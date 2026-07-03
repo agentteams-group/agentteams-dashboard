@@ -96,6 +96,12 @@ export function validateHomeserverUrl(
     return parsed;
   }
 
+  // Check allowlist first — explicitly allowed hosts bypass all other checks.
+  const allowedHosts = getAllowedHosts();
+  if (allowedHosts.length > 0 && allowedHosts.includes(hostname)) {
+    return parsed;
+  }
+
   if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) {
     throw new HomeserverValidationError('private network addresses are not allowed');
   }
@@ -103,11 +109,6 @@ export function validateHomeserverUrl(
   const blockedSuffixes = getBlockedSuffixes();
   if (blockedSuffixes.some((suffix) => hostname.endsWith(suffix))) {
     throw new HomeserverValidationError('internal hostnames are not allowed');
-  }
-
-  const allowedHosts = getAllowedHosts();
-  if (allowedHosts.length > 0 && !allowedHosts.includes(hostname)) {
-    throw new HomeserverValidationError('host is not in the allowlist');
   }
 
   return parsed;

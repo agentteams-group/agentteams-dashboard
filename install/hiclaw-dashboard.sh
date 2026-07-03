@@ -225,6 +225,7 @@ recreate_container() {
     -e HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL}" \
     -e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}" \
     -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}" \
+    -e MATRIX_HOMESERVER_ALLOWLIST="matrix-local.hiclaw.io,matrix.org" \
     -e DATABASE_URL="file:/app/db/dashboard.db" \
     -v "${DATA_VOLUME}:/app/db" \
     "${HICLAW_DASHBOARD_IMAGE}"
