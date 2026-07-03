@@ -1,0 +1,160 @@
+From: TaDashboard <dashboard@hiclaw.io>
+Subject: [PATCH 1/3] feat(install): integrate TaDashboard as optional component
+
+Add TaDashboard as an optional component in the AgentTeams installation:
+- Dashboard wizard step with port, image, and Higress Console URL config
+- Auto-detect Higress Console URL for shared authentication
+- Dashboard container startup after embedded controller
+- Bilingual messages (zh/en)
+- LAN-accessible by default (bind 0.0.0.0)
+---
+ install/hiclaw-install.sh | 80 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 80 insertions(+)
+
+--- a/install/hiclaw-install.sh
++++ b/install/hiclaw-install.sh
+@@ -45,6 +45,11 @@
+ #   HICLAW_PORT_ELEMENT_WEB   Host port for Element Web direct access (default: 18088)
+ #   HICLAW_PORT_MANAGER_CONSOLE  Host port for Manager console (default: 18888)
+ #   HICLAW_WORKER_IDLE_TIMEOUT  Worker idle timeout in minutes (default: 720, i.e. 12 hours)
++#   HICLAW_DASHBOARD              Install TaDashboard management UI (default: 1)
++#   HICLAW_PORT_DASHBOARD         Dashboard host port (default: 13000)
++#   HICLAW_DASHBOARD_IMAGE        Override dashboard image
++#   HICLAW_AI_GATEWAY_ADMIN_URL   Higress Console URL for shared auth (auto-detected)
+
+ set -e
+
+@@ -876,8 +881,22 @@
+         "success.manager_console_gateway.en") text="  Manager Console (gateway): http://console-local.hiclaw.io (Username: %s / Password: %s)" ;;
+-        "success.dashboard.zh") text="  管理面板 (Dashboard): http://localhost:%s/dashboard" ;;
+-        "success.dashboard.en") text="  Management Dashboard: http://localhost:%s/dashboard" ;;
++        "success.dashboard.zh") text="  管理面板 (Dashboard): http://localhost:%s/" ;;
++        "success.dashboard.en") text="  Management Dashboard: http://localhost:%s/" ;;
+         "success.copaw_console.zh") text="  QwenPaw App API: http://localhost:%s（无需登录）" ;;
++        # --- Dashboard wizard ---
++        "dash.prompt.zh")        text="是否安装 TaDashboard 管理面板?" ;;
++        "dash.prompt.en")        text="Install TaDashboard management UI?" ;;
++        "dash.port_prompt.zh")   text="Dashboard 端口号" ;;
++        "dash.port_prompt.en")   text="Dashboard port" ;;
++        "dash.image_prompt.zh")  text="Dashboard 镜像" ;;
++        "dash.image_prompt.en")  text="Dashboard image" ;;
++        "dash.higress_prompt.zh") text="Higress Console URL（共用登录，留空跳过）" ;;
++        "dash.higress_prompt.en") text="Higress Console URL (shared login, empty to skip)" ;;
++        "dash.starting.zh")      text="正在启动 TaDashboard..." ;;
++        "dash.starting.en")      text="Starting TaDashboard..." ;;
++        "dash.ready.zh")         text="TaDashboard 已就绪" ;;
++        "dash.ready.en")         text="TaDashboard is ready" ;;
++        "dash.failed.zh")        text="TaDashboard 启动失败" ;;
++        "dash.failed.en")        text="TaDashboard failed to start" ;;
++        "dash.skipped.zh")       text="跳过 TaDashboard 安装" ;;
++        "dash.skipped.en")       text="Skipping TaDashboard installation" ;;
+
+@@ -1038,6 +1057,7 @@
+     DASHBOARD_IMAGE="${HICLAW_INSTALL_DASHBOARD_IMAGE:-${HICLAW_REGISTRY}/higress/hiclaw-dashboard:${HICLAW_VERSION}}"
++    HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}"
+
+@@ -1611,6 +1631,8 @@
+         step_volume|step_workspace)
+             [ "${UPGRADE_EXISTING_WORKERS:-0}" = "1" ] ;;
++        step_dashboard)
++            [ "${HICLAW_DASHBOARD:-1}" != "1" ] ;;
+
+@@ -1673,6 +1695,7 @@
+         step_volume)    unset HICLAW_DATA_DIR ;;
++        step_dashboard) unset HICLAW_DASHBOARD HICLAW_PORT_DASHBOARD HICLAW_DASHBOARD_IMAGE HICLAW_AI_GATEWAY_ADMIN_URL ;;
+
+@@ -2411,6 +2434,40 @@
+     export HICLAW_WORKSPACE_DIR
+ }
++
++step_dashboard() {
++    log "$(msg dash.prompt)"
++    # ── Non-interactive guard ──────────────────────────────────────
++    if [ "${HICLAW_NON_INTERACTIVE}" = "1" ]; then
++        HICLAW_DASHBOARD="${HICLAW_DASHBOARD:-1}"
++        if [ "${HICLAW_DASHBOARD}" != "1" ]; then
++            log "$(msg dash.skipped)"
++            return 0
++        fi
++        HICLAW_PORT_DASHBOARD="${HICLAW_PORT_DASHBOARD:-13000}"
++        HICLAW_DASHBOARD_IMAGE="${HICLAW_DASHBOARD_IMAGE:-hiclaw-dashboard:latest}"
++        HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}"
++        log "  Port: ${HICLAW_PORT_DASHBOARD}, Image: ${HICLAW_DASHBOARD_IMAGE} (non-interactive)"
++        export HICLAW_DASHBOARD HICLAW_PORT_DASHBOARD HICLAW_DASHBOARD_IMAGE HICLAW_AI_GATEWAY_ADMIN_URL
++        return 0
++    fi
++    # ───────────────────────────────────────────────────────────────
++    prompt_yes_no HICLAW_DASHBOARD "$(msg dash.prompt)" "1"
++    if [ "${HICLAW_DASHBOARD}" != "1" ]; then
++        log "$(msg dash.skipped)"
++        return 0
++    fi
++    prompt HICLAW_PORT_DASHBOARD "$(msg dash.port_prompt)" "13000"
++    prompt HICLAW_DASHBOARD_IMAGE "$(msg dash.image_prompt)" "hiclaw-dashboard:latest"
++    # Auto-detect Higress Console URL
++    local _higress_url="" _higress_ctr
++    _higress_ctr=$(${DOCKER_CMD} ps --format '{{.Names}}' | grep -E "higress-console|higress" | head -1 || true)
++    if [ -n "${_higress_ctr}" ]; then
++        local _higress_port
++        _higress_port=$(${DOCKER_CMD} port "${_higress_ctr}" 8001 2>/dev/null | head -1 | cut -d: -f2 || true)
++        _higress_url="http://${_higress_ctr}:8001"
++        [ -n "${_higress_port}" ] && _higress_url="http://127.0.0.1:${_higress_port}"
++    fi
++    prompt HICLAW_AI_GATEWAY_ADMIN_URL "$(msg dash.higress_prompt)" "${_higress_url}"
++    export HICLAW_DASHBOARD HICLAW_PORT_DASHBOARD HICLAW_DASHBOARD_IMAGE HICLAW_AI_GATEWAY_ADMIN_URL
++}
+
+@@ -2916,7 +2973,7 @@
+     local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
+                    step_ports step_domains step_github step_skills step_volume
+-                   step_workspace step_e2ee step_docker_proxy step_idle step_hostshare step_podman_autostart )
++                   step_workspace step_dashboard step_e2ee step_docker_proxy step_idle step_hostshare step_podman_autostart )
+
+@@ -3580,6 +3637,38 @@
+         # (container startup and wait logic)
++        # --- TaDashboard (optional) ---
++        if [ "${HICLAW_DASHBOARD:-1}" = "1" ]; then
++            log "$(msg dash.starting)"
++
++            local _dash_ctrl_url="http://hiclaw-controller:8090"
++
++            ${DOCKER_CMD} run -d --name hiclaw-dashboard \
++                --network "${NETWORK_NAME}" \
++                --restart unless-stopped \
++                -p "${_port_prefix}${HICLAW_PORT_DASHBOARD:-13000}:3000" \
++                -e HICLAW_CONTROLLER_URL="${_dash_ctrl_url}" \
++                -e NEXT_PUBLIC_MATRIX_API_URL="http://matrix-local.hiclaw.io:6167" \
++                -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}" \
++                -e DATABASE_URL="file:/app/db/dashboard.db" \
++                -v "hiclaw-dashboard-data:/app/db" \
++                "${DASHBOARD_IMAGE}"
++
++            # Wait for readiness
++            local _dash_wait=0 _dash_max=60
++            while [ ${_dash_wait} -lt ${_dash_max} ]; do
++                if curl -sf "http://127.0.0.1:${HICLAW_PORT_DASHBOARD:-13000}/" >/dev/null 2>&1; then
++                    break
++                fi
++                sleep 2
++                _dash_wait=$((_dash_wait + 2))
++            done
++
++            if [ ${_dash_wait} -ge ${_dash_max} ]; then
++                log "$(msg dash.failed)"
++            else
++                log "$(msg dash.ready)"
++            fi
++        fi
+
+@@ -3807,7 +3856,7 @@
+     if [ "${HICLAW_USE_EMBEDDED}" = "1" ]; then
+-        log "$(msg success.dashboard "${HICLAW_PORT_GATEWAY:-18080}")"
++        log "$(msg success.dashboard "${HICLAW_PORT_DASHBOARD:-13000}")"
+     fi
+
+@@ -env_file_generation (add after existing env vars):
++    # Dashboard
++    echo "HICLAW_DASHBOARD=${HICLAW_DASHBOARD}" >> "${_env_file}"
++    echo "HICLAW_PORT_DASHBOARD=${HICLAW_PORT_DASHBOARD}" >> "${_env_file}"
++    echo "HICLAW_DASHBOARD_IMAGE=${HICLAW_DASHBOARD_IMAGE}" >> "${_env_file}"
++    echo "HICLAW_AI_GATEWAY_ADMIN_URL=${HICLAW_AI_GATEWAY_ADMIN_URL:-}" >> "${_env_file}"

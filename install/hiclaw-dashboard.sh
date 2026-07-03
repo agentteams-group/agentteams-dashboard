@@ -4,7 +4,8 @@
 # as an optional component of an existing AgentTeams (HiClaw) deployment.
 #
 # Usage:
-#   bash hiclaw-dashboard.sh              # interactive install/upgrade
+#   bash hiclaw-dashboard.sh              # interactive install (first time)
+#   bash hiclaw-dashboard.sh update       # pull latest image & recreate
 #   bash hiclaw-dashboard.sh uninstall    # remove dashboard container
 #
 # Non-interactive:
@@ -18,6 +19,7 @@ NETWORK_NAME="hiclaw-net"
 DEFAULT_PORT=13000
 DEFAULT_IMAGE="hiclaw-dashboard:latest"
 DATA_VOLUME="hiclaw-dashboard-data"
+ENV_FILE="${HOME}/.hiclaw-dashboard.env"
 
 # ---------- helpers ----------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -37,6 +39,35 @@ detect_docker() {
     fi
   fi
   info "Using: ${DOCKER_CMD}"
+}
+
+# ---------- env persistence ----------
+save_env() {
+  cat > "${ENV_FILE}" <<EOF
+HICLAW_PORT_DASHBOARD=${HICLAW_PORT_DASHBOARD}
+HICLAW_DASHBOARD_IMAGE=${HICLAW_DASHBOARD_IMAGE}
+HICLAW_CONTROLLER_URL=${HICLAW_CONTROLLER_URL}
+NEXT_PUBLIC_MATRIX_API_URL=${NEXT_PUBLIC_MATRIX_API_URL}
+HICLAW_AI_GATEWAY_ADMIN_URL=${HICLAW_AI_GATEWAY_ADMIN_URL:-}
+HICLAW_LOCAL_ONLY=${HICLAW_LOCAL_ONLY:-0}
+EOF
+  ok "Configuration saved to ${ENV_FILE}"
+}
+
+load_env() {
+  if [ ! -f "${ENV_FILE}" ]; then
+    err "No saved configuration found at ${ENV_FILE}"
+    err "Run 'bash hiclaw-dashboard.sh' (without arguments) to install first."
+    exit 1
+  fi
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  # Apply defaults for any missing values
+  HICLAW_PORT_DASHBOARD="${HICLAW_PORT_DASHBOARD:-${DEFAULT_PORT}}"
+  HICLAW_DASHBOARD_IMAGE="${HICLAW_DASHBOARD_IMAGE:-${DEFAULT_IMAGE}}"
+  HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL:-http://hiclaw-controller:8090}"
+  NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://matrix-local.hiclaw.io:6167}"
+  HICLAW_LOCAL_ONLY="${HICLAW_LOCAL_ONLY:-0}"
 }
 
 # ---------- uninstall ----------
@@ -151,44 +182,35 @@ resolve_port_prefix() {
   fi
 }
 
-# ---------- install ----------
-do_install() {
-  preflight
-  wizard
-
-  echo ""
-  info "Configuration:"
-  info "  Port:        ${HICLAW_PORT_DASHBOARD}"
-  info "  Image:       ${HICLAW_DASHBOARD_IMAGE}"
-  info "  Controller:  ${HICLAW_CONTROLLER_URL}"
-  info "  Matrix:      ${NEXT_PUBLIC_MATRIX_API_URL}"
-  info "  Higress:     ${HICLAW_AI_GATEWAY_ADMIN_URL:-<not configured>}"
-  info "  LAN access:  $([ "${HICLAW_LOCAL_ONLY:-0}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
-  echo ""
-
-  resolve_port_prefix
-
-  # Remove existing container if present
-  if ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
-    info "Removing existing ${CONTAINER_NAME} container..."
-    ${DOCKER_CMD} rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-  fi
-
-  # Pull image if not local
-  if ! ${DOCKER_CMD} image inspect "${HICLAW_DASHBOARD_IMAGE}" >/dev/null 2>&1; then
-    info "Pulling image ${HICLAW_DASHBOARD_IMAGE}..."
-    ${DOCKER_CMD} pull "${HICLAW_DASHBOARD_IMAGE}" || {
+# ---------- pull or build image ----------
+ensure_image() {
+  local image="$1"
+  # Pull latest if image not present locally
+  if ! ${DOCKER_CMD} image inspect "${image}" >/dev/null 2>&1; then
+    info "Pulling image ${image}..."
+    ${DOCKER_CMD} pull "${image}" || {
       warn "Pull failed — attempting to build from source..."
       local script_dir
       script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
       if [ -f "${script_dir}/../Dockerfile" ]; then
         ${DOCKER_CMD} build \
           --build-arg NEXT_PUBLIC_BASE_PATH="" \
-          -t "${HICLAW_DASHBOARD_IMAGE}" "${script_dir}/.."
+          -t "${image}" "${script_dir}/.."
       else
         err "Cannot build: Dockerfile not found."; exit 1
       fi
     }
+  fi
+}
+
+# ---------- recreate container ----------
+recreate_container() {
+  resolve_port_prefix
+
+  # Remove existing container if present
+  if ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+    info "Removing existing ${CONTAINER_NAME} container..."
+    ${DOCKER_CMD} rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
   fi
 
   # Create data volume
@@ -203,7 +225,7 @@ do_install() {
     -p "${_port_prefix}${HICLAW_PORT_DASHBOARD}:3000" \
     -e HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL}" \
     -e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}" \
-    -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL}" \
+    -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}" \
     -e DATABASE_URL="file:/app/db/dashboard.db" \
     -v "${DATA_VOLUME}:/app/db" \
     "${HICLAW_DASHBOARD_IMAGE}"
@@ -224,10 +246,13 @@ do_install() {
   else
     ok "Dashboard is ready!"
   fi
+}
 
+# ---------- print success ----------
+print_success() {
   echo ""
   echo -e "${GREEN}========================================${NC}"
-  echo -e "${GREEN}  TaDashboard installed successfully!${NC}"
+  echo -e "${GREEN}  TaDashboard ${1:-installed} successfully!${NC}"
   echo -e "${GREEN}========================================${NC}"
   echo ""
   local bind_host="0.0.0.0"
@@ -238,10 +263,67 @@ do_install() {
   echo ""
 }
 
+# ---------- install (first time) ----------
+do_install() {
+  preflight
+  wizard
+
+  echo ""
+  info "Configuration:"
+  info "  Port:        ${HICLAW_PORT_DASHBOARD}"
+  info "  Image:       ${HICLAW_DASHBOARD_IMAGE}"
+  info "  Controller:  ${HICLAW_CONTROLLER_URL}"
+  info "  Matrix:      ${NEXT_PUBLIC_MATRIX_API_URL}"
+  info "  Higress:     ${HICLAW_AI_GATEWAY_ADMIN_URL:-<not configured>}"
+  info "  LAN access:  $([ "${HICLAW_LOCAL_ONLY:-0}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
+  echo ""
+
+  save_env
+  ensure_image "${HICLAW_DASHBOARD_IMAGE}"
+  recreate_container
+  print_success "installed"
+}
+
+# ---------- update (upgrade existing) ----------
+do_update() {
+  preflight
+  load_env
+
+  echo ""
+  info "Updating TaDashboard..."
+  info "  Port:        ${HICLAW_PORT_DASHBOARD}"
+  info "  Image:       ${HICLAW_DASHBOARD_IMAGE}"
+  info "  Controller:  ${HICLAW_CONTROLLER_URL}"
+  echo ""
+
+  # Pull latest image (force re-pull to get updates)
+  info "Pulling latest image ${HICLAW_DASHBOARD_IMAGE}..."
+  ${DOCKER_CMD} pull "${HICLAW_DASHBOARD_IMAGE}" || {
+    warn "Pull failed — attempting to rebuild from source..."
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "${script_dir}/../Dockerfile" ]; then
+      ${DOCKER_CMD} build \
+        --no-cache \
+        --build-arg NEXT_PUBLIC_BASE_PATH="" \
+        -t "${HICLAW_DASHBOARD_IMAGE}" "${script_dir}/.."
+    else
+      err "Cannot build: Dockerfile not found. Run without 'update' to install from scratch."
+      exit 1
+    fi
+  }
+
+  recreate_container
+  print_success "updated"
+}
+
 # ---------- main ----------
 case "${1:-}" in
   uninstall|remove|rm)
     do_uninstall
+    ;;
+  update|upgrade)
+    do_update
     ;;
   *)
     do_install

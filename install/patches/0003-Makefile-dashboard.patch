@@ -1,0 +1,36 @@
+From: TaDashboard <dashboard@hiclaw.io>
+Subject: [PATCH 3/3] feat(Makefile): add Dashboard standalone targets
+
+Add Makefile targets for standalone Dashboard management:
+- install-dashboard: build + install
+- update-dashboard: pull latest & recreate
+- uninstall-dashboard: remove container
+---
+ Makefile | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+--- a/Makefile
++++ b/Makefile
+@@ -41,6 +41,7 @@
+ DASHBOARD_IMAGE      ?= $(REGISTRY)/$(REPO)/hiclaw-dashboard
+ EMBEDDED_IMAGE       ?= $(REGISTRY)/$(REPO)/hiclaw-embedded
++DASHBOARD_CONTEXT    ?= ./TaDashboard/
+
+ DASHBOARD_TAG      ?= $(DASHBOARD_IMAGE):$(VERSION)
+
+@@ .PHONY declarations (add to the list):
++        install-dashboard update-dashboard uninstall-dashboard \
+
+@@ (add after the push-embedded target):
+
++# --- TaDashboard standalone ---
++.PHONY: install-dashboard update-dashboard uninstall-dashboard
++
++install-dashboard: build-dashboard ## Install TaDashboard standalone
++	@bash $(DASHBOARD_CONTEXT)/install/hiclaw-dashboard.sh
++
++update-dashboard: ## Update TaDashboard (pull latest & recreate)
++	@bash $(DASHBOARD_CONTEXT)/install/hiclaw-dashboard.sh update
++
++uninstall-dashboard: ## Uninstall TaDashboard
++	@bash $(DASHBOARD_CONTEXT)/install/hiclaw-dashboard.sh uninstall
