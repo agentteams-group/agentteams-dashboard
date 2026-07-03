@@ -6,6 +6,7 @@
 # Run:
 #   docker run -p 3000:3000 \
 #     -e HICLAW_CONTROLLER_URL=http://hiclaw-controller:8090 \
+#     -e HICLAW_AI_GATEWAY_ADMIN_URL=http://hiclaw-controller:8001 \
 #     -e NEXT_PUBLIC_MATRIX_API_URL=http://matrix-local.hiclaw.io:6167 \
 #     hiclaw-dashboard:latest
 

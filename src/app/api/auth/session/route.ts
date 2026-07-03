@@ -1,7 +1,6 @@
-// GET /api/auth/session - Validate the browser's session (Higress Console or local)
+// GET /api/auth/session - Validate the browser's session via Higress Console
 import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, getHigressConsoleURL } from '../../higress/proxy-helper';
-import { validateSessionToken, isHigressConfigured } from '@/lib/auth-local';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,13 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ authenticated: false }, { status: 200 });
     }
 
-    // ── Path A: Higress Console is configured → validate via Higress ──
-    if (isHigressConfigured()) {
-      return await validateViaHigress(request, cookie);
-    }
-
-    // ── Path B: No Higress → validate local session token ──
-    return validateViaLocal(cookie);
+    return await validateViaHigress(request, cookie);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ authenticated: false, error: message }, { status: 200 });
@@ -50,20 +43,3 @@ async function validateViaHigress(request: NextRequest, cookie: string) {
   return NextResponse.json({ authenticated: true, username, mode: 'higress' }, { status: 200 });
 }
 
-/** Validate the local session cookie. */
-function validateViaLocal(cookie: string) {
-  // Extract hiclaw_session from cookie string
-  const match = cookie.match(/(?:^|;\s*)hiclaw_session=([^;]+)/);
-  if (!match) {
-    return NextResponse.json({ authenticated: false }, { status: 200 });
-  }
-
-  const token = match[1];
-  const username = validateSessionToken(token);
-
-  if (!username) {
-    return NextResponse.json({ authenticated: false }, { status: 200 });
-  }
-
-  return NextResponse.json({ authenticated: true, username, mode: 'local' }, { status: 200 });
-}

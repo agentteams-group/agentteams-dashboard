@@ -1,8 +1,7 @@
-// POST /api/auth/login - Authenticate via Higress Console or local fallback
+// POST /api/auth/login - Authenticate via Higress Console
 // Also attempts Matrix login with the same credentials for seamless chat access.
 import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, forwardCookies, getHigressConsoleURL, higressErrorResponse } from '../../higress/proxy-helper';
-import { authenticateLocal, createSessionToken, isHigressConfigured } from '@/lib/auth-local';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 
 const MATRIX_HOMESERVER =
@@ -19,13 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Username and password are required' }, { status: 400 });
     }
 
-    // ── Path A: Higress Console is configured → proxy auth to Higress ──
-    if (isHigressConfigured()) {
-      return await loginViaHigress(request, username, password);
-    }
-
-    // ── Path B: No Higress → local auth fallback ──
-    return await loginViaLocal(username, password);
+    return await loginViaHigress(request, username, password);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ success: false, error: message }, { status: 502 });
@@ -116,34 +109,3 @@ async function loginViaHigress(request: NextRequest, username: string, password:
   );
 }
 
-/** Authenticate against the local user store (first login creates the admin). */
-async function loginViaLocal(username: string, password: string) {
-  const result = await authenticateLocal(username, password);
-
-  if (!result.success) {
-    return NextResponse.json(
-      { success: false, error: result.error || 'Login failed' },
-      { status: 401 }
-    );
-  }
-
-  // Attempt Matrix login with the same credentials (non-blocking).
-  const matrix = await tryMatrixLogin(username, password);
-
-  // Create a signed session cookie.
-  const token = createSessionToken(username);
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
-  const isSecure = process.env.NODE_ENV === 'production';
-  const responseHeaders = new Headers();
-  responseHeaders.set('content-type', 'application/json');
-  responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  responseHeaders.append(
-    'Set-Cookie',
-    `hiclaw_session=${token}; Path=${basePath || '/'}; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}${isSecure ? '; Secure' : ''}`
-  );
-
-  return new NextResponse(
-    JSON.stringify({ success: true, user: { username }, mode: 'local', matrix }),
-    { status: 200, headers: responseHeaders }
-  );
-}
