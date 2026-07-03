@@ -125,12 +125,28 @@ wizard() {
   prompt_value HICLAW_CONTROLLER_URL "HiClaw Controller URL" "${ctrl_url}"
 
   prompt_value NEXT_PUBLIC_MATRIX_API_URL "Matrix Homeserver URL" "http://matrix-local.hiclaw.io:6167"
+
+  # Detect Higress Console URL from running container (for shared auth with Higress)
+  local higress_url=""
+  local higress_container
+  higress_container=$(${DOCKER_CMD} ps --format '{{.Names}}' | grep -E "higress-console|higress" | head -1 || true)
+  if [ -n "${higress_container}" ]; then
+    # Try to get the mapped port for 8001
+    local higress_port
+    higress_port=$(${DOCKER_CMD} port "${higress_container}" 8001 2>/dev/null | head -1 | cut -d: -f2 || true)
+    if [ -n "${higress_port}" ]; then
+      higress_url="http://127.0.0.1:${higress_port}"
+    else
+      higress_url="http://${higress_container}:8001"
+    fi
+  fi
+  prompt_value HICLAW_AI_GATEWAY_ADMIN_URL "Higress Console URL (for shared login)" "${higress_url}"
 }
 
 # ---------- local-only binding ----------
 resolve_port_prefix() {
   _port_prefix=""
-  if [ "${HICLAW_LOCAL_ONLY:-1}" = "1" ]; then
+  if [ "${HICLAW_LOCAL_ONLY:-0}" = "1" ]; then
     _port_prefix="127.0.0.1:"
   fi
 }
@@ -146,6 +162,8 @@ do_install() {
   info "  Image:       ${HICLAW_DASHBOARD_IMAGE}"
   info "  Controller:  ${HICLAW_CONTROLLER_URL}"
   info "  Matrix:      ${NEXT_PUBLIC_MATRIX_API_URL}"
+  info "  Higress:     ${HICLAW_AI_GATEWAY_ADMIN_URL:-<not configured>}"
+  info "  LAN access:  $([ "${HICLAW_LOCAL_ONLY:-0}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
   echo ""
 
   resolve_port_prefix
@@ -164,7 +182,9 @@ do_install() {
       local script_dir
       script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
       if [ -f "${script_dir}/../Dockerfile" ]; then
-        ${DOCKER_CMD} build -t "${HICLAW_DASHBOARD_IMAGE}" "${script_dir}/.."
+        ${DOCKER_CMD} build \
+          --build-arg NEXT_PUBLIC_BASE_PATH="" \
+          -t "${HICLAW_DASHBOARD_IMAGE}" "${script_dir}/.."
       else
         err "Cannot build: Dockerfile not found."; exit 1
       fi
@@ -183,6 +203,7 @@ do_install() {
     -p "${_port_prefix}${HICLAW_PORT_DASHBOARD}:3000" \
     -e HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL}" \
     -e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}" \
+    -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL}" \
     -e DATABASE_URL="file:/app/db/dashboard.db" \
     -v "${DATA_VOLUME}:/app/db" \
     "${HICLAW_DASHBOARD_IMAGE}"
@@ -210,7 +231,7 @@ do_install() {
   echo -e "${GREEN}========================================${NC}"
   echo ""
   local bind_host="0.0.0.0"
-  [ "${HICLAW_LOCAL_ONLY:-1}" = "1" ] && bind_host="127.0.0.1"
+  [ "${HICLAW_LOCAL_ONLY:-0}" = "1" ] && bind_host="127.0.0.1"
   echo -e "  Access: ${CYAN}http://${bind_host}:${HICLAW_PORT_DASHBOARD}/${NC}"
   echo -e "  Logs:   ${DOCKER_CMD} logs -f ${CONTAINER_NAME}"
   echo -e "  Stop:   ${DOCKER_CMD} stop ${CONTAINER_NAME}"

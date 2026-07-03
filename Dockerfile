@@ -12,9 +12,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Default basePath for embedding TaDashboard under /dashboard.
-# Override at build time with --build-arg NEXT_PUBLIC_BASE_PATH="" to serve at root.
-ARG NEXT_PUBLIC_BASE_PATH=/dashboard
+# Default basePath is empty for standalone deployment (served at root).
+# Override at build time with --build-arg NEXT_PUBLIC_BASE_PATH=/dashboard for embedding.
+ARG NEXT_PUBLIC_BASE_PATH=
 ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 
 # Optional build-time default for the browser-side controller URL.
@@ -44,6 +44,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+# Next.js 15+ standalone server defaults to localhost; bind to all interfaces for LAN access.
+ENV HOSTNAME=0.0.0.0
 
 ARG APK_MIRROR=mirrors.aliyun.com
 RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
