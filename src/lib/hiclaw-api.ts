@@ -2,6 +2,7 @@
 // All requests go through Next.js API proxy routes
 
 import { ApiError, NetworkError } from '@/lib/api-error';
+import { apiUrl } from '@/lib/api-base';
 
 // ============ Response Types ============
 
@@ -206,7 +207,7 @@ async function proxyRequest<T>(
 ): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/api/hiclaw${path}`, {
+    res = await fetch(apiUrl(`/api/hiclaw${path}`), {
       ...options,
       headers: {
         ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
@@ -383,7 +384,7 @@ export const hiclawApi = {
   uploadPackage: async (file: File): Promise<{ packageUri: string }> => {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch('/api/hiclaw/packages', {
+    const res = await fetch(apiUrl('/api/hiclaw/packages'), {
       method: 'POST',
       body: formData,
     });

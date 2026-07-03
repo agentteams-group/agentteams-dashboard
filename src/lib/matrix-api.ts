@@ -1,6 +1,8 @@
 // Matrix Client-Server API Client
 // All requests go through Next.js API proxy routes to the Matrix homeserver
 
+import { apiUrl } from '@/lib/api-base';
+
 export interface MatrixLoginResponse {
   access_token: string;
   user_id: string;
@@ -95,7 +97,8 @@ function buildMatrixUrl(path: string, params: Record<string, string | number | u
     if (v !== undefined) search.set(k, String(v));
   }
   const qs = search.toString();
-  return qs ? `${path}?${qs}` : path;
+  const base = apiUrl(path);
+  return qs ? `${base}?${qs}` : base;
 }
 
 async function throwIfNotOk(res: Response, fallback: string): Promise<void> {
@@ -106,7 +109,7 @@ async function throwIfNotOk(res: Response, fallback: string): Promise<void> {
 
 export const matrixApi = {
   login: async (homeserver: string, username: string, password: string): Promise<MatrixLoginResponse> => {
-    const res = await fetch('/api/matrix/login', {
+    const res = await fetch(apiUrl('/api/matrix/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ homeserver, username, password }),

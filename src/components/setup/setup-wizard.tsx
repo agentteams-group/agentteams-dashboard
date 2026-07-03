@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Check, ChevronRight, KeyRound, Loader2, Sparkles } from 'lucide-react';
+import { apiUrl } from '@/lib/api-base';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +49,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         payload.openaiBaseUrl = baseUrl.trim();
       }
 
-      const res = await fetch('/api/hiclaw/setup/', {
+      const res = await fetch(apiUrl('/api/hiclaw/setup/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

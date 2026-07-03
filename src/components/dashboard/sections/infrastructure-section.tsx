@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useReducer } from 'react';
 import { motion } from 'framer-motion';
+import { apiUrl } from '@/lib/api-base';
 import {
   Server,
   Zap,
@@ -429,7 +430,7 @@ export function InfrastructureSection() {
         }
       } else {
         // Use infrastructure API for others
-        const res = await fetch('/api/hiclaw/infrastructure', {
+        const res = await fetch(apiUrl('/api/hiclaw/infrastructure'), {
           signal: AbortSignal.timeout(8000),
         });
         if (res.ok) {

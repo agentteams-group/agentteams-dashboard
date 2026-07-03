@@ -6,6 +6,7 @@ import { LoginPage } from '@/components/auth/login-page';
 import { SetupWizard } from '@/components/setup/setup-wizard';
 import { QueryProvider } from '@/lib/query-provider';
 import { SearchProvider } from '@/lib/search-context';
+import { apiUrl } from '@/lib/api-base';
 import { ThemeProvider } from 'next-themes';
 
 type AuthState =
@@ -24,7 +25,7 @@ export default function Home() {
 
   const checkSession = async () => {
     try {
-      const res = await fetch('/api/auth/session', {
+      const res = await fetch(apiUrl('/api/auth/session'), {
         credentials: 'same-origin',
       });
       const data = await res.json();
@@ -40,7 +41,7 @@ export default function Home() {
 
   const checkSetup = async () => {
     try {
-      const res = await fetch('/api/hiclaw/setup/status/', {
+      const res = await fetch(apiUrl('/api/hiclaw/setup/status/'), {
         credentials: 'same-origin',
       });
       const data = await res.json().catch(() => ({}));
