@@ -148,11 +148,17 @@ wizard() {
   prompt_value HICLAW_PORT_DASHBOARD "Dashboard port" "${DEFAULT_PORT}"
   prompt_value HICLAW_DASHBOARD_IMAGE "Dashboard Docker image" "${DEFAULT_IMAGE}"
 
-  # Detect controller URL from running container
+  # Detect controller URL — in embedded mode the API is on hiclaw-controller:8090,
+  # in standalone mode it may be on hiclaw-manager:8090. Probe to find the right one.
   local ctrl_url="http://hiclaw-controller:8090"
-  if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "hiclaw-manager"; then
-    ctrl_url="http://hiclaw-manager:8090"
-  fi
+  for _ctr in "hiclaw-controller" "hiclaw-manager"; do
+    if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^${_ctr}$"; then
+      if ${DOCKER_CMD} exec "${_ctr}" wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz >/dev/null 2>&1; then
+        ctrl_url="http://${_ctr}:8090"
+        break
+      fi
+    fi
+  done
   prompt_value HICLAW_CONTROLLER_URL "HiClaw Controller URL" "${ctrl_url}"
 
   prompt_value NEXT_PUBLIC_MATRIX_API_URL "Matrix Homeserver URL" "http://matrix-local.hiclaw.io:6167"
