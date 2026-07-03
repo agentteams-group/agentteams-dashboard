@@ -27,6 +27,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
     try {
       const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
@@ -36,7 +37,8 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
         throw new Error(data.error || 'Login failed');
       }
 
-      onLoginSuccess?.();
+      // Small delay to ensure cookie is fully persisted before reload
+      setTimeout(() => onLoginSuccess?.(), 100);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -54,7 +56,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
             </div>
             <div>
               <CardTitle className="text-lg">HiClaw Dashboard</CardTitle>
-              <CardDescription>使用 Higress Console 管理员账号登录</CardDescription>
+              <CardDescription>管理员账号登录（首次登录自动注册）</CardDescription>
             </div>
           </div>
         </CardHeader>

@@ -82,12 +82,14 @@ async function loginViaLocal(username: string, password: string) {
 
   // Create a signed session cookie.
   const token = createSessionToken(username);
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  const isSecure = process.env.NODE_ENV === 'production';
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   responseHeaders.append(
     'Set-Cookie',
-    `hiclaw_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`
+    `hiclaw_session=${token}; Path=${basePath || '/'}; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}${isSecure ? '; Secure' : ''}`
   );
 
   return new NextResponse(

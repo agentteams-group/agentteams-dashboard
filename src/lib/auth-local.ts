@@ -1,5 +1,5 @@
 // Local authentication module — fallback when Higress Console is not configured.
-// Stores admin credentials in a JSON file with scrypt-hashed passwords.
+// Stores admin credentials and session secret in a JSON file with scrypt-hashed passwords.
 import { randomBytes, scrypt, timingSafeEqual, createHmac } from 'crypto';
 import { promisify } from 'util';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -7,8 +7,6 @@ import { dirname } from 'path';
 
 const scryptAsync = promisify(scrypt);
 
-// Session signing secret — generated once per process start.
-const SESSION_SECRET = process.env.SESSION_SECRET || randomBytes(32).toString('hex');
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface StoredUser {
@@ -19,6 +17,7 @@ interface StoredUser {
 }
 
 interface StoredData {
+  sessionSecret: string;
   users: StoredUser[];
 }
 
@@ -29,12 +28,18 @@ function getDbPath(): string {
 function readDb(): StoredData {
   const dbPath = getDbPath();
   if (!existsSync(dbPath)) {
-    return { users: [] };
+    return { sessionSecret: '', users: [] };
   }
   try {
-    return JSON.parse(readFileSync(dbPath, 'utf-8'));
+    const data = JSON.parse(readFileSync(dbPath, 'utf-8'));
+    // Migrate old format without sessionSecret
+    if (!data.sessionSecret) {
+      data.sessionSecret = randomBytes(32).toString('hex');
+      writeDb(data);
+    }
+    return data;
   } catch {
-    return { users: [] };
+    return { sessionSecret: '', users: [] };
   }
 }
 
@@ -45,6 +50,16 @@ function writeDb(data: StoredData): void {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(dbPath, JSON.stringify(data, null, 2));
+}
+
+/** Get or create the persisted session secret. */
+function getSessionSecret(): string {
+  const db = readDb();
+  if (!db.sessionSecret) {
+    db.sessionSecret = randomBytes(32).toString('hex');
+    writeDb(db);
+  }
+  return db.sessionSecret;
 }
 
 export async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
@@ -95,13 +110,14 @@ export async function authenticateLocal(username: string, password: string): Pro
  * Create a signed session token.
  */
 export function createSessionToken(username: string): string {
+  const secret = getSessionSecret();
   const payload = JSON.stringify({
     username,
     iat: Date.now(),
     exp: Date.now() + SESSION_MAX_AGE,
   });
   const encoded = Buffer.from(payload).toString('base64url');
-  const signature = createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+  const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
   return `${encoded}.${signature}`;
 }
 
@@ -110,10 +126,11 @@ export function createSessionToken(username: string): string {
  */
 export function validateSessionToken(token: string): string | null {
   try {
+    const secret = getSessionSecret();
     const [encoded, signature] = token.split('.');
     if (!encoded || !signature) return null;
 
-    const expectedSig = createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+    const expectedSig = createHmac('sha256', secret).update(encoded).digest('base64url');
 
     // Constant-time comparison
     if (signature.length !== expectedSig.length) return null;
