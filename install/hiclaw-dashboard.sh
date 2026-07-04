@@ -289,6 +289,12 @@ detect_runtime_env() {
 
   HICLAW_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" cat /var/run/hiclaw/cli-token 2>/dev/null | tr -d '\n' || true)
 
+  # Always use the internal Docker-network Higress Console URL; a host IP saved
+  # in an old env file is often unreachable from inside the dashboard container.
+  if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
+    HICLAW_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
+  fi
+
   if [ -z "${HICLAW_FS_ACCESS_KEY}" ] || [ -z "${HICLAW_FS_SECRET_KEY}" ]; then
     warn "Could not auto-detect MinIO credentials from ${ctrl_container}"
   fi
