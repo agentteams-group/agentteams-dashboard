@@ -474,6 +474,30 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
     return <ChatLoginRequired />;
   }
 
+  // Show error state if messages query fails
+  if (messagesQuery.isError) {
+    return (
+      <div className="flex items-center justify-center h-full text-center p-8">
+        <div>
+          <MessageSquare className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <p className="text-sm font-medium text-red-500">加载消息失败</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {messagesQuery.error?.message || '无法连接到 Matrix 服务器'}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 text-xs"
+            onClick={() => messagesQuery.refetch()}
+          >
+            <RefreshCw className="w-3 h-3 mr-1" />
+            重试
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
