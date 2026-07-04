@@ -50,6 +50,15 @@ HICLAW_CONTROLLER_URL=${HICLAW_CONTROLLER_URL}
 NEXT_PUBLIC_MATRIX_API_URL=${NEXT_PUBLIC_MATRIX_API_URL}
 HICLAW_AI_GATEWAY_ADMIN_URL=${HICLAW_AI_GATEWAY_ADMIN_URL:-}
 HICLAW_LOCAL_ONLY=${HICLAW_LOCAL_ONLY:-0}
+HICLAW_FS_ENDPOINT=${HICLAW_FS_ENDPOINT:-}
+HICLAW_FS_ACCESS_KEY=${HICLAW_FS_ACCESS_KEY:-}
+HICLAW_FS_SECRET_KEY=${HICLAW_FS_SECRET_KEY:-}
+HICLAW_FS_BUCKET=${HICLAW_FS_BUCKET:-}
+HICLAW_LLM_PROVIDER=${HICLAW_LLM_PROVIDER:-}
+HICLAW_LLM_API_KEY=${HICLAW_LLM_API_KEY:-}
+HICLAW_OPENAI_BASE_URL=${HICLAW_OPENAI_BASE_URL:-}
+HICLAW_DEFAULT_MODEL=${HICLAW_DEFAULT_MODEL:-}
+HICLAW_AUTH_TOKEN=${HICLAW_AUTH_TOKEN:-}
 EOF
   ok "Configuration saved to ${ENV_FILE}"
 }
@@ -68,6 +77,15 @@ load_env() {
   HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL:-http://hiclaw-controller:8090}"
   NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://matrix-local.hiclaw.io:6167}"
   HICLAW_LOCAL_ONLY="${HICLAW_LOCAL_ONLY:-0}"
+  HICLAW_FS_ENDPOINT="${HICLAW_FS_ENDPOINT:-}"
+  HICLAW_FS_ACCESS_KEY="${HICLAW_FS_ACCESS_KEY:-}"
+  HICLAW_FS_SECRET_KEY="${HICLAW_FS_SECRET_KEY:-}"
+  HICLAW_FS_BUCKET="${HICLAW_FS_BUCKET:-}"
+  HICLAW_LLM_PROVIDER="${HICLAW_LLM_PROVIDER:-}"
+  HICLAW_LLM_API_KEY="${HICLAW_LLM_API_KEY:-}"
+  HICLAW_OPENAI_BASE_URL="${HICLAW_OPENAI_BASE_URL:-}"
+  HICLAW_DEFAULT_MODEL="${HICLAW_DEFAULT_MODEL:-}"
+  HICLAW_AUTH_TOKEN="${HICLAW_AUTH_TOKEN:-}"
 }
 
 # ---------- uninstall ----------
@@ -148,17 +166,22 @@ wizard() {
   prompt_value HICLAW_PORT_DASHBOARD "Dashboard port" "${DEFAULT_PORT}"
   prompt_value HICLAW_DASHBOARD_IMAGE "Dashboard Docker image" "${DEFAULT_IMAGE}"
 
-  # Detect controller URL — in embedded mode the API is on hiclaw-controller:8090,
-  # in standalone mode it may be on hiclaw-manager:8090. Probe to find the right one.
-  local ctrl_url="http://hiclaw-controller:8090"
-  for _ctr in "hiclaw-controller" "hiclaw-manager"; do
-    if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^${_ctr}$"; then
-      if ${DOCKER_CMD} exec "${_ctr}" wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz >/dev/null 2>&1; then
-        ctrl_url="http://${_ctr}:8090"
-        break
-      fi
+  # Detect controller URL — in embedded mode the API is on hiclaw-controller:8090.
+  # The manager container does not expose the controller REST API, so we always
+  # prefer hiclaw-controller and only fall back to hiclaw-manager as a last resort.
+  local ctrl_url=""
+  if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^hiclaw-controller$"; then
+    if ${DOCKER_CMD} exec hiclaw-controller wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz >/dev/null 2>&1; then
+      ctrl_url="http://hiclaw-controller:8090"
     fi
-  done
+  fi
+  if [ -z "${ctrl_url}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^hiclaw-manager$"; then
+    warn "hiclaw-controller not available — falling back to hiclaw-manager:8090"
+    if ${DOCKER_CMD} exec hiclaw-manager wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz >/dev/null 2>&1; then
+      ctrl_url="http://hiclaw-manager:8090"
+    fi
+  fi
+  [ -z "${ctrl_url}" ] && ctrl_url="http://hiclaw-controller:8090"
   prompt_value HICLAW_CONTROLLER_URL "HiClaw Controller URL" "${ctrl_url}"
 
   prompt_value NEXT_PUBLIC_MATRIX_API_URL "Matrix Homeserver URL" "http://matrix-local.hiclaw.io:6167"
@@ -207,6 +230,73 @@ ensure_image() {
   fi
 }
 
+# ---------- runtime env detection from controller container ----------
+detect_runtime_env() {
+  # MinIO / LLM / auth credentials live on the controller container, even when the
+  # dashboard talks to a manager or proxy. Prefer hiclaw-controller, fall back to
+  # the host derived from HICLAW_CONTROLLER_URL.
+  if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "hiclaw-controller"; then
+    if echo "${HICLAW_CONTROLLER_URL}" | grep -q "hiclaw-manager"; then
+      warn "Controller URL points to hiclaw-manager; switching to hiclaw-controller:8090 for API access"
+      HICLAW_CONTROLLER_URL="http://hiclaw-controller:8090"
+    fi
+  fi
+
+  local ctrl_container=""
+  if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "hiclaw-controller"; then
+    ctrl_container="hiclaw-controller"
+  else
+    ctrl_container=$(echo "${HICLAW_CONTROLLER_URL}" | sed -n 's|^http://\([^/:]*\).*|\1|p')
+  fi
+
+  if [ -z "${ctrl_container}" ]; then
+    warn "Could not derive controller container name from ${HICLAW_CONTROLLER_URL}"
+    return
+  fi
+
+  if ! ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "${ctrl_container}"; then
+    warn "Controller container '${ctrl_container}' not running — cannot auto-detect MinIO/LLM credentials"
+    return
+  fi
+
+  info "Detecting runtime environment from ${ctrl_container}..."
+  local env_out
+  env_out=$(${DOCKER_CMD} inspect "${ctrl_container}" --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}')
+
+  HICLAW_FS_BUCKET=$(echo "${env_out}" | sed -n 's/^HICLAW_FS_BUCKET=//p')
+  [ -z "${HICLAW_FS_BUCKET}" ] && HICLAW_FS_BUCKET=$(echo "${env_out}" | sed -n 's/^HICLAW_MINIO_BUCKET=//p')
+
+  HICLAW_FS_ACCESS_KEY=$(echo "${env_out}" | sed -n 's/^HICLAW_FS_ACCESS_KEY=//p')
+  [ -z "${HICLAW_FS_ACCESS_KEY}" ] && HICLAW_FS_ACCESS_KEY=$(echo "${env_out}" | sed -n 's/^HICLAW_MINIO_USER=//p')
+
+  HICLAW_FS_SECRET_KEY=$(echo "${env_out}" | sed -n 's/^HICLAW_FS_SECRET_KEY=//p')
+  [ -z "${HICLAW_FS_SECRET_KEY}" ] && HICLAW_FS_SECRET_KEY=$(echo "${env_out}" | sed -n 's/^HICLAW_MINIO_PASSWORD=//p')
+
+  local fs_endpoint
+  fs_endpoint=$(echo "${env_out}" | sed -n 's/^HICLAW_FS_ENDPOINT=//p')
+  [ -z "${fs_endpoint}" ] && fs_endpoint=$(echo "${env_out}" | sed -n 's/^HICLAW_MINIO_ENDPOINT=//p')
+  if [ -n "${fs_endpoint}" ]; then
+    # Controller often advertises MinIO as 127.0.0.1, but Dashboard runs in a different container.
+    HICLAW_FS_ENDPOINT=$(echo "${fs_endpoint}" | sed -e "s|127\\.0\\.0\\.1|${ctrl_container}|" -e "s|localhost|${ctrl_container}|")
+  else
+    HICLAW_FS_ENDPOINT="http://${ctrl_container}:9000"
+  fi
+
+  HICLAW_LLM_PROVIDER=$(echo "${env_out}" | sed -n 's/^HICLAW_LLM_PROVIDER=//p')
+  HICLAW_LLM_API_KEY=$(echo "${env_out}" | sed -n 's/^HICLAW_LLM_API_KEY=//p')
+  HICLAW_OPENAI_BASE_URL=$(echo "${env_out}" | sed -n 's/^HICLAW_OPENAI_BASE_URL=//p')
+  HICLAW_DEFAULT_MODEL=$(echo "${env_out}" | sed -n 's/^HICLAW_DEFAULT_MODEL=//p')
+
+  HICLAW_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" cat /var/run/hiclaw/cli-token 2>/dev/null | tr -d '\n' || true)
+
+  if [ -z "${HICLAW_FS_ACCESS_KEY}" ] || [ -z "${HICLAW_FS_SECRET_KEY}" ]; then
+    warn "Could not auto-detect MinIO credentials from ${ctrl_container}"
+  fi
+  if [ -z "${HICLAW_LLM_API_KEY}" ]; then
+    warn "Could not auto-detect LLM API key from ${ctrl_container}"
+  fi
+}
+
 # ---------- recreate container ----------
 recreate_container() {
   resolve_port_prefix
@@ -220,6 +310,29 @@ recreate_container() {
   # Create data volume
   ${DOCKER_CMD} volume create "${DATA_VOLUME}" >/dev/null 2>&1 || true
 
+  # Auto-detect MinIO / LLM / auth from the controller container
+  detect_runtime_env
+
+  # Build environment argument list
+  local env_args=()
+  env_args+=(-e HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL}")
+  env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}")
+  env_args+=(-e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}")
+  env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="matrix-local.hiclaw.io,matrix.org")
+  env_args+=(-e DATABASE_URL="file:/app/db/dashboard.db")
+  [ -n "${HICLAW_AUTH_TOKEN:-}" ] && env_args+=(-e HICLAW_AUTH_TOKEN="${HICLAW_AUTH_TOKEN}")
+  [ -n "${HICLAW_FS_ENDPOINT:-}" ] && env_args+=(-e HICLAW_FS_ENDPOINT="${HICLAW_FS_ENDPOINT}")
+  [ -n "${HICLAW_FS_ACCESS_KEY:-}" ] && env_args+=(-e HICLAW_FS_ACCESS_KEY="${HICLAW_FS_ACCESS_KEY}")
+  [ -n "${HICLAW_FS_SECRET_KEY:-}" ] && env_args+=(-e HICLAW_FS_SECRET_KEY="${HICLAW_FS_SECRET_KEY}")
+  [ -n "${HICLAW_FS_BUCKET:-}" ] && env_args+=(-e HICLAW_FS_BUCKET="${HICLAW_FS_BUCKET}")
+  [ -n "${HICLAW_LLM_PROVIDER:-}" ] && env_args+=(-e HICLAW_LLM_PROVIDER="${HICLAW_LLM_PROVIDER}")
+  [ -n "${HICLAW_LLM_API_KEY:-}" ] && env_args+=(-e HICLAW_LLM_API_KEY="${HICLAW_LLM_API_KEY}")
+  [ -n "${HICLAW_OPENAI_BASE_URL:-}" ] && env_args+=(-e HICLAW_OPENAI_BASE_URL="${HICLAW_OPENAI_BASE_URL}")
+  [ -n "${HICLAW_DEFAULT_MODEL:-}" ] && env_args+=(-e HICLAW_DEFAULT_MODEL="${HICLAW_DEFAULT_MODEL}")
+
+  # Persist the latest detected values
+  save_env
+
   # Start container
   info "Starting ${CONTAINER_NAME}..."
   ${DOCKER_CMD} run -d \
@@ -227,11 +340,7 @@ recreate_container() {
     --restart unless-stopped \
     --network "${NETWORK_NAME}" \
     -p "${_port_prefix}${HICLAW_PORT_DASHBOARD}:3000" \
-    -e HICLAW_CONTROLLER_URL="${HICLAW_CONTROLLER_URL}" \
-    -e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}" \
-    -e HICLAW_AI_GATEWAY_ADMIN_URL="${HICLAW_AI_GATEWAY_ADMIN_URL:-}" \
-    -e MATRIX_HOMESERVER_ALLOWLIST="matrix-local.hiclaw.io,matrix.org" \
-    -e DATABASE_URL="file:/app/db/dashboard.db" \
+    "${env_args[@]}" \
     -v "${DATA_VOLUME}:/app/db" \
     "${HICLAW_DASHBOARD_IMAGE}"
 
@@ -280,6 +389,8 @@ do_install() {
   info "  Controller:  ${HICLAW_CONTROLLER_URL}"
   info "  Matrix:      ${NEXT_PUBLIC_MATRIX_API_URL}"
   info "  Higress:     ${HICLAW_AI_GATEWAY_ADMIN_URL:-<not configured>}"
+  info "  MinIO:       ${HICLAW_FS_ENDPOINT:-<not configured>} (bucket: ${HICLAW_FS_BUCKET:-<unknown>})"
+  info "  LLM:         ${HICLAW_LLM_PROVIDER:-<unknown>} / ${HICLAW_DEFAULT_MODEL:-<unknown>}"
   info "  LAN access:  $([ "${HICLAW_LOCAL_ONLY:-0}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
   echo ""
 
@@ -299,6 +410,8 @@ do_update() {
   info "  Port:        ${HICLAW_PORT_DASHBOARD}"
   info "  Image:       ${HICLAW_DASHBOARD_IMAGE}"
   info "  Controller:  ${HICLAW_CONTROLLER_URL}"
+  info "  MinIO:       ${HICLAW_FS_ENDPOINT:-<not configured>} (bucket: ${HICLAW_FS_BUCKET:-<unknown>})"
+  info "  LLM:         ${HICLAW_LLM_PROVIDER:-<unknown>} / ${HICLAW_DEFAULT_MODEL:-<unknown>}"
   echo ""
 
   # Pull latest image (force re-pull to get updates)
