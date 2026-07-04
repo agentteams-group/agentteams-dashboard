@@ -1,10 +1,11 @@
 'use client';
 
+import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { navItems } from './nav-items';
+import { navItems, isNavItemVisible, type DeploymentMode } from './nav-items';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -13,6 +14,7 @@ interface MobileSidebarProps {
   sectionsWithNotifications: Set<string>;
   onNavClick: (_sectionId: string) => void;
   onClose: () => void;
+  mode?: DeploymentMode | null;
 }
 
 export function MobileSidebar({
@@ -22,7 +24,13 @@ export function MobileSidebar({
   sectionsWithNotifications,
   onNavClick,
   onClose,
+  mode,
 }: MobileSidebarProps) {
+  const visibleItems = useMemo(
+    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    [mode]
+  );
+
   return (
     <AnimatePresence>
       {open && (
@@ -53,7 +61,7 @@ export function MobileSidebar({
               </Button>
             </div>
             <nav className="py-2">
-              {navItems.map((item) => {
+              {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.id;
                 const count = countMap[item.id] ?? 0;

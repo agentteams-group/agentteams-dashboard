@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTheme } from 'next-themes';
 import {
@@ -34,7 +34,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { NotificationPopover } from './notification-popover';
-import { createActions } from './nav-items';
+import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 
 interface DashboardHeaderProps {
   isConnected: boolean;
@@ -50,6 +50,8 @@ interface DashboardHeaderProps {
   onRefreshAll: () => void;
   onOpenMobileMenu: () => void;
   onOpenSettings: () => void;
+  mode?: DeploymentMode | null;
+  createActions?: readonly CreateAction[];
 }
 
 export function DashboardHeader({
@@ -66,12 +68,19 @@ export function DashboardHeader({
   onRefreshAll,
   onOpenMobileMenu,
   onOpenSettings,
+  mode,
+  createActions: actions = createActions,
 }: DashboardHeaderProps) {
   const { theme, setTheme } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const visibleActions = useMemo(
+    () => actions.filter((action) => isCreateActionVisible(action, mode)),
+    [actions, mode]
+  );
 
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -150,7 +159,7 @@ export function DashboardHeader({
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuLabel>快速操作</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {createActions.map((action) => {
+          {visibleActions.map((action) => {
             const ActionIcon = action.icon;
             return (
               <DropdownMenuItem

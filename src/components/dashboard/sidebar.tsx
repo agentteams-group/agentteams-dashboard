@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { navItems, type NavItem } from './nav-items';
+import { navItems, isNavItemVisible, type NavItem, type DeploymentMode } from './nav-items';
 
 interface SidebarProps {
   activeSection: string;
@@ -18,6 +19,7 @@ interface SidebarProps {
   collapsed: boolean;
   onNavClick: (_sectionId: string) => void;
   onToggleCollapse: () => void;
+  mode?: DeploymentMode | null;
 }
 
 interface NavButtonProps {
@@ -90,7 +92,13 @@ export function Sidebar({
   collapsed,
   onNavClick,
   onToggleCollapse,
+  mode,
 }: SidebarProps) {
+  const visibleItems = useMemo(
+    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    [mode]
+  );
+
   return (
     <aside
       className={`hidden md:flex flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 ${
@@ -113,7 +121,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {navItems.map((item, idx) => (
+        {visibleItems.map((item, idx) => (
           <NavButton
             key={item.id}
             item={item}

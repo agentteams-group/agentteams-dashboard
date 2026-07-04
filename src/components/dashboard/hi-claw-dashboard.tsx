@@ -28,7 +28,8 @@ import { MobileSidebar } from './mobile-sidebar';
 import { DashboardHeader } from './header';
 import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
-import { navItems } from './nav-items';
+import { navItems, isNavItemVisible, createActions, isCreateActionVisible } from './nav-items';
+import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -64,6 +65,7 @@ const sectionMap: Record<string, React.ComponentType> = {
 export function HiClawDashboard() {
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
+  const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
@@ -79,6 +81,16 @@ export function HiClawDashboard() {
   const { data: managers } = useManagers();
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    [mode]
+  );
+
+  const visibleCreateActions = useMemo(
+    () => createActions.filter((action) => isCreateActionVisible(action, mode)),
+    [mode]
+  );
+
   const checkConnection = useHiClawStore((s) => s.checkConnection);
   useEffect(() => {
     checkConnection();
@@ -90,24 +102,31 @@ export function HiClawDashboard() {
     }
   }, [workers, teams, managers]);
 
+  // Guard active section: fall back to overview if the current section is hidden in this mode.
+  useEffect(() => {
+    if (!modeLoading && !visibleNavItems.some((n) => n.id === activeSection)) {
+      setActiveSection('overview');
+    }
+  }, [activeSection, visibleNavItems, setActiveSection, modeLoading]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (isCmdOrCtrl && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
-        const index = parseInt(e.key) - 1;
-        if (index < navItems.length) {
-          setActiveSection(navItems[index].id);
+        const index = parseInt(e.key, 10) - 1;
+        if (index < visibleNavItems.length) {
+          setActiveSection(visibleNavItems[index].id);
           setMobileMenuOpen(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveSection]);
+  }, [setActiveSection, visibleNavItems]);
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
-  const activeLabel = navItems.find((n) => n.id === activeSection)?.label || '总览';
+  const activeLabel = visibleNavItems.find((n) => n.id === activeSection)?.label || '总览';
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -179,6 +198,7 @@ export function HiClawDashboard() {
             collapsed={sidebarCollapsed}
             onNavClick={handleNavClick}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            mode={mode}
           />
 
           <MobileSidebar
@@ -188,6 +208,7 @@ export function HiClawDashboard() {
             sectionsWithNotifications={sectionsWithNotifications}
             onNavClick={handleNavClick}
             onClose={() => setMobileMenuOpen(false)}
+            mode={mode}
           />
 
           <div className="flex-1 flex flex-col min-w-0">
@@ -205,6 +226,8 @@ export function HiClawDashboard() {
               onRefreshAll={handleRefreshAll}
               onOpenMobileMenu={() => setMobileMenuOpen(true)}
               onOpenSettings={openSettings}
+              mode={mode}
+              createActions={visibleCreateActions}
             />
 
             <ConnectionBanner />
