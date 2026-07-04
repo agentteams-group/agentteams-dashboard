@@ -16,21 +16,12 @@ export function useTroubleshoot() {
       setError(null);
       try {
         const res = await hiclawApi.troubleshoot(request);
-        if (!res.body) {
-          setAnswer('');
-          return;
+        const data = await res.json();
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setAnswer(data.answer || '');
         }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let done = false;
-        while (!done) {
-          const { value, done: d } = await reader.read();
-          done = d;
-          if (value) {
-            setAnswer((prev) => prev + decoder.decode(value, { stream: true }));
-          }
-        }
-        setAnswer((prev) => prev + decoder.decode());
       } catch (err) {
         setError(err instanceof Error ? err.message : '诊断失败');
       } finally {

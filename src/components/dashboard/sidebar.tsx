@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Box, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -110,13 +110,35 @@ export function Sidebar({
           H
         </div>
         {!collapsed && (
-          <motion.span
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="font-bold text-lg"
+            className="flex flex-col min-w-0"
           >
-            HiClaw
-          </motion.span>
+            <span className="font-bold text-lg leading-tight">HiClaw</span>
+            {mode && (
+              <span className={`inline-flex items-center gap-1 text-[10px] font-medium leading-tight ${
+                mode === 'embedded' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
+              }`}>
+                {mode === 'embedded' ? <Box className="w-2.5 h-2.5" /> : <Cloud className="w-2.5 h-2.5" />}
+                {mode === 'embedded' ? '嵌入模式' : 'K8s 模式'}
+              </span>
+            )}
+          </motion.div>
+        )}
+        {collapsed && mode && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`absolute bottom-0.5 right-0.5 ${
+                mode === 'embedded' ? 'text-emerald-500' : 'text-blue-500'
+              }`}>
+                {mode === 'embedded' ? <Box className="w-3 h-3" /> : <Cloud className="w-3 h-3" />}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {mode === 'embedded' ? '嵌入模式' : 'K8s 模式'}
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
 

@@ -145,6 +145,7 @@ export interface DisplayMessage {
   timestamp: number;
   type: string;
   isMe: boolean;
+  status?: 'sending' | 'sent' | 'error';
 }
 
 export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): DisplayMessage | null {

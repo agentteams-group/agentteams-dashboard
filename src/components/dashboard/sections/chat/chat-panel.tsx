@@ -284,15 +284,22 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
   const [showMembers, setShowMembers] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
 
   const allMessages = useMemo(() => {
     const pages = messagesQuery.data?.pages || [];
     const events = pages.flatMap((page) => page.chunk || []);
-    return [...events]
+    const serverMessages = [...events]
       .reverse()
       .map((e) => formatMatrixEvent(e, userId))
       .filter((m): m is DisplayMessage => m !== null);
-  }, [messagesQuery.data, userId]);
+    // Remove pending messages that now exist on the server
+    const pendingIds = new Set(serverMessages.map((m) => m.id));
+    const filteredPending = pendingMessages.filter(
+      (p) => p.status === 'sending' && !pendingIds.has(p.id)
+    );
+    return [...filteredPending, ...serverMessages];
+  }, [messagesQuery.data, userId, pendingMessages]);
 
   const displayItems = useMemo(() => buildDisplayItems(allMessages), [allMessages]);
 
@@ -322,11 +329,44 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
       .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
       .replace(/\n/g, '<br />');
+
+    // Optimistic: add a pending message immediately
+    const pendingId = `pending-${Date.now()}`;
+    const optimisticMsg: DisplayMessage = {
+      id: pendingId,
+      sender: userId || '',
+      senderShort: userId ? userId.split(':')[0].slice(1) : 'me',
+      content: body,
+      formattedContent: formattedBody,
+      timestamp: Date.now(),
+      type: 'm.text',
+      isMe: true,
+      status: 'sending',
+    };
+    setPendingMessages((prev) => [...prev, optimisticMsg]);
+    setInputValue('');
+
     sendMessage.mutate(
       { roomId: room.id, body, formattedBody },
-      { onSuccess: () => setInputValue('') }
+      {
+        onSuccess: () => {
+          // Mark as sent, will be cleaned up when server data refreshes
+          setPendingMessages((prev) =>
+            prev.map((p) => (p.id === pendingId ? { ...p, status: 'sent' as const } : p))
+          );
+          // Clear after a short delay
+          setTimeout(() => {
+            setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
+          }, 2000);
+        },
+        onError: () => {
+          setPendingMessages((prev) =>
+            prev.map((p) => (p.id === pendingId ? { ...p, status: 'error' as const } : p))
+          );
+        },
+      }
     );
-  }, [inputValue, room.id, sendMessage]);
+  }, [inputValue, room.id, sendMessage, userId]);
 
   const memberList = useMemo(() => {
     const members = membersQuery.data?.chunk || [];

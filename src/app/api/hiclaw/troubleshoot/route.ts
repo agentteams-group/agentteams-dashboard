@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: cfg.model,
         messages: [{ role: 'user', content: prompt }],
-        stream: true,
+        stream: false,
       }),
     });
 
@@ -79,39 +79,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!res.body) {
-      return NextResponse.json({ error: 'LLM returned empty stream' }, { status: 502 });
-    }
+    const data = await res.json();
+    const answer =
+      data?.choices?.[0]?.message?.content ||
+      data?.choices?.[0]?.text ||
+      '未能获取诊断结果';
 
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = res.body!.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            controller.enqueue(encoder.encode(chunk));
-          }
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Stream error';
-          controller.enqueue(encoder.encode(`\n\n[Error: ${message}]`));
-        } finally {
-          controller.close();
-        }
-      },
-    });
-
-    return new NextResponse(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-      },
-    });
+    return NextResponse.json({ answer });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown LLM error';
     return NextResponse.json({ error: message }, { status: 502 });

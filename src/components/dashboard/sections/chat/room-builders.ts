@@ -33,13 +33,18 @@ export function buildRooms(
     }
   });
   managers?.forEach((manager) => {
-    if (manager.roomID) {
+    // Prefer the DM room for human-manager interaction; fall back to manager's own room
+    const chatRoomId = manager.leaderDMRoomID || manager.roomID;
+    if (chatRoomId) {
+      // Find the team this manager leads
+      const leadingTeam = teams?.find((t) => t.leaderName === manager.name);
       roomList.push({
-        id: manager.roomID,
-        name: `${manager.name} 房间`,
+        id: chatRoomId,
+        name: `${manager.name} 对话`,
         type: 'manager',
         members: [manager.matrixUserID].filter(Boolean),
         matrixUserId: manager.matrixUserID,
+        parentTeam: leadingTeam?.name,
         phase: manager.phase,
       });
     }

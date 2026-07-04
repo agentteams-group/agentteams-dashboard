@@ -84,6 +84,7 @@ export interface ManagerResponse {
   image: string;
   matrixUserID: string;
   roomID: string;
+  leaderDMRoomID?: string;
   version: string;
   message: string;
   welcomeSent: boolean;

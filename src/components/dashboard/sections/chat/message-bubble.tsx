@@ -2,9 +2,22 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Check, Clock, AlertCircle } from 'lucide-react';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { formatTime, getAvatarColor } from './format';
 import { MarkdownMessage } from './markdown-message';
+
+function MessageStatus({ status }: { status?: 'sending' | 'sent' | 'error' }) {
+  if (!status) return null;
+  switch (status) {
+    case 'sending':
+      return <Clock className="w-3 h-3 text-muted-foreground/60 animate-pulse" />;
+    case 'sent':
+      return <Check className="w-3 h-3 text-muted-foreground/60" />;
+    case 'error':
+      return <AlertCircle className="w-3 h-3 text-red-500" />;
+  }
+}
 
 export function MessageBubble({
   message,
@@ -63,6 +76,11 @@ export function MessageBubble({
             formattedContent={message.formattedContent}
           />
         </div>
+        {message.isMe && (
+          <div className={`flex items-center gap-1 mt-0.5 ${message.isMe ? 'justify-end' : ''}`}>
+            <MessageStatus status={message.status} />
+          </div>
+        )}
       </div>
     </div>
   );

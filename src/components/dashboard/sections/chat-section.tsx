@@ -93,7 +93,7 @@ export function ChatSection() {
           )}
         </div>
 
-        <div className="w-60 shrink-0 space-y-4 overflow-y-auto custom-scrollbar hidden xl:block">
+        <div className="w-52 shrink-0 space-y-4 overflow-y-auto custom-scrollbar hidden xl:block">
           <RoomTopology rooms={rooms} />
           <HumanPanel />
         </div>
