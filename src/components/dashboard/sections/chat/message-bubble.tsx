@@ -2,9 +2,9 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { escapeHtml } from '@/lib/utils';
 import type { DisplayMessage } from '@/hooks/use-matrix';
-import { formatTime, getAvatarColor, renderFormattedContent } from './format';
+import { formatTime, getAvatarColor } from './format';
+import { MarkdownMessage } from './markdown-message';
 
 export function MessageBubble({
   message,
@@ -58,21 +58,10 @@ export function MessageBubble({
                 : 'bg-muted/80 text-foreground rounded-tl-sm'
           }`}
         >
-          {message.formattedContent ? (
-            <div
-              className="matrix-html-content [&>p]:mb-1 [&>br]:block [&>pre]:bg-muted/50 [&>pre]:rounded [&>pre]:p-2 [&>code]:bg-muted/50 [&>code]:px-1 [&>code]:rounded text-sm"
-              dangerouslySetInnerHTML={{
-                __html: renderFormattedContent(message.formattedContent, message.content).html,
-              }}
-            />
-          ) : (
-            <p
-              className="whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{
-                __html: escapeHtml(message.content).replace(/\n/g, '<br />'),
-              }}
-            />
-          )}
+          <MarkdownMessage
+            content={message.content}
+            formattedContent={message.formattedContent}
+          />
         </div>
       </div>
     </div>

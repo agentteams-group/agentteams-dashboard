@@ -314,8 +314,16 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
 
   const handleSend = useCallback(() => {
     if (!inputValue.trim() || sendMessage.isPending) return;
+    const body = inputValue.trim();
+    const formattedBody = body
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\n/g, '<br />');
     sendMessage.mutate(
-      { roomId: room.id, body: inputValue.trim() },
+      { roomId: room.id, body, formattedBody },
       { onSuccess: () => setInputValue('') }
     );
   }, [inputValue, room.id, sendMessage]);
