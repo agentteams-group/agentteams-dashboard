@@ -1,17 +1,21 @@
-import { NextRequest } from 'next/server';
-import { getControllerUrl, proxyToHiClaw } from '../../proxy-helper';
+import { NextRequest, NextResponse } from 'next/server';
+import { getModel, updateModel, deleteModel } from '@/lib/model-registry';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   const { name } = await params;
-  return proxyToHiClaw(
-    request,
-    getControllerUrl(request),
-    `/api/v1/models/${encodeURIComponent(name)}`,
-    { forwardBody: false }
-  );
+  try {
+    const model = await getModel(decodeURIComponent(name));
+    if (!model) {
+      return NextResponse.json({ error: 'Model not found' }, { status: 404 });
+    }
+    return NextResponse.json(model);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown model error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function PUT(
@@ -19,22 +23,32 @@ export async function PUT(
   { params }: { params: Promise<{ name: string }> }
 ) {
   const { name } = await params;
-  return proxyToHiClaw(
-    request,
-    getControllerUrl(request),
-    `/api/v1/models/${encodeURIComponent(name)}`
-  );
+  try {
+    const body = await request.json();
+    const model = await updateModel(decodeURIComponent(name), body);
+    if (!model) {
+      return NextResponse.json({ error: 'Model not found' }, { status: 404 });
+    }
+    return NextResponse.json(model);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown model error';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   const { name } = await params;
-  return proxyToHiClaw(
-    request,
-    getControllerUrl(request),
-    `/api/v1/models/${encodeURIComponent(name)}`,
-    { forwardBody: false, method: 'DELETE' }
-  );
+  try {
+    const ok = await deleteModel(decodeURIComponent(name));
+    if (!ok) {
+      return NextResponse.json({ error: 'Model not found' }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown model error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

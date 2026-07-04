@@ -35,6 +35,26 @@ export function useDeleteObject() {
   });
 }
 
+export function useDownloadObjectUrl() {
+  return useMutation({
+    mutationFn: ({ bucket, key }: { bucket: string; key: string }) => Promise.resolve(hiclawApi.downloadObjectUrl(bucket, key)),
+  });
+}
+
+export function useUploadObject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bucket, key, file }: { bucket: string; key: string; file: File }) => hiclawApi.uploadObject(bucket, key, file),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['hiclaw-objects', variables.bucket],
+      });
+    },
+  });
+}
+
+// Presigned URL variants kept for advanced use-cases; the UI uses the proxied
+// download/upload helpers above so the browser never needs direct MinIO access.
 export function usePresignDownload() {
   return useMutation({
     mutationFn: ({ bucket, key }: { bucket: string; key: string }) => hiclawApi.presignDownload(bucket, key),

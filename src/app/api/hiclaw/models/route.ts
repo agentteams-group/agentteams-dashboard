@@ -1,10 +1,23 @@
-import { NextRequest } from 'next/server';
-import { getControllerUrl, proxyToHiClaw } from '../proxy-helper';
+import { NextRequest, NextResponse } from 'next/server';
+import { listModels, createModel } from '@/lib/model-registry';
 
-export async function GET(request: NextRequest) {
-  return proxyToHiClaw(request, getControllerUrl(request), '/api/v1/models', { forwardBody: false });
+export async function GET() {
+  try {
+    const models = await listModels();
+    return NextResponse.json({ models });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown model error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
-  return proxyToHiClaw(request, getControllerUrl(request), '/api/v1/models');
+  try {
+    const body = await request.json();
+    const model = await createModel(body);
+    return NextResponse.json(model, { status: 201 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown model error';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }

@@ -516,6 +516,25 @@ export const hiclawApi = {
       { method: 'GET' }
     ),
 
+  downloadObjectUrl: (bucket: string, key: string): string => {
+    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    return `${base}/api/hiclaw/storage/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`;
+  },
+
+  uploadObject: async (bucket: string, key: string, file: File): Promise<void> => {
+    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    const url = `${base}/api/hiclaw/storage/upload?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(`Upload failed: ${res.status} ${text}`, res.status, url);
+    }
+  },
+
   // Logs
   getLogs: (component: string, options?: { tail?: number; since?: string; level?: string }) => {
     const params = new URLSearchParams();

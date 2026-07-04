@@ -34,8 +34,8 @@ import {
   useBuckets,
   useObjects,
   useDeleteObject,
-  usePresignDownload,
-  usePresignUpload,
+  useDownloadObjectUrl,
+  useUploadObject,
 } from '@/hooks/use-hiclaw-storage';
 
 function formatBytes(n: number): string {
@@ -55,8 +55,8 @@ export function StorageSection() {
   const [prefix, setPrefix] = useState('');
   const { data: objects, isLoading: objectsLoading } = useObjects(bucket || null, prefix);
   const deleteObject = useDeleteObject();
-  const presignDownload = usePresignDownload();
-  const presignUpload = usePresignUpload();
+  const downloadObject = useDownloadObjectUrl();
+  const uploadObject = useUploadObject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -92,13 +92,13 @@ export function StorageSection() {
     async (key: string) => {
       if (!selectedBucketName) return;
       try {
-        const { url } = await presignDownload.mutateAsync({ bucket: selectedBucketName, key });
+        const url = await downloadObject.mutateAsync({ bucket: selectedBucketName, key });
         window.open(url, '_blank');
       } catch {
         toast.error('生成下载链接失败');
       }
     },
-    [presignDownload, selectedBucketName]
+    [downloadObject, selectedBucketName]
   );
 
   const handleDelete = useCallback(
@@ -122,20 +122,7 @@ export function StorageSection() {
       setUploading(true);
       try {
         const key = prefix ? `${prefix}${file.name}` : file.name;
-        const { url, fields } = await presignUpload.mutateAsync({
-          bucket: selectedBucketName,
-          key,
-          contentType: file.type,
-        });
-
-        const formData = new FormData();
-        if (fields) {
-          Object.entries(fields).forEach(([k, v]) => formData.append(k, v));
-        }
-        formData.append('file', file);
-
-        const res = await fetch(url, { method: 'POST', body: formData });
-        if (!res.ok) throw new Error('Upload failed');
+        await uploadObject.mutateAsync({ bucket: selectedBucketName, key, file });
         toast.success('上传成功');
       } catch {
         toast.error('上传失败');
@@ -144,7 +131,7 @@ export function StorageSection() {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
-    [presignUpload, selectedBucketName, prefix]
+    [uploadObject, selectedBucketName, prefix]
   );
 
   return (
@@ -274,7 +261,7 @@ export function StorageSection() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDownload(obj.key)}
-                        disabled={presignDownload.isPending}
+                        disabled={downloadObject.isPending}
                       >
                         <Download className="w-4 h-4" />
                       </Button>
