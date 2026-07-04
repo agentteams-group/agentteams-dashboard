@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { CreateManagerRequest } from '@/lib/hiclaw-api';
+import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function ManagerCreateDialog({
   open,
@@ -44,10 +45,10 @@ export function ManagerCreateDialog({
           </div>
           <div className="space-y-2">
             <Label>模型</Label>
-            <Input
-              value={value.model || ''}
-              onChange={(e) => onChange({ ...value, model: e.target.value })}
-              placeholder="gpt-4 / claude-3 等"
+            <ModelSelector
+              value={value.model}
+              onChange={(model) => onChange({ ...value, model })}
+              placeholder="选择模型"
             />
           </div>
           <div className="space-y-2">

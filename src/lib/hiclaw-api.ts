@@ -199,6 +199,32 @@ export interface InfrastructureInfo {
   controller?: { healthy: boolean; version: string };
 }
 
+export interface ModelResponse {
+  name: string;
+  provider: string;
+  baseUrl?: string;
+  apiKeyMasked?: string;
+  capabilities?: string[];
+  default?: boolean;
+}
+
+export interface CreateModelRequest {
+  name: string;
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
+  capabilities?: string[];
+  default?: boolean;
+}
+
+export interface UpdateModelRequest {
+  provider?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  capabilities?: string[];
+  default?: boolean;
+}
+
 // ============ Proxy Request Helper ============
 
 async function proxyRequest<T>(
@@ -397,4 +423,27 @@ export const hiclawApi = {
 
   // Infrastructure
   getInfrastructure: () => proxyRequest<InfrastructureInfo>('/infrastructure'),
+
+  // Models
+  listModels: async (): Promise<ModelResponse[]> => {
+    const result = await proxyRequest<ModelResponse[] | { models: ModelResponse[] }>('/models');
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : (result as { models: ModelResponse[] }).models ?? [];
+  },
+
+  getModel: (name: string) => proxyRequest<ModelResponse>(`/models/${encodeURIComponent(name)}`),
+
+  createModel: (data: CreateModelRequest) =>
+    proxyRequest<ModelResponse>('/models', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateModel: (name: string, data: UpdateModelRequest) =>
+    proxyRequest<ModelResponse>(`/models/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  deleteModel: (name: string) =>
+    proxyRequest<void>(`/models/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  getDefaultModel: () => proxyRequest<ModelResponse | null>('/models/default'),
+
+  setDefaultModel: (name: string) =>
+    proxyRequest<void>('/models/default', { method: 'POST', body: JSON.stringify({ name }) }),
 };
