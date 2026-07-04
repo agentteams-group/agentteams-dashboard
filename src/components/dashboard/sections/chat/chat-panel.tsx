@@ -404,7 +404,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-4 py-2"
+          className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar"
         >
           <ChatMessages
             isLoading={messagesQuery.isLoading}

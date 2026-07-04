@@ -8,7 +8,8 @@ import { useHumans } from '@/hooks/use-hiclaw-humans';
 import { useHiClawStore } from '@/lib/hiclaw-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { SectionHeader } from '@/components/dashboard/section-header';
+import { MessageSquare, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { buildRooms } from './chat/room-builders';
 import { ChatAuthBadge } from './chat/chat-auth-badge';
 import { ChatRoomSidebar } from './chat/chat-room-sidebar';
@@ -28,6 +29,7 @@ export function ChatSection() {
 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(false);
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
@@ -51,28 +53,40 @@ export function ChatSection() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Header - compact, no bottom margin */}
-      <div className="shrink-0 px-4 py-2 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      {/* Compact header bar */}
+      <div className="shrink-0 px-3 py-1.5 border-b border-border flex items-center justify-between bg-card/30">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-orange-500" />
           <h2 className="text-sm font-semibold">Matrix 聊天</h2>
-          <span className="text-xs text-muted-foreground">实时通信与人机协同</span>
+          <span className="text-[10px] text-muted-foreground hidden sm:inline">实时通信与人机协同</span>
         </div>
-        <ChatAuthBadge
-          isLoggedIn={isLoggedIn}
-          userId={userId}
-          onLogout={logout}
-          onLoginClick={() => setShowLoginDialog(true)}
-          showLoginDialog={showLoginDialog}
-          onLoginDialogChange={setShowLoginDialog}
-        />
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            onClick={() => setShowRightPanel((v) => !v)}
+            title={showRightPanel ? '隐藏侧栏' : '显示侧栏'}
+          >
+            {showRightPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
+          </Button>
+          <ChatAuthBadge
+            isLoggedIn={isLoggedIn}
+            userId={userId}
+            onLogout={logout}
+            onLoginClick={() => setShowLoginDialog(true)}
+            showLoginDialog={showLoginDialog}
+            onLoginDialogChange={setShowLoginDialog}
+          />
+        </div>
       </div>
 
-      {/* Login banner - only shows when not logged in */}
+      {/* Login banner */}
       {!isLoggedIn && (
         <MatrixStatusBanner isLoggedIn={isLoggedIn} onLoginClick={() => setShowLoginDialog(true)} />
       )}
 
-      {/* Main content: 3-column flex, fills remaining space */}
+      {/* Main content: 2 or 3 column flex */}
       <div className="flex-1 flex min-h-0">
         {/* Left: Room list */}
         <ChatRoomSidebar
@@ -85,7 +99,7 @@ export function ChatSection() {
         />
 
         {/* Center: Chat panel */}
-        <div className="flex-1 flex flex-col min-w-0 border-l border-r border-border">
+        <div className="flex-1 flex flex-col min-w-0">
           {selectedRoom ? (
             <ChatPanel room={selectedRoom} />
           ) : (
@@ -96,13 +110,15 @@ export function ChatSection() {
           )}
         </div>
 
-        {/* Right: Members + Topology (always visible, narrow) */}
-        <div className="w-48 shrink-0 flex flex-col border-l border-border overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-2 space-y-3">
-            <RoomTopology rooms={rooms} />
-            <HumanPanel />
+        {/* Right: Members + Topology (toggleable) */}
+        {showRightPanel && (
+          <div className="w-48 shrink-0 flex flex-col border-l border-border overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
+              <RoomTopology rooms={rooms} />
+              <HumanPanel />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

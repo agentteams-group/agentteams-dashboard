@@ -34,6 +34,7 @@ import { useWorkers } from '@/hooks/use-hiclaw-workers';
 import { useTeams } from '@/hooks/use-hiclaw-teams';
 import { useManagers } from '@/hooks/use-hiclaw-managers';
 import { useInfrastructure } from '@/hooks/use-hiclaw-infrastructure';
+import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useHiClawStore } from '@/lib/hiclaw-store';
 import { WORKER_PHASE_COLORS } from '@/lib/phase-colors';
 import { useNotificationStore } from '@/lib/notification-store';
@@ -194,6 +195,7 @@ export function OverviewSection() {
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
   const { data: infrastructure } = useInfrastructure();
+  const { mode } = useDeploymentMode();
   const notifications = useNotificationStore((s) => s.notifications);
 
   // ---- Computed values ----
@@ -231,20 +233,6 @@ export function OverviewSection() {
   const managersTotal = managers?.length ?? 0;
 
   // Unique skills count from workers
-  const uniqueSkillsCount = useMemo(() => {
-    if (!workers) return null;
-    const skills = new Set<string>();
-    workers.forEach((w) => {
-      if (w.role) {
-        // role could be a comma-separated list or single skill
-        w.role.split(',').forEach((s) => {
-          const trimmed = s.trim();
-          if (trimmed) skills.add(trimmed);
-        });
-      }
-    });
-    return skills.size;
-  }, [workers]);
 
   // Worker Phase Distribution for PieChart
   const phaseData = useMemo(() => {
@@ -503,30 +491,39 @@ export function OverviewSection() {
             <CardContent className="p-4 pt-0">
               {isConnected && infrastructure ? (
                 <div className="space-y-2">
-                  <HealthCard
-                    name="MinIO"
-                    healthy={infrastructure.minio?.healthy}
-                    icon={Server}
-                    detail={infrastructure.minio?.endpoint}
-                  />
-                  <HealthCard
-                    name="Higress"
-                    healthy={infrastructure.higress?.healthy}
-                    icon={Zap}
-                    detail={infrastructure.higress?.endpoint}
-                  />
+                  {/* MinIO: embedded only */}
+                  {mode !== 'k8s' && (
+                    <HealthCard
+                      name="MinIO"
+                      healthy={infrastructure.minio?.healthy}
+                      icon={Server}
+                      detail={infrastructure.minio?.endpoint}
+                    />
+                  )}
+                  {/* Higress: k8s only */}
+                  {mode !== 'embedded' && (
+                    <HealthCard
+                      name="Higress"
+                      healthy={infrastructure.higress?.healthy}
+                      icon={Zap}
+                      detail={infrastructure.higress?.endpoint}
+                    />
+                  )}
                   <HealthCard
                     name="Matrix"
                     healthy={infrastructure.matrix?.healthy}
                     icon={MessageSquare}
                     detail={infrastructure.matrix?.homeserver}
                   />
-                  <HealthCard
-                    name="Kubernetes"
-                    healthy={infrastructure.kubernetes?.healthy}
-                    icon={Cpu}
-                    detail={infrastructure.kubernetes?.version}
-                  />
+                  {/* Kubernetes: k8s only */}
+                  {mode !== 'embedded' && (
+                    <HealthCard
+                      name="Kubernetes"
+                      healthy={infrastructure.kubernetes?.healthy}
+                      icon={Cpu}
+                      detail={infrastructure.kubernetes?.version}
+                    />
+                  )}
                   <HealthCard
                     name="Controller"
                     healthy={infrastructure.controller?.healthy}
@@ -561,22 +558,13 @@ export function OverviewSection() {
                 <Plus className="w-3.5 h-3.5" />
                 创建团队
               </Button>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { window.location.hash = 'k8s'; }}>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { window.location.hash = 'humans'; }}>
                 <UserPlus className="w-3.5 h-3.5" />
                 创建用户
               </Button>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { window.location.hash = 'chat'; }}>
                 <MessageCircle className="w-3.5 h-3.5" />
                 Matrix 聊天
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { window.location.hash = 'skills'; }}>
-                <Eye className="w-3.5 h-3.5" />
-                查看技能
-                {uniqueSkillsCount !== null && uniqueSkillsCount > 0 && (
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1 ml-0.5">
-                    {uniqueSkillsCount}
-                  </Badge>
-                )}
               </Button>
             </div>
           </CardContent>
