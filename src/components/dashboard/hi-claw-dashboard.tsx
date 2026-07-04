@@ -226,45 +226,57 @@ export function HiClawDashboard() {
 
             <ConnectionBanner />
 
-            <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
-              <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Home className="w-3.5 h-3.5" />
-                <ChevronSep className="w-3 h-3" />
-                <span className="font-medium text-foreground">HiClaw</span>
-                <ChevronSep className="w-3 h-3" />
-                <span>{activeLabel}</span>
-              </nav>
-            </div>
+            {activeSection === 'chat' ? (
+              /* Chat mode: bypass <main> scroll container, fill all available space */
+              <div className="flex-1 flex flex-col min-h-0">
+                <Suspense fallback={<SectionSkeleton />}>
+                  <ChatSection />
+                </Suspense>
+              </div>
+            ) : (
+              /* Normal mode: breadcrumb + scrollable content + footer */
+              <>
+                <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
+                  <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Home className="w-3.5 h-3.5" />
+                    <ChevronSep className="w-3 h-3" />
+                    <span className="font-medium text-foreground">HiClaw</span>
+                    <ChevronSep className="w-3 h-3" />
+                    <span>{activeLabel}</span>
+                  </nav>
+                </div>
 
-            <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeSection}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <SectionErrorBoundary sectionName={activeLabel}>
-                    <Suspense fallback={<SectionSkeleton />}>
-                      <ActiveSectionComponent />
-                    </Suspense>
-                  </SectionErrorBoundary>
-                </motion.div>
-              </AnimatePresence>
-            </main>
+                <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeSection}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <SectionErrorBoundary sectionName={activeLabel}>
+                        <Suspense fallback={<SectionSkeleton />}>
+                          <ActiveSectionComponent />
+                        </Suspense>
+                      </SectionErrorBoundary>
+                    </motion.div>
+                  </AnimatePresence>
+                </main>
 
-            <DashboardFooter
-              isConnected={isConnected}
-              connectionLatency={connectionLatency}
-              controllerUrl={controllerUrl}
-              reconnectInterval={reconnectInterval}
-              lastRefreshText={lastRefreshText}
-              latencyColor={latencyColor}
-              latencyText={latencyText}
-              matrixLoggedIn={matrixLoggedIn}
-              matrixSyncing={matrixSyncing}
-            />
+                <DashboardFooter
+                  isConnected={isConnected}
+                  connectionLatency={connectionLatency}
+                  controllerUrl={controllerUrl}
+                  reconnectInterval={reconnectInterval}
+                  lastRefreshText={lastRefreshText}
+                  latencyColor={latencyColor}
+                  latencyText={latencyText}
+                  matrixLoggedIn={matrixLoggedIn}
+                  matrixSyncing={matrixSyncing}
+                />
+              </>
+            )}
           </div>
         </div>
 

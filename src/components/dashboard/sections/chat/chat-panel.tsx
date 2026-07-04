@@ -236,22 +236,18 @@ function ChatHeader({
   roomId: string;
 }) {
   return (
-    <div className="border-b border-border px-4 py-2.5 flex items-center justify-between shrink-0 bg-card/30">
+    <div className="border-b border-border px-4 py-2 flex items-center justify-between shrink-0 bg-card/20">
       <div className="flex items-center gap-2 min-w-0">
-        <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
-        <div className="min-w-0">
-          <h3 className="font-semibold text-sm truncate">{roomName}</h3>
-          {roomTopic && <p className="text-[10px] text-muted-foreground truncate">{roomTopic}</p>}
-        </div>
+        <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <h3 className="font-medium text-sm truncate">{roomName}</h3>
+        {roomTopic && <span className="text-xs text-muted-foreground truncate hidden lg:inline">— {roomTopic}</span>}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        <Badge variant="outline" className="text-[10px]">
-          {memberCount} 成员
-        </Badge>
+        <span className="text-[10px] text-muted-foreground">{memberCount} 成员</span>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0"
+          className="h-6 w-6 p-0"
           onClick={onToggleMembers}
           title={showMembers ? '隐藏成员列表' : '显示成员列表'}
           aria-label={showMembers ? '隐藏成员列表' : '显示成员列表'}
@@ -284,15 +280,22 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
   const [showMembers, setShowMembers] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
 
   const allMessages = useMemo(() => {
     const pages = messagesQuery.data?.pages || [];
     const events = pages.flatMap((page) => page.chunk || []);
-    return [...events]
+    const serverMessages = [...events]
       .reverse()
       .map((e) => formatMatrixEvent(e, userId))
       .filter((m): m is DisplayMessage => m !== null);
-  }, [messagesQuery.data, userId]);
+    // Remove pending messages that now exist on the server
+    const pendingIds = new Set(serverMessages.map((m) => m.id));
+    const filteredPending = pendingMessages.filter(
+      (p) => p.status === 'sending' && !pendingIds.has(p.id)
+    );
+    return [...filteredPending, ...serverMessages];
+  }, [messagesQuery.data, userId, pendingMessages]);
 
   const displayItems = useMemo(() => buildDisplayItems(allMessages), [allMessages]);
 
@@ -314,11 +317,52 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
 
   const handleSend = useCallback(() => {
     if (!inputValue.trim() || sendMessage.isPending) return;
+    const body = inputValue.trim();
+    const formattedBody = body
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\n/g, '<br />');
+
+    // Optimistic: add a pending message immediately
+    const pendingId = `pending-${Date.now()}`;
+    const optimisticMsg: DisplayMessage = {
+      id: pendingId,
+      sender: userId || '',
+      senderShort: userId ? userId.split(':')[0].slice(1) : 'me',
+      content: body,
+      formattedContent: formattedBody,
+      timestamp: Date.now(),
+      type: 'm.text',
+      isMe: true,
+      status: 'sending',
+    };
+    setPendingMessages((prev) => [...prev, optimisticMsg]);
+    setInputValue('');
+
     sendMessage.mutate(
-      { roomId: room.id, body: inputValue.trim() },
-      { onSuccess: () => setInputValue('') }
+      { roomId: room.id, body, formattedBody },
+      {
+        onSuccess: () => {
+          // Mark as sent, will be cleaned up when server data refreshes
+          setPendingMessages((prev) =>
+            prev.map((p) => (p.id === pendingId ? { ...p, status: 'sent' as const } : p))
+          );
+          // Clear after a short delay
+          setTimeout(() => {
+            setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
+          }, 2000);
+        },
+        onError: () => {
+          setPendingMessages((prev) =>
+            prev.map((p) => (p.id === pendingId ? { ...p, status: 'error' as const } : p))
+          );
+        },
+      }
     );
-  }, [inputValue, room.id, sendMessage]);
+  }, [inputValue, room.id, sendMessage, userId]);
 
   const memberList = useMemo(() => {
     const members = membersQuery.data?.chunk || [];
@@ -360,7 +404,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+          className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar"
         >
           <ChatMessages
             isLoading={messagesQuery.isLoading}
