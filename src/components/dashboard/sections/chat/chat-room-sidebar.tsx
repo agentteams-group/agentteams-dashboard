@@ -41,7 +41,7 @@ export function ChatRoomSidebar({
   const shortId = shortUserId(userId);
 
   return (
-    <div className="w-56 shrink-0 flex flex-col border border-border rounded-xl bg-card/30 backdrop-blur-sm overflow-hidden">
+    <div className="w-52 shrink-0 flex flex-col border-r border-border bg-card/20 overflow-hidden">
       <div className="p-2.5 border-b border-border shrink-0">
         <div className="relative">
           <Search

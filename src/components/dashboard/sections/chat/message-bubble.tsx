@@ -45,7 +45,7 @@ export function MessageBubble({
       ) : (
         <div className="w-7 shrink-0" />
       )}
-      <div className={`max-w-[75%] min-w-0 ${message.isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`max-w-[80%] min-w-0 ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showSender && (
           <div className={`flex items-center gap-2 mb-1 ${message.isMe ? 'justify-end' : ''}`}>
             <span className="text-[10px] font-medium text-muted-foreground">

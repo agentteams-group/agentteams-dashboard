@@ -5,16 +5,8 @@ import {
   Crown,
   UserCheck,
   MessageSquare,
-  Server,
-  Container,
-  Sparkles,
-  GitBranch,
-  Shield,
-  Cpu,
-  Rocket,
-  Brain,
-  HardDrive,
-  FileText,
+  Settings,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,16 +29,8 @@ export const navItems: NavItem[] = [
   { id: 'managers', label: 'Managers', icon: Crown },
   { id: 'humans', label: 'Humans', icon: UserCheck },
   { id: 'chat', label: 'Matrix 聊天', icon: MessageSquare },
-  { id: 'models', label: '模型仓库', icon: Brain, modes: ['embedded'] },
-  { id: 'storage', label: '对象存储', icon: HardDrive, modes: ['embedded'] },
-  { id: 'logs', label: '系统日志', icon: FileText, modes: ['embedded'] },
-  { id: 'infrastructure', label: '基础设施', icon: Server, modes: ['k8s'] },
-  { id: 'k8s', label: 'K8s 资源', icon: Container, modes: ['k8s'] },
-  { id: 'skills', label: '技能生态', icon: Sparkles },
-  { id: 'architecture', label: '架构', icon: GitBranch },
-  { id: 'security', label: '安全模型', icon: Shield },
-  { id: 'runtime', label: '多运行时', icon: Cpu },
-  { id: 'quickstart', label: '快速开始', icon: Rocket },
+  { id: 'ops', label: '基础设施', icon: Settings },
+  { id: 'docs', label: '文档', icon: BookOpen },
 ];
 
 export function isNavItemVisible(

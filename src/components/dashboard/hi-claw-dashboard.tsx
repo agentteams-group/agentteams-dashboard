@@ -37,17 +37,9 @@ const WorkersSection = lazy(() => import('./sections/workers-section').then(m =>
 const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ default: m.TeamsSection })));
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
-const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
-const StorageSection = lazy(() => import('./sections/storage-section').then(m => ({ default: m.StorageSection })));
-const LogsSection = lazy(() => import('./sections/logs-section').then(m => ({ default: m.LogsSection })));
 const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ default: m.ChatSection })));
-const InfrastructureSection = lazy(() => import('./sections/infrastructure-section').then(m => ({ default: m.InfrastructureSection })));
-const K8sSection = lazy(() => import('./sections/k8s-section').then(m => ({ default: m.K8sSection })));
-const SkillsSection = lazy(() => import('./sections/skills-section').then(m => ({ default: m.SkillsSection })));
-const ArchitectureSection = lazy(() => import('./sections/architecture-section').then(m => ({ default: m.ArchitectureSection })));
-const SecuritySection = lazy(() => import('./sections/security-section').then(m => ({ default: m.SecuritySection })));
-const RuntimeSection = lazy(() => import('./sections/runtime-section').then(m => ({ default: m.RuntimeSection })));
-const QuickstartSection = lazy(() => import('./sections/quickstart-section').then(m => ({ default: m.QuickstartSection })));
+const OpsSection = lazy(() => import('./sections/ops-section').then(m => ({ default: m.OpsSection })));
+const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 
 const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -55,17 +47,9 @@ const sectionMap: Record<string, React.ComponentType> = {
   teams: TeamsSection,
   managers: ManagersSection,
   humans: HumansSection,
-  models: ModelsSection,
-  storage: StorageSection,
-  logs: LogsSection,
   chat: ChatSection,
-  infrastructure: InfrastructureSection,
-  k8s: K8sSection,
-  skills: SkillsSection,
-  architecture: ArchitectureSection,
-  security: SecuritySection,
-  runtime: RuntimeSection,
-  quickstart: QuickstartSection,
+  ops: OpsSection,
+  docs: DocsSection,
 };
 
 export function HiClawDashboard() {
@@ -154,8 +138,8 @@ export function HiClawDashboard() {
         if (msg.includes('团队') || msg.includes('team')) sectionSet.add('teams');
         if (msg.includes('manager')) sectionSet.add('managers');
         if (msg.includes('matrix') || msg.includes('聊天') || msg.includes('chat')) sectionSet.add('chat');
-        if (msg.includes('infra') || msg.includes('基础设施')) sectionSet.add('infrastructure');
-        if (msg.includes('k8s') || msg.includes('kubernetes')) sectionSet.add('k8s');
+        if (msg.includes('infra') || msg.includes('基础设施')) sectionSet.add('ops');
+        if (msg.includes('k8s') || msg.includes('kubernetes')) sectionSet.add('ops');
       }
     });
     return sectionSet;
