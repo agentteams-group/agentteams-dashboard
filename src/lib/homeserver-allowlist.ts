@@ -6,6 +6,7 @@ const DEFAULT_ALLOWED_HOSTS = [
   'localhost',
   '127.0.0.1',
   '::1',
+  'matrix-local.hiclaw.io',
   'matrix.org',
   'client.matrix.org',
 ];

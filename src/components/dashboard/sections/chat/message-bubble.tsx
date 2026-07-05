@@ -7,6 +7,7 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { formatTime, getAvatarColor } from './format';
 import { MarkdownMessage } from './markdown-message';
+import { A2uiChatContent } from './a2ui';
 
 function MessageStatus({ status }: { status?: 'sending' | 'sent' | 'error' }) {
   if (!status) return null;
@@ -31,6 +32,9 @@ export function MessageBubble({
   const isNotice = message.type === 'm.notice';
   const avatarColor = getAvatarColor(message.sender);
   const homeserver = useMatrixStore((s) => s.homeserver);
+
+  // Check if this is a media message (m.image, m.file)
+  const isMedia = message.type === 'm.image' || message.type === 'm.file';
 
   return (
     <div
@@ -62,6 +66,14 @@ export function MessageBubble({
                 Bot
               </Badge>
             )}
+            {message.isStreaming && (
+              <Badge
+                variant="outline"
+                className="text-[8px] px-1 py-0 h-3.5 border-cyan-500/30 text-cyan-500"
+              >
+                流式输出中
+              </Badge>
+            )}
           </div>
         )}
         <div
@@ -73,14 +85,25 @@ export function MessageBubble({
                 : 'bg-muted/80 text-foreground rounded-tl-sm'
           }`}
         >
-          <MarkdownMessage
-            content={message.content}
-            formattedContent={message.formattedContent}
-            msgType={message.type}
-            mediaUrl={message.mediaUrl}
-            mediaInfo={message.mediaInfo}
-            homeserver={homeserver}
-          />
+          {/* Media messages use MarkdownMessage for mxc:// URL resolution */}
+          {isMedia ? (
+            <MarkdownMessage
+              content={message.content}
+              formattedContent={message.formattedContent}
+              msgType={message.type}
+              mediaUrl={message.mediaUrl}
+              mediaInfo={message.mediaInfo}
+              homeserver={homeserver}
+            />
+          ) : (
+            /* Text messages use A2UI renderer for thinking/tool-call/streaming support */
+            <A2uiChatContent
+              content={message.content}
+              formattedContent={message.formattedContent}
+              isStreaming={message.isStreaming}
+              messageId={message.id}
+            />
+          )}
         </div>
         {message.isMe && (
           <div className={`flex items-center gap-1 mt-0.5 ${message.isMe ? 'justify-end' : ''}`}>

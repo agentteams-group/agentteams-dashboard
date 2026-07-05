@@ -7,7 +7,7 @@ import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 const MATRIX_HOMESERVER =
   process.env.NEXT_PUBLIC_MATRIX_API_URL ||
   process.env.HICLAW_MATRIX_URL ||
-  'http://hiclaw-tuwunel.hiclaw-system:6167';
+  'http://matrix-local.hiclaw.io:18080';
 
 export async function POST(request: NextRequest) {
   try {

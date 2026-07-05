@@ -42,7 +42,7 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Homeserver 地址</label>
             <Input
-              placeholder="http://localhost:6167"
+              placeholder="http://matrix-local.hiclaw.io:18080"
               value={effectiveHomeserverUrl}
               onChange={(e) => setHomeserverUrl(e.target.value)}
               className="h-9 text-sm bg-background/50"

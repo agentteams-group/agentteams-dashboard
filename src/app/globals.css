@@ -2,6 +2,8 @@
 @source "../components";
 @import "tw-animate-css";
 
+/* A2UI styles are handled by Tailwind classes in our custom catalog components */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

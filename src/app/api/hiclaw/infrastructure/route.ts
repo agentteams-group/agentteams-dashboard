@@ -15,7 +15,7 @@ const MINIO_ENDPOINT =
 
 const MATRIX_ENDPOINT =
   process.env.HICLAW_MATRIX_URL ||
-  'http://hiclaw-tuwunel.hiclaw-system:6167';
+  'http://matrix-local.hiclaw.io:18080';
 
 const HIGRESS_ENDPOINT =
   process.env.HICLAW_AI_GATEWAY_URL ||

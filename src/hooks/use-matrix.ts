@@ -293,6 +293,8 @@ export interface DisplayMessage {
   status?: 'sending' | 'sent' | 'error';
   mediaUrl?: string;
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
+  /** Whether this message is still being streamed (AI response in progress) */
+  isStreaming?: boolean;
 }
 
 export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): DisplayMessage | null {
