@@ -93,6 +93,43 @@ export function useDeleteBucket() {
   });
 }
 
+export function useBucketStats(bucket: string | null) {
+  return useQuery<{ bucket: string; objectCount: number; totalSize: number }>({
+    queryKey: ['hiclaw-bucket-stats', bucket],
+    queryFn: async () => {
+      const res = await fetch(`/api/hiclaw/storage/buckets/${encodeURIComponent(bucket!)}/stats`);
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      return res.json();
+    },
+    enabled: !!bucket,
+    refetchInterval: 30000,
+    placeholderData: (prev) => prev,
+    throwOnError: false,
+  });
+}
+
+export function useBulkDeleteObjects() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bucket, keys }: { bucket: string; keys: string[] }) => {
+      const res = await fetch(`/api/hiclaw/storage/buckets/${encodeURIComponent(bucket)}/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['hiclaw-objects', variables.bucket] });
+      queryClient.invalidateQueries({ queryKey: ['hiclaw-bucket-stats', variables.bucket] });
+    },
+  });
+}
+
 // Presigned URL variants kept for advanced use-cases; the UI uses the proxied
 // download/upload helpers above so the browser never needs direct MinIO access.
 export function usePresignDownload() {

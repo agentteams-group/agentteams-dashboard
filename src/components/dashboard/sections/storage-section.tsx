@@ -12,6 +12,10 @@ import {
   Loader2,
   Plus,
   X,
+  Search,
+  BarChart3,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
@@ -41,6 +45,8 @@ import {
   useUploadObject,
   useCreateBucket,
   useDeleteBucket,
+  useBucketStats,
+  useBulkDeleteObjects,
 } from '@/hooks/use-hiclaw-storage';
 
 function formatBytes(n: number): string {
@@ -58,18 +64,71 @@ export function StorageSection() {
   const { data: buckets, isLoading: bucketsLoading } = useBuckets();
   const [bucket, setBucket] = useState<string>('');
   const [prefix, setPrefix] = useState('');
+  // Reset selections when bucket changes
+  const handleBucketChange = useCallback((b: string) => {
+    setBucket(b);
+    setPrefix('');
+    setSearchQuery('');
+    setSelectedKeys(new Set());
+  }, []);
   const { data: objects, isLoading: objectsLoading } = useObjects(bucket || null, prefix);
   const deleteObject = useDeleteObject();
   const downloadObject = useDownloadObjectUrl();
   const uploadObject = useUploadObject();
   const createBucket = useCreateBucket();
   const deleteBucket = useDeleteBucket();
+  const { data: bucketStats } = useBucketStats(bucket || null);
+  const bulkDelete = useBulkDeleteObjects();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showNewBucket, setShowNewBucket] = useState(false);
   const [newBucketName, setNewBucketName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const selectedBucketName = useMemo(() => bucket, [bucket]);
+
+  // Filter objects by search query
+  const filteredObjects = useMemo(() => {
+    if (!objects) return [];
+    if (!searchQuery.trim()) return objects;
+    const q = searchQuery.toLowerCase();
+    return objects.filter((obj) => basename(obj.key).toLowerCase().includes(q));
+  }, [objects, searchQuery]);
+
+  const toggleSelect = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (!filteredObjects) return;
+    const fileKeys = filteredObjects.filter((o) => !o.isPrefix).map((o) => o.key);
+    if (fileKeys.every((k) => selectedKeys.has(k))) {
+      setSelectedKeys(new Set());
+    } else {
+      setSelectedKeys(new Set(fileKeys));
+    }
+  }, [filteredObjects, selectedKeys]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (!selectedBucketName || selectedKeys.size === 0) return;
+    if (!confirm(`确认删除 ${selectedKeys.size} 个对象？`)) return;
+    try {
+      const result = await bulkDelete.mutateAsync({
+        bucket: selectedBucketName,
+        keys: Array.from(selectedKeys),
+      });
+      toast.success(`已删除 ${result.deleted} 个对象`);
+      setSelectedKeys(new Set());
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '批量删除失败');
+    }
+  }, [selectedBucketName, selectedKeys, bulkDelete]);
 
   const breadcrumbs = useMemo(() => {
     const parts = prefix ? prefix.replace(/\/$/, '').split('/') : [];
@@ -177,7 +236,7 @@ export function StorageSection() {
       />
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <Select value={bucket} onValueChange={setBucket}>
+        <Select value={bucket} onValueChange={handleBucketChange}>
           <SelectTrigger className="w-64">
             <SelectValue placeholder={bucketsLoading ? '加载中...' : '选择存储桶'} />
           </SelectTrigger>
@@ -237,6 +296,24 @@ export function StorageSection() {
         )}
       </div>
 
+      {/* Bucket stats */}
+      {bucket && bucketStats && (
+        <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 border border-border/50">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">桶统计</span>
+          </div>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground">对象:</span>
+            <span className="font-mono font-medium">{bucketStats.objectCount}</span>
+          </div>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground">总大小:</span>
+            <span className="font-mono font-medium">{formatBytes(bucketStats.totalSize)}</span>
+          </div>
+        </div>
+      )}
+
       {showNewBucket && (
         <div className="flex items-center gap-2 max-w-md">
           <Input
@@ -272,10 +349,52 @@ export function StorageSection() {
         </div>
       )}
 
+      {/* Search + Bulk actions */}
+      {bucket && (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索对象..."
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          {selectedKeys.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleBulkDelete}
+              disabled={bulkDelete.isPending}
+            >
+              {bulkDelete.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+              )}
+              删除 {selectedKeys.size} 项
+            </Button>
+          )}
+        </div>
+      )}
+
       <ScrollArea className="h-[500px] rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                {bucket && filteredObjects.some((o) => !o.isPrefix) && (
+                  <button onClick={toggleSelectAll} className="shrink-0">
+                    {filteredObjects.filter((o) => !o.isPrefix).every((o) => selectedKeys.has(o.key)) ? (
+                      <CheckSquare className="w-4 h-4 text-orange-500" />
+                    ) : (
+                      <Square className="w-4 h-4 text-muted-foreground/50" />
+                    )}
+                  </button>
+                )}
+              </TableHead>
               <TableHead>对象</TableHead>
               <TableHead>大小</TableHead>
               <TableHead>最后修改</TableHead>
@@ -285,27 +404,38 @@ export function StorageSection() {
           <TableBody>
             {!bucket && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   请先选择一个存储桶
                 </TableCell>
               </TableRow>
             )}
             {bucket && objectsLoading && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   加载中...
                 </TableCell>
               </TableRow>
             )}
-            {bucket && !objectsLoading && objects?.length === 0 && (
+            {bucket && !objectsLoading && filteredObjects?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  该前缀下暂无对象
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  {searchQuery ? '没有匹配的对象' : '该前缀下暂无对象'}
                 </TableCell>
               </TableRow>
             )}
-            {objects?.map((obj) => (
-              <TableRow key={obj.key}>
+            {filteredObjects?.map((obj) => (
+              <TableRow key={obj.key} className={selectedKeys.has(obj.key) ? 'bg-accent/50' : ''}>
+                <TableCell className="w-8">
+                  {!obj.isPrefix && (
+                    <button onClick={() => toggleSelect(obj.key)}>
+                      {selectedKeys.has(obj.key) ? (
+                        <CheckSquare className="w-4 h-4 text-orange-500" />
+                      ) : (
+                        <Square className="w-4 h-4 text-muted-foreground/50" />
+                      )}
+                    </button>
+                  )}
+                </TableCell>
                 <TableCell className="font-mono text-xs">
                   <button
                     className="flex items-center gap-2 hover:text-orange-600"
