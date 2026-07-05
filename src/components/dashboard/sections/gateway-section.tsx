@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Shield,
   Key,
@@ -13,6 +13,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   Users,
+  Gauge,
+  Clock,
+  Zap,
+  Save,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -278,6 +282,251 @@ export function GatewaySection() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Rate Limiting Configuration */}
+      <RateLimitSection routes={routes} />
+    </div>
+  );
+}
+
+// ============ Rate Limit Plugin Configuration ============
+
+interface RateLimitConfig {
+  routeName: string;
+  enabled: boolean;
+  rps: number;           // requests per second
+  rpm: number;           // requests per minute
+  burst: number;         // burst size
+  perConsumer: boolean;  // per-consumer or global
+}
+
+const DEFAULT_RATE_LIMIT: RateLimitConfig = {
+  routeName: '',
+  enabled: true,
+  rps: 10,
+  rpm: 600,
+  burst: 20,
+  perConsumer: true,
+};
+
+function RateLimitSection({ routes }: { routes: Array<{ name: string }> | undefined }) {
+  const [configs, setConfigs] = useState<RateLimitConfig[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newConfig, setNewConfig] = useState<RateLimitConfig>({ ...DEFAULT_RATE_LIMIT });
+
+  const handleAdd = useCallback(() => {
+    if (!newConfig.routeName) return;
+    setConfigs((prev) => [...prev, { ...newConfig }]);
+    setNewConfig({ ...DEFAULT_RATE_LIMIT });
+    setShowAdd(false);
+  }, [newConfig]);
+
+  const handleRemove = useCallback((idx: number) => {
+    setConfigs((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const handleToggle = useCallback((idx: number) => {
+    setConfigs((prev) =>
+      prev.map((c, i) => (i === idx ? { ...c, enabled: !c.enabled } : c))
+    );
+  }, []);
+
+  const handleUpdateField = useCallback(
+    <K extends keyof RateLimitConfig>(idx: number, field: K, value: RateLimitConfig[K]) => {
+      setConfigs((prev) =>
+        prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c))
+      );
+    },
+    []
+  );
+
+  const handleExportConfig = useCallback(() => {
+    // Export as Higress WASM plugin config format
+    const pluginConfigs = configs
+      .filter((c) => c.enabled)
+      .map((c) => ({
+        routeName: c.routeName,
+        pluginName: 'wasm-rate-limit',
+        config: {
+          rule_name: `rate-limit-${c.routeName}`,
+          limit_by_header: c.perConsumer ? 'x-consumer-name' : undefined,
+          rate: c.rps > 0 ? `${c.rps}` : undefined,
+          rpm: c.rpm > 0 ? `${c.rpm}` : undefined,
+          burst: c.burst > 0 ? `${c.burst}` : undefined,
+          show_limit_quota_header: true,
+        },
+      }));
+    const blob = new Blob([JSON.stringify(pluginConfigs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'higress-rate-limit-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [configs]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Gauge className="w-4 h-4 text-amber-500" />
+          限流策略 (Rate Limit)
+        </h3>
+        <div className="flex items-center gap-2">
+          {configs.length > 0 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleExportConfig}>
+              <Save className="w-3 h-3 mr-1" />
+              导出配置
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowAdd((v) => !v)}>
+            <Plus className="w-3 h-3 mr-1" />
+            添加限流规则
+          </Button>
+        </div>
+      </div>
+
+      {/* Add form */}
+      {showAdd && (
+        <div className="border border-border rounded-lg p-4 space-y-3 bg-card/50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground">目标路由 *</label>
+              <select
+                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                value={newConfig.routeName}
+                onChange={(e) => setNewConfig({ ...newConfig, routeName: e.target.value })}
+              >
+                <option value="">选择路由...</option>
+                {routes?.map((r) => (
+                  <option key={r.name} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">RPS (每秒请求数)</label>
+              <input
+                type="number"
+                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                value={newConfig.rps}
+                onChange={(e) => setNewConfig({ ...newConfig, rps: parseInt(e.target.value) || 0 })}
+                min={0}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">RPM (每分钟请求数)</label>
+              <input
+                type="number"
+                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                value={newConfig.rpm}
+                onChange={(e) => setNewConfig({ ...newConfig, rpm: parseInt(e.target.value) || 0 })}
+                min={0}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">突发容量</label>
+              <input
+                type="number"
+                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                value={newConfig.burst}
+                onChange={(e) => setNewConfig({ ...newConfig, burst: parseInt(e.target.value) || 0 })}
+                min={0}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newConfig.perConsumer}
+                onChange={(e) => setNewConfig({ ...newConfig, perConsumer: e.target.checked })}
+                className="rounded"
+              />
+              按 Consumer 限流（不同 Consumer 独立计数）
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={handleAdd} disabled={!newConfig.routeName}>
+              添加
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>
+              取消
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Config list */}
+      {configs.length === 0 && !showAdd && (
+        <p className="text-xs text-muted-foreground text-center py-4">
+          暂无限流规则。点击「添加限流规则」为 AI 路由配置请求频率限制。
+        </p>
+      )}
+
+      {configs.map((config, idx) => (
+        <div
+          key={`${config.routeName}-${idx}`}
+          className={`flex items-center gap-3 p-3 rounded-lg border ${
+            config.enabled ? 'border-border bg-card/50' : 'border-border/50 bg-muted/20 opacity-60'
+          }`}
+        >
+          <button onClick={() => handleToggle(idx)}>
+            {config.enabled ? (
+              <ToggleRight className="w-5 h-5 text-emerald-500" />
+            ) : (
+              <ToggleLeft className="w-5 h-5 text-gray-400" />
+            )}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Route className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">{config.routeName}</span>
+              {config.perConsumer && (
+                <Badge variant="secondary" className="text-[9px]">按 Consumer</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+              {config.rps > 0 && (
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  {config.rps} req/s
+                </span>
+              )}
+              {config.rpm > 0 && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {config.rpm} req/min
+                </span>
+              )}
+              {config.burst > 0 && <span>突发: {config.burst}</span>}
+            </div>
+          </div>
+          {/* Inline edit */}
+          <input
+            type="number"
+            className="w-16 h-7 rounded border border-input bg-transparent px-1.5 text-xs text-center"
+            value={config.rps}
+            onChange={(e) => handleUpdateField(idx, 'rps', parseInt(e.target.value) || 0)}
+            title="RPS"
+          />
+          <span className="text-[10px] text-muted-foreground">req/s</span>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleRemove(idx)}>
+            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+          </Button>
+        </div>
+      ))}
+
+      {configs.length > 0 && (
+        <div className="border border-border/50 rounded-lg p-3 bg-muted/20">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-[10px] text-muted-foreground space-y-0.5">
+              <p>限流配置导出后需通过 Higress Console API 或 kubectl 应用到网关。</p>
+              <p>配置格式: Higress <code>wasm-rate-limit</code> 插件，支持 per-route 和 per-consumer 限流。</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
