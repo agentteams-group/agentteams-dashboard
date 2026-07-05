@@ -1,10 +1,14 @@
 'use client';
 
-import { useMemo, memo } from 'react';
+import { useMemo, memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
 import { sanitizeHtml } from '@/lib/utils';
+import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   parseA2uiContent,
   legacyToA2uiMessages,
@@ -12,8 +16,180 @@ import {
   type ParsedA2uiBlock,
 } from '@/lib/a2ui/parser';
 import { A2uiSurfaceRenderer } from './a2ui-surface-renderer';
-import { StreamingCard } from '../streaming-card';
-import { ThinkingCard } from '../thinking-card';
+
+// ─── Code Block Component ────────────────────────────────────────────────────
+
+function CodeBlock({ language, children }: { language?: string; children: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-2 rounded-lg overflow-hidden border bg-muted/50">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-muted text-xs text-muted-foreground">
+        <span>{language || 'code'}</span>
+        <button
+          onClick={handleCopy}
+          className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs hover:text-foreground"
+        >
+          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
+      <pre className="p-3 overflow-x-auto m-0">
+        <code className={`text-xs ${language ? `language-${language}` : ''}`}>{children}</code>
+      </pre>
+    </div>
+  );
+}
+
+// ─── HTML Renderer Component ─────────────────────────────────────────────────
+
+function HtmlContent({ html }: { html: string }) {
+  const sanitized = useMemo(() => sanitizeHtml(html), [html]);
+
+  return (
+    <div
+      className="html-content prose prose-sm dark:prose-invert max-w-none
+        [&_a]:text-orange-600 [&_a]:hover:underline
+        [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
+        [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
+        [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+        [&_table]:border-collapse [&_table]:border [&_table]:border-border
+        [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
+        [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
+        [&_blockquote]:border-l-4 [&_blockquote]:border-orange-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic
+        [&_ul]:list-disc [&_ul]:pl-4
+        [&_ol]:list-decimal [&_ol]:pl-4
+        [&_hr]:border-border [&_hr]:my-2"
+      dangerouslySetInnerHTML={{ __html: sanitized }}
+    />
+  );
+}
+
+// ─── Markdown Renderer Component ─────────────────────────────────────────────
+
+const markdownComponents = {
+  code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { className?: string }) {
+    const language = className?.replace('language-', '');
+    const code = String(children).replace(/\n$/, '');
+    if (className?.includes('language-')) {
+      return <CodeBlock language={language} children={code} />;
+    }
+    return (
+      <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props}>
+        {children}
+      </code>
+    );
+  },
+  pre({ children }: React.HTMLAttributes<HTMLPreElement>) {
+    return <div className="my-1">{children}</div>;
+  },
+  p({ children }: React.HTMLAttributes<HTMLParagraphElement>) {
+    return <p className="mb-1 last:mb-0">{children}</p>;
+  },
+  ul({ children }: React.HTMLAttributes<HTMLUListElement>) {
+    return <ul className="list-disc pl-4 mb-1">{children}</ul>;
+  },
+  ol({ children }: React.OlHTMLAttributes<HTMLOListElement>) {
+    return <ol className="list-decimal pl-4 mb-1">{children}</ol>;
+  },
+  li({ children }: React.HTMLAttributes<HTMLLIElement>) {
+    return <li className="mb-0.5">{children}</li>;
+  },
+  a({ href, children }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-orange-600 hover:underline"
+      >
+        {children}
+      </a>
+    );
+  },
+  table({ children }: React.HTMLAttributes<HTMLTableElement>) {
+    return (
+      <div className="overflow-x-auto my-2">
+        <table className="text-xs border-collapse border border-border">{children}</table>
+      </div>
+    );
+  },
+  th({ children }: React.ThHTMLAttributes<HTMLTableCellElement>) {
+    return <th className="border border-border px-2 py-1 bg-muted">{children}</th>;
+  },
+  td({ children }: React.TdHTMLAttributes<HTMLTableCellElement>) {
+    return <td className="border border-border px-2 py-1">{children}</td>;
+  },
+  blockquote({ children }: React.BlockquoteHTMLAttributes<HTMLElement>) {
+    return (
+      <blockquote className="border-l-4 border-orange-500/50 pl-4 italic my-2">
+        {children}
+      </blockquote>
+    );
+  },
+  hr() {
+    return <hr className="border-border my-2" />;
+  },
+  img({ src, alt }: React.ImgHTMLAttributes<HTMLImageElement>) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className="max-w-full max-h-64 rounded-lg object-contain my-2"
+        loading="lazy"
+      />
+    );
+  },
+  details({ children }: React.DetailsHTMLAttributes<HTMLDetailsElement>) {
+    return (
+      <details className="my-2 rounded-lg border border-border/50 overflow-hidden">
+        {children}
+      </details>
+    );
+  },
+  summary({ children }: React.HTMLAttributes<HTMLElement>) {
+    return (
+      <summary className="px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors text-sm font-medium">
+        {children}
+      </summary>
+    );
+  },
+  // Task list support (from remark-gfm)
+  input({ type, checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+    if (type === 'checkbox') {
+      return (
+        <input
+          type="checkbox"
+          checked={checked}
+          readOnly
+          className="mr-1 rounded border-border"
+          {...props}
+        />
+      );
+    }
+    return <input type={type} {...props} />;
+  },
+};
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+        components={markdownComponents}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 // ─── A2uiChatContent ─────────────────────────────────────────────────────────
 
@@ -29,8 +205,11 @@ interface A2uiChatContentProps {
 }
 
 /**
- * Renders Matrix message content using A2UI protocol.
- * Falls back to legacy rendering for non-A2UI content.
+ * Renders Matrix message content with support for:
+ * - A2UI protocol messages (thinking, tool calls, streaming)
+ * - HTML formatted_body (sanitized)
+ * - Markdown with GFM, math, code highlighting
+ * - Legacy card/thinking blocks
  */
 export const A2uiChatContent = memo(function A2uiChatContent({
   content,
@@ -78,13 +257,7 @@ const A2uiBlocks = memo(function A2uiBlocks({
               />
             );
           case 'text':
-            return block.text ? (
-              <div key={key} className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                  {block.text}
-                </ReactMarkdown>
-              </div>
-            ) : null;
+            return block.text ? <MarkdownContent key={key} content={block.text} /> : null;
           default:
             return null;
         }
@@ -111,7 +284,6 @@ const LegacyBlocks = memo(function LegacyBlocks({
 
         switch (block.type) {
           case 'thinking':
-            // Convert legacy thinking to A2UI messages
             return block.content ? (
               <A2uiSurfaceRenderer
                 key={key}
@@ -122,7 +294,6 @@ const LegacyBlocks = memo(function LegacyBlocks({
             ) : null;
 
           case 'tool_call':
-            // Convert legacy tool_call to A2UI messages
             return block.payload ? (
               <A2uiSurfaceRenderer
                 key={key}
@@ -133,7 +304,6 @@ const LegacyBlocks = memo(function LegacyBlocks({
             ) : null;
 
           case 'card':
-            // Convert legacy card to A2UI messages
             return block.payload ? (
               <A2uiSurfaceRenderer
                 key={key}
@@ -144,13 +314,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
             ) : null;
 
           case 'text':
-            return block.text ? (
-              <div key={key} className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                  {block.text}
-                </ReactMarkdown>
-              </div>
-            ) : null;
+            return block.text ? <MarkdownContent key={key} content={block.text} /> : null;
 
           default:
             return null;

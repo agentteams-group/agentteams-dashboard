@@ -3,7 +3,10 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
 import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -164,7 +167,15 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
               <div
                 key={idx}
                 dangerouslySetInnerHTML={{ __html: part.text }}
-                className="[&>p]:mb-1 [&>br]:block"
+                className="[&>p]:mb-1 [&>br]:block
+                  [&_a]:text-orange-600 [&_a]:hover:underline
+                  [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
+                  [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
+                  [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+                  [&_table]:border-collapse [&_table]:border [&_table]:border-border
+                  [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
+                  [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
+                  [&_blockquote]:border-l-4 [&_blockquote]:border-orange-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
               />
             );
           }
@@ -180,11 +191,11 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  // For plain text / markdown body
+  // For plain text / markdown body - enhanced with full format support
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
       components={{
         code({ className, children, ...props }) {
           const language = className?.replace('language-', '');
@@ -237,6 +248,55 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
         },
         td({ children }) {
           return <td className="border border-border px-2 py-1">{children}</td>;
+        },
+        blockquote({ children }) {
+          return (
+            <blockquote className="border-l-4 border-orange-500/50 pl-4 italic my-2">
+              {children}
+            </blockquote>
+          );
+        },
+        hr() {
+          return <hr className="border-border my-2" />;
+        },
+        img({ src, alt }) {
+          return (
+            <img
+              src={src}
+              alt={alt}
+              className="max-w-full max-h-64 rounded-lg object-contain my-2"
+              loading="lazy"
+            />
+          );
+        },
+        details({ children }) {
+          return (
+            <details className="my-2 rounded-lg border border-border/50 overflow-hidden">
+              {children}
+            </details>
+          );
+        },
+        summary({ children }) {
+          return (
+            <summary className="px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors text-sm font-medium">
+              {children}
+            </summary>
+          );
+        },
+        // Task list support (from remark-gfm)
+        input({ type, checked, ...props }) {
+          if (type === 'checkbox') {
+            return (
+              <input
+                type="checkbox"
+                checked={checked}
+                readOnly
+                className="mr-1 rounded border-border"
+                {...props}
+              />
+            );
+          }
+          return <input type={type} {...props} />;
         },
       }}
     >
