@@ -4,6 +4,7 @@ import { Bot, Users } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
+import { TeamHealthPanel } from './team-health-panel';
 import type { TeamResponse, WorkerResponse } from '@/lib/hiclaw-api';
 import { getWorkersForTeam } from './team-selectors';
 
@@ -76,6 +77,7 @@ export function TeamDetailDialog({
               <Users className="w-5 h-5 text-emerald-500" aria-hidden="true" />
               <PhaseBadge kind="team" phase={team.phase} />
             </div>
+            <TeamHealthPanel team={team} allWorkers={workers} />
             {DETAIL_FIELDS.map(([label, read]) => (
               <div
                 key={label}
