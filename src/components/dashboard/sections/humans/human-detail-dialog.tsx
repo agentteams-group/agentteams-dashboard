@@ -1,6 +1,7 @@
 'use client';
 
-import { Lock, Mail, Shield } from 'lucide-react';
+import { useMemo } from 'react';
+import { Lock, Mail, Shield, Eye, Play, Pencil, Trash2, Sun, Moon, CheckCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { StatusDot } from '@/components/dashboard/status-dot';
@@ -8,6 +9,7 @@ import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { HumanResponse } from '@/lib/hiclaw-api';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
+import { getAccessSummary } from '@/lib/rbac-engine';
 
 const BASE_FIELDS: Array<[string, (_h: HumanResponse) => string]> = [
   ['名称', (h) => h.name],
@@ -138,6 +140,7 @@ export function HumanDetailDialog({
             {human.message && (
               <DetailRow label="消息" value={human.message} />
             )}
+            <RBACSummary human={human} />
             <TagList items={human.accessibleTeams} label="可访问团队" />
             <TagList items={human.accessibleWorkers} label="可访问 Workers" />
             <div className="pt-2">
@@ -156,5 +159,51 @@ export function HumanDetailDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+const PERM_ICONS: Record<string, React.ReactNode> = {
+  view: <Eye className="w-3 h-3" />,
+  create: <Play className="w-3 h-3" />,
+  update: <Pencil className="w-3 h-3" />,
+  delete: <Trash2 className="w-3 h-3" />,
+  wake: <Sun className="w-3 h-3" />,
+  sleep: <Moon className="w-3 h-3" />,
+  'ensure-ready': <CheckCircle className="w-3 h-3" />,
+};
+
+const PERM_LABELS: Record<string, string> = {
+  view: '查看',
+  create: '创建',
+  update: '编辑',
+  delete: '删除',
+  wake: '唤醒',
+  sleep: '休眠',
+  'ensure-ready': '就绪',
+};
+
+function RBACSummary({ human }: { human: HumanResponse }) {
+  const summary = useMemo(() => getAccessSummary(human), [human]);
+
+  return (
+    <div className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Shield className="w-4 h-4 text-violet-500" />
+        <span className="text-xs font-medium">权限摘要</span>
+        <Badge variant="outline" className="text-[10px]">{summary.level}</Badge>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {summary.permissions.map((perm) => (
+          <Badge key={perm} variant="secondary" className="text-[10px] gap-1">
+            {PERM_ICONS[perm]}
+            {PERM_LABELS[perm] || perm}
+          </Badge>
+        ))}
+      </div>
+      <div className="text-[10px] text-muted-foreground space-y-0.5">
+        <p>团队范围: {summary.teamScope}</p>
+        <p>Worker 范围: {summary.workerScope}</p>
+      </div>
+    </div>
   );
 }

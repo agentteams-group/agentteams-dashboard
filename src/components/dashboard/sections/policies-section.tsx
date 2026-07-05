@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ToggleLeft,
   ToggleRight,
+  Zap,
   Trash2,
   Info,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { usePolicyStore } from '@/lib/policy-store';
 import { evaluatePolicies, type PolicyViolation } from '@/lib/policy-engine';
+import { determineRemediation } from '@/lib/remediation-engine';
 import { useWorkers } from '@/hooks/use-hiclaw-workers';
 import { useTeams } from '@/hooks/use-hiclaw-teams';
 import { useManagers } from '@/hooks/use-hiclaw-managers';
@@ -155,15 +157,26 @@ export function PoliciesSection() {
               <CardContent className="pt-0">
                 <p className="text-xs text-muted-foreground mb-2">{policy.description}</p>
 
-                {/* Show violations */}
+                {/* Show violations with remediation info */}
                 {hasViolations && (
                   <div className="space-y-1 mt-2">
-                    {policyViolations.slice(0, 5).map((v, i) => (
-                      <div key={i} className="flex items-center gap-2 text-[10px] text-amber-600 dark:text-amber-400">
-                        <AlertTriangle className="w-3 h-3 shrink-0" />
-                        <span>{v.message}</span>
-                      </div>
-                    ))}
+                    {policyViolations.slice(0, 5).map((v, i) => {
+                      const remediation = policy.enforcement === 'auto-remediate' ? determineRemediation(v) : null;
+                      return (
+                        <div key={i}>
+                          <div className="flex items-center gap-2 text-[10px] text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>{v.message}</span>
+                          </div>
+                          {remediation && (
+                            <div className="flex items-center gap-1.5 ml-5 text-[9px] text-blue-500">
+                              <Zap className="w-2.5 h-2.5" />
+                              <span>自动: {remediation.reason}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     {policyViolations.length > 5 && (
                       <p className="text-[10px] text-muted-foreground">
                         ...还有 {policyViolations.length - 5} 项违规
