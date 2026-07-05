@@ -9,6 +9,9 @@ import {
   BookOpen,
   Shield,
   Network,
+  GitBranch,
+  FlaskConical,
+  FileCheck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -31,8 +34,11 @@ export const navItems: NavItem[] = [
   { id: 'managers', label: 'Managers', icon: Crown },
   { id: 'humans', label: 'Humans', icon: UserCheck },
   { id: 'chat', label: 'Matrix 聊天', icon: MessageSquare },
+  { id: 'topology', label: '拓扑图', icon: GitBranch },
   { id: 'gateway', label: '网关', icon: Network },
   { id: 'policies', label: '策略', icon: Shield },
+  { id: 'sandbox', label: '沙箱', icon: FlaskConical },
+  { id: 'compliance', label: '合规', icon: FileCheck },
   { id: 'ops', label: '基础设施', icon: Settings },
   { id: 'docs', label: '文档', icon: BookOpen },
 ];

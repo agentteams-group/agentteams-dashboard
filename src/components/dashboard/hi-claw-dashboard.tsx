@@ -45,6 +45,9 @@ const OpsSection = lazy(() => import('./sections/ops-section').then(m => ({ defa
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 const PoliciesSection = lazy(() => import('./sections/policies-section').then(m => ({ default: m.PoliciesSection })));
 const GatewaySection = lazy(() => import('./sections/gateway-section').then(m => ({ default: m.GatewaySection })));
+const TopologySection = lazy(() => import('./sections/topology-section').then(m => ({ default: m.TopologySection })));
+const SandboxSection = lazy(() => import('./sections/sandbox-section').then(m => ({ default: m.SandboxSection })));
+const ComplianceSection = lazy(() => import('./sections/compliance-section').then(m => ({ default: m.ComplianceSection })));
 
 const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -53,8 +56,11 @@ const sectionMap: Record<string, React.ComponentType> = {
   managers: ManagersSection,
   humans: HumansSection,
   chat: ChatSection,
+  topology: TopologySection,
   gateway: GatewaySection,
   policies: PoliciesSection,
+  sandbox: SandboxSection,
+  compliance: ComplianceSection,
   ops: OpsSection,
   docs: DocsSection,
 };
