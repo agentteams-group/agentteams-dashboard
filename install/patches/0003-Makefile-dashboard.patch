@@ -9,6 +9,7 @@ Add Makefile targets for standalone Dashboard management:
  Makefile | 12 ++++++++++++
  1 file changed, 12 insertions(+)
 
+diff --git a/Makefile b/Makefile
 --- a/Makefile
 +++ b/Makefile
 @@ -41,6 +41,7 @@

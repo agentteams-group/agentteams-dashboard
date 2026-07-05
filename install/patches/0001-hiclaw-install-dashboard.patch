@@ -11,6 +11,7 @@ Add TaDashboard as an optional component in the AgentTeams installation:
  install/hiclaw-install.sh | 80 +++++++++++++++++++++++++++++++++++++++
  1 file changed, 80 insertions(+)
 
+diff --git a/install/hiclaw-install.sh b/install/hiclaw-install.sh
 --- a/install/hiclaw-install.sh
 +++ b/install/hiclaw-install.sh
 @@ -45,6 +45,11 @@

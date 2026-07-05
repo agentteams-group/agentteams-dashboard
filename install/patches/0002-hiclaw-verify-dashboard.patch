@@ -7,6 +7,7 @@ the Dashboard container is running and responding on its configured port.
  install/hiclaw-verify.sh | 15 +++++++++++++++
  1 file changed, 15 insertions(+)
 
+diff --git a/install/hiclaw-verify.sh b/install/hiclaw-verify.sh
 --- a/install/hiclaw-verify.sh
 +++ b/install/hiclaw-verify.sh
 @@ -60,6 +60,8 @@
