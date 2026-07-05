@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { Plus, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -111,6 +113,18 @@ export function WorkerCreateDialog({
               placeholder="skill1, skill2, skill3"
             />
           </div>
+          <div className="space-y-2">
+            <Label>关联 Agents（逗号分隔）</Label>
+            <Input
+              value={value.agents || ''}
+              onChange={(e) => onChange({ ...value, agents: e.target.value || undefined })}
+              placeholder="agent1, agent2"
+            />
+          </div>
+          <McpServersField
+            value={value.mcpServers || []}
+            onChange={(mcpServers) => onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -126,5 +140,86 @@ export function WorkerCreateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Reusable MCP Servers list editor */
+export function McpServersField({
+  value,
+  onChange,
+}: {
+  value: { name: string; url: string; transport: string }[];
+  onChange: (_next: { name: string; url: string; transport: string }[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const addServer = () => {
+    onChange([...value, { name: '', url: '', transport: 'stdio' }]);
+    setExpanded(true);
+  };
+
+  const removeServer = (idx: number) => {
+    onChange(value.filter((_, i) => i !== idx));
+  };
+
+  const updateServer = (idx: number, field: string, val: string) => {
+    const next = value.map((s, i) => (i === idx ? { ...s, [field]: val } : s));
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>MCP Servers</Label>
+        <Button variant="ghost" size="sm" type="button" onClick={addServer} className="h-6 px-2 text-xs">
+          <Plus className="w-3 h-3 mr-1" />
+          添加
+        </Button>
+      </div>
+      {value.length > 0 && !expanded && (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setExpanded(true)}
+        >
+          {value.length} 个 MCP Server（点击展开）
+        </button>
+      )}
+      {expanded &&
+        value.map((server, idx) => (
+          <div key={idx} className="flex gap-2 items-start">
+            <Input
+              value={server.name}
+              onChange={(e) => updateServer(idx, 'name', e.target.value)}
+              placeholder="名称"
+              className="h-8 text-xs"
+            />
+            <Input
+              value={server.url}
+              onChange={(e) => updateServer(idx, 'url', e.target.value)}
+              placeholder="URL"
+              className="h-8 text-xs"
+            />
+            <select
+              value={server.transport}
+              onChange={(e) => updateServer(idx, 'transport', e.target.value)}
+              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+            >
+              <option value="stdio">stdio</option>
+              <option value="sse">sse</option>
+              <option value="streamable-http">streamable-http</option>
+            </select>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => removeServer(idx)}
+              className="h-8 w-8 p-0 shrink-0"
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        ))}
+    </div>
   );
 }

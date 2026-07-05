@@ -10,9 +10,12 @@ import {
   Upload,
   ChevronRight,
   Loader2,
+  Plus,
+  X,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -36,6 +39,8 @@ import {
   useDeleteObject,
   useDownloadObjectUrl,
   useUploadObject,
+  useCreateBucket,
+  useDeleteBucket,
 } from '@/hooks/use-hiclaw-storage';
 
 function formatBytes(n: number): string {
@@ -57,8 +62,12 @@ export function StorageSection() {
   const deleteObject = useDeleteObject();
   const downloadObject = useDownloadObjectUrl();
   const uploadObject = useUploadObject();
+  const createBucket = useCreateBucket();
+  const deleteBucket = useDeleteBucket();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showNewBucket, setShowNewBucket] = useState(false);
+  const [newBucketName, setNewBucketName] = useState('');
 
   const selectedBucketName = useMemo(() => bucket, [bucket]);
 
@@ -134,6 +143,32 @@ export function StorageSection() {
     [uploadObject, selectedBucketName, prefix]
   );
 
+  const handleCreateBucket = useCallback(async () => {
+    const name = newBucketName.trim().toLowerCase();
+    if (!name) return;
+    try {
+      await createBucket.mutateAsync(name);
+      toast.success(`桶 "${name}" 创建成功`);
+      setNewBucketName('');
+      setShowNewBucket(false);
+      setBucket(name);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '创建失败');
+    }
+  }, [newBucketName, createBucket]);
+
+  const handleDeleteBucket = useCallback(async () => {
+    if (!selectedBucketName) return;
+    if (!confirm(`确认删除桶 "${selectedBucketName}"？桶内所有对象将被永久删除！`)) return;
+    try {
+      await deleteBucket.mutateAsync(selectedBucketName);
+      toast.success(`桶 "${selectedBucketName}" 已删除`);
+      setBucket('');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '删除失败');
+    }
+  }, [selectedBucketName, deleteBucket]);
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -158,6 +193,15 @@ export function StorageSection() {
           </SelectContent>
         </Select>
 
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowNewBucket((v) => !v)}
+        >
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          新建桶
+        </Button>
+
         {bucket && (
           <>
             <input
@@ -179,9 +223,37 @@ export function StorageSection() {
               )}
               上传文件
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={handleDeleteBucket}
+              disabled={deleteBucket.isPending}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              删除桶
+            </Button>
           </>
         )}
       </div>
+
+      {showNewBucket && (
+        <div className="flex items-center gap-2 max-w-md">
+          <Input
+            value={newBucketName}
+            onChange={(e) => setNewBucketName(e.target.value)}
+            placeholder="桶名称 (小写字母、数字、连字符)"
+            className="h-8 text-sm"
+            onKeyDown={(e) => e.key === 'Enter' && handleCreateBucket()}
+          />
+          <Button size="sm" onClick={handleCreateBucket} disabled={!newBucketName.trim() || createBucket.isPending}>
+            {createBucket.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '创建'}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => { setShowNewBucket(false); setNewBucketName(''); }}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
 
       {bucket && (
         <div className="flex items-center gap-1 text-sm text-muted-foreground">

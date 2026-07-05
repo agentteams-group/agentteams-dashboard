@@ -214,7 +214,7 @@ export const matrixApi = {
     accessToken: string,
     roomId: string,
     body: string,
-    options: { msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown> } = {}
+    options: { msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] } } = {}
   ): Promise<{ event_id: string }> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, { homeserver });
     const messageBody: Record<string, unknown> = {
@@ -225,6 +225,7 @@ export const matrixApi = {
     if (options.formattedBody) messageBody.formatted_body = options.formattedBody;
     if (options.url) messageBody.url = options.url;
     if (options.info) messageBody.info = options.info;
+    if (options.mentions) messageBody['m.mentions'] = options.mentions;
     const res = await fetch(url, {
       method: 'PUT',
       headers: buildHeaders(accessToken, { 'Content-Type': 'application/json' }),

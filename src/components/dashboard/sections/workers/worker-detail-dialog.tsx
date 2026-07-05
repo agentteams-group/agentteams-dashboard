@@ -14,6 +14,7 @@ const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['镜像', (w) => w.image || '-'],
   ['团队', (w) => w.team || '-'],
   ['角色', (w) => w.role || '-'],
+  ['关联 Agents', (w) => w.agents || '-'],
   ['Matrix 用户', (w) => w.matrixUserID || '-'],
   ['房间 ID', (w) => w.roomID || '-'],
   ['容器管理', (w) => (w.containerManaged ? '是' : '否')],
@@ -52,6 +53,18 @@ export function WorkerDetailDialog({
                 </span>
               </div>
             ))}
+            {(worker.mcpServers?.length ?? 0) > 0 && (
+              <div className="pt-2">
+                <p className="text-muted-foreground mb-1">MCP Servers</p>
+                {worker.mcpServers?.map((s, i) => (
+                  <div key={i} className="text-xs font-mono flex items-center gap-2">
+                    <span className="font-medium">{s.name}</span>
+                    <span className="text-muted-foreground">({s.transport})</span>
+                    <span className="truncate">{s.url}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {(worker.exposedPorts?.length ?? 0) > 0 && (
               <div className="pt-2">
                 <p className="text-muted-foreground mb-1">暴露端口</p>

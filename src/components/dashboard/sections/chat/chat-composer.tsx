@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
 
+/** A single @mention that was inserted into the input */
+export interface MentionEntry {
+  userId: string;       // e.g. @worker:matrix.server
+  displayName: string;  // e.g. worker
+  placeholder: string;  // e.g. @worker  (what appears in the textarea)
+}
+
 interface Member {
   userId: string;
   displayName: string;
@@ -38,6 +45,8 @@ interface ChatComposerProps {
   onFileUpload?: (_file: File) => void;
   isUploading?: boolean;
   onSlashCommand?: (_command: string, _args: string) => void;
+  /** Called when mentions list changes (for the parent to build m.mentions on send) */
+  onMentionsChange?: (_mentions: MentionEntry[]) => void;
 }
 
 export function ChatComposer({
@@ -52,7 +61,14 @@ export function ChatComposer({
   onFileUpload,
   isUploading = false,
   onSlashCommand,
+  onMentionsChange,
 }: ChatComposerProps) {
+  // Track @mentions that were inserted
+  const [mentions, setMentions] = useState<MentionEntry[]>([]);
+  // Expose mentions to parent whenever they change
+  useEffect(() => {
+    onMentionsChange?.(mentions);
+  }, [mentions, onMentionsChange]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -183,13 +199,16 @@ export function ChatComposer({
       if (atIndex === -1) return;
       const before = value.slice(0, atIndex);
       const after = value.slice(cursorPos);
-      const newValue = `${before}@${member.displayName} ${after}`;
+      const placeholder = `@${member.displayName}`;
+      const newValue = `${before}${placeholder} ${after}`;
       onChange(newValue);
+      // Track this mention for Matrix m.mentions protocol
+      setMentions((prev) => [...prev, { userId: member.userId, displayName: member.displayName, placeholder }]);
       setMenuType(null);
       // Focus and set cursor after the mention
       requestAnimationFrame(() => {
         if (inputRef.current) {
-          const newPos = atIndex + member.displayName.length + 2;
+          const newPos = atIndex + placeholder.length + 1;
           inputRef.current.focus();
           inputRef.current.setSelectionRange(newPos, newPos);
         }

@@ -53,6 +53,46 @@ export function useUploadObject() {
   });
 }
 
+export function useCreateBucket() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      fetch(`/api/hiclaw/storage/buckets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Failed: ${res.status}`);
+        }
+        return res.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hiclaw-buckets'] });
+    },
+  });
+}
+
+export function useDeleteBucket() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      fetch(`/api/hiclaw/storage/buckets/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+      }).then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Failed: ${res.status}`);
+        }
+        return res.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hiclaw-buckets'] });
+    },
+  });
+}
+
 // Presigned URL variants kept for advanced use-cases; the UI uses the proxied
 // download/upload helpers above so the browser never needs direct MinIO access.
 export function usePresignDownload() {

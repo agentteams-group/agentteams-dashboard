@@ -22,7 +22,7 @@ export function ModelSelector({
   placeholder = '选择模型',
   disabled,
 }: ModelSelectorProps) {
-  const { data: models, isLoading } = useModels();
+  const { data: providers, isLoading } = useModels();
 
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled || isLoading}>
@@ -30,17 +30,17 @@ export function ModelSelector({
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {models?.map((model) => (
-          <SelectItem key={model.name} value={model.name}>
-            {model.name}
-            {model.default && (
-              <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>
-            )}
+        {providers?.map((provider) => (
+          <SelectItem key={provider.name} value={provider.name}>
+            {provider.name}
+            <span className="ml-2 text-[10px] text-muted-foreground">
+              ({provider.type})
+            </span>
           </SelectItem>
         ))}
-        {models?.length === 0 && (
+        {providers?.length === 0 && (
           <SelectItem value="__empty__" disabled>
-            暂无模型配置
+            暂无模型配置，请先添加 AI 提供商
           </SelectItem>
         )}
       </SelectContent>

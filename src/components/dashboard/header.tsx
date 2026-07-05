@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/tooltip';
 import { NotificationPopover } from './notification-popover';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
+import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
+import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/hiclaw-api';
 
 interface DashboardHeaderProps {
   isConnected: boolean;
@@ -52,6 +54,10 @@ interface DashboardHeaderProps {
   onOpenSettings: () => void;
   mode?: DeploymentMode | null;
   createActions?: readonly CreateAction[];
+  workers?: WorkerResponse[];
+  teams?: TeamResponse[];
+  managers?: ManagerResponse[];
+  humans?: HumanResponse[];
 }
 
 export function DashboardHeader({
@@ -70,12 +76,19 @@ export function DashboardHeader({
   onOpenSettings,
   mode,
   createActions: actions = createActions,
+  workers,
+  teams,
+  managers,
+  humans,
 }: DashboardHeaderProps) {
   const { theme, setTheme } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  const searchResults = useGlobalSearch(debouncedQuery, workers, teams, managers, humans);
 
   const visibleActions = useMemo(
     () => actions.filter((action) => isCreateActionVisible(action, mode)),
@@ -122,14 +135,31 @@ export function DashboardHeader({
       </Button>
 
       <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
         <Input
           ref={searchInputRef}
-          placeholder="搜索... (K)"
+          placeholder="搜索 Workers、团队、Manager... (K)"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
+          onFocus={() => setPaletteOpen(true)}
+          onBlur={() => {
+            // Delay closing so click events on results can fire
+            setTimeout(() => setPaletteOpen(false), 200);
+          }}
           className="pl-9 h-9 bg-background/50"
         />
+        {paletteOpen && searchResults.length > 0 && (
+          <CommandPalette
+            results={searchResults}
+            onSelect={(result: SearchResult) => {
+              onNavClick(result.section);
+              setDebouncedQuery('');
+              setPaletteOpen(false);
+              searchInputRef.current?.blur();
+            }}
+            onClose={() => setPaletteOpen(false)}
+          />
+        )}
       </div>
 
       {isConnected && (

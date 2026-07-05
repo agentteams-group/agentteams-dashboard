@@ -10,6 +10,8 @@ import type {
   CreateManagerRequest,
   UpdateManagerRequest,
   CreateConsumerRequest,
+  WorkerResponse,
+  WorkerPhase,
 } from '@/lib/hiclaw-api';
 import { toast } from 'sonner';
 import { useNotificationStore } from '@/lib/notification-store';
@@ -46,16 +48,25 @@ export function useDeleteWorker() {
 
   return useMutation({
     mutationFn: (name: string) => hiclawApi.deleteWorker(name),
+    onMutate: async (name) => {
+      await queryClient.cancelQueries({ queryKey: ['hiclaw-workers'] });
+      const previous = queryClient.getQueryData<WorkerResponse[]>(['hiclaw-workers']);
+      queryClient.setQueryData<WorkerResponse[]>(['hiclaw-workers'], (old) =>
+        old?.filter((w) => w.name !== name)
+      );
+      return { previous };
+    },
+    onError: (err, name, context) => {
+      if (context?.previous) queryClient.setQueryData(['hiclaw-workers'], context.previous);
+      toast.error(`Worker "${name}" 删除失败: ${formatErrorMessage(err)}`);
+      addNotification({ type: 'error', title: 'Worker 删除失败', message: formatErrorMessage(err) });
+    },
     onSuccess: (_, name) => {
-      queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] });
       queryClient.invalidateQueries({ queryKey: ['hiclaw-cluster-status'] });
       toast.success(`Worker "${name}" 已删除`);
       addNotification({ type: 'success', title: 'Worker 已删除', message: `Worker "${name}" 已删除` });
     },
-    onError: (err, name) => {
-      toast.error(`Worker "${name}" 删除失败: ${formatErrorMessage(err)}`);
-      addNotification({ type: 'error', title: 'Worker 删除失败', message: formatErrorMessage(err) });
-    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] }),
   });
 }
 
@@ -85,15 +96,24 @@ export function useWakeWorker() {
 
   return useMutation({
     mutationFn: (name: string) => hiclawApi.wakeWorker(name),
-    onSuccess: (_, name) => {
-      queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] });
-      toast.success(`Worker "${name}" 已唤醒`);
-      addNotification({ type: 'success', title: 'Worker 已唤醒', message: `Worker "${name}" 已唤醒` });
+    onMutate: async (name) => {
+      await queryClient.cancelQueries({ queryKey: ['hiclaw-workers'] });
+      const previous = queryClient.getQueryData<WorkerResponse[]>(['hiclaw-workers']);
+      queryClient.setQueryData<WorkerResponse[]>(['hiclaw-workers'], (old) =>
+        old?.map((w) => w.name === name ? { ...w, phase: 'Pending' as WorkerPhase } : w)
+      );
+      return { previous };
     },
-    onError: (err, name) => {
+    onError: (err, name, context) => {
+      if (context?.previous) queryClient.setQueryData(['hiclaw-workers'], context.previous);
       toast.error(`Worker "${name}" 唤醒失败: ${formatErrorMessage(err)}`);
       addNotification({ type: 'error', title: 'Worker 唤醒失败', message: formatErrorMessage(err) });
     },
+    onSuccess: (_, name) => {
+      toast.success(`Worker "${name}" 已唤醒`);
+      addNotification({ type: 'success', title: 'Worker 已唤醒', message: `Worker "${name}" 已唤醒` });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] }),
   });
 }
 
@@ -103,15 +123,24 @@ export function useSleepWorker() {
 
   return useMutation({
     mutationFn: (name: string) => hiclawApi.sleepWorker(name),
-    onSuccess: (_, name) => {
-      queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] });
-      toast.success(`Worker "${name}" 已休眠`);
-      addNotification({ type: 'success', title: 'Worker 已休眠', message: `Worker "${name}" 已休眠` });
+    onMutate: async (name) => {
+      await queryClient.cancelQueries({ queryKey: ['hiclaw-workers'] });
+      const previous = queryClient.getQueryData<WorkerResponse[]>(['hiclaw-workers']);
+      queryClient.setQueryData<WorkerResponse[]>(['hiclaw-workers'], (old) =>
+        old?.map((w) => w.name === name ? { ...w, phase: 'Pending' as WorkerPhase } : w)
+      );
+      return { previous };
     },
-    onError: (err, name) => {
+    onError: (err, name, context) => {
+      if (context?.previous) queryClient.setQueryData(['hiclaw-workers'], context.previous);
       toast.error(`Worker "${name}" 休眠失败: ${formatErrorMessage(err)}`);
       addNotification({ type: 'error', title: 'Worker 休眠失败', message: formatErrorMessage(err) });
     },
+    onSuccess: (_, name) => {
+      toast.success(`Worker "${name}" 已休眠`);
+      addNotification({ type: 'success', title: 'Worker 已休眠', message: `Worker "${name}" 已休眠` });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['hiclaw-workers'] }),
   });
 }
 

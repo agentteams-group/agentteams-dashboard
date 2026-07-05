@@ -130,11 +130,12 @@ export function useMatrixSendMessage() {
   const { homeserver, accessToken } = useMatrixParams();
 
   return useMutation({
-    mutationFn: async ({ roomId, body, formattedBody, extra }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown> }) => {
+    mutationFn: async ({ roomId, body, formattedBody, extra, mentions }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown>; mentions?: { user_ids: string[] } }) => {
       if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
       return matrixApi.sendMessage(homeserver, accessToken, roomId, body, {
         format: formattedBody ? 'org.matrix.custom.html' : undefined,
         formattedBody,
+        mentions,
         ...extra,
       });
     },

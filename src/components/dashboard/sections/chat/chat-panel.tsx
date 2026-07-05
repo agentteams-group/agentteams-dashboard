@@ -35,7 +35,7 @@ import type { RoomInfo } from './room-info';
 import { formatDate, getAvatarColor, isDifferentDay } from './format';
 import { MessageBubble } from './message-bubble';
 import { DateSeparator } from './date-separator';
-import { ChatComposer } from './chat-composer';
+import { ChatComposer, type MentionEntry } from './chat-composer';
 
 type DisplayItem =
   | { type: 'date'; date: string; key: string }
@@ -291,6 +291,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
+  const [currentMentions, setCurrentMentions] = useState<MentionEntry[]>([]);
 
   const allMessages = useMemo(() => {
     const pages = messagesQuery.data?.pages || [];
@@ -331,13 +332,31 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTyping.mutate({ roomId: room.id, typing: false });
     const body = inputValue.trim();
-    const formattedBody = body
+
+    // Build Matrix-compliant formatted body with proper mention links
+    let formattedBody = body;
+    const mentionedUserIds: string[] = [];
+    for (const m of currentMentions) {
+      // Only include mentions that are still present in the text
+      if (body.includes(m.placeholder)) {
+        const link = `<a href="https://matrix.to/#/${encodeURIComponent(m.userId)}">${m.displayName}</a>`;
+        formattedBody = formattedBody.replaceAll(m.placeholder, link);
+        if (!mentionedUserIds.includes(m.userId)) {
+          mentionedUserIds.push(m.userId);
+        }
+      }
+    }
+    // Apply markdown formatting (after mention link replacement)
+    formattedBody = formattedBody
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
       .replace(/\n/g, '<br />');
+
+    // Build m.mentions field per Matrix spec (MSC3952)
+    const mentions = mentionedUserIds.length > 0 ? { user_ids: mentionedUserIds } : undefined;
 
     // Optimistic: add a pending message immediately
     const pendingId = `pending-${Date.now()}`;
@@ -354,16 +373,15 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
     };
     setPendingMessages((prev) => [...prev, optimisticMsg]);
     setInputValue('');
+    setCurrentMentions([]);
 
     sendMessage.mutate(
-      { roomId: room.id, body, formattedBody },
+      { roomId: room.id, body, formattedBody, mentions },
       {
         onSuccess: () => {
-          // Mark as sent, will be cleaned up when server data refreshes
           setPendingMessages((prev) =>
             prev.map((p) => (p.id === pendingId ? { ...p, status: 'sent' as const } : p))
           );
-          // Clear after a short delay
           setTimeout(() => {
             setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
           }, 2000);
@@ -375,7 +393,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
         },
       }
     );
-  }, [inputValue, room.id, sendMessage, userId, sendTyping]);
+  }, [inputValue, room.id, sendMessage, userId, sendTyping, currentMentions]);
 
   // File upload handler
   const handleFileUpload = useCallback(
@@ -542,6 +560,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
           onFileUpload={handleFileUpload}
           isUploading={uploadMedia.isPending}
           onSlashCommand={handleSlashCommand}
+          onMentionsChange={setCurrentMentions}
         />
       </div>
       <MembersSidebar

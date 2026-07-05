@@ -35,6 +35,7 @@ export interface WorkerResponse {
   team: string;
   role: string;
   skills?: string[];
+  agents?: string;
   mcpServers?: { name: string; url: string; transport: string }[];
   version?: string;
 }
@@ -463,28 +464,15 @@ export const hiclawApi = {
   // Infrastructure
   getInfrastructure: () => proxyRequest<InfrastructureInfo>('/infrastructure'),
 
-  // Models
-  listModels: async (): Promise<ModelResponse[]> => {
-    const result = await proxyRequest<ModelResponse[] | { models: ModelResponse[] }>('/models');
-    if (!result || typeof result !== 'object') return [];
-    return Array.isArray(result) ? result : (result as { models: ModelResponse[] }).models ?? [];
-  },
-
-  getModel: (name: string) => proxyRequest<ModelResponse>(`/models/${encodeURIComponent(name)}`),
-
-  createModel: (data: CreateModelRequest) =>
-    proxyRequest<ModelResponse>('/models', { method: 'POST', body: JSON.stringify(data) }),
-
-  updateModel: (name: string, data: UpdateModelRequest) =>
-    proxyRequest<ModelResponse>(`/models/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
-
-  deleteModel: (name: string) =>
-    proxyRequest<void>(`/models/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-
-  getDefaultModel: () => proxyRequest<ModelResponse | null>('/models/default'),
-
-  setDefaultModel: (name: string) =>
-    proxyRequest<void>('/models/default', { method: 'POST', body: JSON.stringify({ name }) }),
+  // Models — now managed via Higress Console API (see higress-api.ts)
+  // Legacy stubs kept for backward compatibility; prefer higressApi.* for new code
+  listModels: async (): Promise<ModelResponse[]> => [],
+  getModel: async (_name: string): Promise<ModelResponse | null> => null,
+  createModel: async (_data: CreateModelRequest): Promise<ModelResponse> => { throw new Error('Use higressApi.createProvider instead'); },
+  updateModel: async (_name: string, _data: UpdateModelRequest): Promise<ModelResponse> => { throw new Error('Use higressApi.updateProvider instead'); },
+  deleteModel: async (_name: string): Promise<void> => { throw new Error('Use higressApi.deleteProvider instead'); },
+  getDefaultModel: async (): Promise<ModelResponse | null> => null,
+  setDefaultModel: async (_name: string): Promise<void> => { throw new Error('Use higressApi instead'); },
 
   // Storage
   listBuckets: async (): Promise<BucketResponse[]> => {

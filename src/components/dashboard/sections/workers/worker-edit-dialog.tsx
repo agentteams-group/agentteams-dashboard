@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/hiclaw-api';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { McpServersField } from './worker-create-dialog';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -109,6 +110,18 @@ export function WorkerEditDialog({
               placeholder="skill1, skill2, skill3"
             />
           </div>
+          <div className="space-y-2">
+            <Label>关联 Agents（逗号分隔）</Label>
+            <Input
+              value={value.agents || ''}
+              onChange={(e) => onChange({ ...value, agents: e.target.value || undefined })}
+              placeholder="agent1, agent2"
+            />
+          </div>
+          <McpServersField
+            value={value.mcpServers || []}
+            onChange={(mcpServers) => onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

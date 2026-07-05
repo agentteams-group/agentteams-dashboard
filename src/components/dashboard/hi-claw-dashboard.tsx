@@ -19,6 +19,7 @@ import { useVersion } from '@/hooks/use-hiclaw-version';
 import { useWorkers } from '@/hooks/use-hiclaw-workers';
 import { useTeams } from '@/hooks/use-hiclaw-teams';
 import { useManagers } from '@/hooks/use-hiclaw-managers';
+import { useHumans } from '@/hooks/use-hiclaw-humans';
 import { ConnectionBanner } from './connection-banner';
 import { SettingsDialog } from './settings-dialog';
 import { SectionErrorBoundary } from './section-error-boundary';
@@ -73,6 +74,7 @@ export function HiClawDashboard() {
   const { data: workers } = useWorkers();
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
+  const { data: humans } = useHumans();
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   const visibleNavItems = useMemo(
@@ -222,6 +224,10 @@ export function HiClawDashboard() {
               onOpenSettings={openSettings}
               mode={mode}
               createActions={visibleCreateActions}
+              workers={workers}
+              teams={teams}
+              managers={managers}
+              humans={humans}
             />
 
             <ConnectionBanner />

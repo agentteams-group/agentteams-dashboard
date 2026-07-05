@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formattedBody, url: mediaUrl, info } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formattedBody, url: mediaUrl, info, 'm.mentions': mentions } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
@@ -36,6 +36,9 @@ export async function PUT(
     }
     if (info) {
       messageContent.info = info;
+    }
+    if (mentions) {
+      messageContent['m.mentions'] = mentions;
     }
 
     const controller = new AbortController();
