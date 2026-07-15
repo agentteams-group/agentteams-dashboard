@@ -15,7 +15,7 @@ import type {
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
 import { useNotificationStore } from '@/lib/notification-store';
-import { formatErrorMessage } from '@/lib/api-error';
+import { formatErrorMessage, isUnsupportedEndpointError } from '@/lib/api-error';
 import { auditMutation } from '@/lib/audit-store';
 
 function useNotify() {
@@ -381,8 +381,12 @@ export function useUpdateHuman() {
       addNotification({ type: 'success', title: '用户更新成功', message: `用户 "${variables.name}" 已更新` });
     },
     onError: (err, variables) => {
-      toast.error(`用户 "${variables.name}" 更新失败: ${formatErrorMessage(err)}`);
-      addNotification({ type: 'error', title: '用户更新失败', message: formatErrorMessage(err) });
+      // AgentTeams v1.2.0-beta.1 has no PUT /api/v1/humans/{name} (405)
+      const message = isUnsupportedEndpointError(err)
+        ? '当前 Controller 版本（v1.2.0-beta.1）不支持编辑 Human，请通过删除后重建的方式修改'
+        : formatErrorMessage(err);
+      toast.error(`用户 "${variables.name}" 更新失败: ${message}`);
+      addNotification({ type: 'error', title: '用户更新失败', message });
     },
   });
 }

@@ -87,10 +87,10 @@ export function StreamingCard({ payload }: StreamingCardProps) {
   const actions = Array.isArray(payload.actions) ? payload.actions as { label: string; url?: string }[] : [];
 
   return (
-    <Card className="my-2 border-l-4 border-l-orange-500">
+    <Card className="my-2 border-l-4 border-l-primary">
       <CardHeader className="py-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <Zap className="w-3.5 h-3.5 text-orange-500" />
+          <Zap className="w-3.5 h-3.5 text-primary" />
           {title}
         </CardTitle>
       </CardHeader>
@@ -104,7 +104,7 @@ export function StreamingCard({ payload }: StreamingCardProps) {
                 href={action.url || '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-orange-600 hover:underline"
+                className="text-xs text-primary hover:underline"
               >
                 {action.label}
               </a>

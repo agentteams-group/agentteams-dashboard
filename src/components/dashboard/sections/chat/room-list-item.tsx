@@ -21,7 +21,7 @@ function roomTypeIcon(type: RoomInfo['type']) {
     case 'team':
       return <Users className="w-4 h-4 text-emerald-500" />;
     case 'worker':
-      return <Bot className="w-4 h-4 text-orange-500" />;
+      return <Bot className="w-4 h-4 text-primary" />;
     case 'manager':
       return <Crown className="w-4 h-4 text-violet-500" />;
     case 'human':
@@ -53,7 +53,7 @@ export function RoomListItem({
       onClick={onClick}
       className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
         isSelected
-          ? 'bg-orange-500/10 border border-orange-500/30'
+          ? 'bg-primary/10 border border-primary/30'
           : 'hover:bg-accent border border-transparent'
       }`}
       whileHover={{ x: 2 }}

@@ -39,12 +39,12 @@ function NavButton({ item, idx, isActive, count, hasNotification, collapsed, onN
       onClick={() => onNavClick(item.id)}
       className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 relative ${
         isActive
-          ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium border-r-2 border-orange-500'
+          ? 'bg-primary/10 text-primary dark:text-primary font-medium border-r-2 border-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
       }`}
       title={collapsed ? item.label : undefined}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-orange-500' : ''}`} />
+      <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
       {!collapsed && <span className="truncate">{item.label}</span>}
       {!collapsed && count > 0 && (
         <Badge
@@ -60,7 +60,7 @@ function NavButton({ item, idx, isActive, count, hasNotification, collapsed, onN
         </span>
       )}
       {hasNotification && !isActive && (
-        <span className={`w-2 h-2 rounded-full bg-orange-500 animate-pulse ${collapsed ? 'absolute top-1.5 right-1.5' : 'mr-1 ml-0'}`} />
+        <span className={`w-2 h-2 rounded-full bg-primary animate-pulse ${collapsed ? 'absolute top-1.5 right-1.5' : 'mr-1 ml-0'}`} />
       )}
       {!collapsed && !count && (
         <kbd className="ml-auto text-[10px] text-muted-foreground/50 hidden lg:inline-block">

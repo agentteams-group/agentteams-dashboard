@@ -58,7 +58,7 @@ export function WorkerTable({
           {workers.map((worker) => (
             <TableRow
               key={worker.name}
-              className={selectedWorkers.has(worker.name) ? 'bg-orange-500/5' : ''}
+              className={selectedWorkers.has(worker.name) ? 'bg-primary/5' : ''}
             >
               <TableCell>
                 <button
@@ -68,7 +68,7 @@ export function WorkerTable({
                   aria-pressed={selectedWorkers.has(worker.name)}
                 >
                   {selectedWorkers.has(worker.name) ? (
-                    <CheckSquare className="w-4 h-4 text-orange-500" aria-hidden="true" />
+                    <CheckSquare className="w-4 h-4 text-primary" aria-hidden="true" />
                   ) : (
                     <Square
                       className="w-4 h-4 text-muted-foreground/50 hover:text-muted-foreground"
@@ -80,7 +80,7 @@ export function WorkerTable({
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={worker.phase} />
-                  <Bot className="w-4 h-4 text-orange-500 shrink-0" aria-hidden="true" />
+                  <Bot className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
                   <span className="font-medium truncate max-w-[180px]">{worker.name}</span>
                 </div>
               </TableCell>

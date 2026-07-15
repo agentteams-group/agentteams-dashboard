@@ -8,10 +8,7 @@ import {
   Server,
   Key,
   Route,
-  ChevronDown,
-  ChevronRight,
   AlertTriangle,
-  ExternalLink,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';

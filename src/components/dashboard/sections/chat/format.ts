@@ -1,7 +1,7 @@
 import { escapeHtml, sanitizeHtml } from '@/lib/utils';
 
 const AVATAR_COLORS = [
-  'bg-orange-500/20 text-orange-600 dark:text-orange-400',
+  'bg-primary/20 text-primary dark:text-primary',
   'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400',
   'bg-violet-500/20 text-violet-600 dark:text-violet-400',
   'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',

@@ -72,11 +72,11 @@ export function MobileSidebar({
                     onClick={() => onNavClick(item.id)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm relative ${
                       isActive
-                        ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium'
+                        ? 'bg-primary/10 text-primary dark:text-primary font-medium'
                         : 'text-muted-foreground hover:bg-accent'
                     }`}
                   >
-                    <Icon className={`w-5 h-5 ${isActive ? 'text-orange-500' : ''}`} />
+                    <Icon className={`w-5 h-5 ${isActive ? 'text-primary' : ''}`} />
                     <span>{item.label}</span>
                     {count > 0 && (
                       <Badge
@@ -87,7 +87,7 @@ export function MobileSidebar({
                       </Badge>
                     )}
                     {hasNotification && !isActive && (
-                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse ml-1" />
+                      <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-1" />
                     )}
                   </button>
                 );

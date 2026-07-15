@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshCw, Send, Paperclip, Wrench, HelpCircle, Trash2, Users, Hash } from 'lucide-react';
+import { RefreshCw, Send, Paperclip, HelpCircle, Trash2, Users, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
@@ -74,14 +74,15 @@ export function ChatComposer({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Menu state
-  const [menuType, setMenuType] = useState<'mention' | 'command' | null>(null);
-  const [menuFilter, setMenuFilter] = useState('');
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const [menuSelectedIdx, setMenuSelectedIdx] = useState(0);
+  // Cursor position tracked via events (inputRef must not be read during render)
+  const [cursorPos, setCursorPos] = useState<number | null>(null);
 
   // @ mention: detect @ trigger
   const mentionTrigger = useMemo(() => {
-    const cursorPos = inputRef.current?.selectionStart ?? value.length;
-    const textBefore = value.slice(0, cursorPos);
+    const pos = cursorPos ?? value.length;
+    const textBefore = value.slice(0, pos);
     // Find last @ that's either at start or after whitespace
     const atIndex = textBefore.lastIndexOf('@');
     if (atIndex === -1) return null;
@@ -90,7 +91,7 @@ export function ChatComposer({
     const query = textBefore.slice(atIndex + 1);
     // Don't trigger if there's a space right after @ with no query
     return { atIndex, query };
-  }, [value]);
+  }, [value, cursorPos]);
 
   // / command: detect / trigger at line start
   const commandTrigger = useMemo(() => {
@@ -123,27 +124,22 @@ export function ChatComposer({
     );
   }, [commandTrigger]);
 
-  // Update menu state based on triggers
-  useEffect(() => {
-    if (mentionTrigger && filteredMembers.length > 0) {
-      setMenuType('mention');
-      setMenuFilter(mentionTrigger.query);
-      setMenuSelectedIdx(0);
-    } else if (commandTrigger && filteredCommands.length > 0 && value.startsWith('/')) {
-      setMenuType('command');
-      setMenuFilter(commandTrigger.query);
-      setMenuSelectedIdx(0);
-    } else {
-      setMenuType(null);
-    }
-  }, [mentionTrigger, commandTrigger, filteredMembers.length, filteredCommands.length, value]);
+  // Derive the active menu from the current triggers; once dismissed it stays
+  // hidden until the user types again (see the textarea onChange handler)
+  const derivedMenuType: 'mention' | 'command' | null =
+    mentionTrigger && filteredMembers.length > 0
+      ? 'mention'
+      : commandTrigger && filteredCommands.length > 0 && value.startsWith('/')
+        ? 'command'
+        : null;
+  const menuType = menuDismissed ? null : derivedMenuType;
 
   // Close menu on click outside
   useEffect(() => {
     if (!menuType) return;
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setMenuType(null);
+        setMenuDismissed(true);
       }
     };
     document.addEventListener('mousedown', handleClick);
@@ -180,7 +176,7 @@ export function ChatComposer({
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        setMenuType(null);
+        setMenuDismissed(true);
         return;
       }
     }
@@ -204,7 +200,7 @@ export function ChatComposer({
       onChange(newValue);
       // Track this mention for Matrix m.mentions protocol
       setMentions((prev) => [...prev, { userId: member.userId, displayName: member.displayName, placeholder }]);
-      setMenuType(null);
+      setMenuDismissed(true);
       // Focus and set cursor after the mention
       requestAnimationFrame(() => {
         if (inputRef.current) {
@@ -221,19 +217,19 @@ export function ChatComposer({
     (command: SlashCommand) => {
       if (command.id === 'clear') {
         onChange('');
-        setMenuType(null);
+        setMenuDismissed(true);
         return;
       }
       if (command.id === 'members' || command.id === 'help') {
         // Execute immediately
         onSlashCommand?.(command.id, '');
         onChange('');
-        setMenuType(null);
+        setMenuDismissed(true);
         return;
       }
       // For commands with args (like /topic), fill in the command prefix
       onChange(command.label + ' ');
-      setMenuType(null);
+      setMenuDismissed(true);
       requestAnimationFrame(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -352,11 +348,17 @@ export function ChatComposer({
         <textarea
           ref={inputRef}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setCursorPos(e.target.selectionStart);
+            setMenuDismissed(false);
+            setMenuSelectedIdx(0);
+            onChange(e.target.value);
+          }}
+          onSelect={(e) => setCursorPos(e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className="flex-1 resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50"
+          className="flex-1 resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
           onInput={autoResize}

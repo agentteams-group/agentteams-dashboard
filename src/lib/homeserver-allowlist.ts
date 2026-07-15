@@ -91,7 +91,9 @@ export function validateHomeserverUrl(
     throw new HomeserverValidationError('protocol must be http or https');
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  // URL.hostname keeps the brackets on IPv6 literals — strip them so the
+  // allowlist and private-range checks below see the bare address.
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
 
   if (options.allowPrivateNetwork) {
     return parsed;
@@ -110,6 +112,11 @@ export function validateHomeserverUrl(
   const blockedSuffixes = getBlockedSuffixes();
   if (blockedSuffixes.some((suffix) => hostname.endsWith(suffix))) {
     throw new HomeserverValidationError('internal hostnames are not allowed');
+  }
+
+  // An explicitly configured allowlist is exclusive: anything not on it is rejected.
+  if (process.env.MATRIX_HOMESERVER_ALLOWLIST) {
+    throw new HomeserverValidationError('host is not in the allowlist');
   }
 
   return parsed;

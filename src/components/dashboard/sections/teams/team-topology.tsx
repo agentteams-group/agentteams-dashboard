@@ -41,14 +41,14 @@ export function TeamTopologyDiagram({
           <div className="w-0.5 h-6 bg-emerald-500/30" />
           <div className="relative flex items-start justify-center gap-3 flex-wrap">
             {teamWorkers.length > 1 && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] h-0.5 bg-orange-500/20 max-w-[400px]" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] h-0.5 bg-primary/20 max-w-[400px]" />
             )}
             {teamWorkers.map((w) => (
               <div key={w.name} className="flex flex-col items-center">
-                <div className="w-0.5 h-4 bg-orange-500/20" />
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 bg-orange-500/5">
+                <div className="w-0.5 h-4 bg-primary/20" />
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/5">
                   <StatusDot phase={w.phase} />
-                  <Bot className="w-3 h-3 text-orange-500" aria-hidden="true" />
+                  <Bot className="w-3 h-3 text-primary" aria-hidden="true" />
                   <span className="text-xs font-medium">{w.name}</span>
                 </div>
               </div>

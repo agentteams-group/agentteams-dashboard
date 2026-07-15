@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Shield,
   Key,
@@ -19,7 +19,7 @@ import {
   Save,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,9 +36,15 @@ import { toast } from 'sonner';
 import { useConsumers } from '@/hooks/use-agentteams-consumers';
 import { useCreateConsumer, useDeleteConsumer } from '@/hooks/use-agentteams-mutations';
 import { useAiRoutes, useDeleteAiRoute } from '@/hooks/use-agentteams-models';
+import { formatErrorMessage } from '@/lib/api-error';
 
 export function GatewaySection() {
-  const { data: consumers, isLoading: consumersLoading } = useConsumers();
+  const {
+    data: consumers,
+    isLoading: consumersLoading,
+    error: consumersError,
+    listUnsupported: consumerListUnsupported,
+  } = useConsumers();
   const { data: routes, isLoading: routesLoading } = useAiRoutes();
   const createConsumer = useCreateConsumer();
   const deleteConsumer = useDeleteConsumer();
@@ -155,6 +161,22 @@ export function GatewaySection() {
             <Button variant="ghost" size="sm" onClick={() => setShowAddConsumer(false)}>
               取消
             </Button>
+          </div>
+        )}
+
+        {consumerListUnsupported && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <p>
+              当前 Controller 版本不支持获取 Consumer 列表（v1.2.0-beta.1 缺少 GET
+              /api/v1/gateway/consumers），仍可创建新 Consumer。
+            </p>
+          </div>
+        )}
+        {consumersError && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>Consumer 列表加载失败: {formatErrorMessage(consumersError)}</p>
           </div>
         )}
 

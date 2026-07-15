@@ -237,7 +237,7 @@ export function TeamsSection() {
             </Button>
             <Button
               size="sm"
-              className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />

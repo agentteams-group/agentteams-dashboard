@@ -43,7 +43,7 @@ function SkillCard({ skill, isExpanded, onToggle }: {
   onToggle: () => void;
 }) {
   const categoryColors: Record<string, string> = {
-    '协调': 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+    '协调': 'bg-primary/10 text-primary dark:text-primary',
     '监控': 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
     '处理': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     '容错': 'bg-red-500/10 text-red-600 dark:text-red-400',
@@ -93,7 +93,7 @@ function SkillCard({ skill, isExpanded, onToggle }: {
         <div className="flex flex-wrap gap-1 mt-1.5">
           {skill.workers.slice(0, 3).map((w) => (
             <Badge key={w.name} variant="outline" className="text-[10px] gap-1">
-              <Bot className="w-2.5 h-2.5 text-orange-500" />
+              <Bot className="w-2.5 h-2.5 text-primary" />
               {w.name}
             </Badge>
           ))}
@@ -121,7 +121,7 @@ function SkillCard({ skill, isExpanded, onToggle }: {
             {skill.workers.length > 0 && (
               <div className="p-2 rounded-md bg-muted/30">
                 <p className="text-[10px] text-muted-foreground font-medium mb-1 flex items-center gap-1">
-                  <Bot className="w-3 h-3 text-orange-500" />
+                  <Bot className="w-3 h-3 text-primary" />
                   使用此技能的 Workers
                 </p>
                 <div className="flex flex-wrap gap-1">
@@ -395,7 +395,7 @@ export function SkillsSection() {
       {workerSkillMap.size > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Bot className="w-5 h-5 text-orange-500" />
+            <Bot className="w-5 h-5 text-primary" />
             Worker 技能映射
             <Badge variant="outline" className="text-[10px]">{workerSkillMap.size} Workers</Badge>
           </h2>
@@ -411,7 +411,7 @@ export function SkillsSection() {
                 <Card className="glass-card hover-lift">
                   <CardContent className="p-3">
                     <div className="flex items-center gap-2 mb-2">
-                      <Bot className="w-4 h-4 text-orange-500" />
+                      <Bot className="w-4 h-4 text-primary" />
                       <span className="font-medium text-sm">{workerName}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -497,7 +497,7 @@ export function SkillsSection() {
                         <div className="flex flex-wrap gap-1">
                           {mcp.workers.map((w) => (
                             <Badge key={w} variant="secondary" className="text-[10px]">
-                              <Bot className="w-2.5 h-2.5 mr-1 text-orange-500" />
+                              <Bot className="w-2.5 h-2.5 mr-1 text-primary" />
                               {w}
                             </Badge>
                           ))}

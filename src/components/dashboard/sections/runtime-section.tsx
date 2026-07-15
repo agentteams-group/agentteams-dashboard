@@ -19,8 +19,8 @@ const runtimeInfo = [
     language: 'Go + Python',
     models: ['GPT-4', 'Claude-3', '通义千问', 'DeepSeek'],
     useCases: ['通用 Agent', '内容生成', '代码助手', '数据分析'],
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10 border-orange-500/20',
+    color: 'text-primary',
+    bgColor: 'bg-primary/10 border-primary/20',
   },
   {
     name: 'CoPaw',
@@ -223,13 +223,13 @@ export function RuntimeSection() {
         <CardContent className="p-6">
           <h2 className="text-lg font-semibold mb-4">选择指南</h2>
           <div className="space-y-3 text-sm">
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-500/5 border border-orange-500/10">
-              <Code className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
+              <Code className="w-4 h-4 text-primary mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">通用 Agent 任务</p>
                 <p className="text-xs text-muted-foreground">选择 OpenClaw — 最灵活的运行时，支持多模型和 MCP Server 集成</p>
               </div>
-              <CheckCircle2 className="w-5 h-5 text-orange-500 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
               <Layers className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />

@@ -46,7 +46,7 @@ export function RoomTopology({ rooms }: { rooms: RoomInfo[] }) {
               ))}
               {teamWorkers.map((wr) => (
                 <div key={wr.id} className="flex items-center gap-1.5 text-[10px]">
-                  <Bot className="w-3 h-3 text-orange-500" />
+                  <Bot className="w-3 h-3 text-primary" />
                   <span className="font-medium">{wr.name}</span>
                   <span className="text-muted-foreground">↔</span>
                   <span className="text-muted-foreground">团队</span>

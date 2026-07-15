@@ -46,8 +46,6 @@ export interface A2uiParseResult {
 
 const A2UI_HTML_MARKER = /<!--a2ui:([\s\S]*?)-->/g;
 const A2UI_TEXT_MARKER = /```a2ui\n([\s\S]*?)\n```/g;
-const LEGACY_CARD_MARKER = /```card\n([\s\S]*?)\n```/g;
-const LEGACY_THINKING_MARKER = /(?:&lt;|<)details\s+class="thinking"(?:&gt;|>)([\s\S]*?)(?:&lt;|<\/)details(?:&gt;|>)/g;
 
 /**
  * Parse A2UI protocol messages from Matrix message content.
@@ -59,8 +57,8 @@ export function parseA2uiContent(
 ): A2uiParseResult {
   const blocks: ParsedA2uiBlock[] = [];
   let hasA2ui = false;
-  let hasThinking = false;
-  let hasToolCall = false;
+  const hasThinking = false;
+  const hasToolCall = false;
 
   // Prefer formatted_body if available (HTML)
   const content = formattedBody || body;

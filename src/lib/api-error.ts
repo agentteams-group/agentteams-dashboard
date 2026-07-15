@@ -31,6 +31,15 @@ export class NetworkError extends ApiError {
   }
 }
 
+/**
+ * True when the backend does not expose the requested endpoint at all
+ * (404 Not Found / 405 Method Not Allowed), e.g. AgentTeams v1.2.0-beta.1
+ * lacks GET /api/v1/gateway/consumers and PUT /api/v1/humans/{name}.
+ */
+export function isUnsupportedEndpointError(err: unknown): err is ApiError {
+  return err instanceof ApiError && (err.status === 404 || err.status === 405);
+}
+
 export function formatErrorMessage(err: unknown, fallback = '操作失败'): string {
   if (err instanceof ApiError) {
     if (err.isNetworkError) return err.message;

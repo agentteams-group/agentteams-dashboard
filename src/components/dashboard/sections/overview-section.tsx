@@ -22,7 +22,6 @@ import {
   Crown,
   UserPlus,
   MessageCircle,
-  Eye,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -49,9 +48,15 @@ function useRefreshCountdown(intervalMs: number) {
   const [countdown, setCountdown] = useState(() => intervalMs / 1000);
   const startTimeRef = useRef(Date.now());
 
+  // Restart the cycle when the interval changes (adjust state during render)
+  const [prevIntervalMs, setPrevIntervalMs] = useState(intervalMs);
+  if (prevIntervalMs !== intervalMs) {
+    setPrevIntervalMs(intervalMs);
+    setCountdown(intervalMs / 1000);
+  }
+
   useEffect(() => {
     startTimeRef.current = Date.now();
-    setCountdown(intervalMs / 1000);
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTimeRef.current;
@@ -322,7 +327,7 @@ export function OverviewSection() {
             value={activeWorkers}
             label="活跃 Workers"
             icon={Bot}
-            color="text-orange-500"
+            color="text-primary"
             sub={
               workers && workers.length > 0 ? (
                 <div className="space-y-0.5">
@@ -448,7 +453,7 @@ export function OverviewSection() {
                       <RechartsTooltip />
                       <Legend />
                       <Bar dataKey="ready" name="就绪 Workers" fill="#10b981" radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="total" name="总 Workers" fill="#f97316" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="total" name="总 Workers" fill="#2ABC74" radius={[2, 2, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -469,7 +474,7 @@ export function OverviewSection() {
           <Card className="glass-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Activity className="w-4 h-4 text-orange-500" />
+                <Activity className="w-4 h-4 text-primary" />
                 操作动态
               </CardTitle>
             </CardHeader>

@@ -1,7 +1,7 @@
 // RBAC Engine — Role-Based Access Control
 // Evaluates permissions for Human users against Workers/Teams
 
-import type { HumanResponse, WorkerResponse, TeamResponse } from '@/lib/agentteams-api';
+import type { HumanResponse } from '@/lib/agentteams-api';
 
 export type Permission = 'view' | 'create' | 'update' | 'delete' | 'wake' | 'sleep' | 'ensure-ready';
 

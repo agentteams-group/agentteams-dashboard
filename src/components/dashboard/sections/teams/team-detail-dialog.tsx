@@ -45,7 +45,7 @@ function TeamWorkersList({
         {teamWorkers.map((w) => (
           <div key={w.name} className="flex items-center gap-2 p-2 rounded-lg bg-background/50">
             <StatusDot phase={w.phase} />
-            <Bot className="w-4 h-4 text-orange-500" aria-hidden="true" />
+            <Bot className="w-4 h-4 text-primary" aria-hidden="true" />
             <span className="text-xs font-medium">{w.name}</span>
             <PhaseBadge kind="worker" phase={w.phase} className="text-[10px] ml-auto" />
           </div>

@@ -44,7 +44,7 @@ export function WorkerCard({
       layout
     >
       <Card
-        className={`glass-card hover-lift ${isSelected ? 'ring-2 ring-orange-500/50' : ''}`}
+        className={`glass-card hover-lift ${isSelected ? 'ring-2 ring-primary/50' : ''}`}
       >
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
@@ -57,7 +57,7 @@ export function WorkerCard({
                 aria-pressed={isSelected}
               >
                 {isSelected ? (
-                  <CheckSquare className="w-4 h-4 text-orange-500" aria-hidden="true" />
+                  <CheckSquare className="w-4 h-4 text-primary" aria-hidden="true" />
                 ) : (
                   <Square
                     className="w-4 h-4 text-muted-foreground/50 hover:text-muted-foreground"
@@ -66,7 +66,7 @@ export function WorkerCard({
                 )}
               </button>
               <StatusDot phase={worker.phase} />
-              <Bot className="w-5 h-5 text-orange-500 shrink-0" aria-hidden="true" />
+              <Bot className="w-5 h-5 text-primary shrink-0" aria-hidden="true" />
               <span className="font-medium truncate">{worker.name}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">

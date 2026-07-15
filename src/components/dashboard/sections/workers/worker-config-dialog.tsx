@@ -58,7 +58,7 @@ export function WorkerConfigDialog({
           <Button
             onClick={onApply}
             disabled={isPending || !value.trim()}
-            className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isPending ? '创建中...' : '应用'}
           </Button>

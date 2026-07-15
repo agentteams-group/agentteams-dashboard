@@ -30,7 +30,7 @@ export function TopologySection() {
           <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Team
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full bg-orange-500 inline-block" /> Worker
+          <span className="w-3 h-3 rounded-full bg-primary inline-block" /> Worker
         </span>
         <span className="ml-4">外环颜色 = 阶段状态</span>
       </div>

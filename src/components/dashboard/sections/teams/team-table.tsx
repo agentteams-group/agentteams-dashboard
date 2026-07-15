@@ -148,7 +148,7 @@ export function TeamTable({
                                 onClick={() => onAddWorker(team.name, w.name)}
                               >
                                 <StatusDot phase={w.phase} />
-                                <Bot className="w-3 h-3 text-orange-500" aria-hidden="true" />
+                                <Bot className="w-3 h-3 text-primary" aria-hidden="true" />
                                 <span className="truncate">{w.name}</span>
                               </button>
                             ))}

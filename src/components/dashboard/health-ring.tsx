@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import { healthScoreStrokeColor } from '@/lib/agent-health';
 
 interface HealthRingProps {

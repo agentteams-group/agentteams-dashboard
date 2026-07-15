@@ -27,11 +27,11 @@ ARG APK_MIRROR=mirrors.aliyun.com
 RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
     apk add --no-cache ca-certificates
 
-# Install dependencies
+# Install dependencies (lockfile included for reproducible builds)
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN npm config set registry "${NPM_REGISTRY}" && \
-    npm install
+    npm ci --no-audit --no-fund
 
 # Copy source and build
 COPY . .

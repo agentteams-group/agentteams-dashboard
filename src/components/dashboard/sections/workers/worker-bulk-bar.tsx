@@ -38,7 +38,7 @@ export function WorkerBulkBar({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 glass-card px-4 py-3 rounded-xl border border-orange-500/20 shadow-lg flex items-center gap-3"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 glass-card px-4 py-3 rounded-xl border border-primary/20 shadow-lg flex items-center gap-3"
         >
           <span className="text-sm font-medium">已选择 {count} 个 Worker</span>
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onTrigger('wake')}>

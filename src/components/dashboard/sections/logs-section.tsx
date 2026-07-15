@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { FileText, Download, Search, Loader2 } from 'lucide-react';
+import { Download, Search, Loader2 } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

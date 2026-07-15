@@ -10,7 +10,7 @@ import {
 describe('getAvatarColor', () => {
   it('returns one of the palette classes', () => {
     const allowedPrefixes = [
-      'bg-orange-500/20',
+      'bg-primary/20',
       'bg-cyan-500/20',
       'bg-violet-500/20',
       'bg-emerald-500/20',

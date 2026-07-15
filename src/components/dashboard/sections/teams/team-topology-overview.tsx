@@ -32,8 +32,8 @@ export function TopologyOverview() {
             <polygon points="32,6 40,12 32,18" className="fill-emerald-500/40" />
           </svg>
           <div className="flex flex-col items-center">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-orange-500/40 bg-orange-500/10">
-              <Bot className="w-4 h-4 text-orange-500" aria-hidden="true" />
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10">
+              <Bot className="w-4 h-4 text-primary" aria-hidden="true" />
               <span className="text-sm">Workers</span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">执行任务</p>

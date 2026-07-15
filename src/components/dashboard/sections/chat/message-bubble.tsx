@@ -79,7 +79,7 @@ export function MessageBubble({
         <div
           className={`rounded-xl px-3 py-2 text-sm break-words inline-block overflow-hidden ${
             message.isMe
-              ? 'bg-orange-500/15 text-foreground rounded-tr-sm'
+              ? 'bg-primary/15 text-foreground rounded-tr-sm'
               : isNotice
                 ? 'bg-violet-500/10 text-foreground rounded-tl-sm border border-violet-500/10'
                 : 'bg-muted/80 text-foreground rounded-tl-sm'

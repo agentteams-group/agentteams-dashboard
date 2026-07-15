@@ -11,7 +11,7 @@ import { useModels } from '@/hooks/use-agentteams-models';
 
 interface ModelSelectorProps {
   value?: string;
-  onChange: (value: string) => void;
+  onChange: (_value: string) => void;
   placeholder?: string;
   disabled?: boolean;
 }

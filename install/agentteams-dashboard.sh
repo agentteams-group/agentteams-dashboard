@@ -287,7 +287,9 @@ detect_runtime_env() {
   AGENTTEAMS_OPENAI_BASE_URL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_OPENAI_BASE_URL=//p')
   AGENTTEAMS_DEFAULT_MODEL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_DEFAULT_MODEL=//p')
 
-  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" cat /var/run/agentteams/cli-token 2>/dev/null | tr -d '\n' || true)
+  # Controller versions differ in token path: older builds (≤ v1.2.0-beta.1) write
+  # /var/run/hiclaw/cli-token, newer ones write /var/run/agentteams/cli-token. Try both.
+  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
 
   # Always use the internal Docker-network Higress Console URL; a host IP saved
   # in an old env file is often unreachable from inside the dashboard container.
@@ -295,6 +297,10 @@ detect_runtime_env() {
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
   fi
 
+  if [ -z "${AGENTTEAMS_AUTH_TOKEN}" ]; then
+    warn "Could not read controller auth token (cli-token) from ${ctrl_container}."
+    warn "Dashboard API calls will be UNAUTHENTICATED — workers/teams/rooms will appear empty."
+  fi
   if [ -z "${AGENTTEAMS_FS_ACCESS_KEY}" ] || [ -z "${AGENTTEAMS_FS_SECRET_KEY}" ]; then
     warn "Could not auto-detect MinIO credentials from ${ctrl_container}"
   fi

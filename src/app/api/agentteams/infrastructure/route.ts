@@ -11,14 +11,17 @@ const CONTROLLER_URL =
 
 const MINIO_ENDPOINT =
   process.env.AGENTTEAMS_MINIO_URL ||
+  process.env.AGENTTEAMS_FS_ENDPOINT || // set by install/agentteams-dashboard.sh
   'http://agentteams-minio.agentteams-system:9000';
 
 const MATRIX_ENDPOINT =
   process.env.AGENTTEAMS_MATRIX_URL ||
+  process.env.NEXT_PUBLIC_MATRIX_API_URL || // set by install/agentteams-dashboard.sh
   'http://matrix-local.agentteams.io:18080';
 
 const HIGRESS_ENDPOINT =
   process.env.AGENTTEAMS_AI_GATEWAY_URL ||
+  process.env.AGENTTEAMS_AI_GATEWAY_ADMIN_URL || // set by install/agentteams-dashboard.sh
   'http://higress-gateway.agentteams-system:80';
 
 async function fetchWithTimeout(

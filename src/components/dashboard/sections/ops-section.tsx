@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Server, Container, HardDrive, FileText, Brain } from 'lucide-react';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { InfrastructureSection } from './infrastructure-section';
@@ -33,11 +33,10 @@ export function OpsSection() {
   const [activeTab, setActiveTab] = useState(visibleTabs[0]?.id || '');
 
   // Reset active tab when mode changes and current tab is no longer visible
-  useEffect(() => {
-    if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0].id);
-    }
-  }, [visibleTabs, activeTab]);
+  // (self-correcting state adjustment during render)
+  if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.id === activeTab)) {
+    setActiveTab(visibleTabs[0].id);
+  }
 
   const currentTab = visibleTabs.find((t) => t.id === activeTab) || visibleTabs[0];
   const ActiveComponent = currentTab?.component;
@@ -55,7 +54,7 @@ export function OpsSection() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm transition-colors border-b-2 -mb-px ${
                 isActive
-                  ? 'border-orange-500 text-orange-600 dark:text-orange-400 font-medium'
+                  ? 'border-primary text-primary dark:text-primary font-medium'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
               }`}
             >

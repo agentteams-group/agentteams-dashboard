@@ -44,7 +44,7 @@ export const A2uiSurfaceRenderer = memo(function A2uiSurfaceRenderer({
   isStreaming = false,
 }: A2uiSurfaceRendererProps) {
   const processorRef = useRef<MessageProcessor<ReactComponentImplementation> | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [surfaces, setSurfaces] = useState<Array<{ id: string; surface: any }>>([]);
 
   // Initialize processor and process messages
@@ -67,7 +67,7 @@ export const A2uiSurfaceRenderer = memo(function A2uiSurfaceRenderer({
 
     // Sync surfaces
     const sync = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const list: Array<{ id: string; surface: any }> = [];
       processor.model.surfacesMap.forEach((surface: unknown, id: string) => {
         if (surface) list.push({ id, surface });
@@ -126,7 +126,7 @@ export const IncrementalA2uiRenderer = memo(function IncrementalA2uiRenderer({
 }: IncrementalA2uiRendererProps) {
   const processorRef = useRef<MessageProcessor<ReactComponentImplementation> | null>(null);
   const processedCountRef = useRef(0);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [surfaces, setSurfaces] = useState<Array<{ id: string; surface: any }>>([]);
 
   useEffect(() => {
@@ -153,7 +153,7 @@ export const IncrementalA2uiRenderer = memo(function IncrementalA2uiRenderer({
 
     // Sync surfaces
     const sync = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const list: Array<{ id: string; surface: any }> = [];
       processor.model.surfacesMap.forEach((surface: unknown, id: string) => {
         if (surface) list.push({ id, surface });

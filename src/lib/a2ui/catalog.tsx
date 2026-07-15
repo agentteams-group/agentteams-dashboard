@@ -29,7 +29,7 @@ import rehypeHighlight from 'rehype-highlight';
 // A2UI uses Zod v3 internally, but the project uses Zod v4.
 // We use 'as any' to bridge the type gap while maintaining runtime compatibility.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type AnyComponentApi = any;
 
 function makeApi(name: string, schema: z.ZodTypeAny): AnyComponentApi {
@@ -278,7 +278,7 @@ const CollapsibleBlockApi = makeApi('CollapsibleBlock', z.object({
 
 const CollapsibleBlock = createComponentImplementation(
   CollapsibleBlockApi,
-  ({ props, buildChild }: { props: Record<string, unknown>; buildChild: (id: string) => React.ReactNode }) => {
+  ({ props, buildChild }: { props: Record<string, unknown>; buildChild: (_id: string) => React.ReactNode }) => {
     const title = typeof props.title === 'string' ? props.title : '';
     const [open, setOpen] = useState((props.defaultOpen as boolean) ?? false);
 

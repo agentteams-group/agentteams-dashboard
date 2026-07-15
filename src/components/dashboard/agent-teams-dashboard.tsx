@@ -104,11 +104,14 @@ export function AgentTeamsDashboard() {
     checkConnection();
   }, [checkConnection]);
 
-  useEffect(() => {
+  // Track the last time entity data changed (adjust state during render)
+  const [prevData, setPrevData] = useState({ workers, teams, managers });
+  if (prevData.workers !== workers || prevData.teams !== teams || prevData.managers !== managers) {
+    setPrevData({ workers, teams, managers });
     if (workers !== undefined || teams !== undefined || managers !== undefined) {
       setLastRefreshTime(new Date());
     }
-  }, [workers, teams, managers]);
+  }
 
   // Guard active section: fall back to overview if the current section is hidden in this mode.
   useEffect(() => {

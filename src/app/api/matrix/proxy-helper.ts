@@ -24,10 +24,11 @@ export function getMatrixHomeserver(request: NextRequest): string {
 }
 
 export function getAccessToken(request: NextRequest): string {
-  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
-    || request.nextUrl.searchParams.get('accessToken');
+  // Authorization header only — never accept tokens via query string, which
+  // would leak into access logs, browser history, and referer headers.
+  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
   if (!token) {
-    throw new Error('Missing access token. Provide via Authorization header or ?accessToken= parameter.');
+    throw new Error('Missing access token. Provide via Authorization header.');
   }
   return token;
 }

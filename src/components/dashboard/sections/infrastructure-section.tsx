@@ -545,7 +545,7 @@ export function InfrastructureSection() {
         actions={
           <Button
             size="sm"
-            className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={() => setConsumerOpen(true)}
           >
             <Plus className="w-4 h-4 mr-1" />
@@ -716,7 +716,7 @@ export function InfrastructureSection() {
             <Button
               onClick={handleCreateConsumer}
               disabled={!consumerData.name || !consumerData.password || createConsumer.isPending}
-              className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createConsumer.isPending ? '创建中...' : '创建'}
             </Button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import type { WorkerResponse, TeamResponse, ManagerResponse } from '@/lib/agentteams-api';
 
 interface TopologyNode {
@@ -20,7 +20,7 @@ interface TopologyEdge {
 const NODE_COLORS: Record<string, string> = {
   manager: '#8b5cf6',
   team: '#10b981',
-  worker: '#f97316',
+  worker: '#2ABC74',
 };
 
 const PHASE_FILLS: Record<string, string> = {
@@ -154,7 +154,7 @@ export function TopologyCanvas({
               y1={src.y + 12}
               x2={tgt.x}
               y2={tgt.y - 12}
-              stroke={isHighlighted ? '#f97316' : '#64748b'}
+              stroke={isHighlighted ? '#2ABC74' : '#64748b'}
               strokeWidth={isHighlighted ? 2 : 1}
               strokeDasharray={isHighlighted ? undefined : '4 2'}
               opacity={isHighlighted ? 1 : 0.4}
