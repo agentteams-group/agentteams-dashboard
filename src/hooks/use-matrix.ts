@@ -305,16 +305,29 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     ? event.sender.split(':')[0].slice(1)
     : event.sender;
 
+  // Edited messages (m.replace): render the replacement content instead of
+  // the stale fallback body ("* ..."). The manager delivers final answers by
+  // editing its "处理中..." placeholder, so without this the room shows the
+  // edit fallback as a separate, ugly message.
+  let content = event.content;
+  const relatesTo = content['m.relates_to'] as { rel_type?: string } | undefined;
+  if (relatesTo?.rel_type === 'm.replace') {
+    const newContent = content['m.new_content'] as typeof content | undefined;
+    if (newContent && typeof newContent === 'object') {
+      content = { ...content, ...newContent };
+    }
+  }
+
   return {
     id: event.event_id,
     sender: event.sender,
     senderShort,
-    content: event.content.body || '',
-    formattedContent: event.content.formatted_body,
+    content: content.body || '',
+    formattedContent: content.formatted_body,
     timestamp: event.origin_server_ts,
-    type: event.content.msgtype || 'm.text',
+    type: content.msgtype || 'm.text',
     isMe: event.sender === currentUserId,
-    mediaUrl: event.content.url as string | undefined,
-    mediaInfo: event.content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
+    mediaUrl: content.url as string | undefined,
+    mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
   };
 }

@@ -18,6 +18,7 @@
  */
 
 import type { A2uiMessage } from '@a2ui/web_core/v0_9';
+import { tryParseAgentReprBlocks } from './agent-repr';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,11 +51,26 @@ const A2UI_TEXT_MARKER = /```a2ui\n([\s\S]*?)\n```/g;
 /**
  * Parse A2UI protocol messages from Matrix message content.
  * Handles both HTML formatted_body and plain text body.
+ *
+ * Bodies that contain a dumped agentscope-runtime Message repr (the copaw
+ * channel's raw `sequence_number=... object='message' ...` dumps) are parsed
+ * first and mapped to text/thinking/tool-call blocks.
  */
 export function parseA2uiContent(
   body: string,
   formattedBody?: string
 ): A2uiParseResult {
+  // 0. Agent message repr dumps (always in plain body, never formatted_body)
+  const agentBlocks = tryParseAgentReprBlocks(body);
+  if (agentBlocks) {
+    return {
+      blocks: agentBlocks.blocks,
+      hasA2ui: false,
+      hasThinking: agentBlocks.hasThinking,
+      hasToolCall: agentBlocks.hasToolCall,
+    };
+  }
+
   const blocks: ParsedA2uiBlock[] = [];
   let hasA2ui = false;
   const hasThinking = false;
