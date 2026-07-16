@@ -196,6 +196,15 @@ export interface VersionInfo {
   kubeMode: boolean;
 }
 
+// AgentTeams v1.2.0+ returns kubeMode as a string ('embedded' | 'incluster')
+// while older versions returned a boolean. Normalize to boolean so that
+// consumers can rely on truthiness ('embedded' is a truthy string).
+export function normalizeKubeMode(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value === 'incluster' || value === 'k8s';
+  return false;
+}
+
 export interface InfrastructureInfo {
   minio?: { healthy: boolean; endpoint: string; buckets: string[] };
   higress?: { healthy: boolean; endpoint: string };
@@ -338,9 +347,15 @@ export const agentteamsApi = {
   // Health & Status
   checkHealth: (controllerUrl: string) => healthRequest(controllerUrl),
 
-  getStatus: () => proxyRequest<ClusterStatus>('/cluster-status'),
+  getStatus: async (): Promise<ClusterStatus> => {
+    const raw = await proxyRequest<ClusterStatus>('/cluster-status');
+    return { ...raw, kubeMode: normalizeKubeMode(raw.kubeMode) };
+  },
 
-  getVersion: () => proxyRequest<VersionInfo>('/version'),
+  getVersion: async (): Promise<VersionInfo> => {
+    const raw = await proxyRequest<VersionInfo>('/version');
+    return { ...raw, kubeMode: normalizeKubeMode(raw.kubeMode) };
+  },
 
   // Workers
   listWorkers: async (): Promise<WorkerResponse[]> => {
