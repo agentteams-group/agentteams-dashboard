@@ -16,6 +16,11 @@
 # ============================================================
 set -euo pipefail
 
+# Resolve the patch directory to an ABSOLUTE path up front — later steps cd
+# into the cloned AgentTeams repo, so a relative path would break.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATCH_DIR="${SCRIPT_DIR}/patches"
+
 # ---------- 参数检查 ----------
 if [ $# -lt 1 ]; then
     echo "用法: bash install/submit-pr.sh <你的GitHub用户名>"
@@ -53,13 +58,17 @@ check_prerequisites() {
     
     ok "git 已安装"
     
-    # 检查是否有 GitHub token 或 SSH key
+    if [ ! -d "${PATCH_DIR}" ] || ! ls "${PATCH_DIR}"/*.patch &>/dev/null; then
+        err "未找到 Patch 目录或 Patch 文件: ${PATCH_DIR}"
+        exit 1
+    fi
+    ok "Patch 目录: ${PATCH_DIR}"
+    
+    # 克隆与推送均走 HTTPS —— 只认 GITHUB_TOKEN；SSH key 帮不上 HTTPS 推送
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        ok "检测到 GITHUB_TOKEN"
-    elif [ -f ~/.ssh/id_rsa ] || [ -f ~/.ssh/id_ed25519 ]; then
-        ok "检测到 SSH key"
+        ok "检测到 GITHUB_TOKEN（将用于 HTTPS 推送，并导出为 GH_TOKEN 供 gh 使用）"
     else
-        warn "未检测到 GITHUB_TOKEN 或 SSH key，推送时可能需要输入密码"
+        warn "未设置 GITHUB_TOKEN —— 推送时将使用 git 凭据管理器或交互输入"
     fi
 }
 
@@ -86,34 +95,25 @@ clone_repo() {
 apply_patches() {
     info "创建分支并应用 Patch..."
     
-    # 基于上游 main 创建分支
+    # 基于上游 main 创建分支（补丁针对 v1.2.0-beta.1 生成，main 漂移时走 3way 合并）
     git checkout -b "${BRANCH_NAME}" upstream/main
     
-    # Patch 文件路径
-    PATCH_DIR="$(dirname "$0")/patches"
-    
-    if [ ! -d "${PATCH_DIR}" ]; then
-        err "未找到 Patch 目录: ${PATCH_DIR}"
-        exit 1
-    fi
-    
-    # 应用 3 个 Patch
+    # 应用全部 Patch（git apply 单次生效，失败则尝试 3way，不再混用 git am）
     local patch_count=0
     for patch in "${PATCH_DIR}"/*.patch; do
-        if [ -f "${patch}" ]; then
-            info "应用 Patch: $(basename "${patch}")"
-            git apply --check "${patch}" 2>/dev/null || {
-                err "Patch 应用失败: $(basename "${patch}")"
-                err "尝试使用 git am..."
-                git am --3way "${patch}" || {
-                    warn "git am 失败，尝试 git apply..."
-                    git apply "${patch}"
-                }
-            }
+        [ -f "${patch}" ] || continue
+        info "应用 Patch: $(basename "${patch}")"
+        if git apply --check "${patch}" 2>/dev/null; then
             git apply "${patch}"
-            patch_count=$((patch_count + 1))
-            ok "已应用: $(basename "${patch}")"
+        elif git apply --3way "${patch}" 2>/dev/null; then
+            warn "上下文有偏移，已通过 3way 合并应用: $(basename "${patch}")"
+        else
+            err "Patch 应用失败: $(basename "${patch}")"
+            err "上游文件已变动，请按 install/AGENTTEAMS_PATCH.md 的流程重新生成补丁"
+            exit 1
         fi
+        patch_count=$((patch_count + 1))
+        ok "已应用: $(basename "${patch}")"
     done
     
     if [ ${patch_count} -eq 0 ]; then
@@ -142,15 +142,17 @@ Add agentteams-dashboard as an optional component in the AgentTeams installation
 - Dashboard wizard step with port, image, and Higress Console URL config
 - Auto-detect Higress Console URL for shared authentication
 - Dashboard container startup after embedded controller
+- Admin credentials forwarded for Higress ensure-ai bootstrap
+- Dashboard container removed on uninstall
 - Bilingual messages (zh/en)
 - LAN-accessible by default (bind 0.0.0.0)
 - Add verification check in hiclaw-verify.sh
-- Add Makefile targets: install-dashboard, update-dashboard, uninstall-dashboard
+- Add Makefile targets: build-dashboard, install-dashboard, update-dashboard, uninstall-dashboard
 
 Environment variables:
 - AGENTTEAMS_DASHBOARD (default: 1) - Enable/disable dashboard installation
 - AGENTTEAMS_PORT_DASHBOARD (default: 13000) - Dashboard host port
-- AGENTTEAMS_DASHBOARD_IMAGE (default: agentteams-dashboard:latest) - Dashboard image
+- AGENTTEAMS_DASHBOARD_IMAGE (default: \${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:\${AGENTTEAMS_VERSION}) - Dashboard image
 - AGENTTEAMS_AI_GATEWAY_ADMIN_URL (auto-detected) - Higress Console URL
 
 Co-authored-by: agentteams-dashboard <dashboard@agentteams.io>"
@@ -163,11 +165,17 @@ push_branch() {
     info "推送到远程仓库..."
     
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        # 使用 token 推送
-        git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
+        # 使用 token 推送（x-access-token 避免把用户名写进凭据）
+        git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
     fi
     
-    git push -u origin "${BRANCH_NAME}"
+    # --force-with-lease：脚本可重入，重跑时安全覆盖同名分支
+    git push --force-with-lease -u origin "${BRANCH_NAME}"
+    
+    # 推送完成后立刻清掉 remote URL 里的明文 token，避免残留在 .git/config
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        git remote set-url origin "${FORK_URL}"
+    fi
     
     ok "分支已推送到 ${FORK_URL}"
 }
@@ -207,7 +215,7 @@ agentteams-dashboard 是一个基于 Next.js 的 Web 管理面板，用于可视
 |------|--------|------|
 | \`AGENTTEAMS_DASHBOARD\` | \`1\` | 是否安装 Dashboard (1=是, 0=否) |
 | \`AGENTTEAMS_PORT_DASHBOARD\` | \`13000\` | Dashboard 主机端口 |
-| \`AGENTTEAMS_DASHBOARD_IMAGE\` | \`agentteams-dashboard:latest\` | Dashboard 镜像 |
+| \`AGENTTEAMS_DASHBOARD_IMAGE\` | \`\${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:\${AGENTTEAMS_VERSION}\` | Dashboard 镜像 |
 | \`AGENTTEAMS_AI_GATEWAY_ADMIN_URL\` | 自动检测 | Higress Console URL (共用登录) |
 
 ## 测试步骤
@@ -230,7 +238,6 @@ make uninstall-dashboard
 
 ## 检查清单
 
-- [x] 代码通过 shellcheck 检查
 - [x] 支持非交互模式 (\`AGENTTEAMS_NON_INTERACTIVE=1\`)
 - [x] 支持中英文双语
 - [x] 容器使用 Docker 网络连接
@@ -240,13 +247,19 @@ make uninstall-dashboard
 
 ## 相关链接
 
-- agentteams-dashboard 仓库: https://github.com/nillikechatchat/agentteams-dashboard
-- A2UI 协议: https://a2ui.org/
-- 安装脚本: https://github.com/nillikechatchat/agentteams-dashboard/blob/main/install/agentteams-dashboard.sh
-- 集成文档: https://github.com/nillikechatchat/agentteams-dashboard/blob/main/install/AGENTTEAMS_PATCH.md"
+- agentteams-dashboard 仓库: https://github.com/agentteams-group/agentteams-dashboard
+- 安装脚本: https://github.com/agentteams-group/agentteams-dashboard/blob/main/install/agentteams-dashboard.sh
+- 集成文档: https://github.com/agentteams-group/agentteams-dashboard/blob/main/install/AGENTTEAMS_PATCH.md"
     
-    # 尝试使用 gh CLI 创建 PR
-    if command -v gh &>/dev/null; then
+    # gh CLI 使用 GH_TOKEN（从 GITHUB_TOKEN 导出）；未认证时回退到手动指引
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        export GH_TOKEN="${GITHUB_TOKEN}"
+    fi
+    
+    # 保存 PR 内容到文件（无论是否自动创建，都便于人工核对）
+    echo "${pr_body}" > "${WORK_DIR}/pr-body.md"
+    
+    if command -v gh &>/dev/null && gh auth status &>/dev/null; then
         gh pr create \
             --repo "agentscope-ai/${REPO_NAME}" \
             --head "${GITHUB_USER}:${BRANCH_NAME}" \
@@ -256,7 +269,11 @@ make uninstall-dashboard
         
         ok "PR 已创建"
     else
-        warn "未安装 gh CLI，请手动创建 PR"
+        if ! command -v gh &>/dev/null; then
+            warn "未安装 gh CLI，请手动创建 PR"
+        else
+            warn "gh CLI 未登录（无 GITHUB_TOKEN/GH_TOKEN 且 gh auth status 失败），请手动创建 PR"
+        fi
         echo ""
         echo "请访问以下链接创建 PR:"
         echo "https://github.com/agentscope-ai/${REPO_NAME}/compare/main...${GITHUB_USER}:${BRANCH_NAME}"
@@ -265,9 +282,6 @@ make uninstall-dashboard
         echo "feat(install): integrate agentteams-dashboard as optional component"
         echo ""
         echo "PR 内容已保存到: ${WORK_DIR}/pr-body.md"
-        
-        # 保存 PR 内容到文件
-        echo "${pr_body}" > "${WORK_DIR}/pr-body.md"
     fi
 }
 

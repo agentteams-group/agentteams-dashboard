@@ -95,7 +95,7 @@ docker run -p 3000:3000 \
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AGENTTEAMS_CONTROLLER_URL` | AgentTeams Controller endpoint (server-side proxy) | `http://agentteams-controller.agentteams-system:8090` |
+| `AGENTTEAMS_CONTROLLER_URL` | AgentTeams Controller endpoint (server-side proxy) | `http://agentteams-controller:8090` |
 | `NEXT_PUBLIC_AGENTTEAMS_CONTROLLER_URL` | Browser-facing Controller URL (optional) | — |
 | `NEXT_PUBLIC_MATRIX_API_URL` | Matrix Homeserver endpoint | — |
 | `MATRIX_HOMESERVER_ALLOWLIST` | Comma-separated homeserver hostnames allowed through the Matrix proxy (exclusive once set) | — |

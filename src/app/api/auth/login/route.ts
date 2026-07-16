@@ -4,10 +4,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, forwardCookies, getHigressConsoleURL, higressErrorResponse } from '../../higress/proxy-helper';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 
+// Server-side default follows the embedded topology: the dashboard container
+// reaches Tuwunel directly inside the agentteams-controller container.
 const MATRIX_HOMESERVER =
   process.env.NEXT_PUBLIC_MATRIX_API_URL ||
   process.env.AGENTTEAMS_MATRIX_URL ||
-  'http://matrix-local.agentteams.io:18080';
+  'http://agentteams-controller:6167';
 
 export async function POST(request: NextRequest) {
   try {

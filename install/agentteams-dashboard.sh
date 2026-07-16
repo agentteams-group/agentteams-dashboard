@@ -17,7 +17,8 @@ set -euo pipefail
 CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
-DEFAULT_IMAGE="agentteams-dashboard:latest"
+# Must match the Makefile image coordinates (REGISTRY/REPO/name).
+DEFAULT_IMAGE="higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:latest"
 DATA_VOLUME="agentteams-dashboard-data"
 ENV_FILE="${HOME}/.agentteams-dashboard.env"
 
@@ -59,6 +60,8 @@ AGENTTEAMS_LLM_API_KEY=${AGENTTEAMS_LLM_API_KEY:-}
 AGENTTEAMS_OPENAI_BASE_URL=${AGENTTEAMS_OPENAI_BASE_URL:-}
 AGENTTEAMS_DEFAULT_MODEL=${AGENTTEAMS_DEFAULT_MODEL:-}
 AGENTTEAMS_AUTH_TOKEN=${AGENTTEAMS_AUTH_TOKEN:-}
+AGENTTEAMS_ADMIN_USER=${AGENTTEAMS_ADMIN_USER:-}
+AGENTTEAMS_ADMIN_PASSWORD=${AGENTTEAMS_ADMIN_PASSWORD:-}
 EOF
   ok "Configuration saved to ${ENV_FILE}"
 }
@@ -75,7 +78,7 @@ load_env() {
   AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-${DEFAULT_PORT}}"
   AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${DEFAULT_IMAGE}}"
   AGENTTEAMS_CONTROLLER_URL="${AGENTTEAMS_CONTROLLER_URL:-http://agentteams-controller:8090}"
-  NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://matrix-local.agentteams.io:6167}"
+  NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://agentteams-controller:6167}"
   AGENTTEAMS_LOCAL_ONLY="${AGENTTEAMS_LOCAL_ONLY:-0}"
   AGENTTEAMS_FS_ENDPOINT="${AGENTTEAMS_FS_ENDPOINT:-}"
   AGENTTEAMS_FS_ACCESS_KEY="${AGENTTEAMS_FS_ACCESS_KEY:-}"
@@ -86,6 +89,8 @@ load_env() {
   AGENTTEAMS_OPENAI_BASE_URL="${AGENTTEAMS_OPENAI_BASE_URL:-}"
   AGENTTEAMS_DEFAULT_MODEL="${AGENTTEAMS_DEFAULT_MODEL:-}"
   AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN:-}"
+  AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER:-}"
+  AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD:-}"
 }
 
 # ---------- uninstall ----------
@@ -184,7 +189,7 @@ wizard() {
   [ -z "${ctrl_url}" ] && ctrl_url="http://agentteams-controller:8090"
   prompt_value AGENTTEAMS_CONTROLLER_URL "AgentTeams Controller URL" "${ctrl_url}"
 
-  prompt_value NEXT_PUBLIC_MATRIX_API_URL "Matrix Homeserver URL" "http://matrix-local.agentteams.io:6167"
+  prompt_value NEXT_PUBLIC_MATRIX_API_URL "Matrix Homeserver URL" "http://agentteams-controller:6167"
 
   # Detect Higress Console URL from running container (for shared auth with Higress)
   # Use internal Docker network URL (container:port) — works for dashboard on the same network.
@@ -287,9 +292,13 @@ detect_runtime_env() {
   AGENTTEAMS_OPENAI_BASE_URL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_OPENAI_BASE_URL=//p')
   AGENTTEAMS_DEFAULT_MODEL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_DEFAULT_MODEL=//p')
 
-  # The controller writes the CLI token to /var/run/hiclaw/cli-token
-  # (older builds used /var/run/agentteams/cli-token).
-  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null || cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+  # The controller writes the CLI token to /var/run/hiclaw/cli-token.
+  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
+
+  # Admin credentials are set on the controller container by the AgentTeams
+  # installer; the dashboard needs them for the Higress ensure-ai bootstrap.
+  AGENTTEAMS_ADMIN_USER=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_USER=//p')
+  AGENTTEAMS_ADMIN_PASSWORD=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_PASSWORD=//p')
 
   # Always use the internal Docker-network Higress Console URL; a host IP saved
   # in an old env file is often unreachable from inside the dashboard container.
@@ -330,9 +339,11 @@ recreate_container() {
   env_args+=(-e AGENTTEAMS_CONTROLLER_URL="${AGENTTEAMS_CONTROLLER_URL}")
   env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}")
   env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}")
-  env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="matrix-local.agentteams.io,matrix.org")
+  env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="agentteams-controller,matrix-local.agentteams.io,matrix.org")
   env_args+=(-e DATABASE_URL="file:/app/db/dashboard.db")
   [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN}")
+  [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER}")
+  [ -n "${AGENTTEAMS_ADMIN_PASSWORD:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD}")
   [ -n "${AGENTTEAMS_FS_ENDPOINT:-}" ] && env_args+=(-e AGENTTEAMS_FS_ENDPOINT="${AGENTTEAMS_FS_ENDPOINT}")
   [ -n "${AGENTTEAMS_FS_ACCESS_KEY:-}" ] && env_args+=(-e AGENTTEAMS_FS_ACCESS_KEY="${AGENTTEAMS_FS_ACCESS_KEY}")
   [ -n "${AGENTTEAMS_FS_SECRET_KEY:-}" ] && env_args+=(-e AGENTTEAMS_FS_SECRET_KEY="${AGENTTEAMS_FS_SECRET_KEY}")

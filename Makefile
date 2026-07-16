@@ -13,13 +13,13 @@
 # ---------- Configuration ----------
 
 VERSION  ?= latest
-REGISTRY ?= registry.cn-hangzhou.aliyuncs.com
+REGISTRY ?= higress-registry.cn-hangzhou.cr.aliyuncs.com
 REPO     ?= agentteams
 
-IMAGE     ?= $(REGISTRY)/$(REPO)/agentteams
+IMAGE     ?= $(REGISTRY)/$(REPO)/agentteams-dashboard
 IMAGE_TAG ?= $(IMAGE):$(VERSION)
 
-LOCAL_IMAGE = agentteams/agentteams:$(VERSION)
+LOCAL_IMAGE = agentteams-dashboard:$(VERSION)
 
 # Multi-arch configuration
 MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64

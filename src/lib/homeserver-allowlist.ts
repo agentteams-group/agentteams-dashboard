@@ -6,6 +6,8 @@ const DEFAULT_ALLOWED_HOSTS = [
   'localhost',
   '127.0.0.1',
   '::1',
+  // Embedded topology: Tuwunel runs inside the agentteams-controller container.
+  'agentteams-controller',
   'matrix-local.agentteams.io',
   'matrix.org',
   'client.matrix.org',

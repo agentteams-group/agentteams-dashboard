@@ -13,9 +13,20 @@ function isInKubernetesPod(): boolean {
 }
 
 export async function GET() {
+  // Dashboard-specific override takes precedence.
   const envMode = process.env.AGENTTEAMS_DEPLOYMENT_MODE;
   if (envMode === 'embedded' || envMode === 'k8s') {
     return NextResponse.json({ mode: envMode, source: 'env' });
+  }
+
+  // Upstream AgentTeams convention (controller config.go): AGENTTEAMS_KUBE_MODE
+  // is 'embedded' (default, single docker container) or 'incluster' (k8s/helm).
+  const kubeMode = process.env.AGENTTEAMS_KUBE_MODE;
+  if (kubeMode === 'incluster' || kubeMode === 'k8s') {
+    return NextResponse.json({ mode: 'k8s', source: 'env' });
+  }
+  if (kubeMode === 'embedded') {
+    return NextResponse.json({ mode: 'embedded', source: 'env' });
   }
 
   const mode = isInKubernetesPod() ? 'k8s' : 'embedded';

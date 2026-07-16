@@ -170,14 +170,17 @@ export interface UpdateManagerRequest {
   image?: string;
 }
 
+// Matches the controller's snake_case schema (hiclaw-controller internal/server/types.go):
+// request {name, credential_key}, response {name, consumer_id, api_key, status}.
 export interface CreateConsumerRequest {
   name: string;
-  password: string;
+  credential_key?: string;
 }
 
 export interface ConsumerResponse {
   name: string;
   consumer_id?: string;
+  api_key?: string;
   status?: string;
 }
 

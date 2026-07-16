@@ -336,10 +336,17 @@ export function useCreateConsumer() {
 
   return useMutation({
     mutationFn: (data: CreateConsumerRequest) => agentteamsApi.createConsumer(data),
-    onSuccess: (_, variables) => {
+    onSuccess: (created, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-consumers'] });
-      toast.success(`Consumer "${variables.name}" 创建成功`);
-      addNotification({ type: 'success', title: 'Consumer 创建成功', message: `Consumer "${variables.name}" 已创建` });
+      // User-facing toast is handled by the caller (it surfaces created.api_key);
+      // keep the notification here and include the key when the controller returns one.
+      addNotification({
+        type: 'success',
+        title: 'Consumer 创建成功',
+        message: created?.api_key
+          ? `Consumer "${variables.name}" 已创建，API Key: ${created.api_key}`
+          : `Consumer "${variables.name}" 已创建`,
+      });
     },
     onError: (err) => {
       toast.error(`Consumer 创建失败: ${formatErrorMessage(err)}`);

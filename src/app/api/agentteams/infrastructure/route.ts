@@ -4,25 +4,29 @@ import type { InfrastructureInfo } from '@/lib/agentteams-api';
 
 const TIMEOUT_MS = 5000;
 
+// Defaults follow the embedded (single-container) topology: all platform
+// services live in the agentteams-controller container on the agentteams-net
+// docker network. Install scripts inject the env vars below; k8s deployments
+// must point them at the corresponding Services explicitly.
 const CONTROLLER_URL =
   process.env.AGENTTEAMS_CONTROLLER_URL ||
   process.env.AGENTTEAMS_API_URL ||
-  'http://agentteams-controller.agentteams-system:8090';
+  'http://agentteams-controller:8090';
 
 const MINIO_ENDPOINT =
   process.env.AGENTTEAMS_MINIO_URL ||
   process.env.AGENTTEAMS_FS_ENDPOINT || // set by install/agentteams-dashboard.sh
-  'http://agentteams-minio.agentteams-system:9000';
+  'http://agentteams-controller:9000';
 
 const MATRIX_ENDPOINT =
   process.env.AGENTTEAMS_MATRIX_URL ||
   process.env.NEXT_PUBLIC_MATRIX_API_URL || // set by install/agentteams-dashboard.sh
-  'http://matrix-local.agentteams.io:18080';
+  'http://agentteams-controller:6167';
 
 const HIGRESS_ENDPOINT =
   process.env.AGENTTEAMS_AI_GATEWAY_URL ||
   process.env.AGENTTEAMS_AI_GATEWAY_ADMIN_URL || // set by install/agentteams-dashboard.sh
-  'http://higress-gateway.agentteams-system:80';
+  'http://agentteams-controller:8001';
 
 async function fetchWithTimeout(
   url: string,

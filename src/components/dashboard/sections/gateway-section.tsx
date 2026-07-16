@@ -57,11 +57,19 @@ export function GatewaySection() {
   const handleCreateConsumer = async () => {
     if (!consumerName.trim()) return;
     try {
-      await createConsumer.mutateAsync({
+      // Controller field is credential_key; when omitted it auto-generates one
+      // and returns it as api_key — surface it, it is not retrievable later.
+      const created = await createConsumer.mutateAsync({
         name: consumerName.trim(),
-        password: consumerKey.trim() || `${consumerName.trim()}-${Date.now()}`,
+        credential_key: consumerKey.trim() || undefined,
       });
-      toast.success(`Consumer "${consumerName}" 创建成功`);
+      if (created?.api_key) {
+        toast.success(`Consumer "${consumerName}" 创建成功，API Key: ${created.api_key}`, {
+          duration: 15000,
+        });
+      } else {
+        toast.success(`Consumer "${consumerName}" 创建成功`);
+      }
       setConsumerName('');
       setConsumerKey('');
       setShowAddConsumer(false);
@@ -142,7 +150,7 @@ export function GatewaySection() {
               />
             </div>
             <div className="flex-1">
-              <Label className="text-xs">密码 (可选)</Label>
+              <Label className="text-xs">API Key (可选)</Label>
               <Input
                 value={consumerKey}
                 onChange={(e) => setConsumerKey(e.target.value)}

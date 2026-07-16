@@ -1,21 +1,22 @@
-From c6e0994e24fb5bd250f4c2c0b8ebc9a8f6db1b5c Mon Sep 17 00:00:00 2001
+From 9d63c6629529fb0ac3eae784245ad95209c44d1e Mon Sep 17 00:00:00 2001
 From: agentteams-dashboard <dashboard@agentteams.io>
-Date: Sun, 5 Jul 2026 21:02:06 +0800
+Date: Thu, 16 Jul 2026 14:45:39 +0800
 Subject: [PATCH 3/3] feat(Makefile): add Dashboard standalone targets
 
 Add Makefile targets for standalone Dashboard management:
+- build-dashboard: build the dashboard image
 - install-dashboard: build + install
 - update-dashboard: pull latest & recreate
 - uninstall-dashboard: remove container
 ---
- Makefile | 20 +++++++++++++++++++-
- 1 file changed, 19 insertions(+), 1 deletion(-)
+ Makefile | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index 24afbcd..bd61e8d 100644
+index 5a64260..23d1240 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -33,6 +33,7 @@ OPENHUMAN_WORKER_IMAGE ?= $(REGISTRY)/$(REPO)/agentteams-openhuman-worker
+@@ -34,6 +34,7 @@ OPENHUMAN_WORKER_IMAGE ?= $(REGISTRY)/$(REPO)/agentteams-openhuman-worker
  OPENCLAW_BASE_IMAGE  ?= $(REGISTRY)/$(REPO)/openclaw-base
  CONTROLLER_IMAGE     ?= $(REGISTRY)/$(REPO)/agentteams-controller
  EMBEDDED_IMAGE       ?= $(REGISTRY)/$(REPO)/agentteams-embedded
@@ -23,7 +24,7 @@ index 24afbcd..bd61e8d 100644
  
  MANAGER_TAG        ?= $(MANAGER_IMAGE):$(VERSION)
  MANAGER_COPAW_TAG  ?= $(MANAGER_COPAW_IMAGE):$(VERSION)
-@@ -110,6 +111,7 @@ LINES          ?= 50
+@@ -133,6 +134,7 @@ LINES          ?= 50
          buildx-setup \
          test test-quick test-installed test-embedded \
          install install-embedded uninstall uninstall-embedded replay replay-log \
@@ -31,8 +32,8 @@ index 24afbcd..bd61e8d 100644
          verify wait-ready wait-ready-embedded \
          generate sync-crds check-crd-sync \
          status logs \
-@@ -168,6 +170,10 @@ build-embedded: build-hiclaw-controller ## Build embedded all-in-one controller
- 		-t $(LOCAL_EMBEDDED) \
+@@ -196,6 +198,10 @@ build-embedded: build-hiclaw-controller ## Build embedded all-in-one controller
+ 		-t $(LOCAL_EMBEDDED_LEGACY) \
  		.
  
 +build-dashboard: ## Build agentteams-dashboard image
@@ -42,13 +43,10 @@ index 24afbcd..bd61e8d 100644
  build-worker: ## Build Worker image
  	@echo "==> Building Worker image: $(LOCAL_WORKER) (registry: $(HIGRESS_REGISTRY))"
  	docker build $(PLATFORM_FLAG) $(REGISTRY_ARG) $(OPENCLAW_BASE_BUILD_ARG) $(SHARED_LIB_CTX) $(DOCKER_BUILD_ARGS) \
-@@ -314,7 +320,19 @@ else
- 		$(if $(PUSH_LATEST),-t $(EMBEDDED_IMAGE):latest) \
- 		--push \
- 		-f agentteams-controller/Dockerfile.embedded .
--endif
-+	endif
-+
+@@ -362,6 +368,18 @@ else
+ 		-f hiclaw-controller/Dockerfile.embedded .
+ endif
+ 
 +# --- agentteams-dashboard standalone ---
 +.PHONY: install-dashboard update-dashboard uninstall-dashboard
 +
@@ -60,9 +58,10 @@ index 24afbcd..bd61e8d 100644
 +
 +uninstall-dashboard: ## Uninstall agentteams-dashboard
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh uninstall
- 
++
  push-manager: push-hiclaw-controller buildx-setup ## Build + push multi-arch Manager image (OpenClaw)
  	@echo "==> Building + pushing multi-arch Manager: $(MANAGER_TAG) [$(MULTIARCH_PLATFORMS)]"
+ ifeq ($(IS_PODMAN),1)
 -- 
 2.52.0
 

@@ -2465,7 +2465,7 @@ step_workspace() {
 step_dashboard() {
     AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_DASHBOARD_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/agentteams/agentteams:${AGENTTEAMS_VERSION}}"
+    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}"
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
 
     if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
@@ -2947,7 +2947,7 @@ _start_dashboard() {
     fi
 
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_DASHBOARD_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/agentteams/agentteams:${AGENTTEAMS_VERSION}}"
+    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}"
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
     local DASHBOARD_CONTAINER="agentteams-dashboard"
 
@@ -2973,11 +2973,11 @@ _start_dashboard() {
 
     # The dashboard authenticates its API proxy calls to the controller with the
     # controller's admin CLI token (minted at controller startup and written to
-    # /var/run/hiclaw/cli-token; older builds used /var/run/agentteams/cli-token).
+    # /var/run/hiclaw/cli-token).
     # Auto-detect it when the caller did not provide one — without it every
     # dashboard data API returns 401 and workers/teams/rooms appear empty.
     if [ -z "${AGENTTEAMS_AUTH_TOKEN:-}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
-        AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec agentteams-controller sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null || cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+        AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec agentteams-controller sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
         [ -z "${AGENTTEAMS_AUTH_TOKEN}" ] && log "WARNING: Could not read controller auth token (cli-token); dashboard API calls will be unauthenticated."
     fi
 
@@ -2987,6 +2987,10 @@ _start_dashboard() {
     _dash_env+=(-e "NEXT_PUBLIC_BASE_PATH=")
     [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ] && _dash_env+=(-e "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
     [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && _dash_env+=(-e "AGENTTEAMS_AUTH_TOKEN=${AGENTTEAMS_AUTH_TOKEN}")
+    # Admin credentials (from step_admin) let the dashboard bootstrap the Higress
+    # AI gateway (setup/ensure-ai) with the same account as the Console.
+    [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && _dash_env+=(-e "AGENTTEAMS_ADMIN_USER=${AGENTTEAMS_ADMIN_USER}")
+    [ -n "${AGENTTEAMS_ADMIN_PASSWORD:-}" ] && _dash_env+=(-e "AGENTTEAMS_ADMIN_PASSWORD=${AGENTTEAMS_ADMIN_PASSWORD}")
 
     # Detect Higress admin URL from controller
     if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
@@ -3288,7 +3292,7 @@ AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
 # agentteams-dashboard (management UI)
 AGENTTEAMS_DASHBOARD=${AGENTTEAMS_DASHBOARD:-1}
 AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD:-13000}
-AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_DASHBOARD_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/agentteams/agentteams:${AGENTTEAMS_VERSION}}
+AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}
 AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}
 EOF
 
@@ -4261,6 +4265,13 @@ uninstall_hiclaw() {
             ${DOCKER_CMD} rm -f "${w}" >/dev/null 2>&1 || true
             log "$(msg uninstall.removed "${w}")"
         done
+    fi
+
+    # Stop and remove the dashboard container (installed via step_dashboard)
+    if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-dashboard$"; then
+        log "Stopping and removing agentteams-dashboard..."
+        ${DOCKER_CMD} stop agentteams-dashboard >/dev/null 2>&1 || true
+        ${DOCKER_CMD} rm agentteams-dashboard >/dev/null 2>&1 || true
     fi
 
     # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses

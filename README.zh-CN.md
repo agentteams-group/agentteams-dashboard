@@ -95,7 +95,7 @@ docker run -p 3000:3000 \
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `AGENTTEAMS_CONTROLLER_URL` | AgentTeams Controller 地址（服务端代理用） | `http://agentteams-controller.agentteams-system:8090` |
+| `AGENTTEAMS_CONTROLLER_URL` | AgentTeams Controller 地址（服务端代理用） | `http://agentteams-controller:8090` |
 | `NEXT_PUBLIC_AGENTTEAMS_CONTROLLER_URL` | 浏览器端 Controller URL（可选） | — |
 | `NEXT_PUBLIC_MATRIX_API_URL` | Matrix Homeserver 地址 | — |
 | `MATRIX_HOMESERVER_ALLOWLIST` | Matrix 代理允许的 homeserver 主机名（逗号分隔，设置后排他生效） | — |
