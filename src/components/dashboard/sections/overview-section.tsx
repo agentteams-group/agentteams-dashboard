@@ -80,7 +80,7 @@ function useRefreshCountdown(intervalMs: number) {
 function AnimatedStat({ value, label, icon: Icon, color, sub }: { value: number | null; label: string; icon: React.ComponentType<{ className?: string }>; color: string; sub?: React.ReactNode }) {
   const animatedValue = useCounter(value ?? 0, 800);
   return (
-    <Card className="glass-card hover-lift">
+    <Card className="glass-card hover-lift h-full">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
@@ -402,7 +402,7 @@ export function OverviewSection() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Worker Phase Distribution PieChart */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-            <Card className="glass-card">
+            <Card className="glass-card h-full">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Worker 阶段分布</CardTitle>
               </CardHeader>
@@ -439,7 +439,7 @@ export function OverviewSection() {
 
           {/* Team Readiness BarChart */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-            <Card className="glass-card">
+            <Card className="glass-card h-full">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">团队就绪状态</CardTitle>
               </CardHeader>
@@ -471,22 +471,22 @@ export function OverviewSection() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Activity Feed */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-          <Card className="glass-card">
+          <Card className="glass-card h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-500" />
                 操作动态
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 pt-0">
+            <CardContent className="p-4 pt-0 flex flex-col h-full">
               {recentActivity.length > 0 ? (
-                <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-0.5">
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-0.5 min-h-0">
                   {recentActivity.map((n) => (
                     <ActivityFeedItem key={n.id} notification={n} />
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
                   <Activity className="w-8 h-8 mb-2 opacity-30" />
                   <p className="text-sm">暂无操作动态</p>
                   <p className="text-xs">执行操作后将在此显示</p>
@@ -498,16 +498,16 @@ export function OverviewSection() {
 
         {/* Infrastructure Health */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-          <Card className="glass-card">
+          <Card className="glass-card h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Server className="w-4 h-4 text-cyan-500" />
                 基础设施健康
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 pt-0">
+            <CardContent className="p-4 pt-0 flex flex-col h-full">
               {isConnected && infrastructure ? (
-                <div className="space-y-2">
+                <div className="flex-1 space-y-2">
                   {/* MinIO: embedded only */}
                   {mode !== 'k8s' && (
                     <HealthCard
@@ -549,7 +549,7 @@ export function OverviewSection() {
                   />
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
                   <Server className="w-8 h-8 mb-2 opacity-30" />
                   <p className="text-sm">
                     {isConnected ? '未获取到基础设施信息' : '连接 Controller 后查看基础设施状态'}
