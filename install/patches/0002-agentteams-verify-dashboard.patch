@@ -1,5 +1,5 @@
 From 6379ea3d9c44d0d49afe509d1764d5685f06c6d1 Mon Sep 17 00:00:00 2001
-From: TaDashboard <dashboard@agentteams.io>
+From: AgentTeams-Dashboard <dashboard@agentteams.io>
 Date: Sun, 5 Jul 2026 21:02:06 +0800
 Subject: [PATCH 2/3] feat(verify): add Dashboard health check
 

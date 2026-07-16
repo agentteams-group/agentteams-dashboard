@@ -1,6 +1,6 @@
 # AgentTeams Integration Patches
 
-This document describes how to integrate TaDashboard into the AgentTeams installation scripts.
+This document describes how to integrate AgentTeams-Dashboard into the AgentTeams installation scripts.
 
 ## Option A: Standalone Install (Recommended for existing installations)
 
@@ -20,9 +20,9 @@ Apply the patches in `install/patches/` to the AgentTeams repository.
 
 ```bash
 cd /path/to/AgentTeams
-git apply /path/to/TaDashboard/install/patches/0001-agentteams-install-dashboard.patch
-git apply /path/to/TaDashboard/install/patches/0002-agentteams-verify-dashboard.patch
-git apply /path/to/TaDashboard/install/patches/0003-Makefile-dashboard.patch
+git apply /path/to/AgentTeams-Dashboard/install/patches/0001-agentteams-install-dashboard.patch
+git apply /path/to/AgentTeams-Dashboard/install/patches/0002-agentteams-verify-dashboard.patch
+git apply /path/to/AgentTeams-Dashboard/install/patches/0003-Makefile-dashboard.patch
 ```
 
 ### Regenerate Patches
@@ -34,7 +34,7 @@ The patch files are generated from a working AgentTeams branch. To update them:
 #    install/agentteams-verify.sh, Makefile) to add or modify Dashboard integration.
 # 2. Commit each file separately with a descriptive message.
 # 3. Generate patches:
-git format-patch HEAD~3 -o /path/to/TaDashboard/install/patches/
+git format-patch HEAD~3 -o /path/to/AgentTeams-Dashboard/install/patches/
 # 4. Rename the generated files to the canonical names if necessary:
 #    0001-agentteams-install-dashboard.patch
 #    0002-agentteams-verify-dashboard.patch
@@ -69,7 +69,7 @@ The patches make the following changes:
 
 #### 3. `Makefile`
 
-- Add `DASHBOARD_CONTEXT ?= ./TaDashboard/`.
+- Add `DASHBOARD_CONTEXT ?= ./AgentTeams-Dashboard/`.
 - Add `install-dashboard`, `update-dashboard`, and `uninstall-dashboard` to `.PHONY`.
 - Add a `build-dashboard` target.
 - Add `install-dashboard`, `update-dashboard`, and `uninstall-dashboard` targets.

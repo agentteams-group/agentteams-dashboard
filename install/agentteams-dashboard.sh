@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# agentteams-dashboard.sh — Install / upgrade / uninstall TaDashboard
+# agentteams-dashboard.sh — Install / upgrade / uninstall AgentTeams-Dashboard
 # as an optional component of an existing AgentTeams deployment.
 #
 # Usage:
@@ -153,11 +153,11 @@ prompt_yes_no() {
 wizard() {
   echo ""
   echo -e "${CYAN}========================================${NC}"
-  echo -e "${CYAN}  TaDashboard Installation Wizard${NC}"
+  echo -e "${CYAN}  AgentTeams-Dashboard Installation Wizard${NC}"
   echo -e "${CYAN}========================================${NC}"
   echo ""
 
-  prompt_yes_no AGENTTEAMS_DASHBOARD "Install TaDashboard?" "1"
+  prompt_yes_no AGENTTEAMS_DASHBOARD "Install AgentTeams-Dashboard?" "1"
   if [ "${AGENTTEAMS_DASHBOARD}" != "1" ]; then
     info "Dashboard installation skipped."
     exit 0
@@ -287,9 +287,8 @@ detect_runtime_env() {
   AGENTTEAMS_OPENAI_BASE_URL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_OPENAI_BASE_URL=//p')
   AGENTTEAMS_DEFAULT_MODEL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_DEFAULT_MODEL=//p')
 
-  # Controller versions differ in token path: older builds (≤ v1.2.0-beta.1) write
-  # /var/run/hiclaw/cli-token, newer ones write /var/run/agentteams/cli-token. Try both.
-  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
+  # The controller writes the CLI token to /var/run/agentteams/cli-token.
+  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
 
   # Always use the internal Docker-network Higress Console URL; a host IP saved
   # in an old env file is often unreachable from inside the dashboard container.
@@ -378,7 +377,7 @@ recreate_container() {
 print_success() {
   echo ""
   echo -e "${GREEN}========================================${NC}"
-  echo -e "${GREEN}  TaDashboard ${1:-installed} successfully!${NC}"
+  echo -e "${GREEN}  AgentTeams-Dashboard ${1:-installed} successfully!${NC}"
   echo -e "${GREEN}========================================${NC}"
   echo ""
   local bind_host="0.0.0.0"
@@ -418,7 +417,7 @@ do_update() {
   load_env
 
   echo ""
-  info "Updating TaDashboard..."
+  info "Updating AgentTeams-Dashboard..."
   info "  Port:        ${AGENTTEAMS_PORT_DASHBOARD}"
   info "  Image:       ${AGENTTEAMS_DASHBOARD_IMAGE}"
   info "  Controller:  ${AGENTTEAMS_CONTROLLER_URL}"

@@ -1,5 +1,5 @@
 From c6e0994e24fb5bd250f4c2c0b8ebc9a8f6db1b5c Mon Sep 17 00:00:00 2001
-From: TaDashboard <dashboard@agentteams.io>
+From: AgentTeams-Dashboard <dashboard@agentteams.io>
 Date: Sun, 5 Jul 2026 21:02:06 +0800
 Subject: [PATCH 3/3] feat(Makefile): add Dashboard standalone targets
 
@@ -19,7 +19,7 @@ index 24afbcd..bd61e8d 100644
  OPENCLAW_BASE_IMAGE  ?= $(REGISTRY)/$(REPO)/openclaw-base
  CONTROLLER_IMAGE     ?= $(REGISTRY)/$(REPO)/agentteams-controller
  EMBEDDED_IMAGE       ?= $(REGISTRY)/$(REPO)/agentteams-embedded
-+DASHBOARD_CONTEXT    ?= ./TaDashboard/
++DASHBOARD_CONTEXT    ?= ./AgentTeams-Dashboard/
  
  MANAGER_TAG        ?= $(MANAGER_IMAGE):$(VERSION)
  MANAGER_COPAW_TAG  ?= $(MANAGER_COPAW_IMAGE):$(VERSION)
@@ -35,8 +35,8 @@ index 24afbcd..bd61e8d 100644
  		-t $(LOCAL_EMBEDDED) \
  		.
  
-+build-dashboard: ## Build TaDashboard image
-+	@echo "==> Building TaDashboard image"
++build-dashboard: ## Build AgentTeams-Dashboard image
++	@echo "==> Building AgentTeams-Dashboard image"
 +	$(MAKE) -C $(DASHBOARD_CONTEXT) build
 +
  build-worker: ## Build Worker image
@@ -49,16 +49,16 @@ index 24afbcd..bd61e8d 100644
 -endif
 +	endif
 +
-+# --- TaDashboard standalone ---
++# --- AgentTeams-Dashboard standalone ---
 +.PHONY: install-dashboard update-dashboard uninstall-dashboard
 +
-+install-dashboard: build-dashboard ## Install TaDashboard standalone
++install-dashboard: build-dashboard ## Install AgentTeams-Dashboard standalone
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh
 +
-+update-dashboard: ## Update TaDashboard (pull latest & recreate)
++update-dashboard: ## Update AgentTeams-Dashboard (pull latest & recreate)
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh update
 +
-+uninstall-dashboard: ## Uninstall TaDashboard
++uninstall-dashboard: ## Uninstall AgentTeams-Dashboard
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh uninstall
  
  push-manager: push-agentteams-controller buildx-setup ## Build + push multi-arch Manager image (OpenClaw)

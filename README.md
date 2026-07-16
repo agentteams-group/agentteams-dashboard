@@ -1,8 +1,8 @@
-# TaDashboard
+# AgentTeams-Dashboard
 
 > AgentTeams 的 Web 管理面板
 
-TaDashboard 是一个轻量级 **Next.js** Web 界面，用于可视化管理 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 集群中的 Worker、Team、Human、Manager 等资源，同时集成 Matrix 聊天能力。
+AgentTeams-Dashboard 是一个轻量级 **Next.js** Web 界面，用于可视化管理 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 集群中的 Worker、Team、Human、Manager 等资源，同时集成 Matrix 聊天能力。
 
 ---
 
@@ -162,4 +162,4 @@ docker run -p 3000:3000 \
 ## 相关仓库
 
 - [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — 多智能体协作运行时
-- [AgentTeams Controller](https://github.com/higress-group/hiclaw) — Controller
+- [AgentTeams Controller](https://github.com/higress-group/agentteams) — Controller
