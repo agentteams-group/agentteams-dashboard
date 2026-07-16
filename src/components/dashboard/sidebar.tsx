@@ -107,7 +107,7 @@ export function Sidebar({
     >
       <div className="flex items-center gap-2 px-4 h-14 border-b border-border">
         <div className="w-8 h-8 rounded-lg mesh-gradient flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-          H
+          A
         </div>
         {!collapsed && (
           <motion.div

@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   title: "AgentTeams Dashboard - AI 集群管理面板",
   description: "AgentTeams 控制器仪表盘，管理 Workers、Teams、Managers 和基础设施",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/agentteams-logo.svg",
   },
 };
 

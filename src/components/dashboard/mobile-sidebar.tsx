@@ -52,7 +52,7 @@ export function MobileSidebar({
             <div className="flex items-center justify-between px-4 h-14 border-b border-border">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg mesh-gradient flex items-center justify-center text-white font-bold text-sm">
-                  H
+                  A
                 </div>
                 <span className="font-bold text-lg">AgentTeams</span>
               </div>
