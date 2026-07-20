@@ -18,8 +18,9 @@ function extractSessionCookie(cookie: string): string {
     .map((c) => c.trim())
     .filter((c) => {
       const name = c.split('=')[0];
-      // Higress Console typically uses session cookies; match common patterns.
-      return /^(_?higress|session|connect\.sid)/i.test(name);
+      // Higress Console uses `_hi_sess` (and historically `_higress*`/`higress*`);
+      // also accept generic session / connect.sid for local dev fallback stores.
+      return /^(_?hi(gress)?|session|connect\.sid)/i.test(name);
     })
     .join(';');
 }
