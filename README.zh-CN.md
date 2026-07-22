@@ -7,7 +7,7 @@
 
   [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-  [![Build Dashboard Image](https://github.com/higress-group/TaDashboard/actions/workflows/build.yml/badge.svg)](https://github.com/higress-group/TaDashboard/actions/workflows/build.yml)
+  [![Build Dashboard Image](https://github.com/agentteams-group/agentteams-dashboard/actions/workflows/build.yml/badge.svg)](https://github.com/agentteams-group/agentteams-dashboard/actions/workflows/build.yml)
   [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
   [![React](https://img.shields.io/badge/React-19-149eca?logo=react)](https://react.dev/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -84,11 +84,15 @@ npm start
 ### Docker 构建
 
 ```bash
-docker build -t agentteams-dashboard:latest .
-docker run -p 3000:3000 \
+# 直接拉取预构建镜像
+docker run -d -p 13000:3000 \
+  --name agentteams-dashboard \
   -e AGENTTEAMS_CONTROLLER_URL=http://host.docker.internal:8090 \
   -e NEXT_PUBLIC_MATRIX_API_URL=http://host.docker.internal:6167 \
-  agentteams-dashboard:latest
+  ghcr.io/agentteams-group/agentteams-dashboard:v1.0.0
+
+# 或从源码构建
+docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.0.0 .
 ```
 
 ## ⚙️ 环境变量
