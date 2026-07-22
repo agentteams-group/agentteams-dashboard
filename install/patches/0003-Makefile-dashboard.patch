@@ -1,93 +1,44 @@
-From 495a3fe03fe2c1700cfa74178cbf976f243f1eb4 Mon Sep 17 00:00:00 2001
-From: agentteams-dashboard <d******@agentteams.io>
-Date: Wed, 22 Jul 2026 21:33:20 +0800
-Subject: [PATCH] feat(Makefile): add Dashboard standalone targets
-
-- build/install/update/uninstall-dashboard targets
-- wait-dashboard-ready with configurable port
-- DASHBOARD_CONTEXT existence check and error propagation
----
- Makefile | 46 +++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 45 insertions(+), 1 deletion(-)
-
 diff --git a/Makefile b/Makefile
-index 87073e8..d67ae52 100644
+index 87073e8..5d1da71 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -34,6 +34,7 @@ OPENHUMAN_WORKER_IMAGE ?= $(REGISTRY)/$(REPO)/agentteams-openhuman-worker
- OPENCLAW_BASE_IMAGE  ?= $(REGISTRY)/$(REPO)/openclaw-base
- CONTROLLER_IMAGE     ?= $(REGISTRY)/$(REPO)/agentteams-controller
- EMBEDDED_IMAGE       ?= $(REGISTRY)/$(REPO)/agentteams-embedded
-+DASHBOARD_CONTEXT    ?= ./agentteams-dashboard/
- 
- MANAGER_TAG        ?= $(MANAGER_IMAGE):$(VERSION)
- MANAGER_COPAW_TAG  ?= $(MANAGER_COPAW_IMAGE):$(VERSION)
-@@ -116,7 +117,7 @@ LINES          ?= 50
-         push-native-qwenpaw-worker \
-         buildx-setup \
-         test test-quick test-installed test-embedded \
--        install install-embedded uninstall uninstall-embedded replay replay-log \
-+        install install-embedded uninstall uninstall-embedded replay replay-log install-dashboard update-dashboard uninstall-dashboard wait-dashboard-ready \
-         verify wait-ready wait-ready-embedded \
-         generate sync-crds check-crd-sync \
-         status logs \
-@@ -175,6 +176,15 @@ build-embedded: build-agentteams-controller ## Build embedded all-in-one control
- 		-t $(LOCAL_EMBEDDED) \
- 		.
- 
-+build-dashboard: ## Build agentteams-dashboard image
+@@ -892,3 +892,39 @@ help: ## Show this help
+ 	@echo "  DATE_TAG         Tag for date-pinned images  (default: YYYYMMDD)"
+ 	@echo "  DRY_RUN          Show commands only           (set to 1)"
+ 	@echo "  USE_CONTAINER    Use skopeo container         (set to 1)"
++
++# ---- AgentTeams Dashboard targets ----
++DASHBOARD_CONTEXT ?= ../agentteams-dashboard
++
++.PHONY: build-dashboard
++build-dashboard:
 +	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
-+		echo "ERROR: DASHBOARD_CONTEXT directory not found: $(DASHBOARD_CONTEXT)"; \
-+		echo "Set DASHBOARD_CONTEXT to the agentteams-dashboard source directory."; \
++		echo "Error: DASHBOARD_CONTEXT=$(DASHBOARD_CONTEXT) does not exist"; \
 +		exit 1; \
 +	fi
-+	@echo "==> Building agentteams-dashboard image"
-+	$(MAKE) -C $(DASHBOARD_CONTEXT) build
++	$(MAKE) -C $(DASHBOARD_CONTEXT) image
 +
- build-worker: ## Build Worker image
- 	@echo "==> Building Worker image: $(LOCAL_WORKER) (registry: $(HIGRESS_REGISTRY))"
- 	docker build $(PLATFORM_FLAG) $(REGISTRY_ARG) $(OPENCLAW_BASE_BUILD_ARG) $(SHARED_LIB_CTX) $(DOCKER_BUILD_ARGS) \
-@@ -738,6 +748,40 @@ uninstall-embedded: ## Stop and remove embedded containers
- 	fi
- 	@echo "==> AgentTeams (embedded) uninstalled"
- 
-+# --- agentteams-dashboard standalone management ---
-+.PHONY: install-dashboard update-dashboard uninstall-dashboard wait-dashboard-ready
++.PHONY: install-dashboard
++install-dashboard: build-dashboard wait-dashboard-ready
 +
-+install-dashboard: ## Install agentteams-dashboard standalone
-+	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
-+		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
-+	fi
-+	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh
-+	@$(MAKE) wait-dashboard-ready
++.PHONY: update-dashboard
++update-dashboard: build-dashboard
++	bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh update
 +
-+update-dashboard: ## Update agentteams-dashboard (pull latest & recreate)
-+	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
-+		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
-+	fi
-+	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh update
-+	@$(MAKE) wait-dashboard-ready
++.PHONY: uninstall-dashboard
++uninstall-dashboard:
++	bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh uninstall
 +
-+uninstall-dashboard: ## Uninstall agentteams-dashboard
-+	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
-+		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
-+	fi
-+	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh uninstall
-+
-+wait-dashboard-ready: ## Wait for dashboard HTTP endpoint to respond
-+	@echo "Waiting for agentteams-dashboard to be ready..."
++.PHONY: wait-dashboard-ready
++wait-dashboard-ready:
++	@echo "Waiting for Dashboard to be ready..."
 +	@PORT=$${AGENTTEAMS_PORT_DASHBOARD:-13000}; \
 +	for i in $$(seq 1 30); do \
-+		if curl -sf -o /dev/null --max-time 3 http://127.0.0.1:$$PORT/ 2>/dev/null; then \
-+			echo "Dashboard is ready!"; exit 0; \
++		if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$$PORT/" 2>/dev/null | grep -qE "200|301|302"; then \
++			echo "Dashboard ready on port $$PORT"; \
++			exit 0; \
 +		fi; \
 +		sleep 2; \
 +	done; \
-+	echo "ERROR: Dashboard did not respond within 60s"; exit 1
-+
- # ---------- Replay ----------
- 
- replay: ## Send a task to Manager (TASK="..." or interactive, YOLO mode auto-enabled)
--- 
-2.43.0
-
++	echo "Dashboard startup timed out"; \
++	exit 1

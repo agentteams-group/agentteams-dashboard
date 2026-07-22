@@ -18,7 +18,7 @@ CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
 # Must match the Makefile image coordinates (REGISTRY/REPO/name).
-DEFAULT_IMAGE="higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:latest"
+DEFAULT_IMAGE="higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:v1.0.0"
 DATA_VOLUME="agentteams-dashboard-data"
 ENV_FILE="${HOME}/.agentteams-dashboard.env"
 
