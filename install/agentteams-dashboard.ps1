@@ -15,7 +15,7 @@ param(
     [string]$Action = "install",
 
     [int]$Port = 13000,
-    [string]$Image = "higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:latest",
+    [string]$Image = "higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:v1.0.0",
     [string]$ControllerUrl = "http://agentteams-controller:8090",
     [string]$MatrixUrl = "http://agentteams-controller:6167",
     [switch]$LocalOnly
@@ -192,18 +192,21 @@ function Do-Install {
     $envArgs = Build-EnvArgs -CtrlEnv $ctrlEnv
 
     # Port binding (default to localhost only)
-    $portBind = "127.0.0.1:${Port}:3000"
+    $portBind = "127.0.0.1:{0}:3000" -f $Port
     if (-not $LocalOnly -and $env:AGENTTEAMS_LOCAL_ONLY -ne "1") {
-        $portBind = "${Port}:3000"
+        $portBind = "{0}:3000" -f $Port
     }
+
+    $volumeArg = "{0}:/app/db" -f $DataVolume
+    $portArg = "{0}:3000" -f $portBind
 
     Write-Info "Starting $ContainerName..."
     & $DockerCmd run -d `
         --name $ContainerName `
         --restart unless-stopped `
         --network $NetworkName `
-        -p $portBind `
-        -v "${DataVolume}:/app/db" `
+        -p $portArg `
+        -v $volumeArg `
         @envArgs `
         $Image
 
