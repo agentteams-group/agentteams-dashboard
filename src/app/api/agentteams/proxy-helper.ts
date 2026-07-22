@@ -98,11 +98,13 @@ export async function proxyToAgentTeams(
     };
 
     // In cluster mode the dashboard must authenticate to the controller using its
-    // own service-account token. Prefer that over any browser-supplied Authorization.
-    // Only fall back to the incoming header when no pod token is configured.
+    // own service-account token. When SA token is configured, NEVER trust the
+    // browser-supplied Authorization header to prevent token injection attacks.
+    // Only fall back to the incoming header when no server-side token exists at all.
     const saToken = await getAuthToken();
-    const incomingAuth = request.headers.get('authorization');
-    const authToken = saToken || (incomingAuth ? incomingAuth.replace(/^Bearer\s+/i, '') : undefined);
+    const authToken = saToken || (
+      request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || undefined
+    );
     if (authToken) {
       (fetchOptions.headers as Record<string, string>)['authorization'] = `Bearer ${authToken}`;
     }

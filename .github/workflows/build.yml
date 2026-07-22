@@ -11,13 +11,13 @@ on:
     branches:
       - main
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+      - 'v*.*.*'
+      - 'v*.*.*-*'
 
 env:
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
   REPO: agentteams
-  IMAGE_NAME: agentteams
+  IMAGE_NAME: agentteams-dashboard
 
 jobs:
   build:

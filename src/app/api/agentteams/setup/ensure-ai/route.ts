@@ -7,13 +7,26 @@ import { callHigressConsole, getHigressConsoleURL } from '../../../higress/proxy
 export async function POST() {
   const consoleUrl = getHigressConsoleURL();
 
+  const adminUser = process.env.AGENTTEAMS_ADMIN_USER;
+  const adminPassword = process.env.AGENTTEAMS_ADMIN_PASSWORD;
+
+  // Refuse to operate without explicitly configured admin credentials.
+  // Never fall back to hardcoded defaults to avoid unauthorized gateway
+  // reconfiguration when the deployer did not set the env vars.
+  if (!adminUser || !adminPassword) {
+    return NextResponse.json(
+      { error: 'AGENTTEAMS_ADMIN_USER and AGENTTEAMS_ADMIN_PASSWORD must be configured' },
+      { status: 500 }
+    );
+  }
+
   try {
     // Step 1: Login to get session cookie
     const { response: loginRes } = await callHigressConsole('/session/login', {
       method: 'POST',
       body: {
-        username: process.env.AGENTTEAMS_ADMIN_USER || 'admin',
-        password: process.env.AGENTTEAMS_ADMIN_PASSWORD || 'admin123',
+        username: adminUser,
+        password: adminPassword,
       },
       consoleUrl,
     });

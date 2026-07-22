@@ -1,0 +1,67 @@
+name: Install Test
+
+on:
+  pull_request:
+    paths:
+      - 'install/**'
+      - '.github/workflows/install-test.yml'
+  workflow_dispatch:
+
+jobs:
+  install-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [docker, podman]
+        os: [ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          large-packages: false
+
+      - name: Checkout agentteams-dashboard
+        uses: actions/checkout@v4
+
+      - name: Install Podman (if selected)
+        if: matrix.runtime == 'podman'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman podman-docker
+          podman info
+
+      - name: Check Docker/Podman availability
+        run: ${{ matrix.runtime }} --version
+
+      - name: Validate shell script syntax
+        run: bash -n install/agentteams-dashboard.sh
+
+      - name: Validate patches apply cleanly to upstream
+        run: |
+          git clone --depth 1 https://github.com/agentscope-ai/AgentTeams.git /tmp/agentteams-upstream
+          cd /tmp/agentteams-upstream
+          for patch in ${{ github.workspace }}/install/patches/*.patch; do
+            echo "Applying $(basename "$patch")..."
+            git apply --check "$patch"
+          done
+          echo "All patches apply cleanly!"
+
+      - name: Validate PowerShell script syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          $tokens = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              "${{ github.workspace }}/install/agentteams-dashboard.ps1",
+              [ref]$tokens,
+              [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+          }
+          Write-Host "PowerShell syntax OK"

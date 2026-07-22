@@ -1,19 +1,17 @@
-From 9d63c6629529fb0ac3eae784245ad95209c44d1e Mon Sep 17 00:00:00 2001
-From: agentteams-dashboard <dashboard@agentteams.io>
-Date: Thu, 16 Jul 2026 14:45:39 +0800
-Subject: [PATCH 3/3] feat(Makefile): add Dashboard standalone targets
+From 495a3fe03fe2c1700cfa74178cbf976f243f1eb4 Mon Sep 17 00:00:00 2001
+From: agentteams-dashboard <d******@agentteams.io>
+Date: Wed, 22 Jul 2026 21:33:20 +0800
+Subject: [PATCH] feat(Makefile): add Dashboard standalone targets
 
-Add Makefile targets for standalone Dashboard management:
-- build-dashboard: build the dashboard image
-- install-dashboard: build + install
-- update-dashboard: pull latest & recreate
-- uninstall-dashboard: remove container
+- build/install/update/uninstall-dashboard targets
+- wait-dashboard-ready with configurable port
+- DASHBOARD_CONTEXT existence check and error propagation
 ---
- Makefile | 18 ++++++++++++++++++
- 1 file changed, 18 insertions(+)
+ Makefile | 46 +++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 45 insertions(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index 5a64260..23d1240 100644
+index 87073e8..d67ae52 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -34,6 +34,7 @@ OPENHUMAN_WORKER_IMAGE ?= $(REGISTRY)/$(REPO)/agentteams-openhuman-worker
@@ -24,44 +22,72 @@ index 5a64260..23d1240 100644
  
  MANAGER_TAG        ?= $(MANAGER_IMAGE):$(VERSION)
  MANAGER_COPAW_TAG  ?= $(MANAGER_COPAW_IMAGE):$(VERSION)
-@@ -133,6 +134,7 @@ LINES          ?= 50
+@@ -116,7 +117,7 @@ LINES          ?= 50
+         push-native-qwenpaw-worker \
          buildx-setup \
          test test-quick test-installed test-embedded \
-         install install-embedded uninstall uninstall-embedded replay replay-log \
-+        install-dashboard update-dashboard uninstall-dashboard \
+-        install install-embedded uninstall uninstall-embedded replay replay-log \
++        install install-embedded uninstall uninstall-embedded replay replay-log install-dashboard update-dashboard uninstall-dashboard wait-dashboard-ready \
          verify wait-ready wait-ready-embedded \
          generate sync-crds check-crd-sync \
          status logs \
-@@ -196,6 +198,10 @@ build-embedded: build-hiclaw-controller ## Build embedded all-in-one controller
- 		-t $(LOCAL_EMBEDDED_LEGACY) \
+@@ -175,6 +176,15 @@ build-embedded: build-agentteams-controller ## Build embedded all-in-one control
+ 		-t $(LOCAL_EMBEDDED) \
  		.
  
 +build-dashboard: ## Build agentteams-dashboard image
++	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
++		echo "ERROR: DASHBOARD_CONTEXT directory not found: $(DASHBOARD_CONTEXT)"; \
++		echo "Set DASHBOARD_CONTEXT to the agentteams-dashboard source directory."; \
++		exit 1; \
++	fi
 +	@echo "==> Building agentteams-dashboard image"
 +	$(MAKE) -C $(DASHBOARD_CONTEXT) build
 +
  build-worker: ## Build Worker image
  	@echo "==> Building Worker image: $(LOCAL_WORKER) (registry: $(HIGRESS_REGISTRY))"
  	docker build $(PLATFORM_FLAG) $(REGISTRY_ARG) $(OPENCLAW_BASE_BUILD_ARG) $(SHARED_LIB_CTX) $(DOCKER_BUILD_ARGS) \
-@@ -362,6 +368,18 @@ else
- 		-f hiclaw-controller/Dockerfile.embedded .
- endif
+@@ -738,6 +748,40 @@ uninstall-embedded: ## Stop and remove embedded containers
+ 	fi
+ 	@echo "==> AgentTeams (embedded) uninstalled"
  
-+# --- agentteams-dashboard standalone ---
-+.PHONY: install-dashboard update-dashboard uninstall-dashboard
++# --- agentteams-dashboard standalone management ---
++.PHONY: install-dashboard update-dashboard uninstall-dashboard wait-dashboard-ready
 +
-+install-dashboard: build-dashboard ## Install agentteams-dashboard standalone
++install-dashboard: ## Install agentteams-dashboard standalone
++	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
++		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
++	fi
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh
++	@$(MAKE) wait-dashboard-ready
 +
 +update-dashboard: ## Update agentteams-dashboard (pull latest & recreate)
++	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
++		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
++	fi
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh update
++	@$(MAKE) wait-dashboard-ready
 +
 +uninstall-dashboard: ## Uninstall agentteams-dashboard
++	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
++		echo "ERROR: DASHBOARD_CONTEXT not found: $(DASHBOARD_CONTEXT)"; exit 1; \
++	fi
 +	@bash $(DASHBOARD_CONTEXT)/install/agentteams-dashboard.sh uninstall
 +
- push-manager: push-hiclaw-controller buildx-setup ## Build + push multi-arch Manager image (OpenClaw)
- 	@echo "==> Building + pushing multi-arch Manager: $(MANAGER_TAG) [$(MULTIARCH_PLATFORMS)]"
- ifeq ($(IS_PODMAN),1)
++wait-dashboard-ready: ## Wait for dashboard HTTP endpoint to respond
++	@echo "Waiting for agentteams-dashboard to be ready..."
++	@PORT=$${AGENTTEAMS_PORT_DASHBOARD:-13000}; \
++	for i in $$(seq 1 30); do \
++		if curl -sf -o /dev/null --max-time 3 http://127.0.0.1:$$PORT/ 2>/dev/null; then \
++			echo "Dashboard is ready!"; exit 0; \
++		fi; \
++		sleep 2; \
++	done; \
++	echo "ERROR: Dashboard did not respond within 60s"; exit 1
++
+ # ---------- Replay ----------
+ 
+ replay: ## Send a task to Manager (TASK="..." or interactive, YOLO mode auto-enabled)
 -- 
-2.52.0
+2.43.0
 

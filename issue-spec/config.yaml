@@ -1,0 +1,8 @@
+rules:
+  language: "Simplified Chinese (简体中文)"
+  language_instructions: >-
+    Write all natural-language content (issue titles, descriptions, rationale,
+    design notes, and QUESTION/REVIEW/VERIFY/scenario prose) in Simplified Chinese
+    (简体中文). Keep canonical structural tokens in English so validation passes:
+    the `## Requirement:` and `### Scenario:` headings, the `**WHEN**`/`**THEN**`
+    scenario bullets, the MUST/SHALL normative keywords, and typed comment headers.
