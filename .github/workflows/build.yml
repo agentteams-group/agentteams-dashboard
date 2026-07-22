@@ -1,43 +1,52 @@
-name: Build Dashboard Image
+name: Publish Dashboard Image
 
 on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Image version tag (e.g. v1.0.0). Leave empty for latest.'
-        required: false
+        description: "Image version (for example, v0.2.0)"
+        required: true
         type: string
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*.*.*'
-      - 'v*.*.*-*'
+
+concurrency:
+  group: dashboard-image-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  REGISTRY: higress-registry.cn-hangzhou.cr.aliyuncs.com
   REPO: agentteams
-  IMAGE_NAME: agentteams-dashboard
 
 jobs:
-  build:
+  publish:
+    name: Build and push multi-arch image
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - name: Free Up GitHub Actions Ubuntu Runner Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+
+          if ! [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: ${VERSION}" >&2
+            exit 1
+          fi
+
+          echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -45,42 +54,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Registry
+      - name: Login to registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Extract metadata
-        id: meta
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${{ github.ref_name }}"
-          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
-            VERSION="latest"
-          else
-            VERSION="${{ inputs.version }}"
-            if [ -z "${VERSION}" ]; then
-              VERSION="latest"
-            fi
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-          if echo "${VERSION}" | grep -qiE '-(rc|beta|alpha|pre|preview|dev|snapshot)(\.[0-9]+)?$' || [ "${VERSION}" = "latest" ]; then
-            echo "push_latest=0" >> $GITHUB_OUTPUT
-          else
-            echo "push_latest=1" >> $GITHUB_OUTPUT
-          fi
-
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.REPO }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ steps.meta.outputs.push_latest == '1' && format('{0}/{1}/{2}:latest', env.REGISTRY, env.REPO, env.IMAGE_NAME) || '' }}
-          build-args: |
-            NEXT_PUBLIC_BASE_PATH=
+        run: |
+          make push \
+            VERSION="${{ steps.version.outputs.value }}" \
+            REGISTRY="${{ env.REGISTRY }}" \
+            REPO="${{ env.REPO }}" \
+            DOCKER_BUILD_ARGS="--build-arg NEXT_PUBLIC_BASE_PATH="
+
+      - name: Publish summary
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO }}/agentteams-dashboard:${VERSION}"
+          echo "### Dashboard image published" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Image: \`${IMAGE}\`" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Platforms: \`linux/amd64, linux/arm64\`" >> "${GITHUB_STEP_SUMMARY}"
