@@ -1,46 +1,42 @@
-From 3610a6ae6a4547ab5c4788e2534a40ff334c3171 Mon Sep 17 00:00:00 2001
-From: agentteams-dashboard <d******@agentteams.io>
-Date: Wed, 22 Jul 2026 21:33:20 +0800
-Subject: [PATCH] feat(install): add dashboard accessibility check
-
----
- install/agentteams-verify.sh | 23 +++++++++++++++++++++++
- 1 file changed, 23 insertions(+)
-
 diff --git a/install/agentteams-verify.sh b/install/agentteams-verify.sh
-index 10f0448..cbb93ac 100755
+index 10f0448..37d1d36 100755
 --- a/install/agentteams-verify.sh
 +++ b/install/agentteams-verify.sh
-@@ -163,6 +163,29 @@ else
+@@ -163,6 +163,37 @@ else
      fi
  fi
  
-+# 7. Dashboard accessible (if the dashboard container is running)
-+PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-+if ${DOCKER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-dashboard$"; then
-+    # Read the host port mapping from the dashboard container itself
-+    _dash_port=$(${DOCKER_CMD} port agentteams-dashboard 3000 2>/dev/null | head -1 | sed 's/.*://')
-+    [ -n "${_dash_port}" ] && PORT_DASHBOARD="${_dash_port}"
-+    dash_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-+        "http://127.0.0.1:${PORT_DASHBOARD}/" 2>/dev/null) || dash_status="000"
-+    if [ "${dash_status}" = "200" ]; then
-+        check_pass "Dashboard accessible on port ${PORT_DASHBOARD}"
-+    else
-+        check_fail "Dashboard accessible on port ${PORT_DASHBOARD} (HTTP ${dash_status})"
-+    fi
++
++# 7. Dashboard accessible (optional component)
++ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
++if [ ! -f "${ENV_FILE}" ]; then
++    check_pass "Dashboard not installed (no env file, skipped)"
 +else
-+    # Dashboard container not running; check if it was enabled in env file
-+    _env_file="${HOME}/agentteams-manager.env"
-+    if [ -f "${_env_file}" ] && grep -q '^AGENTTEAMS_DASHBOARD=1' "${_env_file}" 2>/dev/null; then
-+        check_fail "Dashboard was enabled but container is not running"
++    dashboard_enabled=$(grep -E '^AGENTTEAMS_DASHBOARD=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "0")
++    dashboard_port=$(grep -E '^AGENTTEAMS_PORT_DASHBOARD=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "13000")
++
++    if [ "${dashboard_enabled}" != "1" ]; then
++        check_pass "Dashboard not enabled (skipped)"
 +    else
-+        echo "  [SKIP] Dashboard not installed"
++        # Check container running
++        ctr_id=$(${DOCKER_CMD} ps -q -f name=agentteams-dashboard 2>/dev/null)
++        if [ -z "${ctr_id}" ]; then
++            check_fail "Dashboard container not running"
++        else
++            # Get actual mapped port
++            host_port=$(${DOCKER_CMD} port agentteams-dashboard 3000/tcp 2>/dev/null | head -1 | sed 's/.*://' || echo "")
++            if [ -z "${host_port}" ]; then
++                host_port="${dashboard_port}"
++            fi
++            # HTTP check
++            if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${host_port}/" --connect-timeout 5 2>/dev/null | grep -qE "200|301|302"; then
++                check_pass "Dashboard accessible on port ${host_port}"
++            else
++                check_fail "Dashboard not responding on port ${host_port}"
++            fi
++        fi
 +    fi
 +fi
-+
  # ---------- Summary ----------
  
  TOTAL=$((PASS + FAIL))
--- 
-2.43.0
-

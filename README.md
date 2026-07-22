@@ -49,19 +49,44 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 
 ### Install as an AgentTeams component (recommended)
 
-If you already have [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installed, add the Dashboard with one command:
+The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via patch files under `install/patches/`. When the patches are applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
+
+- **Default version**: `v1.0.0` (configurable via `AGENTTEAMS_DASHBOARD_VERSION`)
+- **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
+- **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
+
+You can also install the Dashboard standalone against an already-running AgentTeams cluster:
 
 ```bash
-# Install
+# Linux / macOS — standalone install
 bash install/agentteams-dashboard.sh
+
+# Windows — PowerShell install
+install/agentteams-dashboard.ps1
 
 # Uninstall
 bash install/agentteams-dashboard.sh uninstall
 ```
 
-Default port is `13000` — visit `http://127.0.0.1:13000/` after installation.
+After installation visit `http://127.0.0.1:13000/`.
 
-See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed integration notes.
+#### Integration environment variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
+| `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag | `v1.0.0` |
+| `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
+
+Non-interactive install example:
+
+```bash
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.0.0 \
+  bash agentteams-install.sh --non-interactive
+```
+
+See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed integration notes (patch contents, Makefile targets, verification).
 
 ### Run standalone
 
