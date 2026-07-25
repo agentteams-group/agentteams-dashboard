@@ -49,11 +49,13 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 
 ### Install as an AgentTeams component (recommended)
 
-The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via patch files under `install/patches/`. When the patches are applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
+The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via a patch file under `install/patches/`. When applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
 
-- **Default version**: `v1.0.0` (configurable via `AGENTTEAMS_DASHBOARD_VERSION`)
+- **Default version**: `v1.2.0-beta.1` (configurable via `AGENTTEAMS_DASHBOARD_VERSION`, independent of AgentTeams version)
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
+- **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
+- **Platform**: Linux/macOS (Bash installer) only. PowerShell support is planned.
 
 You can also install the Dashboard standalone against an already-running AgentTeams cluster:
 
@@ -76,17 +78,26 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag | `v1.0.0` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.0-beta.1` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
+| `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
+
+**Key integration features**:
+- Independent versioning — AgentTeams and Dashboard can release on different schedules
+- Full env persistence — keep-all upgrades preserve all Dashboard settings
+- Explicit URL priority — `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` overrides auto-detection
+- Auto URL normalization — `http://` is prepended if protocol is missing
+- CLI token polling — 30s retry with graceful fallback
+- Legacy HiClaw compatibility — also reads `/var/run/hiclaw/cli-token`
 
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.0.0 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.0-beta.1 \
   bash agentteams-install.sh --non-interactive
 ```
 
-See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed integration notes (patch contents, Makefile targets, verification).
+See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed integration notes (patch contents, Makefile targets, verification, and roadmap).
 
 ### Run standalone
 

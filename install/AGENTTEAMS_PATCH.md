@@ -12,68 +12,108 @@ bash install/agentteams-dashboard.sh update   # pull latest & recreate
 bash install/agentteams-dashboard.sh uninstall
 ```
 
+**Windows (PowerShell)**:
+
+```powershell
+.\install\agentteams-dashboard.ps1
+```
+
 ## Option B: Patch into AgentTeams Install Script
 
-Apply the patches in `install/patches/` to the AgentTeams repository.
+Apply the patch in `install/patches/` to the AgentTeams repository.
 
-### Quick Apply (using the patch files)
+### Quick Apply (using the patch file)
 
 ```bash
 cd /path/to/AgentTeams
 git apply /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch
-git apply /path/to/agentteams-dashboard/install/patches/0002-agentteams-verify-dashboard.patch
-git apply /path/to/agentteams-dashboard/install/patches/0003-Makefile-dashboard.patch
 ```
+
+> **Note**: The single patch file covers all three files: `install/agentteams-install.sh`, `install/agentteams-verify.sh`, and `Makefile`.
 
 ### Regenerate Patches
 
-The patch files are generated from a working AgentTeams branch. To update them:
+The patch file is generated from a working AgentTeams branch. To update:
 
 ```bash
 # 1. Edit the AgentTeams files directly (install/agentteams-install.sh,
 #    install/agentteams-verify.sh, Makefile) to add or modify Dashboard integration.
-# 2. Commit each file separately with a descriptive message.
-# 3. Generate patches:
-git format-patch HEAD~3 -o /path/to/agentteams-dashboard/install/patches/
-# 4. Rename the generated files to the canonical names if necessary:
-#    0001-agentteams-install-dashboard.patch
-#    0002-agentteams-verify-dashboard.patch
-#    0003-Makefile-dashboard.patch
+# 2. Generate patch:
+git diff -- Makefile install/agentteams-install.sh install/agentteams-verify.sh \
+  > /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch
+# 3. Verify:
+git stash && git apply --check /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch && git stash pop
 ```
 
-### Manual Integration Summary
+### Integration Features
 
-The patches make the following changes:
+The patch adds the following capabilities:
 
 #### 1. `install/agentteams-install.sh`
 
-- Add documented environment variables near the top (with other `AGENTTEAMS_` vars):
-  - `AGENTTEAMS_DASHBOARD` — install Dashboard (default: 1)
-  - `AGENTTEAMS_PORT_DASHBOARD` — Dashboard host port (default: 13000)
-  - `AGENTTEAMS_DASHBOARD_IMAGE` — override Dashboard image
-  - `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` — Higress Console URL for shared auth
-- Add Dashboard i18n messages (`success.dashboard.*`, `dash.*`).
-- Add `DASHBOARD_IMAGE` and `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` defaults in `resolve_image_tags()`.
-- Load Dashboard variables from the saved env file in `load_current_params_from_env()`.
-- Add `step_dashboard()` wizard function after `step_workspace()`.
-- Add `step_dashboard` to the `_STEPS` state-machine array.
-- Add `step_dashboard` handling to `should_skip_step()` and `clear_step_vars()`.
-- Start the `agentteams-dashboard` container after the embedded controller is ready.
-- Print the Dashboard URL in the success banner when Dashboard is enabled.
-- Persist Dashboard variables in the generated `.env` file.
+**Environment Variables** (documented near the top, alongside other `AGENTTEAMS_` vars):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENTTEAMS_DASHBOARD` | `1` | Install Dashboard? (1=yes, 0=no) |
+| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.2.0-beta.1` | Dashboard version tag (independent of AgentTeams version) |
+| `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
+| `AGENTTEAMS_DASHBOARD_IMAGE` | derived | Full image reference (uses `AGENTTEAMS_DASHBOARD_VERSION`) |
+| `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | auto-detected | Higress Console URL for shared login |
+
+**Key Features**:
+
+- **Independent versioning**: `AGENTTEAMS_DASHBOARD_VERSION` is separate from `AGENTTEAMS_VERSION`, so AgentTeams and Dashboard can release on different schedules.
+- **Full env persistence**: All 5 Dashboard config variables are loaded from saved env in `load_current_params_from_env()`, persisted to the generated env file, and cleared on `reset_dashboard`. Keep-all upgrades preserve all Dashboard settings.
+- **Explicit URL priority**: `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` takes priority over auto-detection. Auto-detect (`http://agentteams-controller:8001`) is only used as a fallback when no explicit URL is configured.
+- **URL normalization**: If the user enters a URL without a protocol (e.g. `aigw-local.agentteams.io:8001`), `http://` is automatically prepended.
+- **CLI token polling**: The Dashboard waits up to 30 seconds for the controller's CLI SA token to be generated (it's created asynchronously in the first reconcile loop). Falls back gracefully if unavailable.
+- **Legacy HiClaw compatibility**: Also checks `/var/run/hiclaw/cli-token` for older HiClaw-era images.
+- **URL reachability check**: Verifies the Higress Console URL is reachable before starting; warns if not (best-effort, doesn't block install).
+- **Bilingual (zh/en)**: All wizard prompts and messages support both Chinese and English.
+- **Platform note**: Linux/macOS only (Bash installer). PowerShell installer does not include Dashboard support.
+
+**Functions added**:
+
+- `step_dashboard()` — interactive wizard step for Dashboard configuration
+- `_start_dashboard()` — starts the Dashboard container with auto-detected env vars
+- `_wait_dashboard_ready()` — polls until Dashboard responds with HTTP 200/301/302
 
 #### 2. `install/agentteams-verify.sh`
 
-- Read `AGENTTEAMS_PORT_DASHBOARD` from the Manager container env.
-- Add a 7th check that verifies Dashboard is accessible on its configured port.
-- Also checks `agentteams-controller` container for Dashboard port in embedded mode.
+- Reads `AGENTTEAMS_PORT_DASHBOARD` from the controller/env
+- Adds a Dashboard accessibility check (verifies HTTP response on configured port)
+- Works in both embedded mode and standalone mode
 
 #### 3. `Makefile`
 
-- Add `DASHBOARD_CONTEXT ?= ./agentteams-dashboard/`.
-- Add `install-dashboard`, `update-dashboard`, and `uninstall-dashboard` to `.PHONY`.
-- Add a `build-dashboard` target.
-- Add `install-dashboard`, `update-dashboard`, and `uninstall-dashboard` targets.
+**Variables**:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DASHBOARD_CONTEXT` | `../agentteams-dashboard` | Path to dashboard source tree |
+| `DASHBOARD_VERSION` | `1.0.0` | Dashboard version tag |
+| `DASHBOARD_IMAGE` | derived | Full image reference |
+| `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
+
+**Targets**:
+
+| Target | Description | Prerequisites |
+|--------|-------------|---------------|
+| `build-dashboard` | Build Dashboard image from local source | `DASHBOARD_CONTEXT` must exist |
+| `install-dashboard` | Install/start Dashboard container | `agentteams-controller` must be running |
+| `update-dashboard` | Rebuild image + restart Dashboard | `build-dashboard` as dependency |
+| `uninstall-dashboard` | Stop and remove Dashboard container | None |
+| `wait-dashboard-ready` | Wait for Dashboard to respond | Dashboard must be starting |
+
+**Prerequisites clearly documented**:
+- AgentTeams must already be installed (controller running)
+- For build: `DASHBOARD_CONTEXT` must point to a dashboard repo
+- Linux/macOS only (Bash installer)
+
+### Legacy Cleanup
+
+The patch does **not** add broad `agentteams-*` container cleanup. It only removes the known legacy `agentteams-docker-proxy` container (exact name match). The Dashboard container is also matched exactly (`^agentteams-dashboard$`).
 
 ## Quick Reference
 
@@ -83,7 +123,38 @@ The patches make the following changes:
 | Update (pull latest) | `bash install/agentteams-dashboard.sh update` |
 | Uninstall | `bash install/agentteams-dashboard.sh uninstall` |
 | Build image only | `make build-dashboard` |
+| Install via Makefile | `make install-dashboard` |
 | View logs | `docker logs -f agentteams-dashboard` |
 | Default port | `13000` |
 | LAN access | Controlled by `AGENTTEAMS_LOCAL_ONLY` (binds `0.0.0.0` when disabled) |
 | Auth mode | Higress shared auth (if URL configured) or local fallback |
+| CLI token | Polled for 30s from `/var/run/agentteams/cli-token` (legacy: `/var/run/hiclaw/cli-token`) |
+
+## Roadmap / TODO
+
+### Short-term (next release)
+
+- [ ] **PowerShell installer parity** — add Dashboard integration to `agentteams-install.ps1`
+- [ ] **Health check endpoint** — dedicated `/api/health` endpoint for readiness probing
+- [ ] **Upgrade guide** — document upgrade path from standalone to integrated install
+
+### Medium-term
+
+- [ ] **Dashboard settings page** — configure Dashboard preferences from the UI
+- [ ] **Real-time updates** — WebSocket/SSE for live Worker/Team status updates
+- [ ] **Multi-cluster support** — manage multiple AgentTeams clusters from one Dashboard
+- [ ] **Dark mode** — UI theme toggle
+
+### Long-term / Ideas
+
+- [ ] **Plugin system** — extensible Dashboard with custom modules
+- [ ] **Metrics & monitoring** — Prometheus/Grafana integration for performance metrics
+- [ ] **Audit log viewer** — browse and search audit trails
+- [ ] **CLI integration** — `agt dashboard` subcommand for quick access
+
+## Related Links
+
+- AgentTeams repository: https://github.com/agentscope-ai/AgentTeams
+- Dashboard repository: https://github.com/agentteams-group/agentteams-dashboard
+- Integration PR: https://github.com/agentscope-ai/AgentTeams/pull/1075
+- Tagged releases: https://github.com/agentteams-group/agentteams-dashboard/tags
