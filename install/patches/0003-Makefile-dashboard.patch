@@ -1,3 +1,12 @@
+From a866e1e45d05450a2354d529424ed6990427c7ef Mon Sep 17 00:00:00 2001
+From: Super User <root@localhost.localdomain>
+Date: Sat, 25 Jul 2026 12:50:28 +0800
+Subject: [PATCH 3/3] feat(make): add dashboard build/install/update targets
+
+---
+ Makefile | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
 diff --git a/Makefile b/Makefile
 index 87073e8..5d1da71 100644
 --- a/Makefile
@@ -42,3 +51,6 @@ index 87073e8..5d1da71 100644
 +	done; \
 +	echo "Dashboard startup timed out"; \
 +	exit 1
+-- 
+2.52.0
+

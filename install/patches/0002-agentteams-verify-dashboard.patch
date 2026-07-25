@@ -1,12 +1,20 @@
+From 6649a6daf6368dd67b649e251c71c2decc05ae37 Mon Sep 17 00:00:00 2001
+From: Super User <root@localhost.localdomain>
+Date: Sat, 25 Jul 2026 12:50:11 +0800
+Subject: [PATCH 2/3] feat(verify): add dashboard accessibility check
+
+---
+ install/agentteams-verify.sh | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
 diff --git a/install/agentteams-verify.sh b/install/agentteams-verify.sh
-index 1e2a856..23dbdea 100644
+index 10f0448..51a4be3 100644
 --- a/install/agentteams-verify.sh
 +++ b/install/agentteams-verify.sh
-@@ -143,6 +143,35 @@ else
-         check_fail "OpenClaw Agent healthy (output: ${agent_output:-<empty>})"
+@@ -163,6 +163,35 @@ else
      fi
  fi
-+
+ 
 +
 +# 7. Dashboard accessible (optional component)
 +ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
@@ -35,6 +43,10 @@ index 1e2a856..23dbdea 100644
 +        fi
 +    fi
 +fi
++
  # ---------- Summary ----------
+ 
  TOTAL=$((PASS + FAIL))
- echo "==> Result: ${PASS}/${TOTAL} passed"
+-- 
+2.52.0
+
