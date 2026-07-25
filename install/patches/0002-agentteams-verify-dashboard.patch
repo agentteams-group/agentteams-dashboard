@@ -1,11 +1,12 @@
 diff --git a/install/agentteams-verify.sh b/install/agentteams-verify.sh
-index 10f0448..37d1d36 100755
+index 1e2a856..23dbdea 100644
 --- a/install/agentteams-verify.sh
 +++ b/install/agentteams-verify.sh
-@@ -163,6 +163,37 @@ else
+@@ -143,6 +143,35 @@ else
+         check_fail "OpenClaw Agent healthy (output: ${agent_output:-<empty>})"
      fi
  fi
- 
++
 +
 +# 7. Dashboard accessible (optional component)
 +ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
@@ -18,17 +19,14 @@ index 10f0448..37d1d36 100755
 +    if [ "${dashboard_enabled}" != "1" ]; then
 +        check_pass "Dashboard not enabled (skipped)"
 +    else
-+        # Check container running
 +        ctr_id=$(${DOCKER_CMD} ps -q -f name=agentteams-dashboard 2>/dev/null)
 +        if [ -z "${ctr_id}" ]; then
 +            check_fail "Dashboard container not running"
 +        else
-+            # Get actual mapped port
 +            host_port=$(${DOCKER_CMD} port agentteams-dashboard 3000/tcp 2>/dev/null | head -1 | sed 's/.*://' || echo "")
 +            if [ -z "${host_port}" ]; then
 +                host_port="${dashboard_port}"
 +            fi
-+            # HTTP check
 +            if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${host_port}/" --connect-timeout 5 2>/dev/null | grep -qE "200|301|302"; then
 +                check_pass "Dashboard accessible on port ${host_port}"
 +            else
@@ -38,5 +36,5 @@ index 10f0448..37d1d36 100755
 +    fi
 +fi
  # ---------- Summary ----------
- 
  TOTAL=$((PASS + FAIL))
+ echo "==> Result: ${PASS}/${TOTAL} passed"

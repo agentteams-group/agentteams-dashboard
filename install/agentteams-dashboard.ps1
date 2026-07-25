@@ -91,7 +91,7 @@ function Build-EnvArgs {
     )
 
     # Auth token
-    $authToken = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null' 2>$null
+    $authToken = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' 2>$null
     if ($authToken) {
         $authToken = $authToken.Trim()
         $envArgs += @("-e", "AGENTTEAMS_AUTH_TOKEN=$authToken")

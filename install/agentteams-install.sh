@@ -1,11 +1,11 @@
 #!/bin/bash
-# hiclaw-install.sh - One-click installation for AgentTeams Manager and Worker
+# agentteams-install.sh - One-click installation for AgentTeams Manager and Worker
 #
 # Usage:
-#   ./hiclaw-install.sh                  # Interactive installation (choose Quick Start or Manual)
-#   ./hiclaw-install.sh manager          # Same as above (explicit)
-#   ./hiclaw-install.sh worker --name <name> ...  # Worker installation
-#   ./hiclaw-install.sh uninstall        # Stop and remove Manager + all Workers
+#   ./agentteams-install.sh                  # Interactive installation (choose Quick Start or Manual)
+#   ./agentteams-install.sh manager          # Same as above (explicit)
+#   ./agentteams-install.sh worker --name <name> ...  # Worker installation
+#   ./agentteams-install.sh uninstall        # Stop and remove Manager + all Workers
 #
 # Onboarding Modes:
 #   Quick Start  - Fast installation with all default values (recommended)
@@ -72,7 +72,7 @@ STEP_RESULT=""  # Used by state machine to signal "back" navigation
 # Log all output to file
 # ============================================================
 
-AGENTTEAMS_LOG_FILE="${HOME}/hiclaw-install.log"
+AGENTTEAMS_LOG_FILE="${HOME}/agentteams-install.log"
 
 if [ "${1:-}" != "uninstall" ]; then
     # Redirect all output (stdout and stderr) to both terminal and log file
@@ -684,18 +684,18 @@ msg() {
         "install.podman.linger_enable.en") text="Attempting to enable systemd linger (enter sudo password if prompted)..." ;;
         "install.podman.linger_warn.zh") text="警告: 无法自动启用 linger。驻留可能失败，请手动执行: sudo loginctl enable-linger \$(whoami)" ;;
         "install.podman.linger_warn.en") text="WARNING: Failed to auto-enable linger. Please run manually: sudo loginctl enable-linger \$(whoami)" ;;
-        "install.podman.root_setup.zh") text="检测到 root 用户。正在配置系统级 hiclaw-podman-restart 服务..." ;;
-        "install.podman.root_setup.en") text="Root user detected. Configuring system-wide hiclaw-podman-restart service..." ;;
-        "install.podman.root_success.zh") text="✅ 系统级 hiclaw-podman-restart 服务已成功启用并运行。" ;;
-        "install.podman.root_success.en") text="✅ System-wide hiclaw-podman-restart service successfully enabled and running." ;;
-        "install.podman.root_fail.zh") text="⚠️ 系统级 hiclaw-podman-restart 服务启用失败，请稍后手动检查。" ;;
-        "install.podman.root_fail.en") text="⚠️ Failed to enable system-wide hiclaw-podman-restart service. Please check manually later." ;;
-        "install.podman.user_setup.zh") text="检测到普通用户 (%s)。正在配置用户级 hiclaw-podman-restart 服务..." ;;
-        "install.podman.user_setup.en") text="Non-root user (%s) detected. Configuring user-level hiclaw-podman-restart service..." ;;
-        "install.podman.user_success.zh") text="✅ 用户级 hiclaw-podman-restart 服务已成功启用并运行。" ;;
-        "install.podman.user_success.en") text="✅ User-level hiclaw-podman-restart service successfully enabled and running." ;;
-        "install.podman.user_fail.zh") text="⚠️ 用户级 hiclaw-podman-restart 服务启用失败。\n提示：这通常是因为缺少 XDG_RUNTIME_DIR 或 dbus 没有运行。您可以尝试手动执行: systemctl --user enable --now hiclaw-podman-restart.service" ;;
-        "install.podman.user_fail.en") text="⚠️ Failed to enable user-level hiclaw-podman-restart service.\nHint: This is usually due to missing XDG_RUNTIME_DIR or dbus not running. Try manually: systemctl --user enable --now hiclaw-podman-restart.service" ;;
+        "install.podman.root_setup.zh") text="检测到 root 用户。正在配置系统级 agentteams-podman-restart 服务..." ;;
+        "install.podman.root_setup.en") text="Root user detected. Configuring system-wide agentteams-podman-restart service..." ;;
+        "install.podman.root_success.zh") text="✅ 系统级 agentteams-podman-restart 服务已成功启用并运行。" ;;
+        "install.podman.root_success.en") text="✅ System-wide agentteams-podman-restart service successfully enabled and running." ;;
+        "install.podman.root_fail.zh") text="⚠️ 系统级 agentteams-podman-restart 服务启用失败，请稍后手动检查。" ;;
+        "install.podman.root_fail.en") text="⚠️ Failed to enable system-wide agentteams-podman-restart service. Please check manually later." ;;
+        "install.podman.user_setup.zh") text="检测到普通用户 (%s)。正在配置用户级 agentteams-podman-restart 服务..." ;;
+        "install.podman.user_setup.en") text="Non-root user (%s) detected. Configuring user-level agentteams-podman-restart service..." ;;
+        "install.podman.user_success.zh") text="✅ 用户级 agentteams-podman-restart 服务已成功启用并运行。" ;;
+        "install.podman.user_success.en") text="✅ User-level agentteams-podman-restart service successfully enabled and running." ;;
+        "install.podman.user_fail.zh") text="⚠️ 用户级 agentteams-podman-restart 服务启用失败。\n提示：这通常是因为缺少 XDG_RUNTIME_DIR 或 dbus 没有运行。您可以尝试手动执行: systemctl --user enable --now agentteams-podman-restart.service" ;;
+        "install.podman.user_fail.en") text="⚠️ Failed to enable user-level agentteams-podman-restart service.\nHint: This is usually due to missing XDG_RUNTIME_DIR or dbus not running. Try manually: systemctl --user enable --now agentteams-podman-restart.service" ;;
         "install.podman.success.zh") text="Podman 开机自启配置完成。" ;;
         "install.podman.success.en") text="Podman autostart successfully configured." ;;
         # --- Worker idle timeout ---
@@ -829,10 +829,10 @@ msg() {
         "install.welcome_msg.timeout.en") text="WARNING: Did not observe the Manager sending its welcome message (status.welcomeSent=true) within %ss. Installation is still successful, all services are up — continue with the Element Web instructions below." ;;
         "install.welcome_msg.timeout_hint.zh") text="手动触发 onboarding: 登录 Element Web → 打开与 Manager 的 DM 房间 → 发送任意一句话（例如 \"hi\"），Manager 会接管对话并开始引导。" ;;
         "install.welcome_msg.timeout_hint.en") text="Manual onboarding: log in to Element Web → open the DM with the Manager → send any message (e.g. \"hi\") and the Manager will take over and start the guided setup." ;;
-        "install.welcome_msg.timeout_inspect.zh") text="排查命令: docker exec agentteams-controller hiclaw get managers default" ;;
-        "install.welcome_msg.timeout_inspect.en") text="Inspect status: docker exec agentteams-controller hiclaw get managers default" ;;
-        "install.welcome_msg.poll_unavailable.zh") text="提示: agentteams-manager 内未找到 hiclaw CLI，跳过 welcome 等待（旧镜像？）" ;;
-        "install.welcome_msg.poll_unavailable.en") text="Note: hiclaw CLI not found inside agentteams-manager; skipping welcome wait (old image?)" ;;
+        "install.welcome_msg.timeout_inspect.zh") text="排查命令: docker exec agentteams-controller agt get managers default" ;;
+        "install.welcome_msg.timeout_inspect.en") text="Inspect status: docker exec agentteams-controller agt get managers default" ;;
+        "install.welcome_msg.poll_unavailable.zh") text="提示: agentteams-manager 内未找到 AgentTeams CLI，跳过 welcome 等待（旧镜像？）" ;;
+        "install.welcome_msg.poll_unavailable.en") text="Note: AgentTeams CLI not found inside agentteams-manager; skipping welcome wait (old image?)" ;;
         # --- Dashboard wizard ---
         "dash.prompt.zh")        text="是否安装 agentteams-dashboard 管理面板?" ;;
         "dash.prompt.en")        text="Install agentteams-dashboard management UI?" ;;
@@ -969,8 +969,8 @@ msg() {
         "uninstall.removing_volume.en") text="Removing Docker volume: %s" ;;
         "uninstall.removing_env.zh") text="正在移除 env 文件: %s" ;;
         "uninstall.removing_env.en") text="Removing env file: %s" ;;
-        "uninstall.removing_proxy.zh") text="正在停止并移除 Docker API 代理容器: hiclaw-docker-proxy" ;;
-        "uninstall.removing_proxy.en") text="Stopping and removing Docker API proxy container: hiclaw-docker-proxy" ;;
+        "uninstall.removing_proxy.zh") text="正在停止并移除 Docker API 代理容器: agentteams-docker-proxy" ;;
+        "uninstall.removing_proxy.en") text="Stopping and removing Docker API proxy container: agentteams-docker-proxy" ;;
         "uninstall.stopping_controller.zh") text="正在停止并移除 agentteams-controller (内嵌 Tuwunel/MinIO/Higress)..." ;;
         "uninstall.stopping_controller.en") text="Stopping and removing agentteams-controller (embedded Tuwunel/MinIO/Higress)..." ;;
         "uninstall.removing_network.zh") text="正在移除 Docker 网络: agentteams-net" ;;
@@ -1096,12 +1096,12 @@ resolve_embedded_image() {
         return 0
     fi
 
-    # Versions before v1.1.0 predate hiclaw-embedded entirely — their manager image
-    # bundled all infrastructure.  Falling back to hiclaw-embedded:latest would
+    # Versions before v1.1.0 predate agentteams-embedded entirely — their manager image
+    # bundled all infrastructure.  Falling back to agentteams-embedded:latest would
     # silently swap in the v1.1.0 architecture (embedded kube-apiserver) which
     # crashes under QEMU on Apple Silicon.  Auto-activate legacy mode instead.
     if _ver_lt "${AGENTTEAMS_VERSION}" "v1.1.0"; then
-        log "INFO: ${AGENTTEAMS_VERSION} predates hiclaw-embedded; switching to legacy all-in-one manager architecture."
+        log "INFO: ${AGENTTEAMS_VERSION} predates agentteams-embedded; switching to legacy all-in-one manager architecture."
         log "WARNING: Legacy all-in-one mode requires AGENTTEAMS_VERSION <= v1.0.9 (older bundled manager image)."
         log "WARNING: Newer slim manager images will hang on 'Waiting for Higress Gateway'."
         AGENTTEAMS_USE_EMBEDDED=0
@@ -1133,7 +1133,7 @@ resolve_embedded_image() {
     error "     wait for the release pipeline to publish it."
     error "  2) For a local build, run:  make install-embedded"
     error "     (builds and uses the local embedded image without touching the registry)."
-    error "  3) Override with a custom image:  AGENTTEAMS_INSTALL_EMBEDDED_IMAGE=...  ./hiclaw-install.sh"
+    error "  3) Override with a custom image:  AGENTTEAMS_INSTALL_EMBEDDED_IMAGE=...  ./agentteams-install.sh"
     exit 1
 }
 
@@ -1245,9 +1245,9 @@ wait_matrix_ready() {
     die "$(msg install.wait_matrix.timeout "${timeout}" "${container}")"
 }
 
-# Read KEY=value from /data/hiclaw-secrets.env on a Docker volume (manager container not required).
+# Read KEY=value from /data/agentteams-secrets.env on a Docker volume (manager container not required).
 # Requires EMBEDDED_IMAGE (resolved earlier in install_manager). Uses ${DOCKER_CMD}.
-hiclaw_read_secret_from_data_volume() {
+agentteams_read_secret_from_data_volume() {
     local _vol="$1" _key="$2"
     if [ -z "${_vol}" ] || [ -z "${_key}" ] || [ -z "${EMBEDDED_IMAGE:-}" ]; then
         echo ""
@@ -1255,11 +1255,11 @@ hiclaw_read_secret_from_data_volume() {
     fi
     ${DOCKER_CMD} run --rm --entrypoint sh \
         -v "${_vol}:/data:ro" \
-        "${EMBEDDED_IMAGE}" -c "grep \"^${_key}=\" /data/hiclaw-secrets.env 2>/dev/null | cut -d= -f2- | head -1 | tr -d '\r'" 2>/dev/null
+        "${EMBEDDED_IMAGE}" -c "grep \"^${_key}=\" /data/agentteams-secrets.env 2>/dev/null | cut -d= -f2- | head -1 | tr -d '\r'" 2>/dev/null
 }
 
 # Read KEY=value from /data/worker-creds/<worker>.env on a Docker volume.
-hiclaw_read_worker_creds_value_from_volume() {
+agentteams_read_worker_creds_value_from_volume() {
     local _vol="$1" _worker="$2" _key="$3"
     if [ -z "${_vol}" ] || [ -z "${_worker}" ] || [ -z "${_key}" ] || [ -z "${EMBEDDED_IMAGE:-}" ]; then
         echo ""
@@ -1271,7 +1271,7 @@ hiclaw_read_worker_creds_value_from_volume() {
 }
 
 # Read admin_dm_room_id from host workspace state.json (fallback when Matrix API is unavailable).
-hiclaw_read_admin_dm_room_from_workspace() {
+agentteams_read_admin_dm_room_from_workspace() {
     local _ws="$1"
     local _f="${_ws}/state.json"
     if [ ! -f "${_f}" ] || ! command -v jq >/dev/null 2>&1; then
@@ -2831,7 +2831,7 @@ setup_podman_autostart() {
     current_user="$(whoami)"
 
     # Define the dedicated AgentTeams service content
-    # Strict scoping: Only manage containers matching '--filter name=hiclaw'
+    # Strict scoping: Only manage containers matching '--filter name=agentteams'
     local _service_content="[Unit]
 Description=AgentTeams Dedicated Podman Autostart Service
 Documentation=https://github.com/agentscope-ai/AgentTeams
@@ -2842,8 +2842,8 @@ After=network-online.target
 Type=oneshot
 RemainAfterExit=true
 Environment=LOGGING=\"--log-level=info\"
-ExecStart=/usr/bin/podman \$LOGGING start --filter name=hiclaw --filter restart-policy=always --filter restart-policy=unless-stopped
-ExecStop=/usr/bin/podman \$LOGGING stop --filter name=hiclaw --filter restart-policy=always --filter restart-policy=unless-stopped
+ExecStart=/usr/bin/podman \$LOGGING start --filter name=agentteams --filter restart-policy=always --filter restart-policy=unless-stopped
+ExecStop=/usr/bin/podman \$LOGGING stop --filter name=agentteams --filter restart-policy=always --filter restart-policy=unless-stopped
 
 [Install]
 WantedBy=default.target"
@@ -2856,11 +2856,11 @@ WantedBy=default.target"
 
         local _sys_dir="/etc/systemd/system"
         mkdir -p "${_sys_dir}"
-        echo "${_service_content}" > "${_sys_dir}/hiclaw-podman-restart.service"
+        echo "${_service_content}" > "${_sys_dir}/agentteams-podman-restart.service"
 
         systemctl daemon-reload >/dev/null 2>&1 || true
 
-        if systemctl enable --now hiclaw-podman-restart.service >/dev/null 2>&1; then
+        if systemctl enable --now agentteams-podman-restart.service >/dev/null 2>&1; then
             log "$(msg install.podman.root_success)"
             _autostart_ok=1
         else
@@ -2901,11 +2901,11 @@ WantedBy=default.target"
         # 2. Write dedicated service file to user directory
         local _user_dir="${HOME}/.config/systemd/user"
         mkdir -p "${_user_dir}"
-        echo "${_service_content}" > "${_user_dir}/hiclaw-podman-restart.service"
+        echo "${_service_content}" > "${_user_dir}/agentteams-podman-restart.service"
 
         systemctl --user daemon-reload >/dev/null 2>&1 || true
 
-        if systemctl --user enable --now hiclaw-podman-restart.service >/dev/null 2>&1; then
+        if systemctl --user enable --now agentteams-podman-restart.service >/dev/null 2>&1; then
             log "$(msg install.podman.user_success)"
             # Crucial: Only consider autostart fully successful if systemd linger is also enabled
             if [ "${_linger_ok}" = "1" ]; then
@@ -2941,20 +2941,19 @@ _start_dashboard() {
         return 0
     fi
 
-    if ! ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
-        log "Skipping Dashboard: agentteams-controller container not found."
-        return 0
-    fi
+    local CTRL_CONTAINER="agentteams-controller"
+    local DASHBOARD_CONTAINER="agentteams-dashboard"
 
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
     AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}"
-    AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
-    local DASHBOARD_CONTAINER="agentteams-dashboard"
 
     log ""
     log "Starting agentteams-dashboard..."
 
-    # Remove existing dashboard container if present
+    local BIND_ADDR="127.0.0.1"
+    [ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "0" ] && BIND_ADDR="0.0.0.0"
+
+    # Remove existing container
     if ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -qx "${DASHBOARD_CONTAINER}"; then
         ${DOCKER_CMD} rm -f "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
     fi
@@ -2968,51 +2967,96 @@ _start_dashboard() {
         }
     fi
 
-    # Build env args
-    local _dash_env=()
+    # Build env args from controller container (MinIO/LLM/auth).
+    local env_args=()
+    env_args+=(-e AGENTTEAMS_CONTROLLER_URL="http://${CTRL_CONTAINER}:8090")
+    env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="http://${CTRL_CONTAINER}:6167")
+    env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="${CTRL_CONTAINER},matrix-local.agentteams.io,matrix.org")
+    env_args+=(-e DATABASE_URL="file:/app/db/dashboard.db")
+    env_args+=(-e NEXT_PUBLIC_BASE_PATH="")
 
-    # The dashboard authenticates its API proxy calls to the controller with the
-    # controller's admin CLI token (minted at controller startup and written to
-    # /var/run/hiclaw/cli-token).
-    # Auto-detect it when the caller did not provide one — without it every
-    # dashboard data API returns 401 and workers/teams/rooms appear empty.
-    if [ -z "${AGENTTEAMS_AUTH_TOKEN:-}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
-        AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec agentteams-controller sh -c 'cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
-        [ -z "${AGENTTEAMS_AUTH_TOKEN}" ] && log "WARNING: Could not read controller auth token (cli-token); dashboard API calls will be unauthenticated."
-    fi
+    if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "${CTRL_CONTAINER}"; then
+        local env_out
+        env_out=$(${DOCKER_CMD} inspect "${CTRL_CONTAINER}" --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}')
 
-    _dash_env+=(-e "AGENTTEAMS_CONTROLLER_URL=http://agentteams-controller:8090")
-    _dash_env+=(-e "NEXT_PUBLIC_MATRIX_API_URL=http://agentteams-controller:6167")
-    _dash_env+=(-e "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org")
-    _dash_env+=(-e "NEXT_PUBLIC_BASE_PATH=")
-    [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ] && _dash_env+=(-e "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
-    [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && _dash_env+=(-e "AGENTTEAMS_AUTH_TOKEN=${AGENTTEAMS_AUTH_TOKEN}")
-    # Admin credentials (from step_admin) let the dashboard bootstrap the Higress
-    # AI gateway (setup/ensure-ai) with the same account as the Console.
-    [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && _dash_env+=(-e "AGENTTEAMS_ADMIN_USER=${AGENTTEAMS_ADMIN_USER}")
-    [ -n "${AGENTTEAMS_ADMIN_PASSWORD:-}" ] && _dash_env+=(-e "AGENTTEAMS_ADMIN_PASSWORD=${AGENTTEAMS_ADMIN_PASSWORD}")
+        _env() { echo "${env_out}" | sed -n "s|^${1}=||p" | head -n1; }
 
-    # Detect Higress admin URL from controller
-    if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
-        if ${DOCKER_CMD} exec agentteams-controller curl -sf --max-time 2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
-            _dash_env+=(-e "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=http://agentteams-controller:8001")
+        local fs_endpoint; fs_endpoint=$(_env AGENTTEAMS_FS_ENDPOINT)
+        [ -z "${fs_endpoint}" ] && fs_endpoint=$(_env AGENTTEAMS_MINIO_ENDPOINT)
+        if [ -n "${fs_endpoint}" ]; then
+            fs_endpoint=$(echo "${fs_endpoint}" | sed -e "s|127\.0\.0\.1|${CTRL_CONTAINER}|" -e "s|localhost|${CTRL_CONTAINER}|")
+            env_args+=(-e AGENTTEAMS_FS_ENDPOINT="${fs_endpoint}")
+        else
+            env_args+=(-e AGENTTEAMS_FS_ENDPOINT="http://${CTRL_CONTAINER}:9000")
         fi
+
+        local fs_bucket; fs_bucket=$(_env AGENTTEAMS_FS_BUCKET)
+        [ -z "${fs_bucket}" ] && fs_bucket=$(_env AGENTTEAMS_MINIO_BUCKET)
+        [ -n "${fs_bucket}" ] && env_args+=(-e AGENTTEAMS_FS_BUCKET="${fs_bucket}")
+
+        local fs_user; fs_user=$(_env AGENTTEAMS_FS_ACCESS_KEY)
+        [ -z "${fs_user}" ] && fs_user=$(_env AGENTTEAMS_MINIO_USER)
+        [ -n "${fs_user}" ] && env_args+=(-e AGENTTEAMS_FS_ACCESS_KEY="${fs_user}")
+
+        local fs_pass; fs_pass=$(_env AGENTTEAMS_FS_SECRET_KEY)
+        [ -z "${fs_pass}" ] && fs_pass=$(_env AGENTTEAMS_MINIO_PASSWORD)
+        [ -n "${fs_pass}" ] && env_args+=(-e AGENTTEAMS_FS_SECRET_KEY="${fs_pass}")
+
+        for k in AGENTTEAMS_LLM_PROVIDER AGENTTEAMS_LLM_API_KEY AGENTTEAMS_OPENAI_BASE_URL AGENTTEAMS_DEFAULT_MODEL; do
+            local v; v=$(_env "${k}")
+            [ -n "${v}" ] && env_args+=(-e "${k}=${v}")
+        done
+
+        # The controller writes the CLI SA token to /var/run/agentteams/cli-token.
+        local auth_token
+        auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+        if [ -n "${auth_token}" ]; then
+            env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${auth_token}")
+        else
+            log "WARNING: could not read controller SA token — Dashboard will be unauthenticated to Controller."
+        fi
+
+        local admin_user; admin_user=$(_env AGENTTEAMS_ADMIN_USER)
+        local admin_pass; admin_pass=$(_env AGENTTEAMS_ADMIN_PASSWORD)
+        [ -n "${admin_user}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${admin_user}")
+        [ -n "${admin_pass}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${admin_pass}")
+
+        # In embedded topology the Higress Console lives inside the controller on port 8001.
+        if ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
+        fi
+    else
+        log "WARNING: ${CTRL_CONTAINER} not running; launching Dashboard without Controller/MinIO/LLM env."
+        env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
     fi
 
-    # Build port prefix (local-only vs public)
-    local _dash_prefix=""
-    [ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "1" ] && _dash_prefix="127.0.0.1:"
+    # Create persistent data volume
+    ${DOCKER_CMD} volume create agentteams-dashboard-data >/dev/null 2>&1 || true
 
     ${DOCKER_CMD} run -d \
         --name "${DASHBOARD_CONTAINER}" \
-        --network agentteams-net \
-        --network-alias dashboard.agentteams.io \
         --restart unless-stopped \
-        -p "${_dash_prefix}${AGENTTEAMS_PORT_DASHBOARD}:3000" \
-        "${_dash_env[@]}" \
+        --network "${AGENTTEAMS_NETWORK:-agentteams-net}" \
+        --network-alias dashboard.agentteams.io \
+        -p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000" \
+        "${env_args[@]}" \
+        -v agentteams-dashboard-data:/app/db \
         "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
-    log "Dashboard started on port ${AGENTTEAMS_PORT_DASHBOARD}"
+    # Wait for dashboard to be ready
+    local max_wait=60
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if curl -sf "http://127.0.0.1:${AGENTTEAMS_PORT_DASHBOARD}/" >/dev/null 2>&1; then
+            log "Dashboard ready on port ${AGENTTEAMS_PORT_DASHBOARD}"
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    log "WARNING: Dashboard startup timed out after ${max_wait}s"
+    ${DOCKER_CMD} logs "${DASHBOARD_CONTAINER}" 2>&1 | tail -20
+    return 0
 }
 
 # ============================================================
@@ -3177,7 +3221,7 @@ install_manager() {
     ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
     cat > "${ENV_FILE}" << EOF
 # AgentTeams Manager Configuration
-# Generated by hiclaw-install.sh on $(date)
+# Generated by agentteams-install.sh on $(date)
 
 # Language
 AGENTTEAMS_LANGUAGE=${AGENTTEAMS_LANGUAGE}
@@ -3374,38 +3418,16 @@ EOF
     # Pull images (manager based on runtime config; all worker runtimes always pulled)
     _is_local_image() {
         case "$1" in
-            hiclaw/*|agentteams/*) return 0 ;;
+            agentteams/*) return 0 ;;
             *) return 1 ;;
         esac
     }
 
-    _legacy_local_image_for() {
-        case "$1" in
-            agentteams/manager:*) printf '%s\n' "hiclaw/hiclaw-manager:${1##*:}" ;;
-            agentteams/manager-copaw:*) printf '%s\n' "hiclaw/hiclaw-manager-copaw:${1##*:}" ;;
-            agentteams/worker-agent:*) printf '%s\n' "hiclaw/worker-agent:${1##*:}" ;;
-            agentteams/copaw-worker:*) printf '%s\n' "hiclaw/copaw-worker:${1##*:}" ;;
-            agentteams/hermes-worker:*) printf '%s\n' "hiclaw/hermes-worker:${1##*:}" ;;
-            agentteams/qwenpaw-worker:*) printf '%s\n' "hiclaw/qwenpaw-worker:${1##*:}" ;;
-            agentteams/agentteams-embedded:*) printf '%s\n' "hiclaw/hiclaw-embedded:${1##*:}" ;;
-            agentteams/agentteams-controller:*) printf '%s\n' "hiclaw/hiclaw-controller:${1##*:}" ;;
-        esac
-    }
-
-    _ensure_local_image_tag() {
+    _local_image_exists() {
         local _img="$1"
         [ -z "${_img}" ] && return 1
         _is_local_image "${_img}" || return 1
-        if ${DOCKER_CMD} image inspect "${_img}" >/dev/null 2>&1; then
-            return 0
-        fi
-        local _legacy_img
-        _legacy_img="$(_legacy_local_image_for "${_img}")"
-        if [ -n "${_legacy_img}" ] && ${DOCKER_CMD} image inspect "${_legacy_img}" >/dev/null 2>&1; then
-            ${DOCKER_CMD} tag "${_legacy_img}" "${_img}"
-            return 0
-        fi
-        return 1
+        ${DOCKER_CMD} image inspect "${_img}" >/dev/null 2>&1
     }
 
     # Helper: pull or skip a single image
@@ -3413,7 +3435,7 @@ EOF
     _pull_image() {
         local _img="$1" _exists_key="$2" _pull_key="$3"
         [ -z "${_img}" ] && return 0
-        if _ensure_local_image_tag "${_img}"; then
+        if _local_image_exists "${_img}"; then
             log "$(msg "${_exists_key}" "${_img}")"
             return 0
         fi
@@ -3436,7 +3458,7 @@ EOF
     # Embedded controller image (resolve versioned tag, fallback to latest)
     resolve_embedded_image
     if [ "${AGENTTEAMS_USE_EMBEDDED}" = "1" ]; then
-        _ensure_local_image_tag "${EMBEDDED_IMAGE}" || true
+        _local_image_exists "${EMBEDDED_IMAGE}" || true
     fi
 
     # Manager image is always required (select based on runtime)
@@ -3484,10 +3506,10 @@ EOF
         # Manager password (container Config.Env, then secrets file inside running manager, then data volume)
         _mgr_pw=$(${DOCKER_CMD} inspect agentteams-manager --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^AGENTTEAMS_MANAGER_PASSWORD=' | cut -d= -f2-)
         if [ -z "${_mgr_pw}" ] && ${DOCKER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q '^agentteams-manager$'; then
-            _mgr_pw=$(${DOCKER_CMD} exec agentteams-manager bash -c 'source /data/hiclaw-secrets.env 2>/dev/null && echo "${AGENTTEAMS_MANAGER_PASSWORD}"' 2>/dev/null)
+            _mgr_pw=$(${DOCKER_CMD} exec agentteams-manager bash -c 'source /data/agentteams-secrets.env 2>/dev/null && echo "${AGENTTEAMS_MANAGER_PASSWORD}"' 2>/dev/null)
         fi
         if [ -z "${_mgr_pw}" ] && ${DOCKER_CMD} volume ls -q 2>/dev/null | grep -q "^${AGENTTEAMS_DATA_DIR}$"; then
-            _mgr_pw=$(hiclaw_read_secret_from_data_volume "${AGENTTEAMS_DATA_DIR}" AGENTTEAMS_MANAGER_PASSWORD)
+            _mgr_pw=$(agentteams_read_secret_from_data_volume "${AGENTTEAMS_DATA_DIR}" AGENTTEAMS_MANAGER_PASSWORD)
         fi
 
         # Manager admin DM room ID: login as admin, find DM room with @manager
@@ -3523,7 +3545,7 @@ for room_id in rooms:
                 fi
             fi
             if [ -z "${_mgr_room}" ]; then
-                _mgr_room=$(hiclaw_read_admin_dm_room_from_workspace "${AGENTTEAMS_WORKSPACE_DIR}")
+                _mgr_room=$(agentteams_read_admin_dm_room_from_workspace "${AGENTTEAMS_WORKSPACE_DIR}")
             fi
             cat > "${_creds_tmp}/default.env" <<CREDEOF
 WORKER_PASSWORD="${_mgr_pw}"
@@ -3540,14 +3562,14 @@ CREDEOF
             for _wname in ${_worker_names}; do
                 _wpw=""
                 if ${DOCKER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q '^agentteams-manager$'; then
-                    _wpw=$(${DOCKER_CMD} exec agentteams-manager cat "/root/hiclaw-fs/agents/${_wname}/credentials/matrix/password" 2>/dev/null || true)
+                    _wpw=$(${DOCKER_CMD} exec agentteams-manager cat "/root/agentteams-fs/agents/${_wname}/credentials/matrix/password" 2>/dev/null || true)
                 fi
                 if [ -z "${_wpw}" ] && ${DOCKER_CMD} volume ls -q 2>/dev/null | grep -q "^${AGENTTEAMS_DATA_DIR}$"; then
-                    _wpw=$(hiclaw_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_PASSWORD)
+                    _wpw=$(agentteams_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_PASSWORD)
                 fi
                 _wroom=$(python3 -c "import json; d=json.load(open('${AGENTTEAMS_WORKSPACE_DIR}/workers-registry.json')); print(d.get('workers',{}).get('${_wname}',{}).get('room_id',''))" 2>/dev/null || true)
                 if [ -z "${_wroom}" ] && ${DOCKER_CMD} volume ls -q 2>/dev/null | grep -q "^${AGENTTEAMS_DATA_DIR}$"; then
-                    _wroom=$(hiclaw_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_ROOM_ID)
+                    _wroom=$(agentteams_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_ROOM_ID)
                 fi
                 if [ -n "${_wpw}" ]; then
                     cat > "${_creds_tmp}/${_wname}.env" <<CREDEOF
@@ -3589,8 +3611,8 @@ CREDEOF
         done
     fi
 
-    # Clean up legacy containers (e.g. hiclaw-docker-proxy from v1.0.x)
-    for _legacy in $(${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^hiclaw-' | grep -vE "^(agentteams-controller|agentteams-manager|agentteams-worker-)" || true); do
+    # Clean up legacy containers (e.g. agentteams-docker-proxy from v1.0.x)
+    for _legacy in $(${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^agentteams-' | grep -vE "^(agentteams-controller|agentteams-manager|agentteams-worker-)" || true); do
         log "Removing legacy container: ${_legacy}"
         ${DOCKER_CMD} stop "${_legacy}" 2>/dev/null || true
         ${DOCKER_CMD} rm -f "${_legacy}" 2>/dev/null || true
@@ -3599,7 +3621,7 @@ CREDEOF
     # --- Upgrade: inject extracted credentials into data volume ---
     # Only needed for old-arch upgrades (credential files were extracted above).
     if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-        local _cleanup_ctr="hiclaw-upgrade-cleanup"
+        local _cleanup_ctr="agentteams-upgrade-cleanup"
         ${DOCKER_CMD} rm -f "${_cleanup_ctr}" 2>/dev/null || true
         ${DOCKER_CMD} run --rm --name "${_cleanup_ctr}" \
             --entrypoint sh \
@@ -3754,7 +3776,7 @@ CREDEOF
             -v "${CONTAINER_SOCK}:/var/run/docker.sock" \
             --security-opt label=disable \
             -v "${AGENTTEAMS_DATA_DIR}:/data" \
-            -v "${AGENTTEAMS_WORKSPACE_DIR}:/root/hiclaw-fs/agents/manager" \
+            -v "${AGENTTEAMS_WORKSPACE_DIR}:/root/agentteams-fs/agents/manager" \
             -p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080" \
             -p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" \
             -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" \
@@ -3799,7 +3821,7 @@ CREDEOF
         if [ $_mgr_wait -ge $_mgr_max ]; then
             log "ERROR: Manager Agent container not created after ${_mgr_max}s"
             log "Controller logs:"
-            ${DOCKER_CMD} exec agentteams-controller tail -30 /var/log/hiclaw/hiclaw-controller-error.log 2>/dev/null || true
+            ${DOCKER_CMD} exec agentteams-controller tail -30 /var/log/agentteams/agentteams-controller-error.log 2>/dev/null || true
             exit 1
         fi
 
@@ -3826,7 +3848,7 @@ CREDEOF
         # The controller gates this on (a) Manager joining the DM room and
         # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
         # for the Manager's gateway key — typically ~45-90s on a fresh install.
-        # We poll Manager CR Status.WelcomeSent via the in-container hiclaw CLI,
+        # We poll Manager CR Status.WelcomeSent via the in-container agt CLI,
         # exec'd inside agentteams-controller (the source-of-truth container — its
         # bundled CLI binary is always in lockstep with whatever controller
         # binary is currently serving the HTTP API, since they're the same
@@ -3834,14 +3856,14 @@ CREDEOF
         # controller across image upgrades and silently drop the welcomeSent
         # field, leaving this loop hung). The controller container mints a
         # long-lived admin SA token at startup and writes it to
-        # AGENTTEAMS_AUTH_TOKEN_FILE=/var/run/hiclaw/cli-token (set as a Dockerfile
-        # ENV default), so a bare `docker exec agentteams-controller hiclaw …`
+        # AGENTTEAMS_AUTH_TOKEN_FILE=/var/run/agentteams/cli-token (set as a Dockerfile
+        # ENV default), so a bare `docker exec agentteams-controller agt …`
         # auto-discovers both the endpoint and the token. There is a brief
         # window after container start before bootstrapAdminCLIToken completes
         # where the file may be empty / absent — the loop's silent retry
         # handles that the same way it handles the manager-not-yet-running
         # case below.
-        if ${DOCKER_CMD} exec agentteams-controller sh -c 'command -v hiclaw' >/dev/null 2>&1; then
+        if ${DOCKER_CMD} exec agentteams-controller sh -c 'command -v agt' >/dev/null 2>&1; then
             log "$(msg install.welcome_msg.waiting)"
             local _welcome_wait=0
             local _welcome_max="${AGENTTEAMS_WELCOME_TIMEOUT:-300}"
@@ -3851,7 +3873,7 @@ CREDEOF
                 # any future change in go-json field ordering or formatting.
                 local _wjson
                 _wjson=$(${DOCKER_CMD} exec agentteams-controller \
-                    hiclaw get managers default -o json 2>/dev/null || true)
+                    agt get managers default -o json 2>/dev/null || true)
                 if [ -n "${_wjson}" ] && printf '%s' "${_wjson}" | tr -d ' \r\n' | grep -q '"welcomeSent":true'; then
                     log "$(msg install.welcome_msg.confirmed "${_welcome_wait}")"
                     _welcome_done=1
@@ -3888,18 +3910,18 @@ CREDEOF
         # Start Docker API proxy if enabled (security layer between Manager and Docker daemon)
         PROXY_ARGS=""
         if [ "${AGENTTEAMS_DOCKER_PROXY:-1}" = "1" ] && [ -n "${CONTAINER_SOCK:-}" ]; then
-            local _proxy_image="${AGENTTEAMS_REGISTRY}/higress/hiclaw-docker-proxy:${AGENTTEAMS_VERSION}"
+            local _proxy_image="${AGENTTEAMS_REGISTRY}/higress/agentteams-docker-proxy:${AGENTTEAMS_VERSION}"
             # Try versioned tag, fallback to latest
             if ! ${DOCKER_CMD} image inspect "${_proxy_image}" >/dev/null 2>&1; then
                 ${DOCKER_CMD} pull "${_proxy_image}" 2>/dev/null || {
-                    _proxy_image="${AGENTTEAMS_REGISTRY}/higress/hiclaw-docker-proxy:latest"
+                    _proxy_image="${AGENTTEAMS_REGISTRY}/higress/agentteams-docker-proxy:latest"
                     ${DOCKER_CMD} pull "${_proxy_image}" 2>/dev/null || true
                 }
             fi
             if ${DOCKER_CMD} image inspect "${_proxy_image}" >/dev/null 2>&1; then
                 log "Starting Docker API proxy..."
                 ${DOCKER_CMD} run -d \
-                    --name hiclaw-docker-proxy \
+                    --name agentteams-docker-proxy \
                     --network agentteams-net \
                     -v "${CONTAINER_SOCK}:/var/run/docker.sock" \
                     --security-opt label=disable \
@@ -3909,7 +3931,7 @@ CREDEOF
                     ${AGENTTEAMS_PROXY_ALLOWED_REGISTRIES:+-e AGENTTEAMS_PROXY_ALLOWED_REGISTRIES="${AGENTTEAMS_PROXY_ALLOWED_REGISTRIES}"} \
                     --restart unless-stopped \
                     "${_proxy_image}"
-                PROXY_ARGS="-e AGENTTEAMS_CONTROLLER_URL=http://hiclaw-docker-proxy:2375 -e AGENTTEAMS_CONTAINER_API=http://hiclaw-docker-proxy:2375"
+                PROXY_ARGS="-e AGENTTEAMS_CONTROLLER_URL=http://agentteams-docker-proxy:2375 -e AGENTTEAMS_CONTAINER_API=http://agentteams-docker-proxy:2375"
                 SOCKET_MOUNT_ARGS=""
             fi
         fi
@@ -3964,10 +3986,10 @@ CREDEOF
 
         # Post-install verification (non-fatal: warnings only)
         local _verify_script
-        _verify_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hiclaw-verify.sh"
+        _verify_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agentteams-verify.sh"
         if [ -f "${_verify_script}" ]; then
             bash "${_verify_script}" "agentteams-manager" || {
-                log "WARNING: Some post-install checks failed. Re-run: bash install/hiclaw-verify.sh"
+                log "WARNING: Some post-install checks failed. Re-run: bash install/agentteams-verify.sh"
             }
         fi
     fi
@@ -4097,8 +4119,8 @@ install_worker() {
 
     # Build docker run args
     local DOCKER_ENV=""
-    DOCKER_ENV="${DOCKER_ENV} -e HOME=/root/hiclaw-fs/agents/${WORKER_NAME}"
-    DOCKER_ENV="${DOCKER_ENV} -w /root/hiclaw-fs/agents/${WORKER_NAME}"
+    DOCKER_ENV="${DOCKER_ENV} -e HOME=/root/agentteams-fs/agents/${WORKER_NAME}"
+    DOCKER_ENV="${DOCKER_ENV} -w /root/agentteams-fs/agents/${WORKER_NAME}"
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_WORKER_NAME=${WORKER_NAME}"
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_ENDPOINT=${FS}"
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_ACCESS_KEY=${FS_KEY}"
@@ -4223,7 +4245,7 @@ test_embedding_connectivity() {
 # Uninstall
 # ============================================================
 
-uninstall_hiclaw() {
+uninstall_agentteams() {
     log "$(msg uninstall.title)"
 
     # Safely disable and remove the dedicated AgentTeams Podman autostart service
@@ -4236,10 +4258,10 @@ uninstall_hiclaw() {
             _service_dir="${HOME}/.config/systemd/user"
         fi
 
-        if [ -f "${_service_dir}/hiclaw-podman-restart.service" ]; then
+        if [ -f "${_service_dir}/agentteams-podman-restart.service" ]; then
             log "Disabling and removing dedicated AgentTeams Podman autostart service..."
-            ${_systemctl_cmd} disable --now hiclaw-podman-restart.service 2>/dev/null || true
-            rm -f "${_service_dir}/hiclaw-podman-restart.service"
+            ${_systemctl_cmd} disable --now agentteams-podman-restart.service 2>/dev/null || true
+            rm -f "${_service_dir}/agentteams-podman-restart.service"
             ${_systemctl_cmd} daemon-reload 2>/dev/null || true
         fi
         # Note: Native podman-restart.service is strictly untouched per maintainer review.
@@ -4276,10 +4298,10 @@ uninstall_hiclaw() {
 
     # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
     # agentteams-controller for the same role)
-    if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^hiclaw-docker-proxy$"; then
+    if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
         log "$(msg uninstall.removing_proxy)"
-        ${DOCKER_CMD} stop hiclaw-docker-proxy >/dev/null 2>&1 || true
-        ${DOCKER_CMD} rm hiclaw-docker-proxy >/dev/null 2>&1 || true
+        ${DOCKER_CMD} stop agentteams-docker-proxy >/dev/null 2>&1 || true
+        ${DOCKER_CMD} rm agentteams-docker-proxy >/dev/null 2>&1 || true
     fi
 
     # Stop and remove the embedded controller container. MUST happen
@@ -4342,9 +4364,9 @@ uninstall_hiclaw() {
     fi
 
     # Remove install log
-    if [ -f "${HOME}/hiclaw-install.log" ]; then
-        log "$(msg uninstall.removing_log "${HOME}/hiclaw-install.log")"
-        rm -f "${HOME}/hiclaw-install.log"
+    if [ -f "${HOME}/agentteams-install.log" ]; then
+        log "$(msg uninstall.removing_log "${HOME}/agentteams-install.log")"
+        rm -f "${HOME}/agentteams-install.log"
     fi
 
     echo ""
@@ -4391,7 +4413,7 @@ case "${1:-}" in
         install_worker "$@"
         ;;
     uninstall)
-        uninstall_hiclaw
+        uninstall_agentteams
         ;;
     *)
         echo "Usage: $0 [manager|worker [options]|uninstall]"

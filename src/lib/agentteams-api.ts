@@ -170,7 +170,7 @@ export interface UpdateManagerRequest {
   image?: string;
 }
 
-// Matches the controller's snake_case schema (hiclaw-controller internal/server/types.go):
+// Matches the controller's snake_case schema (agentteams-controller internal/server/types.go):
 // request {name, credential_key}, response {name, consumer_id, api_key, status}.
 export interface CreateConsumerRequest {
   name: string;

@@ -146,7 +146,7 @@ Add agentteams-dashboard as an optional component in the AgentTeams installation
 - Dashboard container removed on uninstall
 - Bilingual messages (zh/en)
 - LAN-accessible by default (bind 0.0.0.0)
-- Add verification check in hiclaw-verify.sh
+- Add verification check in agentteams-verify.sh
 - Add Makefile targets: build-dashboard, install-dashboard, update-dashboard, uninstall-dashboard
 
 Environment variables:
@@ -192,7 +192,7 @@ agentteams-dashboard 是一个基于 Next.js 的 Web 管理面板，用于可视
 
 ## 变更内容
 
-### 1. \`install/hiclaw-install.sh\`
+### 1. \`install/agentteams-install.sh\`
 - 添加 Dashboard 安装向导步骤 (\`step_dashboard\`)
 - 支持配置端口号（默认 13000）、镜像名称、Higress Console URL
 - 自动检测 Higress Console URL 实现共用登录
@@ -200,7 +200,7 @@ agentteams-dashboard 是一个基于 Next.js 的 Web 管理面板，用于可视
 - 支持中英文双语消息
 - 默认绑定 0.0.0.0 支持局域网访问
 
-### 2. \`install/hiclaw-verify.sh\`
+### 2. \`install/agentteams-verify.sh\`
 - 添加 Dashboard 可访问性检查
 - 验证 HTTP 200 响应
 
@@ -222,13 +222,13 @@ agentteams-dashboard 是一个基于 Next.js 的 Web 管理面板，用于可视
 
 \`\`\`bash
 # 1. 安装 AgentTeams（包含 Dashboard）
-bash install/hiclaw-install.sh
+bash install/agentteams-install.sh
 
 # 2. 验证 Dashboard 可访问
 curl -s http://localhost:13000/ | head -5
 
 # 3. 验证安装脚本
-bash install/hiclaw-verify.sh
+bash install/agentteams-verify.sh
 
 # 4. 使用 Makefile
 make install-dashboard
