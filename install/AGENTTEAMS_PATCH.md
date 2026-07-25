@@ -92,7 +92,7 @@ The patch adds the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DASHBOARD_CONTEXT` | `../agentteams-dashboard` | Path to dashboard source tree |
-| `DASHBOARD_VERSION` | `1.0.0` | Dashboard version tag |
+| `DASHBOARD_VERSION` | `v1.2.0-beta.1` | Dashboard version tag |
 | `DASHBOARD_IMAGE` | derived | Full image reference |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 
