@@ -2542,6 +2542,29 @@ step_dashboard() {
     read -p "$(msg dash.gateway_prompt) [${_higress_url:-<skip>}]: " _input
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_input:-${_higress_url}}"
 
+    # Verify the Higress Console URL is reachable (best-effort warning only)
+    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
+        local _gw_reachable=0
+        # If the URL points to the controller container, test from inside the container
+        if echo "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | grep -qE "(agentteams-controller|hiclaw-controller|127\.0\.0\.1|localhost)"; then
+            if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
+                if ${DOCKER_CMD} exec agentteams-controller curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
+                    _gw_reachable=1
+                fi
+            fi
+        else
+            # External URL — test from host
+            if curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
+                _gw_reachable=1
+            fi
+        fi
+        if [ "${_gw_reachable}" = "0" ]; then
+            log "WARNING: Higress Console URL may not be reachable: ${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
+            log "  Dashboard will still work, but shared login via Higress Console may fail."
+            log "  To fix: verify the URL is correct and the Higress Console service is running."
+        fi
+    fi
+
     log "$(msg dash.summary "${AGENTTEAMS_PORT_DASHBOARD}" "${AGENTTEAMS_DASHBOARD_IMAGE}")"
     export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
 }
@@ -3062,6 +3085,17 @@ _start_dashboard() {
             env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
         elif ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
             env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
+        fi
+
+        # Verify Higress Console URL reachability (best-effort warning)
+        local _gw_url=""
+        _gw_url=$(printf '%s\n' "${env_args[@]}" | sed -n 's/^-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL=//p' | head -n1)
+        if [ -n "${_gw_url}" ]; then
+            if ! ${DOCKER_CMD} exec "${CTRL_CONTAINER}" curl -sf --max-time 3 "${_gw_url}/" >/dev/null 2>&1; then
+                log "WARNING: Higress Console URL may not be reachable: ${_gw_url}"
+                log "  Dashboard will still work, but shared login via Higress Console may fail."
+                log "  To fix: verify the URL is correct and the Higress Console service is running."
+            fi
         fi
     else
         log "WARNING: ${CTRL_CONTAINER} not running; launching Dashboard without Controller/MinIO/LLM env."

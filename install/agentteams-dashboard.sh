@@ -350,6 +350,25 @@ detect_runtime_env() {
   if [ -z "${AGENTTEAMS_LLM_API_KEY}" ]; then
     warn "Could not auto-detect LLM API key from ${ctrl_container}"
   fi
+
+  # Verify Higress Console URL reachability (best-effort warning)
+  if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+    local _gw_reachable=0
+    if echo "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | grep -qE "(agentteams-controller|hiclaw-controller|127\.0\.0\.1|localhost)"; then
+      if ${DOCKER_CMD} exec "${ctrl_container}" curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
+        _gw_reachable=1
+      fi
+    else
+      if curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
+        _gw_reachable=1
+      fi
+    fi
+    if [ "${_gw_reachable}" = "0" ]; then
+      warn "Higress Console URL may not be reachable: ${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
+      warn "  Dashboard will still work, but shared login via Higress Console may fail."
+      warn "  To fix: verify the URL is correct and the Higress Console service is running."
+    fi
+  fi
 }
 
 # ---------- recreate container ----------

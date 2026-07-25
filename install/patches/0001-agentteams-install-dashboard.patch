@@ -1,5 +1,5 @@
 diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index 9872b72..77a256a 100755
+index 9872b72..ca16d36 100755
 --- a/install/agentteams-install.sh
 +++ b/install/agentteams-install.sh
 @@ -1,12 +1,16 @@
@@ -99,7 +99,7 @@ index 9872b72..77a256a 100755
          step_runtime)   unset AGENTTEAMS_DEFAULT_WORKER_RUNTIME ;;
          step_manager_runtime) unset AGENTTEAMS_MANAGER_RUNTIME ;;
          step_e2ee)      unset AGENTTEAMS_MATRIX_E2EE ;;
-@@ -2435,6 +2474,78 @@ step_workspace() {
+@@ -2435,6 +2474,101 @@ step_workspace() {
      log "$(msg workspace.dir_label "${AGENTTEAMS_WORKSPACE_DIR}")"
  }
  
@@ -171,6 +171,29 @@ index 9872b72..77a256a 100755
 +    read -p "$(msg dash.gateway_prompt) [${_higress_url:-<skip>}]: " _input
 +    AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_input:-${_higress_url}}"
 +
++    # Verify the Higress Console URL is reachable (best-effort warning only)
++    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
++        local _gw_reachable=0
++        # If the URL points to the controller container, test from inside the container
++        if echo "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | grep -qE "(agentteams-controller|hiclaw-controller|127\.0\.0\.1|localhost)"; then
++            if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
++                if ${DOCKER_CMD} exec agentteams-controller curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
++                    _gw_reachable=1
++                fi
++            fi
++        else
++            # External URL — test from host
++            if curl -sf --max-time 3 "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}/" >/dev/null 2>&1; then
++                _gw_reachable=1
++            fi
++        fi
++        if [ "${_gw_reachable}" = "0" ]; then
++            log "WARNING: Higress Console URL may not be reachable: ${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
++            log "  Dashboard will still work, but shared login via Higress Console may fail."
++            log "  To fix: verify the URL is correct and the Higress Console service is running."
++        fi
++    fi
++
 +    log "$(msg dash.summary "${AGENTTEAMS_PORT_DASHBOARD}" "${AGENTTEAMS_DASHBOARD_IMAGE}")"
 +    export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
 +}
@@ -178,7 +201,7 @@ index 9872b72..77a256a 100755
  step_runtime() {
      log "$(msg worker_runtime.title)"
      echo ""
-@@ -2739,7 +2850,7 @@ setup_podman_autostart() {
+@@ -2739,7 +2873,7 @@ setup_podman_autostart() {
      current_user="$(whoami)"
  
      # Define the dedicated AgentTeams service content
@@ -187,7 +210,7 @@ index 9872b72..77a256a 100755
      local _service_content="[Unit]
  Description=AgentTeams Dedicated Podman Autostart Service
  Documentation=https://github.com/agentscope-ai/AgentTeams
-@@ -2832,6 +2943,162 @@ WantedBy=default.target"
+@@ -2832,6 +2966,173 @@ WantedBy=default.target"
      fi
  }
  
@@ -311,6 +334,17 @@ index 9872b72..77a256a 100755
 +        elif ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
 +            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
 +        fi
++
++        # Verify Higress Console URL reachability (best-effort warning)
++        local _gw_url=""
++        _gw_url=$(printf '%s\n' "${env_args[@]}" | sed -n 's/^-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL=//p' | head -n1)
++        if [ -n "${_gw_url}" ]; then
++            if ! ${DOCKER_CMD} exec "${CTRL_CONTAINER}" curl -sf --max-time 3 "${_gw_url}/" >/dev/null 2>&1; then
++                log "WARNING: Higress Console URL may not be reachable: ${_gw_url}"
++                log "  Dashboard will still work, but shared login via Higress Console may fail."
++                log "  To fix: verify the URL is correct and the Higress Console service is running."
++            fi
++        fi
 +    else
 +        log "WARNING: ${CTRL_CONTAINER} not running; launching Dashboard without Controller/MinIO/LLM env."
 +        if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
@@ -350,7 +384,7 @@ index 9872b72..77a256a 100755
  # ============================================================
  # Manager Installation (Interactive)
  # ============================================================
-@@ -2909,7 +3176,7 @@ install_manager() {
+@@ -2909,7 +3210,7 @@ install_manager() {
      # ── State machine ─────────────────────────────────────────────────────────
      local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
                     step_ports step_domains step_github step_skills step_volume
@@ -359,7 +393,7 @@ index 9872b72..77a256a 100755
      local _STEP_HISTORY=()
      local _step_idx=0
      while [ "${_step_idx}" -lt "${#_STEPS[@]}" ]; do
-@@ -3105,6 +3372,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
+@@ -3105,6 +3406,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
  AGENTTEAMS_WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR:-}
  # Host directory sharing
  AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
@@ -373,7 +407,7 @@ index 9872b72..77a256a 100755
  EOF
  
      chmod 600 "${ENV_FILE}"
-@@ -3117,9 +3391,7 @@ EOF
+@@ -3117,9 +3425,7 @@ EOF
          if [ "${DOCKER_CMD:-}" = "podman" ]; then
              ensure_podman_socket
          fi
@@ -384,7 +418,7 @@ index 9872b72..77a256a 100755
          if [ -n "${CONTAINER_SOCK}" ]; then
              log "$(msg install.socket_detected "${CONTAINER_SOCK}")"
              SOCKET_MOUNT_ARGS="-v ${CONTAINER_SOCK}:/var/run/docker.sock --security-opt label=disable"
-@@ -3353,6 +3625,15 @@ CREDEOF
+@@ -3353,6 +3659,15 @@ CREDEOF
          done
      fi
  
@@ -400,7 +434,7 @@ index 9872b72..77a256a 100755
      # --- Upgrade: inject extracted credentials into data volume ---
      # Only needed for old-arch upgrades (credential files were extracted above).
      if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-@@ -3583,7 +3864,7 @@ CREDEOF
+@@ -3583,7 +3898,7 @@ CREDEOF
          # The controller gates this on (a) Manager joining the DM room and
          # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
          # for the Manager's gateway key — typically ~45-90s on a fresh install.
@@ -409,7 +443,7 @@ index 9872b72..77a256a 100755
          # exec'd inside agentteams-controller (the source-of-truth container — its
          # bundled CLI binary is always in lockstep with whatever controller
          # binary is currently serving the HTTP API, since they're the same
-@@ -3730,6 +4011,9 @@ CREDEOF
+@@ -3730,6 +4045,9 @@ CREDEOF
      fi
      unset _port_prefix
  
@@ -419,7 +453,7 @@ index 9872b72..77a256a 100755
      # Apply Podman autostart if selected and environment matches
      if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
          setup_podman_autostart
-@@ -3778,6 +4062,9 @@ CREDEOF
+@@ -3778,6 +4096,9 @@ CREDEOF
      log ""
      log "$(msg success.other_consoles)"
      log "$(msg success.higress_console "${AGENTTEAMS_PORT_CONSOLE}" "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
@@ -429,7 +463,7 @@ index 9872b72..77a256a 100755
      if [ "${AGENTTEAMS_USE_EMBEDDED}" != "1" ]; then
          log "$(msg success.manager_console "${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}")"
          log "$(msg success.manager_console_gateway "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
-@@ -3993,11 +4280,6 @@ uninstall_agentteams() {
+@@ -3993,11 +4314,6 @@ uninstall_agentteams() {
              rm -f "${_service_dir}/agentteams-podman-restart.service"
              ${_systemctl_cmd} daemon-reload 2>/dev/null || true
          fi
@@ -441,7 +475,7 @@ index 9872b72..77a256a 100755
          # Note: Native podman-restart.service is strictly untouched per maintainer review.
      fi
  
-@@ -4023,6 +4305,13 @@ uninstall_agentteams() {
+@@ -4023,6 +4339,13 @@ uninstall_agentteams() {
          done
      fi
  
@@ -455,7 +489,7 @@ index 9872b72..77a256a 100755
      # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
      # agentteams-controller for the same role)
      if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
-@@ -4139,16 +4428,27 @@ case "${1:-}" in
+@@ -4139,16 +4462,27 @@ case "${1:-}" in
          shift
          install_worker "$@"
          ;;

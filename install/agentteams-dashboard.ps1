@@ -169,6 +169,28 @@ function Build-EnvArgs {
         $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
         if ($higressCheck) {
             $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=http://agentteams-controller:8001")
+            $AiGatewayAdminUrl = "http://agentteams-controller:8001"
+        }
+    }
+
+    # Verify Higress Console URL reachability (best-effort warning)
+    if ($AiGatewayAdminUrl) {
+        $gwReachable = $false
+        if ($AiGatewayAdminUrl -match "(agentteams-controller|hiclaw-controller|127\.0\.0\.1|localhost)") {
+            $gwTest = & $DockerCmd exec agentteams-controller curl -sf --max-time 3 "$AiGatewayAdminUrl/" 2>$null
+            if ($gwTest) { $gwReachable = $true }
+        } else {
+            try {
+                $response = Invoke-WebRequest -Uri "$AiGatewayAdminUrl/" -TimeoutSec 3 -UseBasicParsing 2>$null
+                if ($response.StatusCode -eq 200) { $gwReachable = $true }
+            } catch {
+                $gwReachable = $false
+            }
+        }
+        if (-not $gwReachable) {
+            Write-Warn "Higress Console URL may not be reachable: $AiGatewayAdminUrl"
+            Write-Warn "  Dashboard will still work, but shared login via Higress Console may fail."
+            Write-Warn "  To fix: verify the URL is correct and the Higress Console service is running."
         }
     }
 
