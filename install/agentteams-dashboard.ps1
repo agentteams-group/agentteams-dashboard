@@ -111,11 +111,13 @@ function Build-EnvArgs {
     # asynchronously during the first controller reconcile loop.
     # Handles both fresh installs (token not yet minted) and older
     # AgentTeams images (< v1.2.0-beta.1) that don't have cli-token at all.
+    # For backward compatibility, also try the legacy /var/run/hiclaw/cli-token
+    # path used by older HiClaw images.
     $authToken = ""
     $maxWait = 30
     $waited = 0
     while ($waited -lt $maxWait) {
-        $tokenOutput = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' 2>$null
+        $tokenOutput = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' 2>$null
         if ($tokenOutput) {
             $authToken = $tokenOutput.Trim()
             if ($authToken) { break }
@@ -127,7 +129,7 @@ function Build-EnvArgs {
         $envArgs += @("-e", "AGENTTEAMS_AUTH_TOKEN=$authToken")
     } else {
         Write-Warn "Could not read controller auth token (timed out after ${maxWait}s)."
-        Write-Warn "  This can happen with older AgentTeams images (< v1.2.0-beta.1) or if the controller is still starting."
+        Write-Warn "  This can happen with older AgentTeams/HiClaw images or if the controller is still starting."
         Write-Warn "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
         Write-Warn "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
     }
