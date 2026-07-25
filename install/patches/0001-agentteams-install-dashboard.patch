@@ -1,5 +1,5 @@
 diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index 9872b72..dd043ac 100755
+index 9872b72..20563bb 100755
 --- a/install/agentteams-install.sh
 +++ b/install/agentteams-install.sh
 @@ -1,12 +1,16 @@
@@ -187,7 +187,7 @@ index 9872b72..dd043ac 100755
      local _service_content="[Unit]
  Description=AgentTeams Dedicated Podman Autostart Service
  Documentation=https://github.com/agentscope-ai/AgentTeams
-@@ -2832,6 +2943,144 @@ WantedBy=default.target"
+@@ -2832,6 +2943,160 @@ WantedBy=default.target"
      fi
  }
  
@@ -274,12 +274,28 @@ index 9872b72..dd043ac 100755
 +        done
 +
 +        # The controller writes the CLI SA token to /var/run/agentteams/cli-token.
-+        local auth_token
-+        auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
++        # The token is generated asynchronously during the first reconcile loop,
++        # so it may not be available immediately after the container starts.
++        # We poll for up to 30s to handle both fresh installs (token not yet minted)
++        # and older images that don't support cli-token at all.
++        local auth_token=""
++        local _token_wait=0
++        local _token_max_wait=30
++        while [ ${_token_wait} -lt ${_token_max_wait} ]; do
++            auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
++            if [ -n "${auth_token}" ]; then
++                break
++            fi
++            sleep 2
++            _token_wait=$((_token_wait + 2))
++        done
 +        if [ -n "${auth_token}" ]; then
 +            env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${auth_token}")
 +        else
-+            log "WARNING: could not read controller SA token — Dashboard will be unauthenticated to Controller."
++            log "WARNING: could not read controller SA token (timed out after ${_token_max_wait}s)"
++            log "  This can happen with older AgentTeams images (< v1.2.0-beta.1) or if the controller is still starting."
++            log "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
++            log "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
 +        fi
 +
 +        local admin_user; admin_user=$(_env AGENTTEAMS_ADMIN_USER)
@@ -332,7 +348,7 @@ index 9872b72..dd043ac 100755
  # ============================================================
  # Manager Installation (Interactive)
  # ============================================================
-@@ -2909,7 +3158,7 @@ install_manager() {
+@@ -2909,7 +3174,7 @@ install_manager() {
      # ── State machine ─────────────────────────────────────────────────────────
      local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
                     step_ports step_domains step_github step_skills step_volume
@@ -341,7 +357,7 @@ index 9872b72..dd043ac 100755
      local _STEP_HISTORY=()
      local _step_idx=0
      while [ "${_step_idx}" -lt "${#_STEPS[@]}" ]; do
-@@ -3105,6 +3354,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
+@@ -3105,6 +3370,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
  AGENTTEAMS_WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR:-}
  # Host directory sharing
  AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
@@ -355,7 +371,7 @@ index 9872b72..dd043ac 100755
  EOF
  
      chmod 600 "${ENV_FILE}"
-@@ -3117,9 +3373,7 @@ EOF
+@@ -3117,9 +3389,7 @@ EOF
          if [ "${DOCKER_CMD:-}" = "podman" ]; then
              ensure_podman_socket
          fi
@@ -366,7 +382,7 @@ index 9872b72..dd043ac 100755
          if [ -n "${CONTAINER_SOCK}" ]; then
              log "$(msg install.socket_detected "${CONTAINER_SOCK}")"
              SOCKET_MOUNT_ARGS="-v ${CONTAINER_SOCK}:/var/run/docker.sock --security-opt label=disable"
-@@ -3353,6 +3607,15 @@ CREDEOF
+@@ -3353,6 +3623,15 @@ CREDEOF
          done
      fi
  
@@ -382,7 +398,7 @@ index 9872b72..dd043ac 100755
      # --- Upgrade: inject extracted credentials into data volume ---
      # Only needed for old-arch upgrades (credential files were extracted above).
      if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-@@ -3583,7 +3846,7 @@ CREDEOF
+@@ -3583,7 +3862,7 @@ CREDEOF
          # The controller gates this on (a) Manager joining the DM room and
          # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
          # for the Manager's gateway key — typically ~45-90s on a fresh install.
@@ -391,7 +407,7 @@ index 9872b72..dd043ac 100755
          # exec'd inside agentteams-controller (the source-of-truth container — its
          # bundled CLI binary is always in lockstep with whatever controller
          # binary is currently serving the HTTP API, since they're the same
-@@ -3730,6 +3993,9 @@ CREDEOF
+@@ -3730,6 +4009,9 @@ CREDEOF
      fi
      unset _port_prefix
  
@@ -401,7 +417,7 @@ index 9872b72..dd043ac 100755
      # Apply Podman autostart if selected and environment matches
      if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
          setup_podman_autostart
-@@ -3778,6 +4044,9 @@ CREDEOF
+@@ -3778,6 +4060,9 @@ CREDEOF
      log ""
      log "$(msg success.other_consoles)"
      log "$(msg success.higress_console "${AGENTTEAMS_PORT_CONSOLE}" "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
@@ -411,7 +427,7 @@ index 9872b72..dd043ac 100755
      if [ "${AGENTTEAMS_USE_EMBEDDED}" != "1" ]; then
          log "$(msg success.manager_console "${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}")"
          log "$(msg success.manager_console_gateway "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
-@@ -3993,11 +4262,6 @@ uninstall_agentteams() {
+@@ -3993,11 +4278,6 @@ uninstall_agentteams() {
              rm -f "${_service_dir}/agentteams-podman-restart.service"
              ${_systemctl_cmd} daemon-reload 2>/dev/null || true
          fi
@@ -423,7 +439,7 @@ index 9872b72..dd043ac 100755
          # Note: Native podman-restart.service is strictly untouched per maintainer review.
      fi
  
-@@ -4023,6 +4287,13 @@ uninstall_agentteams() {
+@@ -4023,6 +4303,13 @@ uninstall_agentteams() {
          done
      fi
  
@@ -437,7 +453,7 @@ index 9872b72..dd043ac 100755
      # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
      # agentteams-controller for the same role)
      if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
-@@ -4139,16 +4410,27 @@ case "${1:-}" in
+@@ -4139,16 +4426,27 @@ case "${1:-}" in
          shift
          install_worker "$@"
          ;;

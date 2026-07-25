@@ -308,8 +308,21 @@ detect_runtime_env() {
   AGENTTEAMS_OPENAI_BASE_URL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_OPENAI_BASE_URL=//p')
   AGENTTEAMS_DEFAULT_MODEL=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_DEFAULT_MODEL=//p')
 
-  # The controller writes the CLI token to /var/run/agentteams/cli-token.
-  AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+  # The controller writes the CLI SA token to /var/run/agentteams/cli-token.
+  # The token is generated asynchronously during the first reconcile loop,
+  # so it may not be available immediately after the container starts.
+  # We poll for up to 30s to handle both fresh installs (token not yet minted)
+  # and older images that don't support cli-token at all.
+  local _token_wait=0
+  local _token_max_wait=30
+  while [ ${_token_wait} -lt ${_token_max_wait} ]; do
+    AGENTTEAMS_AUTH_TOKEN=$(${DOCKER_CMD} exec "${ctrl_container}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+    if [ -n "${AGENTTEAMS_AUTH_TOKEN}" ]; then
+      break
+    fi
+    sleep 2
+    _token_wait=$((_token_wait + 2))
+  done
 
   # Admin credentials are set on the controller container by the AgentTeams
   # installer; the dashboard needs them for the Higress ensure-ai bootstrap.
@@ -324,8 +337,10 @@ detect_runtime_env() {
   fi
 
   if [ -z "${AGENTTEAMS_AUTH_TOKEN}" ]; then
-    warn "Could not read controller auth token (cli-token) from ${ctrl_container}."
-    warn "Dashboard API calls will be UNAUTHENTICATED — workers/teams/rooms will appear empty."
+    warn "Could not read controller auth token (cli-token) from ${ctrl_container} (timed out after ${_token_max_wait}s)."
+    warn "  This can happen with older AgentTeams images (< v1.2.0-beta.1) or if the controller is still starting."
+    warn "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
+    warn "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
   fi
   if [ -z "${AGENTTEAMS_FS_ACCESS_KEY}" ] || [ -z "${AGENTTEAMS_FS_SECRET_KEY}" ]; then
     warn "Could not auto-detect MinIO credentials from ${ctrl_container}"

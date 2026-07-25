@@ -107,13 +107,29 @@ function Build-EnvArgs {
         "-e", "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org"
     )
 
-    # Auth token
-    $authToken = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' 2>$null
+    # Auth token: poll for up to 30s since the token is generated
+    # asynchronously during the first controller reconcile loop.
+    # Handles both fresh installs (token not yet minted) and older
+    # AgentTeams images (< v1.2.0-beta.1) that don't have cli-token at all.
+    $authToken = ""
+    $maxWait = 30
+    $waited = 0
+    while ($waited -lt $maxWait) {
+        $tokenOutput = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' 2>$null
+        if ($tokenOutput) {
+            $authToken = $tokenOutput.Trim()
+            if ($authToken) { break }
+        }
+        Start-Sleep -Seconds 2
+        $waited += 2
+    }
     if ($authToken) {
-        $authToken = $authToken.Trim()
         $envArgs += @("-e", "AGENTTEAMS_AUTH_TOKEN=$authToken")
     } else {
-        Write-Warn "Could not read controller auth token; API calls may fail."
+        Write-Warn "Could not read controller auth token (timed out after ${maxWait}s)."
+        Write-Warn "  This can happen with older AgentTeams images (< v1.2.0-beta.1) or if the controller is still starting."
+        Write-Warn "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
+        Write-Warn "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
     }
 
     # Admin credentials
