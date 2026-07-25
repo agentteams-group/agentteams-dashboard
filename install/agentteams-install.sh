@@ -1,11 +1,15 @@
 #!/bin/bash
-# agentteams-install.sh - One-click installation for AgentTeams Manager and Worker
+# agentteams-install.sh - One-click installation for AgentTeams Manager, Worker, and Dashboard
 #
 # Usage:
 #   ./agentteams-install.sh                  # Interactive installation (choose Quick Start or Manual)
 #   ./agentteams-install.sh manager          # Same as above (explicit)
 #   ./agentteams-install.sh worker --name <name> ...  # Worker installation
+#   ./agentteams-install.sh dashboard        # Start/stop agentteams-dashboard (AGENTTEAMS_DASHBOARD=0 to stop)
 #   ./agentteams-install.sh uninstall        # Stop and remove Manager + all Workers
+#
+# NOTE: agentteams-dashboard is currently only supported via the Bash installer.
+#       The PowerShell installer (agentteams-install.ps1) does not yet include dashboard support.
 #
 # Onboarding Modes:
 #   Quick Start  - Fast installation with all default values (recommended)
@@ -47,8 +51,9 @@
 #   AGENTTEAMS_PORT_MANAGER_CONSOLE  Host port for Manager console (default: 18888)
 #   AGENTTEAMS_WORKER_IDLE_TIMEOUT  Worker idle timeout in minutes (default: 720, i.e. 12 hours)
 #   AGENTTEAMS_DASHBOARD              Install agentteams-dashboard management UI (default: 1)
+#   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: 1.0.0, independent of AgentTeams version)
 #   AGENTTEAMS_PORT_DASHBOARD         Dashboard host port (default: 13000)
-#   AGENTTEAMS_DASHBOARD_IMAGE        Override dashboard image
+#   AGENTTEAMS_DASHBOARD_IMAGE        Override dashboard image (default: <registry>/agentteams/agentteams-dashboard:<DASHBOARD_VERSION>)
 #   AGENTTEAMS_AI_GATEWAY_ADMIN_URL   Higress Console URL for shared auth (auto-detected)
 
 set -e
@@ -836,6 +841,8 @@ msg() {
         # --- Dashboard wizard ---
         "dash.prompt.zh")        text="是否安装 agentteams-dashboard 管理面板?" ;;
         "dash.prompt.en")        text="Install agentteams-dashboard management UI?" ;;
+        "dash.version_prompt.zh") text="Dashboard 版本" ;;
+        "dash.version_prompt.en") text="Dashboard version" ;;
         "dash.port_prompt.zh")   text="Dashboard 端口号" ;;
         "dash.port_prompt.en")   text="Dashboard port" ;;
         "dash.image_prompt.zh")  text="Dashboard 镜像" ;;
@@ -1317,6 +1324,11 @@ load_current_params_from_env() {
         [ -z "${AGENTTEAMS_WORKSPACE_DIR:+x}" ] && AGENTTEAMS_WORKSPACE_DIR="$(grep '^AGENTTEAMS_WORKSPACE_DIR=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_HOST_SHARE_DIR:+x}" ] && AGENTTEAMS_HOST_SHARE_DIR="$(grep '^AGENTTEAMS_HOST_SHARE_DIR=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_PODMAN_AUTOSTART:+x}" ] && AGENTTEAMS_PODMAN_AUTOSTART="$(grep '^AGENTTEAMS_PODMAN_AUTOSTART=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_DASHBOARD:+x}" ] && AGENTTEAMS_DASHBOARD="$(grep '^AGENTTEAMS_DASHBOARD=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_DASHBOARD_VERSION:+x}" ] && AGENTTEAMS_DASHBOARD_VERSION="$(grep '^AGENTTEAMS_DASHBOARD_VERSION=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_PORT_DASHBOARD:+x}" ] && AGENTTEAMS_PORT_DASHBOARD="$(grep '^AGENTTEAMS_PORT_DASHBOARD=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:+x}" ] && AGENTTEAMS_DASHBOARD_IMAGE="$(grep '^AGENTTEAMS_DASHBOARD_IMAGE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_ADMIN_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_ADMIN_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
     fi
 }
 
@@ -1692,7 +1704,7 @@ clear_step_vars() {
         step_skills)    unset AGENTTEAMS_SKILLS_API_URL ;;
         step_volume)    unset AGENTTEAMS_DATA_DIR ;;
         step_workspace) unset AGENTTEAMS_WORKSPACE_DIR ;;
-        step_dashboard) unset AGENTTEAMS_DASHBOARD AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL ;;
+        step_dashboard) unset AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL ;;
         step_runtime)   unset AGENTTEAMS_DEFAULT_WORKER_RUNTIME ;;
         step_manager_runtime) unset AGENTTEAMS_MANAGER_RUNTIME ;;
         step_e2ee)      unset AGENTTEAMS_MATRIX_E2EE ;;
@@ -2464,8 +2476,9 @@ step_workspace() {
 
 step_dashboard() {
     AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-1.0.0}"
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}"
+    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
 
     if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
@@ -2475,13 +2488,13 @@ step_dashboard() {
         else
             log "$(msg dash.skip) (non-interactive)"
         fi
-        export AGENTTEAMS_DASHBOARD AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+        export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
         return 0
     fi
 
     if [ "${AGENTTEAMS_UPGRADE}" = "1" ] && [ "${AGENTTEAMS_UPGRADE_KEEP_ALL}" = "1" ]; then
-        log "$(msg prompt.upgrade_keep "" "${AGENTTEAMS_DASHBOARD}") dashboard=${AGENTTEAMS_DASHBOARD} port=${AGENTTEAMS_PORT_DASHBOARD}"
-        export AGENTTEAMS_DASHBOARD AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+        log "$(msg prompt.upgrade_keep "" "${AGENTTEAMS_DASHBOARD}") dashboard=${AGENTTEAMS_DASHBOARD} version=${AGENTTEAMS_DASHBOARD_VERSION} port=${AGENTTEAMS_PORT_DASHBOARD}"
+        export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
         return 0
     fi
 
@@ -2496,21 +2509,27 @@ step_dashboard() {
 
     if [ "${AGENTTEAMS_DASHBOARD}" != "1" ]; then
         log "$(msg dash.skip)"
-        export AGENTTEAMS_DASHBOARD AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+        export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
         return 0
     fi
+
+    # Dashboard version
+    local _current_version="${AGENTTEAMS_DASHBOARD_VERSION}"
+    read -p "$(msg dash.version_prompt) [${_current_version}]: " _input
+    AGENTTEAMS_DASHBOARD_VERSION="${_input:-${_current_version}}"
 
     # Dashboard port
     local _current_port="${AGENTTEAMS_PORT_DASHBOARD}"
     read -p "$(msg dash.port_prompt) [${_current_port}]: " _input
     AGENTTEAMS_PORT_DASHBOARD="${_input:-${_current_port}}"
 
-    # Dashboard image
-    local _current_image="${AGENTTEAMS_DASHBOARD_IMAGE}"
+    # Dashboard image (derived from version by default, but overridable)
+    local _default_image="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
+    local _current_image="${AGENTTEAMS_DASHBOARD_IMAGE:-${_default_image}}"
     read -p "$(msg dash.image_prompt) [${_current_image}]: " _input
     AGENTTEAMS_DASHBOARD_IMAGE="${_input:-${_current_image}}"
 
-    # Higress Console URL (auto-detect or manual)
+    # Higress Console URL (explicit config takes priority; auto-detect as fallback)
     local _higress_url="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
     if [ -z "${_higress_url}" ]; then
         if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
@@ -2524,7 +2543,7 @@ step_dashboard() {
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_input:-${_higress_url}}"
 
     log "$(msg dash.summary "${AGENTTEAMS_PORT_DASHBOARD}" "${AGENTTEAMS_DASHBOARD_IMAGE}")"
-    export AGENTTEAMS_DASHBOARD AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+    export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
 }
 
 step_runtime() {
@@ -2945,7 +2964,8 @@ _start_dashboard() {
     local DASHBOARD_CONTAINER="agentteams-dashboard"
 
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-1.0.0}"
+    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
 
     log ""
     log "Starting agentteams-dashboard..."
@@ -3006,12 +3026,30 @@ _start_dashboard() {
         done
 
         # The controller writes the CLI SA token to /var/run/agentteams/cli-token.
-        local auth_token
-        auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null' | tr -d '\n' || true)
+        # The token is generated asynchronously during the first reconcile loop,
+        # so it may not be available immediately after the container starts.
+        # We poll for up to 30s to handle both fresh installs (token not yet minted)
+        # and older images that don't support cli-token at all.
+        # For backward compatibility, also try the legacy /var/run/hiclaw/cli-token
+        # path used by older HiClaw images.
+        local auth_token=""
+        local _token_wait=0
+        local _token_max_wait=30
+        while [ ${_token_wait} -lt ${_token_max_wait} ]; do
+            auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
+            if [ -n "${auth_token}" ]; then
+                break
+            fi
+            sleep 2
+            _token_wait=$((_token_wait + 2))
+        done
         if [ -n "${auth_token}" ]; then
             env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${auth_token}")
         else
-            log "WARNING: could not read controller SA token — Dashboard will be unauthenticated to Controller."
+            log "WARNING: could not read controller SA token (timed out after ${_token_max_wait}s)"
+            log "  This can happen with older AgentTeams/HiClaw images or if the controller is still starting."
+            log "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
+            log "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
         fi
 
         local admin_user; admin_user=$(_env AGENTTEAMS_ADMIN_USER)
@@ -3019,14 +3057,21 @@ _start_dashboard() {
         [ -n "${admin_user}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${admin_user}")
         [ -n "${admin_pass}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${admin_pass}")
 
-        # In embedded topology the Higress Console lives inside the controller on port 8001.
-        if ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
+        # Higress Console URL: explicit config takes priority, auto-detect as fallback.
+        if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
+        elif ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
             env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
         fi
     else
         log "WARNING: ${CTRL_CONTAINER} not running; launching Dashboard without Controller/MinIO/LLM env."
-        env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
+        if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
+        fi
     fi
+
+    # Create persistent data volume (for future use)
+    ${DOCKER_CMD} volume create agentteams-dashboard-data >/dev/null 2>&1 || true
 
     ${DOCKER_CMD} run -d \
         --name "${DASHBOARD_CONTAINER}" \
@@ -3035,6 +3080,7 @@ _start_dashboard() {
         --network-alias dashboard.agentteams.io \
         -p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000" \
         "${env_args[@]}" \
+        -v agentteams-dashboard-data:/app/db \
         "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
     # Wait for dashboard to be ready
@@ -3329,8 +3375,9 @@ AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
 
 # agentteams-dashboard (management UI)
 AGENTTEAMS_DASHBOARD=${AGENTTEAMS_DASHBOARD:-1}
+AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION:-1.0.0}
 AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD:-13000}
-AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_VERSION}}
+AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}
 AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}
 EOF
 
@@ -3550,33 +3597,6 @@ CREDEOF
             log "Extracted Manager Matrix password${_mgr_room:+ and room ID}"
         fi
 
-        # Worker passwords and room IDs from workers-registry.json
-        if [ -f "${AGENTTEAMS_WORKSPACE_DIR}/workers-registry.json" ]; then
-            _worker_names=$(python3 -c "import json; d=json.load(open('${AGENTTEAMS_WORKSPACE_DIR}/workers-registry.json')); print(' '.join(d.get('workers',{}).keys()))" 2>/dev/null || true)
-            for _wname in ${_worker_names}; do
-                _wpw=""
-                if ${DOCKER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q '^agentteams-manager$'; then
-                    _wpw=$(${DOCKER_CMD} exec agentteams-manager cat "/root/agentteams-fs/agents/${_wname}/credentials/matrix/password" 2>/dev/null || true)
-                fi
-                if [ -z "${_wpw}" ] && ${DOCKER_CMD} volume ls -q 2>/dev/null | grep -q "^${AGENTTEAMS_DATA_DIR}$"; then
-                    _wpw=$(agentteams_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_PASSWORD)
-                fi
-                _wroom=$(python3 -c "import json; d=json.load(open('${AGENTTEAMS_WORKSPACE_DIR}/workers-registry.json')); print(d.get('workers',{}).get('${_wname}',{}).get('room_id',''))" 2>/dev/null || true)
-                if [ -z "${_wroom}" ] && ${DOCKER_CMD} volume ls -q 2>/dev/null | grep -q "^${AGENTTEAMS_DATA_DIR}$"; then
-                    _wroom=$(agentteams_read_worker_creds_value_from_volume "${AGENTTEAMS_DATA_DIR}" "${_wname}" WORKER_ROOM_ID)
-                fi
-                if [ -n "${_wpw}" ]; then
-                    cat > "${_creds_tmp}/${_wname}.env" <<CREDEOF
-WORKER_PASSWORD="${_wpw}"
-WORKER_MINIO_PASSWORD="$(openssl rand -hex 24)"
-WORKER_GATEWAY_KEY="$(openssl rand -hex 32)"
-WORKER_ROOM_ID="${_wroom}"
-CREDEOF
-                    log "Extracted ${_wname} Matrix password${_wroom:+ and room ID}"
-                fi
-            done
-        fi
-
         if [ "${_mgr_creds_tempstart}" = "1" ]; then
             log "Stopping agentteams-manager after credential extraction (upgrade will recreate containers)..."
             ${DOCKER_CMD} stop agentteams-manager 2>/dev/null || true
@@ -3605,11 +3625,13 @@ CREDEOF
         done
     fi
 
-    # Clean up legacy containers (e.g. agentteams-docker-proxy from v1.0.x)
-    for _legacy in $(${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^agentteams-' | grep -vE "^(agentteams-controller|agentteams-manager|agentteams-worker-)" || true); do
-        log "Removing legacy container: ${_legacy}"
-        ${DOCKER_CMD} stop "${_legacy}" 2>/dev/null || true
-        ${DOCKER_CMD} rm -f "${_legacy}" 2>/dev/null || true
+    # Clean up legacy containers from v1.0.x and earlier
+    for _legacy_name in agentteams-docker-proxy; do
+        if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "${_legacy_name}"; then
+            log "Removing legacy container: ${_legacy_name}"
+            ${DOCKER_CMD} stop "${_legacy_name}" 2>/dev/null || true
+            ${DOCKER_CMD} rm -f "${_legacy_name}" 2>/dev/null || true
+        fi
     done
 
     # --- Upgrade: inject extracted credentials into data volume ---
@@ -4406,16 +4428,27 @@ case "${1:-}" in
         shift
         install_worker "$@"
         ;;
+    dashboard)
+        check_container_runtime
+        load_current_params_from_env
+        AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
+        AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-1.0.0}"
+        AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
+        AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
+        AGENTTEAMS_USE_EMBEDDED=1
+        _start_dashboard
+        ;;
     uninstall)
         uninstall_agentteams
         ;;
     *)
-        echo "Usage: $0 [manager|worker [options]|uninstall]"
+        echo "Usage: $0 [manager|worker [options]|dashboard|uninstall]"
         echo ""
         echo "Commands:"
         echo "  manager              Interactive Manager installation (default)"
         echo "                       Choose Quick Start (all defaults) or Manual mode"
         echo "  worker               Worker installation (requires --name and connection params)"
+        echo "  dashboard            Start/stop agentteams-dashboard (use with AGENTTEAMS_DASHBOARD=0 to stop)"
         echo "  uninstall            Stop and remove Manager + all Worker containers"
         echo ""
         echo "Quick Start (fastest):"
