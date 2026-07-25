@@ -17,8 +17,10 @@ set -euo pipefail
 CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
+DEFAULT_DASHBOARD_VERSION="1.0.0"
 # Must match the Makefile image coordinates (REGISTRY/REPO/name).
-DEFAULT_IMAGE="higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:v1.0.0"
+DEFAULT_REGISTRY="higress-registry.cn-hangzhou.cr.aliyuncs.com"
+DEFAULT_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:v${DEFAULT_DASHBOARD_VERSION}"
 DATA_VOLUME="agentteams-dashboard-data"
 ENV_FILE="${HOME}/.agentteams-dashboard.env"
 
@@ -49,6 +51,7 @@ save_env() {
   _tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
   cat > "${_tmp}" <<EOF
 AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD}
+AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}
 AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}
 AGENTTEAMS_CONTROLLER_URL=${AGENTTEAMS_CONTROLLER_URL}
 NEXT_PUBLIC_MATRIX_API_URL=${NEXT_PUBLIC_MATRIX_API_URL}
@@ -81,6 +84,7 @@ load_env() {
   source "${ENV_FILE}"
   # Apply defaults for any missing values
   AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-${DEFAULT_PORT}}"
+  AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-${DEFAULT_DASHBOARD_VERSION}}"
   AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${DEFAULT_IMAGE}}"
   AGENTTEAMS_CONTROLLER_URL="${AGENTTEAMS_CONTROLLER_URL:-http://agentteams-controller:8090}"
   NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://agentteams-controller:6167}"
@@ -173,8 +177,15 @@ wizard() {
     exit 0
   fi
 
+  AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-${DEFAULT_DASHBOARD_VERSION}}"
+  prompt_value AGENTTEAMS_DASHBOARD_VERSION "Dashboard version" "${DEFAULT_DASHBOARD_VERSION}"
+
+  # Derive default image from version if not explicitly set
+  if [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
+    AGENTTEAMS_DASHBOARD_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:v${AGENTTEAMS_DASHBOARD_VERSION}"
+  fi
   prompt_value AGENTTEAMS_PORT_DASHBOARD "Dashboard port" "${DEFAULT_PORT}"
-  prompt_value AGENTTEAMS_DASHBOARD_IMAGE "Dashboard Docker image" "${DEFAULT_IMAGE}"
+  prompt_value AGENTTEAMS_DASHBOARD_IMAGE "Dashboard Docker image" "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
   # Detect controller URL — in embedded mode the API is on agentteams-controller:8090.
   # The manager container does not expose the controller REST API, so we always
@@ -305,10 +316,11 @@ detect_runtime_env() {
   AGENTTEAMS_ADMIN_USER=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_USER=//p')
   AGENTTEAMS_ADMIN_PASSWORD=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_PASSWORD=//p')
 
-  # Always use the internal Docker-network Higress Console URL; a host IP saved
-  # in an old env file is often unreachable from inside the dashboard container.
-  if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
-    AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
+  # Higress Console URL: explicit config takes priority, auto-detect as fallback.
+  if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+    if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
+      AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
+    fi
   fi
 
   if [ -z "${AGENTTEAMS_AUTH_TOKEN}" ]; then
@@ -407,6 +419,7 @@ do_install() {
 
   echo ""
   info "Configuration:"
+  info "  Version:     ${AGENTTEAMS_DASHBOARD_VERSION}"
   info "  Port:        ${AGENTTEAMS_PORT_DASHBOARD}"
   info "  Image:       ${AGENTTEAMS_DASHBOARD_IMAGE}"
   info "  Controller:  ${AGENTTEAMS_CONTROLLER_URL}"

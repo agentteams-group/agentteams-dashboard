@@ -14,10 +14,12 @@ param(
     [ValidateSet("install", "update", "uninstall")]
     [string]$Action = "install",
 
+    [string]$DashboardVersion = "1.0.0",
     [int]$Port = 13000,
-    [string]$Image = "higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-dashboard:v1.0.0",
+    [string]$Image = "",
     [string]$ControllerUrl = "http://agentteams-controller:8090",
     [string]$MatrixUrl = "http://agentteams-controller:6167",
+    [string]$AiGatewayAdminUrl = "",
     [switch]$LocalOnly
 )
 
@@ -28,6 +30,22 @@ $ContainerName = "agentteams-dashboard"
 $NetworkName = "agentteams-net"
 $DataVolume = "agentteams-dashboard-data"
 $EnvFile = Join-Path $env:USERPROFILE ".agentteams-dashboard.env"
+$DefaultRegistry = "higress-registry.cn-hangzhou.cr.aliyuncs.com"
+
+# Derive default image from version if not explicitly set
+if (-not $Image) {
+    $Image = "$DefaultRegistry/agentteams/agentteams-dashboard:v$DashboardVersion"
+}
+# Check for env var override
+if ($env:AGENTTEAMS_DASHBOARD_IMAGE) {
+    $Image = $env:AGENTTEAMS_DASHBOARD_IMAGE
+}
+if ($env:AGENTTEAMS_DASHBOARD_VERSION) {
+    $DashboardVersion = $env:AGENTTEAMS_DASHBOARD_VERSION
+}
+if ($env:AGENTTEAMS_AI_GATEWAY_ADMIN_URL) {
+    $AiGatewayAdminUrl = $env:AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+}
 
 # ---------- helpers ----------
 function Write-Info($msg)  { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
@@ -126,10 +144,14 @@ function Build-EnvArgs {
     if ($CtrlEnv.ContainsKey("AGENTTEAMS_OPENAI_BASE_URL")) { $envArgs += @("-e", "AGENTTEAMS_OPENAI_BASE_URL=$($CtrlEnv['AGENTTEAMS_OPENAI_BASE_URL'])") }
     if ($CtrlEnv.ContainsKey("AGENTTEAMS_DEFAULT_MODEL")) { $envArgs += @("-e", "AGENTTEAMS_DEFAULT_MODEL=$($CtrlEnv['AGENTTEAMS_DEFAULT_MODEL'])") }
 
-    # Higress Console URL
-    $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
-    if ($higressCheck) {
-        $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=http://agentteams-controller:8001")
+    # Higress Console URL: explicit config takes priority, auto-detect as fallback.
+    if ($AiGatewayAdminUrl) {
+        $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=$AiGatewayAdminUrl")
+    } else {
+        $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
+        if ($higressCheck) {
+            $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=http://agentteams-controller:8001")
+        }
     }
 
     return $envArgs
@@ -152,11 +174,29 @@ function Do-Install {
         $input = Read-Host "Install AgentTeams-Dashboard? [Y/n]"
         if ($input -match "^[nN0]$") { Write-Info "Skipped."; exit 0 }
 
+        $verInput = Read-Host "Dashboard version [$DashboardVersion]"
+        if ($verInput) { $DashboardVersion = $verInput }
+
         $portInput = Read-Host "Dashboard port [$Port]"
         if ($portInput) { $Port = [int]$portInput }
 
-        $imgInput = Read-Host "Dashboard image [$Image]"
-        if ($imgInput) { $Image = $imgInput }
+        # Derive default image from version
+        $defaultImage = "$DefaultRegistry/agentteams/agentteams-dashboard:v$DashboardVersion"
+        $imgInput = Read-Host "Dashboard image [$defaultImage]"
+        if ($imgInput) { $Image = $imgInput } else { $Image = $defaultImage }
+
+        # Higress Console URL prompt
+        $higressDefault = ""
+        if ($AiGatewayAdminUrl) {
+            $higressDefault = $AiGatewayAdminUrl
+        } else {
+            $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
+            if ($higressCheck) {
+                $higressDefault = "http://agentteams-controller:8001"
+            }
+        }
+        $higressInput = Read-Host "Higress Console URL (for shared login) [$($higressDefault -replace '^$', '<skip>')]"
+        if ($higressInput) { $AiGatewayAdminUrl = $higressInput } elseif ($higressDefault) { $AiGatewayAdminUrl = $higressDefault }
     }
 
     # Remove existing container
