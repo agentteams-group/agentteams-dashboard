@@ -164,6 +164,10 @@ function Build-EnvArgs {
 
     # Higress Console URL: explicit config takes priority, auto-detect as fallback.
     if ($AiGatewayAdminUrl) {
+        # Normalize URL: add http:// prefix if missing
+        if ($AiGatewayAdminUrl -notmatch "^https?://") {
+            $AiGatewayAdminUrl = "http://$AiGatewayAdminUrl"
+        }
         $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=$AiGatewayAdminUrl")
     } else {
         $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null

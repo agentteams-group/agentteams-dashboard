@@ -336,6 +336,12 @@ detect_runtime_env() {
     if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
       AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
     fi
+  else
+    # Normalize URL: add http:// prefix if missing
+    case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
+      http://*|https://*) ;;
+      *) AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ;;
+    esac
   fi
 
   if [ -z "${AGENTTEAMS_AUTH_TOKEN}" ]; then

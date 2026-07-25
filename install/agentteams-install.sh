@@ -2542,6 +2542,14 @@ step_dashboard() {
     read -p "$(msg dash.gateway_prompt) [${_higress_url:-<skip>}]: " _input
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_input:-${_higress_url}}"
 
+    # Normalize URL: add http:// prefix if missing
+    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
+        case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
+            http://*|https://*) ;;
+            *) AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ;;
+        esac
+    fi
+
     # Verify the Higress Console URL is reachable (best-effort warning only)
     if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
         local _gw_reachable=0
@@ -3082,7 +3090,13 @@ _start_dashboard() {
 
         # Higress Console URL: explicit config takes priority, auto-detect as fallback.
         if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
-            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}")
+            # Normalize URL: add http:// prefix if missing
+            local _gw_norm="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
+            case "${_gw_norm}" in
+                http://*|https://*) ;;
+                *) _gw_norm="http://${_gw_norm}" ;;
+            esac
+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_gw_norm}")
         elif ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
             env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
         fi
