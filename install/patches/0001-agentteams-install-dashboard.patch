@@ -1,9 +1,9 @@
 diff --git a/install/agentteams-dashboard-tests.sh b/install/agentteams-dashboard-tests.sh
 new file mode 100755
-index 0000000..24b2bf3
+index 0000000..2a97073
 --- /dev/null
 +++ b/install/agentteams-dashboard-tests.sh
-@@ -0,0 +1,654 @@
+@@ -0,0 +1,747 @@
 +#!/bin/bash
 +# agentteams-dashboard-tests.sh — Regression tests for Dashboard integration
 +#
@@ -246,7 +246,7 @@ index 0000000..24b2bf3
 +section "Test 10: Non-interactive mode"
 +
 +# Verify step_dashboard handles non-interactive mode
-+if grep -A 20 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
++if grep -A 40 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
 +    pass "step_dashboard handles non-interactive mode"
 +else
 +    fail "step_dashboard missing non-interactive handling"
@@ -453,7 +453,11 @@ index 0000000..24b2bf3
 +_exec_result=$(test_step_dashboard_exec 2>&1)
 +
 +if echo "${_exec_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
-+    pass "Executable step_dashboard: extraction not available (grep tests cover behavior)"
++    fail "Exec step_dashboard: function extraction failed"
++    fail "Exec non-interactive: cannot verify (extraction failed)"
++    fail "Exec non-interactive port: cannot verify (extraction failed)"
++    fail "Exec non-interactive image: cannot verify (extraction failed)"
++    fail "Exec non-interactive enabled: cannot verify (extraction failed)"
 +else
 +    # Test 15a: Version is correct
 +    if echo "${_exec_result}" | grep -q "RESULT_VERSION=v1.2.0-beta.1"; then
@@ -542,7 +546,9 @@ index 0000000..24b2bf3
 +_stop_exec_result=$(test_start_dashboard_stop_exec 2>&1)
 +
 +if echo "${_stop_exec_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
-+    pass "Executable stop: extraction not available (grep tests cover behavior)"
++    fail "Exec stop: function extraction failed"
++    fail "Exec stop: cannot verify stop call (extraction failed)"
++    fail "Exec stop: cannot verify rm call (extraction failed)"
 +else
 +    # Test 16a: stop command is called
 +    if echo "${_stop_exec_result}" | grep -q "docker stop.*agentteams-dashboard"; then
@@ -559,11 +565,12 @@ index 0000000..24b2bf3
 +    fi
 +fi
 +
-+# ---------- Test 17: Executable upgrade version/image derivation ----------
++# ---------- Test 17: Executable non-interactive version/image derivation ----------
 +
-+section "Test 17: Executable upgrade version/image derivation"
++section "Test 17: Executable non-interactive version/image derivation"
 +
-+test_upgrade_derivation_exec() {
++_test_step_dashboard_with_env() {
++    local _version="$1" _image="$2" _noninteractive="$3" _upgrade="$4" _keepall="$5"
 +    local _tmpfile
 +    _tmpfile=$(mktemp)
 +
@@ -580,63 +587,149 @@ index 0000000..24b2bf3
 +        podman() { return 1; }
 +        DOCKER_CMD="docker"
 +
-+        # Simulate upgrade: load current (default) image from env
-+        # Version v1.2.0-beta.1 with the matching default image
-+        AGENTTEAMS_NON_INTERACTIVE=1
++        AGENTTEAMS_NON_INTERACTIVE="${_noninteractive}"
 +        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
-+        AGENTTEAMS_UPGRADE=1
-+        AGENTTEAMS_UPGRADE_KEEP_ALL=1
++        AGENTTEAMS_UPGRADE="${_upgrade}"
++        AGENTTEAMS_UPGRADE_KEEP_ALL="${_keepall}"
 +        AGENTTEAMS_LANG="en"
 +        AGENTTEAMS_USE_EMBEDDED=0
 +        AGENTTEAMS_LOCAL_ONLY=1
 +        AGENTTEAMS_DASHBOARD="1"
-+        AGENTTEAMS_DASHBOARD_VERSION="v1.2.0-beta.1"
++        AGENTTEAMS_DASHBOARD_VERSION="${_version}"
 +        AGENTTEAMS_PORT_DASHBOARD="13000"
-+        # This is the DEFAULT image for v1.2.0-beta.1 (not a user override)
-+        AGENTTEAMS_DASHBOARD_IMAGE="ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1"
++        AGENTTEAMS_DASHBOARD_IMAGE="${_image}"
 +        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
 +        STEP_RESULT=""
 +
-+        # shellcheck disable=SC1090
 +        source "${_tmpfile}" 2>/dev/null
 +
 +        if ! declare -F step_dashboard >/dev/null 2>&1; then
 +            echo "FUNCTION_NOT_FOUND"
 +        else
-+            # In non-interactive keep-all mode, just check that variables are preserved
 +            step_dashboard
 +            echo "RESULT_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}"
 +            echo "RESULT_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}"
-+            echo "RESULT_PORT=${AGENTTEAMS_PORT_DASHBOARD}"
 +        fi
 +    )
 +    rm -f "${_tmpfile}"
 +}
 +
-+_upgrade_result=$(test_upgrade_derivation_exec 2>&1)
++# Test 17a: keep-all preserves values (version=image match)
++_keepall_result=$(_test_step_dashboard_with_env "v1.2.0-beta.1" "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" "1" "1" "1")
 +
-+if echo "${_upgrade_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
-+    pass "Exec upgrade derivation: extraction not available (grep tests cover logic)"
++if echo "${_keepall_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
++    fail "Exec derivation: function extraction failed"
++    fail "Exec keep-all: cannot verify (extraction failed)"
++    fail "Exec keep-all image: cannot verify (extraction failed)"
++    fail "Exec version-change default: cannot verify (extraction failed)"
++    fail "Exec version-change custom: cannot verify (extraction failed)"
++    fail "Exec auth-token env: cannot verify (extraction failed)"
 +else
-+    # Test 17a: Keep-all preserves version
-+    if echo "${_upgrade_result}" | grep -q "RESULT_VERSION=v1.2.0-beta.1"; then
-+        pass "Exec upgrade keep-all: preserves version"
++    # 17a: keep-all preserves version
++    if echo "${_keepall_result}" | grep -q "RESULT_VERSION=v1.2.0-beta.1"; then
++        pass "Exec keep-all: preserves version"
 +    else
-+        fail "Exec upgrade keep-all: version not preserved"
++        fail "Exec keep-all: version not preserved"
 +    fi
 +
-+    # Test 17b: Keep-all preserves image
-+    if echo "${_upgrade_result}" | grep -q "RESULT_IMAGE=.*v1.2.0-beta.1"; then
-+        pass "Exec upgrade keep-all: preserves image"
++    # 17b: keep-all preserves image (version matches, so stays same)
++    if echo "${_keepall_result}" | grep -q "RESULT_IMAGE=.*v1.2.0-beta.1"; then
++        pass "Exec keep-all: preserves image when version matches"
 +    else
-+        fail "Exec upgrade keep-all: image not preserved"
++        fail "Exec keep-all: image not preserved"
 +    fi
 +
-+    # Test 17c: Keep-all preserves port
-+    if echo "${_upgrade_result}" | grep -q "RESULT_PORT=13000"; then
-+        pass "Exec upgrade keep-all: preserves port"
++    # 17c: non-interactive, version changed, default image → image follows
++    _verchange_result=$(_test_step_dashboard_with_env "v2.0.0" "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" "1" "1" "0")
++
++    if echo "${_verchange_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v2.0.0"; then
++        pass "Exec non-interactive: default image follows new version"
 +    else
-+        fail "Exec upgrade keep-all: port not preserved"
++        fail "Exec non-interactive: default image does not follow new version (got: $(echo "${_verchange_result}" | grep RESULT_IMAGE))"
++    fi
++
++    # 17d: non-interactive, version changed, CUSTOM image → image preserved
++    _custom_result=$(_test_step_dashboard_with_env "v2.0.0" "myregistry.io/custom-dashboard:latest" "1" "1" "0")
++
++    if echo "${_custom_result}" | grep -q "RESULT_IMAGE=myregistry.io/custom-dashboard:latest"; then
++        pass "Exec non-interactive: custom image preserved when version changes"
++    else
++        fail "Exec non-interactive: custom image overwritten (got: $(echo "${_custom_result}" | grep RESULT_IMAGE))"
++    fi
++fi
++
++# ---------- Test 18: Executable AGENTTEAMS_AUTH_TOKEN support ----------
++
++section "Test 18: Executable AGENTTEAMS_AUTH_TOKEN env support"
++
++_test_start_dashboard_auth() {
++    local _auth_token="$1"
++    local _tmpfile
++    _tmpfile=$(mktemp)
++
++    if ! extract_function "_start_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
++        echo "EXTRACTION_FAILED"
++        rm -f "${_tmpfile}"
++        return
++    fi
++
++    (
++        ENV_ARGS=""
++        docker() {
++            if [ "$1" = "ps" ]; then
++                echo "agentteams-controller"
++                return 0
++            fi
++            if [ "$1" = "exec" ]; then
++                # Simulate no token file in controller
++                echo ""
++                return 1
++            fi
++            if [ "$1" = "run" ]; then
++                # Capture env vars passed to docker run
++                ENV_ARGS="$(echo "$*" | tr ' ' '\n' | grep -A1 AGENTTEAMS_AUTH_TOKEN | head -2)"
++                return 0
++            fi
++            return 0
++        }
++        podman() { docker "$@"; }
++        DOCKER_CMD="docker"
++
++        log() { :; }
++        msg() { echo "$*"; }
++        _env() { eval "echo \"\${$1:-}\""; }
++
++        AGENTTEAMS_DASHBOARD=1
++        AGENTTEAMS_USE_EMBEDDED=1
++        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
++        AGENTTEAMS_PORT_DASHBOARD="13000"
++        AGENTTEAMS_DASHBOARD_VERSION="v1.0.0"
++        AGENTTEAMS_DASHBOARD_IMAGE="ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.0.0"
++        AGENTTEAMS_LOCAL_ONLY=1
++        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
++        AGENTTEAMS_AUTH_TOKEN="${_auth_token}"
++
++        source "${_tmpfile}" 2>/dev/null
++
++        if ! declare -F _start_dashboard >/dev/null 2>&1; then
++            echo "FUNCTION_NOT_FOUND"
++        else
++            _start_dashboard
++            echo "ENV_ARGS=${ENV_ARGS}"
++        fi
++    )
++    rm -f "${_tmpfile}"
++}
++
++_auth_result=$(_test_start_dashboard_auth "test-token-abc123" 2>&1)
++
++if echo "${_auth_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
++    fail "Exec auth-token: function extraction failed"
++else
++    if echo "${_auth_result}" | grep -q "test-token-abc123"; then
++        pass "Exec _start_dashboard: honors user-supplied AGENTTEAMS_AUTH_TOKEN"
++    else
++        fail "Exec _start_dashboard: user-supplied AGENTTEAMS_AUTH_TOKEN not used"
 +    fi
 +fi
 +
@@ -659,7 +752,7 @@ index 0000000..24b2bf3
 +echo "All tests passed."
 +exit 0
 diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index 9872b72..74e13a2 100755
+index 9872b72..74c1025 100755
 --- a/install/agentteams-install.sh
 +++ b/install/agentteams-install.sh
 @@ -1,12 +1,16 @@
@@ -759,7 +852,7 @@ index 9872b72..74e13a2 100755
          step_runtime)   unset AGENTTEAMS_DEFAULT_WORKER_RUNTIME ;;
          step_manager_runtime) unset AGENTTEAMS_MANAGER_RUNTIME ;;
          step_e2ee)      unset AGENTTEAMS_MATRIX_E2EE ;;
-@@ -2435,6 +2474,132 @@ step_workspace() {
+@@ -2435,6 +2474,150 @@ step_workspace() {
      log "$(msg workspace.dir_label "${AGENTTEAMS_WORKSPACE_DIR}")"
  }
  
@@ -780,6 +873,24 @@ index 9872b72..74e13a2 100755
 +    _init_default=$(_dashboard_default_image)
 +    if [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
 +        AGENTTEAMS_DASHBOARD_IMAGE="${_init_default}"
++    fi
++
++    # Recompute default image in non-interactive/upgrade paths too.
++    # If the current image matches the standard default-image pattern
++    # (registry/agentteams/agentteams-dashboard:<tag>) but the tag
++    # differs from AGENTTEAMS_DASHBOARD_VERSION, recompute.
++    # This handles: env file loads old default image, CLI passes new version.
++    # Genuinely custom images (different registry or repo name) are preserved.
++    if [ -n "${AGENTTEAMS_DASHBOARD_VERSION:-}" ] && [ -n "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
++        local _default_prefix="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:"
++        case "${AGENTTEAMS_DASHBOARD_IMAGE}" in
++            "${_default_prefix}"*)
++                local _current_tag="${AGENTTEAMS_DASHBOARD_IMAGE#${_default_prefix}}"
++                if [ "${_current_tag}" != "${AGENTTEAMS_DASHBOARD_VERSION}" ]; then
++                    AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
++                fi
++                ;;
++        esac
 +    fi
 +
 +    if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
@@ -892,7 +1003,7 @@ index 9872b72..74e13a2 100755
  step_runtime() {
      log "$(msg worker_runtime.title)"
      echo ""
-@@ -2739,7 +2904,7 @@ setup_podman_autostart() {
+@@ -2739,7 +2922,7 @@ setup_podman_autostart() {
      current_user="$(whoami)"
  
      # Define the dedicated AgentTeams service content
@@ -901,7 +1012,7 @@ index 9872b72..74e13a2 100755
      local _service_content="[Unit]
  Description=AgentTeams Dedicated Podman Autostart Service
  Documentation=https://github.com/agentscope-ai/AgentTeams
-@@ -2832,6 +2997,191 @@ WantedBy=default.target"
+@@ -2832,6 +3015,193 @@ WantedBy=default.target"
      fi
  }
  
@@ -1001,21 +1112,23 @@ index 9872b72..74e13a2 100755
 +        # and older images that don't support cli-token at all.
 +        # For backward compatibility, also try the legacy /var/run/hiclaw/cli-token
 +        # path used by older HiClaw images.
-+        local auth_token=""
-+        local _token_wait=0
-+        local _token_max_wait=30
-+        while [ ${_token_wait} -lt ${_token_max_wait} ]; do
-+            auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
-+            if [ -n "${auth_token}" ]; then
-+                break
-+            fi
-+            sleep 2
-+            _token_wait=$((_token_wait + 2))
-+        done
++        local auth_token="${AGENTTEAMS_AUTH_TOKEN:-}"
++        if [ -z "${auth_token}" ]; then
++            local _token_wait=0
++            local _token_max_wait=30
++            while [ ${_token_wait} -lt ${_token_max_wait} ]; do
++                auth_token=$(${DOCKER_CMD} exec "${CTRL_CONTAINER}" sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' | tr -d '\n' || true)
++                if [ -n "${auth_token}" ]; then
++                    break
++                fi
++                sleep 2
++                _token_wait=$((_token_wait + 2))
++            done
++        fi
 +        if [ -n "${auth_token}" ]; then
 +            env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${auth_token}")
 +        else
-+            log "WARNING: could not read controller SA token (timed out after ${_token_max_wait}s)"
++            log "WARNING: could not read controller SA token (timed out after ${_token_max_wait:-30}s)"
 +            log "  This can happen with older AgentTeams/HiClaw images or if the controller is still starting."
 +            log "  Dashboard will still work but some API calls may fail until you log in via Higress Console."
 +            log "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
@@ -1093,7 +1206,7 @@ index 9872b72..74e13a2 100755
  # ============================================================
  # Manager Installation (Interactive)
  # ============================================================
-@@ -2909,7 +3259,7 @@ install_manager() {
+@@ -2909,7 +3279,7 @@ install_manager() {
      # ── State machine ─────────────────────────────────────────────────────────
      local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
                     step_ports step_domains step_github step_skills step_volume
@@ -1102,7 +1215,7 @@ index 9872b72..74e13a2 100755
      local _STEP_HISTORY=()
      local _step_idx=0
      while [ "${_step_idx}" -lt "${#_STEPS[@]}" ]; do
-@@ -3105,6 +3455,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
+@@ -3105,6 +3475,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
  AGENTTEAMS_WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR:-}
  # Host directory sharing
  AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
@@ -1116,7 +1229,7 @@ index 9872b72..74e13a2 100755
  EOF
  
      chmod 600 "${ENV_FILE}"
-@@ -3117,9 +3474,7 @@ EOF
+@@ -3117,9 +3494,7 @@ EOF
          if [ "${DOCKER_CMD:-}" = "podman" ]; then
              ensure_podman_socket
          fi
@@ -1127,7 +1240,7 @@ index 9872b72..74e13a2 100755
          if [ -n "${CONTAINER_SOCK}" ]; then
              log "$(msg install.socket_detected "${CONTAINER_SOCK}")"
              SOCKET_MOUNT_ARGS="-v ${CONTAINER_SOCK}:/var/run/docker.sock --security-opt label=disable"
-@@ -3353,6 +3708,15 @@ CREDEOF
+@@ -3353,6 +3728,15 @@ CREDEOF
          done
      fi
  
@@ -1143,7 +1256,7 @@ index 9872b72..74e13a2 100755
      # --- Upgrade: inject extracted credentials into data volume ---
      # Only needed for old-arch upgrades (credential files were extracted above).
      if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-@@ -3583,7 +3947,7 @@ CREDEOF
+@@ -3583,7 +3967,7 @@ CREDEOF
          # The controller gates this on (a) Manager joining the DM room and
          # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
          # for the Manager's gateway key — typically ~45-90s on a fresh install.
@@ -1152,7 +1265,7 @@ index 9872b72..74e13a2 100755
          # exec'd inside agentteams-controller (the source-of-truth container — its
          # bundled CLI binary is always in lockstep with whatever controller
          # binary is currently serving the HTTP API, since they're the same
-@@ -3730,6 +4094,9 @@ CREDEOF
+@@ -3730,6 +4114,9 @@ CREDEOF
      fi
      unset _port_prefix
  
@@ -1162,7 +1275,7 @@ index 9872b72..74e13a2 100755
      # Apply Podman autostart if selected and environment matches
      if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
          setup_podman_autostart
-@@ -3778,6 +4145,9 @@ CREDEOF
+@@ -3778,6 +4165,9 @@ CREDEOF
      log ""
      log "$(msg success.other_consoles)"
      log "$(msg success.higress_console "${AGENTTEAMS_PORT_CONSOLE}" "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
@@ -1172,7 +1285,7 @@ index 9872b72..74e13a2 100755
      if [ "${AGENTTEAMS_USE_EMBEDDED}" != "1" ]; then
          log "$(msg success.manager_console "${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}")"
          log "$(msg success.manager_console_gateway "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
-@@ -3993,11 +4363,6 @@ uninstall_agentteams() {
+@@ -3993,11 +4383,6 @@ uninstall_agentteams() {
              rm -f "${_service_dir}/agentteams-podman-restart.service"
              ${_systemctl_cmd} daemon-reload 2>/dev/null || true
          fi
@@ -1184,7 +1297,7 @@ index 9872b72..74e13a2 100755
          # Note: Native podman-restart.service is strictly untouched per maintainer review.
      fi
  
-@@ -4023,6 +4388,13 @@ uninstall_agentteams() {
+@@ -4023,6 +4408,13 @@ uninstall_agentteams() {
          done
      fi
  
@@ -1198,7 +1311,7 @@ index 9872b72..74e13a2 100755
      # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
      # agentteams-controller for the same role)
      if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
-@@ -4139,16 +4511,27 @@ case "${1:-}" in
+@@ -4139,16 +4531,27 @@ case "${1:-}" in
          shift
          install_worker "$@"
          ;;
