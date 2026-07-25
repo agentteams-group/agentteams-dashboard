@@ -336,7 +336,7 @@ async function healthRequest(controllerUrl: string): Promise<string> {
   const path = controllerUrl.trim()
     ? `/api/agentteams/healthz/?controllerUrl=${encodeURIComponent(controllerUrl)}`
     : '/api/agentteams/healthz/';
-  const res = await fetch(path, { method: 'GET' });
+  const res = await fetch(apiUrl(path), { method: 'GET' });
   if (!res.ok) throw new ApiError(`Health check failed: ${res.status}`, res.status, '/healthz');
   return res.text();
 }
@@ -474,7 +474,7 @@ export const agentteamsApi = {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new ApiError(`Upload failed ${res.status}: ${text}`, res.status, '/upload');
+      throw new ApiError(`Upload failed ${res.status}: ${text}`, res.status, '/packages');
     }
     return res.json();
   },
@@ -514,6 +514,29 @@ export const agentteamsApi = {
       method: 'DELETE',
     }),
 
+  createBucket: (name: string) =>
+    proxyRequest<BucketResponse>('/storage/buckets', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteBucket: (name: string) =>
+    proxyRequest<void>(`/storage/buckets/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+
+  getBucketStats: (bucket: string) =>
+    proxyRequest<{ bucket: string; objectCount: number; totalSize: number }>(
+      `/storage/buckets/${encodeURIComponent(bucket)}/stats`,
+      { method: 'GET' }
+    ),
+
+  bulkDeleteObjects: (bucket: string, keys: string[]) =>
+    proxyRequest<{ deleted: string[]; errors?: string[] }>(
+      `/storage/buckets/${encodeURIComponent(bucket)}/bulk-delete`,
+      { method: 'POST', body: JSON.stringify({ keys }) }
+    ),
+
   presignUpload: (bucket: string, key: string, contentType?: string) =>
     proxyRequest<PresignUploadResponse>('/storage/presign', {
       method: 'POST',
@@ -527,13 +550,11 @@ export const agentteamsApi = {
     ),
 
   downloadObjectUrl: (bucket: string, key: string): string => {
-    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
-    return `${base}/api/agentteams/storage/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`;
+    return apiUrl(`/api/agentteams/storage/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`);
   },
 
   uploadObject: async (bucket: string, key: string, file: File): Promise<void> => {
-    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
-    const url = `${base}/api/agentteams/storage/upload?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`;
+    const url = apiUrl(`/api/agentteams/storage/upload?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`);
     const res = await fetch(url, {
       method: 'POST',
       body: file,
@@ -568,4 +589,8 @@ export const agentteamsApi = {
     }
     return res;
   },
+
+  // Setup
+  ensureAiGateway: (): Promise<{ success: boolean; message?: string }> =>
+    proxyRequest<{ success: boolean; message?: string }>('/setup/ensure-ai', { method: 'POST' }),
 };

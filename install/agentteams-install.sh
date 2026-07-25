@@ -2972,8 +2972,6 @@ _start_dashboard() {
     env_args+=(-e AGENTTEAMS_CONTROLLER_URL="http://${CTRL_CONTAINER}:8090")
     env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="http://${CTRL_CONTAINER}:6167")
     env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="${CTRL_CONTAINER},matrix-local.agentteams.io,matrix.org")
-    env_args+=(-e DATABASE_URL="file:/app/db/dashboard.db")
-    env_args+=(-e NEXT_PUBLIC_BASE_PATH="")
 
     if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "${CTRL_CONTAINER}"; then
         local env_out
@@ -3030,9 +3028,6 @@ _start_dashboard() {
         env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
     fi
 
-    # Create persistent data volume
-    ${DOCKER_CMD} volume create agentteams-dashboard-data >/dev/null 2>&1 || true
-
     ${DOCKER_CMD} run -d \
         --name "${DASHBOARD_CONTAINER}" \
         --restart unless-stopped \
@@ -3040,7 +3035,6 @@ _start_dashboard() {
         --network-alias dashboard.agentteams.io \
         -p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000" \
         "${env_args[@]}" \
-        -v agentteams-dashboard-data:/app/db \
         "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
     # Wait for dashboard to be ready

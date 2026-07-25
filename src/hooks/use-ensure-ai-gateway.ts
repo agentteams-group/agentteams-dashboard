@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { agentteamsApi } from '@/lib/agentteams-api';
 
 const ENSURE_AI_KEY = 'agentteams-ensure-ai-done';
 
@@ -13,15 +14,13 @@ export function useEnsureAiGateway() {
   const attempted = useRef(false);
 
   useEffect(() => {
-    // Only attempt once per session, and only if not already done
     if (attempted.current) return;
     if (typeof window !== 'undefined' && localStorage.getItem(ENSURE_AI_KEY) === 'true') {
       return;
     }
     attempted.current = true;
 
-    fetch('/api/agentteams/setup/ensure-ai', { method: 'POST' })
-      .then((res) => res.json())
+    agentteamsApi.ensureAiGateway()
       .then((data) => {
         if (data.success) {
           localStorage.setItem(ENSURE_AI_KEY, 'true');

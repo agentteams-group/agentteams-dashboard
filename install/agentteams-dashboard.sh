@@ -333,9 +333,6 @@ recreate_container() {
     ${DOCKER_CMD} rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
   fi
 
-  # Create data volume
-  ${DOCKER_CMD} volume create "${DATA_VOLUME}" >/dev/null 2>&1 || true
-
   # Auto-detect MinIO / LLM / auth from the controller container
   detect_runtime_env
 
@@ -345,7 +342,6 @@ recreate_container() {
   env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}")
   env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}")
   env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="agentteams-controller,matrix-local.agentteams.io,matrix.org")
-  env_args+=(-e DATABASE_URL="file:/app/db/dashboard.db")
   [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN}")
   [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER}")
   [ -n "${AGENTTEAMS_ADMIN_PASSWORD:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD}")
@@ -369,7 +365,6 @@ recreate_container() {
     --network "${NETWORK_NAME}" \
     -p "${_port_prefix}${AGENTTEAMS_PORT_DASHBOARD}:3000" \
     "${env_args[@]}" \
-    -v "${DATA_VOLUME}:/app/db" \
     "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
   # Wait for readiness

@@ -56,18 +56,7 @@ export function useUploadObject() {
 export function useCreateBucket() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      fetch(`/api/agentteams/storage/buckets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      }).then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `Failed: ${res.status}`);
-        }
-        return res.json();
-      }),
+    mutationFn: (name: string) => agentteamsApi.createBucket(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-buckets'] });
     },
@@ -77,16 +66,7 @@ export function useCreateBucket() {
 export function useDeleteBucket() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      fetch(`/api/agentteams/storage/buckets/${encodeURIComponent(name)}`, {
-        method: 'DELETE',
-      }).then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `Failed: ${res.status}`);
-        }
-        return res.json();
-      }),
+    mutationFn: (name: string) => agentteamsApi.deleteBucket(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-buckets'] });
     },
@@ -96,11 +76,7 @@ export function useDeleteBucket() {
 export function useBucketStats(bucket: string | null) {
   return useQuery<{ bucket: string; objectCount: number; totalSize: number }>({
     queryKey: ['agentteams-bucket-stats', bucket],
-    queryFn: async () => {
-      const res = await fetch(`/api/agentteams/storage/buckets/${encodeURIComponent(bucket!)}/stats`);
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
-    },
+    queryFn: () => agentteamsApi.getBucketStats(bucket!),
     enabled: !!bucket,
     refetchInterval: 30000,
     placeholderData: (prev) => prev,
@@ -111,18 +87,8 @@ export function useBucketStats(bucket: string | null) {
 export function useBulkDeleteObjects() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bucket, keys }: { bucket: string; keys: string[] }) => {
-      const res = await fetch(`/api/agentteams/storage/buckets/${encodeURIComponent(bucket)}/bulk-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Failed: ${res.status}`);
-      }
-      return res.json();
-    },
+    mutationFn: ({ bucket, keys }: { bucket: string; keys: string[] }) =>
+      agentteamsApi.bulkDeleteObjects(bucket, keys),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-objects', variables.bucket] });
       queryClient.invalidateQueries({ queryKey: ['agentteams-bucket-stats', variables.bucket] });

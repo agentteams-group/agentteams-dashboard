@@ -36,6 +36,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.40.0",
+    "geist": "^1.7.2",
     "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^2",
     "lucide-react": "^0.525.0",

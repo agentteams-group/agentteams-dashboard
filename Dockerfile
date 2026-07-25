@@ -28,10 +28,11 @@ RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
     apk add --no-cache ca-certificates
 
 # Install dependencies (lockfile included for reproducible builds)
+# NOTE: If Docker bridge DNS is broken, build with --network=host to use host networking.
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 COPY package.json package-lock.json ./
 RUN npm config set registry "${NPM_REGISTRY}" && \
-    npm ci --no-audit --no-fund
+    npm ci --no-audit --no-fund --legacy-peer-deps
 
 # Copy source and build
 COPY . .

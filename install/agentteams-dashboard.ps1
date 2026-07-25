@@ -86,8 +86,7 @@ function Build-EnvArgs {
     $envArgs = @(
         "-e", "AGENTTEAMS_CONTROLLER_URL=$ControllerUrl",
         "-e", "NEXT_PUBLIC_MATRIX_API_URL=$MatrixUrl",
-        "-e", "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org",
-        "-e", "DATABASE_URL=file:/app/db/dashboard.db"
+        "-e", "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org"
     )
 
     # Auth token
@@ -167,9 +166,6 @@ function Do-Install {
         & $DockerCmd rm -f $ContainerName *> $null
     }
 
-    # Create volume
-    & $DockerCmd volume create $DataVolume *> $null
-
     # Pull image if needed
     $imgExists = & $DockerCmd image inspect $Image 2>$null
     if (-not $imgExists) {
@@ -197,7 +193,6 @@ function Do-Install {
         $portBind = "{0}:3000" -f $Port
     }
 
-    $volumeArg = "{0}:/app/db" -f $DataVolume
     $portArg = "{0}:3000" -f $portBind
 
     Write-Info "Starting $ContainerName..."
@@ -206,7 +201,6 @@ function Do-Install {
         --restart unless-stopped `
         --network $NetworkName `
         -p $portArg `
-        -v $volumeArg `
         @envArgs `
         $Image
 

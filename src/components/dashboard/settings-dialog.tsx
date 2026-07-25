@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { apiUrl } from '@/lib/api-base';
 import {
   Dialog,
   DialogContent,
@@ -84,7 +85,7 @@ export function SettingsDialog() {
       const testPath = tempUrl.trim()
         ? `/api/agentteams/healthz/?controllerUrl=${encodeURIComponent(tempUrl)}`
         : '/api/agentteams/healthz/';
-      const res = await fetch(testPath);
+      const res = await fetch(apiUrl(testPath));
       const latency = Math.round(performance.now() - start);
       if (res.ok) {
         const text = await res.text();

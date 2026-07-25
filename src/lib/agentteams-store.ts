@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { apiUrl } from '@/lib/api-base';
 
 export interface ConnectionAttempt {
   timestamp: number;
@@ -61,7 +62,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
           const healthPath = url.trim()
             ? `/api/agentteams/healthz/?controllerUrl=${encodeURIComponent(url)}`
             : '/api/agentteams/healthz/';
-          const res = await fetch(healthPath);
+          const res = await fetch(apiUrl(healthPath));
           const latency = Math.round(performance.now() - start);
           if (res.ok) {
             const text = await res.text();

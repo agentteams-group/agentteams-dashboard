@@ -14,8 +14,9 @@ const CONTROLLER_URL =
   'http://agentteams-controller:8090';
 
 const MINIO_ENDPOINT =
+  process.env.AGENTTEAMS_FS_ENDPOINT ||
+  process.env.AGENTTEAMS_MINIO_ENDPOINT ||
   process.env.AGENTTEAMS_MINIO_URL ||
-  process.env.AGENTTEAMS_FS_ENDPOINT || // set by install/agentteams-dashboard.sh
   'http://agentteams-controller:9000';
 
 const MATRIX_ENDPOINT =
@@ -47,9 +48,12 @@ async function fetchWithTimeout(
 async function checkController(): Promise<InfrastructureInfo['controller']> {
   try {
     const res = await fetchWithTimeout(`${CONTROLLER_URL}/healthz`);
-    const versionRes = await fetchWithTimeout(`${CONTROLLER_URL}/api/v1/version`, {
-      headers: { Authorization: `Bearer ${await getAuthToken() || ''}` },
-    });
+    const authToken = await getAuthToken();
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+    const versionRes = await fetchWithTimeout(`${CONTROLLER_URL}/api/v1/version`, { headers });
     let version = 'unknown';
     if (versionRes.ok) {
       const data = await versionRes.json().catch(() => ({}));
