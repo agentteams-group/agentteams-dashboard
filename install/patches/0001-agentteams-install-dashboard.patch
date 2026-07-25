@@ -1,5 +1,113 @@
+diff --git a/Makefile b/Makefile
+index 87073e8..892935f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -892,3 +892,103 @@ help: ## Show this help
+ 	@echo "  DATE_TAG         Tag for date-pinned images  (default: YYYYMMDD)"
+ 	@echo "  DRY_RUN          Show commands only           (set to 1)"
+ 	@echo "  USE_CONTAINER    Use skopeo container         (set to 1)"
++
++# ---- AgentTeams Dashboard targets ----
++# Dashboard can be built from a local source tree (DASHBOARD_CONTEXT)
++# or pulled from a registry. After AgentTeams is installed, use
++# make install-dashboard to start the Dashboard container.
++#
++# Prerequisites:
++#   - AgentTeams must already be installed (agentteams-controller running)
++#   - For build-dashboard: DASHBOARD_CONTEXT must point to a dashboard repo
++#     (default: ../agentteams-dashboard). Set DASHBOARD_IMAGE to use a
++#     pre-built image instead.
++#   - Linux/macOS only (Bash installer). Windows PowerShell installer
++#     does not yet include dashboard support.
++#
++# Variables:
++#   DASHBOARD_CONTEXT   Path to dashboard source tree (default: ../agentteams-dashboard)
++#   DASHBOARD_IMAGE     Override dashboard image (derived from DASHBOARD_VERSION by default)
++#   DASHBOARD_VERSION   Dashboard version tag (default: 1.0.0)
++#   AGENTTEAMS_PORT_DASHBOARD   Dashboard host port (default: 13000)
++
++DASHBOARD_CONTEXT ?= ../agentteams-dashboard
++DASHBOARD_VERSION ?= 1.0.0
++DASHBOARD_IMAGE ?= $(REGISTRY)/$(REPO)/agentteams-dashboard:$(DASHBOARD_VERSION)
++
++.PHONY: build-dashboard
++build-dashboard:
++	@if [ ! -d "$(DASHBOARD_CONTEXT)" ]; then \
++		echo "Error: DASHBOARD_CONTEXT=$(DASHBOARD_CONTEXT) does not exist"; \
++		echo "Set DASHBOARD_CONTEXT to the path of the agentteams-dashboard source tree,"; \
++		echo "or set DASHBOARD_IMAGE to use a pre-built image."; \
++		exit 1; \
++	fi
++	@echo "==> Building dashboard image from $(DASHBOARD_CONTEXT)..."
++	@if grep -q "image:" $(DASHBOARD_CONTEXT)/Makefile 2>/dev/null; then \
++		$(MAKE) -C $(DASHBOARD_CONTEXT) image VERSION=$(DASHBOARD_VERSION); \
++	else \
++		docker build -t $(DASHBOARD_IMAGE) $(DASHBOARD_CONTEXT)/; \
++	fi
++	@echo "==> Dashboard image built: $(DASHBOARD_IMAGE)"
++
++.PHONY: install-dashboard
++install-dashboard:
++	@echo "==> Installing agentteams-dashboard..."
++	@if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-controller$$"; then \
++		echo "Error: agentteams-controller is not running."; \
++		echo "Install AgentTeams first: make install-embedded or make install"; \
++		exit 1; \
++	fi
++	@if [ -z "$$(docker images -q $(DASHBOARD_IMAGE) 2>/dev/null)" ]; then \
++		echo "Image $(DASHBOARD_IMAGE) not found locally; pulling..."; \
++		docker pull $(DASHBOARD_IMAGE) 2>/dev/null || { \
++			echo "Pull failed. Build locally with: make build-dashboard"; \
++			exit 1; \
++		}; \
++	fi
++	AGENTTEAMS_NON_INTERACTIVE=1 \
++		AGENTTEAMS_DASHBOARD=1 \
++		AGENTTEAMS_DASHBOARD_VERSION=$(DASHBOARD_VERSION) \
++		AGENTTEAMS_DASHBOARD_IMAGE=$(DASHBOARD_IMAGE) \
++		AGENTTEAMS_PORT_DASHBOARD=$(AGENTTEAMS_PORT_DASHBOARD) \
++		bash ./install/agentteams-install.sh dashboard
++	@echo "==> Dashboard installed. Access it at http://localhost:$(AGENTTEAMS_PORT_DASHBOARD)"
++
++.PHONY: update-dashboard
++update-dashboard: build-dashboard
++	@echo "==> Updating agentteams-dashboard..."
++	@docker rm -f agentteams-dashboard 2>/dev/null || true
++	AGENTTEAMS_NON_INTERACTIVE=1 \
++		AGENTTEAMS_DASHBOARD=1 \
++		AGENTTEAMS_DASHBOARD_VERSION=$(DASHBOARD_VERSION) \
++		AGENTTEAMS_DASHBOARD_IMAGE=$(DASHBOARD_IMAGE) \
++		AGENTTEAMS_PORT_DASHBOARD=$(AGENTTEAMS_PORT_DASHBOARD) \
++		bash ./install/agentteams-install.sh dashboard
++	@echo "==> Dashboard updated."
++
++.PHONY: uninstall-dashboard
++uninstall-dashboard:
++	@echo "==> Uninstalling agentteams-dashboard..."
++	@if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-dashboard$$"; then \
++		docker stop agentteams-dashboard 2>/dev/null || true; \
++		docker rm agentteams-dashboard 2>/dev/null || true; \
++		echo "  Removed agentteams-dashboard container"; \
++	else \
++		echo "  Dashboard container not found (already removed)"; \
++	fi
++	@echo "==> Dashboard uninstalled."
++
++.PHONY: wait-dashboard-ready
++wait-dashboard-ready:
++	@echo "Waiting for Dashboard to be ready..."
++	@PORT=$${AGENTTEAMS_PORT_DASHBOARD:-13000}; \
++	for i in $$(seq 1 30); do \
++		if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$$PORT/" 2>/dev/null | grep -qE "200|301|302"; then \
++			echo "Dashboard ready on port $$PORT"; \
++			exit 0; \
++		fi; \
++		sleep 2; \
++	done; \
++	echo "Dashboard startup timed out"; \
++	exit 1
 diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index 9872b72..86b5b2b 100755
+index 9872b72..be94d86 100755
 --- a/install/agentteams-install.sh
 +++ b/install/agentteams-install.sh
 @@ -1,12 +1,16 @@
@@ -99,7 +207,7 @@ index 9872b72..86b5b2b 100755
          step_runtime)   unset AGENTTEAMS_DEFAULT_WORKER_RUNTIME ;;
          step_manager_runtime) unset AGENTTEAMS_MANAGER_RUNTIME ;;
          step_e2ee)      unset AGENTTEAMS_MATRIX_E2EE ;;
-@@ -2435,6 +2474,109 @@ step_workspace() {
+@@ -2435,6 +2474,127 @@ step_workspace() {
      log "$(msg workspace.dir_label "${AGENTTEAMS_WORKSPACE_DIR}")"
  }
  
@@ -107,8 +215,18 @@ index 9872b72..86b5b2b 100755
 +    AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
 +    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.0-beta.1}"
 +    AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-+    AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
 +    AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
++
++    # Track whether the user explicitly supplied an image override.
++    # If they only change the version, we recompute the default image.
++    local _dashboard_image_explicit=0
++    if [ -n "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
++        _dashboard_image_explicit=1
++    fi
++    local _default_image="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
++    if [ "${_dashboard_image_explicit}" = "0" ]; then
++        AGENTTEAMS_DASHBOARD_IMAGE="${_default_image}"
++    fi
 +
 +    if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
 +        AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
@@ -145,6 +263,7 @@ index 9872b72..86b5b2b 100755
 +    # Dashboard version
 +    local _current_version="${AGENTTEAMS_DASHBOARD_VERSION}"
 +    read -p "$(msg dash.version_prompt) [${_current_version}]: " _input
++    local _old_version="${AGENTTEAMS_DASHBOARD_VERSION}"
 +    AGENTTEAMS_DASHBOARD_VERSION="${_input:-${_current_version}}"
 +
 +    # Dashboard port
@@ -152,11 +271,18 @@ index 9872b72..86b5b2b 100755
 +    read -p "$(msg dash.port_prompt) [${_current_port}]: " _input
 +    AGENTTEAMS_PORT_DASHBOARD="${_input:-${_current_port}}"
 +
-+    # Dashboard image (derived from version by default, but overridable)
-+    local _default_image="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
-+    local _current_image="${AGENTTEAMS_DASHBOARD_IMAGE:-${_default_image}}"
++    # Dashboard image: if the user did not explicitly supply an image,
++    # recompute the default from the (possibly changed) version.
++    if [ "${_dashboard_image_explicit}" = "0" ] && [ "${AGENTTEAMS_DASHBOARD_VERSION}" != "${_old_version}" ]; then
++        _default_image="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
++        AGENTTEAMS_DASHBOARD_IMAGE="${_default_image}"
++    fi
++    local _current_image="${AGENTTEAMS_DASHBOARD_IMAGE}"
 +    read -p "$(msg dash.image_prompt) [${_current_image}]: " _input
-+    AGENTTEAMS_DASHBOARD_IMAGE="${_input:-${_current_image}}"
++    if [ -n "${_input}" ]; then
++        AGENTTEAMS_DASHBOARD_IMAGE="${_input}"
++        _dashboard_image_explicit=1
++    fi
 +
 +    # Higress Console URL (explicit config takes priority; auto-detect as fallback)
 +    local _higress_url="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
@@ -209,7 +335,7 @@ index 9872b72..86b5b2b 100755
  step_runtime() {
      log "$(msg worker_runtime.title)"
      echo ""
-@@ -2739,7 +2881,7 @@ setup_podman_autostart() {
+@@ -2739,7 +2899,7 @@ setup_podman_autostart() {
      current_user="$(whoami)"
  
      # Define the dedicated AgentTeams service content
@@ -218,7 +344,7 @@ index 9872b72..86b5b2b 100755
      local _service_content="[Unit]
  Description=AgentTeams Dedicated Podman Autostart Service
  Documentation=https://github.com/agentscope-ai/AgentTeams
-@@ -2832,6 +2974,179 @@ WantedBy=default.target"
+@@ -2832,6 +2992,179 @@ WantedBy=default.target"
      fi
  }
  
@@ -337,24 +463,24 @@ index 9872b72..86b5b2b 100755
 +        [ -n "${admin_pass}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${admin_pass}")
 +
 +        # Higress Console URL: explicit config takes priority, auto-detect as fallback.
++        local _resolved_gw_url=""
 +        if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
 +            # Normalize URL: add http:// prefix if missing
-+            local _gw_norm="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
-+            case "${_gw_norm}" in
++            _resolved_gw_url="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
++            case "${_resolved_gw_url}" in
 +                http://*|https://*) ;;
-+                *) _gw_norm="http://${_gw_norm}" ;;
++                *) _resolved_gw_url="http://${_resolved_gw_url}" ;;
 +            esac
-+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_gw_norm}")
++            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_resolved_gw_url}")
 +        elif ${DOCKER_CMD} exec "${CTRL_CONTAINER}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
-+            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${CTRL_CONTAINER}:8001")
++            _resolved_gw_url="http://${CTRL_CONTAINER}:8001"
++            env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_resolved_gw_url}")
 +        fi
 +
 +        # Verify Higress Console URL reachability (best-effort warning)
-+        local _gw_url=""
-+        _gw_url=$(printf '%s\n' "${env_args[@]}" | sed -n 's/^-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL=//p' | head -n1)
-+        if [ -n "${_gw_url}" ]; then
-+            if ! ${DOCKER_CMD} exec "${CTRL_CONTAINER}" curl -sf --max-time 3 "${_gw_url}/" >/dev/null 2>&1; then
-+                log "WARNING: Higress Console URL may not be reachable: ${_gw_url}"
++        if [ -n "${_resolved_gw_url}" ]; then
++            if ! ${DOCKER_CMD} exec "${CTRL_CONTAINER}" curl -sf --max-time 3 "${_resolved_gw_url}/" >/dev/null 2>&1; then
++                log "WARNING: Higress Console URL may not be reachable: ${_resolved_gw_url}"
 +                log "  Dashboard will still work, but shared login via Higress Console may fail."
 +                log "  To fix: verify the URL is correct and the Higress Console service is running."
 +            fi
@@ -398,7 +524,7 @@ index 9872b72..86b5b2b 100755
  # ============================================================
  # Manager Installation (Interactive)
  # ============================================================
-@@ -2909,7 +3224,7 @@ install_manager() {
+@@ -2909,7 +3242,7 @@ install_manager() {
      # ── State machine ─────────────────────────────────────────────────────────
      local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
                     step_ports step_domains step_github step_skills step_volume
@@ -407,7 +533,7 @@ index 9872b72..86b5b2b 100755
      local _STEP_HISTORY=()
      local _step_idx=0
      while [ "${_step_idx}" -lt "${#_STEPS[@]}" ]; do
-@@ -3105,6 +3420,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
+@@ -3105,6 +3438,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
  AGENTTEAMS_WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR:-}
  # Host directory sharing
  AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
@@ -421,7 +547,7 @@ index 9872b72..86b5b2b 100755
  EOF
  
      chmod 600 "${ENV_FILE}"
-@@ -3117,9 +3439,7 @@ EOF
+@@ -3117,9 +3457,7 @@ EOF
          if [ "${DOCKER_CMD:-}" = "podman" ]; then
              ensure_podman_socket
          fi
@@ -432,7 +558,7 @@ index 9872b72..86b5b2b 100755
          if [ -n "${CONTAINER_SOCK}" ]; then
              log "$(msg install.socket_detected "${CONTAINER_SOCK}")"
              SOCKET_MOUNT_ARGS="-v ${CONTAINER_SOCK}:/var/run/docker.sock --security-opt label=disable"
-@@ -3353,6 +3673,15 @@ CREDEOF
+@@ -3353,6 +3691,15 @@ CREDEOF
          done
      fi
  
@@ -448,7 +574,7 @@ index 9872b72..86b5b2b 100755
      # --- Upgrade: inject extracted credentials into data volume ---
      # Only needed for old-arch upgrades (credential files were extracted above).
      if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-@@ -3583,7 +3912,7 @@ CREDEOF
+@@ -3583,7 +3930,7 @@ CREDEOF
          # The controller gates this on (a) Manager joining the DM room and
          # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
          # for the Manager's gateway key — typically ~45-90s on a fresh install.
@@ -457,7 +583,7 @@ index 9872b72..86b5b2b 100755
          # exec'd inside agentteams-controller (the source-of-truth container — its
          # bundled CLI binary is always in lockstep with whatever controller
          # binary is currently serving the HTTP API, since they're the same
-@@ -3730,6 +4059,9 @@ CREDEOF
+@@ -3730,6 +4077,9 @@ CREDEOF
      fi
      unset _port_prefix
  
@@ -467,7 +593,7 @@ index 9872b72..86b5b2b 100755
      # Apply Podman autostart if selected and environment matches
      if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
          setup_podman_autostart
-@@ -3778,6 +4110,9 @@ CREDEOF
+@@ -3778,6 +4128,9 @@ CREDEOF
      log ""
      log "$(msg success.other_consoles)"
      log "$(msg success.higress_console "${AGENTTEAMS_PORT_CONSOLE}" "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
@@ -477,7 +603,7 @@ index 9872b72..86b5b2b 100755
      if [ "${AGENTTEAMS_USE_EMBEDDED}" != "1" ]; then
          log "$(msg success.manager_console "${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}")"
          log "$(msg success.manager_console_gateway "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
-@@ -3993,11 +4328,6 @@ uninstall_agentteams() {
+@@ -3993,11 +4346,6 @@ uninstall_agentteams() {
              rm -f "${_service_dir}/agentteams-podman-restart.service"
              ${_systemctl_cmd} daemon-reload 2>/dev/null || true
          fi
@@ -489,7 +615,7 @@ index 9872b72..86b5b2b 100755
          # Note: Native podman-restart.service is strictly untouched per maintainer review.
      fi
  
-@@ -4023,6 +4353,13 @@ uninstall_agentteams() {
+@@ -4023,6 +4371,13 @@ uninstall_agentteams() {
          done
      fi
  
@@ -503,7 +629,7 @@ index 9872b72..86b5b2b 100755
      # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
      # agentteams-controller for the same role)
      if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
-@@ -4139,16 +4476,27 @@ case "${1:-}" in
+@@ -4139,16 +4494,27 @@ case "${1:-}" in
          shift
          install_worker "$@"
          ;;
@@ -532,3 +658,43 @@ index 9872b72..86b5b2b 100755
          echo "  uninstall            Stop and remove Manager + all Worker containers"
          echo ""
          echo "Quick Start (fastest):"
+diff --git a/install/agentteams-verify.sh b/install/agentteams-verify.sh
+index 10f0448..51a4be3 100755
+--- a/install/agentteams-verify.sh
++++ b/install/agentteams-verify.sh
+@@ -163,6 +163,35 @@ else
+     fi
+ fi
+ 
++
++# 7. Dashboard accessible (optional component)
++ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
++if [ ! -f "${ENV_FILE}" ]; then
++    check_pass "Dashboard not installed (no env file, skipped)"
++else
++    dashboard_enabled=$(grep -E '^AGENTTEAMS_DASHBOARD=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "0")
++    dashboard_port=$(grep -E '^AGENTTEAMS_PORT_DASHBOARD=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "13000")
++
++    if [ "${dashboard_enabled}" != "1" ]; then
++        check_pass "Dashboard not enabled (skipped)"
++    else
++        ctr_id=$(${DOCKER_CMD} ps -q -f name=agentteams-dashboard 2>/dev/null)
++        if [ -z "${ctr_id}" ]; then
++            check_fail "Dashboard container not running"
++        else
++            host_port=$(${DOCKER_CMD} port agentteams-dashboard 3000/tcp 2>/dev/null | head -1 | sed 's/.*://' || echo "")
++            if [ -z "${host_port}" ]; then
++                host_port="${dashboard_port}"
++            fi
++            if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${host_port}/" --connect-timeout 5 2>/dev/null | grep -qE "200|301|302"; then
++                check_pass "Dashboard accessible on port ${host_port}"
++            else
++                check_fail "Dashboard not responding on port ${host_port}"
++            fi
++        fi
++    fi
++fi
++
+ # ---------- Summary ----------
+ 
+ TOTAL=$((PASS + FAIL))
