@@ -14,7 +14,7 @@ param(
     [ValidateSet("install", "update", "uninstall")]
     [string]$Action = "install",
 
-    [string]$DashboardVersion = "1.2.0-beta.1",
+    [string]$DashboardVersion = "v1.2.0-beta.1",
     [int]$Port = 13000,
     [string]$Image = "",
     [string]$ControllerUrl = "http://agentteams-controller:8090",
@@ -34,7 +34,7 @@ $DefaultRegistry = "higress-registry.cn-hangzhou.cr.aliyuncs.com"
 
 # Derive default image from version if not explicitly set
 if (-not $Image) {
-    $Image = "$DefaultRegistry/agentteams/agentteams-dashboard:v$DashboardVersion"
+    $Image = "$DefaultRegistry/agentteams/agentteams-dashboard:$DashboardVersion"
 }
 # Check for env var override
 if ($env:AGENTTEAMS_DASHBOARD_IMAGE) {
@@ -113,17 +113,20 @@ function Build-EnvArgs {
     # AgentTeams images (< v1.2.0-beta.1) that don't have cli-token at all.
     # For backward compatibility, also try the legacy /var/run/hiclaw/cli-token
     # path used by older HiClaw images.
-    $authToken = ""
-    $maxWait = 30
-    $waited = 0
-    while ($waited -lt $maxWait) {
-        $tokenOutput = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' 2>$null
-        if ($tokenOutput) {
-            $authToken = $tokenOutput.Trim()
-            if ($authToken) { break }
+    # A user-supplied AGENTTEAMS_AUTH_TOKEN always wins; only poll otherwise.
+    $authToken = "$env:AGENTTEAMS_AUTH_TOKEN"
+    if (-not $authToken) {
+        $maxWait = 30
+        $waited = 0
+        while ($waited -lt $maxWait) {
+            $tokenOutput = & $DockerCmd exec agentteams-controller sh -c 'cat /var/run/agentteams/cli-token 2>/dev/null || cat /var/run/hiclaw/cli-token 2>/dev/null' 2>$null
+            if ($tokenOutput) {
+                $authToken = $tokenOutput.Trim()
+                if ($authToken) { break }
+            }
+            Start-Sleep -Seconds 2
+            $waited += 2
         }
-        Start-Sleep -Seconds 2
-        $waited += 2
     }
     if ($authToken) {
         $envArgs += @("-e", "AGENTTEAMS_AUTH_TOKEN=$authToken")
@@ -225,7 +228,7 @@ function Do-Install {
         if ($portInput) { $Port = [int]$portInput }
 
         # Derive default image from version
-        $defaultImage = "$DefaultRegistry/agentteams/agentteams-dashboard:v$DashboardVersion"
+        $defaultImage = "$DefaultRegistry/agentteams/agentteams-dashboard:$DashboardVersion"
         $imgInput = Read-Host "Dashboard image [$defaultImage]"
         if ($imgInput) { $Image = $imgInput } else { $Image = $defaultImage }
 

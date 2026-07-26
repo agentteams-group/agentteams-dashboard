@@ -27,22 +27,34 @@ Apply the patch in `install/patches/` to the AgentTeams repository.
 ```bash
 cd /path/to/AgentTeams
 git apply /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch
+git apply /path/to/agentteams-dashboard/install/patches/0002-agentteams-verify-dashboard.patch
+git apply /path/to/agentteams-dashboard/install/patches/0003-Makefile-dashboard.patch
 ```
 
-> **Note**: The single patch file covers all three files: `install/agentteams-install.sh`, `install/agentteams-verify.sh`, and `Makefile`.
+> **Note**: The integration is split into three patch files:
+> - `0001-agentteams-install-dashboard.patch` — `install/agentteams-install.sh` + new `install/agentteams-dashboard-tests.sh`
+> - `0002-agentteams-verify-dashboard.patch` — `install/agentteams-verify.sh`
+> - `0003-Makefile-dashboard.patch` — `Makefile`
 
 ### Regenerate Patches
 
-The patch file is generated from a working AgentTeams branch. To update:
+The patch files are generated from a working AgentTeams checkout based on
+`upstream/main`. To update:
 
 ```bash
 # 1. Edit the AgentTeams files directly (install/agentteams-install.sh,
-#    install/agentteams-verify.sh, Makefile) to add or modify Dashboard integration.
-# 2. Generate patch:
-git diff -- Makefile install/agentteams-install.sh install/agentteams-verify.sh \
+#    install/agentteams-dashboard-tests.sh, install/agentteams-verify.sh,
+#    Makefile) to add or modify Dashboard integration.
+# 2. Generate patches:
+git add -A
+git diff --cached -- install/agentteams-dashboard-tests.sh install/agentteams-install.sh \
   > /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch
-# 3. Verify:
-git stash && git apply --check /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch && git stash pop
+git diff --cached -- install/agentteams-verify.sh \
+  > /path/to/agentteams-dashboard/install/patches/0002-agentteams-verify-dashboard.patch
+git diff --cached -- Makefile \
+  > /path/to/agentteams-dashboard/install/patches/0003-Makefile-dashboard.patch
+# 3. Verify (clean apply to upstream/main):
+git stash && for p in /path/to/agentteams-dashboard/install/patches/*.patch; do git apply --check "$p"; done && git stash pop
 ```
 
 ### Integration Features

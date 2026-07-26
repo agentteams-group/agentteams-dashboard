@@ -17,10 +17,10 @@ set -euo pipefail
 CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
-DEFAULT_DASHBOARD_VERSION="1.2.0-beta.1"
+DEFAULT_DASHBOARD_VERSION="v1.2.0-beta.1"
 # Must match the Makefile image coordinates (REGISTRY/REPO/name).
 DEFAULT_REGISTRY="higress-registry.cn-hangzhou.cr.aliyuncs.com"
-DEFAULT_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:v${DEFAULT_DASHBOARD_VERSION}"
+DEFAULT_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:${DEFAULT_DASHBOARD_VERSION}"
 DATA_VOLUME="agentteams-dashboard-data"
 ENV_FILE="${HOME}/.agentteams-dashboard.env"
 
@@ -182,7 +182,7 @@ wizard() {
 
   # Derive default image from version if not explicitly set
   if [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
-    AGENTTEAMS_DASHBOARD_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:v${AGENTTEAMS_DASHBOARD_VERSION}"
+    AGENTTEAMS_DASHBOARD_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
   fi
   prompt_value AGENTTEAMS_PORT_DASHBOARD "Dashboard port" "${DEFAULT_PORT}"
   prompt_value AGENTTEAMS_DASHBOARD_IMAGE "Dashboard Docker image" "${AGENTTEAMS_DASHBOARD_IMAGE}"

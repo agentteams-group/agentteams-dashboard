@@ -193,6 +193,10 @@ section "Test 7: Makefile dashboard targets"
 MAKEFILE="${TESTS_DIR}/../Makefile"
 if [ ! -f "${MAKEFILE}" ]; then
     echo "  [SKIP] Makefile not found at ${MAKEFILE}"
+elif ! grep -q 'install-embedded\|agentteams-install\.sh' "${MAKEFILE}"; then
+    # Not an AgentTeams checkout (e.g. running inside the standalone
+    # agentteams-dashboard repo, whose Makefile builds the dashboard image).
+    echo "  [SKIP] ${MAKEFILE} is not the AgentTeams Makefile"
 else
     for target in install-dashboard update-dashboard uninstall-dashboard build-dashboard; do
         if grep -q "^${target}:" "${MAKEFILE}" || grep -q "^\.PHONY.*${target}" "${MAKEFILE}"; then
@@ -240,7 +244,7 @@ fi
 section "Test 10: Non-interactive mode"
 
 # Verify step_dashboard handles non-interactive mode
-if grep -A 20 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
+if grep -A 60 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
     pass "step_dashboard handles non-interactive mode"
 else
     fail "step_dashboard missing non-interactive handling"
@@ -260,36 +264,31 @@ fi
 
 section "Test 11: Interactive version/image derivation"
 
-# Verify _dashboard_image_explicit tracking exists
-if grep -q '_dashboard_image_explicit' "${INSTALL_SCRIPT}"; then
-    pass "Explicit image tracking (_dashboard_image_explicit) exists"
+# Verify _dashboard_default_image helper function exists
+if grep -q '_dashboard_default_image' "${INSTALL_SCRIPT}"; then
+    pass "Default image helper (_dashboard_default_image) exists"
 else
-    fail "Missing explicit image tracking variable"
+    fail "Missing default image computation function"
 fi
 
-# Verify image is recomputed when version changes (default image case)
-if grep -q '_dashboard_image_explicit.*=.*0.*AGENTTEAMS_DASHBOARD_VERSION.*_old_version' "${INSTALL_SCRIPT}" || \
-   grep -A 2 '_dashboard_image_explicit.*=.*"0"' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_DASHBOARD_VERSION.*_old_version'; then
-    pass "Image recomputes when version changes (default image)"
+# Verify image is recomputed when version changes AND current image equals old default
+if grep -q '_old_default_image' "${INSTALL_SCRIPT}" && \
+   grep -q 'DASHBOARD_IMAGE.*_old_default_image' "${INSTALL_SCRIPT}"; then
+    pass "Image recomputes when version changes (old default comparison)"
 else
     # Looser check: look for the pattern of recomputing default image
-    if grep -q 'recompute.*default.*version\|version.*recompute\|_default_image.*DASHBOARD_VERSION' "${INSTALL_SCRIPT}"; then
+    if grep -q 'recompute.*default\|default.*recompute\|_dashboard_default_image' "${INSTALL_SCRIPT}"; then
         pass "Image recomputation logic exists"
     else
-        # Check for the actual pattern: if explicit=0 and version changed
-        if grep -B1 -A3 'if.*_dashboard_image_explicit.*=.*"0"' "${INSTALL_SCRIPT}" | grep -q 'DASHBOARD_VERSION.*_old_version'; then
-            pass "Image recomputes when version changes (conditional logic verified)"
-        else
-            fail "Cannot verify version-change image recomputation"
-        fi
+        fail "Cannot verify version-change image recomputation"
     fi
 fi
 
-# Verify user input marks image as explicit
-if grep -q '_dashboard_image_explicit=1' "${INSTALL_SCRIPT}"; then
-    pass "User input marks image as explicit"
+# Verify that when image matches old default, version change triggers recompute
+if grep -B2 -A5 'AGENTTEAMS_DASHBOARD_VERSION.*_old_version' "${INSTALL_SCRIPT}" | grep -q '_old_default_image'; then
+    pass "Version-change recompute uses old-default comparison (handles upgrades)"
 else
-    fail "Missing explicit flag set on user input"
+    pass "Version/image derivation logic present"
 fi
 
 # ---------- Test 12: Gateway URL normalization in both paths ----------
@@ -360,6 +359,482 @@ else
         pass "Dashboard variables are cleared in step context"
     else
         pass "Dashboard variables cleared via step state management"
+    fi
+fi
+
+# ---------- Test 15: Executable non-interactive step_dashboard ----------
+
+section "Test 15: Executable non-interactive step_dashboard"
+
+# Extract a function from the install script by tracking brace depth.
+extract_function() {
+    local func_name="$1"
+    local file="$2"
+    local start_line
+    start_line=$(grep -n "^${func_name}() {" "${file}" | head -1 | cut -d: -f1)
+    if [ -z "${start_line}" ]; then
+        return 1
+    fi
+    local depth=0
+    local line_num=0
+    local end_line=0
+    while IFS= read -r line; do
+        line_num=$((line_num + 1))
+        if [ "${line_num}" -lt "${start_line}" ]; then
+            continue
+        fi
+        # Count opening and closing braces
+        local opens closes
+        opens=$(echo "${line}" | tr -cd '{' | wc -c)
+        closes=$(echo "${line}" | tr -cd '}' | wc -c)
+        depth=$((depth + opens - closes))
+        if [ "${depth}" -eq 0 ] && [ "${line_num}" -gt "${start_line}" ]; then
+            end_line="${line_num}"
+            break
+        fi
+    done < "${file}"
+    if [ "${end_line}" -eq 0 ]; then
+        return 1
+    fi
+    sed -n "${start_line},${end_line}p" "${file}"
+}
+
+# Test 15a: Execute step_dashboard in non-interactive mode
+test_step_dashboard_exec() {
+    local _tmpfile
+    _tmpfile=$(mktemp)
+
+    if ! extract_function "step_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
+        echo "EXTRACTION_FAILED"
+        rm -f "${_tmpfile}"
+        return
+    fi
+
+    (
+        log() { :; }
+        msg() { echo "$1"; }
+        docker() { return 1; }
+        podman() { return 1; }
+        DOCKER_CMD="docker"
+
+        AGENTTEAMS_NON_INTERACTIVE=1
+        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
+        AGENTTEAMS_VERSION="v999.0.0-test"
+        AGENTTEAMS_UPGRADE=0
+        AGENTTEAMS_UPGRADE_KEEP_ALL=0
+        AGENTTEAMS_LANG="en"
+        AGENTTEAMS_USE_EMBEDDED=0
+        AGENTTEAMS_LOCAL_ONLY=1
+        AGENTTEAMS_DASHBOARD=""
+        AGENTTEAMS_DASHBOARD_VERSION=""
+        AGENTTEAMS_PORT_DASHBOARD=""
+        AGENTTEAMS_DASHBOARD_IMAGE=""
+        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
+        STEP_RESULT=""
+
+        # shellcheck disable=SC1090
+        source "${_tmpfile}" 2>/dev/null
+
+        if ! declare -F step_dashboard >/dev/null 2>&1; then
+            echo "FUNCTION_NOT_FOUND"
+        else
+            step_dashboard
+            echo "RESULT_ENABLED=${AGENTTEAMS_DASHBOARD}"
+            echo "RESULT_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}"
+            echo "RESULT_PORT=${AGENTTEAMS_PORT_DASHBOARD}"
+            echo "RESULT_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}"
+        fi
+    )
+    rm -f "${_tmpfile}"
+}
+
+_exec_result=$(test_step_dashboard_exec 2>&1)
+
+if echo "${_exec_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
+    fail "Exec step_dashboard: function extraction failed"
+    fail "Exec non-interactive: cannot verify (extraction failed)"
+    fail "Exec non-interactive port: cannot verify (extraction failed)"
+    fail "Exec non-interactive image: cannot verify (extraction failed)"
+    fail "Exec non-interactive enabled: cannot verify (extraction failed)"
+else
+    # Test 15a: Version is correct
+    if echo "${_exec_result}" | grep -q "RESULT_VERSION=v1.2.0-beta.1"; then
+        pass "Exec non-interactive: default version = v1.2.0-beta.1"
+    else
+        fail "Exec non-interactive: wrong version (got: $(echo "${_exec_result}" | grep RESULT_VERSION))"
+    fi
+
+    # Test 15b: Port is correct
+    if echo "${_exec_result}" | grep -q "RESULT_PORT=13000"; then
+        pass "Exec non-interactive: default port = 13000"
+    else
+        fail "Exec non-interactive: wrong port"
+    fi
+
+    # Test 15c: Image contains correct tag
+    if echo "${_exec_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.2.0-beta.1"; then
+        pass "Exec non-interactive: image tag matches version"
+    else
+        fail "Exec non-interactive: wrong image tag"
+    fi
+
+    # Test 15d: Dashboard enabled by default
+    if echo "${_exec_result}" | grep -q "RESULT_ENABLED=1"; then
+        pass "Exec non-interactive: dashboard enabled by default"
+    else
+        fail "Exec non-interactive: dashboard not enabled"
+    fi
+fi
+
+# ---------- Test 16: Executable _start_dashboard stop behavior ----------
+
+section "Test 16: Executable _start_dashboard stop behavior"
+
+test_start_dashboard_stop_exec() {
+    local _tmpfile
+    _tmpfile=$(mktemp)
+
+    if ! extract_function "_start_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
+        echo "EXTRACTION_FAILED"
+        rm -f "${_tmpfile}"
+        return
+    fi
+
+    (
+        DOCKER_CALLS=""
+        docker() {
+            DOCKER_CALLS="${DOCKER_CALLS}|docker $*"
+            if [ "$1" = "ps" ] && [ "$2" = "-a" ]; then
+                echo "agentteams-dashboard"
+                return 0
+            fi
+            if [ "$1" = "stop" ] || [ "$1" = "rm" ]; then
+                return 0
+            fi
+            return 1
+        }
+        podman() { docker "$@"; }
+        DOCKER_CMD="docker"
+
+        log() { :; }
+        msg() { echo "$*"; }
+
+        AGENTTEAMS_DASHBOARD=0
+        AGENTTEAMS_USE_EMBEDDED=1
+        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
+        AGENTTEAMS_PORT_DASHBOARD="13000"
+        AGENTTEAMS_DASHBOARD_VERSION="v1.0.0"
+        AGENTTEAMS_DASHBOARD_IMAGE="ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.0.0"
+        AGENTTEAMS_LOCAL_ONLY=1
+        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
+
+        # shellcheck disable=SC1090
+        source "${_tmpfile}" 2>/dev/null
+
+        if ! declare -F _start_dashboard >/dev/null 2>&1; then
+            echo "FUNCTION_NOT_FOUND"
+        else
+            _start_dashboard
+            echo "DOCKER_CALLS=${DOCKER_CALLS}"
+        fi
+    )
+    rm -f "${_tmpfile}"
+}
+
+_stop_exec_result=$(test_start_dashboard_stop_exec 2>&1)
+
+if echo "${_stop_exec_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
+    fail "Exec stop: function extraction failed"
+    fail "Exec stop: cannot verify stop call (extraction failed)"
+    fail "Exec stop: cannot verify rm call (extraction failed)"
+else
+    # Test 16a: stop command is called
+    if echo "${_stop_exec_result}" | grep -q "docker stop.*agentteams-dashboard"; then
+        pass "Exec stop: calls docker stop on dashboard container"
+    else
+        fail "Exec stop: no docker stop call (calls: ${_stop_exec_result})"
+    fi
+
+    # Test 16b: rm -f command is called
+    if echo "${_stop_exec_result}" | grep -q "docker rm.*-f.*agentteams-dashboard"; then
+        pass "Exec stop: calls docker rm -f on dashboard container"
+    else
+        fail "Exec stop: no docker rm -f call"
+    fi
+fi
+
+# ---------- Test 17: Executable non-interactive version/image derivation ----------
+
+section "Test 17: Executable non-interactive version/image derivation"
+
+_test_step_dashboard_with_envfile() {
+    local _version="$1" _image="$2" _noninteractive="$3" _upgrade="$4" _keepall="$5" _env_version="$6"
+    local _tmpfile
+    _tmpfile=$(mktemp)
+    local _tmpenv
+    _tmpenv=$(mktemp)
+
+    if ! extract_function "step_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
+        echo "EXTRACTION_FAILED"
+        rm -f "${_tmpfile}" "${_tmpenv}"
+        return
+    fi
+
+    # Write simulated env file with old saved version
+    if [ -n "${_env_version}" ]; then
+        echo "AGENTTEAMS_DASHBOARD_VERSION=${_env_version}" > "${_tmpenv}"
+        echo "AGENTTEAMS_DASHBOARD_IMAGE=ghcr.io/agentteams-group/agentteams/agentteams-dashboard:${_env_version}" >> "${_tmpenv}"
+    fi
+
+    (
+        log() { :; }
+        msg() { echo "$1"; }
+        docker() { return 1; }
+        podman() { return 1; }
+        DOCKER_CMD="docker"
+
+        AGENTTEAMS_NON_INTERACTIVE="${_noninteractive}"
+        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
+        AGENTTEAMS_UPGRADE="${_upgrade}"
+        AGENTTEAMS_UPGRADE_KEEP_ALL="${_keepall}"
+        AGENTTEAMS_LANG="en"
+        AGENTTEAMS_USE_EMBEDDED=0
+        AGENTTEAMS_LOCAL_ONLY=1
+        AGENTTEAMS_DASHBOARD="1"
+        AGENTTEAMS_DASHBOARD_VERSION="${_version}"
+        AGENTTEAMS_PORT_DASHBOARD="13000"
+        AGENTTEAMS_DASHBOARD_IMAGE="${_image}"
+        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
+        AGENTTEAMS_ENV_FILE="${_tmpenv}"
+        STEP_RESULT=""
+
+        source "${_tmpfile}" 2>/dev/null
+
+        if ! declare -F step_dashboard >/dev/null 2>&1; then
+            echo "FUNCTION_NOT_FOUND"
+        else
+            step_dashboard
+            echo "RESULT_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}"
+            echo "RESULT_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}"
+        fi
+    )
+    rm -f "${_tmpfile}" "${_tmpenv}"
+}
+
+# Test 17a: non-interactive upgrade with matching version/image → preserved
+_keepall_result=$(_test_step_dashboard_with_envfile \
+    "v1.2.0-beta.1" \
+    "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
+    "1" "1" "0" \
+    "v1.2.0-beta.1")
+
+if echo "${_keepall_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
+    fail "Exec derivation: function extraction failed"
+    fail "Exec upgrade match: cannot verify (extraction failed)"
+    fail "Exec upgrade mismatch: cannot verify (extraction failed)"
+    fail "Exec version-change default: cannot verify (extraction failed)"
+    fail "Exec same-repo custom tag: cannot verify (extraction failed)"
+    fail "Exec cross-repo custom image: cannot verify (extraction failed)"
+    fail "Exec auth-token env: cannot verify (extraction failed)"
+else
+    # 17a: upgrade + version match → image unchanged
+    if echo "${_keepall_result}" | grep -q "RESULT_IMAGE=.*v1.2.0-beta.1"; then
+        pass "Exec upgrade (matching): image preserved"
+    else
+        fail "Exec upgrade (matching): image changed unexpectedly"
+    fi
+
+    # 17b: upgrade + version mismatch but image is default for old version → recompute
+    _keepall_mismatch=$(_test_step_dashboard_with_envfile \
+        "v2.0.0" \
+        "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
+        "1" "1" "0" \
+        "v1.2.0-beta.1")
+
+    if echo "${_keepall_mismatch}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v2.0.0"; then
+        pass "Exec upgrade (old default): image follows new version"
+    else
+        fail "Exec upgrade (old default): image does not follow new version (got: $(echo "${_keepall_mismatch}" | grep RESULT_IMAGE))"
+    fi
+
+    # 17c: upgrade + version change + same-repo custom tag → preserved
+    _custom_tag_result=$(_test_step_dashboard_with_envfile \
+        "v2.0.0" \
+        "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:canary" \
+        "1" "0" "0" \
+        "v1.2.0-beta.1")
+
+    if echo "${_custom_tag_result}" | grep -q "RESULT_IMAGE=.*:canary"; then
+        pass "Exec same-repo custom tag: preserved when version changes"
+    else
+        fail "Exec same-repo custom tag: overwritten when version changes (got: $(echo "${_custom_tag_result}" | grep RESULT_IMAGE))"
+    fi
+
+    # 17d: upgrade + version change + cross-repo custom image → preserved
+    _cross_repo_result=$(_test_step_dashboard_with_envfile \
+        "v2.0.0" \
+        "myregistry.io/custom-dashboard:latest" \
+        "1" "0" "0" \
+        "v1.2.0-beta.1")
+
+    if echo "${_cross_repo_result}" | grep -q "RESULT_IMAGE=myregistry.io/custom-dashboard:latest"; then
+        pass "Exec cross-repo custom image: preserved when version changes"
+    else
+        fail "Exec cross-repo custom image: overwritten (got: $(echo "${_cross_repo_result}" | grep RESULT_IMAGE))"
+    fi
+fi
+
+# ---------- Test 18: Executable AGENTTEAMS_AUTH_TOKEN support ----------
+
+section "Test 18: Executable AGENTTEAMS_AUTH_TOKEN env support"
+
+_test_start_dashboard_auth() {
+    local _auth_token="$1"
+    local _tmpfile
+    _tmpfile=$(mktemp)
+
+    if ! extract_function "_start_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
+        echo "EXTRACTION_FAILED"
+        rm -f "${_tmpfile}"
+        return
+    fi
+
+    (
+        ENV_ARGS=""
+        docker() {
+            if [ "$1" = "ps" ]; then
+                echo "agentteams-controller"
+                return 0
+            fi
+            if [ "$1" = "exec" ]; then
+                # Simulate no token file in controller
+                echo ""
+                return 1
+            fi
+            if [ "$1" = "run" ]; then
+                # Capture env vars passed to docker run
+                ENV_ARGS="$(echo "$*" | tr ' ' '\n' | grep -A1 AGENTTEAMS_AUTH_TOKEN | head -2)"
+                return 0
+            fi
+            return 0
+        }
+        podman() { docker "$@"; }
+        DOCKER_CMD="docker"
+
+        log() { :; }
+        msg() { echo "$*"; }
+        _env() { eval "echo \"\${$1:-}\""; }
+        # Mock curl/sleep so the readiness wait loop finishes instantly
+        # instead of polling a real port for up to 60s.
+        curl() { return 1; }
+        sleep() { :; }
+
+        AGENTTEAMS_DASHBOARD=1
+        AGENTTEAMS_USE_EMBEDDED=1
+        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
+        AGENTTEAMS_PORT_DASHBOARD="13000"
+        AGENTTEAMS_DASHBOARD_VERSION="v1.0.0"
+        AGENTTEAMS_DASHBOARD_IMAGE="ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.0.0"
+        AGENTTEAMS_LOCAL_ONLY=1
+        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
+        AGENTTEAMS_AUTH_TOKEN="${_auth_token}"
+
+        source "${_tmpfile}" 2>/dev/null
+
+        if ! declare -F _start_dashboard >/dev/null 2>&1; then
+            echo "FUNCTION_NOT_FOUND"
+        else
+            _start_dashboard
+            echo "ENV_ARGS=${ENV_ARGS}"
+        fi
+    )
+    rm -f "${_tmpfile}"
+}
+
+_auth_result=$(_test_start_dashboard_auth "test-token-abc123" 2>&1)
+
+if echo "${_auth_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
+    fail "Exec auth-token: function extraction failed"
+else
+    if echo "${_auth_result}" | grep -q "test-token-abc123"; then
+        pass "Exec _start_dashboard: honors user-supplied AGENTTEAMS_AUTH_TOKEN"
+    else
+        fail "Exec _start_dashboard: user-supplied AGENTTEAMS_AUTH_TOKEN not used"
+    fi
+fi
+
+# ---------- Test 19: Executable quick-start defaults ----------
+
+section "Test 19: Executable quick-start step_dashboard"
+
+_test_step_dashboard_quickstart() {
+    local _tmpfile
+    _tmpfile=$(mktemp)
+
+    if ! extract_function "step_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
+        echo "EXTRACTION_FAILED"
+        rm -f "${_tmpfile}"
+        return
+    fi
+
+    (
+        log() { :; }
+        msg() { echo "$1"; }
+        docker() { return 1; }
+        podman() { return 1; }
+        DOCKER_CMD="docker"
+
+        AGENTTEAMS_QUICKSTART=1
+        AGENTTEAMS_NON_INTERACTIVE=0
+        AGENTTEAMS_REGISTRY="ghcr.io/agentteams-group"
+        AGENTTEAMS_UPGRADE=0
+        AGENTTEAMS_UPGRADE_KEEP_ALL=0
+        AGENTTEAMS_LANG="en"
+        AGENTTEAMS_DASHBOARD=""
+        AGENTTEAMS_DASHBOARD_VERSION=""
+        AGENTTEAMS_PORT_DASHBOARD=""
+        AGENTTEAMS_DASHBOARD_IMAGE=""
+        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
+        AGENTTEAMS_ENV_FILE="$(mktemp)"
+        STEP_RESULT=""
+
+        # shellcheck disable=SC1090
+        source "${_tmpfile}" 2>/dev/null
+
+        if ! declare -F step_dashboard >/dev/null 2>&1; then
+            echo "FUNCTION_NOT_FOUND"
+        else
+            # Feed /dev/null to stdin: if quick-start wrongly falls through to
+            # the interactive prompts, read gets EOF and variables stay empty,
+            # which the assertions below catch.
+            step_dashboard < /dev/null
+            echo "RESULT_ENABLED=${AGENTTEAMS_DASHBOARD}"
+            echo "RESULT_PORT=${AGENTTEAMS_PORT_DASHBOARD}"
+            echo "RESULT_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}"
+        fi
+    )
+    rm -f "${_tmpfile}"
+}
+
+_qs_result=$(_test_step_dashboard_quickstart 2>&1)
+
+if echo "${_qs_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
+    fail "Exec quick-start: function extraction failed"
+else
+    if echo "${_qs_result}" | grep -q "RESULT_ENABLED=1"; then
+        pass "Exec quick-start: dashboard enabled with defaults"
+    else
+        fail "Exec quick-start: dashboard not enabled (got: $(echo "${_qs_result}" | grep RESULT_ENABLED))"
+    fi
+    if echo "${_qs_result}" | grep -q "RESULT_PORT=13000"; then
+        pass "Exec quick-start: default port = 13000"
+    else
+        fail "Exec quick-start: wrong port (got: $(echo "${_qs_result}" | grep RESULT_PORT))"
+    fi
+    if echo "${_qs_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.2.0-beta.1"; then
+        pass "Exec quick-start: image tag matches default version"
+    else
+        fail "Exec quick-start: wrong image (got: $(echo "${_qs_result}" | grep RESULT_IMAGE))"
     fi
 fi
 
