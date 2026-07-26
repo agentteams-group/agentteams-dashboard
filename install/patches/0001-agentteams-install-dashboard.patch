@@ -1,9 +1,9 @@
 diff --git a/install/agentteams-dashboard-tests.sh b/install/agentteams-dashboard-tests.sh
 new file mode 100755
-index 0000000..2a97073
+index 0000000..7515f7a
 --- /dev/null
 +++ b/install/agentteams-dashboard-tests.sh
-@@ -0,0 +1,747 @@
+@@ -0,0 +1,775 @@
 +#!/bin/bash
 +# agentteams-dashboard-tests.sh — Regression tests for Dashboard integration
 +#
@@ -569,15 +569,23 @@ index 0000000..2a97073
 +
 +section "Test 17: Executable non-interactive version/image derivation"
 +
-+_test_step_dashboard_with_env() {
-+    local _version="$1" _image="$2" _noninteractive="$3" _upgrade="$4" _keepall="$5"
++_test_step_dashboard_with_envfile() {
++    local _version="$1" _image="$2" _noninteractive="$3" _upgrade="$4" _keepall="$5" _env_version="$6"
 +    local _tmpfile
 +    _tmpfile=$(mktemp)
++    local _tmpenv
++    _tmpenv=$(mktemp)
 +
 +    if ! extract_function "step_dashboard" "${INSTALL_SCRIPT}" > "${_tmpfile}" 2>/dev/null; then
 +        echo "EXTRACTION_FAILED"
-+        rm -f "${_tmpfile}"
++        rm -f "${_tmpfile}" "${_tmpenv}"
 +        return
++    fi
++
++    # Write simulated env file with old saved version
++    if [ -n "${_env_version}" ]; then
++        echo "AGENTTEAMS_DASHBOARD_VERSION=${_env_version}" > "${_tmpenv}"
++        echo "AGENTTEAMS_DASHBOARD_IMAGE=ghcr.io/agentteams-group/agentteams/agentteams-dashboard:${_env_version}" >> "${_tmpenv}"
 +    fi
 +
 +    (
@@ -599,6 +607,7 @@ index 0000000..2a97073
 +        AGENTTEAMS_PORT_DASHBOARD="13000"
 +        AGENTTEAMS_DASHBOARD_IMAGE="${_image}"
 +        AGENTTEAMS_AI_GATEWAY_ADMIN_URL=""
++        AGENTTEAMS_ENV_FILE="${_tmpenv}"
 +        STEP_RESULT=""
 +
 +        source "${_tmpfile}" 2>/dev/null
@@ -611,50 +620,69 @@ index 0000000..2a97073
 +            echo "RESULT_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}"
 +        fi
 +    )
-+    rm -f "${_tmpfile}"
++    rm -f "${_tmpfile}" "${_tmpenv}"
 +}
 +
-+# Test 17a: keep-all preserves values (version=image match)
-+_keepall_result=$(_test_step_dashboard_with_env "v1.2.0-beta.1" "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" "1" "1" "1")
++# Test 17a: keep-all with matching version/image → preserved
++_keepall_result=$(_test_step_dashboard_with_envfile \
++    "v1.2.0-beta.1" \
++    "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
++    "1" "1" "1" \
++    "v1.2.0-beta.1")
 +
 +if echo "${_keepall_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
 +    fail "Exec derivation: function extraction failed"
-+    fail "Exec keep-all: cannot verify (extraction failed)"
-+    fail "Exec keep-all image: cannot verify (extraction failed)"
++    fail "Exec keep-all match: cannot verify (extraction failed)"
++    fail "Exec keep-all mismatch: cannot verify (extraction failed)"
 +    fail "Exec version-change default: cannot verify (extraction failed)"
-+    fail "Exec version-change custom: cannot verify (extraction failed)"
++    fail "Exec same-repo custom tag: cannot verify (extraction failed)"
++    fail "Exec cross-repo custom image: cannot verify (extraction failed)"
 +    fail "Exec auth-token env: cannot verify (extraction failed)"
 +else
-+    # 17a: keep-all preserves version
-+    if echo "${_keepall_result}" | grep -q "RESULT_VERSION=v1.2.0-beta.1"; then
-+        pass "Exec keep-all: preserves version"
-+    else
-+        fail "Exec keep-all: version not preserved"
-+    fi
-+
-+    # 17b: keep-all preserves image (version matches, so stays same)
++    # 17a: keep-all + version match → image unchanged
 +    if echo "${_keepall_result}" | grep -q "RESULT_IMAGE=.*v1.2.0-beta.1"; then
-+        pass "Exec keep-all: preserves image when version matches"
++        pass "Exec keep-all (matching): image preserved"
 +    else
-+        fail "Exec keep-all: image not preserved"
++        fail "Exec keep-all (matching): image changed unexpectedly"
 +    fi
 +
-+    # 17c: non-interactive, version changed, default image → image follows
-+    _verchange_result=$(_test_step_dashboard_with_env "v2.0.0" "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" "1" "1" "0")
++    # 17b: keep-all + version mismatch but image is default for old version → recompute
++    _keepall_mismatch=$(_test_step_dashboard_with_envfile \
++        "v2.0.0" \
++        "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
++        "1" "1" "1" \
++        "v1.2.0-beta.1")
 +
-+    if echo "${_verchange_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v2.0.0"; then
-+        pass "Exec non-interactive: default image follows new version"
++    if echo "${_keepall_mismatch}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v2.0.0"; then
++        pass "Exec keep-all (old default): image follows new version"
 +    else
-+        fail "Exec non-interactive: default image does not follow new version (got: $(echo "${_verchange_result}" | grep RESULT_IMAGE))"
++        fail "Exec keep-all (old default): image does not follow new version (got: $(echo "${_keepall_mismatch}" | grep RESULT_IMAGE))"
 +    fi
 +
-+    # 17d: non-interactive, version changed, CUSTOM image → image preserved
-+    _custom_result=$(_test_step_dashboard_with_env "v2.0.0" "myregistry.io/custom-dashboard:latest" "1" "1" "0")
++    # 17c: non-interactive + version change + same-repo custom tag → preserved
++    _custom_tag_result=$(_test_step_dashboard_with_envfile \
++        "v2.0.0" \
++        "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:canary" \
++        "1" "1" "0" \
++        "v1.2.0-beta.1")
 +
-+    if echo "${_custom_result}" | grep -q "RESULT_IMAGE=myregistry.io/custom-dashboard:latest"; then
-+        pass "Exec non-interactive: custom image preserved when version changes"
++    if echo "${_custom_tag_result}" | grep -q "RESULT_IMAGE=.*:canary"; then
++        pass "Exec same-repo custom tag: preserved when version changes"
 +    else
-+        fail "Exec non-interactive: custom image overwritten (got: $(echo "${_custom_result}" | grep RESULT_IMAGE))"
++        fail "Exec same-repo custom tag: overwritten when version changes (got: $(echo "${_custom_tag_result}" | grep RESULT_IMAGE))"
++    fi
++
++    # 17d: non-interactive + version change + cross-repo custom image → preserved
++    _cross_repo_result=$(_test_step_dashboard_with_envfile \
++        "v2.0.0" \
++        "myregistry.io/custom-dashboard:latest" \
++        "1" "1" "0" \
++        "v1.2.0-beta.1")
++
++    if echo "${_cross_repo_result}" | grep -q "RESULT_IMAGE=myregistry.io/custom-dashboard:latest"; then
++        pass "Exec cross-repo custom image: preserved when version changes"
++    else
++        fail "Exec cross-repo custom image: overwritten (got: $(echo "${_cross_repo_result}" | grep RESULT_IMAGE))"
 +    fi
 +fi
 +
@@ -752,7 +780,7 @@ index 0000000..2a97073
 +echo "All tests passed."
 +exit 0
 diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index 9872b72..74c1025 100755
+index 9872b72..e93c258 100755
 --- a/install/agentteams-install.sh
 +++ b/install/agentteams-install.sh
 @@ -1,12 +1,16 @@
@@ -852,7 +880,7 @@ index 9872b72..74c1025 100755
          step_runtime)   unset AGENTTEAMS_DEFAULT_WORKER_RUNTIME ;;
          step_manager_runtime) unset AGENTTEAMS_MANAGER_RUNTIME ;;
          step_e2ee)      unset AGENTTEAMS_MATRIX_E2EE ;;
-@@ -2435,6 +2474,150 @@ step_workspace() {
+@@ -2435,6 +2474,151 @@ step_workspace() {
      log "$(msg workspace.dir_label "${AGENTTEAMS_WORKSPACE_DIR}")"
  }
  
@@ -875,22 +903,23 @@ index 9872b72..74c1025 100755
 +        AGENTTEAMS_DASHBOARD_IMAGE="${_init_default}"
 +    fi
 +
-+    # Recompute default image in non-interactive/upgrade paths too.
-+    # If the current image matches the standard default-image pattern
-+    # (registry/agentteams/agentteams-dashboard:<tag>) but the tag
-+    # differs from AGENTTEAMS_DASHBOARD_VERSION, recompute.
-+    # This handles: env file loads old default image, CLI passes new version.
-+    # Genuinely custom images (different registry or repo name) are preserved.
-+    if [ -n "${AGENTTEAMS_DASHBOARD_VERSION:-}" ] && [ -n "${AGENTTEAMS_DASHBOARD_IMAGE:-}" ]; then
-+        local _default_prefix="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:"
-+        case "${AGENTTEAMS_DASHBOARD_IMAGE}" in
-+            "${_default_prefix}"*)
-+                local _current_tag="${AGENTTEAMS_DASHBOARD_IMAGE#${_default_prefix}}"
-+                if [ "${_current_tag}" != "${AGENTTEAMS_DASHBOARD_VERSION}" ]; then
-+                    AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
-+                fi
-+                ;;
-+        esac
++    # Recompute default image when the version changes AND the current image
++    # matches the default for the *previous* (env-file) version.
++    # This handles non-interactive upgrades correctly:
++    #   - env file loads old default image + old version
++    #   - CLI passes new version
++    #   - image should follow (because it was auto-derived before)
++    # But preserves truly custom images (same repo but custom tag like :canary)
++    # because they won't match the old-version default exactly.
++    local _old_saved_version=""
++    local _env_file="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
++    if [ -f "${_env_file}" ]; then
++        _old_saved_version="$(grep '^AGENTTEAMS_DASHBOARD_VERSION=' "${_env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
++    fi
++    if [ -n "${_old_saved_version}" ] && \
++       [ "${_old_saved_version}" != "${AGENTTEAMS_DASHBOARD_VERSION}" ] && \
++       [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "$(_dashboard_default_image "${_old_saved_version}")" ]; then
++        AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
 +    fi
 +
 +    if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
@@ -1003,7 +1032,7 @@ index 9872b72..74c1025 100755
  step_runtime() {
      log "$(msg worker_runtime.title)"
      echo ""
-@@ -2739,7 +2922,7 @@ setup_podman_autostart() {
+@@ -2739,7 +2923,7 @@ setup_podman_autostart() {
      current_user="$(whoami)"
  
      # Define the dedicated AgentTeams service content
@@ -1012,7 +1041,7 @@ index 9872b72..74c1025 100755
      local _service_content="[Unit]
  Description=AgentTeams Dedicated Podman Autostart Service
  Documentation=https://github.com/agentscope-ai/AgentTeams
-@@ -2832,6 +3015,193 @@ WantedBy=default.target"
+@@ -2832,6 +3016,193 @@ WantedBy=default.target"
      fi
  }
  
@@ -1206,7 +1235,7 @@ index 9872b72..74c1025 100755
  # ============================================================
  # Manager Installation (Interactive)
  # ============================================================
-@@ -2909,7 +3279,7 @@ install_manager() {
+@@ -2909,7 +3280,7 @@ install_manager() {
      # ── State machine ─────────────────────────────────────────────────────────
      local _STEPS=( step_lang step_mode step_version step_existing step_llm step_manager_runtime step_runtime step_admin step_network
                     step_ports step_domains step_github step_skills step_volume
@@ -1215,7 +1244,7 @@ index 9872b72..74c1025 100755
      local _STEP_HISTORY=()
      local _step_idx=0
      while [ "${_step_idx}" -lt "${#_STEPS[@]}" ]; do
-@@ -3105,6 +3475,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
+@@ -3105,6 +3476,13 @@ AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
  AGENTTEAMS_WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR:-}
  # Host directory sharing
  AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
@@ -1229,7 +1258,7 @@ index 9872b72..74c1025 100755
  EOF
  
      chmod 600 "${ENV_FILE}"
-@@ -3117,9 +3494,7 @@ EOF
+@@ -3117,9 +3495,7 @@ EOF
          if [ "${DOCKER_CMD:-}" = "podman" ]; then
              ensure_podman_socket
          fi
@@ -1240,7 +1269,7 @@ index 9872b72..74c1025 100755
          if [ -n "${CONTAINER_SOCK}" ]; then
              log "$(msg install.socket_detected "${CONTAINER_SOCK}")"
              SOCKET_MOUNT_ARGS="-v ${CONTAINER_SOCK}:/var/run/docker.sock --security-opt label=disable"
-@@ -3353,6 +3728,15 @@ CREDEOF
+@@ -3353,6 +3729,15 @@ CREDEOF
          done
      fi
  
@@ -1256,7 +1285,7 @@ index 9872b72..74c1025 100755
      # --- Upgrade: inject extracted credentials into data volume ---
      # Only needed for old-arch upgrades (credential files were extracted above).
      if [ -n "${_creds_tmp}" ] && [ -d "${_creds_tmp}" ] && [ -n "$(ls -A "${_creds_tmp}" 2>/dev/null)" ]; then
-@@ -3583,7 +3967,7 @@ CREDEOF
+@@ -3583,7 +3968,7 @@ CREDEOF
          # The controller gates this on (a) Manager joining the DM room and
          # (b) Higress WASM key-auth propagation actually clearing /v1/chat/completions
          # for the Manager's gateway key — typically ~45-90s on a fresh install.
@@ -1265,7 +1294,7 @@ index 9872b72..74c1025 100755
          # exec'd inside agentteams-controller (the source-of-truth container — its
          # bundled CLI binary is always in lockstep with whatever controller
          # binary is currently serving the HTTP API, since they're the same
-@@ -3730,6 +4114,9 @@ CREDEOF
+@@ -3730,6 +4115,9 @@ CREDEOF
      fi
      unset _port_prefix
  
@@ -1275,7 +1304,7 @@ index 9872b72..74c1025 100755
      # Apply Podman autostart if selected and environment matches
      if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
          setup_podman_autostart
-@@ -3778,6 +4165,9 @@ CREDEOF
+@@ -3778,6 +4166,9 @@ CREDEOF
      log ""
      log "$(msg success.other_consoles)"
      log "$(msg success.higress_console "${AGENTTEAMS_PORT_CONSOLE}" "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
@@ -1285,7 +1314,7 @@ index 9872b72..74c1025 100755
      if [ "${AGENTTEAMS_USE_EMBEDDED}" != "1" ]; then
          log "$(msg success.manager_console "${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}")"
          log "$(msg success.manager_console_gateway "${AGENTTEAMS_ADMIN_USER}" "${AGENTTEAMS_ADMIN_PASSWORD}")"
-@@ -3993,11 +4383,6 @@ uninstall_agentteams() {
+@@ -3993,11 +4384,6 @@ uninstall_agentteams() {
              rm -f "${_service_dir}/agentteams-podman-restart.service"
              ${_systemctl_cmd} daemon-reload 2>/dev/null || true
          fi
@@ -1297,7 +1326,7 @@ index 9872b72..74c1025 100755
          # Note: Native podman-restart.service is strictly untouched per maintainer review.
      fi
  
-@@ -4023,6 +4408,13 @@ uninstall_agentteams() {
+@@ -4023,6 +4409,13 @@ uninstall_agentteams() {
          done
      fi
  
@@ -1311,7 +1340,7 @@ index 9872b72..74c1025 100755
      # Stop and remove docker-proxy (legacy ≤ v1.0.x; current arch uses
      # agentteams-controller for the same role)
      if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-docker-proxy$"; then
-@@ -4139,16 +4531,27 @@ case "${1:-}" in
+@@ -4139,16 +4532,27 @@ case "${1:-}" in
          shift
          install_worker "$@"
          ;;
