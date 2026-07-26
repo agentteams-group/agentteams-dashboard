@@ -2536,6 +2536,12 @@ step_dashboard() {
         return 0
     fi
 
+    if [ "${AGENTTEAMS_UPGRADE}" = "1" ] && [ "${AGENTTEAMS_UPGRADE_KEEP_ALL}" = "1" ]; then
+        log "$(msg prompt.upgrade_keep "" "${AGENTTEAMS_DASHBOARD}") dashboard=${AGENTTEAMS_DASHBOARD} version=${AGENTTEAMS_DASHBOARD_VERSION} port=${AGENTTEAMS_PORT_DASHBOARD}"
+        export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_AI_GATEWAY_ADMIN_URL
+        return 0
+    fi
+
     local _input
     echo ""
     read -p "$(msg dash.prompt) [Y/n]: " _input

@@ -621,47 +621,47 @@ _test_step_dashboard_with_envfile() {
     rm -f "${_tmpfile}" "${_tmpenv}"
 }
 
-# Test 17a: non-interactive upgrade with matching version/image → preserved
+# Test 17a: keep-all with matching version/image → preserved
 _keepall_result=$(_test_step_dashboard_with_envfile \
     "v1.2.0-beta.1" \
     "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
-    "1" "1" "0" \
+    "1" "1" "1" \
     "v1.2.0-beta.1")
 
 if echo "${_keepall_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; then
     fail "Exec derivation: function extraction failed"
-    fail "Exec upgrade match: cannot verify (extraction failed)"
-    fail "Exec upgrade mismatch: cannot verify (extraction failed)"
+    fail "Exec keep-all match: cannot verify (extraction failed)"
+    fail "Exec keep-all mismatch: cannot verify (extraction failed)"
     fail "Exec version-change default: cannot verify (extraction failed)"
     fail "Exec same-repo custom tag: cannot verify (extraction failed)"
     fail "Exec cross-repo custom image: cannot verify (extraction failed)"
     fail "Exec auth-token env: cannot verify (extraction failed)"
 else
-    # 17a: upgrade + version match → image unchanged
+    # 17a: keep-all + version match → image unchanged
     if echo "${_keepall_result}" | grep -q "RESULT_IMAGE=.*v1.2.0-beta.1"; then
-        pass "Exec upgrade (matching): image preserved"
+        pass "Exec keep-all (matching): image preserved"
     else
-        fail "Exec upgrade (matching): image changed unexpectedly"
+        fail "Exec keep-all (matching): image changed unexpectedly"
     fi
 
-    # 17b: upgrade + version mismatch but image is default for old version → recompute
+    # 17b: keep-all + version mismatch but image is default for old version → recompute
     _keepall_mismatch=$(_test_step_dashboard_with_envfile \
         "v2.0.0" \
         "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:v1.2.0-beta.1" \
-        "1" "1" "0" \
+        "1" "1" "1" \
         "v1.2.0-beta.1")
 
     if echo "${_keepall_mismatch}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v2.0.0"; then
-        pass "Exec upgrade (old default): image follows new version"
+        pass "Exec keep-all (old default): image follows new version"
     else
-        fail "Exec upgrade (old default): image does not follow new version (got: $(echo "${_keepall_mismatch}" | grep RESULT_IMAGE))"
+        fail "Exec keep-all (old default): image does not follow new version (got: $(echo "${_keepall_mismatch}" | grep RESULT_IMAGE))"
     fi
 
-    # 17c: upgrade + version change + same-repo custom tag → preserved
+    # 17c: non-interactive + version change + same-repo custom tag → preserved
     _custom_tag_result=$(_test_step_dashboard_with_envfile \
         "v2.0.0" \
         "ghcr.io/agentteams-group/agentteams/agentteams-dashboard:canary" \
-        "1" "0" "0" \
+        "1" "1" "0" \
         "v1.2.0-beta.1")
 
     if echo "${_custom_tag_result}" | grep -q "RESULT_IMAGE=.*:canary"; then
@@ -670,11 +670,11 @@ else
         fail "Exec same-repo custom tag: overwritten when version changes (got: $(echo "${_custom_tag_result}" | grep RESULT_IMAGE))"
     fi
 
-    # 17d: upgrade + version change + cross-repo custom image → preserved
+    # 17d: non-interactive + version change + cross-repo custom image → preserved
     _cross_repo_result=$(_test_step_dashboard_with_envfile \
         "v2.0.0" \
         "myregistry.io/custom-dashboard:latest" \
-        "1" "0" "0" \
+        "1" "1" "0" \
         "v1.2.0-beta.1")
 
     if echo "${_cross_repo_result}" | grep -q "RESULT_IMAGE=myregistry.io/custom-dashboard:latest"; then
