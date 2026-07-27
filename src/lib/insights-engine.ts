@@ -132,7 +132,8 @@ export function computeInsights(
   if (infrastructure) {
     const unhealthyServices: string[] = [];
     if (infrastructure.minio && !infrastructure.minio.healthy) unhealthyServices.push('MinIO');
-    if (infrastructure.higress && !infrastructure.higress.healthy) unhealthyServices.push('Higress');
+    if (infrastructure.higress?.gateway.state === 'unreachable') unhealthyServices.push('Higress Gateway');
+    if (infrastructure.higress?.console.state === 'unreachable') unhealthyServices.push('Higress Console');
     if (infrastructure.matrix && !infrastructure.matrix.healthy) unhealthyServices.push('Matrix');
     if (infrastructure.kubernetes && !infrastructure.kubernetes.healthy) unhealthyServices.push('Kubernetes');
 

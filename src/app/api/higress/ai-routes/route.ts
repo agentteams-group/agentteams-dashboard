@@ -1,6 +1,8 @@
 // GET/POST /api/higress/ai-routes — List / Create AI Routes via Higress Console
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse } from '../proxy-helper';
+import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../proxy-helper';
+import { requireHigressConsoleAccess } from '../access';
+import { validateAiRoutePayload } from '@/lib/higress-api';
 
 function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
@@ -9,6 +11,8 @@ function getSessionCookie(request: NextRequest): string | null {
 // GET — List all AI routes
 export async function GET(request: NextRequest) {
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const { response, body } = await callHigressConsole('/v1/ai/routes', {
       method: 'GET',
@@ -20,26 +24,25 @@ export async function GET(request: NextRequest) {
     }
 
     const routes = Array.isArray(body) ? body : (body as Record<string, unknown>)?.routes ?? [];
-    return NextResponse.json({ routes });
+    return NextResponse.json({ routes, fallbackConfigWritable: isFallbackConfigWriteEnabled() });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to list routes';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to list routes');
   }
 }
 
 // POST — Create a new AI route
 export async function POST(request: NextRequest) {
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
-    const body = await request.json();
-
-    if (!body.name) {
-      return NextResponse.json({ error: 'name is required' }, { status: 400 });
-    }
+    const body: unknown = await request.json().catch(() => null);
+    const validationErrors = validateAiRoutePayload(body);
+    if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
     const { response, body: resBody } = await callHigressConsole('/v1/ai/routes', {
       method: 'POST',
-      body,
+      body: prepareAiRoutePayload(body as Record<string, unknown>),
       cookie,
     });
 
@@ -49,7 +52,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(resBody, { status: 201 });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to create route';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to create route');
   }
 }

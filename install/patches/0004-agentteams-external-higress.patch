@@ -1,0 +1,147 @@
+diff --git a/agentteams-controller/internal/config/config.go b/agentteams-controller/internal/config/config.go
+index 7e4389e..5e4669d 100644
+--- a/agentteams-controller/internal/config/config.go
++++ b/agentteams-controller/internal/config/config.go
+@@ -433,7 +433,9 @@ func LoadConfig() *Config {
+ 		if ctrlHost := extractHost(cfg.WorkerEnv.ControllerURL); ctrlHost != "" {
+ 			cfg.WorkerEnv.MatrixURL = replaceHost(cfg.WorkerEnv.MatrixURL, ctrlHost)
+ 			cfg.WorkerEnv.FSEndpoint = replaceHost(cfg.WorkerEnv.FSEndpoint, ctrlHost)
+-			cfg.WorkerEnv.AIGatewayURL = replaceHost(cfg.WorkerEnv.AIGatewayURL, ctrlHost)
++			if os.Getenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE") != "external" {
++				cfg.WorkerEnv.AIGatewayURL = replaceHost(cfg.WorkerEnv.AIGatewayURL, ctrlHost)
++			}
+ 		}
+ 	}
+ 	// S3/MinIO API is never on the Higress HTTP gateway port (8080). Misconfigured
+diff --git a/agentteams-controller/internal/config/config_test.go b/agentteams-controller/internal/config/config_test.go
+index a43ff60..997f744 100644
+--- a/agentteams-controller/internal/config/config_test.go
++++ b/agentteams-controller/internal/config/config_test.go
+@@ -177,6 +177,18 @@ func TestLoadConfigPrefersAbstractInfraEnv(t *testing.T) {
+ 	}
+ }
+ 
++func TestLoadConfigPreservesExternalGatewayURLInEmbeddedMode(t *testing.T) {
++	t.Setenv("AGENTTEAMS_KUBE_MODE", "embedded")
++	t.Setenv("AGENTTEAMS_CONTROLLER_URL", "http://agentteams-controller:8090")
++	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
++	t.Setenv("AGENTTEAMS_AI_GATEWAY_URL", "https://gateway.example.test")
++
++	cfg := LoadConfig()
++	if got, want := cfg.WorkerEnv.AIGatewayURL, "https://gateway.example.test"; got != want {
++		t.Fatalf("WorkerEnv.AIGatewayURL = %q, want %q", got, want)
++	}
++}
++
+ func TestMatrixConfigIncludesAppServicePushURL(t *testing.T) {
+ 	cfg := &Config{
+ 		MatrixAppServicePushURL: appServicePushURL("http://controller.example.com:8090/"),
+diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
+index e6e2941..8c45309 100755
+--- a/install/agentteams-install.sh
++++ b/install/agentteams-install.sh
+@@ -18,8 +18,10 @@
+ # Environment variables (for automation):
+ #   AGENTTEAMS_NON_INTERACTIVE    Skip all prompts, use defaults  (default: 0)
+ #   AGENTTEAMS_LLM_PROVIDER      LLM provider       (default: openai-compat for zh non-interactive Token Plan; qwen for en)
+-#   AGENTTEAMS_DEFAULT_MODEL      Default model       (default: qwen3.6-plus for zh Token Plan and en non-interactive)
++#   AGENTTEAMS_DEFAULT_MODEL      Request model alias (default: qwen3.6-plus for zh Token Plan and en non-interactive)
+ #   AGENTTEAMS_OPENAI_BASE_URL    OpenAI-compatible base URL (default for zh non-interactive: Alibaba Token Plan endpoint)
++#   AGENTTEAMS_HIGRESS_ADAPTER_MODE Higress adapter mode (default: direct; external preserves the configured Gateway URL)
++#   AGENTTEAMS_AI_GATEWAY_URL     Higress Gateway data-plane URL for Manager and Worker model requests
+ #   AGENTTEAMS_LLM_API_KEY        LLM API key         (required)
+ #   AGENTTEAMS_ADMIN_USER         Admin username       (default: admin)
+ #   AGENTTEAMS_ADMIN_PASSWORD     Admin password       (auto-generated if not set, min 8 chars)
+@@ -1357,6 +1359,8 @@ load_current_params_from_env() {
+         [ -z "${AGENTTEAMS_PORT_DASHBOARD:+x}" ] && AGENTTEAMS_PORT_DASHBOARD="$(grep '^AGENTTEAMS_PORT_DASHBOARD=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+         [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:+x}" ] && AGENTTEAMS_DASHBOARD_IMAGE="$(grep '^AGENTTEAMS_DASHBOARD_IMAGE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+         [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_ADMIN_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_ADMIN_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
++        [ -z "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:+x}" ] && AGENTTEAMS_HIGRESS_ADAPTER_MODE="$(grep '^AGENTTEAMS_HIGRESS_ADAPTER_MODE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
++        [ -z "${AGENTTEAMS_AI_GATEWAY_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+     fi
+ }
+ 
+@@ -3431,6 +3435,8 @@ AGENTTEAMS_MATRIX_CLIENT_DOMAIN=${AGENTTEAMS_MATRIX_CLIENT_DOMAIN}
+ 
+ # Gateway
+ AGENTTEAMS_AI_GATEWAY_DOMAIN=${AGENTTEAMS_AI_GATEWAY_DOMAIN}
++AGENTTEAMS_HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}
++AGENTTEAMS_AI_GATEWAY_URL=${AGENTTEAMS_AI_GATEWAY_URL:-}
+ AGENTTEAMS_MANAGER_GATEWAY_KEY=${AGENTTEAMS_MANAGER_GATEWAY_KEY}
+ 
+ # File System
+@@ -3817,6 +3823,10 @@ CREDEOF
+         local _aigw_domain="${AGENTTEAMS_AI_GATEWAY_DOMAIN:-aigw-local.agentteams.io}"
+         # Ensure internal gateway port is present (container-internal traffic uses 8080)
+         case "${_aigw_domain}" in *:*) ;; *) _aigw_domain="${_aigw_domain}:${_internal_gw_port}" ;; esac
++        local _ai_gateway_url="http://${_aigw_domain}"
++        if [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" = "external" ] && [ -n "${AGENTTEAMS_AI_GATEWAY_URL:-}" ]; then
++            _ai_gateway_url="${AGENTTEAMS_AI_GATEWAY_URL}"
++        fi
+         local _fs_domain="${AGENTTEAMS_FS_DOMAIN:-fs-local.agentteams.io}"
+         case "${_fs_domain}" in *:*) ;; *) _fs_domain="${_fs_domain}:${_internal_gw_port}" ;; esac
+ 
+@@ -3844,11 +3854,12 @@ CREDEOF
+             -e "${_ctrl_env_prefix}ELEMENT_HOMESERVER_URL=http://127.0.0.1:${AGENTTEAMS_PORT_GATEWAY}"
+             -e "${_ctrl_env_prefix}MATRIX_URL=http://127.0.0.1:6167"
+             -e "${_ctrl_env_prefix}MATRIX_E2EE=${AGENTTEAMS_MATRIX_E2EE:-0}"
++            -e "${_ctrl_env_prefix}HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}"
+             -e "${_ctrl_env_prefix}MINIO_ENDPOINT=http://127.0.0.1:9000"
+             -e "${_ctrl_env_prefix}MINIO_BUCKET=agentteams-storage"
+             -e "${_ctrl_env_prefix}STORAGE_PREFIX=agentteams/agentteams-storage"
+             -e "${_ctrl_env_prefix}FS_ENDPOINT=http://127.0.0.1:9000"
+-            -e "${_ctrl_env_prefix}AI_GATEWAY_URL=http://${_aigw_domain}"
++            -e "${_ctrl_env_prefix}AI_GATEWAY_URL=${_ai_gateway_url}"
+             -e "${_ctrl_env_prefix}CONTROLLER_URL=http://agentteams-controller:8090"
+             -e "${_ctrl_env_prefix}DOCKER_NETWORK=agentteams-net"
+             -e "${_ctrl_env_prefix}WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR}"
+diff --git a/manager/agent/skills/worker-management/scripts/generate-worker-config.sh b/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
+index db36bd8..319f114 100644
+--- a/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
++++ b/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
+@@ -89,9 +89,9 @@ else
+ fi
+ # Matrix Domain for user IDs keeps original port (e.g., :9080)
+ export AGENTTEAMS_MATRIX_DOMAIN="${MATRIX_DOMAIN_FOR_ID}"
+-# AI Gateway URL: cloud/k8s uses AGENTTEAMS_AI_GATEWAY_URL; local always uses fixed internal domain
+-# so workers on agentteams-net can reach Higress regardless of user-configured AI gateway domain.
+-if [ -n "${AGENTTEAMS_AI_GATEWAY_URL:-}" ] && [ "${AGENTTEAMS_RUNTIME}" != "docker" ]; then
++# AI Gateway URL: preserve an explicitly configured external data-plane URL for
++# every runtime. Direct local deployments retain the Docker network default.
++if [ -n "${AGENTTEAMS_AI_GATEWAY_URL:-}" ] && { [ "${AGENTTEAMS_RUNTIME}" != "docker" ] || [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" = "external" ]; }; then
+     export AGENTTEAMS_AI_GATEWAY_URL
+ else
+     export AGENTTEAMS_AI_GATEWAY_URL="http://aigw-local.agentteams.io:8080"
+
+diff --git a/agentteams-controller/internal/service/worker_env_test.go b/agentteams-controller/internal/service/worker_env_test.go
+index 12fb399..36e4294 100644
+--- a/agentteams-controller/internal/service/worker_env_test.go
++++ b/agentteams-controller/internal/service/worker_env_test.go
+@@ -102,3 +102,27 @@ func TestWorkerEnvBuilderBuildManagerUsesConfiguredRuntimeAndBucket(t *testing.T
+ 		}
+ 	}
+ }
++
++func TestWorkerEnvBuilderPreservesExternalGatewayAndModelAlias(t *testing.T) {
++	builder := NewWorkerEnvBuilder(config.WorkerEnvDefaults{
++		AIGatewayURL: "https://gateway.example.test",
++		Runtime:      "docker",
++	})
++
++	workerEnv := builder.Build("worker", &WorkerProvisionResult{})
++	if got, want := workerEnv["AGENTTEAMS_AI_GATEWAY_URL"], "https://gateway.example.test"; got != want {
++		t.Fatalf("worker gateway URL = %q, want %q", got, want)
++	}
++
++	managerEnv := builder.BuildManager("manager", &ManagerProvisionResult{}, v1beta1.ManagerSpec{
++		Model: "team-default",
++	})
++	for key, want := range map[string]string{
++		"AGENTTEAMS_AI_GATEWAY_URL": "https://gateway.example.test",
++		"AGENTTEAMS_DEFAULT_MODEL":  "team-default",
++	} {
++		if got := managerEnv[key]; got != want {
++			t.Fatalf("manager %s = %q, want %q", key, got, want)
++		}
++	}
++}

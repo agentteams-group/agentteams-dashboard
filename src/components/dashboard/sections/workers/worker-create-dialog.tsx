@@ -73,11 +73,11 @@ export function WorkerCreateDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>模型</Label>
+            <Label>请求模型别名</Label>
             <ModelSelector
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}
-              placeholder="选择模型"
+              placeholder="例如 team-chat"
             />
           </div>
           <div className="space-y-2">

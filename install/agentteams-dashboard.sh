@@ -55,7 +55,10 @@ AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}
 AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}
 AGENTTEAMS_CONTROLLER_URL=${AGENTTEAMS_CONTROLLER_URL}
 NEXT_PUBLIC_MATRIX_API_URL=${NEXT_PUBLIC_MATRIX_API_URL}
+AGENTTEAMS_HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}
+AGENTTEAMS_AI_GATEWAY_URL=${AGENTTEAMS_AI_GATEWAY_URL:-}
 AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}
+AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}
 AGENTTEAMS_LOCAL_ONLY=${AGENTTEAMS_LOCAL_ONLY:-1}
 AGENTTEAMS_FS_ENDPOINT=${AGENTTEAMS_FS_ENDPOINT:-}
 AGENTTEAMS_FS_ACCESS_KEY=${AGENTTEAMS_FS_ACCESS_KEY:-}
@@ -88,6 +91,10 @@ load_env() {
   AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${DEFAULT_IMAGE}}"
   AGENTTEAMS_CONTROLLER_URL="${AGENTTEAMS_CONTROLLER_URL:-http://agentteams-controller:8090}"
   NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL:-http://agentteams-controller:6167}"
+  AGENTTEAMS_HIGRESS_ADAPTER_MODE="${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}"
+  AGENTTEAMS_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-}"
+  AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}"
+  AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}"
   AGENTTEAMS_LOCAL_ONLY="${AGENTTEAMS_LOCAL_ONLY:-1}"
   AGENTTEAMS_FS_ENDPOINT="${AGENTTEAMS_FS_ENDPOINT:-}"
   AGENTTEAMS_FS_ACCESS_KEY="${AGENTTEAMS_FS_ACCESS_KEY:-}"
@@ -210,15 +217,17 @@ wizard() {
   # Detect Higress Console URL from running container (for shared auth with Higress)
   # Use internal Docker network URL (container:port) — works for dashboard on the same network.
   local higress_url=""
-  for _ctr in "agentteams-controller" "higress-console" "higress"; do
-    if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^${_ctr}$"; then
-      # Prefer internal port 8001 (Higress Console API)
-      if ${DOCKER_CMD} exec "${_ctr}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
-        higress_url="http://${_ctr}:8001"
-        break
+  if [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" != "external" ]; then
+    for _ctr in "agentteams-controller" "higress-console" "higress"; do
+      if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^${_ctr}$"; then
+        # Prefer internal port 8001 (Higress Console API)
+        if ${DOCKER_CMD} exec "${_ctr}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
+          higress_url="http://${_ctr}:8001"
+          break
+        fi
       fi
-    fi
-  done
+    done
+  fi
   prompt_value AGENTTEAMS_AI_GATEWAY_ADMIN_URL "Higress Console URL (for shared login)" "${higress_url}"
 }
 
@@ -332,7 +341,7 @@ detect_runtime_env() {
   AGENTTEAMS_ADMIN_PASSWORD=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_PASSWORD=//p')
 
   # Higress Console URL: explicit config takes priority, auto-detect as fallback.
-  if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+  if [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE}" != "external" ] && [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
     if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
       AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
     fi
@@ -394,7 +403,10 @@ recreate_container() {
   local env_args=()
   env_args+=(-e AGENTTEAMS_CONTROLLER_URL="${AGENTTEAMS_CONTROLLER_URL}")
   env_args+=(-e NEXT_PUBLIC_MATRIX_API_URL="${NEXT_PUBLIC_MATRIX_API_URL}")
+  env_args+=(-e AGENTTEAMS_HIGRESS_ADAPTER_MODE="${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}")
+  env_args+=(-e AGENTTEAMS_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-}")
   env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}")
+  env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}")
   env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="agentteams-controller,matrix-local.agentteams.io,matrix.org")
   [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN}")
   [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER}")

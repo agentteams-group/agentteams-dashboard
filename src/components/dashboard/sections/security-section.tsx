@@ -225,11 +225,15 @@ export function SecuritySection() {
       detail: matrixStore.isLoggedIn ? `用户: ${matrixStore.userId}` : '未登录 Matrix 账户',
     });
 
-    // Check: Higress gateway is healthy
     checks.push({
-      label: 'Higress 网关正常运行',
-      checked: !!infra?.higress?.healthy,
-      detail: infra?.higress?.healthy ? `端点: ${infra.higress.endpoint}` : '网关不可用',
+      label: 'Higress Gateway 运行时可用',
+      checked: infra?.higress?.gateway.state === 'reachable',
+      detail: infra?.higress?.gateway.state === 'reachable' ? `端点: ${infra.higress.gateway.endpoint}` : 'Gateway 数据平面不可用',
+    });
+    checks.push({
+      label: 'Higress Console 管理端可用',
+      checked: infra?.higress?.console.state === 'reachable',
+      detail: infra?.higress?.console.state === 'reachable' ? `端点: ${infra.higress.console.endpoint}` : 'Console 管理端不可用',
     });
 
     // Check: No humans with default/empty password (can't verify directly, so check if humans exist)

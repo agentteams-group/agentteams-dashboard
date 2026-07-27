@@ -32,6 +32,7 @@ import { useActiveSection } from './use-active-section';
 import { navItems, isNavItemVisible, createActions, isCreateActionVisible } from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useEnsureAiGateway } from '@/hooks/use-ensure-ai-gateway';
+import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 
 // Lazy load sections for performance
@@ -78,9 +79,10 @@ export function AgentTeamsDashboard() {
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
+  const { data: infrastructure } = useInfrastructure();
 
   // Auto-configure Higress AI gateway on first load
-  useEnsureAiGateway();
+  useEnsureAiGateway(infrastructure?.higress?.mode);
   usePhaseWatcher();
   useAgentTeamsStatus();
   const { data: workers } = useWorkers();

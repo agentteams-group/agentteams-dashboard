@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ authenticated: false }, { status: 200 });
     }
 
-    return await validateViaHigress(request, cookie);
+    return await validateViaHigress(cookie);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ authenticated: false, error: message }, { status: 200 });
@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
 }
 
 /** Validate session by probing Higress Console (original behaviour). */
-async function validateViaHigress(request: NextRequest, cookie: string) {
-  const consoleUrl = getHigressConsoleURL(request);
+async function validateViaHigress(cookie: string) {
+  const consoleUrl = getHigressConsoleURL();
 
   const { response, body } = await callHigressConsole('/v1/consumers', {
     method: 'GET',
@@ -42,4 +42,3 @@ async function validateViaHigress(request: NextRequest, cookie: string) {
 
   return NextResponse.json({ authenticated: true, username, mode: 'higress' }, { status: 200 });
 }
-

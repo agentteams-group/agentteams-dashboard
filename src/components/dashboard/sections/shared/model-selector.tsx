@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useModels } from '@/hooks/use-agentteams-models';
+import { Input } from '@/components/ui/input';
 
 interface ModelSelectorProps {
   value?: string;
@@ -22,28 +15,13 @@ export function ModelSelector({
   placeholder = '选择模型',
   disabled,
 }: ModelSelectorProps) {
-  const { data: providers, isLoading } = useModels();
-
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled || isLoading}>
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {providers?.map((provider) => (
-          <SelectItem key={provider.name} value={provider.name}>
-            {provider.name}
-            <span className="ml-2 text-[10px] text-muted-foreground">
-              ({provider.type})
-            </span>
-          </SelectItem>
-        ))}
-        {providers?.length === 0 && (
-          <SelectItem value="__empty__" disabled>
-            暂无模型配置，请先添加 AI 提供商
-          </SelectItem>
-        )}
-      </SelectContent>
-    </Select>
+    <Input
+      value={value ?? ''}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      aria-label="请求模型别名"
+    />
   );
 }

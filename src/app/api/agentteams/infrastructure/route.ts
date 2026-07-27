@@ -24,10 +24,14 @@ const MATRIX_ENDPOINT =
   process.env.NEXT_PUBLIC_MATRIX_API_URL || // set by install/agentteams-dashboard.sh
   'http://agentteams-controller:6167';
 
-const HIGRESS_ENDPOINT =
+const HIGRESS_MODE = process.env.AGENTTEAMS_HIGRESS_ADAPTER_MODE === 'external' ? 'external' : 'direct';
+const LEGACY_HIGRESS_ENDPOINT = 'http://agentteams-controller:8001';
+const HIGRESS_GATEWAY_ENDPOINT =
   process.env.AGENTTEAMS_AI_GATEWAY_URL ||
-  process.env.AGENTTEAMS_AI_GATEWAY_ADMIN_URL || // set by install/agentteams-dashboard.sh
-  'http://agentteams-controller:8001';
+  (HIGRESS_MODE === 'direct' ? LEGACY_HIGRESS_ENDPOINT : undefined);
+const HIGRESS_CONSOLE_ENDPOINT =
+  process.env.AGENTTEAMS_AI_GATEWAY_ADMIN_URL ||
+  (HIGRESS_MODE === 'direct' ? LEGACY_HIGRESS_ENDPOINT : undefined);
 
 async function fetchWithTimeout(
   url: string,
@@ -141,13 +145,41 @@ async function checkMatrix(): Promise<InfrastructureInfo['matrix']> {
   }
 }
 
-async function checkHigress(): Promise<InfrastructureInfo['higress']> {
-  try {
-    const res = await fetchWithTimeout(HIGRESS_ENDPOINT);
-    return { healthy: res.ok, endpoint: HIGRESS_ENDPOINT };
-  } catch {
-    return { healthy: false, endpoint: HIGRESS_ENDPOINT };
+async function checkExternalService(endpoint: string | undefined) {
+  if (!endpoint) {
+    return { configured: false, state: 'unconfigured' as const };
   }
+
+  try {
+    const res = await fetchWithTimeout(new URL('/', endpoint).toString());
+    return {
+      configured: true,
+      endpoint,
+      state: 'reachable' as const,
+      httpStatus: res.status,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      endpoint,
+      state: 'unreachable' as const,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+async function checkHigress(): Promise<NonNullable<InfrastructureInfo['higress']>> {
+  const [gateway, console] = await Promise.all([
+    checkExternalService(HIGRESS_GATEWAY_ENDPOINT),
+    checkExternalService(HIGRESS_CONSOLE_ENDPOINT),
+  ]);
+
+  return {
+    mode: HIGRESS_MODE,
+    gateway,
+    console,
+    healthy: gateway.state === 'reachable' && console.state === 'reachable',
+  };
 }
 
 // GET /api/agentteams/infrastructure - aggregate health of all platform components

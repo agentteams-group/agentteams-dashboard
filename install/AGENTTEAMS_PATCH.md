@@ -2,6 +2,56 @@
 
 This document describes how to integrate agentteams-dashboard into the AgentTeams installation scripts.
 
+## Higress External Adapter Source Binding
+
+The external Higress adapter targets AgentTeams commit
+`785c2db56a02c0635a66bba490ad0f6f327c790a` from
+`agentscope-ai/AgentTeams` `main`. Future adapter patches must apply cleanly
+to this revision unless this section is updated with a replacement commit.
+
+### Runtime Contract
+
+`AGENTTEAMS_AI_GATEWAY_URL` is the Gateway data-plane base URL. The Manager
+and Worker `model` value is the request model alias sent to that URL. The
+Dashboard must provide the value through deployment configuration and must not
+substitute the Higress Console URL.
+
+### Request Model Alias Migration
+
+The Controller API retains the `model` JSON field for Manager and Worker
+create and update requests. Dashboard forms treat the field as a request model
+alias rather than a Higress Provider name. Existing non-empty values are
+rendered and resubmitted unchanged, preserving deployed resources while their
+routes are migrated. New values use the request alias form, such as
+`team-chat`; route and model-mapping availability validation is tracked
+separately from this wire-contract migration.
+
+| Runtime boundary | Target AgentTeams file | Interface | Adapter expectation |
+|---|---|---|---|
+| Controller configuration | `agentteams-controller/internal/config/config.go` | `WorkerEnv.AIGatewayURL`, `ManagerAgentEnv`, `GatewayConfig` | Read the configured Gateway URL once and expose it to embedded Manager creation and data-plane clients. |
+| Controller container environment | `agentteams-controller/internal/service/worker_env.go` | `WorkerEnvBuilder.Build`, `WorkerEnvBuilder.BuildManager`, `applyClusterDefaults` | Inject `AGENTTEAMS_AI_GATEWAY_URL` into every Worker and Manager container; inject `ManagerSpec.Model` as `AGENTTEAMS_DEFAULT_MODEL`. |
+| Controller reconciliation overrides | `agentteams-controller/internal/controller/manager_reconcile_container.go`, `agentteams-controller/internal/controller/member_reconcile.go` | `createManagerContainer`, `buildMemberWorkerEnv` | Preserve the externally configured URL when no platform model-provider intranet URL overrides it. |
+| Manager runtime | `manager/scripts/init/start-manager-agent.sh` | `AGENTTEAMS_AI_GATEWAY_URL`, `AGENTTEAMS_DEFAULT_MODEL`, generated `openclaw.json` | Use the data-plane URL with `/v1`; treat `AGENTTEAMS_DEFAULT_MODEL` as the request model alias. |
+| Worker configuration generation | `manager/agent/skills/worker-management/scripts/generate-worker-config.sh` | `MODEL_NAME`, `AGENTTEAMS_AI_GATEWAY_URL`, `worker-openclaw.json.tmpl` | Write the request model alias and data-plane URL into the Worker OpenClaw configuration. |
+| Worker process environment | `shared/lib/agentteams-env.sh`, `worker/scripts/worker-entrypoint.sh` | normalized and exported `AGENTTEAMS_AI_GATEWAY_URL` | Retain the injected URL at startup; external mode requires bypassing the Docker-local Gateway fallback in worker configuration generation. |
+
+### Acceptance Scenarios
+
+1. With `AGENTTEAMS_AI_GATEWAY_URL=https://gateway.example.test`, Controller-created Manager and Worker environments contain that exact value.
+2. A Manager or Worker configured with model alias `team-chat` writes `team-chat` as its OpenClaw model identifier and sends model requests to `https://gateway.example.test/v1`.
+3. In external adapter mode, neither Controller reconciliation nor Worker configuration generation replaces the configured data-plane URL with a Console URL or `aigw-local.agentteams.io`.
+4. A Higress AI Route and model mapping resolving `team-chat` accepts the Manager and Worker request model value.
+
+### Delivered Patch
+
+`install/patches/0004-agentteams-external-higress.patch` persists
+`AGENTTEAMS_HIGRESS_ADAPTER_MODE` and `AGENTTEAMS_AI_GATEWAY_URL`, passes the
+configured data-plane URL to the embedded Controller, preserves it during
+embedded configuration normalization, and retains it when Docker Workers are
+configured. The patch adds a Controller configuration test for the embedded
+external URL behavior and a WorkerEnvBuilder fixture that asserts Worker and
+Manager Gateway URL propagation plus the Manager request model alias.
+
 ## Option A: Standalone Install (Recommended for existing installations)
 
 Run directly against an existing AgentTeams deployment:
@@ -29,12 +79,14 @@ cd /path/to/AgentTeams
 git apply /path/to/agentteams-dashboard/install/patches/0001-agentteams-install-dashboard.patch
 git apply /path/to/agentteams-dashboard/install/patches/0002-agentteams-verify-dashboard.patch
 git apply /path/to/agentteams-dashboard/install/patches/0003-Makefile-dashboard.patch
+git apply /path/to/agentteams-dashboard/install/patches/0004-agentteams-external-higress.patch
 ```
 
-> **Note**: The integration is split into three patch files:
+> **Note**: The integration is split into four patch files:
 > - `0001-agentteams-install-dashboard.patch` — `install/agentteams-install.sh` + new `install/agentteams-dashboard-tests.sh`
 > - `0002-agentteams-verify-dashboard.patch` — `install/agentteams-verify.sh`
 > - `0003-Makefile-dashboard.patch` — `Makefile`
+> - `0004-agentteams-external-higress.patch` — external Gateway URL propagation and Docker Worker preservation
 
 ### Regenerate Patches
 

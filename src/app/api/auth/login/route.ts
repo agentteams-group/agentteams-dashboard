@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Username and password are required' }, { status: 400 });
     }
 
-    return await loginViaHigress(request, username, password);
+    return await loginViaHigress(username, password);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ success: false, error: message }, { status: 502 });
@@ -65,8 +65,8 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
 }
 
 /** Authenticate against Higress Console (original behaviour). */
-async function loginViaHigress(request: NextRequest, username: string, password: string) {
-  const consoleUrl = getHigressConsoleURL(request);
+async function loginViaHigress(username: string, password: string) {
+  const consoleUrl = getHigressConsoleURL();
 
   // 1. Initialize Higress Console admin account (idempotent).
   try {
@@ -110,4 +110,3 @@ async function loginViaHigress(request: NextRequest, username: string, password:
     { status: 200, headers: responseHeaders }
   );
 }
-

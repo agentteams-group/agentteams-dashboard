@@ -13,6 +13,8 @@ export type TeamPhase = 'Pending' | 'Active' | 'Degraded' | 'Failed';
 export type HumanPhase = 'Pending' | 'Active' | 'Failed';
 export type ManagerPhase = 'Running' | 'Pending' | 'Failed';
 export type ManagerState = 'Running' | 'Sleeping' | 'Stopped';
+// The `model` field is the request model alias forwarded to the AI Gateway.
+export type RequestModelAlias = string;
 
 export interface ExposedPort {
   port: number;
@@ -24,7 +26,7 @@ export interface WorkerResponse {
   phase: WorkerPhase;
   state: WorkerState;
   containerManaged: boolean;
-  model: string;
+  model: RequestModelAlias;
   runtime: WorkerRuntime;
   image: string;
   containerState: string;
@@ -80,7 +82,7 @@ export interface ManagerResponse {
   name: string;
   phase: ManagerPhase;
   state: ManagerState;
-  model: string;
+  model: RequestModelAlias;
   runtime: string;
   image: string;
   matrixUserID: string;
@@ -94,7 +96,7 @@ export interface ManagerResponse {
 
 export interface CreateWorkerRequest {
   name: string;
-  model?: string;
+  model?: RequestModelAlias;
   runtime: WorkerRuntime;
   image?: string;
   soul?: string;
@@ -107,7 +109,7 @@ export interface CreateWorkerRequest {
 }
 
 export interface UpdateWorkerRequest {
-  model?: string;
+  model?: RequestModelAlias;
   runtime?: WorkerRuntime;
   image?: string;
   soul?: string;
@@ -159,13 +161,13 @@ export interface UpdateHumanRequest {
 
 export interface CreateManagerRequest {
   name: string;
-  model?: string;
+  model?: RequestModelAlias;
   runtime?: string;
   image?: string;
 }
 
 export interface UpdateManagerRequest {
-  model?: string;
+  model?: RequestModelAlias;
   runtime?: string;
   image?: string;
 }
@@ -205,9 +207,26 @@ export function normalizeKubeMode(value: unknown): boolean {
   return false;
 }
 
+export type ExternalServiceState = 'unconfigured' | 'reachable' | 'unreachable';
+
+export interface ExternalServiceStatus {
+  configured: boolean;
+  endpoint?: string;
+  state: ExternalServiceState;
+  httpStatus?: number;
+  error?: string;
+}
+
+export interface HigressStatus {
+  mode: 'direct' | 'external';
+  gateway: ExternalServiceStatus;
+  console: ExternalServiceStatus;
+  healthy: boolean;
+}
+
 export interface InfrastructureInfo {
   minio?: { healthy: boolean; endpoint: string; buckets: string[] };
-  higress?: { healthy: boolean; endpoint: string };
+  higress?: HigressStatus;
   matrix?: { healthy: boolean; homeserver: string };
   kubernetes?: { healthy: boolean; version: string };
   controller?: { healthy: boolean; version: string };

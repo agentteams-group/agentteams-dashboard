@@ -88,7 +88,8 @@ const componentIcons: Record<string, React.ComponentType<{ className?: string }>
 
 const componentNames: Record<string, string> = {
   minio: 'MinIO 对象存储',
-  higress: 'Higress 网关',
+  'higress-gateway': 'Higress Gateway',
+  'higress-console': 'Higress Console',
   matrix: 'Matrix 通信',
   kubernetes: 'Kubernetes',
   controller: 'AgentTeams Controller',
@@ -96,7 +97,8 @@ const componentNames: Record<string, string> = {
 
 const componentDescriptions: Record<string, string> = {
   minio: 'S3 兼容对象存储服务',
-  higress: '云原生 API 网关',
+  'higress-gateway': 'AgentTeams 运行时模型请求入口',
+  'higress-console': '模型配置管理入口',
   matrix: '去中心化即时通信协议',
   kubernetes: '容器编排平台',
   controller: 'AgentTeams 核心控制器',
@@ -374,7 +376,10 @@ export function InfrastructureSection() {
   const componentsList = useMemo(() => {
     const components: { name: string; healthy: boolean }[] = [];
     if (derivedHealth.minio) components.push({ name: 'minio', healthy: derivedHealth.minio.healthy });
-    if (derivedHealth.higress) components.push({ name: 'higress', healthy: derivedHealth.higress.healthy });
+    if (derivedHealth.higress) {
+      components.push({ name: 'higress-gateway', healthy: derivedHealth.higress.gateway.state === 'reachable' });
+      components.push({ name: 'higress-console', healthy: derivedHealth.higress.console.state === 'reachable' });
+    }
     if (derivedHealth.matrix) components.push({ name: 'matrix', healthy: derivedHealth.matrix.healthy });
     if (derivedHealth.kubernetes) components.push({ name: 'kubernetes', healthy: derivedHealth.kubernetes.healthy });
     if (derivedHealth.controller) components.push({ name: 'controller', healthy: derivedHealth.controller.healthy });
@@ -392,7 +397,14 @@ export function InfrastructureSection() {
 
   const filteredComponents = useMemo(() => {
     if (!derivedHealth) return [];
-    const entries = Object.entries(derivedHealth).filter(([_, data]) => data && typeof data === 'object');
+    const entries = Object.entries(derivedHealth).flatMap(([key, data]) => {
+      if (key !== 'higress' || !data || typeof data !== 'object') return [[key, data]];
+      const higress = data as NonNullable<InfrastructureInfo['higress']>;
+      return [
+        ['higress-gateway', { healthy: higress.gateway.state === 'reachable', endpoint: higress.gateway.endpoint }],
+        ['higress-console', { healthy: higress.console.state === 'reachable', endpoint: higress.console.endpoint }],
+      ];
+    }).filter(([_, data]) => data && typeof data === 'object');
     if (!searchQuery) return entries;
     const q = searchQuery.toLowerCase();
     return entries.filter(([key]) => {
@@ -483,15 +495,21 @@ export function InfrastructureSection() {
       healthy: minioHealthy ?? false,
     });
 
-    // Network (Higress)
-    const higressHealthy = derivedHealth?.higress?.healthy;
-    const higressEndpoint = derivedHealth?.higress?.endpoint;
+    const gatewayStatus = derivedHealth?.higress?.gateway;
     items.push({
       icon: Globe,
-      label: '网络端点',
-      value: higressHealthy ? '运行中' : '未就绪',
-      detail: higressEndpoint ? higressEndpoint.replace(/^https?:\/\//, '') : '无端点',
-      healthy: higressHealthy ?? false,
+      label: 'Higress Gateway',
+      value: gatewayStatus?.state === 'reachable' ? '运行中' : '未就绪',
+      detail: gatewayStatus?.endpoint ? gatewayStatus.endpoint.replace(/^https?:\/\//, '') : '无端点',
+      healthy: gatewayStatus?.state === 'reachable',
+    });
+    const consoleStatus = derivedHealth?.higress?.console;
+    items.push({
+      icon: Shield,
+      label: 'Higress Console',
+      value: consoleStatus?.state === 'reachable' ? '可管理' : '未就绪',
+      detail: consoleStatus?.endpoint ? consoleStatus.endpoint.replace(/^https?:\/\//, '') : '无端点',
+      healthy: consoleStatus?.state === 'reachable',
     });
 
     // Matrix

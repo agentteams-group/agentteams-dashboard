@@ -517,14 +517,11 @@ export function OverviewSection() {
                       detail={infrastructure.minio?.endpoint}
                     />
                   )}
-                  {/* Higress: k8s only */}
                   {mode !== 'embedded' && (
-                    <HealthCard
-                      name="Higress"
-                      healthy={infrastructure.higress?.healthy}
-                      icon={Zap}
-                      detail={infrastructure.higress?.endpoint}
-                    />
+                    <>
+                      <HealthCard name="Higress Gateway" healthy={infrastructure.higress?.gateway.state === 'reachable'} icon={Zap} detail={infrastructure.higress?.gateway.endpoint} />
+                      <HealthCard name="Higress Console" healthy={infrastructure.higress?.console.state === 'reachable'} icon={Server} detail={infrastructure.higress?.console.endpoint} />
+                    </>
                   )}
                   <HealthCard
                     name="Matrix"

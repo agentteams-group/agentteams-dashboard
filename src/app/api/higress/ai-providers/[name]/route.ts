@@ -1,9 +1,17 @@
 // GET/PUT/DELETE /api/higress/ai-providers/[name] — Single AI Provider operations
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse } from '../../proxy-helper';
+import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse } from '../../proxy-helper';
+import { requireHigressConsoleAccess } from '../../access';
+import { validateProviderPayload } from '@/lib/higress-api';
 
 function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
+}
+
+function maskProvider(provider: Record<string, unknown>) {
+  const tokens = Array.isArray(provider.tokens) ? provider.tokens : [];
+  const { tokens: _, ...rest } = provider;
+  return { ...rest, tokenCount: tokens.length };
 }
 
 // GET — Get a single provider
@@ -13,6 +21,8 @@ export async function GET(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const { response, body } = await callHigressConsole(
       `/v1/ai/providers/${encodeURIComponent(name)}`,
@@ -24,12 +34,9 @@ export async function GET(
     }
 
     const provider = body as Record<string, unknown>;
-    const tokens = provider.tokens as string[] | undefined;
-    const { tokens: _, ...rest } = provider;
-    return NextResponse.json({ ...rest, tokenCount: tokens?.length ?? 0 });
+    return NextResponse.json(maskProvider(provider));
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to get provider';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to get provider');
   }
 }
 
@@ -40,22 +47,25 @@ export async function PUT(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
-    const body = await request.json();
+    const body: unknown = await request.json().catch(() => null);
+    const validationErrors = validateProviderPayload(body, true);
+    if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
     const { response, body: resBody } = await callHigressConsole(
       `/v1/ai/providers/${encodeURIComponent(name)}`,
-      { method: 'PUT', body, cookie }
+       { method: 'PUT', body: body as Record<string, unknown>, cookie }
     );
 
     if (!response.ok) {
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(resBody);
+    return NextResponse.json(maskProvider(resBody as Record<string, unknown>));
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to update provider';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to update provider');
   }
 }
 
@@ -66,6 +76,8 @@ export async function DELETE(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const { response, body } = await callHigressConsole(
       `/v1/ai/providers/${encodeURIComponent(name)}`,
@@ -78,7 +90,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to delete provider';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to delete provider');
   }
 }

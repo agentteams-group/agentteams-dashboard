@@ -5,6 +5,13 @@ import { callHigressConsole, getHigressConsoleURL } from '../../../higress/proxy
 // This resolves the Envoy listener warming issue by ensuring the key-auth
 // WASM plugin config gets pushed.
 export async function POST() {
+  if (process.env.AGENTTEAMS_HIGRESS_ADAPTER_MODE === 'external') {
+    return NextResponse.json(
+      { error: 'External Higress mode is read-only; configure Consumers, Providers, and AI Routes in the external Console' },
+      { status: 409 }
+    );
+  }
+
   const consoleUrl = getHigressConsoleURL();
 
   const adminUser = process.env.AGENTTEAMS_ADMIN_USER;

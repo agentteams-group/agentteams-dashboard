@@ -1,6 +1,8 @@
 // GET/PUT/DELETE /api/higress/ai-routes/[name] — Single AI Route operations
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse } from '../../proxy-helper';
+import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../../proxy-helper';
+import { requireHigressConsoleAccess } from '../../access';
+import { validateAiRoutePayload } from '@/lib/higress-api';
 
 function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
@@ -13,6 +15,8 @@ export async function GET(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const { response, body } = await callHigressConsole(
       `/v1/ai/routes/${encodeURIComponent(name)}`,
@@ -23,10 +27,9 @@ export async function GET(
       return higressErrorResponse(response, body);
     }
 
-    return NextResponse.json(body);
+    return NextResponse.json({ ...(body as Record<string, unknown>), fallbackConfigWritable: isFallbackConfigWriteEnabled() });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to get route';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to get route');
   }
 }
 
@@ -37,12 +40,16 @@ export async function PUT(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
-    const body = await request.json();
+    const body: unknown = await request.json().catch(() => null);
+    const validationErrors = validateAiRoutePayload(body, true);
+    if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
     const { response, body: resBody } = await callHigressConsole(
       `/v1/ai/routes/${encodeURIComponent(name)}`,
-      { method: 'PUT', body, cookie }
+      { method: 'PUT', body: prepareAiRoutePayload(body as Record<string, unknown>), cookie }
     );
 
     if (!response.ok) {
@@ -51,8 +58,7 @@ export async function PUT(
 
     return NextResponse.json(resBody);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to update route';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to update route');
   }
 }
 
@@ -63,6 +69,8 @@ export async function DELETE(
 ) {
   const { name } = await params;
   try {
+    const rejected = await requireHigressConsoleAccess(request);
+    if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const { response, body } = await callHigressConsole(
       `/v1/ai/routes/${encodeURIComponent(name)}`,
@@ -75,7 +83,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to delete route';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return higressProxyErrorResponse(err, 'Failed to delete route');
   }
 }

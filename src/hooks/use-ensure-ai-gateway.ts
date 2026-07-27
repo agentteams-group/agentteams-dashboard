@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { agentteamsApi } from '@/lib/agentteams-api';
+import type { HigressStatus } from '@/lib/agentteams-api';
 
 const ENSURE_AI_KEY = 'agentteams-ensure-ai-done';
 
@@ -10,15 +11,21 @@ const ENSURE_AI_KEY = 'agentteams-ensure-ai-done';
  * is properly configured (consumer + AI route). This resolves the Envoy
  * listener warming issue that prevents Manager LLM calls.
  */
-export function useEnsureAiGateway() {
+export function useEnsureAiGateway(adapterMode: HigressStatus['mode'] | undefined) {
   const attempted = useRef(false);
 
   useEffect(() => {
     if (attempted.current) return;
+    if (!adapterMode) return;
+    attempted.current = true;
+
+    // External Higress is administered outside of Dashboard. Its first-load path
+    // only consumes the infrastructure status query supplied by the dashboard.
+    if (adapterMode === 'external') return;
+
     if (typeof window !== 'undefined' && localStorage.getItem(ENSURE_AI_KEY) === 'true') {
       return;
     }
-    attempted.current = true;
 
     agentteamsApi.ensureAiGateway()
       .then((data) => {
@@ -29,5 +36,5 @@ export function useEnsureAiGateway() {
       .catch(() => {
         // Silently fail - the gateway may already be configured
       });
-  }, []);
+  }, [adapterMode]);
 }

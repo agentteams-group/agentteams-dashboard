@@ -9,12 +9,28 @@ import type {
   CreateAiRouteRequest,
 } from '@/lib/higress-api';
 
+const providerQueryKey = ['agentteams-models'];
+const routeQueryKey = ['agentteams-ai-routes'];
+const bindingQueryKey = ['agentteams-model-bindings'];
+
+function invalidateProviderDependencies(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: providerQueryKey });
+  queryClient.invalidateQueries({ queryKey: routeQueryKey });
+  queryClient.invalidateQueries({ queryKey: bindingQueryKey });
+}
+
+function invalidateRouteDependencies(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: routeQueryKey });
+  queryClient.invalidateQueries({ queryKey: bindingQueryKey });
+}
+
 // ============ AI Providers ============
 
-export function useModels() {
+export function useModels(enabled = true) {
   return useQuery<LlmProviderResponse[]>({
-    queryKey: ['agentteams-models'],
+    queryKey: providerQueryKey,
     queryFn: () => higressApi.listProviders(),
+    enabled,
     refetchInterval: 30000,
     retry: 1,
     placeholderData: (previousData) => previousData,
@@ -27,7 +43,7 @@ export function useCreateModel() {
   return useMutation({
     mutationFn: (data: CreateLlmProviderRequest) => higressApi.createProvider(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-models'] });
+      invalidateProviderDependencies(queryClient);
     },
   });
 }
@@ -38,7 +54,7 @@ export function useUpdateModel() {
     mutationFn: ({ name, data }: { name: string; data: UpdateLlmProviderRequest }) =>
       higressApi.updateProvider(name, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-models'] });
+      invalidateProviderDependencies(queryClient);
     },
   });
 }
@@ -48,18 +64,18 @@ export function useDeleteModel() {
   return useMutation({
     mutationFn: (name: string) => higressApi.deleteProvider(name),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-models'] });
-      queryClient.invalidateQueries({ queryKey: ['agentteams-ai-routes'] });
+      invalidateProviderDependencies(queryClient);
     },
   });
 }
 
 // ============ AI Routes ============
 
-export function useAiRoutes() {
+export function useAiRoutes(enabled = true) {
   return useQuery<AiRoute[]>({
-    queryKey: ['agentteams-ai-routes'],
+    queryKey: routeQueryKey,
     queryFn: () => higressApi.listRoutes(),
+    enabled,
     refetchInterval: 30000,
     retry: 1,
     placeholderData: (previousData) => previousData,
@@ -72,7 +88,7 @@ export function useCreateAiRoute() {
   return useMutation({
     mutationFn: (data: CreateAiRouteRequest) => higressApi.createRoute(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-ai-routes'] });
+      invalidateRouteDependencies(queryClient);
     },
   });
 }
@@ -83,7 +99,7 @@ export function useUpdateAiRoute() {
     mutationFn: ({ name, data }: { name: string; data: Partial<CreateAiRouteRequest> }) =>
       higressApi.updateRoute(name, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-ai-routes'] });
+      invalidateRouteDependencies(queryClient);
     },
   });
 }
@@ -93,7 +109,7 @@ export function useDeleteAiRoute() {
   return useMutation({
     mutationFn: (name: string) => higressApi.deleteRoute(name),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-ai-routes'] });
+      invalidateRouteDependencies(queryClient);
     },
   });
 }
