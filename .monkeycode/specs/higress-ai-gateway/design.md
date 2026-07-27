@@ -43,6 +43,8 @@ flowchart TB
 
 当适配模式为 `external` 时，Dashboard 在加载和首次启动期间只调用状态读取接口，`ensure-ai` 不进入调用路径。当适配模式为 `direct` 时，现有首次启动行为保持不变。
 
+外部模式采用双层 Gateway 约束。AgentTeams Controller 是运行时地址的最终事实来源：当 `AGENTTEAMS_HIGRESS_ADAPTER_MODE=external` 时，Controller 忽略 Manager 和 Worker `modelProvider` 解析出的 `IntranetURL`，并使用 `WorkerEnv.AIGatewayURL` 生成 Manager、Worker 和运行时 OpenClaw 配置。Dashboard 在创建、更新、启动、唤醒和就绪入口提前拒绝非空 `modelProvider`，使管理员在运行时调谐前获得明确迁移提示。该策略覆盖 Dashboard 调用和直接 Controller API 调用。
+
 Dashboard 的首次启动向导当前通过 Controller 的 `/api/v1/setup` 设置 `llmProvider`、`llmApiKey` 和可选 Base URL。外部 Higress 接入启用后，Manager 和 Worker 的 `model` 字段统一为请求模型别名，运行时将该别名作为模型请求参数发送到 Gateway，Higress 路由和上游映射将别名解析到具体厂商模型。Dashboard 只在 Console 地址已配置且具备会话权限时展示写入操作。
 
 ### 当前实现的实施门槛
@@ -206,6 +208,7 @@ interface AgentTeamsModelBinding {
 6. 厂商配置写入成功后，厂商列表和路由列表会在下次渲染时读取新配置。
 7. 请求模型别名仅在绑定路由、上游厂商和目标模型均可用时标记为可用。
 8. 外部 Higress 适配模式下，页面加载和首次启动不会创建 Consumer、Provider 或 AI Route。
+9. 外部 Higress 适配模式下，Manager 和 Worker 的运行时 Gateway 地址等于配置的 `AGENTTEAMS_AI_GATEWAY_URL`，且不受 `modelProvider` 解析结果影响。
 
 ## 错误处理
 
@@ -220,6 +223,8 @@ interface AgentTeamsModelBinding {
 | 外部 Console 主机未获授权 | 拒绝代理请求并提示部署管理员更新允许主机名配置 |
 | 外部适配模式首次启动 | 仅查询 Gateway 和 Console 状态，不发起任何 Console 配置写入 |
 | 外部适配模式缺少 Gateway 地址 | 返回 `gateway.state = unconfigured` 并显示部署配置要求 |
+| 外部模式携带模型提供方 | Dashboard 返回 409 并说明请求模型别名与 AI Route 迁移路径 |
+| 外部模式已有模型提供方 | 启动、唤醒和就绪操作返回 409，直到迁移移除模型提供方 |
 
 ## 测试策略
 
@@ -248,6 +253,7 @@ interface AgentTeamsModelBinding {
 - 外部适配模式下首次加载与首次启动仅执行只读请求。
 - Console 地址允许主机、非法环境地址和缺失配置的明确失败行为。
 - Gateway 与 Console 地址独立成功、失败和误配状态。
+- 外部模式下 Manager、Worker 和运行时配置忽略 `modelProvider.IntranetURL` 并保留 Gateway 数据平面地址。
 
 ## 实施顺序
 
@@ -261,10 +267,12 @@ interface AgentTeamsModelBinding {
 8. 增强 AI 路由表单，加入多上游、模型映射、认证和模型绑定。
 9. 补齐 API 路由请求校验、脱敏和错误测试。
 10. 运行 `npm run lint`、`npm run typecheck` 和 `npm test`。
+11. 在 AgentTeams Controller 外部模式下屏蔽 `modelProvider` 的内网地址覆盖，并以 Dashboard 门禁阻止新增和遗留引用。
 
 ## 已确认决策
 
 1. 路由回退策略首期采用受限 JSON 编辑器。实现以目标 Higress Console 的固定 API 版本和允许的 `fallbackConfig` schema 为验收基线；Console 不支持写入时展示只读摘要。编辑器保留 Console 返回的未知字段，并在提交前校验 JSON 与允许 schema。
+2. 外部模式的 Gateway 地址以 AgentTeams Controller 配置为权威；`modelProvider` 在外部模式不参与 Manager、Worker 与运行时配置的 Gateway 地址选择。Dashboard 与 Controller 共同实施约束，避免直连 Controller 绕过 Dashboard 校验。
 
 ## 参考
 

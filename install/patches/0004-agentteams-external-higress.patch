@@ -1,3 +1,64 @@
+diff --git a/agentteams-controller/internal/agentconfig/generator.go b/agentteams-controller/internal/agentconfig/generator.go
+index 5447b24..cb5ae5a 100644
+--- a/agentteams-controller/internal/agentconfig/generator.go
++++ b/agentteams-controller/internal/agentconfig/generator.go
+@@ -3,6 +3,7 @@ package agentconfig
+ import (
+ 	"encoding/json"
+ 	"fmt"
++	"os"
+ 	"strings"
+ )
+ 
+@@ -38,7 +39,7 @@ func (g *Generator) GenerateOpenClawConfig(req WorkerConfigRequest) ([]byte, err
+ 	}
+ 
+ 	aiGatewayURL := g.config.AIGatewayURL
+-	if req.AIGatewayURL != "" {
++	if os.Getenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE") != "external" && req.AIGatewayURL != "" {
+ 		aiGatewayURL = req.AIGatewayURL
+ 	}
+ 	if aiGatewayURL == "" {
+diff --git a/agentteams-controller/internal/agentconfig/generator_test.go b/agentteams-controller/internal/agentconfig/generator_test.go
+index a42e1c1..32b9434 100644
+--- a/agentteams-controller/internal/agentconfig/generator_test.go
++++ b/agentteams-controller/internal/agentconfig/generator_test.go
+@@ -156,6 +156,35 @@ func TestGenerateOpenClawConfig_CustomModel(t *testing.T) {
+ 	}
+ }
+ 
++func TestGenerateOpenClawConfigExternalHigressIgnoresRequestGatewayOverride(t *testing.T) {
++	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
++	g := NewGenerator(Config{
++		MatrixDomain:    "d",
++		MatrixServerURL: "http://m:8080",
++		AIGatewayURL:    "https://gateway.example.test",
++	})
++
++	data, err := g.GenerateOpenClawConfig(WorkerConfigRequest{
++		WorkerName:   "w1",
++		MatrixToken:  "tok",
++		GatewayKey:   "key",
++		AIGatewayURL: "http://legacy-provider.internal",
++	})
++	if err != nil {
++		t.Fatalf("GenerateOpenClawConfig: %v", err)
++	}
++
++	var config map[string]interface{}
++	if err := json.Unmarshal(data, &config); err != nil {
++		t.Fatalf("invalid JSON: %v", err)
++	}
++	providers := config["models"].(map[string]interface{})["providers"].(map[string]interface{})
++	provider := providers["agentteams-gateway"].(map[string]interface{})
++	if got, want := provider["baseUrl"], "https://gateway.example.test/v1"; got != want {
++		t.Fatalf("OpenClaw baseUrl = %q, want %q", got, want)
++	}
++}
++
+ func TestGenerateOpenClawConfig_WithEmbedding(t *testing.T) {
+ 	g := NewGenerator(Config{
+ 		MatrixDomain:    "d",
 diff --git a/agentteams-controller/internal/config/config.go b/agentteams-controller/internal/config/config.go
 index 7e4389e..5e4669d 100644
 --- a/agentteams-controller/internal/config/config.go
@@ -14,18 +75,18 @@ index 7e4389e..5e4669d 100644
  	}
  	// S3/MinIO API is never on the Higress HTTP gateway port (8080). Misconfigured
 diff --git a/agentteams-controller/internal/config/config_test.go b/agentteams-controller/internal/config/config_test.go
-index a43ff60..997f744 100644
+index a43ff60..f40f00e 100644
 --- a/agentteams-controller/internal/config/config_test.go
 +++ b/agentteams-controller/internal/config/config_test.go
-@@ -177,6 +177,18 @@ func TestLoadConfigPrefersAbstractInfraEnv(t *testing.T) {
+@@ -151,6 +151,18 @@ func TestLoadConfigAIGatewayEndpointOverride(t *testing.T) {
  	}
  }
  
-+func TestLoadConfigPreservesExternalGatewayURLInEmbeddedMode(t *testing.T) {
++func TestLoadConfigExternalHigressPreservesConfiguredAIGatewayURL(t *testing.T) {
 +	t.Setenv("AGENTTEAMS_KUBE_MODE", "embedded")
 +	t.Setenv("AGENTTEAMS_CONTROLLER_URL", "http://agentteams-controller:8090")
-+	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
 +	t.Setenv("AGENTTEAMS_AI_GATEWAY_URL", "https://gateway.example.test")
++	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
 +
 +	cfg := LoadConfig()
 +	if got, want := cfg.WorkerEnv.AIGatewayURL, "https://gateway.example.test"; got != want {
@@ -33,44 +94,149 @@ index a43ff60..997f744 100644
 +	}
 +}
 +
- func TestMatrixConfigIncludesAppServicePushURL(t *testing.T) {
- 	cfg := &Config{
- 		MatrixAppServicePushURL: appServicePushURL("http://controller.example.com:8090/"),
-diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
-index e6e2941..8c45309 100755
---- a/install/agentteams-install.sh
-+++ b/install/agentteams-install.sh
-@@ -18,8 +18,10 @@
- # Environment variables (for automation):
- #   AGENTTEAMS_NON_INTERACTIVE    Skip all prompts, use defaults  (default: 0)
- #   AGENTTEAMS_LLM_PROVIDER      LLM provider       (default: openai-compat for zh non-interactive Token Plan; qwen for en)
--#   AGENTTEAMS_DEFAULT_MODEL      Default model       (default: qwen3.6-plus for zh Token Plan and en non-interactive)
-+#   AGENTTEAMS_DEFAULT_MODEL      Request model alias (default: qwen3.6-plus for zh Token Plan and en non-interactive)
- #   AGENTTEAMS_OPENAI_BASE_URL    OpenAI-compatible base URL (default for zh non-interactive: Alibaba Token Plan endpoint)
-+#   AGENTTEAMS_HIGRESS_ADAPTER_MODE Higress adapter mode (default: direct; external preserves the configured Gateway URL)
-+#   AGENTTEAMS_AI_GATEWAY_URL     Higress Gateway data-plane URL for Manager and Worker model requests
- #   AGENTTEAMS_LLM_API_KEY        LLM API key         (required)
- #   AGENTTEAMS_ADMIN_USER         Admin username       (default: admin)
- #   AGENTTEAMS_ADMIN_PASSWORD     Admin password       (auto-generated if not set, min 8 chars)
-@@ -1357,6 +1359,8 @@ load_current_params_from_env() {
-         [ -z "${AGENTTEAMS_PORT_DASHBOARD:+x}" ] && AGENTTEAMS_PORT_DASHBOARD="$(grep '^AGENTTEAMS_PORT_DASHBOARD=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
-         [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:+x}" ] && AGENTTEAMS_DASHBOARD_IMAGE="$(grep '^AGENTTEAMS_DASHBOARD_IMAGE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
-         [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_ADMIN_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_ADMIN_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
-+        [ -z "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:+x}" ] && AGENTTEAMS_HIGRESS_ADAPTER_MODE="$(grep '^AGENTTEAMS_HIGRESS_ADAPTER_MODE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
-+        [ -z "${AGENTTEAMS_AI_GATEWAY_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
-     fi
+ func TestLoadConfigPrefersAbstractInfraEnv(t *testing.T) {
+ 	t.Setenv("AGENTTEAMS_KUBE_MODE", "incluster")
+ 	t.Setenv("AGENTTEAMS_AI_GATEWAY_ADMIN_URL", "http://higress-admin.example.com:8001")
+diff --git a/agentteams-controller/internal/controller/manager_container_test.go b/agentteams-controller/internal/controller/manager_container_test.go
+index 3daea11..623eef9 100644
+--- a/agentteams-controller/internal/controller/manager_container_test.go
++++ b/agentteams-controller/internal/controller/manager_container_test.go
+@@ -162,6 +162,28 @@ func TestCreateManagerContainer_NilLabelsSafe(t *testing.T) {
+ 	}
  }
  
-@@ -3431,6 +3435,8 @@ AGENTTEAMS_MATRIX_CLIENT_DOMAIN=${AGENTTEAMS_MATRIX_CLIENT_DOMAIN}
++func TestReconcileManagerConfigExternalHigressIgnoresModelProvider(t *testing.T) {
++	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
++	deployer := mocks.NewMockManagerDeployer()
++	r := &ManagerReconciler{Deployer: deployer}
++	scope := &managerScope{
++		manager:           &v1beta1.Manager{},
++		provResult:        &service.ManagerProvisionResult{MatrixToken: "token", GatewayKey: "key"},
++		modelProviderInfo: &gateway.ModelProviderInfo{IntranetURL: "http://legacy-provider.internal"},
++	}
++	scope.manager.Name = "manager-a"
++
++	if _, err := r.reconcileManagerConfig(context.Background(), scope); err != nil {
++		t.Fatalf("reconcileManagerConfig: %v", err)
++	}
++	if got := len(deployer.Calls.DeployManagerConfig); got != 1 {
++		t.Fatalf("DeployManagerConfig calls = %d, want 1", got)
++	}
++	if got := deployer.Calls.DeployManagerConfig[0].AIGatewayURL; got != "" {
++		t.Fatalf("AIGatewayURL = %q, want empty external override", got)
++	}
++}
++
+ func TestCreateManagerContainerSpecResourcesOverrideDefaults(t *testing.T) {
+ 	m := &v1beta1.Manager{}
+ 	m.Name = "default"
+diff --git a/agentteams-controller/internal/controller/manager_reconcile_config.go b/agentteams-controller/internal/controller/manager_reconcile_config.go
+index e0a40ff..91e828a 100644
+--- a/agentteams-controller/internal/controller/manager_reconcile_config.go
++++ b/agentteams-controller/internal/controller/manager_reconcile_config.go
+@@ -26,7 +26,7 @@ func (r *ManagerReconciler) reconcileManagerConfig(ctx context.Context, s *manag
+ 	}
  
- # Gateway
- AGENTTEAMS_AI_GATEWAY_DOMAIN=${AGENTTEAMS_AI_GATEWAY_DOMAIN}
-+AGENTTEAMS_HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}
-+AGENTTEAMS_AI_GATEWAY_URL=${AGENTTEAMS_AI_GATEWAY_URL:-}
- AGENTTEAMS_MANAGER_GATEWAY_KEY=${AGENTTEAMS_MANAGER_GATEWAY_KEY}
+ 	var aiGatewayURL string
+-	if s.modelProviderInfo != nil {
++	if !useExternalHigressAdapter() && s.modelProviderInfo != nil {
+ 		aiGatewayURL = s.modelProviderInfo.IntranetURL
+ 	}
+ 	if err := r.Deployer.DeployManagerConfig(ctx, service.ManagerDeployRequest{
+diff --git a/agentteams-controller/internal/controller/manager_reconcile_container.go b/agentteams-controller/internal/controller/manager_reconcile_container.go
+index fc8c9e2..e694f53 100644
+--- a/agentteams-controller/internal/controller/manager_reconcile_container.go
++++ b/agentteams-controller/internal/controller/manager_reconcile_container.go
+@@ -160,7 +160,7 @@ func (r *ManagerReconciler) createManagerContainer(ctx context.Context, s *manag
+ 	}
  
- # File System
-@@ -3817,6 +3823,10 @@ CREDEOF
+ 	managerEnv := r.EnvBuilder.BuildManager(m.Name, prov, m.Spec)
+-	if s.modelProviderInfo != nil && s.modelProviderInfo.IntranetURL != "" {
++	if !useExternalHigressAdapter() && s.modelProviderInfo != nil && s.modelProviderInfo.IntranetURL != "" {
+ 		managerEnv["AGENTTEAMS_AI_GATEWAY_URL"] = s.modelProviderInfo.IntranetURL
+ 	}
+ 	mergeUserEnv(managerEnv, m.Spec.Env, logger, "manager/"+m.Name)
+diff --git a/agentteams-controller/internal/controller/member_reconcile.go b/agentteams-controller/internal/controller/member_reconcile.go
+index 0cacc17..05c4dca 100644
+--- a/agentteams-controller/internal/controller/member_reconcile.go
++++ b/agentteams-controller/internal/controller/member_reconcile.go
+@@ -361,7 +361,7 @@ func ReconcileMemberConfig(ctx context.Context, d MemberDeps, m MemberContext, s
+ 	logger := log.FromContext(ctx)
+ 	effectiveRuntime := backend.ResolveRuntime(m.Spec.Runtime, d.DefaultRuntime)
+ 	var aiGatewayURL string
+-	if m.ModelProviderInfo != nil {
++	if !useExternalHigressAdapter() && m.ModelProviderInfo != nil {
+ 		aiGatewayURL = m.ModelProviderInfo.IntranetURL
+ 	}
+ 
+@@ -835,7 +835,7 @@ func buildMemberWorkerEnv(ctx context.Context, d MemberDeps, m MemberContext, pr
+ 	logger := log.FromContext(ctx)
+ 	workerEnv := d.EnvBuilder.Build(m.RuntimeName, prov)
+ 	workerEnv["AGENTTEAMS_WORKER_CR_NAME"] = m.Name
+-	if m.ModelProviderInfo != nil && m.ModelProviderInfo.IntranetURL != "" {
++	if !useExternalHigressAdapter() && m.ModelProviderInfo != nil && m.ModelProviderInfo.IntranetURL != "" {
+ 		workerEnv["AGENTTEAMS_AI_GATEWAY_URL"] = m.ModelProviderInfo.IntranetURL
+ 	}
+ 	workerEnv["AGENTTEAMS_WORKER_ROLE"] = m.Role.String()
+diff --git a/agentteams-controller/internal/controller/member_reconcile_test.go b/agentteams-controller/internal/controller/member_reconcile_test.go
+index 786506a..c6e48da 100644
+--- a/agentteams-controller/internal/controller/member_reconcile_test.go
++++ b/agentteams-controller/internal/controller/member_reconcile_test.go
+@@ -604,6 +604,36 @@ func TestReconcileMemberConfigNonQwenPawKeepsFileBasedPath(t *testing.T) {
+ 	}
+ }
+ 
++func TestExternalHigressMemberConfigIgnoresModelProvider(t *testing.T) {
++	t.Setenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE", "external")
++	deployer := mocks.NewMockDeployer()
++	state := &MemberState{ProvResult: &service.WorkerProvisionResult{MatrixToken: "token", GatewayKey: "key"}}
++	member := MemberContext{
++		Name:              "worker-a",
++		ModelProviderInfo: &gateway.ModelProviderInfo{IntranetURL: "http://legacy-provider.internal"},
++		Spec:              v1beta1.WorkerSpec{Runtime: "qwenpaw"},
++	}
++
++	if err := ReconcileMemberConfig(context.Background(), MemberDeps{Deployer: deployer}, member, state); err != nil {
++		t.Fatalf("ReconcileMemberConfig: %v", err)
++	}
++	if got := deployer.Calls.DeployMemberRuntimeConfig[0].AIGatewayURL; got != "" {
++		t.Fatalf("AIGatewayURL = %q, want empty external override", got)
++	}
++
++	envBuilder := mocks.NewMockEnvBuilder()
++	envBuilder.BuildFn = func(string, *service.WorkerProvisionResult) map[string]string {
++		return map[string]string{"AGENTTEAMS_AI_GATEWAY_URL": "https://gateway.example.test"}
++	}
++	env, err := buildMemberWorkerEnv(context.Background(), MemberDeps{EnvBuilder: envBuilder}, member, state.ProvResult)
++	if err != nil {
++		t.Fatalf("buildMemberWorkerEnv: %v", err)
++	}
++	if got, want := env["AGENTTEAMS_AI_GATEWAY_URL"], "https://gateway.example.test"; got != want {
++		t.Fatalf("AGENTTEAMS_AI_GATEWAY_URL = %q, want %q", got, want)
++	}
++}
++
+ func equalStringSlices(a, b []string) bool {
+ 	if len(a) != len(b) {
+ 		return false
+diff --git a/agentteams-controller/internal/controller/team_controller.go b/agentteams-controller/internal/controller/team_controller.go
+index 9cee126..fed1f80 100644
+--- a/agentteams-controller/internal/controller/team_controller.go
++++ b/agentteams-controller/internal/controller/team_controller.go
+@@ -646,7 +646,7 @@ func (r *TeamReconciler) deployTeamRuntimeConfigs(
+ }
+ 
+ func (r *TeamReconciler) runtimeConfigAIGatewayURL(ctx context.Context, spec v1beta1.WorkerSpec, memberName string) (string, error) {
+-	if spec.ModelProvider == "" || r.GatewayClient == nil {
++	if useExternalHigressAdapter() || spec.ModelProvider == "" || r.GatewayClient == nil {
+ 		return "", nil
+ 	}
+ 	info, err := r.GatewayClient.ResolveModelProvider(ctx, spec.ModelProvider)
+diff --git a/install/agentteams-install.sh b/install/agentteams-install.sh
+index e6e2941..c631991 100755
+--- a/install/agentteams-install.sh
++++ b/install/agentteams-install.sh
+@@ -3817,6 +3817,10 @@ CREDEOF
          local _aigw_domain="${AGENTTEAMS_AI_GATEWAY_DOMAIN:-aigw-local.agentteams.io}"
          # Ensure internal gateway port is present (container-internal traffic uses 8080)
          case "${_aigw_domain}" in *:*) ;; *) _aigw_domain="${_aigw_domain}:${_internal_gw_port}" ;; esac
@@ -81,7 +247,7 @@ index e6e2941..8c45309 100755
          local _fs_domain="${AGENTTEAMS_FS_DOMAIN:-fs-local.agentteams.io}"
          case "${_fs_domain}" in *:*) ;; *) _fs_domain="${_fs_domain}:${_internal_gw_port}" ;; esac
  
-@@ -3844,11 +3854,12 @@ CREDEOF
+@@ -3844,11 +3848,12 @@ CREDEOF
              -e "${_ctrl_env_prefix}ELEMENT_HOMESERVER_URL=http://127.0.0.1:${AGENTTEAMS_PORT_GATEWAY}"
              -e "${_ctrl_env_prefix}MATRIX_URL=http://127.0.0.1:6167"
              -e "${_ctrl_env_prefix}MATRIX_E2EE=${AGENTTEAMS_MATRIX_E2EE:-0}"
@@ -96,52 +262,221 @@ index e6e2941..8c45309 100755
              -e "${_ctrl_env_prefix}DOCKER_NETWORK=agentteams-net"
              -e "${_ctrl_env_prefix}WORKSPACE_DIR=${AGENTTEAMS_WORKSPACE_DIR}"
 diff --git a/manager/agent/skills/worker-management/scripts/generate-worker-config.sh b/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
-index db36bd8..319f114 100644
+index db36bd8..73b4f1a 100644
 --- a/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
 +++ b/manager/agent/skills/worker-management/scripts/generate-worker-config.sh
-@@ -89,9 +89,9 @@ else
- fi
- # Matrix Domain for user IDs keeps original port (e.g., :9080)
+@@ -91,7 +91,7 @@ fi
  export AGENTTEAMS_MATRIX_DOMAIN="${MATRIX_DOMAIN_FOR_ID}"
--# AI Gateway URL: cloud/k8s uses AGENTTEAMS_AI_GATEWAY_URL; local always uses fixed internal domain
--# so workers on agentteams-net can reach Higress regardless of user-configured AI gateway domain.
+ # AI Gateway URL: cloud/k8s uses AGENTTEAMS_AI_GATEWAY_URL; local always uses fixed internal domain
+ # so workers on agentteams-net can reach Higress regardless of user-configured AI gateway domain.
 -if [ -n "${AGENTTEAMS_AI_GATEWAY_URL:-}" ] && [ "${AGENTTEAMS_RUNTIME}" != "docker" ]; then
-+# AI Gateway URL: preserve an explicitly configured external data-plane URL for
-+# every runtime. Direct local deployments retain the Docker network default.
 +if [ -n "${AGENTTEAMS_AI_GATEWAY_URL:-}" ] && { [ "${AGENTTEAMS_RUNTIME}" != "docker" ] || [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" = "external" ]; }; then
      export AGENTTEAMS_AI_GATEWAY_URL
  else
      export AGENTTEAMS_AI_GATEWAY_URL="http://aigw-local.agentteams.io:8080"
-
-diff --git a/agentteams-controller/internal/service/worker_env_test.go b/agentteams-controller/internal/service/worker_env_test.go
-index 12fb399..36e4294 100644
---- a/agentteams-controller/internal/service/worker_env_test.go
-+++ b/agentteams-controller/internal/service/worker_env_test.go
-@@ -102,3 +102,27 @@ func TestWorkerEnvBuilderBuildManagerUsesConfiguredRuntimeAndBucket(t *testing.T
- 		}
- 	}
- }
+diff --git a/manager/scripts/init/start-manager-agent.sh b/manager/scripts/init/start-manager-agent.sh
+index 21d1ff5..e8d4af5 100755
+--- a/manager/scripts/init/start-manager-agent.sh
++++ b/manager/scripts/init/start-manager-agent.sh
+@@ -36,6 +36,7 @@ fi
+ 
+ export MATRIX_DOMAIN="${AGENTTEAMS_MATRIX_DOMAIN:-matrix-local.agentteams.io:8080}"
+ AI_GATEWAY_DOMAIN="${AGENTTEAMS_AI_GATEWAY_DOMAIN:-aigw-local.agentteams.io}"
++MANAGER_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-http://${AI_GATEWAY_DOMAIN}:8080}"
+ 
+ # ============================================================
+ # YOLO mode promotion
+@@ -693,7 +694,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+        --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+        --arg model "${MODEL_NAME}" \
+        --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-       --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++       --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+        --arg matrix_user_id "@manager:${MATRIX_DOMAIN}" \
+        --argjson e2ee "${MATRIX_E2EE_ENABLED}" \
+        --argjson known_models "${KNOWN_MODELS}" \
+@@ -714,7 +715,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+         # Rebuild model aliases from the full models list
+         | (.models.providers["agentteams-gateway"].models | map({ ("agentteams-gateway/" + .id): { "alias": .id } }) | add // {}) as $aliases
+         | .agents.defaults.models = ((.agents.defaults.models // {}) + $aliases)
+-        | .channels.matrix.accessToken = $token | .channels.matrix.userId = $matrix_user_id | .models.providers["agentteams-gateway"].apiKey = $key
++        | .channels.matrix.accessToken = $token | .channels.matrix.userId = $matrix_user_id | .models.providers["agentteams-gateway"].apiKey = $key | .models.providers["agentteams-gateway"].baseUrl = $gateway
+         | ((.hooks.token // "") as $ht | if $ht == $key or $ht == ($key + "-hooks" | @base64) then del(.hooks) else . end)
+         | .agents.defaults.model.primary = ("agentteams-gateway/" + $model)
+         | .commands.restart = true
+@@ -732,7 +733,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+         | .tools.elevated.allowFrom |= ((. // {}) | .matrix = ["*"])
+         | .agents.defaults.elevatedDefault = "full"
+         # Ensure memorySearch config exists (embedding model for memory) — skip if embedding model is empty
+-        | if $emb_model != "" then .agents.defaults.memorySearch //= {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}} else . end
++        | if $emb_model != "" then .agents.defaults.memorySearch //= {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}} else . end
+        ' \
+        /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+         mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+@@ -757,7 +758,7 @@ else
+     if ! jq -e --arg model "${MODEL_NAME}" '.models.providers["agentteams-gateway"].models | map(.id) | index($model)' /root/manager-workspace/openclaw.json > /dev/null 2>&1; then
+         log "Custom model '${MODEL_NAME}' not in built-in list, injecting into config..."
+         jq --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-           --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++           --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+            --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+            --arg model "${MODEL_NAME}" \
+            --argjson ctx "${MODEL_CONTEXT_WINDOW}" \
+@@ -765,16 +766,16 @@ else
+            --argjson reasoning "${MODEL_REASONING}" \
+            --argjson input "${MODEL_INPUT}" \
+            '
+-            (if $emb_model != "" then .agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}} else . end)
++            (if $emb_model != "" then .agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}} else . end)
+             | .models.providers["agentteams-gateway"].models += [{"id": $model, "name": $model, "reasoning": $reasoning, "contextWindow": $ctx, "maxTokens": $max, "input": $input}]
+             | .agents.defaults.models += {("agentteams-gateway/" + $model): {"alias": $model}}
+            ' /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+             mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+     elif [ -n "${AGENTTEAMS_EMBEDDING_MODEL}" ]; then
+         jq --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-           --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++           --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+            --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+-           '.agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}}' \
++           '.agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}}' \
+            /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+             mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+     fi
+diff --git a/agentteams-controller/internal/controller/higress_adapter.go b/agentteams-controller/internal/controller/higress_adapter.go
+new file mode 100644
+index 0000000..3301a76
+--- /dev/null
++++ b/agentteams-controller/internal/controller/higress_adapter.go
+@@ -0,0 +1,7 @@
++package controller
 +
-+func TestWorkerEnvBuilderPreservesExternalGatewayAndModelAlias(t *testing.T) {
-+	builder := NewWorkerEnvBuilder(config.WorkerEnvDefaults{
-+		AIGatewayURL: "https://gateway.example.test",
-+		Runtime:      "docker",
-+	})
++import "os"
 +
-+	workerEnv := builder.Build("worker", &WorkerProvisionResult{})
-+	if got, want := workerEnv["AGENTTEAMS_AI_GATEWAY_URL"], "https://gateway.example.test"; got != want {
-+		t.Fatalf("worker gateway URL = %q, want %q", got, want)
-+	}
-+
-+	managerEnv := builder.BuildManager("manager", &ManagerProvisionResult{}, v1beta1.ManagerSpec{
-+		Model: "team-default",
-+	})
-+	for key, want := range map[string]string{
-+		"AGENTTEAMS_AI_GATEWAY_URL": "https://gateway.example.test",
-+		"AGENTTEAMS_DEFAULT_MODEL":  "team-default",
-+	} {
-+		if got := managerEnv[key]; got != want {
-+			t.Fatalf("manager %s = %q, want %q", key, got, want)
-+		}
-+	}
++func useExternalHigressAdapter() bool {
++	return os.Getenv("AGENTTEAMS_HIGRESS_ADAPTER_MODE") == "external"
 +}
+diff --git a/manager/scripts/init/start-manager-agent.sh b/manager/scripts/init/start-manager-agent.sh
+index 21d1ff5..e8d4af5 100755
+--- a/manager/scripts/init/start-manager-agent.sh
++++ b/manager/scripts/init/start-manager-agent.sh
+@@ -36,6 +36,7 @@ fi
+ 
+ export MATRIX_DOMAIN="${AGENTTEAMS_MATRIX_DOMAIN:-matrix-local.agentteams.io:8080}"
+ AI_GATEWAY_DOMAIN="${AGENTTEAMS_AI_GATEWAY_DOMAIN:-aigw-local.agentteams.io}"
++MANAGER_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-http://${AI_GATEWAY_DOMAIN}:8080}"
+ 
+ # ============================================================
+ # YOLO mode promotion
+@@ -693,7 +694,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+        --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+        --arg model "${MODEL_NAME}" \
+        --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-       --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++       --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+        --arg matrix_user_id "@manager:${MATRIX_DOMAIN}" \
+        --argjson e2ee "${MATRIX_E2EE_ENABLED}" \
+        --argjson known_models "${KNOWN_MODELS}" \
+@@ -714,7 +715,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+         # Rebuild model aliases from the full models list
+         | (.models.providers["agentteams-gateway"].models | map({ ("agentteams-gateway/" + .id): { "alias": .id } }) | add // {}) as $aliases
+         | .agents.defaults.models = ((.agents.defaults.models // {}) + $aliases)
+-        | .channels.matrix.accessToken = $token | .channels.matrix.userId = $matrix_user_id | .models.providers["agentteams-gateway"].apiKey = $key
++        | .channels.matrix.accessToken = $token | .channels.matrix.userId = $matrix_user_id | .models.providers["agentteams-gateway"].apiKey = $key | .models.providers["agentteams-gateway"].baseUrl = $gateway
+         | ((.hooks.token // "") as $ht | if $ht == $key or $ht == ($key + "-hooks" | @base64) then del(.hooks) else . end)
+         | .agents.defaults.model.primary = ("agentteams-gateway/" + $model)
+         | .commands.restart = true
+@@ -732,7 +733,7 @@ if [ -f /root/manager-workspace/openclaw.json ]; then
+         | .tools.elevated.allowFrom |= ((. // {}) | .matrix = ["*"])
+         | .agents.defaults.elevatedDefault = "full"
+         # Ensure memorySearch config exists (embedding model for memory) — skip if embedding model is empty
+-        | if $emb_model != "" then .agents.defaults.memorySearch //= {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}} else . end
++        | if $emb_model != "" then .agents.defaults.memorySearch //= {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}} else . end
+        ' \
+        /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+         mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+@@ -757,7 +758,7 @@ else
+     if ! jq -e --arg model "${MODEL_NAME}" '.models.providers["agentteams-gateway"].models | map(.id) | index($model)' /root/manager-workspace/openclaw.json > /dev/null 2>&1; then
+         log "Custom model '${MODEL_NAME}' not in built-in list, injecting into config..."
+         jq --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-           --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++           --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+            --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+            --arg model "${MODEL_NAME}" \
+            --argjson ctx "${MODEL_CONTEXT_WINDOW}" \
+@@ -765,16 +766,16 @@ else
+            --argjson reasoning "${MODEL_REASONING}" \
+            --argjson input "${MODEL_INPUT}" \
+            '
+-            (if $emb_model != "" then .agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}} else . end)
++            (if $emb_model != "" then .agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}} else . end)
+             | .models.providers["agentteams-gateway"].models += [{"id": $model, "name": $model, "reasoning": $reasoning, "contextWindow": $ctx, "maxTokens": $max, "input": $input}]
+             | .agents.defaults.models += {("agentteams-gateway/" + $model): {"alias": $model}}
+            ' /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+             mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+     elif [ -n "${AGENTTEAMS_EMBEDDING_MODEL}" ]; then
+         jq --arg emb_model "${AGENTTEAMS_EMBEDDING_MODEL}" \
+-           --arg aigw_domain "${AI_GATEWAY_DOMAIN}" \
++           --arg gateway "${MANAGER_AI_GATEWAY_URL}/v1" \
+            --arg key "${AGENTTEAMS_MANAGER_GATEWAY_KEY}" \
+-           '.agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":("http://" + $aigw_domain + ":8080/v1"),"apiKey":$key}}' \
++           '.agents.defaults.memorySearch = {"provider":"openai","model":$emb_model,"remote":{"baseUrl":$gateway,"apiKey":$key}}' \
+            /root/manager-workspace/openclaw.json > /tmp/openclaw.json.tmp && \
+             mv /tmp/openclaw.json.tmp /root/manager-workspace/openclaw.json
+     fi
+diff --git a/tests/test-01-manager-boot.sh b/tests/test-01-manager-boot.sh
+index 61a5bf4..df00a68 100755
+--- a/tests/test-01-manager-boot.sh
++++ b/tests/test-01-manager-boot.sh
+@@ -132,6 +132,24 @@ case "${MANAGER_RUNTIME}" in
+         else
+             log_fail "OpenClaw config (openclaw.json) valid"
+         fi
++
++        MANAGER_ADAPTER_MODE=$(docker exec "${_AGENT_CTR}" printenv AGENTTEAMS_HIGRESS_ADAPTER_MODE 2>/dev/null || true)
++        if [ "${MANAGER_ADAPTER_MODE}" = "external" ]; then
++            MANAGER_GATEWAY_URL=$(docker exec "${_AGENT_CTR}" printenv AGENTTEAMS_AI_GATEWAY_URL 2>/dev/null || true)
++            MANAGER_MODEL=$(docker exec "${_AGENT_CTR}" printenv AGENTTEAMS_DEFAULT_MODEL 2>/dev/null || true)
++            MANAGER_OPENCLAW_GATEWAY=$(docker exec "${_AGENT_CTR}" jq -r '.models.providers["agentteams-gateway"].baseUrl' /root/manager-workspace/openclaw.json 2>/dev/null || true)
++            MANAGER_OPENCLAW_MODEL=$(docker exec "${_AGENT_CTR}" jq -r '.agents.defaults.model.primary' /root/manager-workspace/openclaw.json 2>/dev/null || true)
++            if [ "${MANAGER_OPENCLAW_GATEWAY}" = "${MANAGER_GATEWAY_URL}/v1" ]; then
++                log_pass "External Manager OpenClaw Gateway URL preserved"
++            else
++                log_fail "External Manager OpenClaw Gateway URL preserved (got ${MANAGER_OPENCLAW_GATEWAY})"
++            fi
++            if [ "${MANAGER_OPENCLAW_MODEL}" = "agentteams-gateway/${MANAGER_MODEL}" ]; then
++                log_pass "External Manager request model alias preserved"
++            else
++                log_fail "External Manager request model alias preserved (got ${MANAGER_OPENCLAW_MODEL})"
++            fi
++        fi
+         ;;
+ esac
+ 
+diff --git a/tests/test-17-worker-config-verify.sh b/tests/test-17-worker-config-verify.sh
+index 94d1606..ec93a2e 100644
+--- a/tests/test-17-worker-config-verify.sh
++++ b/tests/test-17-worker-config-verify.sh
+@@ -194,6 +194,23 @@ else
+     log_fail "groupAllowFrom does not include Manager"
+ fi
+ 
++WORKER_ADAPTER_MODE=$(exec_in_agent printenv AGENTTEAMS_HIGRESS_ADAPTER_MODE 2>/dev/null || true)
++if [ "${WORKER_ADAPTER_MODE}" = "external" ]; then
++    WORKER_GATEWAY_URL=$(exec_in_agent printenv AGENTTEAMS_AI_GATEWAY_URL 2>/dev/null || true)
++    WORKER_OPENCLAW_GATEWAY=$(echo "${OPENCLAW_CONTENT}" | jq -r '.models.providers["agentteams-gateway"].baseUrl' 2>/dev/null || true)
++    WORKER_OPENCLAW_MODEL=$(echo "${OPENCLAW_CONTENT}" | jq -r '.agents.defaults.model.primary' 2>/dev/null || true)
++    if [ "${WORKER_OPENCLAW_GATEWAY}" = "${WORKER_GATEWAY_URL}/v1" ]; then
++        log_pass "External Worker OpenClaw Gateway URL preserved"
++    else
++        log_fail "External Worker OpenClaw Gateway URL preserved (got ${WORKER_OPENCLAW_GATEWAY})"
++    fi
++    if [ "${WORKER_OPENCLAW_MODEL}" = "agentteams-gateway/qwen3.5-plus" ]; then
++        log_pass "External Worker request model alias preserved"
++    else
++        log_fail "External Worker request model alias preserved (got ${WORKER_OPENCLAW_MODEL})"
++    fi
++fi
++
+ # ============================================================
+ # Section 5: Update worker (re-import)
+ # ============================================================

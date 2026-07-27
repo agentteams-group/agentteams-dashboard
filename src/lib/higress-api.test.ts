@@ -39,6 +39,26 @@ describe('Higress form serialization', () => {
     expect(serializeProviderForm({ ...provider, tokens: [] }, true)).not.toHaveProperty('tokens');
   });
 
+  it('keeps a configured token failover policy in provider payloads', () => {
+    const tokenFailoverConfig = {
+      enabled: true,
+      failureThreshold: 2,
+      successThreshold: 3,
+      healthCheckInterval: 30,
+      healthCheckModel: 'gpt-4.1-mini',
+    };
+
+    expect(serializeProviderForm({ ...provider, tokenFailoverConfig })).toMatchObject({
+      tokenFailoverConfig,
+    });
+    expect(validateProviderPayload({
+      name: 'openai',
+      type: 'openai',
+      tokens: ['token-a'],
+      tokenFailoverConfig,
+    })).toEqual([]);
+  });
+
   it('rejects invalid failover and duplicate exact mapping keys', () => {
     expect(validateProviderForm({
       ...provider,
@@ -81,6 +101,8 @@ describe('Higress form serialization', () => {
     expect(summarizeFallbackConfig(parsed.config)).toBe('最大重试 2 次');
     expect(parseFallbackConfig('{"maxRetries":-1}').error).toBe('fallbackConfig.maxRetries 必须是非负整数');
     expect(parseFallbackConfig('[]').error).toBe('回退配置必须是 JSON 对象');
+    expect(parseFallbackConfig('{"retryStatusCodes":[429,"500"]}').error).toBe('fallbackConfig.retryStatusCodes 必须是整数数组');
+    expect(parseFallbackConfig('{"fallbacks":["provider-a"]}').error).toBe('fallbackConfig.fallbacks 必须是对象数组');
   });
 
   it('rejects malformed provider and route proxy payloads', () => {
@@ -88,5 +110,7 @@ describe('Higress form serialization', () => {
     expect(validateProviderPayload({ name: 'openai', type: 'openai', tokens: ['token'], protocol: 'unsupported' })).toContain('protocol 必须是 openai/v1 或 original');
     expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 40 }, { provider: 'two', weight: 40 }] })).toContain('多个上游的权重总和必须为 100');
     expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100 }], fallbackConfig: { maxRetries: -1 } })).toContain('fallbackConfig.maxRetries 必须是非负整数');
+    expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100, modelMapping: [] }] })).toContain('上游模型映射必须是对象');
+    expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100 }], authConfig: { enabled: true, allowedCredentialTypes: [] } })).toContain('启用路由认证时至少需要一种凭据类型');
   });
 });

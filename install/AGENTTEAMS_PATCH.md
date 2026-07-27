@@ -48,9 +48,22 @@ separately from this wire-contract migration.
 `AGENTTEAMS_HIGRESS_ADAPTER_MODE` and `AGENTTEAMS_AI_GATEWAY_URL`, passes the
 configured data-plane URL to the embedded Controller, preserves it during
 embedded configuration normalization, and retains it when Docker Workers are
-configured. The patch adds a Controller configuration test for the embedded
-external URL behavior and a WorkerEnvBuilder fixture that asserts Worker and
-Manager Gateway URL propagation plus the Manager request model alias.
+configured. In `external` mode, Manager, Worker, Team Runtime, and OpenClaw
+configuration generation retain the configured data-plane URL when a
+`modelProvider.IntranetURL` is available.
+
+The Manager startup script also refreshes an existing OpenClaw configuration's
+Gateway base URL from `AGENTTEAMS_AI_GATEWAY_URL`, so Docker Managers retain an
+external data-plane URL across restarts and model-alias changes.
+
+The patch includes regression tests for embedded configuration normalization,
+Manager deployment configuration, Worker environment generation, QwenPaw
+runtime configuration, and OpenClaw generation with an external Gateway URL
+and a legacy provider URL present.
+
+The fixed-upstream integration fixtures `tests/test-01-manager-boot.sh` and
+`tests/test-17-worker-config-verify.sh` assert the generated OpenClaw Gateway
+URL and request model alias when the runtime reports `external` adapter mode.
 
 ## Option A: Standalone Install (Recommended for existing installations)
 

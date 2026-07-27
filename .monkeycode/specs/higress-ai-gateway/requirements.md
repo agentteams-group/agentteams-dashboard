@@ -14,6 +14,7 @@ AgentTeams Dashboard 需要提供 Higress AI 网关的统一配置界面，覆�
 - **上游**：AI 路由中的单个目标模型厂商及其权重和模型映射。
 - **凭据**：模型厂商访问令牌或网关消费者认证信息。
 - **请求模型别名**：AgentTeams 写入 Manager 或 Worker `model` 字段，并随模型请求发送给 Higress 的稳定模型名称。
+- **模型提供方**：AgentTeams `modelProvider` 字段引用的平台模型提供方；上游 Controller 可将该引用解析为内网模型 API 地址。
 
 ## 范围
 
@@ -134,6 +135,10 @@ Higress 的部署、安装、升级、Console 管理员初始化和默认路由�
 6. WHEN AgentTeams 启动 Manager 或 Worker，AgentTeams SHALL 向运行时提供与 `AGENTTEAMS_AI_GATEWAY_URL` 相同的 Gateway 数据平面地址。
 7. WHILE `AGENTTEAMS_HIGRESS_ADAPTER_MODE` 的值为 `external`，Dashboard SHALL 在页面加载和首次启动流程中执行只读状态检查。
 8. WHEN `AGENTTEAMS_HIGRESS_ADAPTER_MODE` 的值为 `external`，Dashboard SHALL 排除 `ensure-ai` 配置写入流程。
+9. WHILE `AGENTTEAMS_HIGRESS_ADAPTER_MODE` 的值为 `external`，AgentTeams Controller SHALL 使用 `AGENTTEAMS_AI_GATEWAY_URL` 作为 Manager 和 Worker 生成运行时配置的 Gateway 数据平面地址。
+10. WHILE `AGENTTEAMS_HIGRESS_ADAPTER_MODE` 的值为 `external`，AgentTeams Controller SHALL 将 Manager 或 Worker 的 `modelProvider` 视为未设置，以保持 Gateway 数据平面地址一致。
+11. WHEN 外部模式请求包含非空 `modelProvider`，Dashboard SHALL 返回 409 并说明外部 Higress 使用请求模型别名和 AI Route 绑定。
+12. WHEN 外部模式下 Manager 或 Worker 已保存非空 `modelProvider`，Dashboard SHALL 在启动、唤醒和就绪操作前返回 409 并显示迁移要求。
 
 ## 非功能性约束
 

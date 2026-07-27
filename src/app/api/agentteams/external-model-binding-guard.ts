@@ -25,6 +25,27 @@ export async function getRequestModelAlias(request: NextRequest): Promise<string
   }
 }
 
+export async function rejectExternalModelProvider(request: NextRequest): Promise<NextResponse | null> {
+  if (!isExternalAdapterMode()) return null;
+
+  try {
+    const body = await request.clone().json();
+    const modelProvider = body && typeof body === 'object'
+      ? (body as Record<string, unknown>).modelProvider
+      : undefined;
+    if (typeof modelProvider !== 'string' || !modelProvider.trim()) return null;
+
+    return NextResponse.json(
+      {
+        error: 'External Higress mode uses the request model alias. Remove modelProvider and configure the model alias on an available Higress AI Route.',
+      },
+      { status: 409 }
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function rejectUnavailableExternalModelAlias(
   request: NextRequest,
   model: string | undefined
@@ -90,7 +111,15 @@ export async function rejectUnavailableExternalWorkerAlias(
       );
     }
 
-    const worker = await response.json() as { model?: unknown };
+    const worker = await response.json() as { model?: unknown; modelProvider?: unknown };
+    if (typeof worker.modelProvider === 'string' && worker.modelProvider.trim()) {
+      return NextResponse.json(
+        {
+          error: 'This Worker still references modelProvider. Remove the legacy modelProvider and configure its request model alias on an available Higress AI Route.',
+        },
+        { status: 409 }
+      );
+    }
     const model = typeof worker.model === 'string' && worker.model.trim() ? worker.model.trim() : undefined;
     if (!model) {
       return NextResponse.json(
