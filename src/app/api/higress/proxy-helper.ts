@@ -10,6 +10,7 @@ const DEFAULT_ALLOWED_HOSTS = [
   '127.0.0.1',
   '0.0.0.0',
   '::1',
+  'agentteams-controller',
   'higress-console',
   'higress-console.higress-system',
   'higress-console.higress-system.svc',
