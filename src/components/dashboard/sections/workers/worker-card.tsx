@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bot, CheckSquare, Eye, Moon, Pencil, Square, Sun } from 'lucide-react';
+import { Bot, CheckSquare, Eye, Moon, Pencil, Rocket, Square, Sun } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,6 +20,7 @@ export function WorkerCard({
   onEdit,
   onWake,
   onSleep,
+  onEnsureReady,
   onDelete,
   isActionPending,
 }: {
@@ -31,6 +32,7 @@ export function WorkerCard({
   onEdit: () => void;
   onWake: () => void;
   onSleep: () => void;
+  onEnsureReady: () => void;
   onDelete: () => void;
   isActionPending: boolean;
 }) {
@@ -145,6 +147,18 @@ export function WorkerCard({
               >
                 <Moon className="w-3 h-3 mr-1" aria-hidden="true" />
                 休眠
+              </Button>
+            )}
+            {(worker.phase === 'Pending' || worker.phase === 'Stopped') && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs flex-1"
+                onClick={onEnsureReady}
+                disabled={isActionPending}
+              >
+                <Rocket className="w-3 h-3 mr-1" aria-hidden="true" />
+                Ensure Ready
               </Button>
             )}
             <Button

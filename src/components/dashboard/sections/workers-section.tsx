@@ -405,8 +405,9 @@ export function WorkersSection() {
                   onEdit={() => openEdit(worker)}
                   onWake={() => wakeWorker.mutate(worker.name)}
                   onSleep={() => sleepWorker.mutate(worker.name)}
+                  onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
                   onDelete={() => setDeleteTarget(worker.name)}
-                  isActionPending={wakeWorker.isPending || sleepWorker.isPending}
+                  isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
                 />
               ))}
             </div>
