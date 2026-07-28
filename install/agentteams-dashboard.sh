@@ -341,11 +341,11 @@ detect_runtime_env() {
   AGENTTEAMS_ADMIN_PASSWORD=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_ADMIN_PASSWORD=//p')
 
   # Higress Console URL: explicit config takes priority, auto-detect as fallback.
-  if [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE}" != "external" ] && [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+  if [ "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" != "external" ] && [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
     if ${DOCKER_CMD} exec "${ctrl_container}" wget -q -O- --timeout=2 http://127.0.0.1:8001/ >/dev/null 2>&1; then
       AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${ctrl_container}:8001"
     fi
-  else
+  elif [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
     # Normalize URL: add http:// prefix if missing
     case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
       http://*|https://*) ;;
