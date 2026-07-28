@@ -42,7 +42,14 @@ export function buildModelBindings(
   const providersByName = new Map(providers.map((provider) => [provider.name, provider]));
   const bindings: AgentTeamsModelBinding[] = [];
 
-  const requestedAliases = new Set(aliases.map((alias) => alias.trim()).filter(Boolean));
+  // Backend may omit `model` on managers/workers, producing undefined entries.
+  // Guard against non-string aliases so alias.trim() does not throw.
+  const requestedAliases = new Set(
+    aliases
+      .filter((alias): alias is RequestModelAlias => typeof alias === 'string')
+      .map((alias) => alias.trim())
+      .filter(Boolean),
+  );
   for (const route of routes) {
     const routeAliases = [...requestedAliases].filter((alias) => routeMatchesAlias(route, alias));
 
@@ -84,7 +91,10 @@ export function hasUnavailableModelAliases(
   aliases: RequestModelAlias[],
   bindings: AgentTeamsModelBinding[],
 ): boolean {
-  return [...new Set(aliases.map((alias) => alias.trim()).filter(Boolean))].some(
+  return [...new Set(aliases
+    .filter((alias): alias is RequestModelAlias => typeof alias === 'string')
+    .map((alias) => alias.trim())
+    .filter(Boolean))].some(
     (alias) => !bindings.some((binding) => binding.requestModelAlias === alias && binding.available),
   );
 }

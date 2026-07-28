@@ -63,6 +63,22 @@ describe('model bindings', () => {
     expect(hasUnavailableModelAliases(['other-chat'], bindings)).toBe(true);
   });
 
+  it('does not throw when a manager/worker omits model (undefined alias)', () => {
+    // Backend may return agents without a `model` field; this previously threw
+    // "Cannot read properties of undefined (reading 'trim')" on the gateway page.
+    const route = {
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }],
+    };
+
+    expect(() => buildModelBindings(
+      [undefined as unknown as string, 'team-chat'],
+      [route],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }],
+    )).not.toThrow();
+  });
+
   it('does not throw when a model predicate is missing matchValue', () => {
     // Backend may omit matchValue; this previously threw
     // "Cannot read properties of undefined (reading 'trim')".
