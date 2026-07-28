@@ -19,7 +19,8 @@ function routeMatchesAlias(route: AiRoute, alias: string): boolean {
   const predicates = route.modelPredicates ?? [];
   if (predicates.length === 0) return true;
   return predicates.some((predicate) => {
-    const value = predicate.matchValue.trim();
+    const raw = predicate.matchValue;
+    const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) return false;
     return predicate.matchType === 'PRE' ? alias.startsWith(value) : matchesPattern(alias, value);
   });

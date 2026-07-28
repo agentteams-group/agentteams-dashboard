@@ -62,4 +62,17 @@ describe('model bindings', () => {
     expect(hasUnavailableModelAliases(['team-chat'], bindings)).toBe(false);
     expect(hasUnavailableModelAliases(['other-chat'], bindings)).toBe(true);
   });
+
+  it('does not throw when a model predicate is missing matchValue', () => {
+    // Backend may omit matchValue; this previously threw
+    // "Cannot read properties of undefined (reading 'trim')".
+    const route = {
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      modelPredicates: [{ matchType: 'EXACT' } as { matchType: string; matchValue: string }],
+      upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }],
+    };
+
+    expect(() => buildModelBindings(['team-chat'], [route], [{ name: 'openai', type: 'openai', tokenCount: 1 }])).not.toThrow();
+  });
 });

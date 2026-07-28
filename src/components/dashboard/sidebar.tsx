@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   Tooltip,
   TooltipContent,
@@ -275,34 +274,33 @@ export function Sidebar({
   onToggleGroup,
   mode,
 }: SidebarProps) {
-  // Groups with only one visible item collapse to a flat persistent entry
-  // (no parent expand/collapse wrapper — direct click to activate).
-  const { multiItemGroups, collapsedGroupItems } = useMemo(() => {
-    const multi: NavGroup[] = [];
-    const collapsed: NavItem[] = [];
+  // Build the ordered navigation: iterate navGroups in declared order,
+  // rendering each as either a multi-item expandable group or a single
+  // collapsed persistent entry. Persistent ungrouped entries (e.g. docs)
+  // are then appended in their navItems order.
+  const orderedNavEntries = useMemo(() => {
+    type NavEntry =
+      | { kind: 'group'; group: NavGroup }
+      | { kind: 'item'; item: NavItem };
+    const entries: NavEntry[] = [];
     for (const group of navGroups) {
       const items = getGroupItems(group.id, navItems, mode);
       if (items.length === 0) continue;
-      if (items.length === 1) {
-        // Single-item group: surface directly without parent wrapper.
-        collapsed.push({ ...items[0], group: undefined });
+      if (items.length > 1) {
+        entries.push({ kind: 'group', group });
       } else {
-        multi.push(group);
+        // Single-item group: surface directly without parent wrapper.
+        entries.push({ kind: 'item', item: { ...items[0], group: undefined } });
       }
     }
-    return { multiItemGroups: multi, collapsedGroupItems: collapsed };
+    // Append persistent ungrouped entries (docs) in navItems order.
+    for (const item of navItems) {
+      if (!item.group && isNavItemVisible(item, mode)) {
+        entries.push({ kind: 'item', item });
+      }
+    }
+    return entries;
   }, [mode]);
-
-  const persistentItems = useMemo(
-    () =>
-      [
-        ...navItems.filter(
-          (item) => !item.group && isNavItemVisible(item, mode)
-        ),
-        ...collapsedGroupItems,
-      ],
-    [collapsedGroupItems]
-  );
 
   return (
     <aside
@@ -368,42 +366,36 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {multiItemGroups.map((group) => {
-          const groupItems = getGroupItems(group.id, navItems, mode);
+        {orderedNavEntries.map((entry) => {
+          if (entry.kind === 'group') {
+            const groupItems = getGroupItems(entry.group.id, navItems, mode);
+            return (
+              <NavGroupSection
+                key={entry.group.id}
+                group={entry.group}
+                items={groupItems}
+                activeSection={activeSection}
+                expanded={expandedGroups.has(entry.group.id)}
+                countMap={countMap}
+                sectionsWithNotifications={sectionsWithNotifications}
+                collapsed={collapsed}
+                onNavClick={onNavClick}
+                onToggleGroup={onToggleGroup}
+              />
+            );
+          }
           return (
-            <NavGroupSection
-              key={group.id}
-              group={group}
-              items={groupItems}
-              activeSection={activeSection}
-              expanded={expandedGroups.has(group.id)}
-              countMap={countMap}
-              sectionsWithNotifications={sectionsWithNotifications}
+            <NavButton
+              key={entry.item.id}
+              item={entry.item}
+              isActive={activeSection === entry.item.id}
+              count={countMap[entry.item.id] ?? 0}
+              hasNotification={sectionsWithNotifications.has(entry.item.id)}
               collapsed={collapsed}
               onNavClick={onNavClick}
-              onToggleGroup={onToggleGroup}
             />
           );
         })}
-
-        {persistentItems.length > 0 && (
-          <>
-            <div className="px-3 py-1">
-              <Separator />
-            </div>
-            {persistentItems.map((item) => (
-              <NavButton
-                key={item.id}
-                item={item}
-                isActive={activeSection === item.id}
-                count={countMap[item.id] ?? 0}
-                hasNotification={sectionsWithNotifications.has(item.id)}
-                collapsed={collapsed}
-                onNavClick={onNavClick}
-              />
-            ))}
-          </>
-        )}
       </nav>
 
       {/* Collapse toggle */}
