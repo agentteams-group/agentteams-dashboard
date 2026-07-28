@@ -33,6 +33,8 @@ install/               独立安装脚本与 AgentTeams 集成补丁
 
 负责导航、资源管理界面、基础设施状态和模型管理。各 section 通过 hooks 获取数据。
 
+Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 网关、平台和治理五个可折叠分组，以及常驻文档入口。`use-active-section.ts` 将当前节和展开分组持久化到 localStorage，并使用 `#group/section` 深链接格式；旧版扁平哈希会自动映射到对应分组。当前活动节所在分组保持展开，分组内子项支持上下方向键聚焦和 Enter 激活。
+
 ### AgentTeams 代理
 
 位置：`src/app/api/agentteams/`、`src/lib/agentteams-api.ts`

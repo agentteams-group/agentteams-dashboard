@@ -29,7 +29,15 @@ import { MobileSidebar } from './mobile-sidebar';
 import { DashboardHeader } from './header';
 import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
-import { navItems, navGroups, isNavItemVisible, isGroupVisible, createActions, isCreateActionVisible } from './nav-items';
+import {
+  navItems,
+  navGroups,
+  isNavItemVisible,
+  isGroupVisible,
+  getGroupItems,
+  createActions,
+  isCreateActionVisible,
+} from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useEnsureAiGateway } from '@/hooks/use-ensure-ai-gateway';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
@@ -130,29 +138,65 @@ export function AgentTeamsDashboard() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
-      if (!isCmdOrCtrl) return;
 
-      // Ctrl+0: docs (persistent entry)
-      if (e.key === '0') {
+      if (isCmdOrCtrl) {
+        // Ctrl+0: docs (persistent entry)
+        if (e.key === '0') {
+          e.preventDefault();
+          setActiveSection('docs');
+          setMobileMenuOpen(false);
+          return;
+        }
+
+        // Ctrl+1..5: activate each group's defaultItem
+        if (e.key >= '1' && e.key <= '9') {
+          e.preventDefault();
+          const index = parseInt(e.key, 10) - 1;
+          if (index < visibleGroups.length) {
+            setActiveSection(visibleGroups[index].defaultItem);
+            setMobileMenuOpen(false);
+          }
+        }
+        return;
+      }
+
+      const focusedElement = document.activeElement;
+      if (!(focusedElement instanceof HTMLElement)) return;
+
+      const focusedSection = focusedElement.dataset.navSection;
+      const focusedGroup = focusedElement.dataset.navGroup;
+      if (!focusedSection && !focusedGroup) return;
+
+      if (e.key === 'Enter' && focusedSection) {
         e.preventDefault();
-        setActiveSection('docs');
+        setActiveSection(focusedSection);
         setMobileMenuOpen(false);
         return;
       }
 
-      // Ctrl+1..5: activate each group's defaultItem
-      if (e.key >= '1' && e.key <= '9') {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+
+      const groupId = focusedGroup ?? navItems.find((item) => item.id === focusedSection)?.group;
+      if (!groupId || !expandedGroups.has(groupId)) return;
+
+      const items = getGroupItems(groupId, navItems, mode);
+      const currentIndex = focusedSection
+        ? items.findIndex((item) => item.id === focusedSection)
+        : e.key === 'ArrowDown' ? -1 : items.length;
+      const nextIndex = currentIndex + (e.key === 'ArrowDown' ? 1 : -1);
+      if (nextIndex < 0 || nextIndex >= items.length) return;
+
+      const target = focusedElement
+        .closest('aside')
+        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${items[nextIndex].id}"]`);
+      if (target) {
         e.preventDefault();
-        const index = parseInt(e.key, 10) - 1;
-        if (index < visibleGroups.length) {
-          setActiveSection(visibleGroups[index].defaultItem);
-          setMobileMenuOpen(false);
-        }
+        target.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveSection, visibleGroups]);
+  }, [expandedGroups, mode, setActiveSection, visibleGroups]);
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
@@ -210,24 +254,22 @@ export function AgentTeamsDashboard() {
   }, [setActiveSection]);
 
   const handleToggleGroup = useCallback((groupId: string, ctrlKey: boolean) => {
+    const activeGroupId = navItems.find((item) => item.id === activeSection)?.group;
     setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (ctrlKey) {
         // Ctrl+click: toggle independently
-        if (next.has(groupId)) next.delete(groupId);
+        if (next.has(groupId) && groupId !== activeGroupId) next.delete(groupId);
         else next.add(groupId);
       } else {
-        // Normal click: collapse others, expand only this one
-        if (next.has(groupId) && next.size === 1) {
-          // Already the only expanded group — keep it expanded
-          return prev;
-        }
+        // Preserve the group containing the active section.
         next.clear();
         next.add(groupId);
+        if (activeGroupId) next.add(activeGroupId);
       }
       return next;
     });
-  }, [setExpandedGroups]);
+  }, [activeSection, setExpandedGroups]);
 
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);

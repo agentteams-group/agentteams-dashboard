@@ -44,8 +44,14 @@ describe('getGroupItems', () => {
     expect(ids).toEqual(['workers', 'teams', 'managers', 'humans', 'chat']);
   });
 
-  it('returns only topology and ops for platform group', () => {
+  it('hides the K8s-only infrastructure item in embedded mode', () => {
     const items = getGroupItems('platform', navItems, 'embedded');
+    const ids = items.map((i) => i.id);
+    expect(ids).toEqual(['topology']);
+  });
+
+  it('shows the infrastructure item in K8s mode', () => {
+    const items = getGroupItems('platform', navItems, 'k8s');
     const ids = items.map((i) => i.id);
     expect(ids).toEqual(['topology', 'ops']);
   });

@@ -73,6 +73,7 @@ function NavButton({
   const button = (
     <button
       onClick={() => onNavClick(item.id)}
+      data-nav-section={item.id}
       className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 relative ${
         indent && !collapsed ? 'pl-8' : ''
       } ${isActive
@@ -170,6 +171,7 @@ function NavGroupSection({
         <TooltipTrigger asChild>
           <button
             onClick={handleToggle}
+            data-nav-group={group.id}
             className={`w-full flex items-center justify-center py-2.5 text-sm transition-all duration-200 relative ${
               isActiveInGroup
                 ? 'bg-emerald-500/10 text-emerald-500'
@@ -200,6 +202,7 @@ function NavGroupSection({
     <div key={group.id}>
       <button
         onClick={handleToggle}
+        data-nav-group={group.id}
         className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 ${
           isActiveInGroup
             ? 'text-foreground font-semibold'

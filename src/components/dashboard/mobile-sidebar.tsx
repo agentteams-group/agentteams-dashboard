@@ -117,6 +117,7 @@ export function MobileSidebar({
                   <div key={group.id}>
                     <button
                       onClick={makeToggleHandler(group.id)}
+                      data-nav-group={group.id}
                       className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm ${
                         isActiveInGroup
                           ? 'text-foreground font-semibold'
@@ -169,6 +170,7 @@ export function MobileSidebar({
                               <button
                                 key={item.id}
                                 onClick={() => onNavClick(item.id)}
+                                data-nav-section={item.id}
                                 className={`w-full flex items-center gap-3 px-4 pl-8 py-2.5 text-sm ${
                                   isActive
                                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
@@ -217,6 +219,7 @@ export function MobileSidebar({
                       <button
                         key={item.id}
                         onClick={() => onNavClick(item.id)}
+                        data-nav-section={item.id}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm ${
                           isActive
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'

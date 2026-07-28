@@ -64,7 +64,7 @@ export const navItems: NavItem[] = [
   { id: 'policies', label: '策略', icon: Shield, group: 'governance' },
   { id: 'sandbox', label: '沙箱', icon: FlaskConical, group: 'governance' },
   { id: 'compliance', label: '合规', icon: FileCheck, group: 'governance' },
-  { id: 'ops', label: '基础设施', icon: Settings, group: 'platform' },
+  { id: 'ops', label: '基础设施', icon: Settings, group: 'platform', modes: ['k8s'] },
   { id: 'docs', label: '文档', icon: BookOpen },
 ];
 
