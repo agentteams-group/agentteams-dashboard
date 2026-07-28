@@ -29,7 +29,7 @@ import { MobileSidebar } from './mobile-sidebar';
 import { DashboardHeader } from './header';
 import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
-import { navItems, isNavItemVisible, createActions, isCreateActionVisible } from './nav-items';
+import { navItems, navGroups, isNavItemVisible, isGroupVisible, createActions, isCreateActionVisible } from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useEnsureAiGateway } from '@/hooks/use-ensure-ai-gateway';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
@@ -68,7 +68,7 @@ const sectionMap: Record<string, React.ComponentType> = {
 
 export function AgentTeamsDashboard() {
   const queryClient = useQueryClient();
-  const { activeSection, setActiveSection } = useActiveSection();
+  const { activeSection, setActiveSection, expandedGroups, setExpandedGroups } = useActiveSection();
   const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -93,6 +93,11 @@ export function AgentTeamsDashboard() {
 
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    [mode]
+  );
+
+  const visibleGroups = useMemo(
+    () => navGroups.filter((g) => isGroupVisible(g.id, navItems, mode)),
     [mode]
   );
 
@@ -125,21 +130,36 @@ export function AgentTeamsDashboard() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
-      if (isCmdOrCtrl && e.key >= '1' && e.key <= '9') {
+      if (!isCmdOrCtrl) return;
+
+      // Ctrl+0: docs (persistent entry)
+      if (e.key === '0') {
+        e.preventDefault();
+        setActiveSection('docs');
+        setMobileMenuOpen(false);
+        return;
+      }
+
+      // Ctrl+1..5: activate each group's defaultItem
+      if (e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         const index = parseInt(e.key, 10) - 1;
-        if (index < visibleNavItems.length) {
-          setActiveSection(visibleNavItems[index].id);
+        if (index < visibleGroups.length) {
+          setActiveSection(visibleGroups[index].defaultItem);
           setMobileMenuOpen(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveSection, visibleNavItems]);
+  }, [setActiveSection, visibleGroups]);
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
-  const activeLabel = visibleNavItems.find((n) => n.id === activeSection)?.label || '总览';
+  const activeItem = navItems.find((n) => n.id === activeSection);
+  const activeLabel = activeItem?.label || '总览';
+  const activeGroup = activeItem?.group
+    ? navGroups.find((g) => g.id === activeItem.group)
+    : null;
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -189,6 +209,26 @@ export function AgentTeamsDashboard() {
     setMobileMenuOpen(false);
   }, [setActiveSection]);
 
+  const handleToggleGroup = useCallback((groupId: string, ctrlKey: boolean) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (ctrlKey) {
+        // Ctrl+click: toggle independently
+        if (next.has(groupId)) next.delete(groupId);
+        else next.add(groupId);
+      } else {
+        // Normal click: collapse others, expand only this one
+        if (next.has(groupId) && next.size === 1) {
+          // Already the only expanded group — keep it expanded
+          return prev;
+        }
+        next.clear();
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, [setExpandedGroups]);
+
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
     try {
@@ -211,6 +251,8 @@ export function AgentTeamsDashboard() {
             collapsed={sidebarCollapsed}
             onNavClick={handleNavClick}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            expandedGroups={expandedGroups}
+            onToggleGroup={handleToggleGroup}
             mode={mode}
           />
 
@@ -221,6 +263,8 @@ export function AgentTeamsDashboard() {
             sectionsWithNotifications={sectionsWithNotifications}
             onNavClick={handleNavClick}
             onClose={() => setMobileMenuOpen(false)}
+            expandedGroups={expandedGroups}
+            onToggleGroup={handleToggleGroup}
             mode={mode}
           />
 
@@ -264,6 +308,12 @@ export function AgentTeamsDashboard() {
                     <Home className="w-3.5 h-3.5" />
                     <ChevronSep className="w-3 h-3" />
                     <span className="font-medium text-foreground">AgentTeams</span>
+                    {activeGroup && (
+                      <>
+                        <ChevronSep className="w-3 h-3" />
+                        <span>{activeGroup.label}</span>
+                      </>
+                    )}
                     <ChevronSep className="w-3 h-3" />
                     <span>{activeLabel}</span>
                   </nav>
