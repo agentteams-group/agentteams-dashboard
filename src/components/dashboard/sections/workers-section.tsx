@@ -26,6 +26,8 @@ import { agentteamsApi } from '@/lib/agentteams-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { useModels, useAiRoutes } from '@/hooks/use-agentteams-models';
+import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -125,6 +127,9 @@ export function WorkersSection() {
   const sleepWorker = useSleepWorker();
   const ensureReadyWorker = useEnsureReadyWorker();
   const updateWorker = useUpdateWorker();
+  // Soft model alias validation (embedded mode): warn but allow submit.
+  const { data: providers } = useModels();
+  const { data: aiRoutes } = useAiRoutes();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -206,14 +211,27 @@ export function WorkersSection() {
     toast.success('Workers 数据已导出');
   }, [workers]);
 
+  // Soft model alias validation (embedded mode): warn but allow submit.
+  // If the requested alias cannot be resolved through any configured AiRoute,
+  // surface a toast.warning so the user knows the worker may fail to call LLMs,
+  // but still let the mutation go through.
+  const warnIfModelAliasUnbound = useCallback((model: string | undefined) => {
+    if (!model || !aiRoutes || !providers) return;
+    const bindings = buildModelBindings([model], aiRoutes, providers);
+    if (hasUnavailableModelAliases([model], bindings)) {
+      toast.warning(`请求模型别名 "${model}" 在当前 AI 路由中无可解析绑定，Worker 调用 LLM 可能失败。请在「AI 网关」中配置对应路由。`);
+    }
+  }, [aiRoutes, providers]);
+
   const handleCreate = useCallback(() => {
+    warnIfModelAliasUnbound(newWorker.model);
     createWorker.mutate(newWorker, {
       onSuccess: () => {
         setCreateOpen(false);
         setNewWorker({ name: '', runtime: 'openclaw' });
       },
     });
-  }, [createWorker, newWorker]);
+  }, [createWorker, newWorker, warnIfModelAliasUnbound]);
 
   const handleDelete = useCallback(() => {
     if (deleteTarget) {
@@ -256,11 +274,12 @@ export function WorkersSection() {
     if (!editWorker) return;
     const { name: _ignored, ...data } = editForm;
     void _ignored;
+    warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
       { onSuccess: closeEdit }
     );
-  }, [editForm, editWorker, updateWorker, closeEdit]);
+  }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound]);
 
   const handleConfigApply = useCallback(() => {
     setConfigError(null);

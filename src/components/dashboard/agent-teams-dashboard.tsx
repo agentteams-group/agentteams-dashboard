@@ -53,7 +53,7 @@ const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ de
 const OpsSection = lazy(() => import('./sections/ops-section').then(m => ({ default: m.OpsSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 const PoliciesSection = lazy(() => import('./sections/policies-section').then(m => ({ default: m.PoliciesSection })));
-const GatewaySection = lazy(() => import('./sections/gateway-section').then(m => ({ default: m.GatewaySection })));
+const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
 const TopologySection = lazy(() => import('./sections/topology-section').then(m => ({ default: m.TopologySection })));
 const SandboxSection = lazy(() => import('./sections/sandbox-section').then(m => ({ default: m.SandboxSection })));
 const ComplianceSection = lazy(() => import('./sections/compliance-section').then(m => ({ default: m.ComplianceSection })));
@@ -66,7 +66,8 @@ const sectionMap: Record<string, React.ComponentType> = {
   humans: HumansSection,
   chat: ChatSection,
   topology: TopologySection,
-  gateway: GatewaySection,
+  gateway: ModelsSection,
+  'ai-routes': ModelsSection,
   policies: PoliciesSection,
   sandbox: SandboxSection,
   compliance: ComplianceSection,

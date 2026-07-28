@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { AlertTriangle, Key, Loader2, Pencil, Plus, Route, Server, Trash2 } from 'lucide-react';
+import { useState, useCallback, type ReactNode } from 'react';
+import { AlertTriangle, Clock, Gauge, Key, Loader2, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,8 @@ import {
 } from '@/hooks/use-agentteams-models';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useConsumers } from '@/hooks/use-agentteams-consumers';
+import { useCreateConsumer, useDeleteConsumer } from '@/hooks/use-agentteams-mutations';
 import {
   parseFallbackConfig,
   PROVIDERS_NEED_BASE_URL,
@@ -55,6 +57,8 @@ import {
 } from '@/lib/higress-api';
 import { buildModelBindings } from '@/lib/model-bindings';
 import { useHigressConsoleAccess } from '@/hooks/use-higress-console-access';
+import { formatErrorMessage } from '@/lib/api-error';
+import { toast } from 'sonner';
 
 const newProviderForm = (): ProviderForm => ({
   name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [],
@@ -210,6 +214,8 @@ export function ModelsSection() {
     <div className="space-y-4"><SectionHeader title="AI 模型提供商" description="管理提供商协议、Token 故障转移、模型映射与公开高级配置" /><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button><span className="text-xs text-muted-foreground">共 {providers.length} 个提供商</span></div><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></div>
     <div className="space-y-4"><SectionHeader title="AI 路由" description="配置多上游、权重、路径和模型匹配、认证与回退策略" /><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button><span className="text-xs text-muted-foreground">共 {routes.length} 条路由</span></div>{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></div>
     <div className="space-y-4"><SectionHeader title="请求模型别名绑定" description="Manager 和 Worker 使用的模型别名将由 Higress 路由解析到具体提供商模型" /><Table><TableHeader><TableRow><TableHead>请求模型别名</TableHead><TableHead>路由</TableHead><TableHead>提供商</TableHead><TableHead>目标模型</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无请求模型别名绑定</TableCell></TableRow> : modelBindings.map((binding) => <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}><TableCell className="font-mono text-xs">{binding.requestModelAlias}</TableCell><TableCell>{binding.routeName || '-'}</TableCell><TableCell>{binding.providerName || '-'}</TableCell><TableCell className="font-mono text-xs">{binding.targetModel || '-'}</TableCell><TableCell><Badge variant={binding.available ? 'default' : 'destructive'} className="text-[10px]">{binding.available ? '可用' : '不可用'}</Badge></TableCell></TableRow>)}</TableBody></Table></div>
+    <ConsumerSection />
+    <RateLimitSection routes={routes} />
     <div className="rounded-lg border border-border/50 bg-muted/30 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" /><p className="text-xs text-muted-foreground">模型配置通过 Higress Console API 管理，凭据仅以 Token 数量形式显示。</p></div></div>
     <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} />
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '提供商' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该提供商：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
@@ -224,3 +230,134 @@ function RouteTable({ loading, routes, pending, onEdit, onDelete }: { loading: b
 
 function LoadingRow() { return <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow>; }
 function EmptyRow({ icon, text }: { icon: ReactNode; text: string }) { return <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{icon}{text}</TableCell></TableRow>; }
+
+// ============ Consumer Management ============
+
+function ConsumerSection() {
+  const {
+    data: consumers,
+    isLoading: consumersLoading,
+    error: consumersError,
+    listUnsupported: consumerListUnsupported,
+  } = useConsumers();
+  const createConsumer = useCreateConsumer();
+  const deleteConsumer = useDeleteConsumer();
+  const [showAdd, setShowAdd] = useState(false);
+  const [consumerName, setConsumerName] = useState('');
+  const [consumerKey, setConsumerKey] = useState('');
+
+  const handleCreate = useCallback(async () => {
+    if (!consumerName.trim()) return;
+    try {
+      const created = await createConsumer.mutateAsync({
+        name: consumerName.trim(),
+        credential_key: consumerKey.trim() || undefined,
+      });
+      if (created?.api_key) {
+        toast.success(`Consumer "${consumerName}" 创建成功，API Key: ${created.api_key}`, { duration: 15000 });
+      } else {
+        toast.success(`Consumer "${consumerName}" 创建成功`);
+      }
+      setConsumerName('');
+      setConsumerKey('');
+      setShowAdd(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '创建失败');
+    }
+  }, [consumerName, consumerKey, createConsumer]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    if (!confirm(`确认删除 Consumer "${id}"？`)) return;
+    try {
+      await deleteConsumer.mutateAsync(id);
+      toast.success('Consumer 已删除');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '删除失败');
+    }
+  }, [deleteConsumer]);
+
+  return <div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold flex items-center gap-2"><Users className="size-4 text-violet-500" />Consumers（认证凭证）</h3><Button variant="outline" size="sm" onClick={() => setShowAdd((v) => !v)}><Plus className="mr-1 size-3.5" />添加 Consumer</Button></div>
+    {showAdd && <div className="flex items-end gap-2 p-3 border border-border rounded-lg bg-card/50"><div className="flex-1"><Label className="text-xs">名称</Label><Input value={consumerName} onChange={(e) => setConsumerName(e.target.value)} placeholder="consumer-name" className="h-8 text-sm" /></div><div className="flex-1"><Label className="text-xs">API Key (可选)</Label><Input value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} placeholder="留空自动生成" type="password" className="h-8 text-sm" /></div><Button size="sm" onClick={handleCreate} disabled={!consumerName.trim() || createConsumer.isPending}>{createConsumer.isPending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : '创建'}</Button><Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>取消</Button></div>}
+    {consumerListUnsupported && <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground"><AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" /><p>当前 Controller 版本不支持获取 Consumer 列表（v1.2.0-beta.1 缺少 GET /api/v1/gateway/consumers），仍可创建新 Consumer。</p></div>}
+    {consumersError && <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertTriangle className="size-4 shrink-0 mt-0.5" /><p>Consumer 列表加载失败: {formatErrorMessage(consumersError)}</p></div>}
+    <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>凭证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{consumersLoading ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow> : !consumersLoading && consumers?.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">暂无 Consumer</TableCell></TableRow> : consumers?.map((consumer) => <TableRow key={consumer.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Key className="size-3.5 text-muted-foreground" />{consumer.name}</div></TableCell><TableCell>{consumer.status && <Badge variant="outline" className="text-[10px]">{consumer.status}</Badge>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => handleDelete(consumer.name)} disabled={deleteConsumer.isPending}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>
+  </div>;
+}
+
+// ============ Rate Limit Plugin Configuration ============
+
+interface RateLimitConfig {
+  routeName: string;
+  enabled: boolean;
+  rps: number;
+  rpm: number;
+  burst: number;
+  perConsumer: boolean;
+}
+
+const DEFAULT_RATE_LIMIT: RateLimitConfig = {
+  routeName: '',
+  enabled: true,
+  rps: 10,
+  rpm: 600,
+  burst: 20,
+  perConsumer: true,
+};
+
+function RateLimitSection({ routes }: { routes: Array<{ name: string }> | undefined }) {
+  const [configs, setConfigs] = useState<RateLimitConfig[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newConfig, setNewConfig] = useState<RateLimitConfig>({ ...DEFAULT_RATE_LIMIT });
+
+  const handleAdd = useCallback(() => {
+    if (!newConfig.routeName) return;
+    setConfigs((prev) => [...prev, { ...newConfig }]);
+    setNewConfig({ ...DEFAULT_RATE_LIMIT });
+    setShowAdd(false);
+  }, [newConfig]);
+
+  const handleRemove = useCallback((idx: number) => {
+    setConfigs((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const handleToggle = useCallback((idx: number) => {
+    setConfigs((prev) => prev.map((c, i) => (i === idx ? { ...c, enabled: !c.enabled } : c)));
+  }, []);
+
+  const handleUpdateField = useCallback(
+    <K extends keyof RateLimitConfig>(idx: number, field: K, value: RateLimitConfig[K]) => {
+      setConfigs((prev) => prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c)));
+    },
+    []
+  );
+
+  const handleExportConfig = useCallback(() => {
+    const pluginConfigs = configs.filter((c) => c.enabled).map((c) => ({
+      routeName: c.routeName,
+      pluginName: 'wasm-rate-limit',
+      config: {
+        rule_name: `rate-limit-${c.routeName}`,
+        limit_by_header: c.perConsumer ? 'x-consumer-name' : undefined,
+        rate: c.rps > 0 ? `${c.rps}` : undefined,
+        rpm: c.rpm > 0 ? `${c.rpm}` : undefined,
+        burst: c.burst > 0 ? `${c.burst}` : undefined,
+        show_limit_quota_header: true,
+      },
+    }));
+    const blob = new Blob([JSON.stringify(pluginConfigs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'higress-rate-limit-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [configs]);
+
+  return <div className="space-y-3">
+    <div className="flex items-center justify-between"><h3 className="text-sm font-semibold flex items-center gap-2"><Gauge className="size-4 text-amber-500" />限流策略 (Rate Limit)</h3><div className="flex items-center gap-2">{configs.length > 0 && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleExportConfig}><Save className="mr-1 size-3" />导出配置</Button>}<Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowAdd((v) => !v)}><Plus className="mr-1 size-3" />添加限流规则</Button></div></div>
+    {showAdd && <div className="border border-border rounded-lg p-4 space-y-3 bg-card/50"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><label className="text-xs text-muted-foreground">目标路由 *</label><select className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm" value={newConfig.routeName} onChange={(e) => setNewConfig({ ...newConfig, routeName: e.target.value })}><option value="">选择路由...</option>{routes?.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}</select></div><div><label className="text-xs text-muted-foreground">RPS (每秒请求数)</label><input type="number" className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm" value={newConfig.rps} onChange={(e) => setNewConfig({ ...newConfig, rps: parseInt(e.target.value) || 0 })} min={0} /></div><div><label className="text-xs text-muted-foreground">RPM (每分钟请求数)</label><input type="number" className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm" value={newConfig.rpm} onChange={(e) => setNewConfig({ ...newConfig, rpm: parseInt(e.target.value) || 0 })} min={0} /></div><div><label className="text-xs text-muted-foreground">突发容量</label><input type="number" className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm" value={newConfig.burst} onChange={(e) => setNewConfig({ ...newConfig, burst: parseInt(e.target.value) || 0 })} min={0} /></div></div><div className="flex items-center gap-3"><label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={newConfig.perConsumer} onChange={(e) => setNewConfig({ ...newConfig, perConsumer: e.target.checked })} className="rounded" />按 Consumer 限流（不同 Consumer 独立计数）</label></div><div className="flex items-center gap-2"><Button size="sm" onClick={handleAdd} disabled={!newConfig.routeName}>添加</Button><Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>取消</Button></div></div>}
+    {configs.length === 0 && !showAdd && <p className="text-xs text-muted-foreground text-center py-4">暂无限流规则。点击「添加限流规则」为 AI 路由配置请求频率限制。</p>}
+    {configs.map((config, idx) => <div key={`${config.routeName}-${idx}`} className={`flex items-center gap-3 p-3 rounded-lg border ${config.enabled ? 'border-border bg-card/50' : 'border-border/50 bg-muted/20 opacity-60'}`}><button onClick={() => handleToggle(idx)}>{config.enabled ? <ToggleRight className="size-5 text-emerald-500" /> : <ToggleLeft className="size-5 text-gray-400" />}</button><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><Route className="size-3.5 text-muted-foreground" /><span className="text-xs font-medium">{config.routeName}</span>{config.perConsumer && <Badge variant="secondary" className="text-[9px]">按 Consumer</Badge>}</div><div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">{config.rps > 0 && <span className="flex items-center gap-1"><Zap className="size-3" />{config.rps} req/s</span>}{config.rpm > 0 && <span className="flex items-center gap-1"><Clock className="size-3" />{config.rpm} req/min</span>}{config.burst > 0 && <span>突发: {config.burst}</span>}</div></div><input type="number" className="w-16 h-7 rounded border border-input bg-transparent px-1.5 text-xs text-center" value={config.rps} onChange={(e) => handleUpdateField(idx, 'rps', parseInt(e.target.value) || 0)} title="RPS" /><span className="text-[10px] text-muted-foreground">req/s</span><Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleRemove(idx)}><Trash2 className="size-3.5 text-destructive" /></Button></div>)}
+    {configs.length > 0 && <div className="border border-border/50 rounded-lg p-3 bg-muted/20"><div className="flex items-start gap-2"><AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" /><div className="text-[10px] text-muted-foreground space-y-0.5"><p>限流配置导出后需通过 Higress Console API 或 kubectl 应用到网关。</p><p>配置格式: Higress <code>wasm-rate-limit</code> 插件，支持 per-route 和 per-consumer 限流。</p></div></div></div>}
+  </div>;
+}

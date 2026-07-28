@@ -23,7 +23,6 @@ import {
   navGroups,
   isNavItemVisible,
   getGroupItems,
-  isGroupVisible,
   type NavItem,
   type NavGroup,
   type DeploymentMode,
@@ -276,17 +275,33 @@ export function Sidebar({
   onToggleGroup,
   mode,
 }: SidebarProps) {
-  const visibleGroups = useMemo(
-    () => navGroups.filter((g) => isGroupVisible(g.id, navItems, mode)),
-    [mode]
-  );
+  // Groups with only one visible item collapse to a flat persistent entry
+  // (no parent expand/collapse wrapper — direct click to activate).
+  const { multiItemGroups, collapsedGroupItems } = useMemo(() => {
+    const multi: NavGroup[] = [];
+    const collapsed: NavItem[] = [];
+    for (const group of navGroups) {
+      const items = getGroupItems(group.id, navItems, mode);
+      if (items.length === 0) continue;
+      if (items.length === 1) {
+        // Single-item group: surface directly without parent wrapper.
+        collapsed.push({ ...items[0], group: undefined });
+      } else {
+        multi.push(group);
+      }
+    }
+    return { multiItemGroups: multi, collapsedGroupItems: collapsed };
+  }, [mode]);
 
   const persistentItems = useMemo(
     () =>
-      navItems.filter(
-        (item) => !item.group && isNavItemVisible(item, mode)
-      ),
-    [mode]
+      [
+        ...navItems.filter(
+          (item) => !item.group && isNavItemVisible(item, mode)
+        ),
+        ...collapsedGroupItems,
+      ],
+    [collapsedGroupItems]
   );
 
   return (
@@ -353,7 +368,7 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {visibleGroups.map((group) => {
+        {multiItemGroups.map((group) => {
           const groupItems = getGroupItems(group.id, navItems, mode);
           return (
             <NavGroupSection
