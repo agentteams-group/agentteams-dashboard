@@ -36,6 +36,7 @@ export function TeamTable({
   onDelete,
   onAddWorker,
   onShowTopology,
+  deletingTeamNames,
 }: {
   teams: TeamResponse[];
   getAvailableFor: (_teamName: string, _currentWorkerNames: string[]) => WorkerResponse[];
@@ -46,6 +47,7 @@ export function TeamTable({
   onDelete: (_name: string) => void;
   onAddWorker: (_teamName: string, _workerName: string) => void;
   onShowTopology: (_team: TeamResponse) => void;
+  deletingTeamNames: Set<string>;
 }) {
   return (
     <Card className="glass-card overflow-hidden">
@@ -54,6 +56,7 @@ export function TeamTable({
           <TableRow>
             <TableHead>名称</TableHead>
             <TableHead>阶段</TableHead>
+            <TableHead>任务</TableHead>
             <TableHead>Leader</TableHead>
             <TableHead>Workers</TableHead>
             <TableHead>房间</TableHead>
@@ -61,8 +64,10 @@ export function TeamTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {teams.map((team) => (
-            <TableRow key={team.name}>
+          {teams.map((team) => {
+            const isDeleting = deletingTeamNames.has(team.name);
+            return (
+              <TableRow key={team.name}>
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={team.phase} />
@@ -72,6 +77,15 @@ export function TeamTable({
               </TableCell>
               <TableCell>
                 <PhaseBadge kind="team" phase={team.phase} />
+              </TableCell>
+              <TableCell>
+                {isDeleting ? (
+                  <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    删除中
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">-</span>
+                )}
               </TableCell>
               <TableCell>
                 <Tooltip>
@@ -97,7 +111,7 @@ export function TeamTable({
                     <span className="font-mono text-xs truncate max-w-[120px]">
                       {team.teamRoomID}
                     </span>
-                    <CopyButton text={team.teamRoomID} />
+                    <CopyButton text={team.teamRoomID} disabled={isDeleting} />
                   </div>
                 ) : (
                   <span className="text-xs text-muted-foreground">-</span>
@@ -115,9 +129,11 @@ export function TeamTable({
                   >
                     <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
-                  <Popover
-                    open={isAddWorkerOpen(team.name)}
-                    onOpenChange={(open) => onAddWorkerPopoverChange(team.name, open)}
+                    <Popover
+                      open={isAddWorkerOpen(team.name)}
+                      onOpenChange={(open) =>
+                        !isDeleting && onAddWorkerPopoverChange(team.name, open)
+                      }
                   >
                     <PopoverTrigger asChild>
                       <Button
@@ -126,6 +142,7 @@ export function TeamTable({
                         className="h-7 w-7 p-0"
                         title="添加 Worker"
                         aria-label={`为 ${team.name} 添加 Worker`}
+                        disabled={isDeleting}
                       >
                         <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
                       </Button>
@@ -146,6 +163,7 @@ export function TeamTable({
                                 key={w.name}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover:bg-muted/50 transition-colors text-left"
                                 onClick={() => onAddWorker(team.name, w.name)}
+                                disabled={isDeleting}
                               >
                                 <StatusDot phase={w.phase} />
                                 <Bot className="w-3 h-3 text-emerald-500" aria-hidden="true" />
@@ -164,6 +182,7 @@ export function TeamTable({
                     onClick={() => onShowTopology(team)}
                     title="查看拓扑"
                     aria-label={`查看 ${team.name} 拓扑`}
+                    disabled={isDeleting}
                   >
                     <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
@@ -174,6 +193,7 @@ export function TeamTable({
                     onClick={() => onEdit(team)}
                     title="编辑"
                     aria-label={`编辑 ${team.name}`}
+                    disabled={isDeleting}
                   >
                     <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
@@ -184,13 +204,15 @@ export function TeamTable({
                     onClick={() => onDelete(team.name)}
                     title="删除"
                     aria-label={`删除 ${team.name}`}
+                    disabled={isDeleting}
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
                 </div>
               </TableCell>
-            </TableRow>
-          ))}
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </Card>

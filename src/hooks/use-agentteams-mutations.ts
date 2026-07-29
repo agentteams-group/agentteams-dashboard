@@ -10,7 +10,6 @@ import type {
   CreateManagerRequest,
   UpdateManagerRequest,
   CreateConsumerRequest,
-  WorkerResponse,
   WorkerPhase,
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
@@ -51,16 +50,7 @@ export function useDeleteWorker() {
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteWorker(name),
-    onMutate: async (name) => {
-      await queryClient.cancelQueries({ queryKey: ['agentteams-workers'] });
-      const previous = queryClient.getQueryData<WorkerResponse[]>(['agentteams-workers']);
-      queryClient.setQueryData<WorkerResponse[]>(['agentteams-workers'], (old) =>
-        old?.filter((w) => w.name !== name)
-      );
-      return { previous };
-    },
-    onError: (err, name, context) => {
-      if (context?.previous) queryClient.setQueryData(['agentteams-workers'], context.previous);
+    onError: (err, name) => {
       toast.error(`Worker "${name}" 删除失败: ${formatErrorMessage(err)}`);
       addNotification({ type: 'error', title: 'Worker 删除失败', message: formatErrorMessage(err) });
     },

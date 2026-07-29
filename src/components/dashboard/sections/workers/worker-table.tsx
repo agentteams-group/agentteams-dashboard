@@ -27,6 +27,7 @@ export function WorkerTable({
   onEnsureReady,
   onDelete,
   isActionPending,
+  deletingWorkerNames,
 }: {
   workers: WorkerResponse[];
   selectedWorkers: Set<string>;
@@ -38,6 +39,7 @@ export function WorkerTable({
   onEnsureReady: (_name: string) => void;
   onDelete: (_name: string) => void;
   isActionPending: boolean;
+  deletingWorkerNames: Set<string>;
 }) {
   return (
     <Card className="glass-card overflow-hidden">
@@ -48,6 +50,7 @@ export function WorkerTable({
             <TableHead>名称</TableHead>
             <TableHead>阶段</TableHead>
             <TableHead>状态</TableHead>
+            <TableHead>任务</TableHead>
             <TableHead>运行时</TableHead>
             <TableHead>模型</TableHead>
             <TableHead>团队</TableHead>
@@ -55,17 +58,20 @@ export function WorkerTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {workers.map((worker) => (
-            <TableRow
-              key={worker.name}
-              className={selectedWorkers.has(worker.name) ? 'bg-emerald-500/5' : ''}
-            >
+          {workers.map((worker) => {
+            const isDeleting = deletingWorkerNames.has(worker.name);
+            return (
+              <TableRow
+                key={worker.name}
+                className={selectedWorkers.has(worker.name) ? 'bg-emerald-500/5' : ''}
+              >
               <TableCell>
                 <button
                   onClick={() => onToggleSelect(worker.name)}
                   title={selectedWorkers.has(worker.name) ? '取消选择' : '选择'}
                   aria-label={selectedWorkers.has(worker.name) ? '取消选择' : '选择'}
                   aria-pressed={selectedWorkers.has(worker.name)}
+                  disabled={isDeleting}
                 >
                   {selectedWorkers.has(worker.name) ? (
                     <CheckSquare className="w-4 h-4 text-emerald-500" aria-hidden="true" />
@@ -89,6 +95,15 @@ export function WorkerTable({
               </TableCell>
               <TableCell>
                 <span className="text-xs text-muted-foreground">{worker.state}</span>
+              </TableCell>
+              <TableCell>
+                {isDeleting ? (
+                  <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    删除中
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">-</span>
+                )}
               </TableCell>
               <TableCell>
                 <RuntimeBadge runtime={worker.runtime} />
@@ -125,6 +140,7 @@ export function WorkerTable({
                     onClick={() => onEdit(worker)}
                     title="编辑"
                     aria-label={`编辑 ${worker.name}`}
+                    disabled={isDeleting}
                   >
                     <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
@@ -136,7 +152,7 @@ export function WorkerTable({
                       onClick={() => onWake(worker.name)}
                       title="唤醒"
                       aria-label={`唤醒 ${worker.name}`}
-                      disabled={isActionPending}
+                      disabled={isActionPending || isDeleting}
                     >
                       <Sun className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
@@ -149,7 +165,7 @@ export function WorkerTable({
                       onClick={() => onSleep(worker.name)}
                       title="休眠"
                       aria-label={`休眠 ${worker.name}`}
-                      disabled={isActionPending}
+                      disabled={isActionPending || isDeleting}
                     >
                       <Moon className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
@@ -162,7 +178,7 @@ export function WorkerTable({
                       onClick={() => onEnsureReady(worker.name)}
                       title="Ensure Ready"
                       aria-label={`Ensure Ready ${worker.name}`}
-                      disabled={isActionPending}
+                      disabled={isActionPending || isDeleting}
                     >
                       <Rocket className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
@@ -174,14 +190,15 @@ export function WorkerTable({
                     onClick={() => onDelete(worker.name)}
                     title="删除"
                     aria-label={`删除 ${worker.name}`}
-                    disabled={isActionPending}
+                    disabled={isActionPending || isDeleting}
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
                 </div>
               </TableCell>
-            </TableRow>
-          ))}
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </Card>

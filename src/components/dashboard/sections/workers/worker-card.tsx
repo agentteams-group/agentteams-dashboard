@@ -23,6 +23,7 @@ export function WorkerCard({
   onEnsureReady,
   onDelete,
   isActionPending,
+  isDeleting,
 }: {
   worker: WorkerResponse;
   index: number;
@@ -35,6 +36,7 @@ export function WorkerCard({
   onEnsureReady: () => void;
   onDelete: () => void;
   isActionPending: boolean;
+  isDeleting: boolean;
 }) {
   const health = useAgentHealth(worker);
 
@@ -57,6 +59,7 @@ export function WorkerCard({
                 title={isSelected ? '取消选择' : '选择'}
                 aria-label={isSelected ? '取消选择' : '选择'}
                 aria-pressed={isSelected}
+                disabled={isDeleting}
               >
                 {isSelected ? (
                   <CheckSquare className="w-4 h-4 text-emerald-500" aria-hidden="true" />
@@ -89,6 +92,12 @@ export function WorkerCard({
             </div>
           </div>
 
+          {isDeleting && (
+            <p role="status" className="mb-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+              删除中，等待 Controller 完成任务
+            </p>
+          )}
+
           <div className="space-y-1.5 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">模型</span>
@@ -118,7 +127,13 @@ export function WorkerCard({
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs flex-1" onClick={onEdit}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs flex-1"
+              onClick={onEdit}
+              disabled={isDeleting}
+            >
               <Pencil className="w-3 h-3 mr-1" aria-hidden="true" />
               编辑
             </Button>
@@ -131,7 +146,7 @@ export function WorkerCard({
                 size="sm"
                 className="h-7 text-xs flex-1"
                 onClick={onWake}
-                disabled={isActionPending}
+                disabled={isActionPending || isDeleting}
               >
                 <Sun className="w-3 h-3 mr-1" aria-hidden="true" />
                 唤醒
@@ -143,7 +158,7 @@ export function WorkerCard({
                 size="sm"
                 className="h-7 text-xs flex-1"
                 onClick={onSleep}
-                disabled={isActionPending}
+                disabled={isActionPending || isDeleting}
               >
                 <Moon className="w-3 h-3 mr-1" aria-hidden="true" />
                 休眠
@@ -155,7 +170,7 @@ export function WorkerCard({
                 size="sm"
                 className="h-7 text-xs flex-1"
                 onClick={onEnsureReady}
-                disabled={isActionPending}
+                disabled={isActionPending || isDeleting}
               >
                 <Rocket className="w-3 h-3 mr-1" aria-hidden="true" />
                 Ensure Ready
@@ -166,7 +181,7 @@ export function WorkerCard({
               size="sm"
               className="h-7 text-xs text-destructive hover:text-destructive"
               onClick={onDelete}
-              disabled={isActionPending}
+              disabled={isActionPending || isDeleting}
             >
               删除
             </Button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -153,6 +153,7 @@ export function WorkersSection() {
 
   const [selectedWorkers, setSelectedWorkers] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
+  const [deletingWorkerNames, setDeletingWorkerNames] = useState<Set<string>>(new Set());
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
@@ -168,6 +169,15 @@ export function WorkersSection() {
     [sorted, currentPage]
   );
   const runtimeDist = useMemo(() => computeRuntimeDist(workers), [workers]);
+
+  useEffect(() => {
+    if (!workers) return;
+    const currentNames = new Set(workers.map((worker) => worker.name));
+    setDeletingWorkerNames((previous) => {
+      const next = new Set([...previous].filter((name) => currentNames.has(name)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [workers]);
 
   // Reset to first page when filters change (adjust state during render)
   const [prevFilters, setPrevFilters] = useState({ searchQuery, sortKey });
@@ -186,14 +196,32 @@ export function WorkersSection() {
   }, []);
 
   const selectAll = useCallback(() => {
-    setSelectedWorkers(new Set(filtered.map((w) => w.name)));
-  }, [filtered]);
+    const availableNames = filtered
+      .filter((worker) => !deletingWorkerNames.has(worker.name))
+      .map((worker) => worker.name);
+    setSelectedWorkers(new Set(availableNames));
+  }, [filtered, deletingWorkerNames]);
 
   const deselectAll = useCallback(() => setSelectedWorkers(new Set()), []);
 
+  const markWorkersDeleting = useCallback((names: string[]) => {
+    setDeletingWorkerNames((previous) => new Set([...previous, ...names]));
+    setSelectedWorkers((previous) => new Set([...previous].filter((name) => !names.includes(name))));
+  }, []);
+
+  const clearWorkerDeleting = useCallback((name: string) => {
+    setDeletingWorkerNames((previous) => {
+      if (!previous.has(name)) return previous;
+      const next = new Set(previous);
+      next.delete(name);
+      return next;
+    });
+  }, []);
+
   const handleBulkAction = useCallback(() => {
     if (!bulkAction || selectedWorkers.size === 0) return;
-    const names = Array.from(selectedWorkers);
+    const names = Array.from(selectedWorkers).filter((name) => !deletingWorkerNames.has(name));
+    if (names.length === 0) return;
     if (bulkAction === 'sleep') {
       names.forEach((name) => sleepWorker.mutate(name));
       toast.success(`已发送 ${names.length} 个休眠指令`);
@@ -201,12 +229,24 @@ export function WorkersSection() {
       names.forEach((name) => wakeWorker.mutate(name));
       toast.success(`已发送 ${names.length} 个唤醒指令`);
     } else if (bulkAction === 'delete') {
-      names.forEach((name) => deleteWorker.mutate(name));
+      markWorkersDeleting(names);
+      names.forEach((name) =>
+        deleteWorker.mutate(name, { onError: () => clearWorkerDeleting(name) }),
+      );
       toast.success(`已删除 ${names.length} 个 Worker`);
     }
     setSelectedWorkers(new Set());
     setBulkAction(null);
-  }, [bulkAction, selectedWorkers, sleepWorker, wakeWorker, deleteWorker]);
+  }, [
+    bulkAction,
+    selectedWorkers,
+    deletingWorkerNames,
+    sleepWorker,
+    wakeWorker,
+    deleteWorker,
+    markWorkersDeleting,
+    clearWorkerDeleting,
+  ]);
 
   const handleExport = useCallback(() => {
     if (!workers) return;
@@ -244,10 +284,12 @@ export function WorkersSection() {
   }, [createWorker, newWorker, warnIfModelAliasUnbound]);
 
   const handleDelete = useCallback(() => {
-    if (deleteTarget) {
-      deleteWorker.mutate(deleteTarget, { onSuccess: () => setDeleteTarget(null) });
-    }
-  }, [deleteTarget, deleteWorker]);
+    if (!deleteTarget) return;
+    const workerName = deleteTarget;
+    markWorkersDeleting([workerName]);
+    setDeleteTarget(null);
+    deleteWorker.mutate(workerName, { onError: () => clearWorkerDeleting(workerName) });
+  }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting]);
 
   const handleUpload = useCallback(
     async (file: File | null) => {
@@ -445,6 +487,7 @@ export function WorkersSection() {
                   onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
                   onDelete={() => setDeleteTarget(worker.name)}
                   isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
+                  isDeleting={deletingWorkerNames.has(worker.name)}
                 />
               ))}
             </div>
@@ -462,6 +505,7 @@ export function WorkersSection() {
               isActionPending={
                 wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
               }
+              deletingWorkerNames={deletingWorkerNames}
             />
           )}
           <WorkerPagination

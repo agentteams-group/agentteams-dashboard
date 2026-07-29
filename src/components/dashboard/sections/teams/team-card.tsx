@@ -30,6 +30,7 @@ export function TeamCard({
   onAddWorker,
   onShowTopology,
   isAddWorkerOpen,
+  isDeleting,
 }: {
   team: TeamResponse;
   index: number;
@@ -41,6 +42,7 @@ export function TeamCard({
   onAddWorker: (_teamName: string, _workerName: string) => void;
   onShowTopology: (_team: TeamResponse) => void;
   isAddWorkerOpen: boolean;
+  isDeleting: boolean;
 }) {
   return (
     <motion.div
@@ -59,6 +61,12 @@ export function TeamCard({
             </div>
             <PhaseBadge kind="team" phase={team.phase} />
           </div>
+
+          {isDeleting && (
+            <p role="status" className="mb-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+              删除中，等待 Controller 完成任务
+            </p>
+          )}
 
           <div className="space-y-1.5 text-sm">
             {team.description && (
@@ -91,7 +99,7 @@ export function TeamCard({
                   <span className="font-mono text-xs truncate max-w-[60%]">
                     {team.teamRoomID}
                   </span>
-                  <CopyButton text={team.teamRoomID} />
+                  <CopyButton text={team.teamRoomID} disabled={isDeleting} />
                 </div>
               </div>
             )}
@@ -109,7 +117,7 @@ export function TeamCard({
             </Button>
             <Popover
               open={isAddWorkerOpen}
-              onOpenChange={onAddWorkerPopoverChange}
+              onOpenChange={(open) => !isDeleting && onAddWorkerPopoverChange(open)}
             >
               <PopoverTrigger asChild>
                 <Button
@@ -118,6 +126,7 @@ export function TeamCard({
                   className="h-7 text-xs"
                   title="添加 Worker"
                   aria-label={`为 ${team.name} 添加 Worker`}
+                  disabled={isDeleting}
                 >
                   <UserPlus className="w-3 h-3" aria-hidden="true" />
                 </Button>
@@ -138,6 +147,7 @@ export function TeamCard({
                           key={w.name}
                           className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover:bg-muted/50 transition-colors text-left"
                           onClick={() => onAddWorker(team.name, w.name)}
+                          disabled={isDeleting}
                         >
                           <StatusDot phase={w.phase} />
                           <Bot className="w-3 h-3 text-emerald-500" aria-hidden="true" />
@@ -156,6 +166,7 @@ export function TeamCard({
               onClick={() => onShowTopology(team)}
               title="查看拓扑"
               aria-label={`查看 ${team.name} 拓扑`}
+              disabled={isDeleting}
             >
               <UserCheck className="w-3 h-3" aria-hidden="true" />
             </Button>
@@ -166,6 +177,7 @@ export function TeamCard({
               onClick={() => onEdit(team)}
               aria-label={`编辑 ${team.name}`}
               title="编辑"
+              disabled={isDeleting}
             >
               <Pencil className="w-3 h-3" aria-hidden="true" />
             </Button>
@@ -176,6 +188,7 @@ export function TeamCard({
               onClick={() => onDelete(team.name)}
               aria-label={`删除 ${team.name}`}
               title="删除"
+              disabled={isDeleting}
             >
               <Trash2 className="w-3 h-3" aria-hidden="true" />
             </Button>

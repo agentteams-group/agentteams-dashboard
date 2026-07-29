@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -109,6 +109,7 @@ export function TeamsSection() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [addWorkerPopoverOpen, setAddWorkerPopoverOpen] = useState<string | null>(null);
+  const [deletingTeamNames, setDeletingTeamNames] = useState<Set<string>>(new Set());
 
   const filteredTeams = useMemo(() => filterTeams(teams, searchQuery), [teams, searchQuery]);
   const sortedTeams = useMemo(() => sortTeams(filteredTeams, sortKey), [filteredTeams, sortKey]);
@@ -116,6 +117,15 @@ export function TeamsSection() {
     () => paginateTeams(sortedTeams, currentPage, ITEMS_PER_PAGE),
     [sortedTeams, currentPage],
   );
+
+  useEffect(() => {
+    if (!teams) return;
+    const currentNames = new Set(teams.map((team) => team.name));
+    setDeletingTeamNames((previous) => {
+      const next = new Set([...previous].filter((name) => currentNames.has(name)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [teams]);
 
   const pageSection = (
     <PaginationFooter
@@ -157,11 +167,20 @@ export function TeamsSection() {
   }, [createTeam, newTeam]);
 
   const handleDelete = useCallback(() => {
-    if (deleteTarget) {
-      deleteTeam.mutate(deleteTarget, {
-        onSuccess: () => setDeleteTarget(null),
-      });
-    }
+    if (!deleteTarget) return;
+    const teamName = deleteTarget;
+    setDeletingTeamNames((previous) => new Set([...previous, teamName]));
+    setAddWorkerPopoverOpen(null);
+    setDeleteTarget(null);
+    deleteTeam.mutate(teamName, {
+      onError: () => {
+        setDeletingTeamNames((previous) => {
+          const next = new Set(previous);
+          next.delete(teamName);
+          return next;
+        });
+      },
+    });
   }, [deleteTarget, deleteTeam]);
 
   const openEdit = useCallback((team: TeamResponse) => {
@@ -304,6 +323,7 @@ export function TeamsSection() {
                   onDelete={setDeleteTarget}
                   onAddWorker={handleAddWorker}
                   onShowTopology={setTopologyTeam}
+                  isDeleting={deletingTeamNames.has(team.name)}
                 />
               ))}
             </div>
@@ -320,6 +340,7 @@ export function TeamsSection() {
               onDelete={setDeleteTarget}
               onAddWorker={handleAddWorker}
               onShowTopology={setTopologyTeam}
+              deletingTeamNames={deletingTeamNames}
             />
           )}
           {pageSection}
