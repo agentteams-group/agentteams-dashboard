@@ -10,6 +10,7 @@ import type {
   CreateManagerRequest,
   UpdateManagerRequest,
   CreateConsumerRequest,
+  WorkerResponse,
   WorkerPhase,
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
