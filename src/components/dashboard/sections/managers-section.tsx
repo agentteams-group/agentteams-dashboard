@@ -177,9 +177,8 @@ export function ManagersSection() {
 
   const handleUpdate = useCallback(() => {
     if (!editManager) return;
-    const { name: _ignored, state: _ignoredState, ...data } = editForm;
+    const { name: _ignored, ...data } = editForm;
     void _ignored;
-    void _ignoredState;
     if (editForm.model && aiRoutes && providers && hasUnavailableModelAliases(
       [editForm.model],
       buildModelBindings([editForm.model], aiRoutes, providers),
