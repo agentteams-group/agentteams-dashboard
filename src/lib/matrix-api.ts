@@ -15,7 +15,7 @@ export interface MatrixEvent {
   sender: string;
   content: {
     msgtype?: string;
-    body?: string;
+    body?: unknown;
     format?: string;
     formatted_body?: string;
     membership?: string;

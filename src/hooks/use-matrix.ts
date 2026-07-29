@@ -297,6 +297,27 @@ export interface DisplayMessage {
   isStreaming?: boolean;
 }
 
+function normalizeMatrixMessageBody(body: unknown): string {
+  if (typeof body === 'string') return body;
+
+  if (Array.isArray(body)) {
+    return body
+      .map(normalizeMatrixMessageBody)
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (body && typeof body === 'object') {
+    const text = (body as Record<string, unknown>).text;
+    if (typeof text === 'string') return text;
+    return JSON.stringify(body) ?? '';
+  }
+
+  if (typeof body === 'number' || typeof body === 'boolean') return String(body);
+
+  return '';
+}
+
 export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): DisplayMessage | null {
   // Only display message events
   if (event.type !== 'm.room.message') return null;
@@ -322,7 +343,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     id: event.event_id,
     sender: event.sender,
     senderShort,
-    content: content.body || '',
+    content: normalizeMatrixMessageBody(content.body),
     formattedContent: content.formatted_body,
     timestamp: event.origin_server_ts,
     type: content.msgtype || 'm.text',

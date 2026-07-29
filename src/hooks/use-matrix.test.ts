@@ -4,7 +4,7 @@ import { formatMatrixEvents } from './use-matrix';
 
 function message(
   eventId: string,
-  body: string,
+  body: unknown,
   timestamp: number,
   content: Record<string, unknown> = {}
 ): MatrixEvent {
@@ -51,5 +51,33 @@ describe('formatMatrixEvents', () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ id: 'revision', content: '更新内容', isStreaming: true });
+  });
+
+  it('extracts text from structured message body parts', () => {
+    const events = [
+      message('structured', [
+        { type: 'text', text: '第一段回复' },
+        { type: 'text', text: '第二段回复' },
+      ], 100),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('第一段回复\n第二段回复');
+  });
+
+  it('serializes structured parts without text instead of coercing them', () => {
+    const events = [
+      message(
+        'tool-call',
+        [{ type: 'tool_call', name: 'search', arguments: { query: '状态' } }],
+        100
+      ),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0].content).toBe('{"type":"tool_call","name":"search","arguments":{"query":"状态"}}');
   });
 });
