@@ -25,13 +25,16 @@ const MATRIX_ENDPOINT =
   'http://agentteams-controller:6167';
 
 const HIGRESS_MODE = process.env.AGENTTEAMS_HIGRESS_ADAPTER_MODE === 'external' ? 'external' : 'direct';
-const LEGACY_HIGRESS_ENDPOINT = 'http://agentteams-controller:8001';
+// Higress exposes separate data-plane and Console endpoints in the embedded
+// topology. Dashboard runs in its own container, so loopback addresses are invalid.
+const EMBEDDED_HIGRESS_GATEWAY_ENDPOINT = 'http://aigw-local.agentteams.io:8080';
+const EMBEDDED_HIGRESS_CONSOLE_ENDPOINT = 'http://agentteams-controller:8001';
 const HIGRESS_GATEWAY_ENDPOINT =
   process.env.AGENTTEAMS_AI_GATEWAY_URL ||
-  (HIGRESS_MODE === 'direct' ? LEGACY_HIGRESS_ENDPOINT : undefined);
+  (HIGRESS_MODE === 'direct' ? EMBEDDED_HIGRESS_GATEWAY_ENDPOINT : undefined);
 const HIGRESS_CONSOLE_ENDPOINT =
   process.env.AGENTTEAMS_AI_GATEWAY_ADMIN_URL ||
-  (HIGRESS_MODE === 'direct' ? LEGACY_HIGRESS_ENDPOINT : undefined);
+  (HIGRESS_MODE === 'direct' ? EMBEDDED_HIGRESS_CONSOLE_ENDPOINT : undefined);
 
 async function fetchWithTimeout(
   url: string,
@@ -145,13 +148,13 @@ async function checkMatrix(): Promise<InfrastructureInfo['matrix']> {
   }
 }
 
-async function checkExternalService(endpoint: string | undefined) {
+async function checkExternalService(endpoint: string | undefined, healthPath = '/') {
   if (!endpoint) {
     return { configured: false, state: 'unconfigured' as const };
   }
 
   try {
-    const res = await fetchWithTimeout(new URL('/', endpoint).toString());
+    const res = await fetchWithTimeout(new URL(healthPath, endpoint).toString());
     return {
       configured: true,
       endpoint,
@@ -170,7 +173,7 @@ async function checkExternalService(endpoint: string | undefined) {
 
 async function checkHigress(): Promise<NonNullable<InfrastructureInfo['higress']>> {
   const [gateway, console] = await Promise.all([
-    checkExternalService(HIGRESS_GATEWAY_ENDPOINT),
+    checkExternalService(HIGRESS_GATEWAY_ENDPOINT, '/status'),
     checkExternalService(HIGRESS_CONSOLE_ENDPOINT),
   ]);
 

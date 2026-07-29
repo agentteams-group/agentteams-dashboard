@@ -72,7 +72,7 @@ export function getHigressConsoleURL(): string {
     if (isExternalAdapterMode()) {
       throw new HigressConsoleConfigurationError('AGENTTEAMS_AI_GATEWAY_ADMIN_URL must be configured');
     }
-    return validateHigressConsoleURL('http://127.0.0.1:8001');
+    return validateHigressConsoleURL('http://agentteams-controller:8001');
   }
   return validateHigressConsoleURL(configuredUrl);
 }

@@ -37,9 +37,7 @@ describe('Higress Console proxy configuration', () => {
     expect(() => getHigressConsoleURL()).toThrow('AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS must list the Console host');
   });
 
-  it('accepts the auto-detected Controller Console URL in direct mode', () => {
-    vi.stubEnv('AGENTTEAMS_AI_GATEWAY_ADMIN_URL', 'http://agentteams-controller:8001');
-
+  it('uses the Controller Console URL by default in direct mode', () => {
     expect(getHigressConsoleURL()).toBe('http://agentteams-controller:8001/');
   });
 

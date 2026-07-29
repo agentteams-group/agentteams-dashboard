@@ -35,6 +35,20 @@ describe('GET /api/agentteams/infrastructure', () => {
     });
   });
 
+  it('uses the embedded Gateway status endpoint and Console endpoint in direct mode', async () => {
+    const data = await getInfrastructure('direct');
+
+    expect(data.higress).toMatchObject({
+      mode: 'direct',
+      gateway: { endpoint: 'http://aigw-local.agentteams.io:8080', httpStatus: 503 },
+      console: { endpoint: 'http://agentteams-controller:8001', httpStatus: 503 },
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://aigw-local.agentteams.io:8080/status',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   it('treats every HTTP response as a reachable external service', async () => {
     const data = await getInfrastructure(
       'external',
