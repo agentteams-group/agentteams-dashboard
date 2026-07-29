@@ -19,6 +19,8 @@ import { useCreateManager, useDeleteManager, useUpdateManager } from '@/hooks/us
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
+import { useModels, useAiRoutes } from '@/hooks/use-agentteams-models';
+import { buildModelBindings, hasUnavailableModelAliases, listAvailableRequestModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -95,6 +97,8 @@ export function ManagersSection() {
   const createManager = useCreateManager();
   const deleteManager = useDeleteManager();
   const updateManager = useUpdateManager();
+  const { data: providers } = useModels();
+  const { data: aiRoutes } = useAiRoutes();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -106,6 +110,10 @@ export function ManagersSection() {
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const { viewMode, handleViewModeChange } = useViewMode('card');
+  const modelOptions = useMemo(
+    () => listAvailableRequestModelAliases(aiRoutes ?? [], providers ?? []),
+    [aiRoutes, providers],
+  );
 
   const filteredManagers = useMemo(
     () => filterManagers(managers, searchQuery),
@@ -130,13 +138,19 @@ export function ManagersSection() {
   }, [managers]);
 
   const handleCreate = useCallback(() => {
+    if (newManager.model && aiRoutes && providers && hasUnavailableModelAliases(
+      [newManager.model],
+      buildModelBindings([newManager.model], aiRoutes, providers),
+    )) {
+      toast.warning(`请求模型别名 "${newManager.model}" 在当前 AI 路由中无可解析绑定。`);
+    }
     createManager.mutate(newManager, {
       onSuccess: () => {
         setCreateOpen(false);
         setNewManager({ name: '' });
       },
     });
-  }, [createManager, newManager]);
+  }, [createManager, newManager, aiRoutes, providers]);
 
   const handleDelete = useCallback(() => {
     if (deleteTarget) {
@@ -167,11 +181,24 @@ export function ManagersSection() {
     const { name: _ignored, state: _ignoredState, ...data } = editForm;
     void _ignored;
     void _ignoredState;
+    if (editForm.model && aiRoutes && providers && hasUnavailableModelAliases(
+      [editForm.model],
+      buildModelBindings([editForm.model], aiRoutes, providers),
+    )) {
+      toast.warning(`请求模型别名 "${editForm.model}" 在当前 AI 路由中无可解析绑定。`);
+    }
     updateManager.mutate(
       { name: editManager.name, data: data as UpdateManagerRequest },
-      { onSuccess: closeEdit },
+      {
+        onSuccess: () => {
+          closeEdit();
+          if (editForm.model?.trim() && editForm.model !== editManager.model) {
+            toast.info('模型配置已保存。Controller 将在下一次 Manager 运行时调谐时加载新模型。');
+          }
+        },
+      },
     );
-  }, [editForm, editManager, updateManager, closeEdit]);
+  }, [editForm, editManager, updateManager, closeEdit, aiRoutes, providers]);
 
   const workersList: WorkerResponse[] = workers || [];
   const teamsList: TeamResponse[] = teams || [];
@@ -278,6 +305,7 @@ export function ManagersSection() {
         onChange={setNewManager}
         isPending={createManager.isPending}
         onSubmit={handleCreate}
+        modelOptions={modelOptions}
       />
 
       <ManagerEditDialog
@@ -288,6 +316,7 @@ export function ManagersSection() {
         isPending={updateManager.isPending}
         onOpenChange={(open) => !open && closeEdit()}
         onSubmit={handleUpdate}
+        modelOptions={modelOptions}
       />
 
       <ManagerDetailDialog

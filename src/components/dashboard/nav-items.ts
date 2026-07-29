@@ -12,7 +12,6 @@ import {
   GitBranch,
   FlaskConical,
   FileCheck,
-  Route,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -50,8 +49,7 @@ export const navGroups: readonly NavGroup[] = [
 ] as const;
 
 export const AI_GATEWAY_ITEMS: NavItem[] = [
-  { id: 'gateway', label: '模型服务商', icon: Network, group: 'ai-gateway' },
-  { id: 'ai-routes', label: 'AI 路由', icon: Route, group: 'ai-gateway' },
+  { id: 'gateway', label: 'AI 网关', icon: Network, group: 'ai-gateway' },
 ];
 
 export const navItems: NavItem[] = [
@@ -66,7 +64,7 @@ export const navItems: NavItem[] = [
   { id: 'policies', label: '策略', icon: Shield, group: 'governance' },
   { id: 'sandbox', label: '沙箱', icon: FlaskConical, group: 'governance' },
   { id: 'compliance', label: '合规', icon: FileCheck, group: 'governance' },
-  { id: 'ops', label: '基础设施', icon: Settings, group: 'platform', modes: ['k8s'] },
+  { id: 'ops', label: '基础设施', icon: Settings, group: 'platform' },
   { id: 'docs', label: '文档', icon: BookOpen },
 ];
 

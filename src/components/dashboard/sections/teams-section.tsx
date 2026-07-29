@@ -333,6 +333,7 @@ export function TeamsSection() {
         onChange={setNewTeam}
         isPending={createTeam.isPending}
         onSubmit={handleCreate}
+        workers={workersList}
       />
 
       <TeamEditDialog

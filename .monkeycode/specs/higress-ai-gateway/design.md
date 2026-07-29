@@ -57,17 +57,37 @@ flowchart LR
   F --> G["Higress Data Plane /v1"]
 ```
 
-Controller 是 Manager 与 Worker Consumer 生命周期和 `authConfig.allowedConsumers` 的唯一写入者。Dashboard 读取并展示 Consumer 授权状态，调用 Controller 的同步接口触发授权收敛。Dashboard 不通过 Route 编辑表单删除或覆盖 `allowedConsumers`。
+Dashboard 保留 Higress Console 返回的 `authConfig.allowedConsumers`，避免 Route 编辑造成已部署 Consumer 授权丢失。Controller Consumer 授权同步接口属于后续阶段；本期页面将模型别名绑定、Provider 状态和运行时生效语义作为可见配置状态。
 
 | 配置层 | 必需配置 | 所有者 |
 |---|---|---|
 | 部署 | `AGENTTEAMS_AI_GATEWAY_URL`、`AGENTTEAMS_AI_GATEWAY_ADMIN_URL`、Console 允许主机 | 部署管理员 |
 | Provider | 类型、协议、厂商凭据、目标模型映射；自建 OpenAI 兼容服务还需要服务源与自定义服务地址 | Dashboard 和 Higress Console |
 | AI Route | `/v1` 前缀、上游 Provider、请求别名到目标模型映射、key-auth | Dashboard 和 Higress Console |
-| Consumer 授权 | Manager 与 `worker-<name>` Consumer 位于 Route `allowedConsumers` | AgentTeams Controller |
+| Consumer 授权 | Manager 与 `worker-<name>` Consumer 位于 Route `allowedConsumers` | 后续阶段由 AgentTeams Controller 管理 |
 | 运行时 | 请求模型别名、Gateway 数据平面地址、身份 Gateway Key | AgentTeams Controller |
 
 OpenClaw 的模型字段更新只重写对象存储中的配置，Controller 不通过模型字段触发容器重建。Dashboard 必须在更新后提示并提供受控重启操作。QwenPaw 轮询 `runtime.yaml` 并在配置变更后应用模型更新，默认轮询间隔为 5 秒。
+
+### 创建流程与模型生效
+
+Dashboard 的 Matrix 聊天页面只处理对话消息。团队与 Worker 创建由 Dashboard 管理页的表单执行，调用链为：
+
+```mermaid
+flowchart LR
+  A["Dashboard Create Dialog"] --> B["Next.js AgentTeams API Route"]
+  B --> C["Controller API"]
+  C --> D["Runtime Reconciliation"]
+  D --> E["Higress Gateway /v1"]
+```
+
+| 资源 | 创建接口 | 模型字段 | 生效判断 |
+|---|---|---|---|
+| Worker | `POST /api/v1/workers` | 请求模型别名 | Controller 更新 Worker 配置；OpenClaw 重启后加载，QwenPaw 在轮询周期内加载 |
+| Manager | `POST /api/v1/managers` | 请求模型别名 | Controller 更新 Manager 配置并调谐运行时 |
+| Team | `POST /api/v1/teams` | 无 | 团队引用 Leader 和 Worker；模型由引用的 Manager 与 Worker 管理 |
+
+`ModelSelector` 从已配置 AI Route 的上游映射派生可用别名，并为每个别名展示 Route、Provider 和目标模型。管理员仍可输入与通配符映射匹配的别名。外部模式由服务端 API Route 验证别名绑定；直连模式提供页面提示。团队创建表单显示成员 Worker 的模型缺失情况，并保持 Controller 的现有请求契约。
 
 外部模式采用双层 Gateway 约束。AgentTeams Controller 是运行时地址的最终事实来源：当 `AGENTTEAMS_HIGRESS_ADAPTER_MODE=external` 时，Controller 忽略 Manager 和 Worker `modelProvider` 解析出的 `IntranetURL`，并使用 `WorkerEnv.AIGatewayURL` 生成 Manager、Worker 和运行时 OpenClaw 配置。Dashboard 在创建、更新、启动、唤醒和就绪入口提前拒绝非空 `modelProvider`，使管理员在运行时调谐前获得明确迁移提示。该策略覆盖 Dashboard 调用和直接 Controller API 调用。
 

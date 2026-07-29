@@ -18,7 +18,7 @@ AgentTeams Dashboard 需要提供 Higress AI 网关的统一配置界面，覆�
 
 ## 范围
 
-本期覆盖 AgentTeams 与已提供 Higress 实例之间的适配能力，包含模型厂商、模型映射、AI 路由的读取、配置校验、Consumer 授权同步和对 AgentTeams 模型值的绑定。运行时请求转发、计费统计、模型目录自动发现与跨集群配置同步留在后续阶段。
+本期覆盖 AgentTeams 与已提供 Higress 实例之间的适配能力，包含模型厂商、模型映射、AI 路由的读取、配置校验和对 AgentTeams 模型值的绑定。Controller Consumer 授权同步、运行时请求转发、计费统计、模型目录自动发现与跨集群配置同步留在后续阶段。
 
 Higress 的部署、安装、升级、Console 管理员初始化和默认路由创建不在本期范围。部署管理员通过 AgentTeams 部署环境提供 `AGENTTEAMS_HIGRESS_ADAPTER_MODE=external` 和 `AGENTTEAMS_AI_GATEWAY_URL`，该地址必须透传到 Controller、Manager 和 Worker 的运行时配置；部署管理员可选提供 `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` 和 `AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS` 作为 Dashboard 的 Console 管理配置。`AGENTTEAMS_HIGRESS_ADAPTER_MODE` 的默认值为 `direct`。AgentTeams Controller 继续负责 Manager、Worker 的运行时模型消费；Dashboard 负责外部 Higress 的兼容性状态、配置管理和模型绑定呈现。
 
@@ -140,18 +140,29 @@ Higress 的部署、安装、升级、Console 管理员初始化和默认路由�
 11. WHEN 外部模式请求包含非空 `modelProvider`，Dashboard SHALL 返回 409 并说明外部 Higress 使用请求模型别名和 AI Route 绑定。
 12. WHEN 外部模式下 Manager 或 Worker 已保存非空 `modelProvider`，Dashboard SHALL 在启动、唤醒和就绪操作前返回 409 并显示迁移要求。
 
-### 需求 10：统一别名路由与运行时授权同步
+### 需求 10：统一别名路由与运行时模型配置
 
-**用户故事：** 作为平台管理员，我希望将模型别名配置一次并同步给 AgentTeams 运行时，使 Manager 和 Worker 使用已授权的 Higress 路由调用目标模型。
+**用户故事：** 作为平台管理员，我希望将模型别名配置一次并写入 AgentTeams 运行时，使 Manager 和 Worker 使用 Higress 路由调用目标模型。
 
 #### 验收标准
 
 1. Dashboard SHALL 将统一别名路由的路径约束为 `/v1` 前缀，并将请求模型别名映射到指定 Provider 的目标模型。
 2. WHEN 管理员创建或更新统一别名路由，Dashboard SHALL 保留 Higress Console 返回的 `authConfig.allowedConsumers`。
-3. WHEN 管理员提交统一别名路由配置，AgentTeams Controller SHALL 将 Manager Consumer 与已部署 Worker Consumer 写入对应路由的 `authConfig.allowedConsumers`。
-4. WHEN Manager 或 Worker 的 `model` 字段更新为可用请求模型别名，AgentTeams Controller SHALL 将该别名、Gateway 数据平面地址和该身份的 Gateway Key 写入运行时配置。
-5. IF 请求模型别名没有目标模型映射、Provider 凭据或 Consumer 授权，Dashboard SHALL 阻止运行时启动并显示缺失配置项。
-6. WHEN OpenClaw 运行时接收模型配置更新，Dashboard SHALL 显示需要重启运行时的状态；WHEN QwenPaw 运行时接收模型配置更新，Dashboard SHALL 显示运行时轮询同步状态。
+3. WHEN 管理员创建或编辑 Manager 或 Worker，Dashboard SHALL 展示可用请求模型别名及其路由、Provider 和目标模型。
+4. WHEN Manager 或 Worker 的 `model` 字段更新为可用请求模型别名，AgentTeams Controller SHALL 将该别名和 Gateway 数据平面地址写入运行时配置。
+5. IF 请求模型别名没有目标模型映射或 Provider 凭据，Dashboard SHALL 指出缺失配置项；外部模式 SHALL 拒绝创建、更新、启动和唤醒请求。
+6. WHEN OpenClaw 运行时接收模型配置更新，Dashboard SHALL 显示重启运行时后的生效说明；WHEN QwenPaw 运行时接收模型配置更新，Dashboard SHALL 显示约 5 秒的轮询同步说明。
+
+### 需求 11：团队创建模型引导
+
+**用户故事：** 作为平台管理员，我希望在创建团队时确认 Leader 和成员的模型配置，使团队进入调谐状态后具备可用的模型调用配置。
+
+#### 验收标准
+
+1. Dashboard SHALL 将团队模型配置归属说明为 Leader 运行时和 Worker 的 `model` 字段。
+2. WHEN 管理员创建团队，Dashboard SHALL 展示所选成员中缺少模型别名的 Worker 名称。
+3. WHEN 团队创建成功，Dashboard SHALL 提示管理员在 Manager 与 Worker 页面完成模型别名配置并等待团队状态进入 Active。
+4. Dashboard SHALL 保持团队创建请求与 AgentTeams Controller 的既有 `POST /api/v1/teams` 契约一致。
 
 ## 非功能性约束
 

@@ -23,4 +23,22 @@ describe('ModelSelector', () => {
 
     expect(onChange).toHaveBeenCalledWith('team-chat');
   });
+
+  it('shows the configured target for a selectable alias', () => {
+    render(
+      <ModelSelector
+        value="team-chat"
+        onChange={vi.fn()}
+        options={[{
+          requestModelAlias: 'team-chat',
+          routeName: 'chat',
+          providerName: 'openai',
+          targetModel: 'gpt-4.1',
+          available: true,
+        }]}
+      />,
+    );
+
+    expect(screen.getByText('通过路由 chat 转发至 openai / gpt-4.1')).toBeInTheDocument();
+  });
 });

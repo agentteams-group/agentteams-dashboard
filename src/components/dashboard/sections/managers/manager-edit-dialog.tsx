@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { UpdateManagerRequest, ManagerState } from '@/lib/agentteams-api';
+import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export type ManagerEditForm = UpdateManagerRequest & { name?: string; state?: string };
@@ -32,6 +33,7 @@ export function ManagerEditDialog({
   isPending,
   onOpenChange,
   onSubmit,
+  modelOptions,
 }: {
   open: boolean;
   managerName: string | null;
@@ -40,6 +42,7 @@ export function ManagerEditDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
+  modelOptions: AgentTeamsModelBinding[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,6 +57,7 @@ export function ManagerEditDialog({
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}
               placeholder="例如 team-chat"
+              options={modelOptions}
             />
           </div>
           <div className="space-y-2">

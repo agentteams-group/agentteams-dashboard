@@ -77,6 +77,13 @@ function resolveInitialExpandedGroups(activeSection: string): Set<string> {
   return activeGroup ? new Set([activeGroup]) : new Set();
 }
 
+export function toggleExpandedGroup(groups: Set<string>, groupId: string): Set<string> {
+  const next = new Set(groups);
+  if (next.has(groupId)) next.delete(groupId);
+  else next.add(groupId);
+  return next;
+}
+
 export function useActiveSection() {
   const [activeSection, setActiveSectionInternal] = useState<string>(resolveInitialSection);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() =>

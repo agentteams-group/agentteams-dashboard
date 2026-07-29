@@ -24,7 +24,7 @@ interface MobileSidebarProps {
   onNavClick: (_sectionId: string) => void;
   onClose: () => void;
   expandedGroups: Set<string>;
-  onToggleGroup: (_groupId: string, _ctrlKey: boolean) => void;
+  onToggleGroup: (_groupId: string) => void;
   mode?: DeploymentMode | null;
 }
 
@@ -56,7 +56,7 @@ export function MobileSidebar({
     (groupId: string) =>
       (e: React.MouseEvent) => {
         e.stopPropagation();
-        onToggleGroup(groupId, e.ctrlKey || e.metaKey);
+        onToggleGroup(groupId);
       },
     [onToggleGroup]
   );

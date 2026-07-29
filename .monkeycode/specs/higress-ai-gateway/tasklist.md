@@ -42,9 +42,12 @@
   - [x] 6.1 更新基础设施、总览、安全与洞察组件，使其分别展示 Gateway 运行时状态与 Console 管理状态。参见需求 9.1-9.4、设计“错误处理”。
     - [x] 6.2 执行 `npm run lint`、`npm run typecheck` 和 `npm test`，记录每项命令的结果并修复本功能引入的失败。参见设计实施顺序 10。已于 2026-07-27 验证：lint、typecheck 通过；Vitest 27 个文件、209 项测试通过。
 
-- [ ] 7. 实现统一别名路由运行时闭环
+- [ ] 7. 实现统一别名路由运行时模型配置
   - [ ] 7.1 扩展 Higress Route 类型、读取转换和序列化逻辑，保留 `authConfig.allowedConsumers`，并防止 Dashboard Route 编辑覆盖已部署 Agent Consumer 授权。参见需求 10.2、设计“统一别名路由运行时闭环”。
-  - [ ] 7.2 在 AgentTeams Controller 暴露受认证的授权同步接口，复用 `gateway.Client.AuthorizeAIRoutes` 将 Manager 和已部署 Worker Consumer 写入目标路由。参见需求 10.3、设计“统一别名路由运行时闭环”。
-  - [ ] 7.3 在 Dashboard 增加统一别名路由应用操作，依次验证 Provider 凭据、目标模型映射、`/v1` Route、Controller Consumer 授权和运行时模型别名。参见需求 10.1、10.3-10.5。
-  - [ ] 7.4 在 Manager 和 Worker 页面展示模型绑定、授权同步状态及运行时更新语义；OpenClaw 展示受控重启操作，QwenPaw 展示轮询同步状态。参见需求 10.4、10.6。
-  - [ ] 7.5 为标准 Higress `{ success, data }` 响应、授权保留、Controller 授权同步、未绑定别名阻止启动和运行时更新提示编写路由、单元与组件测试。参见需求 10.2-10.6。
+  - [ ] 7.2 在 Manager 和 Worker 创建、编辑表单中提供已绑定请求模型别名的选择与绑定详情，并保留通配符别名输入能力。参见需求 10.3、设计“创建流程与模型生效”。
+  - [ ] 7.3 在 Worker 与 Manager 模型更新完成后展示运行时生效说明；OpenClaw 提示重启，QwenPaw 提示轮询同步。参见需求 10.4-10.6。
+  - [ ] 7.4 在团队创建表单中展示 Leader 和成员的模型配置边界及缺少模型的成员。参见需求 11。
+  - [ ] 7.5 为模型别名选择、团队模型引导、模型更新生效提示和未绑定别名阻止启动编写单元、组件与路由测试。参见需求 10、需求 11。
+
+- [ ] 8. 后续阶段：Controller Consumer 授权同步
+  - [ ] 8.1 在 AgentTeams Controller 暴露受认证的授权同步接口，复用 `gateway.Client.AuthorizeAIRoutes` 将 Manager 与已部署 Worker Consumer 写入目标 Route。参见原需求 10.3 与设计“统一别名路由运行时闭环”。

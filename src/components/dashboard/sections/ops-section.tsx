@@ -1,13 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Server, Container, HardDrive, FileText, Brain } from 'lucide-react';
+import { Server, Container, HardDrive, FileText } from 'lucide-react';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { InfrastructureSection } from './infrastructure-section';
 import { K8sSection } from './k8s-section';
 import { StorageSection } from './storage-section';
 import { LogsSection } from './logs-section';
-import { ModelsSection } from './models-section';
 
 interface TabDef {
   id: string;
@@ -22,7 +21,6 @@ const TABS: TabDef[] = [
   { id: 'k8s', label: 'K8s 资源', icon: Container, modes: ['k8s'], component: K8sSection },
   { id: 'storage', label: '存储', icon: HardDrive, modes: ['embedded'], component: StorageSection },
   { id: 'logs', label: '日志', icon: FileText, modes: ['embedded'], component: LogsSection },
-  { id: 'models', label: '模型', icon: Brain, modes: ['embedded'], component: ModelsSection },
 ];
 
 export function OpsSection() {

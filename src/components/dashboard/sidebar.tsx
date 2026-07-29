@@ -39,7 +39,7 @@ interface SidebarProps {
   onNavClick: (_sectionId: string) => void;
   onToggleCollapse: () => void;
   expandedGroups: Set<string>;
-  onToggleGroup: (_groupId: string, _ctrlKey: boolean) => void;
+  onToggleGroup: (_groupId: string) => void;
   mode?: DeploymentMode | null;
 }
 
@@ -133,7 +133,7 @@ interface NavGroupSectionProps {
   sectionsWithNotifications: Set<string>;
   collapsed: boolean;
   onNavClick: (_sectionId: string) => void;
-  onToggleGroup: (_groupId: string, _ctrlKey: boolean) => void;
+  onToggleGroup: (_groupId: string) => void;
 }
 
 function NavGroupSection({
@@ -157,7 +157,7 @@ function NavGroupSection({
   const handleToggle = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onToggleGroup(group.id, e.ctrlKey || e.metaKey);
+      onToggleGroup(group.id);
     },
     [group.id, onToggleGroup]
   );
@@ -304,7 +304,7 @@ export function Sidebar({
 
   return (
     <aside
-      className={`hidden md:flex flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 ${
+      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 ${
         collapsed ? 'w-16' : 'w-56'
       }`}
     >

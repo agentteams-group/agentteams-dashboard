@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
+import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function WorkerCreateDialog({
@@ -30,6 +31,7 @@ export function WorkerCreateDialog({
   onChange,
   isPending,
   onSubmit,
+  modelOptions,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -37,6 +39,7 @@ export function WorkerCreateDialog({
   onChange: (_next: CreateWorkerRequest) => void;
   isPending: boolean;
   onSubmit: () => void;
+  modelOptions: AgentTeamsModelBinding[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,6 +81,7 @@ export function WorkerCreateDialog({
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}
               placeholder="例如 team-chat"
+              options={modelOptions}
             />
           </div>
           <div className="space-y-2">

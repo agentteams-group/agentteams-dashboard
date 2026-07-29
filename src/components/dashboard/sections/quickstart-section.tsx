@@ -100,10 +100,10 @@ export function QuickstartSection() {
     {
       step: 3,
       title: '创建 Worker',
-      desc: '创建你的第一个 AI Agent Worker。',
+      desc: '创建你的第一个 AI Agent Worker，并写入 AI 网关中已配置的请求模型别名。',
       code: `curl -X POST ${baseUrl}/api/v1/workers \\
   -H "Content-Type: application/json" \\
-  -d '{"name":"my-worker","runtime":"openclaw"}'`,
+   -d '{"name":"my-worker","runtime":"openclaw","model":"team-chat"}'`,
       expected: 'Worker 创建成功',
     },
     {
@@ -118,10 +118,10 @@ export function QuickstartSection() {
     {
       step: 5,
       title: '创建 Manager',
-      desc: '部署 Manager 来领导团队。',
+      desc: '部署 Manager 来领导团队，并写入 AI 网关中已配置的请求模型别名。',
       code: `curl -X POST ${baseUrl}/api/v1/managers \\
   -H "Content-Type: application/json" \\
-  -d '{"name":"my-manager","model":"gpt-4"}'`,
+   -d '{"name":"my-manager","model":"team-chat"}'`,
       expected: 'Manager 创建成功',
     },
     {

@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { CreateTeamRequest } from '@/lib/agentteams-api';
+import type { CreateTeamRequest, WorkerResponse } from '@/lib/agentteams-api';
 
 export function TeamCreateDialog({
   open,
@@ -20,6 +20,7 @@ export function TeamCreateDialog({
   isPending,
   onOpenChange,
   onSubmit,
+  workers,
 }: {
   open: boolean;
   value: CreateTeamRequest;
@@ -27,7 +28,11 @@ export function TeamCreateDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
+  workers: WorkerResponse[];
 }) {
+  const selectedWorkers = workers.filter((worker) => value.workerNames?.includes(worker.name));
+  const workersWithoutModel = selectedWorkers.filter((worker) => !worker.model?.trim());
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -82,6 +87,18 @@ export function TeamCreateDialog({
               }
               placeholder="worker1, worker2"
             />
+          </div>
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+            <p>团队模型由 Leader 运行时与成员 Worker 的“请求模型别名”分别管理。</p>
+            {workersWithoutModel.length > 0 ? (
+              <p className="text-amber-600 dark:text-amber-400">
+                以下已选 Worker 仍需配置模型：{workersWithoutModel.map((worker) => worker.name).join('、')}
+              </p>
+            ) : selectedWorkers.length > 0 ? (
+              <p className="text-emerald-600 dark:text-emerald-400">已选 Worker 均已填写请求模型别名。</p>
+            ) : (
+              <p>添加成员后可在此检查成员模型配置。</p>
+            )}
           </div>
         </div>
         <DialogFooter>

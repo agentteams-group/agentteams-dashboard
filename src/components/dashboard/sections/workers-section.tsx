@@ -27,7 +27,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import { useModels, useAiRoutes } from '@/hooks/use-agentteams-models';
-import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
+import { buildModelBindings, hasUnavailableModelAliases, listAvailableRequestModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -117,6 +117,12 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
   );
 }
 
+function runtimeModelUpdateMessage(runtime: CreateWorkerRequest['runtime'] | undefined): string {
+  if (runtime === 'openclaw') return '模型配置已保存。OpenClaw 会在 Worker 重启后加载新模型。';
+  if (runtime === 'qwenpaw') return '模型配置已保存。QwenPaw 会在约 5 秒的轮询周期内加载新模型。';
+  return '模型配置已保存。Controller 将在下一次运行时调谐时加载新模型。';
+}
+
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
   const { isConnected } = useAgentTeamsStore();
@@ -150,6 +156,10 @@ export function WorkersSection() {
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
+  const modelOptions = useMemo(
+    () => listAvailableRequestModelAliases(aiRoutes ?? [], providers ?? []),
+    [aiRoutes, providers],
+  );
 
   const filtered = useMemo(() => filterWorkers(workers, searchQuery), [workers, searchQuery]);
   const sorted = useMemo(() => sortWorkers(filtered, sortKey), [filtered, sortKey]);
@@ -277,7 +287,14 @@ export function WorkersSection() {
     warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
-      { onSuccess: closeEdit }
+      {
+        onSuccess: () => {
+          closeEdit();
+          if (editForm.model?.trim() && editForm.model !== editWorker.model) {
+            toast.info(runtimeModelUpdateMessage(editForm.runtime ?? editWorker.runtime));
+          }
+        },
+      }
     );
   }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound]);
 
@@ -462,6 +479,7 @@ export function WorkersSection() {
         onChange={setNewWorker}
         isPending={createWorker.isPending}
         onSubmit={handleCreate}
+        modelOptions={modelOptions}
       />
 
       <WorkerEditDialog
@@ -472,6 +490,7 @@ export function WorkersSection() {
         isPending={updateWorker.isPending}
         onOpenChange={(open) => !open && closeEdit()}
         onSubmit={handleUpdate}
+        modelOptions={modelOptions}
       />
 
       <WorkerDetailDialog

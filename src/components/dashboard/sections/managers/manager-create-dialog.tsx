@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { CreateManagerRequest } from '@/lib/agentteams-api';
+import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function ManagerCreateDialog({
@@ -20,6 +21,7 @@ export function ManagerCreateDialog({
   isPending,
   onOpenChange,
   onSubmit,
+  modelOptions,
 }: {
   open: boolean;
   value: CreateManagerRequest;
@@ -27,6 +29,7 @@ export function ManagerCreateDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
+  modelOptions: AgentTeamsModelBinding[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -49,6 +52,7 @@ export function ManagerCreateDialog({
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}
               placeholder="例如 team-chat"
+              options={modelOptions}
             />
           </div>
           <div className="space-y-2">

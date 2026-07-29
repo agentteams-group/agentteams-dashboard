@@ -98,3 +98,28 @@ export function hasUnavailableModelAliases(
     (alias) => !bindings.some((binding) => binding.requestModelAlias === alias && binding.available),
   );
 }
+
+export function listAvailableRequestModelAliases(
+  routes: AiRoute[],
+  providers: LlmProviderResponse[],
+): AgentTeamsModelBinding[] {
+  const aliases = new Set<string>();
+
+  for (const route of routes) {
+    for (const predicate of route.modelPredicates ?? []) {
+      const alias = typeof predicate.matchValue === 'string' ? predicate.matchValue.trim() : '';
+      if (predicate.matchType === 'EXACT' && alias && !alias.includes('*') && !alias.startsWith('~')) {
+        aliases.add(alias);
+      }
+    }
+    for (const upstream of route.upstreams) {
+      for (const alias of Object.keys(upstream.modelMapping ?? {})) {
+        // Wildcard and regular-expression mappings accept administrator-provided
+        // concrete aliases, so only exact mappings can be offered as fixed choices.
+        if (alias && !alias.includes('*') && !alias.startsWith('~')) aliases.add(alias);
+      }
+    }
+  }
+
+  return buildModelBindings([...aliases], routes, providers).filter((binding) => binding.available);
+}

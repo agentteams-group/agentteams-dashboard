@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useActiveSection } from './use-active-section';
+import { toggleExpandedGroup, useActiveSection } from './use-active-section';
 import { STORAGE_KEY, EXPANDED_GROUPS_KEY } from './nav-items';
 
 function setHash(hash: string) {
@@ -130,6 +130,13 @@ describe('useActiveSection', () => {
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.expandedGroups.has('agents')).toBe(true);
       expect(result.current.expandedGroups.has('platform')).toBe(true);
+    });
+
+    it('toggles the active group closed and open again', () => {
+      const expanded = new Set(['agents']);
+      expect(toggleExpandedGroup(expanded, 'agents')).toEqual(new Set());
+      expect(toggleExpandedGroup(expanded, 'platform')).toEqual(new Set(['agents', 'platform']));
+      expect(expanded).toEqual(new Set(['agents']));
     });
   });
 });

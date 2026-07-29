@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildModelBindings, hasUnavailableModelAliases } from './model-bindings';
+import { buildModelBindings, hasUnavailableModelAliases, listAvailableRequestModelAliases } from './model-bindings';
 
 describe('model bindings', () => {
   it('marks an alias available when its route, provider, and target model are available', () => {
@@ -90,5 +90,25 @@ describe('model bindings', () => {
     };
 
     expect(() => buildModelBindings(['team-chat'], [route], [{ name: 'openai', type: 'openai', tokenCount: 1 }])).not.toThrow();
+  });
+
+  it('lists exact aliases that users can select in Manager and Worker forms', () => {
+    const aliases = listAvailableRequestModelAliases(
+      [{
+        name: 'chat',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+        modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+        upstreams: [{ provider: 'openai', weight: 100, modelMapping: { '*': 'gpt-4.1' } }],
+      }],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }],
+    );
+
+    expect(aliases).toEqual([{
+      requestModelAlias: 'team-chat',
+      routeName: 'chat',
+      providerName: 'openai',
+      targetModel: 'gpt-4.1',
+      available: true,
+    }]);
   });
 });

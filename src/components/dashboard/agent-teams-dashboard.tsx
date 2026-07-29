@@ -42,6 +42,7 @@ import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useEnsureAiGateway } from '@/hooks/use-ensure-ai-gateway';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
+import { toggleExpandedGroup } from './use-active-section';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -254,23 +255,9 @@ export function AgentTeamsDashboard() {
     setMobileMenuOpen(false);
   }, [setActiveSection]);
 
-  const handleToggleGroup = useCallback((groupId: string, ctrlKey: boolean) => {
-    const activeGroupId = navItems.find((item) => item.id === activeSection)?.group;
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (ctrlKey) {
-        // Ctrl+click: toggle independently
-        if (next.has(groupId) && groupId !== activeGroupId) next.delete(groupId);
-        else next.add(groupId);
-      } else {
-        // Preserve the group containing the active section.
-        next.clear();
-        next.add(groupId);
-        if (activeGroupId) next.add(activeGroupId);
-      }
-      return next;
-    });
-  }, [activeSection, setExpandedGroups]);
+  const handleToggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((prev) => toggleExpandedGroup(prev, groupId));
+  }, [setExpandedGroups]);
 
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
@@ -285,7 +272,7 @@ export function AgentTeamsDashboard() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="min-h-screen flex flex-col bg-background">
+      <div className="h-dvh overflow-hidden flex flex-col bg-background">
         <div className="flex flex-1 min-h-0">
           <Sidebar
             activeSection={activeSection}
@@ -311,7 +298,7 @@ export function AgentTeamsDashboard() {
             mode={mode}
           />
 
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
             <DashboardHeader
               isConnected={isConnected}
               workerCount={workerCount}

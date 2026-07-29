@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/agentteams-api';
+import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 import { McpServersField } from './worker-create-dialog';
 
@@ -34,6 +35,7 @@ export function WorkerEditDialog({
   isPending,
   onOpenChange,
   onSubmit,
+  modelOptions,
 }: {
   open: boolean;
   workerName: string | null;
@@ -42,6 +44,7 @@ export function WorkerEditDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
+  modelOptions: AgentTeamsModelBinding[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,6 +59,7 @@ export function WorkerEditDialog({
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}
               placeholder="例如 team-chat"
+              options={modelOptions}
             />
           </div>
           <div className="space-y-2">
