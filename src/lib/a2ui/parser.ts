@@ -23,7 +23,7 @@ import { tryParseAgentReprBlocks } from './agent-repr';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'card' | 'text';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'card' | 'text';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
@@ -68,6 +68,16 @@ export function parseA2uiContent(
       hasA2ui: false,
       hasThinking: agentBlocks.hasThinking,
       hasToolCall: agentBlocks.hasToolCall,
+    };
+  }
+
+  const confirmation = parseToolGuardConfirmation(body);
+  if (confirmation) {
+    return {
+      blocks: [{ type: 'confirmation', payload: confirmation }],
+      hasA2ui: false,
+      hasThinking: false,
+      hasToolCall: false,
     };
   }
 
@@ -137,6 +147,36 @@ export function parseA2uiContent(
   }
 
   return { blocks, hasA2ui, hasThinking, hasToolCall };
+}
+
+/**
+ * Recognize the text confirmation prompt emitted by Tool Guard. The runtime
+ * consumes `/approve` for approval and treats every other reply as a denial.
+ */
+function parseToolGuardConfirmation(body: string): Record<string, unknown> | null {
+  if (
+    !/Waiting for approval\s*\/\s*等待审批/i.test(body) ||
+    !/Type\s+\/approve\s+to approve, or send any message to deny\./i.test(body)
+  ) {
+    return null;
+  }
+
+  const field = (label: string) => {
+    const match = body.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
+    return match?.[1]?.trim();
+  };
+  const parameters = body.match(/Parameters\s*\/\s*参数:\s*([\s\S]*?)(?=^💡|^⚠️|^❌|$)/mi)?.[1]?.trim();
+  const externalFiles = body.match(/Files outside workspace:\s*([\s\S]*?)(?=^⚠️|^❌|$)/mi)?.[1]?.trim();
+
+  return {
+    runtime: 'Tool Guard',
+    toolName: field('Tool\\s*\\/\\s*工具') || '未知工具',
+    triggeredBy: field('Triggered by\\s*\\/\\s*触发来源'),
+    parameters,
+    externalFiles,
+    approveReply: '/approve',
+    rejectReply: '拒绝',
+  };
 }
 
 /**

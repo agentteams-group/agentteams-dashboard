@@ -143,6 +143,7 @@ function ChatMessages({
   items,
   autoScroll,
   onJumpToLatest,
+  onConfirmationReply,
 }: {
   isLoading: boolean;
   hasNextPage: boolean;
@@ -151,6 +152,7 @@ function ChatMessages({
   items: DisplayItem[];
   autoScroll: boolean;
   onJumpToLatest: () => void;
+  onConfirmationReply: (reply: string) => Promise<void>;
 }) {
   return (
     <>
@@ -198,7 +200,7 @@ function ChatMessages({
             item.type === 'date' ? (
               <DateSeparator key={item.key} date={item.date} />
             ) : (
-              <MessageBubble key={item.key} message={item.message} showSender={item.showSender} />
+              <MessageBubble key={item.key} message={item.message} showSender={item.showSender} onConfirmationReply={onConfirmationReply} />
             )
           )}
         </>
@@ -391,6 +393,13 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
     );
   }, [inputValue, room.id, sendMessage, userId, sendTyping, currentMentions]);
 
+  const handleConfirmationReply = useCallback(
+    async (reply: string) => {
+      await sendMessage.mutateAsync({ roomId: room.id, body: reply });
+    },
+    [room.id, sendMessage]
+  );
+
   // File upload handler
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -527,6 +536,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
             isFetchingNextPage={!!messagesQuery.isFetchingNextPage}
             onLoadMore={() => messagesQuery.fetchNextPage()}
             items={displayItems}
+            onConfirmationReply={handleConfirmationReply}
             autoScroll={autoScroll}
             onJumpToLatest={() => {
               if (scrollRef.current) {

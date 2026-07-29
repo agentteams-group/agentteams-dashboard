@@ -10,11 +10,12 @@ interface StreamingCardProps {
 }
 
 function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
-  const [open, setOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '未知工具';
   const args = payload.arguments ?? payload.args;
   const result = payload.result;
   const status = typeof payload.status === 'string' ? payload.status : undefined;
+  const open = userOpen ?? (status === 'running');
 
   const formatJson = (data: unknown): string => {
     if (typeof data === 'string') return data;
@@ -31,7 +32,7 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
         variant="ghost"
         size="sm"
         className="w-full justify-between px-3 py-2 h-auto hover:bg-blue-500/10"
-        onClick={() => setOpen(!open)}
+        onClick={() => setUserOpen((previous) => !(previous ?? (status === 'running')))}
       >
         <span className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400">
           <Wrench className="w-3.5 h-3.5" />

@@ -24,9 +24,11 @@ function MessageStatus({ status }: { status?: 'sending' | 'sent' | 'error' }) {
 export function MessageBubble({
   message,
   showSender,
+  onConfirmationReply,
 }: {
   message: DisplayMessage;
   showSender: boolean;
+  onConfirmationReply?: (reply: string) => Promise<void>;
 }) {
   const time = formatTime(message.timestamp);
   const isNotice = message.type === 'm.notice';
@@ -102,6 +104,7 @@ export function MessageBubble({
               formattedContent={message.formattedContent}
               isStreaming={message.isStreaming}
               messageId={message.id}
+              onConfirmationReply={onConfirmationReply}
             />
           )}
         </div>

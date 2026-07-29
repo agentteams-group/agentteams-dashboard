@@ -158,6 +158,33 @@ describe('tryParseAgentReprBlocks', () => {
 });
 
 describe('parseA2uiContent integration', () => {
+  it('parses Tool Guard confirmation prompts into an actionable block', () => {
+    const result = parseA2uiContent(`⏳ Waiting for approval / 等待审批
+
+Tool / 工具: execute_shell_command
+Triggered by / 触发来源: Tool Guard / 工具护栏
+Parameters / 参数:
+{ "command": "rm /root/manager-workspace/pending-workers.json" }
+
+💡 Triggered by tool guardrails
+Type /approve to approve, or send any message to deny.
+
+⚠️ Warning: Files outside workspace detected!
+• ~/pending-workers.json → /root/manager-workspace/pending-workers.json`);
+
+    expect(result.blocks).toEqual([
+      {
+        type: 'confirmation',
+        payload: expect.objectContaining({
+          toolName: 'execute_shell_command',
+          triggeredBy: 'Tool Guard / 工具护栏',
+          approveReply: '/approve',
+          rejectReply: '拒绝',
+        }),
+      },
+    ]);
+  });
+
   it('parses repr bodies even when a formatted_body exists', () => {
     const result = parseA2uiContent(
       ASSISTANT_MESSAGE_REPR,

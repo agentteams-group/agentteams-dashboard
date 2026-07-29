@@ -7,7 +7,8 @@ import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, ShieldAlert, Terminal, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   parseA2uiContent,
   legacyToA2uiMessages,
@@ -190,6 +191,8 @@ interface A2uiChatContentProps {
   isStreaming?: boolean;
   /** Message ID for unique surface keys */
   messageId: string;
+  /** Sends a response defined by a recognized runtime confirmation protocol. */
+  onConfirmationReply?: (reply: string) => Promise<void>;
 }
 
 /**
@@ -204,6 +207,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
   formattedContent,
   isStreaming = false,
   messageId,
+  onConfirmationReply,
 }: A2uiChatContentProps) {
   const useStreamingText = isStreaming
     && content.length > 0
@@ -220,6 +224,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
     formattedContent={formattedContent}
     isStreaming={isStreaming}
     messageId={messageId}
+    onConfirmationReply={onConfirmationReply}
   />;
 });
 
@@ -228,6 +233,7 @@ const ParsedChatContent = memo(function ParsedChatContent({
   formattedContent,
   isStreaming = false,
   messageId,
+  onConfirmationReply,
 }: A2uiChatContentProps) {
   const result = useMemo(
     () => parseA2uiContent(content, formattedContent),
@@ -239,7 +245,7 @@ const ParsedChatContent = memo(function ParsedChatContent({
   }
 
   // Legacy format - use existing components with A2UI wrapping
-  return <LegacyBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} />;
+  return <LegacyBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} onConfirmationReply={onConfirmationReply} />;
 });
 
 // ─── A2uiBlocks ──────────────────────────────────────────────────────────────
@@ -284,10 +290,12 @@ const LegacyBlocks = memo(function LegacyBlocks({
   blocks,
   messageId,
   isStreaming,
+  onConfirmationReply,
 }: {
   blocks: ParsedA2uiBlock[];
   messageId: string;
   isStreaming: boolean;
+  onConfirmationReply?: (reply: string) => Promise<void>;
 }) {
   return (
     <div className="space-y-1">
@@ -315,6 +323,15 @@ const LegacyBlocks = memo(function LegacyBlocks({
               />
             ) : null;
 
+          case 'confirmation':
+            return block.payload ? (
+              <ToolGuardConfirmationCard
+                key={key}
+                payload={block.payload}
+                onReply={onConfirmationReply}
+              />
+            ) : null;
+
           case 'card':
             return block.payload ? (
               <A2uiSurfaceRenderer
@@ -335,3 +352,79 @@ const LegacyBlocks = memo(function LegacyBlocks({
     </div>
   );
 });
+
+function ToolGuardConfirmationCard({
+  payload,
+  onReply,
+}: {
+  payload: Record<string, unknown>;
+  onReply?: (reply: string) => Promise<void>;
+}) {
+  const [reply, setReply] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isSubmitting = reply !== null && reply !== 'sent';
+  const toolName = typeof payload.toolName === 'string' ? payload.toolName : '未知工具';
+  const triggeredBy = typeof payload.triggeredBy === 'string' ? payload.triggeredBy : undefined;
+  const parameters = typeof payload.parameters === 'string' ? payload.parameters : undefined;
+  const externalFiles = typeof payload.externalFiles === 'string' ? payload.externalFiles : undefined;
+
+  const submit = async (nextReply: string) => {
+    if (!onReply || reply) return;
+    setReply(nextReply);
+    setError(null);
+    try {
+      await onReply(nextReply);
+      setReply('sent');
+    } catch {
+      setReply(null);
+      setError('回复发送失败，请重试。');
+    }
+  };
+
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-start gap-2 border-b border-amber-500/20 px-3 py-2">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">等待审批</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">工具护栏请求确认后执行操作</p>
+        </div>
+      </div>
+      <div className="space-y-2 px-3 py-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">工具</span>
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{toolName}</code>
+        </div>
+        {triggeredBy && <p className="text-muted-foreground">触发来源：{triggeredBy}</p>}
+        {parameters && (
+          <div>
+            <p className="mb-1 text-muted-foreground">参数</p>
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px]">{parameters}</pre>
+          </div>
+        )}
+        {externalFiles && (
+          <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800 dark:text-amber-200">
+            <p className="font-medium">检测到工作区外文件</p>
+            <pre className="mt-1 whitespace-pre-wrap text-[11px]">{externalFiles}</pre>
+          </div>
+        )}
+        {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
+        {reply === 'sent' ? (
+          <p className="font-medium text-emerald-600 dark:text-emerald-400">已发送回复，等待运行时处理。</p>
+        ) : (
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" className="h-7 text-xs" disabled={!onReply || isSubmitting} onClick={() => submit('/approve')}>
+              {isSubmitting && reply === '/approve' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              批准
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!onReply || isSubmitting} onClick={() => submit('拒绝')}>
+              {isSubmitting && reply === '拒绝' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              拒绝
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

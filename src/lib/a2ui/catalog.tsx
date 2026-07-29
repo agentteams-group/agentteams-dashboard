@@ -124,11 +124,12 @@ const ToolCallBlock = createComponentImplementation(
     const toolName = typeof props.toolName === 'string' ? props.toolName : '工具调用';
     const status = (props.status as string) ?? 'success';
     const isStreaming = props.isStreaming === true;
-    const [open, setOpen] = useState(false);
+    const [userOpen, setUserOpen] = useState<boolean | null>(null);
     const [copied, setCopied] = useState(false);
 
     const argsStr = formatJson(props.arguments);
     const resultStr = formatJson(props.result);
+    const open = userOpen ?? (isStreaming || status === 'running');
 
     const copyResult = () => {
       navigator.clipboard.writeText(resultStr);
@@ -157,7 +158,7 @@ const ToolCallBlock = createComponentImplementation(
     return (
       <div className="my-2 rounded-lg border border-blue-500/20 bg-blue-500/5 overflow-hidden">
         <button
-          onClick={() => setOpen(!open)}
+          onClick={() => setUserOpen((previous) => !(previous ?? (isStreaming || status === 'running')))}
           className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-blue-500/10 transition-colors"
         >
           {isStreaming ? (
