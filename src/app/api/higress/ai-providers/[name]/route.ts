@@ -59,19 +59,20 @@ export async function PUT(
     if (rejected) return rejected;
     const cookie = getSessionCookie(request);
     const body: unknown = await request.json().catch(() => null);
-    const validationErrors = validateProviderPayload(body, true);
+    const provider = isRecord(body) ? { ...body, name } : body;
+    const validationErrors = validateProviderPayload(provider, true);
     if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
     const { response, body: resBody } = await callHigressConsole(
       `/v1/ai/providers/${encodeURIComponent(name)}`,
-       { method: 'PUT', body: body as Record<string, unknown>, cookie }
+      { method: 'PUT', body: provider as Record<string, unknown>, cookie }
     );
 
     if (!response.ok) {
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(maskProvider(unwrapData(resBody) ?? body));
+    return NextResponse.json(maskProvider(unwrapData(resBody) ?? provider));
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to update provider');
   }

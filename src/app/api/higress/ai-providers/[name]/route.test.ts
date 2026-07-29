@@ -37,12 +37,12 @@ describe('AI provider item route', () => {
     });
   });
 
-  it('preserves existing tokens when an update omits them', async () => {
+  it('uses the URL provider name when an update omits it', async () => {
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 200 }),
       body: { name: 'provider/a', tokens: ['secret'] },
     });
-    const payload = { name: 'provider/a', type: 'openai', protocol: 'openai/v1' };
+    const payload = { type: 'openai', protocol: 'openai/v1' };
 
     const response = await PUT(new NextRequest('http://dashboard.test/api/higress/ai-providers/provider%2Fa', {
       method: 'PUT',
@@ -52,7 +52,7 @@ describe('AI provider item route', () => {
     expect(response.status).toBe(200);
     expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers/provider%2Fa', {
       method: 'PUT',
-      body: payload,
+      body: { ...payload, name: 'provider/a' },
       cookie: null,
     });
     await expect(response.json()).resolves.toEqual({ name: 'provider/a', tokenCount: 1 });
