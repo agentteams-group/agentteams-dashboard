@@ -47,6 +47,20 @@ describe('AI route collection route', () => {
     });
   });
 
+  it('unwraps the standard Higress data envelope', async () => {
+    mockCallHigressConsole.mockResolvedValue({
+      response: new Response(null, { status: 200 }),
+      body: { success: true, data: [{ name: 'team-chat' }] },
+    });
+
+    const response = await GET(new NextRequest('http://dashboard.test/api/higress/ai-routes'));
+
+    await expect(response.json()).resolves.toEqual({
+      routes: [{ name: 'team-chat' }],
+      fallbackConfigWritable: true,
+    });
+  });
+
   it('validates invalid routes before writing to the Console', async () => {
     const response = await POST(new NextRequest('http://dashboard.test/api/higress/ai-routes', {
       method: 'POST',

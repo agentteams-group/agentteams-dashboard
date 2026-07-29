@@ -8,6 +8,12 @@ function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
 }
 
+function unwrapData(body: unknown): unknown {
+  return body && typeof body === 'object' && !Array.isArray(body) && 'data' in body
+    ? (body as Record<string, unknown>).data
+    : body;
+}
+
 // GET — Get a single AI route
 export async function GET(
   request: NextRequest,
@@ -27,7 +33,7 @@ export async function GET(
       return higressErrorResponse(response, body);
     }
 
-    return NextResponse.json({ ...(body as Record<string, unknown>), fallbackConfigWritable: isFallbackConfigWriteEnabled() });
+    return NextResponse.json({ ...(unwrapData(body) as Record<string, unknown>), fallbackConfigWritable: isFallbackConfigWriteEnabled() });
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to get route');
   }
@@ -56,7 +62,7 @@ export async function PUT(
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(resBody);
+    return NextResponse.json(unwrapData(resBody) ?? body);
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to update route');
   }

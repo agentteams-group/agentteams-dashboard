@@ -35,7 +35,7 @@ describe('GET /api/agentteams/infrastructure', () => {
     });
   });
 
-  it('uses the embedded Gateway status endpoint and Console endpoint in direct mode', async () => {
+  it('uses the embedded Gateway and Console endpoints in direct mode', async () => {
     const data = await getInfrastructure('direct');
 
     expect(data.higress).toMatchObject({
@@ -44,7 +44,7 @@ describe('GET /api/agentteams/infrastructure', () => {
       console: { endpoint: 'http://agentteams-controller:8001', httpStatus: 503 },
     });
     expect(fetch).toHaveBeenCalledWith(
-      'http://aigw-local.agentteams.io:8080/status',
+      'http://aigw-local.agentteams.io:8080/',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });

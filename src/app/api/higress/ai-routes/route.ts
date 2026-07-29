@@ -8,6 +8,21 @@ function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function unwrapData(body: unknown): unknown {
+  return isRecord(body) && 'data' in body ? body.data : body;
+}
+
+function getRoutes(body: unknown): unknown[] {
+  const data = unwrapData(body);
+  if (Array.isArray(data)) return data;
+  if (isRecord(data) && Array.isArray(data.routes)) return data.routes;
+  return [];
+}
+
 // GET — List all AI routes
 export async function GET(request: NextRequest) {
   try {
@@ -23,8 +38,7 @@ export async function GET(request: NextRequest) {
       return higressErrorResponse(response, body);
     }
 
-    const routes = Array.isArray(body) ? body : (body as Record<string, unknown>)?.routes ?? [];
-    return NextResponse.json({ routes, fallbackConfigWritable: isFallbackConfigWriteEnabled() });
+    return NextResponse.json({ routes: getRoutes(body), fallbackConfigWritable: isFallbackConfigWriteEnabled() });
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to list routes');
   }
@@ -50,7 +64,7 @@ export async function POST(request: NextRequest) {
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(resBody, { status: 201 });
+    return NextResponse.json(unwrapData(resBody) ?? body, { status: 201 });
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to create route');
   }

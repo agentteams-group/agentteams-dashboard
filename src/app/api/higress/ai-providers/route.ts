@@ -8,9 +8,25 @@ function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
 }
 
-function maskProvider(provider: Record<string, unknown>) {
-  const tokens = Array.isArray(provider.tokens) ? provider.tokens : [];
-  const { tokens: _, ...rest } = provider;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function unwrapData(body: unknown): unknown {
+  return isRecord(body) && 'data' in body ? body.data : body;
+}
+
+function getProviders(body: unknown): Array<Record<string, unknown>> {
+  const data = unwrapData(body);
+  if (Array.isArray(data)) return data.filter(isRecord);
+  if (isRecord(data) && Array.isArray(data.providers)) return data.providers.filter(isRecord);
+  return [];
+}
+
+function maskProvider(provider: unknown) {
+  const source = isRecord(provider) ? provider : {};
+  const tokens = Array.isArray(source.tokens) ? source.tokens : [];
+  const { tokens: _, ...rest } = source;
   return { ...rest, tokenCount: tokens.length };
 }
 
@@ -29,11 +45,8 @@ export async function GET(request: NextRequest) {
       return higressErrorResponse(response, body);
     }
 
-    // Higress returns { providers: [...] } or a direct array
-    const providers = Array.isArray(body) ? body : (body as Record<string, unknown>)?.providers ?? [];
-
     // Mask API keys: only expose count, not actual tokens
-    const masked = (providers as Array<Record<string, unknown>>).map(maskProvider);
+    const masked = getProviders(body).map(maskProvider);
 
     return NextResponse.json({ providers: masked });
   } catch (err: unknown) {
@@ -61,7 +74,9 @@ export async function POST(request: NextRequest) {
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(maskProvider(resBody as Record<string, unknown>), { status: 201 });
+    // Higress Console returns the created provider in its standard { data } envelope.
+    // Some deployed versions return an empty body, so retain the validated request shape.
+    return NextResponse.json(maskProvider(unwrapData(resBody) ?? body), { status: 201 });
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to create provider');
   }

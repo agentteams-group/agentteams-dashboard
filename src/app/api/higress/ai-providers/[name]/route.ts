@@ -8,9 +8,18 @@ function getSessionCookie(request: NextRequest): string | null {
   return request.headers.get('cookie');
 }
 
-function maskProvider(provider: Record<string, unknown>) {
-  const tokens = Array.isArray(provider.tokens) ? provider.tokens : [];
-  const { tokens: _, ...rest } = provider;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function unwrapData(body: unknown): unknown {
+  return isRecord(body) && 'data' in body ? body.data : body;
+}
+
+function maskProvider(provider: unknown) {
+  const source = isRecord(provider) ? provider : {};
+  const tokens = Array.isArray(source.tokens) ? source.tokens : [];
+  const { tokens: _, ...rest } = source;
   return { ...rest, tokenCount: tokens.length };
 }
 
@@ -33,8 +42,7 @@ export async function GET(
       return higressErrorResponse(response, body);
     }
 
-    const provider = body as Record<string, unknown>;
-    return NextResponse.json(maskProvider(provider));
+    return NextResponse.json(maskProvider(unwrapData(body)));
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to get provider');
   }
@@ -63,7 +71,7 @@ export async function PUT(
       return higressErrorResponse(response, resBody);
     }
 
-    return NextResponse.json(maskProvider(resBody as Record<string, unknown>));
+    return NextResponse.json(maskProvider(unwrapData(resBody) ?? body));
   } catch (err: unknown) {
     return higressProxyErrorResponse(err, 'Failed to update provider');
   }

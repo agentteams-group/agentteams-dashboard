@@ -148,13 +148,13 @@ async function checkMatrix(): Promise<InfrastructureInfo['matrix']> {
   }
 }
 
-async function checkExternalService(endpoint: string | undefined, healthPath = '/') {
+async function checkExternalService(endpoint: string | undefined) {
   if (!endpoint) {
     return { configured: false, state: 'unconfigured' as const };
   }
 
   try {
-    const res = await fetchWithTimeout(new URL(healthPath, endpoint).toString());
+    const res = await fetchWithTimeout(new URL('/', endpoint).toString());
     return {
       configured: true,
       endpoint,
@@ -173,7 +173,7 @@ async function checkExternalService(endpoint: string | undefined, healthPath = '
 
 async function checkHigress(): Promise<NonNullable<InfrastructureInfo['higress']>> {
   const [gateway, console] = await Promise.all([
-    checkExternalService(HIGRESS_GATEWAY_ENDPOINT, '/status'),
+    checkExternalService(HIGRESS_GATEWAY_ENDPOINT),
     checkExternalService(HIGRESS_CONSOLE_ENDPOINT),
   ]);
 

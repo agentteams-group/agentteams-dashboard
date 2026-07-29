@@ -10,6 +10,9 @@ function isExternalAdapterMode(): boolean {
 
 function getCollection<T>(body: unknown, key: string): T[] {
   if (Array.isArray(body)) return body as T[];
+  if (body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>).data)) {
+    return (body as Record<string, T[]>).data;
+  }
   if (body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>)[key])) {
     return (body as Record<string, T[]>)[key];
   }

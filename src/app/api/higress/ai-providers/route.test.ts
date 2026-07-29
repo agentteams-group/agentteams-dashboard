@@ -41,6 +41,31 @@ describe('AI provider collection route', () => {
     });
   });
 
+  it('unwraps the standard Higress data envelope for list and create responses', async () => {
+    mockCallHigressConsole
+      .mockResolvedValueOnce({
+        response: new Response(null, { status: 200 }),
+        body: { success: true, data: [{ name: 'openai', type: 'openai', tokens: ['secret'] }] },
+      })
+      .mockResolvedValueOnce({
+        response: new Response(null, { status: 201 }),
+        body: { success: true, data: { name: 'deepseek', type: 'deepseek', tokens: ['secret'] } },
+      });
+
+    const listResponse = await GET(new NextRequest('http://dashboard.test/api/higress/ai-providers'));
+    const createResponse = await POST(new NextRequest('http://dashboard.test/api/higress/ai-providers', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'deepseek', type: 'deepseek', tokens: ['secret'] }),
+    }));
+
+    await expect(listResponse.json()).resolves.toEqual({
+      providers: [{ name: 'openai', type: 'openai', tokenCount: 1 }],
+    });
+    await expect(createResponse.json()).resolves.toEqual({
+      name: 'deepseek', type: 'deepseek', tokenCount: 1,
+    });
+  });
+
   it('rejects invalid provider payloads before calling the Console', async () => {
     const response = await POST(new NextRequest('http://dashboard.test/api/higress/ai-providers', {
       method: 'POST',
