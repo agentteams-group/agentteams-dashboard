@@ -226,7 +226,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
 const ParsedChatContent = memo(function ParsedChatContent({
   content,
   formattedContent,
-  isStreaming,
+  isStreaming = false,
   messageId,
 }: A2uiChatContentProps) {
   const result = useMemo(
