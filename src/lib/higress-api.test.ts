@@ -91,6 +91,29 @@ describe('Higress form serialization', () => {
       .toContain('上游厂商不存在: missing');
   });
 
+  it('preserves Controller-managed consumers when serializing route edits', () => {
+    const route: RouteForm = {
+      name: 'agentteams',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+      upstreams: [{ provider: 'openai', weight: 100, modelMappings: [] }],
+      modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+      authConfig: {
+        enabled: true,
+        allowedCredentialTypes: ['key-auth'],
+        allowedConsumers: ['manager', 'worker-research'],
+      },
+    };
+
+    const payload = serializeRouteForm(route);
+
+    expect(payload.authConfig).toEqual({
+      enabled: true,
+      allowedCredentialTypes: ['key-auth'],
+      allowedConsumers: ['manager', 'worker-research'],
+    });
+    expect(payload.authConfig?.allowedConsumers).not.toBe(route.authConfig.allowedConsumers);
+  });
+
   it('validates known fallback fields while preserving unknown fields', () => {
     const parsed = parseFallbackConfig('{"maxRetries":2,"vendorExtension":{"mode":"adaptive"}}');
 
@@ -112,5 +135,6 @@ describe('Higress form serialization', () => {
     expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100 }], fallbackConfig: { maxRetries: -1 } })).toContain('fallbackConfig.maxRetries 必须是非负整数');
     expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100, modelMapping: [] }] })).toContain('上游模型映射必须是对象');
     expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100 }], authConfig: { enabled: true, allowedCredentialTypes: [] } })).toContain('启用路由认证时至少需要一种凭据类型');
+    expect(validateAiRoutePayload({ name: 'chat', pathPredicate: { matchType: 'PRE', matchValue: '/v1' }, upstreams: [{ provider: 'one', weight: 100 }], authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'], allowedConsumers: [1] } })).toContain('authConfig 配置无效');
   });
 });

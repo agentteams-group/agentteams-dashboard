@@ -40,6 +40,13 @@ export interface LlmProviderResponse {
   rawConfigs?: Record<string, unknown>;
 }
 
+export interface AiRouteAuthConfig {
+  enabled: boolean;
+  allowedCredentialTypes: string[];
+  // AgentTeams Controller owns this list and the Dashboard preserves it on edits.
+  allowedConsumers?: string[];
+}
+
 export interface CreateLlmProviderRequest {
   name: string;
   type: string;
@@ -67,7 +74,7 @@ export interface AiRoute {
     modelMapping?: Record<string, string>;
   }[];
   modelPredicates?: { matchType: string; matchValue: string }[];
-  authConfig?: { enabled: boolean; allowedCredentialTypes: string[] };
+  authConfig?: AiRouteAuthConfig;
   fallbackConfig?: Record<string, unknown>;
   fallbackConfigWritable?: boolean;
   cors?: Record<string, unknown>;
@@ -84,7 +91,7 @@ export interface CreateAiRouteRequest {
     modelMapping?: Record<string, string>;
   }[];
   modelPredicates?: { matchType: string; matchValue: string }[];
-  authConfig?: { enabled: boolean; allowedCredentialTypes: string[] };
+  authConfig?: AiRouteAuthConfig;
   fallbackConfig?: Record<string, unknown>;
 }
 
@@ -114,7 +121,7 @@ export interface RouteForm {
   pathPredicate: AiRoute['pathPredicate'];
   upstreams: RouteUpstreamForm[];
   modelPredicates: NonNullable<AiRoute['modelPredicates']>;
-  authConfig: NonNullable<AiRoute['authConfig']>;
+  authConfig: AiRouteAuthConfig;
   fallbackConfig?: Record<string, unknown>;
 }
 
@@ -211,7 +218,7 @@ export function validateAiRoutePayload(value: unknown, isUpdate = false): string
 
   if (value.authConfig !== undefined) {
     const auth = value.authConfig;
-    if (!isRecord(auth) || typeof auth.enabled !== 'boolean' || !Array.isArray(auth.allowedCredentialTypes) || auth.allowedCredentialTypes.some((type) => typeof type !== 'string')) {
+    if (!isRecord(auth) || typeof auth.enabled !== 'boolean' || !Array.isArray(auth.allowedCredentialTypes) || auth.allowedCredentialTypes.some((type) => typeof type !== 'string') || (auth.allowedConsumers !== undefined && (!Array.isArray(auth.allowedConsumers) || auth.allowedConsumers.some((consumer) => typeof consumer !== 'string')))) {
       errors.push('authConfig 配置无效');
     } else if (auth.enabled && auth.allowedCredentialTypes.length === 0) {
       errors.push('启用路由认证时至少需要一种凭据类型');
@@ -311,7 +318,11 @@ export function serializeRouteForm(form: RouteForm): CreateAiRouteRequest {
       modelMapping: serializeModelMappings(upstream.modelMappings),
     })),
     modelPredicates: form.modelPredicates,
-    authConfig: form.authConfig,
+    authConfig: {
+      enabled: form.authConfig.enabled,
+      allowedCredentialTypes: [...form.authConfig.allowedCredentialTypes],
+      ...(form.authConfig.allowedConsumers ? { allowedConsumers: [...form.authConfig.allowedConsumers] } : {}),
+    },
     ...(form.fallbackConfig ? { fallbackConfig: form.fallbackConfig } : {}),
   };
 }
