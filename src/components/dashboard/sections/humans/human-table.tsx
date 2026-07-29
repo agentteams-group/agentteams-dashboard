@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Pencil, Trash2, UserCheck } from 'lucide-react';
+import { Eye, Trash2, UserCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,12 +24,10 @@ function permissionLabel(level: number): string {
 export function HumanTable({
   humans,
   onView,
-  onEdit,
   onDelete,
 }: {
   humans: HumanResponse[];
   onView: (_human: HumanResponse) => void;
-  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   return (
@@ -95,16 +93,6 @@ export function HumanTable({
                       aria-label={`查看 ${human.name} 详情`}
                     >
                       <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => onEdit(human)}
-                      title="编辑"
-                      aria-label={`编辑 ${human.name}`}
-                    >
-                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
                     <Button
                       variant="ghost"

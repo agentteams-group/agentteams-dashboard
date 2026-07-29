@@ -365,6 +365,7 @@ export function TeamsSection() {
         resourceType="团队"
         itemName={deleteTarget ?? ''}
         onConfirm={handleDelete}
+        isLoading={deleteTeam.isPending}
       />
     </div>
   );

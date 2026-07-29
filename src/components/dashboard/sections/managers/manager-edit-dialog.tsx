@@ -4,26 +4,17 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { UpdateManagerRequest, ManagerState } from '@/lib/agentteams-api';
+import type { UpdateManagerRequest } from '@/lib/agentteams-api';
 import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
-export type ManagerEditForm = UpdateManagerRequest & { name?: string; state?: string };
-
-const STATE_OPTIONS: ManagerState[] = ['Running', 'Sleeping', 'Stopped'];
+export type ManagerEditForm = UpdateManagerRequest & { name?: string };
 
 export function ManagerEditDialog({
   open,
@@ -75,24 +66,6 @@ export function ManagerEditDialog({
               onChange={(e) => onChange({ ...value, image: e.target.value })}
               placeholder="容器镜像地址"
             />
-          </div>
-          <div className="space-y-2">
-            <Label>状态</Label>
-            <Select
-              value={value.state || ''}
-              onValueChange={(v) => onChange({ ...value, state: v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STATE_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
         <DialogFooter>

@@ -13,6 +13,10 @@ import {
 } from '@/components/ui/dialog';
 import type { CreateTeamRequest, WorkerResponse } from '@/lib/agentteams-api';
 
+export function parseWorkerNames(value: string): string[] {
+  return value.split(/[,，]/).map((name) => name.trim()).filter(Boolean);
+}
+
 export function TeamCreateDialog({
   open,
   value,
@@ -74,18 +78,18 @@ export function TeamCreateDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>Worker 名称（逗号分隔）</Label>
+            <Label>Worker 名称（中英文逗号分隔）</Label>
             <Input
               value={value.workerNames?.join(', ') || ''}
               onChange={(e) =>
                 onChange({
                   ...value,
                   workerNames: e.target.value
-                    ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                    ? parseWorkerNames(e.target.value)
                     : undefined,
                 })
               }
-              placeholder="worker1, worker2"
+              placeholder="worker1, worker2 或 worker1，worker2"
             />
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">

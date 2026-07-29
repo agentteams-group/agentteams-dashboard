@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { UpdateTeamRequest } from '@/lib/agentteams-api';
+import { parseWorkerNames } from './team-create-dialog';
 
 export type TeamEditForm = UpdateTeamRequest & { name?: string };
 
@@ -57,18 +58,18 @@ export function TeamEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>Worker 名称（逗号分隔）</Label>
+            <Label>Worker 名称（中英文逗号分隔）</Label>
             <Input
               value={value.workerNames?.join(', ') || ''}
               onChange={(e) =>
                 onChange({
                   ...value,
                   workerNames: e.target.value
-                    ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                    ? parseWorkerNames(e.target.value)
                     : [],
                 })
               }
-              placeholder="worker1, worker2"
+              placeholder="worker1, worker2 或 worker1，worker2"
             />
           </div>
         </div>

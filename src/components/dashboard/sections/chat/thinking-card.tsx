@@ -11,7 +11,8 @@ interface ThinkingCardProps {
 }
 
 export function ThinkingCard({ title = '思考过程', content, isStreaming }: ThinkingCardProps) {
-  const [open, setOpen] = useState(isStreaming ?? false);
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? Boolean(isStreaming);
 
   return (
     <div className="my-2 rounded-lg border bg-muted/30 overflow-hidden">
@@ -19,7 +20,7 @@ export function ThinkingCard({ title = '思考过程', content, isStreaming }: T
         variant="ghost"
         size="sm"
         className="w-full justify-between px-3 py-2 h-auto"
-        onClick={() => setOpen(!open)}
+        onClick={() => setUserOpen((previous) => !(previous ?? Boolean(isStreaming)))}
       >
         <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           {isStreaming ? (

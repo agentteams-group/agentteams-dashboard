@@ -23,7 +23,7 @@ import {
   useMatrixSendTyping,
   useMatrixTypingUsers,
   useTypingSync,
-  formatMatrixEvent,
+  formatMatrixEvents,
   getRoomNameFromState,
   getRoomTopicFromState,
   type DisplayMessage,
@@ -295,10 +295,7 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
   const allMessages = useMemo(() => {
     const pages = messagesQuery.data?.pages || [];
     const events = pages.flatMap((page) => page.chunk || []);
-    const serverMessages = [...events]
-      .reverse()
-      .map((e) => formatMatrixEvent(e, userId))
-      .filter((m): m is DisplayMessage => m !== null);
+    const serverMessages = formatMatrixEvents(events, userId);
     // Remove pending messages that now exist on the server
     const pendingIds = new Set(serverMessages.map((m) => m.id));
     const filteredPending = pendingMessages.filter(
@@ -419,21 +416,14 @@ export function ChatPanel({ room }: { room: RoomInfo }) {
 
   // Slash command handler
   const handleSlashCommand = useCallback(
-    (command: string, args: string) => {
+    (command: string) => {
       switch (command) {
         case 'help':
           // Show help as a system-like message
-          alert('可用指令:\n/help - 显示帮助\n/clear - 清空输入\n/members - 切换成员列表\n/topic <text> - 设置房间主题');
+          alert('可用指令:\n/help - 显示帮助\n/clear - 清空输入\n/members - 切换成员列表');
           break;
         case 'members':
           setShowMembers((v) => !v);
-          break;
-        case 'topic':
-          if (args.trim()) {
-            // Set room topic via state event
-            // This would need a separate API call - for now just show info
-            alert(`设置房间主题: ${args} (功能开发中)`);
-          }
           break;
       }
     },

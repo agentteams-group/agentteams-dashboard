@@ -2,8 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { toggleExpandedGroup, useActiveSection } from './use-active-section';
-import { STORAGE_KEY, EXPANDED_GROUPS_KEY } from './nav-items';
+import { useActiveSection } from './use-active-section';
+import { STORAGE_KEY } from './nav-items';
 
 function setHash(hash: string) {
   Object.defineProperty(window, 'location', {
@@ -28,24 +28,22 @@ describe('useActiveSection', () => {
       expect(result.current.activeSection).toBe('overview');
     });
 
-    it('resolves section from new format hash (#agents/workers)', () => {
+    it('falls back to overview for a legacy grouped hash', () => {
       setHash('#agents/workers');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('workers');
+      expect(result.current.activeSection).toBe('overview');
     });
 
-    it('resolves section from new format hash (#overview/overview)', () => {
+    it('falls back to overview for a grouped overview hash', () => {
       setHash('#overview/overview');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('overview');
     });
 
-    it('maps legacy #workers to #agents/workers and activates workers', () => {
+    it('resolves a flat Worker hash', () => {
       setHash('#workers');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('workers');
-      // jsdom strips the leading # from location.hash
-      expect(window.location.hash).toBe('agents/workers');
     });
 
     it('falls back to localStorage when hash is empty', () => {
@@ -63,13 +61,13 @@ describe('useActiveSection', () => {
   });
 
   describe('setActiveSection', () => {
-    it('writes #group/section format to URL hash', () => {
+    it('writes a flat section hash to URL hash', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       act(() => {
         result.current.setActiveSection('workers');
       });
-      expect(window.location.hash).toBe('agents/workers');
+      expect(window.location.hash).toBe('workers');
     });
 
     it('writes plain section hash for persistent items (docs)', () => {
@@ -91,52 +89,4 @@ describe('useActiveSection', () => {
     });
   });
 
-  describe('expanded groups', () => {
-    it('auto-expands the group containing the active section on init', () => {
-      setHash('#agents/teams');
-      const { result } = renderHook(() => useActiveSection());
-      expect(result.current.expandedGroups.has('agents')).toBe(true);
-    });
-
-    it('auto-expands the group on setActiveSection', () => {
-      setHash('');
-      const { result } = renderHook(() => useActiveSection());
-      act(() => {
-        result.current.setActiveSection('policies');
-      });
-      expect(result.current.expandedGroups.has('governance')).toBe(true);
-    });
-
-    it('persists expanded groups to localStorage', () => {
-      setHash('#agents/workers');
-      renderHook(() => useActiveSection());
-      const stored = localStorage.getItem(EXPANDED_GROUPS_KEY);
-      expect(stored).toBeTruthy();
-      const parsed = JSON.parse(stored!);
-      expect(parsed).toContain('agents');
-    });
-
-    it('restores expanded groups from localStorage', () => {
-      setHash('');
-      localStorage.setItem(EXPANDED_GROUPS_KEY, JSON.stringify(['agents', 'platform']));
-      const { result } = renderHook(() => useActiveSection());
-      expect(result.current.expandedGroups.has('agents')).toBe(true);
-      expect(result.current.expandedGroups.has('platform')).toBe(true);
-    });
-
-    it('always includes active section group even if localStorage had something else', () => {
-      localStorage.setItem(EXPANDED_GROUPS_KEY, JSON.stringify(['platform']));
-      setHash('#agents/chat');
-      const { result } = renderHook(() => useActiveSection());
-      expect(result.current.expandedGroups.has('agents')).toBe(true);
-      expect(result.current.expandedGroups.has('platform')).toBe(true);
-    });
-
-    it('toggles the active group closed and open again', () => {
-      const expanded = new Set(['agents']);
-      expect(toggleExpandedGroup(expanded, 'agents')).toEqual(new Set());
-      expect(toggleExpandedGroup(expanded, 'platform')).toEqual(new Set(['agents', 'platform']));
-      expect(expanded).toEqual(new Set(['agents']));
-    });
-  });
 });

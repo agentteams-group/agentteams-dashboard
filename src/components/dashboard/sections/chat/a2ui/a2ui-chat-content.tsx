@@ -166,6 +166,19 @@ function MarkdownContent({ content }: { content: string }) {
   );
 }
 
+function hasMarkdownStructure(content: string): boolean {
+  return /(^|\n)(```|>\s|\s*[-*+]\s|\s*\d+\.\s|#{1,6}\s|\|)/.test(content);
+}
+
+function StreamingTextContent({ content }: { content: string }) {
+  return (
+    <div className="whitespace-pre-wrap break-words leading-relaxed">
+      {content}
+      <span className="inline-block h-4 w-1.5 translate-y-0.5 bg-foreground/60 animate-pulse ml-0.5" />
+    </div>
+  );
+}
+
 // ─── A2uiChatContent ─────────────────────────────────────────────────────────
 
 interface A2uiChatContentProps {
@@ -190,6 +203,30 @@ export const A2uiChatContent = memo(function A2uiChatContent({
   content,
   formattedContent,
   isStreaming = false,
+  messageId,
+}: A2uiChatContentProps) {
+  const useStreamingText = isStreaming
+    && content.length > 0
+    && !hasMarkdownStructure(content)
+    && !content.includes('<!--a2ui:')
+    && !content.includes('```a2ui');
+
+  if (useStreamingText) {
+    return <StreamingTextContent content={content} />;
+  }
+
+  return <ParsedChatContent
+    content={content}
+    formattedContent={formattedContent}
+    isStreaming={isStreaming}
+    messageId={messageId}
+  />;
+});
+
+const ParsedChatContent = memo(function ParsedChatContent({
+  content,
+  formattedContent,
+  isStreaming,
   messageId,
 }: A2uiChatContentProps) {
   const result = useMemo(

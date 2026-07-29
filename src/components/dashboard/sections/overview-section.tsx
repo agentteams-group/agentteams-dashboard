@@ -22,6 +22,7 @@ import {
   Crown,
   UserPlus,
   MessageCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +42,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { WORKER_PHASE_COLORS } from '@/lib/phase-colors';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useCounter } from '@/hooks/use-counter';
+import { useDashboardRuntime } from '@/hooks/use-dashboard-runtime';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // ============ Auto-refresh countdown hook ============
@@ -194,6 +196,50 @@ function HealthCard({ name, healthy, icon: Icon, detail }: { name: string; healt
   );
 }
 
+function formatUptime(seconds: number | undefined): string {
+  if (seconds === undefined) return '未知';
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return days > 0 ? `${days} 天 ${hours} 小时` : hours > 0 ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟`;
+}
+
+function RuntimeInfoCard({ agentteamsVersion }: { agentteamsVersion?: string }) {
+  const { data: dashboardRuntime, isFetching, refetch } = useDashboardRuntime();
+  const agentteamsRepository = 'https://github.com/agentscope-ai/AgentTeams';
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-base">运行信息</CardTitle>
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? '刷新中...' : '刷新'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 text-sm md:grid-cols-2">
+        <div className="space-y-1.5">
+          <p className="font-medium">AgentTeams</p>
+          <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={agentteamsRepository} target="_blank" rel="noreferrer">
+            仓库 <ExternalLink className="size-3" />
+          </a>
+          <p className="text-xs text-muted-foreground">版本：{agentteamsVersion ?? '未知'}</p>
+          <p className="text-xs text-muted-foreground">运行时长：接口未提供</p>
+        </div>
+        <div className="space-y-1.5">
+          <p className="font-medium">AgentTeams Dashboard</p>
+          <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={dashboardRuntime?.repository} target="_blank" rel="noreferrer">
+            仓库 <ExternalLink className="size-3" />
+          </a>
+          <p className="text-xs text-muted-foreground">版本：{dashboardRuntime?.version ?? '未知'}</p>
+          <p className="text-xs text-muted-foreground">运行时长：{formatUptime(dashboardRuntime?.uptimeSeconds)}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ============ Main OverviewSection ============
 export function OverviewSection() {
   const { isConnected } = useAgentTeamsStore();
@@ -319,6 +365,8 @@ export function OverviewSection() {
           <Activity className="w-3 h-3 ml-1 animate-pulse text-emerald-500" />
         </div>
       </motion.div>
+
+      <RuntimeInfoCard agentteamsVersion={versionData?.controller} />
 
       {/* ===== Row 2: Key Metrics (4 cards) ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

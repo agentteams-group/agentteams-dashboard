@@ -167,7 +167,6 @@ export function ManagersSection() {
       model: manager.model || '',
       runtime: manager.runtime || '',
       image: manager.image || '',
-      state: manager.state,
     });
   }, []);
 
@@ -332,6 +331,7 @@ export function ManagersSection() {
         resourceType="Manager"
         itemName={deleteTarget ?? ''}
         onConfirm={handleDelete}
+        isLoading={deleteManager.isPending}
       />
     </div>
   );

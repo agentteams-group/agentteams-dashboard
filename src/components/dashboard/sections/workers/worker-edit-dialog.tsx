@@ -2,7 +2,6 @@
 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -87,15 +86,6 @@ export function WorkerEditDialog({
               value={value.image || ''}
               onChange={(e) => onChange({ ...value, image: e.target.value })}
               placeholder="容器镜像地址（可选）"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Soul</Label>
-            <Textarea
-              value={value.soul || ''}
-              onChange={(e) => onChange({ ...value, soul: e.target.value })}
-              placeholder="Worker 人格描述（可选）"
-              rows={3}
             />
           </div>
           <div className="space-y-2">

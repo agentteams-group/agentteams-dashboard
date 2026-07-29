@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Pencil, Shield, Trash2, UserCheck } from 'lucide-react';
+import { Eye, Shield, Trash2, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,13 +19,11 @@ export function HumanCard({
   human,
   index,
   onView,
-  onEdit,
   onDelete,
 }: {
   human: HumanResponse;
   index: number;
   onView: (_human: HumanResponse) => void;
-  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   const level = human.permissionLevel || 1;
@@ -85,16 +83,6 @@ export function HumanCard({
             >
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => onEdit(human)}
-              aria-label={`编辑 ${human.name}`}
-              title="编辑"
-            >
-              <Pencil className="w-3 h-3" aria-hidden="true" />
             </Button>
             <Button
               variant="ghost"

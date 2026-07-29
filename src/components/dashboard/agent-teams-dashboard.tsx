@@ -31,18 +31,12 @@ import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
 import {
   navItems,
-  navGroups,
   isNavItemVisible,
-  isGroupVisible,
-  getGroupItems,
   createActions,
   isCreateActionVisible,
 } from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
-import { useEnsureAiGateway } from '@/hooks/use-ensure-ai-gateway';
-import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
-import { toggleExpandedGroup } from './use-active-section';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -51,13 +45,7 @@ const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ 
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ default: m.ChatSection })));
-const OpsSection = lazy(() => import('./sections/ops-section').then(m => ({ default: m.OpsSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
-const PoliciesSection = lazy(() => import('./sections/policies-section').then(m => ({ default: m.PoliciesSection })));
-const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
-const TopologySection = lazy(() => import('./sections/topology-section').then(m => ({ default: m.TopologySection })));
-const SandboxSection = lazy(() => import('./sections/sandbox-section').then(m => ({ default: m.SandboxSection })));
-const ComplianceSection = lazy(() => import('./sections/compliance-section').then(m => ({ default: m.ComplianceSection })));
 
 const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -66,19 +54,12 @@ const sectionMap: Record<string, React.ComponentType> = {
   managers: ManagersSection,
   humans: HumansSection,
   chat: ChatSection,
-  topology: TopologySection,
-  gateway: ModelsSection,
-  'ai-routes': ModelsSection,
-  policies: PoliciesSection,
-  sandbox: SandboxSection,
-  compliance: ComplianceSection,
-  ops: OpsSection,
   docs: DocsSection,
 };
 
 export function AgentTeamsDashboard() {
   const queryClient = useQueryClient();
-  const { activeSection, setActiveSection, expandedGroups, setExpandedGroups } = useActiveSection();
+  const { activeSection, setActiveSection } = useActiveSection();
   const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -89,10 +70,6 @@ export function AgentTeamsDashboard() {
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
-  const { data: infrastructure } = useInfrastructure();
-
-  // Auto-configure Higress AI gateway on first load
-  useEnsureAiGateway(infrastructure?.higress?.mode);
   usePhaseWatcher();
   useAgentTeamsStatus();
   const { data: workers } = useWorkers();
@@ -103,11 +80,6 @@ export function AgentTeamsDashboard() {
 
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
-    [mode]
-  );
-
-  const visibleGroups = useMemo(
-    () => navGroups.filter((g) => isGroupVisible(g.id, navItems, mode)),
     [mode]
   );
 
@@ -150,12 +122,12 @@ export function AgentTeamsDashboard() {
           return;
         }
 
-        // Ctrl+1..5: activate each group's defaultItem
-        if (e.key >= '1' && e.key <= '9') {
+        // Ctrl+1..7: activate each MVP navigation item.
+        if (e.key >= '1' && e.key <= '7') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
-          if (index < visibleGroups.length) {
-            setActiveSection(visibleGroups[index].defaultItem);
+          if (index < visibleNavItems.length) {
+            setActiveSection(visibleNavItems[index].id);
             setMobileMenuOpen(false);
           }
         }
@@ -166,8 +138,7 @@ export function AgentTeamsDashboard() {
       if (!(focusedElement instanceof HTMLElement)) return;
 
       const focusedSection = focusedElement.dataset.navSection;
-      const focusedGroup = focusedElement.dataset.navGroup;
-      if (!focusedSection && !focusedGroup) return;
+      if (!focusedSection) return;
 
       if (e.key === 'Enter' && focusedSection) {
         e.preventDefault();
@@ -178,19 +149,13 @@ export function AgentTeamsDashboard() {
 
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 
-      const groupId = focusedGroup ?? navItems.find((item) => item.id === focusedSection)?.group;
-      if (!groupId || !expandedGroups.has(groupId)) return;
-
-      const items = getGroupItems(groupId, navItems, mode);
-      const currentIndex = focusedSection
-        ? items.findIndex((item) => item.id === focusedSection)
-        : e.key === 'ArrowDown' ? -1 : items.length;
+      const currentIndex = visibleNavItems.findIndex((item) => item.id === focusedSection);
       const nextIndex = currentIndex + (e.key === 'ArrowDown' ? 1 : -1);
-      if (nextIndex < 0 || nextIndex >= items.length) return;
+      if (nextIndex < 0 || nextIndex >= visibleNavItems.length) return;
 
       const target = focusedElement
         .closest('aside')
-        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${items[nextIndex].id}"]`);
+        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${visibleNavItems[nextIndex].id}"]`);
       if (target) {
         e.preventDefault();
         target.focus();
@@ -198,14 +163,11 @@ export function AgentTeamsDashboard() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [expandedGroups, mode, setActiveSection, visibleGroups]);
+  }, [setActiveSection, visibleNavItems]);
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
   const activeLabel = activeItem?.label || '总览';
-  const activeGroup = activeItem?.group
-    ? navGroups.find((g) => g.id === activeItem.group)
-    : null;
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -255,10 +217,6 @@ export function AgentTeamsDashboard() {
     setMobileMenuOpen(false);
   }, [setActiveSection]);
 
-  const handleToggleGroup = useCallback((groupId: string) => {
-    setExpandedGroups((prev) => toggleExpandedGroup(prev, groupId));
-  }, [setExpandedGroups]);
-
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
     try {
@@ -281,8 +239,6 @@ export function AgentTeamsDashboard() {
             collapsed={sidebarCollapsed}
             onNavClick={handleNavClick}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-            expandedGroups={expandedGroups}
-            onToggleGroup={handleToggleGroup}
             mode={mode}
           />
 
@@ -293,8 +249,6 @@ export function AgentTeamsDashboard() {
             sectionsWithNotifications={sectionsWithNotifications}
             onNavClick={handleNavClick}
             onClose={() => setMobileMenuOpen(false)}
-            expandedGroups={expandedGroups}
-            onToggleGroup={handleToggleGroup}
             mode={mode}
           />
 
@@ -338,12 +292,6 @@ export function AgentTeamsDashboard() {
                     <Home className="w-3.5 h-3.5" />
                     <ChevronSep className="w-3 h-3" />
                     <span className="font-medium text-foreground">AgentTeams</span>
-                    {activeGroup && (
-                      <>
-                        <ChevronSep className="w-3 h-3" />
-                        <span>{activeGroup.label}</span>
-                      </>
-                    )}
                     <ChevronSep className="w-3 h-3" />
                     <span>{activeLabel}</span>
                   </nav>

@@ -329,5 +329,58 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     isMe: event.sender === currentUserId,
     mediaUrl: content.url as string | undefined,
     mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
+    isStreaming: isMatrixStreaming(content),
   };
+}
+
+function isMatrixStreaming(content: MatrixEvent['content']): boolean {
+  const status = content['org.agentteams.status'] ?? content.status;
+  return content['org.agentteams.streaming'] === true
+    || content['m.streaming'] === true
+    || content.streaming === true
+    || status === 'streaming'
+    || status === 'in_progress';
+}
+
+/**
+ * Collapses Matrix message revisions into their root event so a streaming
+ * response stays in one position while the homeserver publishes edits.
+ */
+export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
+  const messages = new Map<string, DisplayMessage>();
+  const pendingRevisions = new Map<string, DisplayMessage>();
+
+  for (const event of [...events].sort((a, b) => a.origin_server_ts - b.origin_server_ts)) {
+    const formatted = formatMatrixEvent(event, currentUserId);
+    if (!formatted) continue;
+
+    const relation = event.content['m.relates_to'] as {
+      rel_type?: string;
+      event_id?: string;
+    } | undefined;
+    const rootId = relation?.rel_type === 'm.replace' ? relation.event_id : undefined;
+
+    if (rootId) {
+      const root = messages.get(rootId);
+      if (root) {
+        messages.set(rootId, { ...formatted, id: rootId, timestamp: root.timestamp });
+      } else {
+        pendingRevisions.set(rootId, formatted);
+      }
+      continue;
+    }
+
+    const revision = pendingRevisions.get(event.event_id);
+    messages.set(
+      event.event_id,
+      revision ? { ...revision, id: event.event_id, timestamp: formatted.timestamp } : formatted
+    );
+    pendingRevisions.delete(event.event_id);
+  }
+
+  for (const revision of pendingRevisions.values()) {
+    messages.set(revision.id, revision);
+  }
+
+  return [...messages.values()].sort((a, b) => a.timestamp - b.timestamp);
 }

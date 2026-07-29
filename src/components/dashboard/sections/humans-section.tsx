@@ -13,16 +13,15 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
-import { useCreateHuman, useDeleteHuman, useUpdateHuman } from '@/hooks/use-agentteams-mutations';
+import { useCreateHuman, useDeleteHuman } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
-import { isUnsupportedEndpointError } from '@/lib/api-error';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
-import type { CreateHumanRequest, HumanResponse, UpdateHumanRequest } from '@/lib/agentteams-api';
+import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
   computePhaseStats,
@@ -32,7 +31,6 @@ import {
 import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
-import { HumanEditDialog, type HumanEditForm } from './humans/human-edit-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { PhaseDistribution } from './humans/human-phase-distribution';
 
@@ -87,19 +85,16 @@ export function HumansSection() {
   const { isConnected } = useAgentTeamsStore();
   const createHuman = useCreateHuman();
   const deleteHuman = useDeleteHuman();
-  const updateHuman = useUpdateHuman();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
-  const [editHuman, setEditHuman] = useState<HumanResponse | null>(null);
 
   const [newHuman, setNewHuman] = useState<CreateHumanRequest>({
     name: '',
     displayName: '',
     permissionLevel: 1,
   });
-  const [editForm, setEditForm] = useState<HumanEditForm>({});
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const { viewMode, handleViewModeChange } = useViewMode('card');
@@ -144,41 +139,6 @@ export function HumansSection() {
     }
   }, [deleteTarget, deleteHuman]);
 
-  const openEdit = useCallback((human: HumanResponse) => {
-    updateHuman.reset();
-    setEditHuman(human);
-    setEditForm({
-      name: human.name,
-      displayName: human.displayName || '',
-      email: human.email || '',
-      permissionLevel: (human.permissionLevel ?? 1) as UpdateHumanRequest['permissionLevel'],
-      accessibleTeams: human.accessibleTeams || [],
-      accessibleWorkers: human.accessibleWorkers || [],
-      note: human.note || '',
-    });
-  }, [updateHuman]);
-
-  const closeEdit = useCallback(() => {
-    updateHuman.reset();
-    setEditHuman(null);
-    setEditForm({});
-  }, [updateHuman]);
-
-  const handleUpdate = useCallback(() => {
-    if (!editHuman) return;
-    const { name: _ignored, ...data } = editForm;
-    void _ignored;
-    updateHuman.mutate(
-      { name: editHuman.name, data: data as UpdateHumanRequest },
-      { onSuccess: closeEdit },
-    );
-  }, [editForm, editHuman, updateHuman, closeEdit]);
-
-  // AgentTeams v1.2.0-beta.1 has no PUT /api/v1/humans/{name} (405):
-  // surface a clear message in the dialog instead of the raw API error.
-  const editErrorMessage = isUnsupportedEndpointError(updateHuman.error)
-    ? '当前 Controller 版本（v1.2.0-beta.1）不支持编辑 Human，请通过删除后重建的方式修改'
-    : null;
 
   if (isError && !isConnected) {
     return <ApiErrorState />;
@@ -263,7 +223,6 @@ export function HumansSection() {
               human={human}
               index={i}
               onView={setDetailHuman}
-              onEdit={openEdit}
               onDelete={setDeleteTarget}
             />
           ))}
@@ -272,7 +231,6 @@ export function HumansSection() {
         <HumanTable
           humans={sortedHumans}
           onView={setDetailHuman}
-          onEdit={openEdit}
           onDelete={setDeleteTarget}
         />
       )}
@@ -286,17 +244,6 @@ export function HumansSection() {
         onSubmit={handleCreate}
       />
 
-      <HumanEditDialog
-        open={!!editHuman}
-        humanName={editHuman?.name ?? null}
-        value={editForm}
-        onChange={setEditForm}
-        isPending={updateHuman.isPending}
-        errorMessage={editErrorMessage}
-        onOpenChange={(open) => !open && closeEdit()}
-        onSubmit={handleUpdate}
-      />
-
       <HumanDetailDialog
         human={detailHuman}
         onOpenChange={(open) => !open && setDetailHuman(null)}
@@ -308,6 +255,7 @@ export function HumansSection() {
         resourceType="Human"
         itemName={deleteTarget ?? ''}
         onConfirm={handleDelete}
+        isLoading={deleteHuman.isPending}
       />
     </div>
   );

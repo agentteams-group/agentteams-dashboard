@@ -270,8 +270,9 @@ export function WorkersSection() {
       model: worker.model || '',
       runtime: worker.runtime,
       image: worker.image || '',
-      soul: '',
       skills: worker.skills || [],
+      agents: worker.agents,
+      mcpServers: worker.mcpServers,
     });
   }, []);
 

@@ -84,6 +84,7 @@ export function useUpdateWorker() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-workers'] });
       queryClient.invalidateQueries({ queryKey: ['agentteams-worker-detail', variables.name] });
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Worker "${variables.name}" 更新成功`);
       addNotification({ type: 'success', title: 'Worker 更新成功', message: `Worker "${variables.name}" 已更新` });
     },
@@ -114,6 +115,7 @@ export function useWakeWorker() {
       addNotification({ type: 'error', title: 'Worker 唤醒失败', message: formatErrorMessage(err) });
     },
     onSuccess: (_, name) => {
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Worker "${name}" 已唤醒`);
       addNotification({ type: 'success', title: 'Worker 已唤醒', message: `Worker "${name}" 已唤醒` });
       auditMutation('worker', name, 'wake');
@@ -142,6 +144,7 @@ export function useSleepWorker() {
       addNotification({ type: 'error', title: 'Worker 休眠失败', message: formatErrorMessage(err) });
     },
     onSuccess: (_, name) => {
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Worker "${name}" 已休眠`);
       addNotification({ type: 'success', title: 'Worker 已休眠', message: `Worker "${name}" 已休眠` });
       auditMutation('worker', name, 'sleep');
@@ -158,6 +161,7 @@ export function useEnsureReadyWorker() {
     mutationFn: (name: string) => agentteamsApi.ensureReadyWorker(name),
     onSuccess: (_, name) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-workers'] });
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Worker "${name}" 已请求就绪`);
       addNotification({ type: 'success', title: 'Worker 就绪请求已发送', message: `Worker "${name}" 已请求就绪` });
     },
@@ -278,6 +282,7 @@ export function useCreateManager() {
     mutationFn: (data: CreateManagerRequest) => agentteamsApi.createManager(data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-managers'] });
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Manager "${variables.name}" 创建成功`);
       addNotification({ type: 'success', title: 'Manager 创建成功', message: `Manager "${variables.name}" 已创建` });
       auditMutation('manager', variables.name, 'create');
@@ -298,6 +303,7 @@ export function useDeleteManager() {
     mutationFn: (name: string) => agentteamsApi.deleteManager(name),
     onSuccess: (_, name) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-managers'] });
+      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`Manager "${name}" 已删除`);
       addNotification({ type: 'success', title: 'Manager 已删除', message: `Manager "${name}" 已删除` });
       auditMutation('manager', name, 'delete');

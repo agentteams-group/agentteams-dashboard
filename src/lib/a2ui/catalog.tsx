@@ -20,7 +20,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -50,16 +50,13 @@ const ThinkingBlock = createComponentImplementation(
     const content = typeof props.content === 'string' ? props.content : '';
     const title = typeof props.title === 'string' && props.title ? props.title : '思考过程';
     const isStreaming = props.isStreaming === true;
-    const [open, setOpen] = useState(isStreaming);
-
-    useEffect(() => {
-      if (isStreaming) setOpen(true);
-    }, [isStreaming]);
+    const [userOpen, setUserOpen] = useState<boolean | null>(null);
+    const open = userOpen ?? isStreaming;
 
     return (
       <div className="my-2 rounded-lg border border-amber-500/20 bg-amber-500/5 overflow-hidden">
         <button
-          onClick={() => setOpen(!open)}
+          onClick={() => setUserOpen((previous) => !(previous ?? isStreaming))}
           className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-amber-500/10 transition-colors"
         >
           {isStreaming ? (
