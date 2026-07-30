@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formattedBody, url: mediaUrl, info, 'm.mentions': mentions } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
