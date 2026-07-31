@@ -178,17 +178,17 @@ Generated: 2026-07-31
 ## Phase 4: 新手引导与帮助体系
 
 ### 12. 集成首次访问引导流程
-- [ ] 12.1 安装 react-joyride 包
+- [x] 12.1 安装 react-joyride 包
   - `npm install react-joyride`
   - 引用 Requirement 5.1（首次引导库集成）
-- [ ] 12.2 创建 OnboardingTour 组件 `src/components/onboarding/tour.tsx`
+- [x] 12.2 创建 OnboardingTour 组件 `src/components/onboarding/tour.tsx`
   - 定义 3-5 个 step：Sidebar Navigation → Search Box → Worker Card → Health Ring
   - 引用 Requirement 5.1（tour steps 描述）
-- [ ] 12.3 在 DashboardLayout 根组件中初始化引导
+- [x] 12.3 在 DashboardLayout 根组件中初始化引导
   - 检测 localStorage key `agentteams-tour-step` 判断是否已完成
   - 首次访问时自动启动 tour，完成或跳过则写入 finished 标志
   - 引用 Requirement 5.1（localStorage 持久化）
-- [ ] 12.4 在 Settings 页面添加 "Restart Tour" 按钮
+- [x] 12.4 在 Settings 页面添加 "Restart Tour" 按钮
   - 清除 completed 标志，允许用户重新体验
   - 引用 Requirement 5.1（重启引导功能）
 
