@@ -21,6 +21,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { getHelpContent } from '@/lib/help-content';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
 import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse, ManagerResponse } from '@/lib/agentteams-api';
@@ -243,6 +244,7 @@ export function TeamsSection() {
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
+        helpContent={getHelpContent('teams')}
         actions={
           <div className="flex gap-2">
             <Button

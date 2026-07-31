@@ -200,8 +200,8 @@ Generated: 2026-07-31
   - 弹窗显示：1 sentence purpose + 3 key actions + docs link
   - 内容从配置对象按 sectionId 查找（避免硬编码）
   - 引用 Requirement 5.2（help 内容配置化）
-- [ ] 13.3 在各 Section 页面（Workers/Teams/Chat）注册 help content
-  - 为每个 section 配置 help text（已定义 SECTION_HELP_CONTENT，按需传入 helpContent prop）
+- [x] 13.3 在各 Section 页面（Workers/Teams/Overview/Chat/Batch）注册 help content
+  - 通过 getHelpContent() 注入帮助文案，使用 ContextualHelpPopover 渲染
   - 引用 Requirement 5.2（per-section 配置）
 
 ### 14. 实现快捷键提示

@@ -8,7 +8,7 @@ import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { MessageSquare, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { MessageSquare, PanelRightOpen, PanelRightClose, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buildRooms } from './chat/room-builders';
 import { ChatAuthBadge } from './chat/chat-auth-badge';
@@ -18,6 +18,8 @@ import { ChatPanel } from './chat/chat-panel';
 import { HumanPanel } from './chat/human-panel';
 import { RoomTopology } from './chat/room-topology';
 import { MatrixStatusBanner } from './chat/matrix-status-banner';
+import { getHelpContent } from '@/lib/help-content';
+import { ContextualHelpPopover } from '@/components/dashboard/contextual-help-popover';
 
 export function ChatSection() {
   const { data: workers, isLoading: workersLoading } = useWorkers();
@@ -54,6 +56,7 @@ export function ChatSection() {
           <span className="text-[10px] text-muted-foreground hidden sm:inline">实时通信与人机协同</span>
         </div>
         <div className="flex items-center gap-1.5">
+          <ContextualHelpPopover content={getHelpContent('chat')} />
           <Button
             variant="ghost"
             size="sm"

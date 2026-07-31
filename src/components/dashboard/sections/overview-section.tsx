@@ -23,6 +23,7 @@ import {
   UserPlus,
   MessageCircle,
   ExternalLink,
+  HelpCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +48,8 @@ import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { getHelpContent } from '@/lib/help-content';
+import { ContextualHelpPopover } from '@/components/dashboard/contextual-help-popover';
 
 // ============ Auto-refresh countdown hook ============
 function useRefreshCountdown(intervalMs: number) {
@@ -384,6 +387,7 @@ export function OverviewSection() {
           <span>自动刷新 {countdown}s</span>
           <Activity className="w-3 h-3 ml-1 animate-pulse text-emerald-500" />
         </div>
+        <ContextualHelpPopover content={getHelpContent('overview')} />
       </motion.div>
 
       <RuntimeInfoCard agentteamsVersion={versionData?.controller} />

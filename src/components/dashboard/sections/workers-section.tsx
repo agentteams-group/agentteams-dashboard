@@ -30,6 +30,7 @@ import { useModels, useAiRoutes } from '@/hooks/use-agentteams-models';
 import { buildModelBindings, hasUnavailableModelAliases, listAvailableRequestModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { getHelpContent } from '@/lib/help-content';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
@@ -454,6 +455,7 @@ export function WorkersSection() {
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
+        helpContent={getHelpContent('workers')}
         actions={
           <div className="flex gap-2 flex-wrap">
             <Button

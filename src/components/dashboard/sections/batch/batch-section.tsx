@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Plus, Trash2, Play, Workflow, Pause, Square } from 'lucide-react';
+import { Plus, Trash2, Play, Workflow, Pause, Square, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BatchWorkflowCanvas } from '@/components/batch-editor/canvas-wrapper';
@@ -19,6 +19,8 @@ import { useWorkers } from '@/hooks/use-agentteams-workers';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 import type { MockWorker } from '@/lib/batch-dry-run';
 import { appendExecutionHistory } from '@/lib/batch-execution-history';
+import { getHelpContent } from '@/lib/help-content';
+import { ContextualHelpPopover } from '@/components/dashboard/contextual-help-popover';
 
 /**
  * 批量操作工作流编辑器 — Phase 3, Task 9.1 + 11.x
@@ -245,6 +247,7 @@ export function BatchOperationsSection() {
               {execStatus === 'paused' ? '继续执行' : '执行'}
             </Button>
           )}
+          <ContextualHelpPopover content={getHelpContent('batch-operations')} />
         </div>
       </div>
 
