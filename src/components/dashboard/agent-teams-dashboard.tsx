@@ -37,6 +37,8 @@ import {
 } from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
+import { Tour } from '@/components/onboarding/tour';
+import { useTourState } from '@/components/onboarding/tour';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -336,6 +338,7 @@ export function AgentTeamsDashboard() {
         </div>
 
         <SettingsDialog />
+        <Tour enabled={true} />
       </div>
     </TooltipProvider>
   );

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { apiUrl } from '@/lib/api-base';
+import { useTourState } from '@/components/onboarding/tour';
+import { Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +51,8 @@ export function SettingsDialog() {
     lastConnectedAt,
     connectionHistory,
   } = useAgentTeamsStore();
+
+  const { restartTour } = useTourState();
 
   const { data: infrastructure } = useInfrastructure();
 
@@ -304,6 +308,15 @@ export function SettingsDialog() {
                 </div>
               </div>
             )}
+
+            {/* Restart Tour */}
+            <div className="flex items-center gap-3 pt-2 border-t">
+              <Sparkles className="h-4 w-4 text-emerald-500 shrink-0" />
+              <span className="text-sm text-muted-foreground">使用引导</span>
+              <Button variant="outline" size="sm" onClick={restartTour} className="ml-auto">
+                重新体验引导
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="alerts" className="py-4">
