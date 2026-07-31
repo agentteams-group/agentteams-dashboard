@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { MoonStar, SunMedium, Trash2, XSquare } from 'lucide-react';
+import { MoonStar, Rocket, SunMedium, Trash2, XSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -14,11 +14,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-export type BulkAction = 'sleep' | 'wake' | 'delete';
+export type BulkAction = 'sleep' | 'wake' | 'ensure-ready' | 'delete';
 
 const ACTION_LABEL: Record<BulkAction, string> = {
   sleep: '休眠',
   wake: '唤醒',
+  'ensure-ready': 'Ensure Ready',
   delete: '删除',
 };
 
@@ -48,6 +49,10 @@ export function WorkerBulkBar({
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onTrigger('sleep')}>
             <MoonStar className="w-3 h-3 mr-1" aria-hidden="true" />
             批量休眠
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onTrigger('ensure-ready')}>
+            <Rocket className="w-3 h-3 mr-1" aria-hidden="true" />
+            批量就绪
           </Button>
           <Button
             variant="ghost"

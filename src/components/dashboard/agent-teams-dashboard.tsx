@@ -46,6 +46,9 @@ const ManagersSection = lazy(() => import('./sections/managers-section').then(m 
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ default: m.ChatSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
+const BatchOperationsSection = lazy(() =>
+  import('./sections/batch/batch-section').then(m => ({ default: m.BatchOperationsSection }))
+);
 
 const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -55,6 +58,7 @@ const sectionMap: Record<string, React.ComponentType> = {
   humans: HumansSection,
   chat: ChatSection,
   docs: DocsSection,
+  ['batch-operations']: BatchOperationsSection,
 };
 
 export function AgentTeamsDashboard() {

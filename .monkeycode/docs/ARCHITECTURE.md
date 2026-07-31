@@ -59,6 +59,28 @@ Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 
 
 负责 Dashboard 容器启动和与 AgentTeams 安装器的补丁集成。`install/AGENTTEAMS_PATCH.md` 记录外部 AgentTeams 源码绑定。
 
+### 告警系统
+
+位置：`src/lib/alert-*.ts`、`src/lib/notifications/`、`src/hooks/use-insights-alerts.ts`
+
+告警系统连接 `insights-engine` 生成的洞察，将其路由到配置的告警规则，并通过多渠道适配器（Matrix、Slack、Email）发送通知。核心组件：
+
+- **AlertManager** (`alert-manager.ts`)：接收洞察，匹配规则，节流重复告警，调度发送。内存中维护 lastSentTimestamps map 实现 throttleMinutes 间隔控制。
+- **NotificationAdapters** (`notifications/*.ts`)：插件式接口，每个 channel 实现一个 adapter。SlackAdapter 调用 Webhook，EmailAdapter 调用 REST API，MatrixAdapter 复用 matrix-api。
+- **Alert Rules** (`alert-rules.ts`)：从 localStorage 持久化，默认规则由 `buildDefaultRules()` 生成。
+- **Insight → Alert 桥接** (`use-insights-alerts.ts` hook)：在 Dashboard 挂载时订阅洞察，severity >= warning 时触发告警流程。
+- **Settings UI** (`settings/alert-settings.tsx`)：提供告警规则的 CRUD 界面，集成到 Settings Dialog 的"告警"标签页。
+
+```mermaid
+flowchart TD
+    IE[insights-engine] -->|Insight| AM[AlertManager]
+    AM -->|Match Rule| AR[AlertRule]
+    AM -->|Send| NA[NotificationAdapter]
+    NA -->|Matrix| MH[Matrix Homeserver]
+    NA -->|Slack| SW[Slack Webhook]
+    NA -->|Email| EM[Email Service]
+```
+
 ```mermaid
 flowchart LR
   Browser["浏览器"] --> UI["React Dashboard"]

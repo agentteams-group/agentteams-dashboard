@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
+import { HealthRingCompact } from '@/components/dashboard/health-ring';
 import {
   Table,
   TableBody,
@@ -15,6 +16,29 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { WorkerResponse } from '@/lib/agentteams-api';
+import { useAgentHealth } from '@/hooks/use-agent-health';
+
+// Worker health cell component - displays the health ring and score
+function WorkerHealthCell({ worker }: { worker: WorkerResponse }) {
+  const health = useAgentHealth(worker);
+  
+  if (!health) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center gap-2">
+          <HealthRingCompact score={health.overall} size={20} />
+          <span className="text-xs font-mono">{health.overall}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p className="text-xs font-medium">健康评分: {health.overall}/100 ({health.label})</p>
+        <p className="text-[10px] text-muted-foreground">可用 {health.availability} · 稳定 {health.stability} · 就绪 {health.readiness}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function WorkerTable({
   workers,
@@ -44,19 +68,20 @@ export function WorkerTable({
   return (
     <Card className="glass-card overflow-hidden">
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10"></TableHead>
-            <TableHead>名称</TableHead>
-            <TableHead>阶段</TableHead>
-            <TableHead>状态</TableHead>
-            <TableHead>任务</TableHead>
-            <TableHead>运行时</TableHead>
-            <TableHead>模型</TableHead>
-            <TableHead>团队</TableHead>
-            <TableHead className="text-right">操作</TableHead>
-          </TableRow>
-        </TableHeader>
+         <TableHeader>
+           <TableRow>
+             <TableHead className="w-10"></TableHead>
+             <TableHead>名称</TableHead>
+             <TableHead>阶段</TableHead>
+             <TableHead>状态</TableHead>
+             <TableHead>任务</TableHead>
+             <TableHead>健康评分</TableHead>
+             <TableHead>运行时</TableHead>
+             <TableHead>模型</TableHead>
+             <TableHead>团队</TableHead>
+             <TableHead className="text-right">操作</TableHead>
+           </TableRow>
+         </TableHeader>
         <TableBody>
           {workers.map((worker) => {
             const isDeleting = deletingWorkerNames.has(worker.name);
@@ -104,6 +129,9 @@ export function WorkerTable({
                 ) : (
                   <span className="text-xs text-muted-foreground">-</span>
                 )}
+              </TableCell>
+              <TableCell>
+                <WorkerHealthCell worker={worker} />
               </TableCell>
               <TableCell>
                 <RuntimeBadge runtime={worker.runtime} />

@@ -86,6 +86,86 @@ export function computeInsights(
     });
   }
 
+  // Worker health score analysis
+  const HEALTH_PHASE_SCORES: Record<string, number> = { Running: 100, Ready: 100, Sleeping: 70, Pending: 40, Updating: 50, Stopped: 20, Failed: 0 };
+  let totalScore = 0;
+  const unhealthyWorkers: string[] = [];
+
+  workers.forEach((w) => {
+    const phaseScore = HEALTH_PHASE_SCORES[w.phase] || 50;
+    totalScore += phaseScore;
+    if (phaseScore < 40) {
+      unhealthyWorkers.push(w.name);
+    }
+  });
+
+  const avgHealth = Math.round(totalScore / workers.length);
+
+  // Low overall health
+  if (avgHealth < 50) {
+    insights.push({
+      id: 'low-worker-health',
+      severity: 'critical',
+      category: 'health',
+      message: `Worker 平均健康评分过低 (${avgHealth}/100)`,
+      detail: `健康评分较低，建议检查 Worker 状态。异常 Worker: ${unhealthyWorkers.join(', ')}`,
+      actionSection: 'workers',
+    });
+  } else if (avgHealth < 70) {
+    insights.push({
+      id: 'moderate-worker-health',
+      severity: 'warning',
+      category: 'health',
+      message: `Worker 平均健康评分偏低 (${avgHealth}/100)`,
+      detail: `部分 Worker 需要关注。`,
+      actionSection: 'workers',
+    });
+  }
+
+  // Container state issues
+  const containerIssues = workers.filter((w) => {
+    const state = w.containerState?.toLowerCase();
+    return state === 'exited' || state === 'dead' || state === 'restarting';
+  });
+  if (containerIssues.length > 0) {
+    insights.push({
+      id: 'container-issues',
+      severity: 'warning',
+      category: 'health',
+      message: `${containerIssues.length} 个 Worker 容器状态异常`,
+      detail: containerIssues.map((w) => `${w.name} (${w.containerState})`).join(', '),
+      actionSection: 'workers',
+    });
+  }
+
+  // Workers without Matrix integration
+  const noMatrixWorkers = workers.filter((w) => !w.matrixUserID || !w.roomID);
+  if (noMatrixWorkers.length > 0) {
+    insights.push({
+      id: 'no-matrix-integration',
+      severity: 'info',
+      category: 'configuration',
+      message: `${noMatrixWorkers.length} 个 Worker 未完成 Matrix 集成`,
+      detail: noMatrixWorkers.map((w) => w.name).join(', '),
+      actionSection: 'workers',
+    });
+  }
+
+  // Runtime distribution risk - all eggs in one basket
+  const runtimeDist: Record<string, number> = {};
+  workers.forEach((w) => { runtimeDist[w.runtime] = (runtimeDist[w.runtime] || 0) + 1; });
+  const runtimes = Object.keys(runtimeDist);
+  if (runtimes.length === 1 && workers.length > 2) {
+    insights.push({
+      id: 'single-runtime-risk',
+      severity: 'info',
+      category: 'capacity',
+      message: `所有 Worker 使用单一运行时 (${runtimes[0]})`,
+      detail: '缺乏运行时多样性，建议使用多种运行时降低风险',
+      actionSection: 'workers',
+    });
+  }
+
   // Teams analysis
   if (teams) {
     const degradedTeams = teams.filter((t) => t.phase === 'Degraded');

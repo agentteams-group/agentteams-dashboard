@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshCw, Send, Paperclip, HelpCircle, Trash2, Users, Hash } from 'lucide-react';
+import { RefreshCw, Send, Paperclip, HelpCircle, Trash2, Users, Hash, Bot, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
@@ -29,8 +29,12 @@ interface SlashCommand {
 const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'help', label: '/help', description: '显示帮助信息', icon: <HelpCircle className="w-3.5 h-3.5" /> },
   { id: 'clear', label: '/clear', description: '清空当前输入', icon: <Trash2 className="w-3.5 h-3.5" /> },
-  { id: 'members', label: '/members', description: '切换成员列表', icon: <Users className="w-3.5 h-3.5" /> },
+  { id: 'members', label: '/members', description: '切换成员列表显示', icon: <Users className="w-3.5 h-3.5" /> },
   { id: 'topic', label: '/topic', description: '设置房间主题 (需参数)', icon: <Hash className="w-3.5 h-3.5" /> },
+  // Agent Teams specific commands
+  { id: 'status', label: '/status', description: '查看 Worker 状态概览', icon: <Bot className="w-3.5 h-3.5" /> },
+  { id: 'health', label: '/health', description: '查看 Worker 健康评分', icon: <RefreshCw className="w-3.5 h-3.5" /> },
+  { id: 'logs', label: '/logs', description: '查看最近日志 (需 Worker 名)', icon: <FileCode className="w-3.5 h-3.5" /> },
 ];
 
 interface ChatComposerProps {

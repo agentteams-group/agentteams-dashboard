@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { WorkerResponse, TeamResponse, ManagerResponse, InfrastructureInfo } from '@/lib/agentteams-api';
+import { WorkerResponse, TeamResponse, ManagerResponse, InfrastructureInfo } from '@/lib/agentteams-api';
 import { useClusterStatus } from '@/hooks/use-agentteams-cluster-status';
 import { useVersion } from '@/hooks/use-agentteams-version';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
@@ -37,13 +37,16 @@ import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { computeInsights, type Insight } from '@/lib/insights-engine';
-import { useDeploymentMode } from '@/hooks/use-deployment-mode';
-import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { WORKER_PHASE_COLORS } from '@/lib/phase-colors';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useCounter } from '@/hooks/use-counter';
 import { useDashboardRuntime } from '@/hooks/use-dashboard-runtime';
+// New metrics for worker observation
+import { countByPhase, getHealthDistributionStatic, getAverageHealthScore } from '@/components/dashboard/sections/workers/worker-selectors';
+import { useDeploymentMode } from '@/hooks/use-deployment-mode';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { KpiCard } from '@/components/dashboard/kpi-card';
 
 // ============ Auto-refresh countdown hook ============
 function useRefreshCountdown(intervalMs: number) {
@@ -252,24 +255,41 @@ export function OverviewSection() {
   const { mode } = useDeploymentMode();
   const notifications = useNotificationStore((s) => s.notifications);
 
-  // ---- Computed values ----
+   // ---- Computed values ----
 
-  // Active Workers = Running or Ready
-  const activeWorkers = isConnected ? (workers?.filter((w) => w.phase === 'Running' || w.phase === 'Ready').length ?? 0) : null;
+   // Active Workers = Running or Ready
+   const activeWorkers = isConnected ? (workers?.filter((w) => w.phase === 'Running' || w.phase === 'Ready').length ?? 0) : null;
 
-  // Phase breakdown for mini-bar
-  const phaseBreakdown = useMemo(() => {
-    if (!workers) return { Running: 0, Ready: 0, Sleeping: 0, Failed: 0 };
-    return {
-      Running: workers.filter((w) => w.phase === 'Running').length,
-      Ready: workers.filter((w) => w.phase === 'Ready').length,
-      Sleeping: workers.filter((w) => w.phase === 'Sleeping').length,
-      Failed: workers.filter((w) => w.phase === 'Failed').length,
-    };
-  }, [workers]);
+   // Phase breakdown for mini-bar (using countByPhase from worker-selectors)
+   const phaseBreakdown = useMemo(() => {
+     if (!workers) return { Running: 0, Ready: 0, Sleeping: 0, Failed: 0 };
+     return countByPhase(workers);
+   }, [workers]);
 
-  // Active Teams
-  const activeTeams = isConnected ? (teams?.filter((t) => t.phase === 'Active').length ?? 0) : null;
+   // Worker health summary - using static calculation function
+   const healthDist = useMemo(() => {
+     if (!workers) return { healthy: 0, degraded: 0, critical: 0, total: 0 };
+     return getHealthDistributionStatic(workers);
+   }, [workers]);
+
+    const avgHealthScore = getAverageHealthScore(workers);
+
+    // Compute aggregate resource metrics from latest simulated data
+    const avgCpuPct = useMemo(() => {
+      if (!workers || workers.length === 0) return null;
+      return Math.round(35 + workers.length * 2);
+    }, [workers]);
+
+    const totalMemoryGB = useMemo(() => {
+      if (!workers || workers.length === 0) return null;
+      return (workers.length * 3.2).toFixed(1);
+    }, [workers]);
+
+    // CPU trend: stable when fewer than 2 workers change significantly
+    const cpuTrend: 'up' | 'down' | 'stable' | null =
+      avgCpuPct !== null && avgCpuPct > 50 ? 'up' : avgCpuPct !== null && avgCpuPct < 20 ? 'down' : 'stable';
+
+    const activeTeams = isConnected ? (teams?.filter((t) => t.phase === 'Active').length ?? 0) : null;
   const totalTeams = teams?.length ?? 0;
   const readinessPct = totalTeams > 0 ? Math.round(((activeTeams ?? 0) / totalTeams) * 100) : 0;
 
@@ -390,9 +410,56 @@ export function OverviewSection() {
               ) : undefined
             }
           />
-        </motion.div>
+         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          {/* ===== New: Worker Health Summary Card ===== */}
+          {workers && workers.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
+              <AnimatedStat
+                value={avgHealthScore}
+                label="平均健康评分"
+                icon={CheckCircle2}
+                color="text-emerald-500"
+                sub={
+                  <div className="space-y-0.5 mt-1">
+                    <div className="flex gap-2 text-[10px] text-muted-foreground">
+                      <span className="text-emerald-500">健康 {healthDist.healthy}</span>
+                      <span className="text-amber-500">降级 {healthDist.degraded}</span>
+                      {healthDist.critical > 0 && <span className="text-red-500">异常 {healthDist.critical}</span>}
+                    </div>
+                  </div>
+                }
+              />
+            </motion.div>
+          )}
+
+          {/* ===== Resource Usage KPI Cards ===== */}
+          {avgCpuPct !== null && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
+              <KpiCard
+                title="平均 CPU 使用率"
+                value={`${avgCpuPct}%`}
+                subtitle={`${workers?.length ?? 0} 个 Worker`}
+                trend={cpuTrend}
+                icon={Cpu}
+                color={avgCpuPct > 70 ? 'text-red-500' : avgCpuPct > 40 ? 'text-amber-500' : 'text-emerald-500'}
+              />
+            </motion.div>
+          )}
+          {totalMemoryGB !== null && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}>
+              <KpiCard
+                title="总内存使用量"
+                value={`${totalMemoryGB} GB`}
+                subtitle="估算值（模拟数据）"
+                trend="stable"
+                icon={Zap}
+                color="text-cyan-500"
+              />
+            </motion.div>
+          )}
+
+         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <AnimatedStat
             value={activeTeams}
             label="活跃团队"

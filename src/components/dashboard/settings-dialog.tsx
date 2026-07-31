@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { apiUrl } from '@/lib/api-base';
 import {
@@ -24,6 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { Wifi, WifiOff, Loader2, RotateCcw, Clock, Server, History, Stethoscope } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { TroubleshootTab } from './settings/troubleshoot-tab';
+import { AlertSettingsPage } from './settings/alert-settings';
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -119,8 +120,9 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="connection">连接</TabsTrigger>
+            <TabsTrigger value="alerts">告警</TabsTrigger>
             <TabsTrigger value="troubleshoot">
               <Stethoscope className="w-3.5 h-3.5 mr-1" />
               AI 诊断
@@ -302,6 +304,10 @@ export function SettingsDialog() {
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="alerts" className="py-4">
+            <AlertSettingsPage />
           </TabsContent>
 
           <TabsContent value="troubleshoot" className="py-4">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload } from 'lucide-react';
+import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, RefreshCcw, Square, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -43,6 +43,7 @@ import {
 import { WorkerCard } from './workers/worker-card';
 import { WorkerTable } from './workers/worker-table';
 import { WorkerPagination } from './workers/worker-pagination';
+import { WorkerStatsBar } from './workers/worker-stats-bar';
 import { WorkerBulkBar, WorkerBulkConfirm, type BulkAction } from './workers/worker-bulk-bar';
 import { WorkerCreateDialog } from './workers/worker-create-dialog';
 import {
@@ -151,6 +152,9 @@ export function WorkersSection() {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [currentPage, setCurrentPage] = useState(1);
 
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const AUTO_REFRESH_INTERVAL = 15; // seconds
+
   const [selectedWorkers, setSelectedWorkers] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   const [deletingWorkerNames, setDeletingWorkerNames] = useState<Set<string>>(new Set());
@@ -178,6 +182,12 @@ export function WorkersSection() {
       return next.size === previous.size ? previous : next;
     });
   }, [workers]);
+
+  useEffect(() => {
+    if (!autoRefresh || !isConnected) return;
+    const id = setInterval(() => { refetch(); }, AUTO_REFRESH_INTERVAL * 1000);
+    return () => clearInterval(id);
+  }, [autoRefresh, isConnected, refetch]);
 
   // Reset to first page when filters change (adjust state during render)
   const [prevFilters, setPrevFilters] = useState({ searchQuery, sortKey });
@@ -217,6 +227,74 @@ export function WorkersSection() {
       return next;
     });
   }, []);
+
+  const exportCSV = useCallback(() => {
+    if (!workers) return;
+    const headers = ['名称', '阶段', '状态', '健康评分', '运行时', '模型', '团队'];
+    const rows = workers.map(w => {
+      let healthScore = '-';
+      if (w.phase === 'Running' || w.phase === 'Ready') healthScore = '100';
+      else if (w.phase === 'Sleeping' || w.phase === 'Stopped') healthScore = '70';
+      else if (w.phase === 'Pending') healthScore = '50';
+      else if (w.phase === 'Failed') healthScore = '0';
+      return [
+        w.name,
+        w.phase,
+        w.state || '-',
+        `${healthScore}/100`,
+        w.runtime || '-',
+        w.model || '-',
+        w.team || '-'
+      ];
+    });
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `workers-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [workers]);
+
+  const exportMD = useCallback(() => {
+    if (!workers) return;
+    const mdLines = [
+      '# Worker List Export',
+      '',
+      `**导出时间:** ${new Date().toLocaleString('zh-CN')}`,
+      `**Worker 总数:** ${workers.length}`,
+      '',
+      '| 名称 | 阶段 | 状态 | 健康评分 | 运行时 | 模型 | 团队 |',
+      '|---|---|---|---|---|---|---|',
+    ];
+    
+    workers.forEach(w => {
+      let healthScore = '-';
+      if (w.phase === 'Running' || w.phase === 'Ready') healthScore = '100';
+      else if (w.phase === 'Sleeping' || w.phase === 'Stopped') healthScore = '70';
+      else if (w.phase === 'Pending') healthScore = '50';
+      else if (w.phase === 'Failed') healthScore = '0';
+      
+      mdLines.push(`| ${w.name} | ${w.phase} | ${w.state || '-'} | ${healthScore}/100 | ${w.runtime || '-'} | ${w.model || '-'} | ${w.team || '-'} |`);
+    });
+    
+    const content = mdLines.join('\n');
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `workers-${new Date().toISOString().split('T')[0]}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [workers]);
 
   const handleBulkAction = useCallback(() => {
     if (!bulkAction || selectedWorkers.size === 0) return;
@@ -459,8 +537,48 @@ export function WorkersSection() {
                   <List className="w-3.5 h-3.5" aria-hidden="true" />
                   表格
                 </TabsTrigger>
-              </TabsList>
-            </Tabs>
+               </TabsList>
+             </Tabs>
+            {/* Auto-refresh toggle */}
+            <Button
+              variant={autoRefresh ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              title={autoRefresh ? `每 ${AUTO_REFRESH_INTERVAL}s 自动刷新` : '开启自动刷新'}
+            >
+              <RefreshCcw className={`w-3.5 h-3.5 ${autoRefresh ? 'animate-spin' : ''}`} aria-hidden="true" />
+            </Button>
+            {/* Export dropdown */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                aria-label="导出选项"
+                title="导出选项"
+              >
+                <FileCode className="w-3.5 h-3.5" aria-hidden="true" />
+                <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </Button>
+              <div className="absolute right-0 mt-1 w-24 bg-background border border-border rounded shadow-lg py-1 z-10">
+                <button 
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-emerald-500 hover:text-white rounded"
+                  onClick={() => exportCSV()}
+                >CSV</button>
+                <button 
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-emerald-500 hover:text-white rounded"
+                  onClick={() => handleExport()}
+                >JSON</button>
+                <button 
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-emerald-500 hover:text-white rounded"
+                  onClick={() => exportMD()}
+                >Markdown</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -472,41 +590,47 @@ export function WorkersSection() {
       ) : (
         <>
           {viewMode === 'card' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paginatedWorkers.map((worker, i) => (
-                <WorkerCard
-                  key={worker.name}
-                  worker={worker}
-                  index={i}
-                  isSelected={selectedWorkers.has(worker.name)}
-                  onToggleSelect={() => toggleSelect(worker.name)}
-                  onView={() => setDetailWorker(worker)}
-                  onEdit={() => openEdit(worker)}
-                  onWake={() => wakeWorker.mutate(worker.name)}
-                  onSleep={() => sleepWorker.mutate(worker.name)}
-                  onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
-                  onDelete={() => setDeleteTarget(worker.name)}
-                  isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
-                  isDeleting={deletingWorkerNames.has(worker.name)}
-                />
-              ))}
-            </div>
+            <>
+              <WorkerStatsBar workers={filtered} />
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {paginatedWorkers.map((worker, i) => (
+                 <WorkerCard
+                   key={worker.name}
+                   worker={worker}
+                   index={i}
+                   isSelected={selectedWorkers.has(worker.name)}
+                   onToggleSelect={() => toggleSelect(worker.name)}
+                   onView={() => setDetailWorker(worker)}
+                   onEdit={() => openEdit(worker)}
+                   onWake={() => wakeWorker.mutate(worker.name)}
+                   onSleep={() => sleepWorker.mutate(worker.name)}
+                   onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
+                   onDelete={() => setDeleteTarget(worker.name)}
+                   isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
+                   isDeleting={deletingWorkerNames.has(worker.name)}
+                 />
+               ))}
+             </div>
+            </>
           ) : (
-            <WorkerTable
-              workers={paginatedWorkers}
-              selectedWorkers={selectedWorkers}
-              onToggleSelect={toggleSelect}
-              onView={setDetailWorker}
-              onEdit={openEdit}
-              onWake={(name) => wakeWorker.mutate(name)}
-              onSleep={(name) => sleepWorker.mutate(name)}
-              onEnsureReady={(name) => ensureReadyWorker.mutate(name)}
-              onDelete={setDeleteTarget}
-              isActionPending={
-                wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
-              }
-              deletingWorkerNames={deletingWorkerNames}
-            />
+            <>
+              <WorkerStatsBar workers={filtered} />
+              <WorkerTable
+                workers={paginatedWorkers}
+                selectedWorkers={selectedWorkers}
+                onToggleSelect={toggleSelect}
+                onView={setDetailWorker}
+                onEdit={openEdit}
+                onWake={(name) => wakeWorker.mutate(name)}
+                onSleep={(name) => sleepWorker.mutate(name)}
+                onEnsureReady={(name) => ensureReadyWorker.mutate(name)}
+                onDelete={setDeleteTarget}
+                isActionPending={
+                  wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
+                }
+                deletingWorkerNames={deletingWorkerNames}
+              />
+            </>
           )}
           <WorkerPagination
             currentPage={safePage}

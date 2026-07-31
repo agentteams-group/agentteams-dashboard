@@ -296,6 +296,22 @@ export interface TroubleshootRequest {
 
 export type TroubleshootResponse = ReadableStream<Uint8Array>;
 
+// ============ Metrics Types ============
+
+export interface MetricPoint {
+  timestamp: string; // ISO 8601
+  cpu: number;     // percentage (0-100)
+  memory: number;  // bytes
+  networkRx: number; // bytes
+  networkTx: number; // bytes
+}
+
+export interface MetricResponse {
+  entity: 'worker' | 'team';
+  name: string;
+  data: MetricPoint[];
+}
+
 // ============ Proxy Request Helper ============
 
 async function proxyRequest<T>(

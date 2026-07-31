@@ -5,8 +5,13 @@ import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { HealthRing } from '@/components/dashboard/health-ring';
 import { useAgentHealth } from '@/hooks/use-agent-health';
+import { useAgentMetrics } from '@/hooks/use-agent-metrics';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
-import type { WorkerResponse } from '@/lib/agentteams-api';
+import type { WorkerResponse, LogLine } from '@/lib/agentteams-api';
+import { useEffect, useState } from 'react';
+import { agentteamsApi } from '@/lib/agentteams-api';
+import { WorkerTimeline } from './worker-timeline';
+import { MetricChart } from './metric-chart';
 
 const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['名称', (w) => w.name],
@@ -45,43 +50,157 @@ export function WorkerDetailDialog({
               <RuntimeBadge runtime={worker.runtime} />
             </div>
             <WorkerHealthBreakdown worker={worker} />
-            {DETAIL_FIELDS.map(([label, read]) => (
-              <div
-                key={label}
-                className="flex justify-between py-1 border-b border-border/50"
-              >
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-mono text-xs max-w-[60%] text-right break-all">
-                  {read(worker)}
-                </span>
-              </div>
-            ))}
-            {(worker.mcpServers?.length ?? 0) > 0 && (
-              <div className="pt-2">
-                <p className="text-muted-foreground mb-1">MCP Servers</p>
-                {worker.mcpServers?.map((s, i) => (
-                  <div key={i} className="text-xs font-mono flex items-center gap-2">
-                    <span className="font-medium">{s.name}</span>
-                    <span className="text-muted-foreground">({s.transport})</span>
-                    <span className="truncate">{s.url}</span>
+            
+              {/* Tabs for Details, Logs, Timeline, and Resource Usage */}
+              <div className="mt-4">
+                <div className="border-b border-border/50 flex gap-4">
+                  <button
+                    className="py-2 text-sm font-medium hover:text-emerald-500 transition-colors border-b-2 border-emerald-500 text-emerald-500"
+                  >
+                    详情
+                  </button>
+                  <button
+                    className="py-2 text-sm font-medium text-muted-foreground hover:text-emerald-500 transition-colors border-b-2 border-transparent"
+                  >
+                    日志
+                  </button>
+                  <button
+                    className="py-2 text-sm font-medium text-muted-foreground hover:text-emerald-500 transition-colors border-b-2 border-transparent"
+                  >
+                    时间线
+                  </button>
+                  <button
+                    className="py-2 text-sm font-medium text-muted-foreground hover:text-emerald-500 transition-colors border-b-2 border-transparent"
+                  >
+                    资源使用
+                  </button>
+                </div>
+
+                {/* Resource Usage Tab Content */}
+                <WorkerResourceUsage worker={worker} />
+              
+              {/* Details Tab Content */}
+              <div className="mt-3">
+                {DETAIL_FIELDS.map(([label, read]) => (
+                  <div
+                    key={label}
+                    className="flex justify-between py-1 border-b border-border/50"
+                  >
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="font-mono text-xs max-w-[60%] text-right break-all">
+                      {read(worker)}
+                    </span>
                   </div>
                 ))}
-              </div>
-            )}
-            {(worker.exposedPorts?.length ?? 0) > 0 && (
-              <div className="pt-2">
-                <p className="text-muted-foreground mb-1">暴露端口</p>
-                {worker.exposedPorts?.map((p, i) => (
-                  <div key={i} className="text-xs font-mono">
-                    {p.port} → {p.domain}
+                {(worker.mcpServers?.length ?? 0) > 0 && (
+                  <div className="pt-2">
+                    <p className="text-muted-foreground mb-1">MCP Servers</p>
+                    {worker.mcpServers?.map((s, i) => (
+                      <div key={i} className="text-xs font-mono flex items-center gap-2">
+                        <span className="font-medium">{s.name}</span>
+                        <span className="text-muted-foreground">({s.transport})</span>
+                        <span className="truncate">{s.url}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {(worker.exposedPorts?.length ?? 0) > 0 && (
+                  <div className="pt-2">
+                    <p className="text-muted-foreground mb-1">暴露端口</p>
+                    {worker.exposedPorts?.map((p, i) => (
+                      <div key={i} className="text-xs font-mono">
+                        {p.port} → {p.domain}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Logs Tab Content */}
+              <div className="mt-3">
+                <WorkerLogViewer _workerName={worker.name} />
+              </div>
+
+              {/* Timeline Tab Content */}
+              <div className="mt-3">
+                <WorkerTimeline worker={worker} />
+              </div>
+            </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function WorkerLogViewer({ _workerName }: { _workerName: string }) {
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        setLoading(true);
+        // Get logs for this worker - use worker name as component identifier
+        const result = await agentteamsApi.getLogs(_workerName, { tail: 50 });
+        setLogs(result);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch worker logs:', err);
+        // Try alternative log endpoint format
+        try {
+          const result = await agentteamsApi.getLogs(`workers/${_workerName}`, { tail: 50 });
+          setLogs(result);
+          setError(null);
+        } catch {
+          setError('无法获取日志，请检查 Worker 状态');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, [_workerName]);
+
+  if (loading) {
+    return (
+      <div className="text-center py-4 text-sm text-muted-foreground">
+        加载中...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-4 text-sm text-red-500">
+        {error}
+      </div>
+    );
+  }
+
+  if (logs.length === 0) {
+    return (
+      <div className="text-center py-4 text-sm text-muted-foreground bg-background rounded p-4 border border-border/50">
+        暂无日志记录
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-64 overflow-y-auto bg-background rounded p-2 border border-border/50 font-mono text-xs">
+      {logs.map((log, index) => (
+        <div key={index} className={`py-1 border-b border-border/10 ${
+          log.level === 'error' ? 'text-red-500' : log.level === 'warning' ? 'text-amber-500' : ''
+        }`}>
+          <span className="text-gray-400 mr-2">{log.timestamp}</span>
+          <span className="text-gray-500 mr-2 w-16 inline-block">{log.level}</span>
+          <span className="text-gray-400 mr-2 w-32 inline-block">{log.component}</span>
+          {log.message}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -113,6 +232,53 @@ function HealthBar({ label, value }: { label: string; value: number }) {
         />
       </div>
       <span className="text-[10px] font-mono w-6 text-right">{value}</span>
+    </div>
+  );
+}
+
+function WorkerResourceUsage({ worker }: { worker: WorkerResponse }) {
+  const { data, isLoading, error } = useAgentMetrics({ name: worker.name });
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 flex items-center justify-center py-8 text-sm text-muted-foreground">
+        加载中...
+      </div>
+    );
+  }
+
+  if (error) {
+    console.warn('[WorkerResourceUsage] Metrics unavailable:', error);
+    return (
+      <div className="mt-3 text-center py-8 text-sm text-muted-foreground bg-muted/30 rounded border border-border/50">
+        暂无可用数据
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <MetricChart data={data?.data ?? []} height={180} showMemory />
+      {data && data.data.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="p-2 rounded bg-muted/30 border border-border/50">
+            <p className="text-muted-foreground">当前 CPU</p>
+            <p className="font-mono font-semibold">
+              {Math.round(data.data[data.data.length - 1]?.cpu ?? 0)}%
+            </p>
+          </div>
+          <div className="p-2 rounded bg-muted/30 border border-border/50">
+            <p className="text-muted-foreground">当前内存</p>
+            <p className="font-mono font-semibold">
+              {(data.data[data.data.length - 1]?.memory ?? 0 / 1e9).toFixed(1)} GB
+            </p>
+          </div>
+          <div className="p-2 rounded bg-muted/30 border border-border/50">
+            <p className="text-muted-foreground">采样间隔</p>
+            <p className="font-mono font-semibold">过去 1 小时</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
