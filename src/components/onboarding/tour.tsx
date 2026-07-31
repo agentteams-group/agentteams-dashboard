@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import Joyride, { STATUS } from 'react-joyride';
+import { Joyride, STATUS } from 'react-joyride';
 import type { Step } from 'react-joyride';
 
 const TOUR_STORAGE_KEY = 'agentteams-tour-step';
@@ -76,6 +76,20 @@ export function Tour({ enabled }: { enabled: boolean }) {
     [],
   );
 
+  const handleEvent = useCallback(
+    (data: { action: string; index: number; lifecycle: string }, _controls: unknown) => {
+      const { action, index: currentStep, lifecycle } = data;
+      if (action === 'close' || action === 'skip') {
+        markTourFinished();
+        setRunning(false);
+      } else if (action === 'next' && lifecycle === 'after') {
+        localStorage.setItem(TOUR_STORAGE_KEY, String(currentStep + 1));
+        setStep(currentStep + 1);
+      }
+    },
+    [],
+  );
+
   const handleRestart = () => {
     clearTourState();
     setStep(0);
@@ -89,18 +103,16 @@ export function Tour({ enabled }: { enabled: boolean }) {
       steps={TOUR_STEPS.slice(step)}
       run={running}
       stepIndex={step}
-      callback={handleCallback}
-      styles={{
-        options: {
-          zIndex: 9999,
-          primaryColor: '#10b981',
-          textColor: 'hsl(var(--foreground))',
-          backgroundColor: 'hsl(var(--background))',
-          overlayColor: 'rgba(0,0,0,0.5)',
-        },
+      onEvent={handleEvent}
+      options={{
+        zIndex: 9999,
+        primaryColor: '#10b981',
+        textColor: 'hsl(var(--foreground))',
+        backgroundColor: 'hsl(var(--background))',
+        overlayColor: 'rgba(0,0,0,0.5)',
+        dismissKeyAction: false,
+        overlayClickAction: false,
       }}
-      disableCloseOnEsc
-      disableOverlayClose
     />
   );
 }
