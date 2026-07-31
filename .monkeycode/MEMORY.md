@@ -36,3 +36,11 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Environment Configuration
 - Instructions:
   - The workspace currently has no installed Node.js dependencies; `npm test`, `npm run typecheck`, and `npm run lint` cannot resolve their project executables.
+
+[Project Knowledge Summary]
+- Date: 2026-07-31
+- Context: Discovered by Agent while fixing onboarding tour component build errors
+- Category: Build Methods
+- Instructions:
+  - react-joyride v3 removed the default export and renamed several props: import Joyride as named export (`import { Joyride } from 'react-joyride'`), replace `callback` with `onEvent`, replace `disableCloseOnEsc` with `dismissKeyAction={false}`, replace `disableOverlayClose` with `overlayClickAction={false}`, move style options (zIndex, primaryColor, etc.) from `styles.options` to top-level `options` prop.
+  - TypeScript typecheck command: `npx tsc --noEmit`; production build: `npm run build`.
