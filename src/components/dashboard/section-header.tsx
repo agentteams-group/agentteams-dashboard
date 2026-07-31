@@ -3,6 +3,8 @@
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ContextualHelpPopover } from '@/components/dashboard/contextual-help-popover';
+import type { HelpContent } from '@/lib/help-content';
 
 interface SectionHeaderProps {
   title: string;
@@ -11,9 +13,10 @@ interface SectionHeaderProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   actions?: React.ReactNode;
+  helpContent?: HelpContent;
 }
 
-export function SectionHeader({ title, description, isLive, onRefresh, isRefreshing, actions }: SectionHeaderProps) {
+export function SectionHeader({ title, description, isLive, onRefresh, isRefreshing, actions, helpContent }: SectionHeaderProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div className="flex items-center gap-2">
@@ -29,6 +32,7 @@ export function SectionHeader({ title, description, isLive, onRefresh, isRefresh
         )}
       </div>
       <div className="flex items-center gap-2">
+        {helpContent && <ContextualHelpPopover content={helpContent} />}
         {onRefresh && (
           <Button
             variant="ghost"

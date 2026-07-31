@@ -1,19 +1,27 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2, Play, Workflow } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Plus, Trash2, Play, Workflow, Pause, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BatchWorkflowCanvas } from '@/components/batch-editor/canvas-wrapper';
 import { addDefaultWorkflow } from '@/components/batch-editor/step-config-panel';
-import type { BatchStep, BatchExecutionResult, BatchWorkflow, ExecutionLogEntry } from '@/lib/batch-workflow-types';
+import type {
+  BatchStep,
+  BatchExecutionResult,
+  BatchWorkflow,
+  ExecutionLogEntry,
+  ExecutionStatus,
+} from '@/lib/batch-workflow-types';
 import { ExecutionLog } from '@/components/batch-execution/execution-log';
+import { ProgressProgressBar } from '@/components/batch-execution/progress-bar';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 import type { MockWorker } from '@/lib/batch-dry-run';
+import { appendExecutionHistory } from '@/lib/batch-execution-history';
 
 /**
- * 批量操作工作流编辑器 — Phase 3, Task 9.1
+ * 批量操作工作流编辑器 — Phase 3, Task 9.1 + 11.x
  */
 export function BatchOperationsSection() {
   const [workflows, setWorkflows] = useState<BatchWorkflow[]>(loadWorkflows);
@@ -22,6 +30,10 @@ export function BatchOperationsSection() {
   );
   const [result, setResult] = useState<BatchExecutionResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [execStatus, setExecStatus] = useState<ExecutionStatus>('idle');
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [currentSteps, setCurrentSteps] = useState<ExecutionLogEntry[]>([]);
+  const abortRef = useRef(false);
 
   const { data: workersData } = useWorkers();
   const mockWorkers = toMockWorkers(workersData ?? []);
@@ -64,35 +76,146 @@ export function BatchOperationsSection() {
     });
   };
 
+  const startExecution = () => {
+    setIsExecuting(true);
+    setExecStatus('running');
+    setCurrentStepIndex(0);
+    setCurrentSteps([]);
+    abortRef.current = false;
+  };
+
+  const runNextStep = async (
+    workflow: BatchWorkflow,
+    steps: ExecutionLogEntry[],
+    index: number,
+  ): Promise<ExecutionLogEntry[]> => {
+    if (index >= workflow.steps.length || abortRef.current) {
+      return steps;
+    }
+
+    const step = workflow.steps[index];
+    const startedAt = Date.now();
+    setCurrentStepIndex(index);
+    setCurrentSteps((prev) => [...prev, {
+      stepId: step.id,
+      stepOrder: index,
+      stepType: step.type,
+      status: 'running',
+      startedAt,
+      completedAt: startedAt,
+      affectedWorkers: [],
+    }]);
+
+    // Simulate processing time with variable delay
+    const delay = 400 + Math.random() * 300;
+    await new Promise((r) => setTimeout(r, delay));
+
+    if (abortRef.current) {
+      // Mark remaining steps as skipped
+      const skippedSteps: ExecutionLogEntry[] = workflow.steps.slice(index).map((s, i) => ({
+        stepId: s.id,
+        stepOrder: index + i,
+        stepType: s.type,
+        status: 'skipped',
+        startedAt: Date.now(),
+        completedAt: Date.now(),
+        affectedWorkers: [],
+      }));
+      return [...steps, {
+        stepId: step.id,
+        stepOrder: index,
+        stepType: step.type,
+        status: 'skipped',
+        startedAt,
+        completedAt: Date.now(),
+        affectedWorkers: [],
+      }, ...skippedSteps];
+    }
+
+    const completedAt = Date.now();
+    const newSteps = [...steps, {
+      stepId: step.id,
+      stepOrder: index,
+      stepType: step.type,
+      status: 'completed',
+      startedAt,
+      completedAt,
+      affectedWorkers: mockWorkers.slice(0, Math.floor(mockWorkers.length * 0.6)).map((w) => w.name),
+    }];
+
+    // Recurse for next step
+    return runNextStep(workflow, newSteps as ExecutionLogEntry[], index + 1);
+  };
+
   const handleExecute = async () => {
     if (!activeWorkflow || isExecuting) return;
-    setIsExecuting(true);
-    const logEntries: ExecutionLogEntry[] = [];
-    for (const step of activeWorkflow.steps) {
-      const startedAt = Date.now();
-      await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
-      const completedAt = Date.now();
-      logEntries.push({
-        stepId: step.id,
-        stepOrder: step.order,
-        stepType: step.type,
-        status: 'completed',
-        startedAt,
-        completedAt,
-        affectedWorkers: mockWorkers.slice(0, Math.floor(mockWorkers.length * 0.6)).map((w) => w.name),
+    startExecution();
+    try {
+      const finalSteps = await runNextStep(activeWorkflow, [], 0);
+      const totalAffected = new Set(
+        finalSteps.flatMap((s) => s.affectedWorkers),
+      ).size;
+      const finishedAt = Date.now();
+      const execResult: BatchExecutionResult = {
+        workflowId: activeWorkflow.id,
+        workflowName: activeWorkflow.name,
+        startedAt: activeWorkflow.steps.reduce(
+          (min, s) => Math.min(min, s.startedAt ?? Infinity), Infinity,
+        ),
+        completedAt: finishedAt,
+        status: abortRef.current ? 'paused' : 'completed',
+        steps: finalSteps,
+        totalAffected,
+        totalFailed: 0,
+      };
+      setResult(execResult);
+      setExecStatus(execResult.status);
+      appendExecutionHistory({
+        id: `ex-${Date.now()}`,
+        workflowId: activeWorkflow.id,
+        workflowName: activeWorkflow.name,
+        startedAt: execResult.startedAt,
+        completedAt: finishedAt,
+        status: execResult.status,
+        totalAffected,
+        totalFailed: 0,
       });
+    } catch {
+      setExecStatus('failed');
+      setIsExecuting(false);
     }
-    setResult({
-      workflowId: activeWorkflow.id,
-      workflowName: activeWorkflow.name,
-      startedAt: activeWorkflow.steps.reduce((min, s) => Math.min(min, s.startedAt ?? Infinity), Infinity),
-      completedAt: Date.now(),
-      status: 'completed',
-      steps: logEntries,
-      totalAffected: Math.floor(mockWorkers.length * 0.6),
-      totalFailed: 0,
-    });
     setIsExecuting(false);
+  };
+
+  const handleAbort = () => {
+    abortRef.current = true;
+    setExecStatus('paused');
+  };
+
+  const handleContinue = () => {
+    if (!activeWorkflow) return;
+    abortRef.current = false;
+    setExecStatus('running');
+    setIsExecuting(true);
+    runNextStep(activeWorkflow, currentSteps, currentStepIndex).then((finalSteps) => {
+      const totalAffected = new Set(finalSteps.flatMap((s) => s.affectedWorkers)).size;
+      const finishedAt = Date.now();
+      const execResult: BatchExecutionResult = {
+        workflowId: activeWorkflow.id,
+        workflowName: activeWorkflow.name,
+        startedAt: activeWorkflow.steps.reduce(
+          (min, s) => Math.min(min, s.startedAt ?? Infinity), Infinity,
+        ),
+        completedAt: finishedAt,
+        status: 'completed',
+        steps: finalSteps,
+        totalAffected,
+        totalFailed: 0,
+      };
+      setResult(execResult);
+      setExecStatus('completed');
+      setIsExecuting(false);
+    });
   };
 
   return (
@@ -112,12 +235,30 @@ export function BatchOperationsSection() {
           <Button variant="outline" size="sm" onClick={handleAddWorkflow}>
             <Plus className="h-3.5 w-3.5 mr-1" />新建工作流
           </Button>
-          <Button size="sm" onClick={handleExecute} disabled={isExecuting || !activeWorkflow || activeWorkflow.steps.length === 0}>
-            <Play className="h-3.5 w-3.5 mr-1" />
-            {isExecuting ? '执行中…' : '执行'}
-          </Button>
+          {isExecuting ? (
+            <Button variant="outline" size="sm" onClick={handleAbort}>
+              <Square className="h-3.5 w-3.5 mr-1" />中止
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handleExecute} disabled={!activeWorkflow || activeWorkflow.steps.length === 0}>
+              <Play className="h-3.5 w-3.5 mr-1" />
+              {execStatus === 'paused' ? '继续执行' : '执行'}
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Progress bar (shown when running/paused/completed) */}
+      {(isExecuting || result) && activeWorkflow && (
+        <ProgressProgressBar
+          steps={currentSteps.length > 0 ? currentSteps : (result?.steps ?? [])}
+          totalSteps={activeWorkflow.steps.length}
+          currentStepIndex={isExecuting ? currentStepIndex : (result?.steps.filter((s) => s.status === 'completed').length ?? 0)}
+          status={execStatus as Parameters<typeof ProgressProgressBar>[0]['status']}
+          onContinue={execStatus === 'paused' ? handleContinue : undefined}
+          onAbort={isExecuting ? handleAbort : undefined}
+        />
+      )}
 
       {/* Workspace */}
       <div className="grid grid-cols-[220px_1fr] gap-4 h-[560px]">

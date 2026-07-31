@@ -120,11 +120,11 @@ Generated: 2026-07-31
 ## Phase 3: 批量操作编排
 
 ### 8. 开发 Batch Operations Hub 页面骨架
-- [ ] 8.1 创建 `/src/app/(dashboard)/batch-operations/page.tsx` 新路由页面
+- [x] 8.1 创建 `/src/app/(dashboard)/batch-operations/page.tsx` 新路由页面
   - 左侧面板：Workflow 列表（已保存的工作流）
   - 右侧面板：当前选中 Workflow 的步骤编辑器（初始状态）
   - 引用 Requirement 4.1（视觉布局）
-- [ ] 8.2 在导航菜单中注册 "Batch Operations" 入口
+- [x] 8.2 在导航菜单中注册 "Batch Operations" 入口
   - 添加到 `src/components/dashboard/nav-items.ts` 的 tools 分组
   - 引用 Requirement 4.1（导航可发现性）
 
@@ -161,14 +161,15 @@ Generated: 2026-07-31
 - [x] 11.1 创建 ExecutionLog 组件 `src/components/batch-execution/execution-log.tsx`
   - 实时显示每个步骤的开始时间、结束时间、状态、受影响 Worker 数量
   - 引用 Requirement 4.3（执行日志可视化）
-- [ ] 11.2 创建 ProgressProgressBar 组件（保留作为下一步优化）
-  - 显示当前步骤序号和总步骤数（Step X of Y）
+- [x] 11.2 创建 ProgressProgressBar 组件 `src/components/batch-execution/progress-bar.tsx`
+  - 显示当前步骤序号和总步骤数（Step X of Y）+ 颜色进度条
   - 引用 Requirement 4.3（进度条显示）
-- [ ] 11.3 实现执行中断与错误暂停逻辑
+- [x] 11.3 实现执行中断与错误暂停逻辑
   - 当某步骤失败时暂停执行并标记该步骤为红色
   - 提供 "Continue" / "Abort" 操作按钮
   - 引用 Requirement 4.3（错误处理交互）
-- [ ] 11.4 存储最近 10 次执行历史（localStorage）（保留作为下一步优化）
+- [x] 11.4 存储最近 10 次执行历史（localStorage）
+  - 通过 `src/lib/batch-execution-history.ts` 维护历史
   - 在 Workflow 列表中显示最后执行时间和状态
   - 引用 Requirement 4.3（历史记录可追溯）
 
@@ -192,15 +193,15 @@ Generated: 2026-07-31
   - 引用 Requirement 5.1（重启引导功能）
 
 ### 13. 添加上下文帮助按钮
-- [ ] 13.1 扩展 SectionHeader 组件添加 HelpButton
-  - 在 rightActions 区域渲染 ? 图标按钮
+- [x] 13.1 扩展 SectionHeader 组件添加 HelpButton
+  - 在 rightActions 区域渲染 ? 图标按钮（通过 helpContent prop 注入）
   - 引用 Requirement 5.2（每页面帮助入口）
-- [ ] 13.2 创建 ContextualHelpPopover 组件
+- [x] 13.2 创建 ContextualHelpPopover 组件 `src/components/dashboard/contextual-help-popover.tsx`
   - 弹窗显示：1 sentence purpose + 3 key actions + docs link
   - 内容从配置对象按 sectionId 查找（避免硬编码）
   - 引用 Requirement 5.2（help 内容配置化）
 - [ ] 13.3 在各 Section 页面（Workers/Teams/Chat）注册 help content
-  - 为每个 section 配置 help text
+  - 为每个 section 配置 help text（已定义 SECTION_HELP_CONTENT，按需传入 helpContent prop）
   - 引用 Requirement 5.2（per-section 配置）
 
 ### 14. 实现快捷键提示

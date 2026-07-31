@@ -83,6 +83,20 @@ export interface BatchExecutionResult {
   totalFailed: number;
 }
 
+/**
+ * Lightweight entry stored in execution history (last 10 runs per workflow).
+ */
+export interface ExecutionHistoryEntry {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  startedAt: number;
+  completedAt: number;
+  status: ExecutionStatus;
+  totalAffected: number;
+  totalFailed: number;
+}
+
 // Known worker phases referenced by validate step filters
 export type WorkerPhase = 'Pending' | 'Running' | 'Sleeping' | 'Updating' | 'Stopped' | 'Failed' | 'Ready';
 
