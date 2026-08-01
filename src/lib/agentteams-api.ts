@@ -472,12 +472,14 @@ export const agentteamsApi = {
     return proxyRequest<TeamResponse>('/teams', { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  updateTeam: (name: string, data: UpdateTeamRequest) => {
+  updateTeam: async (name: string, data: UpdateTeamRequest) => {
     const { workerNames, leader, admin, ...rest } = data;
     const payload: Record<string, unknown> = { ...rest };
     if (admin !== undefined) payload.admin = admin;
     if (workerNames !== undefined) {
-      payload.workerMembers = buildWorkerMembers(leader ?? undefined, workerNames);
+      const workerMembers = buildWorkerMembers(leader ?? undefined, workerNames);
+      await ensureWorkersExist(workerMembers);
+      payload.workerMembers = workerMembers;
     }
     delete payload.leader;
     delete payload.workerNames;
