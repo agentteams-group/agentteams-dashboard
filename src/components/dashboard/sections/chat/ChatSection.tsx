@@ -1,5 +1,6 @@
 'use client';
 
+import { ChatProvider } from './ChatStore';
 import { ChatPanel } from './ChatPanel';
 
 interface ChatSectionProps {
@@ -20,12 +21,14 @@ export function ChatSection({
   className,
 }: ChatSectionProps) {
   return (
-    <div className={`flex flex-col h-full ${className}`}>
-      <ChatPanel
-        onSelectRoom={onSelectRoom}
-        canSend={canSend}
-        onSendMessage={onSendMessage}
-      />
-    </div>
+    <ChatProvider>
+      <div className={`flex flex-col h-full ${className}`}>
+        <ChatPanel
+          onSelectRoom={onSelectRoom}
+          canSend={canSend}
+          onSendMessage={onSendMessage}
+        />
+      </div>
+    </ChatProvider>
   );
 }
