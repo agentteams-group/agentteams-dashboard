@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { StreamingCard } from './streaming-card';
 import { ThinkingCard } from './thinking-card';
+import { MermaidRenderer } from './mermaid-renderer';
 import { renderFormattedContent } from './format';
 
 interface MarkdownMessageProps {
@@ -21,6 +22,20 @@ interface MarkdownMessageProps {
   mediaUrl?: string;
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   homeserver?: string;
+  memberMap?: Record<string, string>;
+}
+
+function resolveUserIdToName(text: string, memberMap?: Record<string, string>): string {
+  if (!memberMap) return text;
+  return text.replace(/@([\w.-]+):([\w.-]+)/g, (match, localpart, server) => {
+    const userId = `@${localpart}:${server}`;
+    return memberMap[userId] || match;
+  }).replace(/@([\w.-]+)/g, (match, name) => {
+    const entry = Object.entries(memberMap).find(
+      ([userId, displayName]) => displayName.toLowerCase() === name.toLowerCase()
+    );
+    return entry ? entry[0] : match;
+  });
 }
 
 function CodeBlock({ language, children }: { language?: string; children: string }) {
@@ -91,7 +106,7 @@ function parseCustomBlocks(content: string): ContentPart[] {
   return parts;
 }
 
-export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap }: MarkdownMessageProps) {
   // Resolve mxc:// URL to HTTP URL via Matrix media API
   const resolvedMediaUrl = useMemo(() => {
     if (!mediaUrl) return undefined;
@@ -156,9 +171,15 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
 
   // For HTML formatted_body, render with custom block parsing
   if (html) {
+    // Check for mermaid blocks in HTML content
+    const mermaidEl = MermaidRenderer({ content: html });
+    const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
+    const hasMermaid = !!mermaidChart;
+
     const parts = parseCustomBlocks(html);
     return (
-      <div className="matrix-message-content text-sm">
+      <div className="matrix-message-content text-sm space-y-1">
+        {hasMermaid && mermaidEl}
         {parts.map((part, idx) => {
           if (part.type === 'text') {
             return (
@@ -189,116 +210,120 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  // For plain text / markdown body - enhanced with full format support
+  const resolvedContent = useMemo(() => resolveUserIdToName(content, memberMap), [content, memberMap]);
+  const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
+  const hasMermaid = !!mermaidChart;
+  const plainContent = hasMermaid ? resolvedContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : resolvedContent;
+
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
-      components={{
-        code({ className, children, ...props }) {
-          const language = className?.replace('language-', '');
-          const code = String(children).replace(/\n$/, '');
-          if (className?.includes('language-')) {
-            return <CodeBlock language={language}>{code}</CodeBlock>;
-          }
-          return (
-            <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props}>
-              {children}
-            </code>
-          );
-        },
-        pre({ children }) {
-          return <div className="my-1">{children}</div>;
-        },
-        p({ children }) {
-          return <p className="mb-1 last:mb-0">{children}</p>;
-        },
-        ul({ children }) {
-          return <ul className="list-disc pl-4 mb-1">{children}</ul>;
-        },
-        ol({ children }) {
-          return <ol className="list-decimal pl-4 mb-1">{children}</ol>;
-        },
-        li({ children }) {
-          return <li className="mb-0.5">{children}</li>;
-        },
-        a({ href, children }) {
-          return (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-600 hover:underline"
-            >
-              {children}
-            </a>
-          );
-        },
-        table({ children }) {
-          return (
-            <div className="overflow-x-auto my-2">
-              <table className="text-xs border-collapse border border-border">{children}</table>
-            </div>
-          );
-        },
-        th({ children }) {
-          return <th className="border border-border px-2 py-1 bg-muted">{children}</th>;
-        },
-        td({ children }) {
-          return <td className="border border-border px-2 py-1">{children}</td>;
-        },
-        blockquote({ children }) {
-          return (
-            <blockquote className="border-l-4 border-emerald-500/50 pl-4 italic my-2">
-              {children}
-            </blockquote>
-          );
-        },
-        hr() {
-          return <hr className="border-border my-2" />;
-        },
-        img({ src, alt }) {
-          return (
-            <img
-              src={src}
-              alt={alt}
-              className="max-w-full max-h-64 rounded-lg object-contain my-2"
-              loading="lazy"
-            />
-          );
-        },
-        details({ children }) {
-          return (
-            <details className="my-2 rounded-lg border border-border/50 overflow-hidden">
-              {children}
-            </details>
-          );
-        },
-        summary({ children }) {
-          return (
-            <summary className="px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors text-sm font-medium">
-              {children}
-            </summary>
-          );
-        },
-        // Task list support (from remark-gfm)
-        input({ type, checked, ...props }) {
-          if (type === 'checkbox') {
+    <div className="matrix-message-content text-sm space-y-1">
+      {hasMermaid && <MermaidRenderer content={resolvedContent} />}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+        components={{
+          code({ className, children, ...props }) {
+            const language = className?.replace('language-', '');
+            const code = String(children).replace(/\n$/, '');
+            if (className?.includes('language-')) {
+              return <CodeBlock language={language}>{code}</CodeBlock>;
+            }
             return (
-              <input
-                type="checkbox"
-                checked={checked}
-                readOnly
-                className="mr-1 rounded border-border"
-                {...props}
+              <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props} />
+            );
+          },
+          pre({ children }) {
+            return <div className="my-1">{children}</div>;
+          },
+          p({ children }) {
+            return <p className="mb-1 last:mb-0">{children}</p>;
+          },
+          ul({ children }) {
+            return <ul className="list-disc pl-4 mb-1">{children}</ul>;
+          },
+          ol({ children }) {
+            return <ol className="list-decimal pl-4 mb-1">{children}</ol>;
+          },
+          li({ children }) {
+            return <li className="mb-0.5">{children}</li>;
+          },
+          a({ href, children }) {
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-600 hover:underline"
+              >
+                {children}
+              </a>
+            );
+          },
+          table({ children }) {
+            return (
+              <div className="overflow-x-auto my-2">
+                <table className="text-xs border-collapse border border-border">{children}</table>
+              </div>
+            );
+          },
+          th({ children }) {
+            return <th className="border border-border px-2 py-1 bg-muted">{children}</th>;
+          },
+          td({ children }) {
+            return <td className="border border-border px-2 py-1">{children}</td>;
+          },
+          blockquote({ children }) {
+            return (
+              <blockquote className="border-l-4 border-emerald-500/50 pl-4 italic my-2">
+                {children}
+              </blockquote>
+            );
+          },
+          hr() {
+            return <hr className="border-border my-2" />;
+          },
+          img({ src, alt }) {
+            return (
+              <img
+                src={src}
+                alt={alt}
+                className="max-w-full max-h-64 rounded-lg object-contain my-2"
+                loading="lazy"
               />
             );
-          }
-          return <input type={type} {...props} />;
-        },
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+          },
+          details({ children }) {
+            return (
+              <details className="my-2 rounded-lg border border-border/50 overflow-hidden">
+                {children}
+              </details>
+            );
+          },
+          summary({ children }) {
+            return (
+              <summary className="px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors text-sm font-medium">
+                {children}
+              </summary>
+            );
+          },
+          input({ type, checked, ...props }) {
+            if (type === 'checkbox') {
+              return (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  readOnly
+                  className="mr-1 rounded border-border"
+                  {...props}
+                />
+              );
+            }
+            return <input type={type} {...props} />;
+          },
+        }}
+      >
+        {plainContent}
+      </ReactMarkdown>
+    </div>
   );
 }

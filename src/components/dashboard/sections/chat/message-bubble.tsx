@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Check, Clock, AlertCircle } from 'lucide-react';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { formatTime, getAvatarColor } from './format';
+import { formatTime, getAvatarColor, type MemberMap } from './format';
 import { MarkdownMessage } from './markdown-message';
 import { A2uiChatContent } from './a2ui';
 
@@ -25,10 +25,12 @@ export function MessageBubble({
   message,
   showSender,
   onConfirmationReply,
+  memberMap,
 }: {
   message: DisplayMessage;
   showSender: boolean;
   onConfirmationReply?: (_reply: string) => Promise<void>;
+  memberMap?: MemberMap;
 }) {
   const time = formatTime(message.timestamp);
   const isNotice = message.type === 'm.notice';
@@ -96,6 +98,7 @@ export function MessageBubble({
               mediaUrl={message.mediaUrl}
               mediaInfo={message.mediaInfo}
               homeserver={homeserver}
+              memberMap={memberMap}
             />
           ) : (
             /* Text messages use A2UI renderer for thinking/tool-call/streaming support */
@@ -105,6 +108,7 @@ export function MessageBubble({
               isStreaming={message.isStreaming}
               messageId={message.id}
               onConfirmationReply={onConfirmationReply}
+              memberMap={memberMap}
             />
           )}
         </div>

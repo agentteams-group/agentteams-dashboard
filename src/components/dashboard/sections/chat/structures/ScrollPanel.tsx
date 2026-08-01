@@ -5,8 +5,8 @@ import { Virtuoso } from 'react-virtuoso';
 import type { GroupedMessage } from '../grouper/MainGrouper';
 
 export interface ScrollPanelHandle {
-  scrollToBottom: (_options?: { smooth?: boolean }) => void;
-  scrollToIndex: (_index: number) => void;
+  scrollToBottom: (options?: { smooth?: boolean }) => void;
+  scrollToIndex: (index: number) => void;
 }
 
 interface ScrollPanelProps {
@@ -19,8 +19,6 @@ interface ScrollPanelProps {
   emptyContent?: React.ReactNode;
   className?: string;
 }
-
-const _noop = () => {};
 
 export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>(function ScrollPanel(
   {
@@ -54,7 +52,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
 
   if (loading && items.length === 0) {
     return (
-      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${className}`}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {Array.from({ length: 8 }).map((_i, i) => (
           <div key={i} className="flex gap-3">
             <div className="w-7 h-7 rounded-full bg-muted animate-pulse shrink-0" />
@@ -70,7 +68,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
 
   if (items.length === 0 && !loading) {
     return (
-      <div className={`flex-1 overflow-y-auto flex items-center justify-center ${className}`}>
+      <div className="flex-1 overflow-y-auto flex items-center justify-center">
         {emptyContent || (
           <div className="text-center text-muted-foreground">
             <p>暂无消息</p>
@@ -85,9 +83,8 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     <Virtuoso
       ref={virtuosoRef}
       data={items}
-      itemContent={(index) => itemContent(index, items[index] as GroupedMessage)}
-      style={{ height: '100%', overflow: 'hidden' }}
-      className={className}
+      itemContent={(_index, _item) => itemContent(_index, _item as GroupedMessage)}
+      style={{ height: '100%' }}
       increaseViewportBy={{ top: 400, bottom: 400 }}
       rangeChanged={handleRangeChanged}
       overscan={400}

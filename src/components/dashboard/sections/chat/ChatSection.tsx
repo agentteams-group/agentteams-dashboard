@@ -7,8 +7,15 @@ import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
+import {
+  useMatrixRoomMembers,
+  useMatrixRoomState,
+  formatMatrixEvents,
+  type RoomMember,
+} from '@/hooks/use-matrix';
+import type { MatrixEvent } from '@/lib/matrix-api';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { MessageSquare, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { MessageSquare, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buildRooms } from './room-builders';
 import { ChatAuthBadge } from './chat-auth-badge';
@@ -40,6 +47,29 @@ export function ChatSection() {
     () => rooms.find((r) => r.id === selectedRoomId) || null,
     [rooms, selectedRoomId],
   );
+
+  // Fetch room members for topology display
+  const membersQuery = useMatrixRoomMembers(selectedRoomId);
+  const stateQuery = useMatrixRoomState(selectedRoomId);
+  const roomMembers: RoomMember[] = useMemo(() => {
+    if (membersQuery.data?.chunk) {
+      return membersQuery.data.chunk.map((e: MatrixEvent) => ({
+        userId: e.sender,
+        displayName: String(e.content.displayname || e.sender),
+        membership: e.content.membership || 'join',
+      }));
+    }
+    if (stateQuery.data) {
+      return stateQuery.data
+        .filter(e => e.type === 'm.room.member' && e.content.membership === 'join')
+        .map(e => ({
+          userId: e.sender || '',
+          displayName: String(e.content.displayname || e.sender || ''),
+          membership: 'join',
+        }));
+    }
+    return selectedRoom?.members?.map(m => ({ userId: m, displayName: m.split(':')[0].slice(1), membership: 'join' })) || [];
+  }, [membersQuery.data, stateQuery.data, selectedRoom]);
 
   if (hasError) {
     return <ApiErrorState />;
@@ -109,7 +139,7 @@ export function ChatSection() {
           {showRightPanel && (
             <div className="w-48 shrink-0 flex flex-col border-l border-border overflow-hidden">
               <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
-                <RoomTopology rooms={rooms} />
+                <RoomTopology rooms={rooms} selectedRoomId={selectedRoomId} members={roomMembers} />
                 <HumanPanel />
               </div>
             </div>

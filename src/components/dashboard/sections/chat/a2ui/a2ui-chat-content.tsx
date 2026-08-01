@@ -153,7 +153,19 @@ const markdownComponents = {
   },
 };
 
-function MarkdownContent({ content }: { content: string }) {
+function MarkdownContent({ content, memberMap }: { content: string; memberMap?: Record<string, string> }) {
+  const resolvedContent = useMemo(() => {
+    if (!memberMap) return content;
+    return content.replace(/@([\w.-]+):([\w.-]+)/g, (_match, localpart, server) => {
+      return memberMap[`@${localpart}:${server}`] || _match;
+    }).replace(/@([\w.-]+)/g, (match, name) => {
+      const entry = Object.entries(memberMap).find(
+        ([, displayName]) => displayName.toLowerCase() === name.toLowerCase()
+      );
+      return entry ? entry[0] : match;
+    });
+  }, [content, memberMap]);
+
   return (
     <div className="markdown-content">
       <ReactMarkdown
@@ -161,7 +173,7 @@ function MarkdownContent({ content }: { content: string }) {
         rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
         components={markdownComponents}
       >
-        {content}
+        {resolvedContent}
       </ReactMarkdown>
     </div>
   );
@@ -216,6 +228,8 @@ interface A2uiChatContentProps {
   messageId: string;
   /** Sends a response defined by a recognized runtime confirmation protocol. */
   onConfirmationReply?: (_reply: string) => Promise<void>;
+  /** Map of userId -> displayName for resolving @mentions */
+  memberMap?: Record<string, string>;
 }
 
 /**
@@ -231,6 +245,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
   isStreaming = false,
   messageId,
   onConfirmationReply,
+  memberMap,
 }: A2uiChatContentProps) {
   const useStreamingText = isStreaming
     && content.length > 0
@@ -247,6 +262,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
     isStreaming={isStreaming}
     messageId={messageId}
     onConfirmationReply={onConfirmationReply}
+    memberMap={memberMap}
   />;
 });
 
@@ -256,6 +272,7 @@ const ParsedChatContent = memo(function ParsedChatContent({
   isStreaming = false,
   messageId,
   onConfirmationReply,
+  memberMap,
 }: A2uiChatContentProps) {
   const result = useMemo(
     () => parseA2uiContent(content, formattedContent),
@@ -263,11 +280,11 @@ const ParsedChatContent = memo(function ParsedChatContent({
   );
 
   if (result.hasA2ui) {
-    return <A2uiBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} />;
+    return <A2uiBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} memberMap={memberMap} />;
   }
 
   // Legacy format - use existing components with A2UI wrapping
-  return <LegacyBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} onConfirmationReply={onConfirmationReply} />;
+  return <LegacyBlocks blocks={result.blocks} messageId={messageId} isStreaming={isStreaming} onConfirmationReply={onConfirmationReply} memberMap={memberMap} />;
 });
 
 // ─── A2uiBlocks ──────────────────────────────────────────────────────────────
@@ -276,10 +293,12 @@ const A2uiBlocks = memo(function A2uiBlocks({
   blocks,
   messageId,
   isStreaming,
+  memberMap,
 }: {
   blocks: ParsedA2uiBlock[];
   messageId: string;
   isStreaming: boolean;
+  memberMap?: Record<string, string>;
 }) {
   return (
     <div className="space-y-1">
@@ -297,7 +316,7 @@ const A2uiBlocks = memo(function A2uiBlocks({
               />
             );
           case 'text':
-            return block.text ? <MarkdownContent key={key} content={block.text} /> : null;
+            return block.text ? <MarkdownContent key={key} content={block.text} memberMap={memberMap} /> : null;
           default:
             return null;
         }
@@ -313,11 +332,13 @@ const LegacyBlocks = memo(function LegacyBlocks({
   messageId,
   isStreaming,
   onConfirmationReply,
+  memberMap,
 }: {
   blocks: ParsedA2uiBlock[];
   messageId: string;
   isStreaming: boolean;
   onConfirmationReply?: (_reply: string) => Promise<void>;
+  memberMap?: Record<string, string>;
 }) {
   return (
     <div className="space-y-1">
@@ -365,7 +386,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
             ) : null;
 
           case 'text':
-            return block.text ? <MarkdownContent key={key} content={block.text} /> : null;
+            return block.text ? <MarkdownContent key={key} content={block.text} memberMap={memberMap} /> : null;
 
           default:
             return null;

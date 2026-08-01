@@ -1,17 +1,18 @@
 import { useCallback } from 'react';
 import { ChatRoom } from './ChatRoom';
 import type { RoomInfo } from './room-info';
+import type { MentionEntry } from './chat-composer';
 
 interface ChatPanelProps {
   room: RoomInfo;
   canSend?: boolean;
-  onSendMessage?: (_content: string, _options?: { html?: boolean }) => void;
+  onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   className?: string;
 }
 
 export function ChatPanel({ room, canSend = true, onSendMessage, className = '' }: ChatPanelProps) {
-  const handleSendMessage = useCallback((_content: string, _options?: { html?: boolean }) => {
-    onSendMessage?.(_content, _options);
+  const handleSendMessage = useCallback((content: string, options?: { html?: boolean }, mentions?: MentionEntry[]) => {
+    onSendMessage?.(content, options, mentions);
   }, [onSendMessage]);
 
   return (

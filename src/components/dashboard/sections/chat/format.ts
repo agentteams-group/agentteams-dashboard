@@ -50,3 +50,22 @@ export function renderFormattedContent(formatted: string, fallback: string): { h
   }
   return { html: sanitizeHtml(formatted), isHtml: true };
 }
+
+export function shortUserId(userId: string): string {
+  if (!userId) return userId;
+  return userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId;
+}
+
+export interface MemberMap {
+  [userId: string]: string;
+}
+
+export function resolveMentionsInText(text: string, memberMap: MemberMap): string {
+  return text.replace(/@([\w.-]+)/g, (match, displayName) => {
+    const entry = Object.entries(memberMap).find(
+      ([_, name]) => name.toLowerCase() === displayName.toLowerCase()
+    );
+    if (entry) return entry[0];
+    return match;
+  });
+}
