@@ -174,6 +174,25 @@ describe('ModelsSection', () => {
     await waitFor(() => expect(mutations.bindConsumer).toHaveBeenCalledWith('my-consumer'));
   });
 
+  it('shows the created API key in memory and copies it on demand', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    mutations.createConsumer.mockResolvedValue({ name: 'my-consumer', api_key: 'sk-live-abcdef123456' });
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
+
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[0], { target: { value: 'my-consumer' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await screen.findByText('sk-live-abcdef123456');
+    fireEvent.click(screen.getByRole('button', { name: '复制 API Key' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('sk-live-abcdef123456'));
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => expect(screen.queryByText('sk-live-abcdef123456')).toBeNull());
+  });
+
   it('renders the current request-model binding', () => {
     render(<ModelsSection />);
 

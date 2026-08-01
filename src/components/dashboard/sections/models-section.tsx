@@ -302,6 +302,17 @@ function ConsumerSection() {
   const [consumerName, setConsumerName] = useState('');
   const [consumerKey, setConsumerKey] = useState('');
   const [consumerPendingDeletion, setConsumerPendingDeletion] = useState<string | null>(null);
+  const [createdKey, setCreatedKey] = useState<{ name: string; key: string } | null>(null);
+
+  const copyCreatedKey = useCallback(async () => {
+    if (!createdKey) return;
+    try {
+      await navigator.clipboard.writeText(createdKey.key);
+      toast.success('API Key 已复制');
+    } catch {
+      toast.error('复制失败，请手动选中复制');
+    }
+  }, [createdKey]);
 
   const handleCreate = useCallback(async () => {
     if (!consumerName.trim()) return;
@@ -311,9 +322,12 @@ function ConsumerSection() {
         credential_key: consumerKey.trim() || undefined,
       });
       if (created?.api_key) {
-        toast.success(`Consumer "${consumerName}" 创建成功，API Key: ${created.api_key}`, { duration: 15000 });
+        // The full key lives in memory only and is shown until dismissed;
+        // it is never written to localStorage or the notification store.
+        setCreatedKey({ name: consumerName.trim(), key: created.api_key });
+        toast.success(`Consumer "${consumerName}" 已创建，请及时复制 API Key`);
       } else {
-        toast.success(`Consumer "${consumerName}" 创建成功`);
+        toast.success(`Consumer "${consumerName}" 已创建`);
       }
       setConsumerName('');
       setConsumerKey('');
@@ -350,6 +364,7 @@ function ConsumerSection() {
   }, [consumerPendingDeletion, deleteConsumer]);
 
   return <div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold flex items-center gap-2"><Users className="size-4 text-violet-500" />Consumers（认证凭证）</h3><Button variant="outline" size="sm" onClick={() => setShowAdd((v) => !v)}><Plus className="mr-1 size-3.5" />添加 Consumer</Button></div>
+    {createdKey && <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" /><div className="flex-1 text-xs"><p className="font-medium">Consumer "{createdKey.name}" 已创建</p><p className="mt-1 break-all font-mono text-[13px]">{createdKey.key}</p><p className="mt-1 text-muted-foreground">API Key 仅在本次显示，关闭后将无法再次查看，请立即复制保存。</p></div><div className="flex shrink-0 gap-2"><Button variant="outline" size="sm" aria-label="复制 API Key" onClick={copyCreatedKey}>复制</Button><Button variant="ghost" size="sm" onClick={() => setCreatedKey(null)}>关闭</Button></div></div>}
     {showAdd && <div className="flex items-end gap-2 p-3 border border-border rounded-lg bg-card/50"><div className="flex-1"><Label className="text-xs">名称</Label><Input value={consumerName} onChange={(e) => setConsumerName(e.target.value)} placeholder="consumer-name" className="h-8 text-sm" /></div><div className="flex-1"><Label className="text-xs">API Key (可选)</Label><Input value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} placeholder="留空自动生成" type="password" className="h-8 text-sm" /></div><Button size="sm" onClick={handleCreate} disabled={!consumerName.trim() || createConsumer.isPending}>{createConsumer.isPending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : '创建'}</Button><Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>取消</Button></div>}
     {consumerListUnsupported && <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground"><AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" /><p>当前 Controller 版本缺少 GET /api/v1/gateway/consumers 接口，无法获取 Consumer 列表，仍可创建新 Consumer。</p></div>}
     {consumersError && <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertTriangle className="size-4 shrink-0 mt-0.5" /><p>Consumer 列表加载失败: {formatErrorMessage(consumersError)}</p></div>}
