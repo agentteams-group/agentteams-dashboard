@@ -50,6 +50,7 @@ export function ChatRoom({
   const [showMembers, setShowMembers] = useState(false);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
+  const [inputValue, setInputValue] = useState('');
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
@@ -119,8 +120,10 @@ export function ChatRoom({
   }, [formattedMessages.length, autoScroll]);
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
     if (onSendMessage) {
-      onSendMessage(content, _options, mentions);
+      onSendMessage(trimmed, _options, mentions);
       return;
     }
     if (!roomId || !isLoggedIn) return;
@@ -132,14 +135,17 @@ export function ChatRoom({
 
     sendMutation.mutate({
       roomId,
-      body: content,
-      formattedBody: _options?.html ? content : undefined,
+      body: trimmed,
+      formattedBody: _options?.html ? trimmed : undefined,
       extra: mentionData,
     });
+    setInputValue('');
+    setMentions([]);
     setReplyTo(null);
   }, [roomId, isLoggedIn, sendMutation, onSendMessage]);
 
   const handleInputChange = useCallback((content: string) => {
+    setInputValue(content);
     if (content.trim() && userId) {
       sendTyping.mutate({ roomId, typing: true });
     }
@@ -234,9 +240,9 @@ export function ChatRoom({
           />
           <TypingIndicator users={typingUsers} />
           <ChatComposer
-            value=""
+            value={inputValue}
             onChange={handleInputChange}
-            onSend={() => handleSend('', undefined, mentions)}
+            onSend={() => handleSend(inputValue, undefined, mentions)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
             placeholder={replyTo ? `回复 ${replyTo.senderShort}... (Enter 发送)` : `发送消息到 ${roomName}... (Enter 发送, Shift+Enter 换行)`}
