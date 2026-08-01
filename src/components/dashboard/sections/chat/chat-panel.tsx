@@ -152,7 +152,7 @@ function ChatMessages({
   items: DisplayItem[];
   autoScroll: boolean;
   onJumpToLatest: () => void;
-  onConfirmationReply: (reply: string) => Promise<void>;
+  onConfirmationReply: (_reply: string) => Promise<void>;
 }) {
   return (
     <>

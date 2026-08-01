@@ -28,7 +28,7 @@ export function MessageBubble({
 }: {
   message: DisplayMessage;
   showSender: boolean;
-  onConfirmationReply?: (reply: string) => Promise<void>;
+  onConfirmationReply?: (_reply: string) => Promise<void>;
 }) {
   const time = formatTime(message.timestamp);
   const isNotice = message.type === 'm.notice';

@@ -308,16 +308,58 @@ export function validateRouteForm(form: RouteForm, providerNames: string[]): str
   return errors;
 }
 
+// Exact match is expressed to Higress as an anchored REGEX (^value$). Newer
+// Higress Console versions accept EXACT directly, but older ones reject it
+// with "Unknown matchType"; PRE/REGEX are accepted across versions.
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function unescapeRegex(value: string): string {
+  return value.replace(/\\([.*+?^${}()|[\]\\])/g, '$1');
+}
+
+export function normalizeMatchTypeForApi(
+  matchType: string,
+  matchValue: string,
+): { matchType: string; matchValue: string } {
+  if (matchType === 'EXACT') {
+    return { matchType: 'REGEX', matchValue: `^${escapeRegex(matchValue)}$` };
+  }
+  return { matchType, matchValue };
+}
+
+export function restoreMatchTypeFromApi(
+  matchType: string,
+  matchValue: string,
+): { matchType: string; matchValue: string } {
+  if (
+    matchType === 'REGEX' &&
+    matchValue.length >= 2 &&
+    matchValue.startsWith('^') &&
+    matchValue.endsWith('$')
+  ) {
+    const unescaped = unescapeRegex(matchValue.slice(1, -1));
+    if (`^${escapeRegex(unescaped)}$` === matchValue) {
+      return { matchType: 'EXACT', matchValue: unescaped };
+    }
+  }
+  return { matchType, matchValue };
+}
+
 export function serializeRouteForm(form: RouteForm): CreateAiRouteRequest {
+  const pathPredicate = normalizeMatchTypeForApi(form.pathPredicate.matchType, form.pathPredicate.matchValue.trim());
   return {
     name: form.name.trim(),
-    pathPredicate: { ...form.pathPredicate, matchValue: form.pathPredicate.matchValue.trim() },
+    pathPredicate: { ...pathPredicate },
     upstreams: form.upstreams.map((upstream) => ({
       provider: upstream.provider,
       weight: upstream.weight,
       modelMapping: serializeModelMappings(upstream.modelMappings),
     })),
-    modelPredicates: form.modelPredicates,
+    modelPredicates: form.modelPredicates.map((predicate) =>
+      normalizeMatchTypeForApi(predicate.matchType, predicate.matchValue),
+    ),
     authConfig: {
       enabled: form.authConfig.enabled,
       allowedCredentialTypes: [...form.authConfig.allowedCredentialTypes],
@@ -413,11 +455,29 @@ export const higressApi = {
     request<{ routes: AiRoute[]; fallbackConfigWritable?: boolean }>('/api/higress/ai-routes')
       .then((r) => (r.routes ?? []).map((route) => ({
         ...route,
+        pathPredicate: {
+          ...route.pathPredicate,
+          ...restoreMatchTypeFromApi(route.pathPredicate.matchType, route.pathPredicate.matchValue),
+        },
+        modelPredicates: (route.modelPredicates ?? []).map((predicate) => ({
+          ...predicate,
+          ...restoreMatchTypeFromApi(predicate.matchType, predicate.matchValue),
+        })),
         fallbackConfigWritable: r.fallbackConfigWritable === true,
       }))),
 
   getRoute: (name: string): Promise<AiRoute> =>
-    request<AiRoute>(`/api/higress/ai-routes/${encodeURIComponent(name)}`),
+    request<AiRoute>(`/api/higress/ai-routes/${encodeURIComponent(name)}`).then((route) => ({
+      ...route,
+      pathPredicate: {
+        ...route.pathPredicate,
+        ...restoreMatchTypeFromApi(route.pathPredicate.matchType, route.pathPredicate.matchValue),
+      },
+      modelPredicates: (route.modelPredicates ?? []).map((predicate) => ({
+        ...predicate,
+        ...restoreMatchTypeFromApi(predicate.matchType, predicate.matchValue),
+      })),
+    })),
 
   createRoute: (data: CreateAiRouteRequest): Promise<AiRoute> =>
     request<AiRoute>('/api/higress/ai-routes', {

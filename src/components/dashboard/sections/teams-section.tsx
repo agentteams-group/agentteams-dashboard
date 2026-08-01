@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -118,15 +118,6 @@ export function TeamsSection() {
     [sortedTeams, currentPage],
   );
 
-  useEffect(() => {
-    if (!teams) return;
-    const currentNames = new Set(teams.map((team) => team.name));
-    setDeletingTeamNames((previous) => {
-      const next = new Set([...previous].filter((name) => currentNames.has(name)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [teams]);
-
   const pageSection = (
     <PaginationFooter
       pageKey={`${searchQuery}|${sortKey}`}
@@ -173,6 +164,13 @@ export function TeamsSection() {
     setAddWorkerPopoverOpen(null);
     setDeleteTarget(null);
     deleteTeam.mutate(teamName, {
+      onSuccess: () => {
+        setDeletingTeamNames((previous) => {
+          const next = new Set(previous);
+          next.delete(teamName);
+          return next;
+        });
+      },
       onError: () => {
         setDeletingTeamNames((previous) => {
           const next = new Set(previous);
@@ -189,6 +187,7 @@ export function TeamsSection() {
       name: team.name,
       teamName: team.teamName || '',
       description: team.description || '',
+      leader: team.leaderName ? { name: team.leaderName } : null,
       workerNames: team.workerNames || [],
     });
   }, []);
@@ -214,7 +213,7 @@ export function TeamsSection() {
       if (!team) return;
       const next = [...(team.workerNames || []), workerName];
       updateTeam.mutate(
-        { name: teamName, data: { workerNames: next } },
+        { name: teamName, data: { workerNames: next, leader: team.leaderName ? { name: team.leaderName } : null } },
         {
           onSuccess: () => {
             toast.success(`已将 Worker "${workerName}" 添加到团队 "${teamName}"`);

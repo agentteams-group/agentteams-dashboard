@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   serializeProviderForm,
   serializeRouteForm,
+  normalizeMatchTypeForApi,
+  restoreMatchTypeFromApi,
   parseFallbackConfig,
   summarizeFallbackConfig,
   validateProviderForm,
@@ -112,6 +114,38 @@ describe('Higress form serialization', () => {
       allowedConsumers: ['manager', 'worker-research'],
     });
     expect(payload.authConfig?.allowedConsumers).not.toBe(route.authConfig.allowedConsumers);
+  });
+
+  it('serializes EXACT match to an anchored REGEX for older Higress compatibility', () => {
+    const route: RouteForm = {
+      name: 'team-chat',
+      pathPredicate: { matchType: 'EXACT', matchValue: '/v1/chat/completions' },
+      upstreams: [{ provider: 'openai', weight: 100, modelMappings: [] }],
+      modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+      authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
+    };
+
+    const payload = serializeRouteForm(route);
+
+    expect(payload.pathPredicate).toEqual({ matchType: 'REGEX', matchValue: '^/v1/chat/completions$' });
+    expect(payload.modelPredicates).toEqual([{ matchType: 'REGEX', matchValue: '^team-chat$' }]);
+  });
+
+  it('round-trips EXACT through REGEX restore', () => {
+    expect(normalizeMatchTypeForApi('EXACT', 'team-chat')).toEqual({ matchType: 'REGEX', matchValue: '^team-chat$' });
+    expect(restoreMatchTypeFromApi('REGEX', '^team-chat$')).toEqual({ matchType: 'EXACT', matchValue: 'team-chat' });
+    expect(restoreMatchTypeFromApi('REGEX', '^/v1/chat/completions$')).toEqual({
+      matchType: 'EXACT',
+      matchValue: '/v1/chat/completions',
+    });
+  });
+
+  it('leaves hand-written regular expressions untouched', () => {
+    expect(normalizeMatchTypeForApi('PRE', '/v1')).toEqual({ matchType: 'PRE', matchValue: '/v1' });
+    expect(restoreMatchTypeFromApi('REGEX', '^(team-chat|team-code)$')).toEqual({
+      matchType: 'REGEX',
+      matchValue: '^(team-chat|team-code)$',
+    });
   });
 
   it('validates known fallback fields while preserving unknown fields', () => {
