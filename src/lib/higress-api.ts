@@ -196,7 +196,8 @@ export function validateAiRoutePayload(value: unknown, isUpdate = false): string
   const errors: string[] = [];
   if (!isUpdate && (typeof value.name !== 'string' || !value.name.trim())) errors.push('name 不能为空');
   if (!isUpdate && !isRecord(value.pathPredicate)) errors.push('pathPredicate 必须是对象');
-  if (value.pathPredicate !== undefined && (!isRecord(value.pathPredicate) || typeof value.pathPredicate.matchType !== 'string' || typeof value.pathPredicate.matchValue !== 'string' || !value.pathPredicate.matchValue.trim())) errors.push('pathPredicate 配置无效');
+  if (value.pathPredicate !== undefined && (!isRecord(value.pathPredicate) || typeof value.pathPredicate.matchType !== 'string' || value.pathPredicate.matchType !== 'PRE' || typeof value.pathPredicate.matchValue !== 'string' || !value.pathPredicate.matchValue.trim())) errors.push('pathPredicate 必须使用 PRE 前缀匹配');
+  if (value.modelPredicates !== undefined && (!Array.isArray(value.modelPredicates) || value.modelPredicates.some((predicate) => !isRecord(predicate) || typeof predicate.matchType !== 'string' || !['EQUAL', 'PRE'].includes(predicate.matchType) || typeof predicate.matchValue !== 'string' || !predicate.matchValue.trim()))) errors.push('modelPredicates 配置无效（仅支持 EQUAL/PRE）');
 
   if (!isUpdate && !Array.isArray(value.upstreams)) errors.push('至少需要一个上游');
   if (value.upstreams !== undefined) {
@@ -308,9 +309,13 @@ export function validateRouteForm(form: RouteForm, providerNames: string[]): str
   return errors;
 }
 
-// Exact match is expressed to Higress as an anchored REGEX (^value$). Newer
-// Higress Console versions accept EXACT directly, but older ones reject it
-// with "Unknown matchType"; PRE/REGEX are accepted across versions.
+// Higress SDK enum RoutePredicateTypeEnum uses EQUAL/PRE/REGULAR names.
+// The swagger @Schema doc ("EXACT","PRE","REGEX") is misleading: those are
+// annotation prefixes, not the wire values. So we map the UI's "EXACT"
+// (exact match) to EQUAL on the wire, and the UI never emits REGEX/REGULAR.
+// The AI route API also REQUIRES pathPredicate.matchType === "PRE"
+// (AiRoute.validate throws "pathPredicate must be of type PRE." otherwise)
+// and AiModelPredicate rejects REGULAR entirely.
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -324,7 +329,7 @@ export function normalizeMatchTypeForApi(
   matchValue: string,
 ): { matchType: string; matchValue: string } {
   if (matchType === 'EXACT') {
-    return { matchType: 'REGEX', matchValue: `^${escapeRegex(matchValue)}$` };
+    return { matchType: 'EQUAL', matchValue };
   }
   return { matchType, matchValue };
 }
@@ -333,6 +338,10 @@ export function restoreMatchTypeFromApi(
   matchType: string,
   matchValue: string,
 ): { matchType: string; matchValue: string } {
+  if (matchType === 'EQUAL') {
+    return { matchType: 'EXACT', matchValue };
+  }
+  // Legacy data written as an anchored REGEX (^...$) is still rendered as EXACT.
   if (
     matchType === 'REGEX' &&
     matchValue.length >= 2 &&
@@ -348,10 +357,12 @@ export function restoreMatchTypeFromApi(
 }
 
 export function serializeRouteForm(form: RouteForm): CreateAiRouteRequest {
-  const pathPredicate = normalizeMatchTypeForApi(form.pathPredicate.matchType, form.pathPredicate.matchValue.trim());
+  // pathPredicate is always PRE on the wire: Higress AI routes reject every
+  // other match type with "pathPredicate must be of type PRE."
+  const pathPredicate = { matchType: 'PRE' as const, matchValue: form.pathPredicate.matchValue.trim() };
   return {
     name: form.name.trim(),
-    pathPredicate: { ...pathPredicate },
+    pathPredicate,
     upstreams: form.upstreams.map((upstream) => ({
       provider: upstream.provider,
       weight: upstream.weight,

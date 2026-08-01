@@ -116,7 +116,7 @@ describe('Higress form serialization', () => {
     expect(payload.authConfig?.allowedConsumers).not.toBe(route.authConfig.allowedConsumers);
   });
 
-  it('serializes EXACT match to an anchored REGEX for older Higress compatibility', () => {
+  it('serializes pathPredicate as PRE and EXACT model matches as EQUAL', () => {
     const route: RouteForm = {
       name: 'team-chat',
       pathPredicate: { matchType: 'EXACT', matchValue: '/v1/chat/completions' },
@@ -127,25 +127,22 @@ describe('Higress form serialization', () => {
 
     const payload = serializeRouteForm(route);
 
-    expect(payload.pathPredicate).toEqual({ matchType: 'REGEX', matchValue: '^/v1/chat/completions$' });
-    expect(payload.modelPredicates).toEqual([{ matchType: 'REGEX', matchValue: '^team-chat$' }]);
+    expect(payload.pathPredicate).toEqual({ matchType: 'PRE', matchValue: '/v1/chat/completions' });
+    expect(payload.modelPredicates).toEqual([{ matchType: 'EQUAL', matchValue: 'team-chat' }]);
   });
 
-  it('round-trips EXACT through REGEX restore', () => {
-    expect(normalizeMatchTypeForApi('EXACT', 'team-chat')).toEqual({ matchType: 'REGEX', matchValue: '^team-chat$' });
-    expect(restoreMatchTypeFromApi('REGEX', '^team-chat$')).toEqual({ matchType: 'EXACT', matchValue: 'team-chat' });
-    expect(restoreMatchTypeFromApi('REGEX', '^/v1/chat/completions$')).toEqual({
-      matchType: 'EXACT',
-      matchValue: '/v1/chat/completions',
-    });
+  it('round-trips EXACT through EQUAL restore', () => {
+    expect(normalizeMatchTypeForApi('EXACT', 'team-chat')).toEqual({ matchType: 'EQUAL', matchValue: 'team-chat' });
+    expect(restoreMatchTypeFromApi('EQUAL', 'team-chat')).toEqual({ matchType: 'EXACT', matchValue: 'team-chat' });
+    expect(restoreMatchTypeFromApi('PRE', '/v1')).toEqual({ matchType: 'PRE', matchValue: '/v1' });
   });
 
   it('leaves hand-written regular expressions untouched', () => {
-    expect(normalizeMatchTypeForApi('PRE', '/v1')).toEqual({ matchType: 'PRE', matchValue: '/v1' });
-    expect(restoreMatchTypeFromApi('REGEX', '^(team-chat|team-code)$')).toEqual({
-      matchType: 'REGEX',
+    expect(restoreMatchTypeFromApi('REGULAR', '^(team-chat|team-code)$')).toEqual({
+      matchType: 'REGULAR',
       matchValue: '^(team-chat|team-code)$',
     });
+    expect(restoreMatchTypeFromApi('PRE', '/v1')).toEqual({ matchType: 'PRE', matchValue: '/v1' });
   });
 
   it('validates known fallback fields while preserving unknown fields', () => {
