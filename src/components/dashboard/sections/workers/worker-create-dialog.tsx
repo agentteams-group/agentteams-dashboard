@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
+import { workerNameError } from '@/lib/resource-name';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function WorkerCreateDialog({
@@ -41,6 +42,8 @@ export function WorkerCreateDialog({
   onSubmit: () => void;
   modelOptions: ModelSelectionOption[];
 }) {
+  const nameError = workerNameError(value.name);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -55,6 +58,7 @@ export function WorkerCreateDialog({
               onChange={(e) => onChange({ ...value, name: e.target.value })}
               placeholder="worker-name"
             />
+            {nameError && <p className="text-xs text-red-600 dark:text-red-400">{nameError}</p>}
           </div>
           <div className="space-y-2">
             <Label>运行时 *</Label>
@@ -141,7 +145,7 @@ export function WorkerCreateDialog({
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={!value.name || isPending}
+            disabled={!value.name || !!nameError || isPending}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '创建中...' : '创建'}

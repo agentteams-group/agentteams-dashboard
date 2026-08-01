@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { UpdateTeamRequest } from '@/lib/agentteams-api';
+import { workerNameError } from '@/lib/resource-name';
 import { parseWorkerNames } from './team-create-dialog';
 
 export type TeamEditForm = UpdateTeamRequest & { name?: string };
@@ -45,6 +46,9 @@ export function TeamEditDialog({
       setWorkerInput(value.workerNames?.join(', ') ?? '');
     }
   }
+  const workerNamesError = (value.workerNames ?? [])
+    .map(workerNameError)
+    .find((err) => err !== null) ?? null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -83,6 +87,7 @@ export function TeamEditDialog({
               }}
               placeholder="worker1, worker2 或 worker1，worker2"
             />
+            {workerNamesError && <p className="text-xs text-red-600 dark:text-red-400">{workerNamesError}</p>}
           </div>
         </div>
         <DialogFooter>
@@ -91,7 +96,7 @@ export function TeamEditDialog({
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={isPending}
+            disabled={!!workerNamesError || isPending}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '更新中...' : '更新'}
