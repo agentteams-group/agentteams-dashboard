@@ -171,6 +171,29 @@ function hasMarkdownStructure(content: string): boolean {
   return /(^|\n)(```|>\s|\s*[-*+]\s|\s*\d+\.\s|#{1,6}\s|\|)/.test(content);
 }
 
+/**
+ * True when the message carries structured chat content that must be routed
+ * through the A2UI/legacy/agent-repr parsers instead of being rendered as
+ * plain streaming text. A2UI protocol markers usually live in the HTML
+ * formatted_body while the plain body only holds a text summary, so both
+ * sources are inspected.
+ */
+function looksLikeStructuredStreaming(content: string, formattedContent?: string): boolean {
+  const a2uiMarkers = ['<!--a2ui:', '```a2ui'];
+  if (a2uiMarkers.some((m) => content.includes(m))) return true;
+  if (formattedContent && a2uiMarkers.some((m) => formattedContent.includes(m))) return true;
+
+  const legacyMarkers = [
+    '<details class="thinking"',
+    '&lt;details class="thinking"',
+    '```card',
+  ];
+  if (legacyMarkers.some((m) => content.includes(m))) return true;
+
+  // Agent message repr dumps (copaw channel raw sequence_number=... payloads)
+  return /^(?:sequence_number=\S+\s+)?object='message'\s/.test(content.trim());
+}
+
 function StreamingTextContent({ content }: { content: string }) {
   return (
     <div className="whitespace-pre-wrap break-words leading-relaxed">
@@ -212,8 +235,7 @@ export const A2uiChatContent = memo(function A2uiChatContent({
   const useStreamingText = isStreaming
     && content.length > 0
     && !hasMarkdownStructure(content)
-    && !content.includes('<!--a2ui:')
-    && !content.includes('```a2ui');
+    && !looksLikeStructuredStreaming(content, formattedContent);
 
   if (useStreamingText) {
     return <StreamingTextContent content={content} />;
