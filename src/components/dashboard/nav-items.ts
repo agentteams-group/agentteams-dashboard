@@ -6,6 +6,7 @@ import {
   UserCheck,
   MessageSquare,
   BookOpen,
+  Brain,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ export const navItems: NavItem[] = [
   { id: 'teams', label: '团队', icon: Users },
   { id: 'managers', label: 'Managers', icon: Crown },
   { id: 'humans', label: 'Humans', icon: UserCheck },
+  { id: 'models', label: '模型管理', icon: Brain },
   { id: 'chat', label: 'Matrix 聊天', icon: MessageSquare },
   { id: 'docs', label: '文档', icon: BookOpen },
 ];

@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
-import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function WorkerCreateDialog({
@@ -39,7 +39,7 @@ export function WorkerCreateDialog({
   onChange: (_next: CreateWorkerRequest) => void;
   isPending: boolean;
   onSubmit: () => void;
-  modelOptions: AgentTeamsModelBinding[];
+  modelOptions: ModelSelectionOption[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,6 +83,9 @@ export function WorkerCreateDialog({
               placeholder="例如 team-chat"
               options={modelOptions}
             />
+            <p className="text-xs text-muted-foreground">
+              Worker 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
+            </p>
           </div>
           <div className="space-y-2">
             <Label>镜像</Label>

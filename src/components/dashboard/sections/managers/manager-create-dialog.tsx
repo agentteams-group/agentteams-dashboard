@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { CreateManagerRequest } from '@/lib/agentteams-api';
-import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export function ManagerCreateDialog({
@@ -29,7 +29,7 @@ export function ManagerCreateDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
-  modelOptions: AgentTeamsModelBinding[];
+  modelOptions: ModelSelectionOption[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,6 +54,9 @@ export function ManagerCreateDialog({
               placeholder="例如 team-chat"
               options={modelOptions}
             />
+            <p className="text-xs text-muted-foreground">
+              Manager 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
+            </p>
           </div>
           <div className="space-y-2">
             <Label>运行时</Label>

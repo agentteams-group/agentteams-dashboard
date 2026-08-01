@@ -27,7 +27,8 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import { useModels, useAiRoutes } from '@/hooks/use-agentteams-models';
-import { buildModelBindings, hasUnavailableModelAliases, listAvailableRequestModelAliases } from '@/lib/model-bindings';
+import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
+import { buildModelSelectionOptions } from '@/lib/model-catalog';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -158,7 +159,7 @@ export function WorkersSection() {
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
   const modelOptions = useMemo(
-    () => listAvailableRequestModelAliases(aiRoutes ?? [], providers ?? []),
+    () => buildModelSelectionOptions(aiRoutes ?? [], providers ?? []),
     [aiRoutes, providers],
   );
 

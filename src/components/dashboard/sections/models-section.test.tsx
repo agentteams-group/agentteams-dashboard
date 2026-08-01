@@ -1,6 +1,6 @@
 'use client';
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelsSection } from './models-section';
 
@@ -11,9 +11,14 @@ const mutations = {
   createRoute: vi.fn(),
   updateRoute: vi.fn(),
   deleteRoute: vi.fn(),
+  createConsumer: vi.fn(),
+  bindConsumer: vi.fn(),
 };
 
-const providers = [{ name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 }];
+const providers = [
+  { name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 },
+  { name: 'deepseek', type: 'deepseek', protocol: 'openai/v1', tokenCount: 1 },
+];
 const routes = [{
   name: 'team-chat',
   pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
@@ -37,6 +42,14 @@ vi.mock('@/hooks/use-agentteams-models', () => ({
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [{ model: 'team-chat' }] }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: () => ({ canManage: true, isLoading: false }) }));
+vi.mock('@/hooks/use-agentteams-consumers', () => ({
+  useConsumers: () => ({ data: [{ name: 'web-crawler', status: 'active' }], isLoading: false, error: null, listUnsupported: false }),
+}));
+vi.mock('@/hooks/use-agentteams-mutations', () => ({
+  useCreateConsumer: () => ({ mutate: vi.fn(), mutateAsync: mutations.createConsumer, isPending: false }),
+  useDeleteConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useBindConsumer: () => ({ mutate: vi.fn(), mutateAsync: mutations.bindConsumer, isPending: false }),
+}));
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) => open ? <>{children}</> : null,
@@ -122,6 +135,62 @@ describe('ModelsSection', () => {
     expect(screen.getByText('将删除 team-chat，此操作无法撤销。')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     expect(mutations.deleteRoute).toHaveBeenCalledWith('team-chat', expect.any(Object));
+  });
+
+  it('switches a route to a new provider while preserving route structure', () => {
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 提供商' }));
+
+    fireEvent.change(screen.getByLabelText('目标提供商'), { target: { value: 'deepseek' } });
+    fireEvent.click(screen.getByRole('button', { name: '切换并保存' }));
+
+    expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'team-chat',
+      data: expect.objectContaining({
+        upstreams: [
+          expect.objectContaining({ provider: 'openai', weight: 0, modelMapping: { 'team-chat': 'gpt-4.1' } }),
+          expect.objectContaining({ provider: 'deepseek', weight: 100 }),
+        ],
+      }),
+    }), expect.any(Object));
+  });
+
+  it('binds an existing consumer to the AI route', () => {
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定 web-crawler' }));
+    expect(mutations.bindConsumer).toHaveBeenCalledWith('web-crawler');
+  });
+
+  it('auto-binds a newly created consumer', async () => {
+    mutations.createConsumer.mockResolvedValue({ name: 'my-consumer' });
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
+
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[0], { target: { value: 'my-consumer' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(mutations.createConsumer).toHaveBeenCalledWith({ name: 'my-consumer', credential_key: undefined }));
+    await waitFor(() => expect(mutations.bindConsumer).toHaveBeenCalledWith('my-consumer'));
+  });
+
+  it('shows the created API key in memory and copies it on demand', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    mutations.createConsumer.mockResolvedValue({ name: 'my-consumer', api_key: 'sk-live-abcdef123456' });
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
+
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[0], { target: { value: 'my-consumer' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await screen.findByText('sk-live-abcdef123456');
+    fireEvent.click(screen.getByRole('button', { name: '复制 API Key' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('sk-live-abcdef123456'));
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => expect(screen.queryByText('sk-live-abcdef123456')).toBeNull());
   });
 
   it('renders the current request-model binding', () => {

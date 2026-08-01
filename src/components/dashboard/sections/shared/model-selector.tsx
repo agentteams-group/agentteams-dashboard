@@ -1,15 +1,28 @@
 'use client';
 
-import { useId } from 'react';
+import { useState } from 'react';
+import { Pencil, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
+
+const CUSTOM_ALIAS = '__custom_alias__';
 
 interface ModelSelectorProps {
   value?: string;
   onChange: (_value: string) => void;
   placeholder?: string;
   disabled?: boolean;
-  options?: AgentTeamsModelBinding[];
+  options?: ModelSelectionOption[];
 }
 
 export function ModelSelector({
@@ -19,42 +32,116 @@ export function ModelSelector({
   disabled,
   options,
 }: ModelSelectorProps) {
-  const listId = useId();
-  const binding = options?.find((option) => option.requestModelAlias === value);
-  const uniqueOptions = [...new Map((options ?? []).map((option) => [option.requestModelAlias, option])).values()];
+  const uniqueOptions = [
+    ...new Map((options ?? []).map((option) => [option.alias, option])).values(),
+  ];
+  const known = uniqueOptions.some((option) => option.alias === value);
+  const [customMode, setCustomMode] = useState(false);
+
+  // Leave custom mode once the external value resolves to a selectable alias
+  // (adjust state during render, per React guidance).
+  if (customMode && value && known) {
+    setCustomMode(false);
+  }
+
+  const selectedOption = uniqueOptions.find((option) => option.alias === value);
+  const customActive = customMode || Boolean(value && !known);
+
+  if (customActive) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex gap-2">
+          <Input
+            value={value ?? ''}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            aria-label="请求模型别名"
+          />
+          {uniqueOptions.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={disabled}
+              onClick={() => {
+                setCustomMode(false);
+                onChange('');
+              }}
+            >
+              从列表选择
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          自定义请求模型别名，将由通配符路由或服务端绑定校验处理。
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1.5">
-      <Input
-        list={uniqueOptions.length > 0 ? listId : undefined}
+      <Select
         value={value ?? ''}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
+        onValueChange={(next) => {
+          if (next === CUSTOM_ALIAS) {
+            setCustomMode(true);
+            onChange('');
+          } else {
+            onChange(next);
+          }
+        }}
         disabled={disabled}
-        aria-label="请求模型别名"
-      />
-      {uniqueOptions.length > 0 && (
-        <datalist id={listId}>
+      >
+        <SelectTrigger className="w-full" aria-label="请求模型别名">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
           {uniqueOptions.map((option) => (
-            <option
-              key={option.requestModelAlias}
-              value={option.requestModelAlias}
-              label={`${option.routeName} / ${option.providerName} / ${option.targetModel}`}
-            />
+            <SelectItem key={option.alias} value={option.alias}>
+              <span className="flex items-center gap-1.5">
+                <span className="font-mono">{option.alias}</span>
+                {option.kind === 'builtin' && (
+                  <Badge variant="secondary" className="text-[9px]">
+                    <Sparkles className="mr-0.5 size-2.5" />
+                    内置
+                  </Badge>
+                )}
+              </span>
+              {option.kind === 'configured' && option.binding ? (
+                <span className="block truncate text-xs text-muted-foreground">
+                  {option.binding.routeName} / {option.binding.providerName} / {option.binding.targetModel}
+                </span>
+              ) : (
+                <span className="block truncate text-xs text-muted-foreground">
+                  内置模型，需在「模型管理」配置路由映射
+                </span>
+              )}
+            </SelectItem>
           ))}
-        </datalist>
-      )}
-      {binding ? (
+          {uniqueOptions.length > 0 && <SelectSeparator />}
+          <SelectItem value={CUSTOM_ALIAS}>
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <Pencil className="size-3.5" />
+              自定义别名
+            </span>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      {selectedOption?.kind === 'configured' && selectedOption.binding ? (
         <p className="text-xs text-muted-foreground">
-          通过路由 {binding.routeName} 转发至 {binding.providerName} / {binding.targetModel}
+          通过路由 {selectedOption.binding.routeName} 转发至{' '}
+          {selectedOption.binding.providerName} / {selectedOption.binding.targetModel}
         </p>
-      ) : uniqueOptions.length > 0 && value?.trim() ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          该别名将由通配符路由或服务端绑定校验处理。
+      ) : selectedOption?.kind === 'builtin' ? (
+        <p className="text-xs text-amber-600/80">
+          内置模型别名，请求经 AI 网关 Consumer 凭证转发；需先在「模型管理」为其配置路由映射。
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          在 AI 网关配置请求模型别名后，此处会提供可选项。
+          在「模型管理」配置模型别名后，此处会提供可选项。
         </p>
       )}
     </div>
