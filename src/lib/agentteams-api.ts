@@ -163,6 +163,25 @@ export function buildWorkerMembers(
   return members;
 }
 
+/**
+ * Controller contract: every workerMembers reference (including the team_leader)
+ * must map to an already-existing Worker resource — team creation does not
+ * provision members. Ensure each member exists before creating the team, and
+ * create the missing ones with the minimal Worker payload (name + runtime).
+ */
+async function ensureWorkersExist(members: TeamWorkerMember[]): Promise<void> {
+  const existing = await agentteamsApi.listWorkers();
+  const existingNames = new Set(existing.map((worker) => worker.name));
+  const missing = [...new Set(members.map((member) => member.name))]
+    .filter((name) => name && !existingNames.has(name));
+  for (const name of missing) {
+    await proxyRequest<WorkerResponse>('/workers', {
+      method: 'POST',
+      body: JSON.stringify({ name, runtime: 'openclaw' as WorkerRuntime }),
+    });
+  }
+}
+
 export interface CreateHumanRequest {
   name: string;
   displayName: string;
@@ -438,14 +457,16 @@ export const agentteamsApi = {
 
   getTeam: (name: string) => proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`),
 
-  createTeam: (data: CreateTeamRequest) => {
+  createTeam: async (data: CreateTeamRequest) => {
     // 兼容旧字段 admin：Controller 实际接收的是 leader.name（workerMembers 中的 team_leader）
     const { workerNames, leader, ...rest } = data;
     const payload: Record<string, unknown> = { ...rest };
     if (payload.admin && !leader) {
       payload.leader = payload.admin;
     }
-    payload.workerMembers = buildWorkerMembers(leader, workerNames);
+    const workerMembers = buildWorkerMembers(leader, workerNames);
+    await ensureWorkersExist(workerMembers);
+    payload.workerMembers = workerMembers;
     delete payload.leader;
     delete payload.workerNames;
     return proxyRequest<TeamResponse>('/teams', { method: 'POST', body: JSON.stringify(payload) });
