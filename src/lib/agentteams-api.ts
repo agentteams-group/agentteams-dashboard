@@ -140,6 +140,29 @@ export interface UpdateTeamRequest {
   humanMembers?: string[];
 }
 
+export type TeamWorkerMember = { name: string; role: 'team_leader' | 'worker' };
+
+// Controller contract (v1.2.0): teams are created/updated with workerMembers
+// ([{name, role}], exactly one role=team_leader, no duplicates). The dashboard
+// UI works with leader + workerNames; map them to workerMembers here.
+export function buildWorkerMembers(
+  leader: { name: string } | null | undefined,
+  workerNames: string[] | undefined,
+): TeamWorkerMember[] {
+  const members: TeamWorkerMember[] = [];
+  const seen = new Set<string>();
+  const push = (name: string, role: TeamWorkerMember['role']) => {
+    const trimmed = name.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      members.push({ name: trimmed, role });
+    }
+  };
+  if (leader?.name) push(leader.name, 'team_leader');
+  for (const name of workerNames ?? []) push(name, 'worker');
+  return members;
+}
+
 export interface CreateHumanRequest {
   name: string;
   displayName: string;
@@ -416,17 +439,29 @@ export const agentteamsApi = {
   getTeam: (name: string) => proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`),
 
   createTeam: (data: CreateTeamRequest) => {
-    // 兼容旧字段 admin：Controller 实际接收的是 leader.name
-    const payload: CreateTeamRequest & { leader?: { name: string } } = { ...data };
-    if (payload.admin && !payload.leader) {
+    // 兼容旧字段 admin：Controller 实际接收的是 leader.name（workerMembers 中的 team_leader）
+    const { workerNames, leader, ...rest } = data;
+    const payload: Record<string, unknown> = { ...rest };
+    if (payload.admin && !leader) {
       payload.leader = payload.admin;
-      delete payload.admin;
     }
+    payload.workerMembers = buildWorkerMembers(leader, workerNames);
+    delete payload.leader;
+    delete payload.workerNames;
     return proxyRequest<TeamResponse>('/teams', { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  updateTeam: (name: string, data: UpdateTeamRequest) =>
-    proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateTeam: (name: string, data: UpdateTeamRequest) => {
+    const { workerNames, leader, admin, ...rest } = data;
+    const payload: Record<string, unknown> = { ...rest };
+    if (admin !== undefined) payload.admin = admin;
+    if (workerNames !== undefined) {
+      payload.workerMembers = buildWorkerMembers(leader ?? undefined, workerNames);
+    }
+    delete payload.leader;
+    delete payload.workerNames;
+    return proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
 
   deleteTeam: (name: string) =>
     proxyRequest<void>(`/teams/${encodeURIComponent(name)}`, { method: 'DELETE' }),

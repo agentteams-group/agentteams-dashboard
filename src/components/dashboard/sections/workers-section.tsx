@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -171,15 +171,6 @@ export function WorkersSection() {
   );
   const runtimeDist = useMemo(() => computeRuntimeDist(workers), [workers]);
 
-  useEffect(() => {
-    if (!workers) return;
-    const currentNames = new Set(workers.map((worker) => worker.name));
-    setDeletingWorkerNames((previous) => {
-      const next = new Set([...previous].filter((name) => currentNames.has(name)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [workers]);
-
   // Reset to first page when filters change (adjust state during render)
   const [prevFilters, setPrevFilters] = useState({ searchQuery, sortKey });
   if (prevFilters.searchQuery !== searchQuery || prevFilters.sortKey !== sortKey) {
@@ -232,7 +223,9 @@ export function WorkersSection() {
     } else if (bulkAction === 'delete') {
       markWorkersDeleting(names);
       names.forEach((name) =>
-        deleteWorker.mutate(name, { onError: () => clearWorkerDeleting(name) }),
+        deleteWorker.mutate(name, {
+          onSettled: () => clearWorkerDeleting(name),
+        }),
       );
       toast.success(`已删除 ${names.length} 个 Worker`);
     }
@@ -289,7 +282,9 @@ export function WorkersSection() {
     const workerName = deleteTarget;
     markWorkersDeleting([workerName]);
     setDeleteTarget(null);
-    deleteWorker.mutate(workerName, { onError: () => clearWorkerDeleting(workerName) });
+    deleteWorker.mutate(workerName, {
+      onSettled: () => clearWorkerDeleting(workerName),
+    });
   }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting]);
 
   const handleUpload = useCallback(

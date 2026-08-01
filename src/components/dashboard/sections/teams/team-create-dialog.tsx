@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +35,18 @@ export function TeamCreateDialog({
   onSubmit: () => void;
   workers: WorkerResponse[];
 }) {
+  // Keep the raw worker list text locally so a trailing separator the user
+  // types (e.g. "worker1,") is preserved on screen; value.workerNames always
+  // holds the parsed, trimmed names. Re-sync from the external value whenever
+  // the dialog opens.
+  const [lastOpen, setLastOpen] = useState(open);
+  const [workerInput, setWorkerInput] = useState(value.workerNames?.join(', ') ?? '');
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) {
+      setWorkerInput(value.workerNames?.join(', ') ?? '');
+    }
+  }
   const selectedWorkers = workers.filter((worker) => value.workerNames?.includes(worker.name));
   const workersWithoutModel = selectedWorkers.filter((worker) => !worker.model?.trim());
 
@@ -80,15 +93,15 @@ export function TeamCreateDialog({
           <div className="space-y-2">
             <Label>Worker 名称（中英文逗号分隔）</Label>
             <Input
-              value={value.workerNames?.join(', ') || ''}
-              onChange={(e) =>
+              value={workerInput}
+              onChange={(e) => {
+                const text = e.target.value;
+                setWorkerInput(text);
                 onChange({
                   ...value,
-                  workerNames: e.target.value
-                    ? parseWorkerNames(e.target.value)
-                    : undefined,
-                })
-              }
+                  workerNames: text ? parseWorkerNames(text) : undefined,
+                });
+              }}
               placeholder="worker1, worker2 或 worker1，worker2"
             />
           </div>

@@ -192,7 +192,7 @@ interface A2uiChatContentProps {
   /** Message ID for unique surface keys */
   messageId: string;
   /** Sends a response defined by a recognized runtime confirmation protocol. */
-  onConfirmationReply?: (reply: string) => Promise<void>;
+  onConfirmationReply?: (_reply: string) => Promise<void>;
 }
 
 /**
@@ -295,7 +295,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
   blocks: ParsedA2uiBlock[];
   messageId: string;
   isStreaming: boolean;
-  onConfirmationReply?: (reply: string) => Promise<void>;
+  onConfirmationReply?: (_reply: string) => Promise<void>;
 }) {
   return (
     <div className="space-y-1">
@@ -358,7 +358,7 @@ function ToolGuardConfirmationCard({
   onReply,
 }: {
   payload: Record<string, unknown>;
-  onReply?: (reply: string) => Promise<void>;
+  onReply?: (_reply: string) => Promise<void>;
 }) {
   const [reply, setReply] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
