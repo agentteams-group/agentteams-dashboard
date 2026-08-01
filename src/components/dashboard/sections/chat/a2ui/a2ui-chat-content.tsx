@@ -15,7 +15,7 @@ import {
   thinkingToA2uiMessages,
   type ParsedA2uiBlock,
 } from '@/lib/a2ui/parser';
-import { A2uiSurfaceRenderer } from './a2ui-surface-renderer';
+import { IncrementalA2uiRenderer } from './a2ui-surface-renderer';
 
 // ─── Code Block Component ────────────────────────────────────────────────────
 
@@ -267,7 +267,7 @@ const A2uiBlocks = memo(function A2uiBlocks({
         switch (block.type) {
           case 'a2ui':
             return (
-              <A2uiSurfaceRenderer
+              <IncrementalA2uiRenderer
                 key={key}
                 messages={block.messages || []}
                 messageKey={key}
@@ -305,7 +305,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
         switch (block.type) {
           case 'thinking':
             return block.content ? (
-              <A2uiSurfaceRenderer
+              <IncrementalA2uiRenderer
                 key={key}
                 messages={thinkingToA2uiMessages(block.content, key, isStreaming)}
                 messageKey={key}
@@ -315,7 +315,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
 
           case 'tool_call':
             return block.payload ? (
-              <A2uiSurfaceRenderer
+              <IncrementalA2uiRenderer
                 key={key}
                 messages={legacyToA2uiMessages(block.payload, key, true)}
                 messageKey={key}
@@ -334,7 +334,7 @@ const LegacyBlocks = memo(function LegacyBlocks({
 
           case 'card':
             return block.payload ? (
-              <A2uiSurfaceRenderer
+              <IncrementalA2uiRenderer
                 key={key}
                 messages={legacyToA2uiMessages(block.payload, key, false)}
                 messageKey={key}
