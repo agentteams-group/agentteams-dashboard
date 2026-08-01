@@ -53,6 +53,12 @@ Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 
 
 负责 Higress Console 的 Provider 与 AI Route 管理。Provider 响应在返回浏览器前移除 Token 值。
 
+### A2UI 聊天渲染
+
+位置：`src/components/dashboard/sections/chat/`、`src/lib/a2ui/parser.ts`
+
+Matrix 消息正文与 formatted_body 由 `parseA2uiContent` 解析为 A2UI 协议消息、agent 消息 repr、legacy thinking/卡片块与纯文本。流式输出使用 `IncrementalA2uiRenderer`：只对新增消息（`messages.slice(startIndex)`）增量处理，避免对完整消息列表的全量重处理破坏处理器内部 surface 状态；流式且长时间无 surface 时用静态提示替换三点动画。`A2uiChatContent` 通过 `looksLikeStructuredStreaming` 同时检查正文与 formatted_body 中的 A2UI 标记、agent repr 与 legacy 块，保证思考与工具调用在流式中以可折叠卡片呈现。
+
 ### 部署集成
 
 位置：`install/`

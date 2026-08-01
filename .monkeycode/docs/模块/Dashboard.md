@@ -12,6 +12,8 @@
 
 区块位于 `src/components/dashboard/sections/`：概览汇总资源和基础设施；Workers、Teams、Managers、Humans 提供资源操作；Chat 组合 Matrix 房间；Topology 绘制资源关系；Gateway 管理 Consumer 和 Higress Route；Policies、Sandbox、Compliance 提供治理能力。
 
+聊天区块位于 `src/components/dashboard/sections/chat/`：`a2ui/a2ui-chat-content.tsx` 解析 Matrix 消息中的 A2UI 协议、agent repr 与 legacy 块，流式输出由 `IncrementalA2uiRenderer` 增量渲染思考、工具调用、确认卡片与 Markdown 文本；AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
+
 ## 状态和数据流
 
 TanStack Query 保存服务端资源缓存。Worker、Team、Manager、Human 查询默认每 15 秒轮询，基础设施和模型查询默认每 30 秒轮询。`use-agentteams-mutations.ts` 负责缓存失效、部分 Worker 乐观更新、Toast、通知和审计事件分发。

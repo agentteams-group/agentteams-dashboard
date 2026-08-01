@@ -6,6 +6,18 @@
 
 `src/lib/higress-api.ts` 定义 `LlmProvider`、`LlmProviderResponse`、`AiRoute` 及对应的创建和更新请求。Provider 响应使用 `tokenCount` 表示凭据数量。
 
+## Team workerMembers 契约
+
+Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须恰好包含一个 `role=team_leader`，且每个被引用的 Worker 都必须是已存在的 Worker 资源（否则返回 `referenced Worker X does not exist`）。`buildWorkerMembers` 将 UI 的 `leader + workerNames` 映射为该数组：leader 以 `team_leader` 角色进入，名称去重。Controller 在创建团队时不会自动创建成员，因此 `ensureWorkersExist` 先列出已有 Worker，对缺失成员以 `{name, runtime}` 最小载荷创建后再提交团队（创建与编辑均适用）。
+
+## Higress matchType 契约
+
+Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`；swagger 注释中的 `EXACT`/`PRE`/`REGEX` 是注解前缀而非线上值。序列化时 UI 的精确匹配 `EXACT` 映射为 `EQUAL`（`normalizeMatchTypeForApi`）；读取时 `EQUAL` 还原为 `EXACT`，并兼容旧版以 `^...$` 锚定的 `REGEX` 数据（`restoreMatchTypeFromApi`）。AI 路由强制 `pathPredicate.matchType === "PRE"`（否则返回 `pathPredicate must be of type PRE`），表单锁定为前缀；`modelPredicates` 仅允许 `EQUAL`/`PRE`（`AiModelPredicate` 拒绝正则）。`validateAiRoutePayload` 在提交前强制执行以上约束。
+
+## MinIO Worker 名称约束
+
+嵌入式模式下 Worker 名用作 MinIO 访问密钥，长度必须为 3-20 字符，否则 provisioning 报 `access key length should be between 3 and 20`。`src/lib/resource-name.ts` 的 `workerNameError` 在 Worker 创建、团队创建与团队编辑对话框执行该校验并阻止提交。
+
 ## Dashboard API 路由
 
 | 路径前缀 | 目标系统 | 主要职责 |
