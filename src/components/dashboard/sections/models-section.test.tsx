@@ -13,7 +13,10 @@ const mutations = {
   deleteRoute: vi.fn(),
 };
 
-const providers = [{ name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 }];
+const providers = [
+  { name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 },
+  { name: 'deepseek', type: 'deepseek', protocol: 'openai/v1', tokenCount: 1 },
+];
 const routes = [{
   name: 'team-chat',
   pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
@@ -37,6 +40,14 @@ vi.mock('@/hooks/use-agentteams-models', () => ({
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [{ model: 'team-chat' }] }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: () => ({ canManage: true, isLoading: false }) }));
+vi.mock('@/hooks/use-agentteams-consumers', () => ({
+  useConsumers: () => ({ data: [], isLoading: false, error: null, listUnsupported: false }),
+}));
+vi.mock('@/hooks/use-agentteams-mutations', () => ({
+  useCreateConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useDeleteConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useBindConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+}));
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) => open ? <>{children}</> : null,
@@ -122,6 +133,21 @@ describe('ModelsSection', () => {
     expect(screen.getByText('将删除 team-chat，此操作无法撤销。')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     expect(mutations.deleteRoute).toHaveBeenCalledWith('team-chat', expect.any(Object));
+  });
+
+  it('switches a route to a new provider and keeps model mappings', () => {
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 提供商' }));
+
+    fireEvent.change(screen.getByLabelText('目标提供商'), { target: { value: 'deepseek' } });
+    fireEvent.click(screen.getByRole('button', { name: '切换并保存' }));
+
+    expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'team-chat',
+      data: expect.objectContaining({
+        upstreams: [{ provider: 'deepseek', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }],
+      }),
+    }), expect.any(Object));
   });
 
   it('renders the current request-model binding', () => {

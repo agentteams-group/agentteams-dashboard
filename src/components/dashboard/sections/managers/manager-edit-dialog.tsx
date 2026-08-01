@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { UpdateManagerRequest } from '@/lib/agentteams-api';
-import type { AgentTeamsModelBinding } from '@/lib/model-bindings';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 
 export type ManagerEditForm = UpdateManagerRequest & { name?: string };
@@ -33,7 +33,7 @@ export function ManagerEditDialog({
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
-  modelOptions: AgentTeamsModelBinding[];
+  modelOptions: ModelSelectionOption[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

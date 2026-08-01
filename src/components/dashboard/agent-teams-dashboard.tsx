@@ -44,6 +44,7 @@ const WorkersSection = lazy(() => import('./sections/workers-section').then(m =>
 const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ default: m.TeamsSection })));
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
+const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
 const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ default: m.ChatSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 
@@ -53,6 +54,7 @@ const sectionMap: Record<string, React.ComponentType> = {
   teams: TeamsSection,
   managers: ManagersSection,
   humans: HumansSection,
+  models: ModelsSection,
   chat: ChatSection,
   docs: DocsSection,
 };
@@ -122,8 +124,8 @@ export function AgentTeamsDashboard() {
           return;
         }
 
-        // Ctrl+1..7: activate each MVP navigation item.
-        if (e.key >= '1' && e.key <= '7') {
+        // Ctrl+1..8: activate each navigation item.
+        if (e.key >= '1' && e.key <= '8') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
           if (index < visibleNavItems.length) {

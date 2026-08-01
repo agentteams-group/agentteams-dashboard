@@ -370,6 +370,24 @@ export function useDeleteConsumer() {
   });
 }
 
+export function useBindConsumer() {
+  const queryClient = useQueryClient();
+  const addNotification = useNotify();
+
+  return useMutation({
+    mutationFn: (id: string) => agentteamsApi.bindConsumer(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['agentteams-consumers'] });
+      toast.success(`Consumer ${id} 已绑定到 AI 路由`);
+      addNotification({ type: 'success', title: 'Consumer 已绑定', message: `Consumer ${id} 已授权访问 AI 路由` });
+    },
+    onError: (err) => {
+      toast.error(`Consumer 绑定失败: ${formatErrorMessage(err)}`);
+      addNotification({ type: 'error', title: 'Consumer 绑定失败', message: formatErrorMessage(err) });
+    },
+  });
+}
+
 // Human Update Mutation
 export function useUpdateHuman() {
   const queryClient = useQueryClient();

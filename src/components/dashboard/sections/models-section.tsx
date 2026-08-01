@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, type ReactNode } from 'react';
-import { AlertTriangle, Clock, Gauge, Key, Loader2, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, Clock, Gauge, Key, Link2, Loader2, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ import {
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useConsumers } from '@/hooks/use-agentteams-consumers';
-import { useCreateConsumer, useDeleteConsumer } from '@/hooks/use-agentteams-mutations';
+import { useCreateConsumer, useDeleteConsumer, useBindConsumer } from '@/hooks/use-agentteams-mutations';
 import {
   parseFallbackConfig,
   PROVIDERS_NEED_BASE_URL,
@@ -192,6 +192,43 @@ function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpe
   </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}{editing ? '保存修改' : '创建路由'}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
+function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { open: boolean; route: AiRoute | null; providers: LlmProviderResponse[]; onOpenChange: (_open: boolean) => void }) {
+  const update = useUpdateAiRoute();
+  const currentProviders = route?.upstreams.map((upstream) => upstream.provider) ?? [];
+  const candidates = providers.filter((provider) => provider.tokenCount > 0 && !currentProviders.includes(provider.name));
+  const [selected, setSelected] = useState('');
+  const [errors, setErrors] = useState<string[]>([]);
+  const pending = update.isPending;
+
+  const submit = () => {
+    if (!route || !selected) return;
+    // Keep the first upstream's modelMapping so request-model aliases still
+    // resolve to concrete target models after the provider switch.
+    const keepMapping = route.upstreams[0]?.modelMapping;
+    update.mutate({
+      name: route.name,
+      data: {
+        name: route.name,
+        domains: route.domains,
+        pathPredicate: route.pathPredicate,
+        upstreams: [{ provider: selected, weight: 100, modelMapping: keepMapping }],
+        modelPredicates: route.modelPredicates,
+        authConfig: route.authConfig,
+        fallbackConfig: route.fallbackConfig,
+      },
+    }, {
+      onSuccess: () => { onOpenChange(false); setSelected(''); },
+      onError: (error) => setErrors([error.message]),
+    });
+  };
+
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>切换提供商 - {route?.name}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
+    <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground"><p>当前上游提供商：{currentProviders.length > 0 ? currentProviders.join('、') : '-'}</p><p className="mt-1">切换后该路由将把请求模型别名路由到新提供商（权重 100%），并保留模型映射与认证配置。</p></div>
+    <div><Label>目标提供商 *</Label><select aria-label="目标提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">选择提供商...</option>{candidates.map((provider) => <option key={provider.name} value={provider.name}>{provider.name}（{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}，{provider.tokenCount} Token）</option>)}</select>{candidates.length === 0 && <p className="mt-2 text-xs text-amber-600">没有可切换的提供商（当前路由已使用全部可用提供商）。请先添加新的提供商。</p>}</div>
+    <FormErrors errors={errors} />
+  </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending || !selected} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}切换并保存</Button></DialogFooter></DialogContent></Dialog>;
+}
+
 export function ModelsSection() {
   const consoleAccess = useHigressConsoleAccess();
   const providersQuery = useModels(consoleAccess.canManage);
@@ -202,6 +239,7 @@ export function ModelsSection() {
   const deleteRoute = useDeleteAiRoute();
   const [providerDialog, setProviderDialog] = useState<LlmProviderResponse | null | undefined>(undefined);
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
+  const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
   const providers = providersQuery.data ?? [];
   const routes = routesQuery.data ?? [];
@@ -218,14 +256,14 @@ export function ModelsSection() {
   };
   if (!consoleAccess.canManage) return <div className="space-y-4"><SectionHeader title="Higress Console 管理" description="模型提供商和 AI 路由由外部 Higress Console 管理" /><div className="rounded-lg border border-border/50 bg-muted/30 p-4 text-sm text-muted-foreground">{consoleAccess.isLoading ? '正在检查 Higress Console 状态...' : consoleAccess.reason}</div></div>;
   return <div className="space-y-6">
-    <SectionHeader title="AI 网关" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
+    <SectionHeader title="模型管理" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 模型提供商</CardTitle><CardDescription>协议、Token 故障转移、模型映射与公开高级配置</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button><span className="text-xs text-muted-foreground">共 {providers.length} 个提供商</span></div><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
-    <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 路由</CardTitle><CardDescription>多上游权重、路径与模型匹配、认证和回退策略</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button><span className="text-xs text-muted-foreground">共 {routes.length} 条路由</span></div>{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
+    <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 路由</CardTitle><CardDescription>多上游权重、路径与模型匹配、认证和回退策略</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button><span className="text-xs text-muted-foreground">共 {routes.length} 条路由</span></div>{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">请求模型别名绑定</CardTitle><CardDescription>Manager 和 Worker 的模型别名将由 Higress 路由解析为具体提供商模型</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>请求模型别名</TableHead><TableHead>路由</TableHead><TableHead>提供商</TableHead><TableHead>目标模型</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无请求模型别名绑定</TableCell></TableRow> : modelBindings.map((binding) => <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}><TableCell className="font-mono text-xs">{binding.requestModelAlias}</TableCell><TableCell>{binding.routeName || '-'}</TableCell><TableCell>{binding.providerName || '-'}</TableCell><TableCell className="font-mono text-xs">{binding.targetModel || '-'}</TableCell><TableCell><Badge variant={binding.available ? 'default' : 'destructive'} className="text-[10px]">{binding.available ? '可用' : '不可用'}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
     <ConsumerSection />
     <RateLimitSection routes={routes} />
     <div className="rounded-lg border border-border/50 bg-muted/30 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" /><p className="text-xs text-muted-foreground">模型配置通过 Higress Console API 管理，凭据仅以 Token 数量形式显示。</p></div></div>
-    <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} />
+    <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} /><RouteProviderSwitchDialog key={`switch-${switchRoute?.name ?? 'none'}`} open={switchRoute !== null} route={switchRoute} providers={providers} onOpenChange={(open) => !open && setSwitchRoute(null)} />
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '提供商' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该提供商：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
@@ -234,7 +272,7 @@ function ResourceError({ error }: { error: Error | null }) { return error ? <p c
 
 function ProviderTable({ loading, providers, pending, onEdit, onDelete }: { loading: boolean; providers: LlmProviderResponse[]; pending: boolean; onEdit: (_provider: LlmProviderResponse) => void; onDelete: (_name: string) => void }) { return <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>协议</TableHead><TableHead>Token 数</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : providers.length === 0 ? <EmptyRow icon={<Server className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 提供商配置" /> : providers.map((provider) => <TableRow key={provider.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Server className="size-3.5 text-muted-foreground" />{provider.name}</div></TableCell><TableCell><Badge variant="outline" className="text-[10px]">{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}</Badge></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{provider.protocol || 'openai/v1'}</TableCell><TableCell><span className="flex items-center gap-1 text-xs"><Key className="size-3 text-muted-foreground" />{provider.tokenCount} 个</span></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="编辑提供商" aria-label={`编辑 ${provider.name}`} disabled={pending} onClick={() => onEdit(provider)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除提供商" aria-label={`删除 ${provider.name}`} disabled={pending} onClick={() => onDelete(provider.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 
-function RouteTable({ loading, routes, pending, onEdit, onDelete }: { loading: boolean; routes: AiRoute[]; pending: boolean; onEdit: (_route: AiRoute) => void; onDelete: (_name: string) => void }) { return <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>路径</TableHead><TableHead>上游提供商</TableHead><TableHead>认证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : routes.length === 0 ? <EmptyRow icon={<Route className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 路由" /> : routes.map((route) => <TableRow key={route.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Route className="size-3.5 text-muted-foreground" />{route.name}</div></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{route.pathPredicate.matchValue}</TableCell><TableCell><div className="flex flex-wrap gap-1">{route.upstreams.map((upstream) => <Badge key={`${route.name}-${upstream.provider}`} variant="secondary" className="text-[10px]">{upstream.provider} ({upstream.weight}%)</Badge>)}</div></TableCell><TableCell>{route.authConfig?.enabled ? <Badge variant="outline" className="text-[10px]">已启用</Badge> : <span className="text-xs text-muted-foreground">未启用</span>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="编辑路由" aria-label={`编辑 ${route.name}`} disabled={pending} onClick={() => onEdit(route)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除路由" aria-label={`删除 ${route.name}`} disabled={pending} onClick={() => onDelete(route.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
+function RouteTable({ loading, routes, pending, onEdit, onSwitch, onDelete }: { loading: boolean; routes: AiRoute[]; pending: boolean; onEdit: (_route: AiRoute) => void; onSwitch: (_route: AiRoute) => void; onDelete: (_name: string) => void }) { return <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>路径</TableHead><TableHead>上游提供商</TableHead><TableHead>认证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : routes.length === 0 ? <EmptyRow icon={<Route className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 路由" /> : routes.map((route) => <TableRow key={route.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Route className="size-3.5 text-muted-foreground" />{route.name}</div></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{route.pathPredicate.matchValue}</TableCell><TableCell><div className="flex flex-wrap gap-1">{route.upstreams.map((upstream) => <Badge key={`${route.name}-${upstream.provider}`} variant="secondary" className="text-[10px]">{upstream.provider} ({upstream.weight}%)</Badge>)}</div></TableCell><TableCell>{route.authConfig?.enabled ? <Badge variant="outline" className="text-[10px]">已启用</Badge> : <span className="text-xs text-muted-foreground">未启用</span>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="切换提供商" aria-label={`切换 ${route.name} 提供商`} disabled={pending} onClick={() => onSwitch(route)}><ArrowLeftRight className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" title="编辑路由" aria-label={`编辑 ${route.name}`} disabled={pending} onClick={() => onEdit(route)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除路由" aria-label={`删除 ${route.name}`} disabled={pending} onClick={() => onDelete(route.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 
 function LoadingRow() { return <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow>; }
 function EmptyRow({ icon, text }: { icon: ReactNode; text: string }) { return <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{icon}{text}</TableCell></TableRow>; }
@@ -250,6 +288,7 @@ function ConsumerSection() {
   } = useConsumers();
   const createConsumer = useCreateConsumer();
   const deleteConsumer = useDeleteConsumer();
+  const bindConsumer = useBindConsumer();
   const [showAdd, setShowAdd] = useState(false);
   const [consumerName, setConsumerName] = useState('');
   const [consumerKey, setConsumerKey] = useState('');
@@ -270,10 +309,24 @@ function ConsumerSection() {
       setConsumerName('');
       setConsumerKey('');
       setShowAdd(false);
+      try {
+        await bindConsumer.mutateAsync(consumerName.trim());
+        toast.success(`Consumer "${consumerName}" 已自动绑定到 AI 路由`);
+      } catch (bindErr) {
+        toast.error(bindErr instanceof Error ? `自动绑定失败：${bindErr.message}` : '自动绑定失败');
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : '创建失败');
     }
-  }, [consumerName, consumerKey, createConsumer]);
+  }, [consumerName, consumerKey, createConsumer, bindConsumer]);
+
+  const handleBind = useCallback(async (name: string) => {
+    try {
+      await bindConsumer.mutateAsync(name);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '绑定失败');
+    }
+  }, [bindConsumer]);
 
   const handleDelete = useCallback(async () => {
     if (!consumerPendingDeletion) return;
@@ -290,7 +343,7 @@ function ConsumerSection() {
     {showAdd && <div className="flex items-end gap-2 p-3 border border-border rounded-lg bg-card/50"><div className="flex-1"><Label className="text-xs">名称</Label><Input value={consumerName} onChange={(e) => setConsumerName(e.target.value)} placeholder="consumer-name" className="h-8 text-sm" /></div><div className="flex-1"><Label className="text-xs">API Key (可选)</Label><Input value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} placeholder="留空自动生成" type="password" className="h-8 text-sm" /></div><Button size="sm" onClick={handleCreate} disabled={!consumerName.trim() || createConsumer.isPending}>{createConsumer.isPending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : '创建'}</Button><Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>取消</Button></div>}
     {consumerListUnsupported && <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground"><AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" /><p>当前 Controller 版本不支持获取 Consumer 列表（v1.2.0-beta.1 缺少 GET /api/v1/gateway/consumers），仍可创建新 Consumer。</p></div>}
     {consumersError && <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertTriangle className="size-4 shrink-0 mt-0.5" /><p>Consumer 列表加载失败: {formatErrorMessage(consumersError)}</p></div>}
-    <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>凭证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{consumersLoading ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow> : !consumersLoading && consumers?.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">暂无 Consumer</TableCell></TableRow> : consumers?.map((consumer) => <TableRow key={consumer.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Key className="size-3.5 text-muted-foreground" />{consumer.name}</div></TableCell><TableCell>{consumer.status && <Badge variant="outline" className="text-[10px]">{consumer.status}</Badge>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" aria-label={`删除 ${consumer.name}`} onClick={() => setConsumerPendingDeletion(consumer.name)} disabled={deleteConsumer.isPending}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>
+    <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>凭证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{consumersLoading ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow> : !consumersLoading && consumers?.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">暂无 Consumer</TableCell></TableRow> : consumers?.map((consumer) => <TableRow key={consumer.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Key className="size-3.5 text-muted-foreground" />{consumer.name}</div></TableCell><TableCell>{consumer.status && <Badge variant="outline" className="text-[10px]">{consumer.status}</Badge>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" title="绑定到 AI 路由" aria-label={`绑定 ${consumer.name}`} onClick={() => handleBind(consumer.name)} disabled={bindConsumer.isPending || deleteConsumer.isPending}><Link2 className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="sm" aria-label={`删除 ${consumer.name}`} onClick={() => setConsumerPendingDeletion(consumer.name)} disabled={bindConsumer.isPending || deleteConsumer.isPending}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>
     <AlertDialog open={Boolean(consumerPendingDeletion)} onOpenChange={(open) => !open && !deleteConsumer.isPending && setConsumerPendingDeletion(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除 Consumer</AlertDialogTitle><AlertDialogDescription>将删除 {consumerPendingDeletion ?? ''} 的认证凭证。依赖该凭证的调用将无法通过 Higress 认证。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleteConsumer.isPending}>取消</AlertDialogCancel><AlertDialogAction disabled={deleteConsumer.isPending} onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleteConsumer.isPending && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
