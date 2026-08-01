@@ -65,7 +65,10 @@ export function ModelSelector({
               size="sm"
               className="shrink-0"
               disabled={disabled}
-              onClick={() => setCustomMode(false)}
+              onClick={() => {
+                setCustomMode(false);
+                onChange('');
+              }}
             >
               从列表选择
             </Button>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelector } from './model-selector';
@@ -96,6 +97,27 @@ describe('ModelSelector', () => {
     fireEvent.change(input, { target: { value: 'my-custom-alias' } });
 
     expect(onChange).toHaveBeenCalledWith('my-custom-alias');
+  });
+
+  it('exits custom alias mode back to the model list', () => {
+    if (!('ResizeObserver' in window)) {
+      Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, configurable: true });
+    }
+    function Controlled() {
+      const [value, setValue] = useState('my-unknown-alias');
+      return <ModelSelector value={value} onChange={setValue} options={options} />;
+    }
+    render(<Controlled />);
+
+    // Unknown alias value puts the component in custom input mode.
+    expect((screen.getByLabelText('请求模型别名') as HTMLInputElement).value).toBe('my-unknown-alias');
+
+    fireEvent.click(screen.getByRole('button', { name: '从列表选择' }));
+
+    // Back to the dropdown: the text input is gone, the Select trigger is shown.
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', { name: /team-chat/ })).toBeTruthy();
   });
 
   it('marks an unconfigured built-in model alias in the dropdown', () => {

@@ -23,6 +23,14 @@ function useNotify() {
   return addNotification;
 }
 
+// Persisted notifications are stored in localStorage, so only a masked
+// credential should ever be written into them. The full key is surfaced
+// once via a non-persisted toast at creation time.
+export function maskApiKey(apiKey: string): string {
+  if (apiKey.length <= 8) return '••••••••';
+  return `${apiKey.slice(0, 4)}••••${apiKey.slice(-4)}`;
+}
+
 // Worker Mutations
 export function useCreateWorker() {
   const queryClient = useQueryClient();
@@ -335,13 +343,13 @@ export function useCreateConsumer() {
     mutationFn: (data: CreateConsumerRequest) => agentteamsApi.createConsumer(data),
     onSuccess: (created, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-consumers'] });
-      // User-facing toast is handled by the caller (it surfaces created.api_key);
-      // keep the notification here and include the key when the controller returns one.
+      // The full key is shown once by the caller via a non-persisted toast;
+      // the persisted notification only carries a masked credential.
       addNotification({
         type: 'success',
         title: 'Consumer 创建成功',
         message: created?.api_key
-          ? `Consumer "${variables.name}" 已创建，API Key: ${created.api_key}`
+          ? `Consumer "${variables.name}" 已创建，API Key: ${maskApiKey(created.api_key)}`
           : `Consumer "${variables.name}" 已创建`,
       });
     },

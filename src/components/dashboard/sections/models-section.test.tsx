@@ -135,7 +135,7 @@ describe('ModelsSection', () => {
     expect(mutations.deleteRoute).toHaveBeenCalledWith('team-chat', expect.any(Object));
   });
 
-  it('switches a route to a new provider and keeps model mappings', () => {
+  it('switches a route to a new provider while preserving route structure', () => {
     render(<ModelsSection />);
     fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 提供商' }));
 
@@ -145,7 +145,10 @@ describe('ModelsSection', () => {
     expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({
       name: 'team-chat',
       data: expect.objectContaining({
-        upstreams: [{ provider: 'deepseek', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }],
+        upstreams: [
+          expect.objectContaining({ provider: 'openai', weight: 0, modelMapping: { 'team-chat': 'gpt-4.1' } }),
+          expect.objectContaining({ provider: 'deepseek', weight: 100 }),
+        ],
       }),
     }), expect.any(Object));
   });

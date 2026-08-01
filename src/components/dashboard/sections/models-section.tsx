@@ -202,16 +202,25 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
 
   const submit = () => {
     if (!route || !selected) return;
-    // Keep the first upstream's modelMapping so request-model aliases still
-    // resolve to concrete target models after the provider switch.
-    const keepMapping = route.upstreams[0]?.modelMapping;
+    // Preserve the route structure: keep every upstream (and its model
+    // mapping / failover config), only shift weights so the target provider
+    // takes 100% of the traffic. Adds the target as a new upstream when it is
+    // not part of the route yet.
+    const existing = route.upstreams.some((upstream) => upstream.provider === selected);
+    const upstreams = route.upstreams.map((upstream) => ({
+      ...upstream,
+      weight: upstream.provider === selected ? 100 : 0,
+    }));
+    if (!existing) {
+      upstreams.push({ provider: selected, weight: 100, modelMapping: {} });
+    }
     update.mutate({
       name: route.name,
       data: {
         name: route.name,
         domains: route.domains,
         pathPredicate: route.pathPredicate,
-        upstreams: [{ provider: selected, weight: 100, modelMapping: keepMapping }],
+        upstreams,
         modelPredicates: route.modelPredicates,
         authConfig: route.authConfig,
         fallbackConfig: route.fallbackConfig,
@@ -223,7 +232,7 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
   };
 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>切换提供商 - {route?.name}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
-    <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground"><p>当前上游提供商：{currentProviders.length > 0 ? currentProviders.join('、') : '-'}</p><p className="mt-1">切换后该路由将把请求模型别名路由到新提供商（权重 100%），并保留模型映射与认证配置。</p></div>
+    <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground"><p>当前上游提供商：{currentProviders.length > 0 ? currentProviders.join('、') : '-'}</p><p className="mt-1">切换将调整权重使目标提供商接管 100% 流量，其余上游权重置 0；所有上游的模型映射与故障转移配置均保留。若目标提供商尚未在路由中，将追加为新的上游。</p></div>
     <div><Label>目标提供商 *</Label><select aria-label="目标提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">选择提供商...</option>{candidates.map((provider) => <option key={provider.name} value={provider.name}>{provider.name}（{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}，{provider.tokenCount} Token）</option>)}</select>{candidates.length === 0 && <p className="mt-2 text-xs text-amber-600">没有可切换的提供商（当前路由已使用全部可用提供商）。请先添加新的提供商。</p>}</div>
     <FormErrors errors={errors} />
   </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending || !selected} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}切换并保存</Button></DialogFooter></DialogContent></Dialog>;
