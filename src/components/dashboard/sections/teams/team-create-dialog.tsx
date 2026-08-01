@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { CreateTeamRequest, WorkerResponse } from '@/lib/agentteams-api';
+import { workerNameError } from '@/lib/resource-name';
 
 export function parseWorkerNames(value: string): string[] {
   return value.split(/[,，]/).map((name) => name.trim()).filter(Boolean);
@@ -50,6 +51,11 @@ export function TeamCreateDialog({
   const selectedWorkers = workers.filter((worker) => value.workerNames?.includes(worker.name));
   const workersWithoutModel = selectedWorkers.filter((worker) => !worker.model?.trim());
 
+  const leaderError = value.leader?.name ? workerNameError(value.leader.name) : null;
+  const workerNamesError = (value.workerNames ?? [])
+    .map(workerNameError)
+    .find((err) => err !== null) ?? null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -72,6 +78,7 @@ export function TeamCreateDialog({
               onChange={(e) => onChange({ ...value, leader: { name: e.target.value } })}
               placeholder="leader-name"
             />
+            {leaderError && <p className="text-xs text-red-600 dark:text-red-400">{leaderError}</p>}
           </div>
           <div className="space-y-2">
             <Label>团队名称</Label>
@@ -104,6 +111,7 @@ export function TeamCreateDialog({
               }}
               placeholder="worker1, worker2 或 worker1，worker2"
             />
+            {workerNamesError && <p className="text-xs text-red-600 dark:text-red-400">{workerNamesError}</p>}
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
             <p>团队模型由 Leader 运行时与成员 Worker 的“请求模型别名”分别管理。</p>
@@ -124,7 +132,7 @@ export function TeamCreateDialog({
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={!value.name || !value.leader?.name || isPending}
+            disabled={!value.name || !value.leader?.name || !!leaderError || !!workerNamesError || isPending}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '创建中...' : '创建'}
