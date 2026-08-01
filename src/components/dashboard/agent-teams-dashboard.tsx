@@ -45,7 +45,7 @@ const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ 
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
-const ChatSection = lazy(() => import('./sections/chat-section').then(m => ({ default: m.ChatSection })));
+const ChatSection = lazy(() => import('./sections/chat/ChatSection').then(m => ({ default: m.ChatSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 
 const sectionMap: Record<string, React.ComponentType> = {
