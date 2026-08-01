@@ -36,3 +36,13 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Environment Configuration
 - Instructions:
   - The workspace currently has no installed Node.js dependencies; `npm test`, `npm run typecheck`, and `npm run lint` cannot resolve their project executables.
+
+[Project Knowledge Summary]
+- Date: 2026-08-01
+- Context: Agent implemented Matrix chat UI restructure with virtualized message list
+- Category: Build Methods
+- Instructions:
+  - New components created: structures/MessageList.tsx, structures/ScrollPanel.tsx, views/MessageBubble.tsx, views/EventTile/index.tsx, grouper/MainGrouper.ts, ChatRoom.tsx, ChatPanel.tsx, ChatSection.tsx, ChatStore.tsx, components/MessageInput.tsx
+  - Added `react-virtuoso` to package.json dependencies for virtualized scrolling
+  - Extended DisplayMessage interface with threadId, replyCount, isEdited fields
+  - All new code passes TypeScript and ESLint checks

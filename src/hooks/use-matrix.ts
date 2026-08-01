@@ -281,6 +281,13 @@ export function getRoomTopicFromState(stateEvents: { type: string; state_key: st
 
 // ============ Helper: Format Matrix event for display ============
 
+export interface RoomMember {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  membership: string;
+}
+
 export interface DisplayMessage {
   id: string;
   sender: string;
@@ -295,6 +302,14 @@ export interface DisplayMessage {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   /** Whether this message is still being streamed (AI response in progress) */
   isStreaming?: boolean;
+  /** Thread ID if this message has replies */
+  threadId?: string;
+  /** Number of replies in thread */
+  replyCount?: number;
+  /** Whether this message has been edited */
+  isEdited?: boolean;
+  /** Original event ID for edit/delete (for m.room.redaction) */
+  eventId?: string;
 }
 
 function normalizeMatrixMessageBody(body: unknown): string {
