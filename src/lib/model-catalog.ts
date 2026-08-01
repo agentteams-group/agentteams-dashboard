@@ -1,6 +1,7 @@
 // Model catalog: built-in model aliases plus user-configured aliases resolved
 // from Higress AI routes. The alias list mirrors the official AgentTeams
-// controller built-in models (agentteams-controller/internal/agentconfig/generator.go).
+// controller built-in models. Verified against agentscope-ai/AgentTeams
+// tag v1.2.0 (commit 793db24), agentteams-controller/internal/agentconfig/generator.go.
 
 import type { AiRoute, LlmProviderResponse } from '@/lib/higress-api';
 import { listAvailableRequestModelAliases, type AgentTeamsModelBinding } from '@/lib/model-bindings';

@@ -368,7 +368,6 @@ export function useDeleteConsumer() {
     mutationFn: (id: string) => agentteamsApi.deleteConsumer(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-consumers'] });
-      toast.success(`Consumer 已删除`);
       addNotification({ type: 'success', title: 'Consumer 已删除', message: `Consumer ${id} 已删除` });
     },
     onError: (err) => {
@@ -386,7 +385,6 @@ export function useBindConsumer() {
     mutationFn: (id: string) => agentteamsApi.bindConsumer(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-consumers'] });
-      toast.success(`Consumer ${id} 已绑定到 AI 路由`);
       addNotification({ type: 'success', title: 'Consumer 已绑定', message: `Consumer ${id} 已授权访问 AI 路由` });
     },
     onError: (err) => {

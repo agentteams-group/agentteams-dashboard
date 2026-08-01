@@ -1,6 +1,6 @@
 'use client';
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelsSection } from './models-section';
 
@@ -11,6 +11,8 @@ const mutations = {
   createRoute: vi.fn(),
   updateRoute: vi.fn(),
   deleteRoute: vi.fn(),
+  createConsumer: vi.fn(),
+  bindConsumer: vi.fn(),
 };
 
 const providers = [
@@ -41,12 +43,12 @@ vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: () => ({ canManage: true, isLoading: false }) }));
 vi.mock('@/hooks/use-agentteams-consumers', () => ({
-  useConsumers: () => ({ data: [], isLoading: false, error: null, listUnsupported: false }),
+  useConsumers: () => ({ data: [{ name: 'web-crawler', status: 'active' }], isLoading: false, error: null, listUnsupported: false }),
 }));
 vi.mock('@/hooks/use-agentteams-mutations', () => ({
-  useCreateConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useCreateConsumer: () => ({ mutate: vi.fn(), mutateAsync: mutations.createConsumer, isPending: false }),
   useDeleteConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
-  useBindConsumer: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useBindConsumer: () => ({ mutate: vi.fn(), mutateAsync: mutations.bindConsumer, isPending: false }),
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
@@ -151,6 +153,25 @@ describe('ModelsSection', () => {
         ],
       }),
     }), expect.any(Object));
+  });
+
+  it('binds an existing consumer to the AI route', () => {
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定 web-crawler' }));
+    expect(mutations.bindConsumer).toHaveBeenCalledWith('web-crawler');
+  });
+
+  it('auto-binds a newly created consumer', async () => {
+    mutations.createConsumer.mockResolvedValue({ name: 'my-consumer' });
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
+
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[0], { target: { value: 'my-consumer' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(mutations.createConsumer).toHaveBeenCalledWith({ name: 'my-consumer', credential_key: undefined }));
+    await waitFor(() => expect(mutations.bindConsumer).toHaveBeenCalledWith('my-consumer'));
   });
 
   it('renders the current request-model binding', () => {
