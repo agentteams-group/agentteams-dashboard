@@ -441,8 +441,9 @@ export function OverviewSection() {
         workers={workers}
         teams={teams}
         managers={managers}
-        infrastructure={infrastructure ?? undefined}
+        infrastructure={infrastructure}
         isConnected={isConnected}
+        mode={mode}
       />
 
       {/* ===== Row 3: Charts (two-column) ===== */}
@@ -643,16 +644,18 @@ function InsightsBar({
   managers,
   infrastructure,
   isConnected,
+  mode,
 }: {
   workers: WorkerResponse[] | undefined;
   teams: TeamResponse[] | undefined;
   managers: ManagerResponse[] | undefined;
-  infrastructure: InfrastructureInfo | undefined;
+  infrastructure: InfrastructureInfo | null | undefined;
   isConnected: boolean;
+  mode: string | null | undefined;
 }) {
   const insights = useMemo(
-    () => computeInsights(workers, teams, managers, infrastructure, isConnected),
-    [workers, teams, managers, infrastructure, isConnected]
+    () => computeInsights(workers, teams, managers, infrastructure ?? undefined, isConnected, mode as any),
+    [workers, teams, managers, infrastructure, isConnected, mode]
   );
 
   if (insights.length === 0) return null;

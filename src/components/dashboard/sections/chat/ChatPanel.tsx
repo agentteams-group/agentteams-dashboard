@@ -24,7 +24,7 @@ export function ChatPanel({ room, canSend = true, onSendMessage, className = '' 
           roomName={room.name}
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
           canSend={canSend}
-          onSendMessage={handleSendMessage}
+          onSendMessage={onSendMessage}
           className="h-full"
         />
       </div>

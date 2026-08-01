@@ -2,6 +2,7 @@
 // Automatically detects anomalies and generates actionable insights
 
 import type { WorkerResponse, TeamResponse, ManagerResponse, InfrastructureInfo } from '@/lib/agentteams-api';
+import type { DeploymentMode } from '@/components/dashboard/nav-items';
 
 export interface Insight {
   id: string;
@@ -17,7 +18,8 @@ export function computeInsights(
   teams: TeamResponse[] | undefined,
   managers: ManagerResponse[] | undefined,
   infrastructure: InfrastructureInfo | undefined,
-  isConnected: boolean
+  isConnected: boolean,
+  deploymentMode?: DeploymentMode | null
 ): Insight[] {
   const insights: Insight[] = [];
 
@@ -135,7 +137,7 @@ export function computeInsights(
     if (infrastructure.higress?.gateway.state === 'unreachable') unhealthyServices.push('Higress Gateway');
     if (infrastructure.higress?.console.state === 'unreachable') unhealthyServices.push('Higress Console');
     if (infrastructure.matrix && !infrastructure.matrix.healthy) unhealthyServices.push('Matrix');
-    if (infrastructure.kubernetes && !infrastructure.kubernetes.healthy) unhealthyServices.push('Kubernetes');
+    if (deploymentMode !== 'embedded' && infrastructure.kubernetes && !infrastructure.kubernetes.healthy) unhealthyServices.push('Kubernetes');
 
     if (unhealthyServices.length > 0) {
       insights.push({

@@ -59,6 +59,6 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
     (r) =>
       r.name.toLowerCase().includes(q) ||
       r.id.toLowerCase().includes(q) ||
-      r.members.some((m) => m.toLowerCase().includes(q)),
+      r.members.some((m) => m && m.toLowerCase().includes(q)),
   );
 }

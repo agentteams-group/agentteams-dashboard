@@ -51,9 +51,9 @@ export function useGlobalSearch(
     workers?.forEach((w) => {
       if (
         w.name.toLowerCase().includes(q) ||
-        w.model.toLowerCase().includes(q) ||
-        w.runtime.toLowerCase().includes(q) ||
-        w.team?.toLowerCase().includes(q)
+        (w.model || '').toLowerCase().includes(q) ||
+        (w.runtime || '').toLowerCase().includes(q) ||
+        (w.team || '').toLowerCase().includes(q)
       ) {
         results.push({
           entity: 'worker',
