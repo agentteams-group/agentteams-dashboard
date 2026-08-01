@@ -46,3 +46,8 @@ This file records user instructions, preferences, and teachings for reference in
   - Added `react-virtuoso` to package.json dependencies for virtualized scrolling
   - Extended DisplayMessage interface with threadId, replyCount, isEdited fields
   - All new code passes TypeScript and ESLint checks
+  - Test suite: 259 tests pass
+  - Build: `npm run build` compiles successfully
+  - Source files are in `/workspace/src/components/dashboard/sections/chat/`, NOT in `/workspace/packages/dashboard/src/`
+  - ScrollPanel uses Virtuoso with `followOutput: 'auto'` for auto-scroll and `scrollTo({ top: MAX_SAFE_INTEGER })` for manual scroll-to-bottom
+  - MessageList uses forwardRef to pass Virtuoso ref for imperative scrolling from ChatRoom
