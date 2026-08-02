@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeftRight, Clock, Gauge, Key, Link2, Loader2, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, Clock, Gauge, Globe, Info, Key, Link2, Loader2, Monitor, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -310,7 +310,7 @@ export function ModelsSection() {
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">请求模型别名绑定</CardTitle><CardDescription>Manager 和 Worker 的模型别名将由 Higress 路由解析为具体提供商模型</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>请求模型别名</TableHead><TableHead>路由</TableHead><TableHead>提供商</TableHead><TableHead>目标模型</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无请求模型别名绑定</TableCell></TableRow> : modelBindings.map((binding) => <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}><TableCell className="font-mono text-xs">{binding.requestModelAlias}</TableCell><TableCell>{binding.routeName || '-'}</TableCell><TableCell>{binding.providerName || '-'}</TableCell><TableCell className="font-mono text-xs">{binding.targetModel || '-'}</TableCell><TableCell><Badge variant={binding.available ? 'default' : 'destructive'} className="text-[10px]">{binding.available ? '可用' : '不可用'}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
     <ConsumerSection />
     <RateLimitSection routes={routes} />
-    <div className="rounded-lg border border-border/50 bg-muted/30 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" /><p className="text-xs text-muted-foreground">模型配置通过 Higress Console API 管理，凭据仅以 Token 数量形式显示。</p></div></div>
+    <HigressReferencePanel />
     <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} /><RouteProviderSwitchDialog key={`switch-${switchRoute?.name ?? 'none'}`} open={switchRoute !== null} route={switchRoute} providers={providers} onOpenChange={(open) => !open && setSwitchRoute(null)} />
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '提供商' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该提供商：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
@@ -324,6 +324,39 @@ function RouteTable({ loading, routes, pending, onEdit, onSwitch, onDelete }: { 
 
 function LoadingRow() { return <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow>; }
 function EmptyRow({ icon, text }: { icon: ReactNode; text: string }) { return <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{icon}{text}</TableCell></TableRow>; }
+
+// ============ Higress Reference Panel ============
+
+function HigressReferencePanel() {
+  const [open, setOpen] = useState(false);
+  return <div className="rounded-lg border border-border/50 bg-muted/30 overflow-hidden">
+    <button className="w-full flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:bg-muted/50 transition-colors" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+      <Info className="size-3.5 shrink-0" />
+      <span>Higress 网关对接参考</span>
+      {open ? <ChevronDown className="size-3.5 ml-auto" /> : <ChevronRight className="size-3.5 ml-auto" />}
+    </button>
+    {open && <div className="px-4 pb-3 text-[11px] text-muted-foreground space-y-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <p className="font-medium text-foreground">数据面端点</p>
+          <p>• <code className="font-mono">POST /v1/chat/completions</code> — 对话补全（支持流式）</p>
+          <p>• <code className="font-mono">POST /v1/embeddings</code> — 向量化（memorySearch 使用）</p>
+          <p>• <code className="font-mono">GET /v1/models</code> — 仅认证/连通性探测（非完整模型列表）</p>
+          <p>• <code className="font-mono">POST /mcp-servers/{'{name}'}/mcp</code> — MCP Server 端点（Streamable HTTP）</p>
+        </div>
+        <div className="space-y-1">
+          <p className="font-medium text-foreground">认证方式</p>
+          <p>• LLM/MCP：key-auth Bearer，凭据为 Consumer <code className="font-mono">GatewayKey</code></p>
+          <p>• 授权范围：<code className="font-mono">authConfig.allowedConsumers</code></p>
+          <p>• 暴露 Worker 端口：无认证（公开）</p>
+          <p>• OpenClaw Console：basic-auth（<code className="font-mono">AGENTTEAMS_ADMIN_USER</code>）</p>
+        </div>
+      </div>
+      <p>• Gateway 健康探测使用 <code className="font-mono">POST /v1/chat/completions</code>；仅 404 判为不可用，401/403 仍视为数据面已服务。</p>
+      <p>• 嵌入模式默认域名：<code className="font-mono">aigw-local.agentteams.io:8080</code>（容器内）/ <code className="font-mono">:18080</code>（宿主机）。Console：<code className="font-mono">agentteams-controller:8001</code>（容器内）/ <code className="font-mono">:18001</code>（宿主机）。</p>
+    </div>}
+  </div>;
+}
 
 // ============ Consumer Management ============
 
@@ -416,23 +449,67 @@ function ConsumerSection() {
 
 function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) {
   const gateway = higress?.gateway;
-  let description: string;
-  if (higress?.mode === 'external') {
-    description = gateway?.state === 'reachable'
-      ? `Manager/Worker 经 Higress Gateway 服务访问模型：${gateway.endpoint}`
-      : '外部适配模式尚未配置可用的 Gateway 数据平面地址';
-  } else {
-    description = gateway?.state === 'reachable'
-      ? `嵌入模式经 Gateway 服务访问：${gateway.endpoint}；也可由 Controller 直连 LLM Provider`
-      : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）';
-  }
-  return <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-4">
-    <Zap className="size-4 shrink-0 text-emerald-500" />
-    <div className="min-w-0 flex-1">
-      <p className="text-sm font-medium">运行时模型访问方式</p>
-      <p className="mt-0.5 break-all text-xs text-muted-foreground">{description}</p>
+  const console_ = higress?.console;
+  const [expanded, setExpanded] = useState(false);
+  if (!higress) return null;
+
+  const modeLabel = higress.mode === 'external' ? '外部适配' : '嵌入直连';
+  const gatewayLabel = gateway?.configured
+    ? gateway.endpoint
+    : '未配置';
+  const consoleLabel = console_?.configured
+    ? console_.endpoint
+    : '未配置';
+
+  return <div className="space-y-3">
+    <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-4">
+      <Zap className={`size-4 shrink-0 ${higress.healthy ? 'text-emerald-500' : 'text-amber-500'}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">运行时模型访问方式</p>
+        <p className="mt-0.5 break-all text-xs text-muted-foreground">
+          {higress.mode === 'external'
+            ? gateway?.state === 'reachable'
+              ? `Manager/Worker 经 Higress Gateway 访问模型：${gatewayLabel}`
+              : '外部适配模式尚未配置可用的 Gateway 数据平面地址'
+            : gateway?.state === 'reachable'
+              ? `嵌入模式经 Gateway 访问：${gatewayLabel}`
+              : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）'}
+        </p>
+      </div>
+      <Badge variant="secondary" className="shrink-0 text-[10px]">{modeLabel}</Badge>
+      <button className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? '收起详情' : '展开详情'}>
+        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+      </button>
     </div>
-    <Badge variant="secondary" className="shrink-0 text-[10px]">{higress?.mode === 'external' ? 'external' : 'direct'}</Badge>
+    {expanded && <div className="grid gap-3 rounded-lg border border-border/50 bg-card/50 p-4 text-xs">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <p className="font-medium flex items-center gap-1.5"><Globe className="size-3.5 text-cyan-500" />Gateway 数据平面</p>
+          <p className="font-mono text-[11px] text-muted-foreground break-all">{gatewayLabel}</p>
+          <div className="flex items-center gap-1.5">
+            {gateway?.state === 'reachable' && <Monitor className="size-3 text-emerald-500" />}
+            {gateway?.state === 'unreachable' && <AlertTriangle className="size-3 text-amber-500" />}
+            {gateway?.state === 'unconfigured' && <Globe className="size-3 text-muted-foreground" />}
+            <span className="text-[11px] text-muted-foreground capitalize">{gateway?.state}</span>
+            {gateway?.httpStatus !== undefined && <span className="text-[10px] text-muted-foreground/70">HTTP {gateway.httpStatus}</span>}
+          </div>
+          {gateway?.error && <p className="text-[10px] text-destructive">{gateway.error}</p>}
+        </div>
+        <div className="space-y-1">
+          <p className="font-medium flex items-center gap-1.5"><Server className="size-3.5 text-violet-500" />Console 管理端</p>
+          <p className="font-mono text-[11px] text-muted-foreground break-all">{consoleLabel}</p>
+          <div className="flex items-center gap-1.5">
+            {console_?.state === 'reachable' && <Monitor className="size-3 text-emerald-500" />}
+            {console_?.state === 'unreachable' && <AlertTriangle className="size-3 text-amber-500" />}
+            {console_?.state === 'unconfigured' && <Server className="size-3 text-muted-foreground" />}
+            <span className="text-[11px] text-muted-foreground capitalize">{console_?.state}</span>
+            {console_?.httpStatus !== undefined && <span className="text-[10px] text-muted-foreground/70">HTTP {console_.httpStatus}</span>}
+          </div>
+          {console_?.error && <p className="text-[10px] text-destructive">{console_.error}</p>}
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground">健康状态以 Gateway POST /v1/chat/completions 探测为准；仅 404 表示 AI 路由未代理。Console 为可选管理端，不影响运行时可用状态。</p>
+    </div>}
   </div>;
 }
 
