@@ -1,5 +1,16 @@
 // Higress Console API Client — AI Provider & Route Management
 // All requests go through Next.js API proxy routes to Higress Console
+//
+// Data-plane context (see the Higress gateway API reference): the ai-proxy
+// plugin only matches `/v1/chat/completions` and `/v1/embeddings`. `GET
+// /v1/models` is NOT a full OpenAI models-list endpoint in Higress — it is
+// only useful as an auth/connectivity probe (401/403 = bad key or not in
+// allowedConsumers, 404 = not an ai-proxy route). Embeddings
+// (`POST /v1/embeddings`) power memorySearch when configured. MCP servers are
+// exposed on the gateway at `/mcp-servers/{name}/mcp` (Streamable HTTP) and
+// are authorized per consumer via `consumerAuthInfo`; both MCP and LLM calls
+// authenticate with the per-identity consumer `GatewayKey` (key-auth Bearer),
+// scoped by `authConfig.allowedConsumers` on the AI route.
 
 import { apiUrl } from '@/lib/api-base';
 

@@ -171,9 +171,50 @@ async function checkExternalService(endpoint: string | undefined) {
   }
 }
 
+// Probe the Higress data plane on its real readiness surface. Per the Higress
+// gateway API reference, the ai-proxy plugin only matches `/v1/chat/completions`
+// and `/v1/embeddings`; a bare `GET /` therefore cannot distinguish a live AI
+// route from a gateway that is up but not proxying. We POST an unauthenticated
+// chat/completions probe and treat only a definitive auth/route answer as
+// "reachable": 200 (route open), 401/403 (route matched, key missing) still
+// prove the data plane is serving AI traffic, whereas 404 means the request
+// never reached an ai-proxy route.
+async function checkHigressGateway(endpoint: string | undefined) {
+  if (!endpoint) {
+    return { configured: false, state: 'unconfigured' as const };
+  }
+
+  try {
+    const probeUrl = new URL('/v1/chat/completions', endpoint).toString();
+    const res = await fetchWithTimeout(probeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'health-probe', messages: [{ role: 'user', content: 'ok' }] }),
+    });
+    // 404 => path not handled by ai-proxy (misconfigured gateway/route).
+    const state = res.status === 404 ? ('unreachable' as const) : ('reachable' as const);
+    return {
+      configured: true,
+      endpoint,
+      state,
+      httpStatus: res.status,
+      ...(state === 'unreachable'
+        ? { error: 'AI route /v1/chat/completions not proxied (HTTP 404)' }
+        : {}),
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      endpoint,
+      state: 'unreachable' as const,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
 async function checkHigress(): Promise<NonNullable<InfrastructureInfo['higress']>> {
   const [gateway, console] = await Promise.all([
-    checkExternalService(HIGRESS_GATEWAY_ENDPOINT),
+    checkHigressGateway(HIGRESS_GATEWAY_ENDPOINT),
     checkExternalService(HIGRESS_CONSOLE_ENDPOINT),
   ]);
 

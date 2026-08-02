@@ -10,6 +10,44 @@
 
 Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须恰好包含一个 `role=team_leader`，且每个被引用的 Worker 都必须是已存在的 Worker 资源（否则返回 `referenced Worker X does not exist`）。`buildWorkerMembers` 将 UI 的 `leader + workerNames` 映射为该数组：leader 以 `team_leader` 角色进入，名称去重。Controller 在创建团队时不会自动创建成员，因此 `ensureWorkersExist` 先列出已有 Worker，对缺失成员以 `{name, runtime}` 最小载荷创建后再提交团队（创建与编辑均适用）。
 
+## Higress 数据面端点（对外接口）
+
+以下是 Higress Gateway 暴露给 Manager/Worker/外部客户端的数据面端点，Dashboard 不直接代理这些端点，但其健康检查与模型绑定逻辑以其口径为准：
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/v1/chat/completions` | POST | 对话补全（支持流式），Controller 的就绪探测端点（`IsManagerLLMAuthReady`） |
+| `/v1/embeddings` | POST | 向量化（配置 memorySearch 时使用） |
+| `/v1/models` | GET | **不是**完整的 OpenAI 模型列表端点；ai-proxy 仅匹配 chat/completions 与 embeddings。`/v1/models` 仅作为认证/连通性探测（401/403=key 或 allowedConsumers 有误，404=非 ai-proxy 路由） |
+| `/mcp-servers/{name}/mcp` | POST | MCP Server 端点（Streamable HTTP），name 为 MCP Server 名（内置 GitHub 为 `mcp-github`），按 `consumerAuthInfo` 做 per-consumer 授权 |
+| `worker-{name}-{port}-local.agentteams.io` | * | 暴露的 Worker 端口（服务发布），**无认证**（公开访问），域名绑定在网关端口 |
+
+AI 路由默认 `default-ai-route`，路径前缀 `/v1`，上游由 `AGENTTEAMS_LLM_PROVIDER` 决定。嵌入模式下容器内网关地址为 `http://aigw-local.agentteams.io:8080`（宿主机 `:18080`），Console 容器内 `http://agentteams-controller:8001`（宿主机 `:18001`）。
+
+## Higress 认证方式汇总
+
+| 接口 | 机制 | 凭据 |
+|---|---|---|
+| LLM AI 路由（`/v1/*`） | key-auth WASM（Bearer） | Consumer `GatewayKey`（`Authorization: Bearer <key>`），按 `authConfig.allowedConsumers` 隔离 |
+| MCP 端点（`/mcp-servers/*`） | key-auth（Bearer），经 `consumerAuthInfo` | Consumer `GatewayKey` |
+| 暴露的 Worker 端口 | 无（公开） | — |
+| OpenClaw Console 路由 | basic-auth | `AGENTTEAMS_ADMIN_USER` / `AGENTTEAMS_ADMIN_PASSWORD` |
+| Higress Console API | session cookie | `POST /session/login` |
+
+## Higress 控制面 Console API（参照）
+
+Dashboard 仅代理其中的 ai-providers 与 ai-routes 子集；完整控制面口径如下（路径前缀 `/v1`，session-cookie 认证，`POST /system/init` 初始化 admin、`POST /session/login` 获取 cookie）：
+
+| 端点 | 方法 | 用途 | Dashboard 是否代理 |
+|---|---|---|---|
+| `/v1/ai/providers` + `/{name}` | GET/POST/PUT/DELETE | LLM Provider 管理 | 是（`/api/higress/ai-providers`） |
+| `/v1/ai/routes` + `/{name}` | GET/POST/PUT/DELETE | AI 路由管理（含 `authConfig.allowedConsumers`） | 是（`/api/higress/ai-routes`） |
+| `/v1/consumers` + `/{name}` | GET/POST/DELETE | key-auth Consumer 管理 | 否（经 Controller `/api/v1/gateway/consumers`） |
+| `/v1/domains`、`/v1/service-sources`、`/v1/routes` | GET/POST/PUT/DELETE | 域名、服务源、经典路由 | 否 |
+| `/v1/routes/{name}/plugin-instances/{plugin}` | PUT | 路由插件配置（如 basic-auth） | 否 |
+| `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT | MCP Server 与 Consumer 授权 | 否 |
+| `/system/higress-config` | GET/PUT | 网关配置（如 stream idleTimeout） | 否 |
+
 ## Higress matchType 契约
 
 Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`；swagger 注释中的 `EXACT`/`PRE`/`REGEX` 是注解前缀而非线上值。序列化时 UI 的精确匹配 `EXACT` 映射为 `EQUAL`（`normalizeMatchTypeForApi`）；读取时 `EQUAL` 还原为 `EXACT`，并兼容旧版以 `^...$` 锚定的 `REGEX` 数据（`restoreMatchTypeFromApi`）。AI 路由强制 `pathPredicate.matchType === "PRE"`（否则返回 `pathPredicate must be of type PRE`），表单锁定为前缀；`modelPredicates` 仅允许 `EQUAL`/`PRE`（`AiModelPredicate` 拒绝正则）。`validateAiRoutePayload` 在提交前强制执行以上约束。
@@ -41,7 +79,7 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS` | Console 允许主机集合 |
 | `AGENTTEAMS_HIGRESS_ADAPTER_MODE` | Higress 适配模式，规划值为 `direct` 或 `external` |
 
-`GET /api/agentteams/infrastructure` 的 `higress` 字段包含 `mode`、`gateway` 与 `console`。每个外部服务状态通过 `configured`、`endpoint`、`state`、可选的 `httpStatus` 和 `error` 表示；`state` 取值为 `unconfigured`、`reachable` 或 `unreachable`。已配置地址使用 5 秒 `GET /` 探测，任何 HTTP 响应都会标记为 `reachable`。
+`GET /api/agentteams/infrastructure` 的 `higress` 字段包含 `mode`、`gateway` 与 `console`。每个外部服务状态通过 `configured`、`endpoint`、`state`、可选的 `httpStatus` 和 `error` 表示；`state` 取值为 `unconfigured`、`reachable` 或 `unreachable`。Console 管理地址使用 5 秒 `GET /` 探测，任何 HTTP 响应都标记为 `reachable`。Gateway 数据平面则按 Higress 就绪口径探测 `POST /v1/chat/completions`：仅 `404`（路径未被 ai-proxy 代理）判为 `unreachable`，`200`/`401`/`403` 均证明数据面已在服务 AI 流量而判为 `reachable`；网络错误/超时为 `unreachable`。
 
 `AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS` 是逗号分隔的精确 Console 主机名集合。`external` 模式要求同时设置该变量和 `AGENTTEAMS_AI_GATEWAY_ADMIN_URL`；地址、协议或主机校验失败会阻止 Console 代理请求，并返回部署配置错误。
 

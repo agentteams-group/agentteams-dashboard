@@ -43,10 +43,59 @@ describe('GET /api/agentteams/infrastructure', () => {
       gateway: { endpoint: 'http://aigw-local.agentteams.io:8080', httpStatus: 503 },
       console: { endpoint: 'http://agentteams-controller:8001', httpStatus: 503 },
     });
+    // Gateway data plane is probed on its real readiness surface.
     expect(fetch).toHaveBeenCalledWith(
-      'http://aigw-local.agentteams.io:8080/',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      'http://aigw-local.agentteams.io:8080/v1/chat/completions',
+      expect.objectContaining({ method: 'POST', signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it('marks the gateway unreachable when the AI route is not proxied (404)', async () => {
+    vi.resetModules();
+    vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
+    vi.stubEnv('AGENTTEAMS_AI_GATEWAY_URL', 'https://gateway.example.test');
+    vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
+    vi.stubEnv('AGENTTEAMS_MATRIX_URL', 'http://matrix.test');
+    vi.stubEnv('AGENTTEAMS_FS_ENDPOINT', 'http://minio.test');
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.startsWith('https://gateway.example.test')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      return Promise.resolve(new Response('', { status: 200 }));
+    }));
+
+    const { GET } = await import('./route');
+    const response = await GET({} as never);
+    const data = await response.json();
+
+    expect(data.higress).toMatchObject({
+      gateway: { configured: true, state: 'unreachable', httpStatus: 404 },
+      healthy: false,
+    });
+  });
+
+  it('treats 401/403 on the AI route as a reachable data plane', async () => {
+    vi.resetModules();
+    vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
+    vi.stubEnv('AGENTTEAMS_AI_GATEWAY_URL', 'https://gateway.example.test');
+    vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
+    vi.stubEnv('AGENTTEAMS_MATRIX_URL', 'http://matrix.test');
+    vi.stubEnv('AGENTTEAMS_FS_ENDPOINT', 'http://minio.test');
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.startsWith('https://gateway.example.test')) {
+        return Promise.resolve(new Response('', { status: 401 }));
+      }
+      return Promise.resolve(new Response('', { status: 200 }));
+    }));
+
+    const { GET } = await import('./route');
+    const response = await GET({} as never);
+    const data = await response.json();
+
+    expect(data.higress).toMatchObject({
+      gateway: { configured: true, state: 'reachable', httpStatus: 401 },
+      healthy: true,
+    });
   });
 
   it('treats every HTTP response as a reachable external service', async () => {
