@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ApiError, NetworkError, formatErrorMessage } from '@/lib/api-error';
+import { ApiError, NetworkError, describeWorkerDeleteError, formatErrorMessage } from '@/lib/api-error';
 
 describe('ApiError', () => {
   it('exposes status and endpoint', () => {
@@ -73,5 +73,24 @@ describe('formatErrorMessage', () => {
     expect(formatErrorMessage('plain string')).toBe('操作失败');
     expect(formatErrorMessage('plain string', '自定义')).toBe('自定义');
     expect(formatErrorMessage(null)).toBe('操作失败');
+  });
+});
+
+describe('describeWorkerDeleteError', () => {
+  it('turns a 409 member-of-team error into an actionable hint', () => {
+    const err = new ApiError(
+      'API Error 409: {"message":"worker is a member of team ceshi; remove via PUT/DELETE /api/v1/teams/ceshi"}',
+      409,
+      '/workers/leader123'
+    );
+    expect(describeWorkerDeleteError(err, 'leader123')).toBe(
+      'Worker "leader123" 属于团队 "ceshi"，请先在团队详情中将其移出后再删除'
+    );
+  });
+
+  it('falls back to formatErrorMessage for other errors', () => {
+    expect(describeWorkerDeleteError(new ApiError('not found', 404, '/workers/x'), 'x')).toBe('not found');
+    expect(describeWorkerDeleteError(new Error('boom'), 'x')).toBe('boom');
+    expect(describeWorkerDeleteError(new NetworkError('/workers/x'), 'x')).toBe('网络请求失败，请检查连接');
   });
 });

@@ -50,3 +50,19 @@ export function formatErrorMessage(err: unknown, fallback = '操作失败'): str
   if (err instanceof Error) return err.message;
   return fallback;
 }
+
+/**
+ * Human-readable message for a failed worker delete. A 409 from the controller
+ * usually means the worker is still attached to a team; turn the raw JSON error
+ * into an actionable hint (which team to detach it from) instead of dumping the
+ * whole "API Error 409: {...}" payload.
+ */
+export function describeWorkerDeleteError(err: unknown, workerName: string): string {
+  if (err instanceof ApiError && err.status === 409) {
+    const match = /member of team ([^;"\s]+)/.exec(err.message);
+    if (match) {
+      return `Worker "${workerName}" 属于团队 "${match[1]}"，请先在团队详情中将其移出后再删除`;
+    }
+  }
+  return formatErrorMessage(err);
+}

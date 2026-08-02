@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload } from 'lucide-react';
+import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -32,6 +32,7 @@ import { buildModelSelectionOptions } from '@/lib/model-catalog';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
+import { describeWorkerDeleteError } from '@/lib/api-error';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-types';
@@ -155,6 +156,7 @@ export function WorkersSection() {
   const [selectedWorkers, setSelectedWorkers] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   const [deletingWorkerNames, setDeletingWorkerNames] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState<{ worker: string; message: string } | null>(null);
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
@@ -222,12 +224,27 @@ export function WorkersSection() {
       toast.success(`已发送 ${names.length} 个唤醒指令`);
     } else if (bulkAction === 'delete') {
       markWorkersDeleting(names);
+      let settled = 0;
+      let failed = 0;
       names.forEach((name) =>
         deleteWorker.mutate(name, {
-          onSettled: () => clearWorkerDeleting(name),
+          onError: (err) => {
+            failed += 1;
+            setDeleteError({ worker: name, message: describeWorkerDeleteError(err, name) });
+          },
+          onSettled: () => {
+            settled += 1;
+            clearWorkerDeleting(name);
+            if (settled === names.length) {
+              if (failed === 0) {
+                toast.success(`已删除 ${names.length} 个 Worker`);
+              } else {
+                toast.error(`删除了 ${names.length - failed} 个，失败 ${failed} 个`);
+              }
+            }
+          },
         }),
       );
-      toast.success(`已删除 ${names.length} 个 Worker`);
     }
     setSelectedWorkers(new Set());
     setBulkAction(null);
@@ -283,6 +300,8 @@ export function WorkersSection() {
     markWorkersDeleting([workerName]);
     setDeleteTarget(null);
     deleteWorker.mutate(workerName, {
+      onSuccess: () => setDeleteError(null),
+      onError: (err) => setDeleteError({ worker: workerName, message: describeWorkerDeleteError(err, workerName) }),
       onSettled: () => clearWorkerDeleting(workerName),
     });
   }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting]);
@@ -458,6 +477,27 @@ export function WorkersSection() {
               </TabsList>
             </Tabs>
           </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <p className="leading-relaxed break-all">
+            <span className="font-medium">Worker &quot;{deleteError.worker}&quot; 删除失败：</span>
+            {deleteError.message}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 shrink-0 p-0"
+            onClick={() => setDeleteError(null)}
+            aria-label="关闭错误提示"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
       )}
 

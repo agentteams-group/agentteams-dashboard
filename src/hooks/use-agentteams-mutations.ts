@@ -16,7 +16,7 @@ import type {
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
 import { useNotificationStore } from '@/lib/notification-store';
-import { formatErrorMessage } from '@/lib/api-error';
+import { formatErrorMessage, describeWorkerDeleteError } from '@/lib/api-error';
 import { auditMutation } from '@/lib/audit-store';
 
 function useNotify() {
@@ -61,8 +61,8 @@ export function useDeleteWorker() {
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteWorker(name),
     onError: (err, name) => {
-      toast.error(`Worker "${name}" 删除失败: ${formatErrorMessage(err)}`);
-      addNotification({ type: 'error', title: 'Worker 删除失败', message: formatErrorMessage(err) });
+      toast.error(`Worker "${name}" 删除失败: ${describeWorkerDeleteError(err, name)}`);
+      addNotification({ type: 'error', title: 'Worker 删除失败', message: describeWorkerDeleteError(err, name) });
     },
     onSuccess: (_, name) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
