@@ -126,6 +126,22 @@ describe('resolveMentionsToDisplayNames', () => {
     expect(resolveMentionsToDisplayNames('hi @ALICE', memberMap)).toBe('hi Alice');
   });
 
+  it('is case-insensitive when matching a full user id', () => {
+    expect(resolveMentionsToDisplayNames('hi @WORKER:AGENTTEAMS.IO', memberMap)).toBe('hi worker');
+  });
+
+  it('resolves mentions with non-ASCII display names', () => {
+    const map = { '@zhang:agentteams.io': '张三' };
+    expect(resolveMentionsToDisplayNames('hi @zhang:agentteams.io', map)).toBe('hi 张三');
+    expect(resolveMentionsToDisplayNames('hi @张三', map)).toBe('hi 张三');
+  });
+
+  it('does not treat an email domain as a mention', () => {
+    expect(resolveMentionsToDisplayNames('contact bob@example.com please', memberMap)).toBe(
+      'contact bob@example.com please'
+    );
+  });
+
   it('returns text unchanged when memberMap is empty', () => {
     expect(resolveMentionsToDisplayNames('hi @worker:agentteams.io', {})).toBe(
       'hi @worker:agentteams.io'

@@ -60,11 +60,18 @@ export interface MemberMap {
   [userId: string]: string;
 }
 
-const MENTION_PATTERN = /@[\w.-]+(?::[\w.-]+)?/g;
+const MENTION_PATTERN = /@[\p{L}\p{N}._:/-]+/gu;
 
 function resolveMention(match: string, memberMap: MemberMap): string | null {
   const direct = memberMap[match];
   if (direct) return direct;
+  // Case-insensitive full user-id lookup (e.g. @WORKER:agentteams.io).
+  const lower = match.toLowerCase();
+  const byUserId = Object.entries(memberMap).find(([userId]) => userId.toLowerCase() === lower);
+  if (byUserId) return byUserId[1];
+  // Fall back to matching the bare short name against a display name, which
+  // also supports non-ASCII display names (e.g. Chinese) because MENTION_PATTERN
+  // is Unicode-aware.
   const shortName = match.slice(1).split(':')[0];
   const byDisplayName = Object.entries(memberMap).find(
     ([, displayName]) => displayName.toLowerCase() === shortName.toLowerCase()
@@ -87,7 +94,7 @@ export function resolveMentionsInHtml(
 ): string {
   if (!memberMap || Object.keys(memberMap).length === 0) return html;
   const render = wrap ?? ((name) => name);
-  return html.replace(/<[^>]*>|@[\w.-]+(?::[\w.-]+)?/g, (token) => {
+  return html.replace(/<[^>]*>|@[\p{L}\p{N}._:/-]+/gu, (token) => {
     if (token.startsWith('<')) return token;
     const resolved = resolveMention(token, memberMap);
     if (resolved === null) return token;

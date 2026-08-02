@@ -102,19 +102,24 @@ export function ChatRoom({
   }, [messagesQuery]);
 
   const roomMembers = useMemo<RoomMember[]>(() => {
+    // m.room.member events carry the affected user id in `state_key` (the
+    // sender is whoever updated the membership, which is not necessarily the
+    // member themselves). Only joined members are shown / mentionable.
     if (membersQuery.data?.chunk) {
-      return membersQuery.data.chunk.map((e: MatrixEvent) => ({
-        userId: e.sender,
-        displayName: String(e.content.displayname || e.sender),
-        membership: e.content.membership || 'join',
-      }));
+      return membersQuery.data.chunk
+        .filter((e) => e.type === 'm.room.member' && e.content?.membership === 'join')
+        .map((e) => ({
+          userId: e.state_key || '',
+          displayName: String(e.content?.displayname || e.state_key?.split(':')[0]?.slice(1) || ''),
+          membership: 'join',
+        }));
     }
     if (stateQuery.data) {
       return stateQuery.data
-        .filter(e => e.type === 'm.room.member' && e.content.membership === 'join')
-        .map(e => ({
-          userId: e.sender || '',
-          displayName: String(e.content.displayname || e.sender || ''),
+        .filter((e) => e.type === 'm.room.member' && e.content?.membership === 'join')
+        .map((e) => ({
+          userId: e.state_key || e.sender || '',
+          displayName: String(e.content?.displayname || e.state_key?.split(':')[0]?.slice(1) || e.sender || ''),
           membership: 'join',
         }));
     }
@@ -188,10 +193,27 @@ export function ChatRoom({
   }) => {
     if (!roomId || !isLoggedIn || !userId) return;
     const { content, options, mentions, replyTo, clientId } = params;
-    const mentionUserIds = mentions?.map(m => m.userId) || [];
+
+    // Only mentions that still appear in the final text are sent (the user may
+    // have typed more after inserting them, or deleted the placeholder again).
+    const activeMentions = (mentions ?? []).filter((m) => content.includes(m.placeholder));
+    const mentionUserIds = activeMentions.map(m => m.userId);
     const mentionData = mentionUserIds.length > 0
       ? { 'm.mentions': { user_ids: mentionUserIds } }
       : {};
+
+    // Build a Matrix-compatible formatted body with clickable mention links
+    // (https://matrix.to/#/userId). Without these the receiver only sees the
+    // raw "@name" text and the mention is not actionable.
+    let formattedBody: string | undefined = options?.html ? content : undefined;
+    if (activeMentions.length > 0) {
+      let body = formattedBody ?? content;
+      for (const m of activeMentions) {
+        const link = `<a href="https://matrix.to/#/${encodeURIComponent(m.userId)}">${m.displayName}</a>`;
+        body = body.replaceAll(m.placeholder, link);
+      }
+      formattedBody = body;
+    }
     const cid = clientId ?? `local-${Date.now()}-${++localCounterRef.current}`;
 
     // First attempt renders an optimistic "sending" bubble; a retry keeps the
@@ -202,7 +224,7 @@ export function ChatRoom({
         sender: userId,
         senderShort: userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId,
         content,
-        formattedContent: options?.html ? content : undefined,
+        formattedContent: formattedBody ?? (options?.html ? content : undefined),
         mentions,
         replyTo,
         timestamp: Date.now(),
@@ -214,7 +236,7 @@ export function ChatRoom({
       {
         roomId,
         body: content,
-        formattedBody: options?.html ? content : undefined,
+        formattedBody,
         extra: mentionData,
         relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
       },
