@@ -243,6 +243,9 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
     // mapping / failover config), only shift weights so the target provider
     // takes 100% of the traffic. Adds the target as a new upstream when it is
     // not part of the route yet.
+    // Reuse serializeRouteForm so that modelPredicates matchType is correctly
+    // normalised to the API format (EQUAL/PRE) and upstream modelMappings are
+    // serialised the same way the form editor does.
     const existing = route.upstreams.some((upstream) => upstream.provider === selected);
     const upstreams = route.upstreams.map((upstream) => ({
       ...upstream,
@@ -251,17 +254,22 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
     if (!existing) {
       upstreams.push({ provider: selected, weight: 100, modelMapping: {} });
     }
+    const tempForm: RouteForm = {
+      name: route.name,
+      pathPredicate: route.pathPredicate,
+      upstreams: upstreams.map((u) => ({
+        provider: u.provider,
+        weight: u.weight,
+        modelMappings: mappingRules(u.modelMapping),
+      })),
+      modelPredicates: route.modelPredicates ?? [],
+      authConfig: route.authConfig ?? { enabled: true, allowedCredentialTypes: ['key-auth'] },
+      ...(route.fallbackConfig ? { fallbackConfig: route.fallbackConfig } : {}),
+    };
+    const payload = serializeRouteForm(tempForm);
     update.mutate({
       name: route.name,
-      data: {
-        name: route.name,
-        domains: route.domains,
-        pathPredicate: route.pathPredicate,
-        upstreams,
-        modelPredicates: route.modelPredicates,
-        authConfig: route.authConfig,
-        fallbackConfig: route.fallbackConfig,
-      },
+      data: { ...payload, domains: route.domains },
     }, {
       onSuccess: () => { onOpenChange(false); setSelected(''); },
       onError: (error) => setErrors([error.message]),
