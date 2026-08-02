@@ -112,9 +112,13 @@ function routeToForm(route: AiRoute): RouteForm {
     modelPredicates: route.modelPredicates ?? [],
     authConfig: route.authConfig
       ? {
-          enabled: route.authConfig.enabled,
-          allowedCredentialTypes: [...route.authConfig.allowedCredentialTypes],
-          ...(route.authConfig.allowedConsumers ? { allowedConsumers: [...route.authConfig.allowedConsumers] } : {}),
+          enabled: Boolean(route.authConfig.enabled),
+          allowedCredentialTypes: Array.isArray(route.authConfig.allowedCredentialTypes)
+            ? [...route.authConfig.allowedCredentialTypes]
+            : [],
+          ...(Array.isArray(route.authConfig.allowedConsumers) && route.authConfig.allowedConsumers.length > 0
+            ? { allowedConsumers: [...route.authConfig.allowedConsumers] }
+            : {}),
         }
       : { enabled: true, allowedCredentialTypes: ['key-auth'] },
     fallbackConfig: route.fallbackConfig,

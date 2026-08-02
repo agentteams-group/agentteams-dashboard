@@ -28,9 +28,11 @@ const routes = [{
   fallbackConfigWritable: true,
 }];
 
+const { mockRouteOverrides } = vi.hoisted(() => ({ mockRouteOverrides: { value: undefined as unknown } }));
+
 vi.mock('@/hooks/use-agentteams-models', () => ({
   useModels: () => ({ data: providers, isLoading: false, error: null }),
-  useAiRoutes: () => ({ data: routes, isLoading: false, error: null }),
+  useAiRoutes: () => ({ data: mockRouteOverrides.value ?? routes, isLoading: false, error: null }),
   useCreateModel: () => ({ mutate: mutations.createProvider, isPending: false }),
   useUpdateModel: () => ({ mutate: mutations.updateProvider, isPending: false }),
   useDeleteModel: () => ({ mutate: mutations.deleteProvider, isPending: false, isError: false }),
@@ -89,6 +91,7 @@ describe('ModelsSection', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    mockRouteOverrides.value = undefined;
   });
 
   it('retains provider form input when immediate validation fails', () => {
@@ -214,5 +217,22 @@ describe('ModelsSection', () => {
     expect(screen.getByText('请求模型别名绑定')).toBeTruthy();
     expect(screen.getByText('gpt-4.1')).toBeTruthy();
     expect(screen.getAllByText('可用').length).toBeGreaterThan(0);
+  });
+
+  it('opens the edit form for a route whose authConfig omits allowedCredentialTypes', () => {
+    // Backend routes may carry an authConfig that only sets `enabled`; the edit
+    // form must not crash iterating a missing credential type list.
+    mockRouteOverrides.value = [{
+      name: 'legacy-route',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+      upstreams: [{ provider: 'openai', weight: 100, modelMapping: {} }],
+      authConfig: { enabled: true },
+    }];
+
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '编辑 legacy-route' }));
+
+    expect(screen.getByText('启用认证')).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: '启用认证' }) as HTMLInputElement).checked).toBe(true);
   });
 });
