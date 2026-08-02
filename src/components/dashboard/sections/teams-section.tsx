@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +23,7 @@ import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
+import { formatErrorMessage } from '@/lib/api-error';
 import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse, ManagerResponse } from '@/lib/agentteams-api';
 import { ITEMS_PER_PAGE, SORT_OPTIONS, type SortKey } from './teams/team-types';
 import {
@@ -110,6 +111,11 @@ export function TeamsSection() {
 
   const [addWorkerPopoverOpen, setAddWorkerPopoverOpen] = useState<string | null>(null);
   const [deletingTeamNames, setDeletingTeamNames] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState<{
+    team: string;
+    message: string;
+    kind: 'error' | 'warning';
+  } | null>(null);
 
   const filteredTeams = useMemo(() => filterTeams(teams, searchQuery), [teams, searchQuery]);
   const sortedTeams = useMemo(() => sortTeams(filteredTeams, sortKey), [filteredTeams, sortKey]);
@@ -165,6 +171,7 @@ export function TeamsSection() {
     setDeleteTarget(null);
     deleteTeam.mutate(teamName, {
       onSuccess: () => {
+        setDeleteError(null);
         setDeletingTeamNames((previous) => {
           const next = new Set(previous);
           next.delete(teamName);
@@ -179,12 +186,18 @@ export function TeamsSection() {
           void refetch().then((result) => {
             const stillExists = result.data?.some((team) => team.name === teamName);
             if (stillExists) {
+              setDeleteError({
+                team: teamName,
+                message: '接口返回成功但团队仍存在，可能未完全删除',
+                kind: 'warning',
+              });
               toast.warning(`团队 "${teamName}" 可能未完全删除，请检查后端状态`);
             }
           });
         }, 2000);
       },
-      onError: () => {
+      onError: (err) => {
+        setDeleteError({ team: teamName, message: formatErrorMessage(err), kind: 'error' });
         setDeletingTeamNames((previous) => {
           const next = new Set(previous);
           next.delete(teamName);
@@ -277,6 +290,33 @@ export function TeamsSection() {
           </div>
         }
       />
+
+      {deleteError && (
+        <div
+          role="alert"
+          className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${
+            deleteError.kind === 'error'
+              ? 'border-destructive/30 bg-destructive/10 text-destructive'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+          }`}
+        >
+          <p className="leading-relaxed break-all">
+            <span className="font-medium">
+              团队 &quot;{deleteError.team}&quot; 删除{deleteError.kind === 'error' ? '失败' : '可能未完成'}：
+            </span>
+            {deleteError.message}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 shrink-0 p-0"
+            onClick={() => setDeleteError(null)}
+            aria-label="关闭错误提示"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      )}
 
       {sortedTeams.length > 0 && (
         <div className="flex items-center justify-between gap-3 flex-wrap">
