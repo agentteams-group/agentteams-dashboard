@@ -5,6 +5,9 @@ import {
   getAvatarColor,
   isDifferentDay,
   renderFormattedContent,
+  resolveMentionsInHtml,
+  resolveMentionsInText,
+  resolveMentionsToDisplayNames,
 } from '@/components/dashboard/sections/chat/format';
 
 describe('getAvatarColor', () => {
@@ -96,5 +99,89 @@ describe('renderFormattedContent', () => {
     const out = renderFormattedContent('<script>alert(1)</script>safe', 'x');
     expect(out.html.toLowerCase()).not.toContain('script');
     expect(out.html).toContain('safe');
+  });
+});
+
+describe('resolveMentionsToDisplayNames', () => {
+  const memberMap = {
+    '@worker:agentteams.io': 'worker',
+    '@alice:agentteams.io': 'Alice',
+  };
+
+  it('resolves full user id to display name', () => {
+    expect(resolveMentionsToDisplayNames('hi @worker:agentteams.io', memberMap)).toBe('hi worker');
+  });
+
+  it('resolves short name matching a display name', () => {
+    expect(resolveMentionsToDisplayNames('hi @worker', memberMap)).toBe('hi worker');
+  });
+
+  it('keeps unmatched mentions unchanged', () => {
+    expect(resolveMentionsToDisplayNames('hi @ghost @ghost:elsewhere.io', memberMap)).toBe(
+      'hi @ghost @ghost:elsewhere.io'
+    );
+  });
+
+  it('is case-insensitive when matching short names', () => {
+    expect(resolveMentionsToDisplayNames('hi @ALICE', memberMap)).toBe('hi Alice');
+  });
+
+  it('returns text unchanged when memberMap is empty', () => {
+    expect(resolveMentionsToDisplayNames('hi @worker:agentteams.io', {})).toBe(
+      'hi @worker:agentteams.io'
+    );
+  });
+
+  it('is idempotent once resolved to a display name', () => {
+    const once = resolveMentionsToDisplayNames('hi @worker:agentteams.io', memberMap);
+    expect(resolveMentionsToDisplayNames(once, memberMap)).toBe('hi worker');
+  });
+});
+
+describe('resolveMentionsInHtml', () => {
+  const memberMap = {
+    '@worker:agentteams.io': 'worker',
+    '@alice:agentteams.io': 'Alice',
+  };
+
+  it('resolves mentions in html text to escaped display name', () => {
+    const out = resolveMentionsInHtml('<p>Hey @worker:agentteams.io!</p>', memberMap);
+    expect(out).toBe('<p>Hey worker!</p>');
+  });
+
+  it('wraps resolved mentions with a render callback', () => {
+    const out = resolveMentionsInHtml(
+      '<p>@worker:agentteams.io</p>',
+      memberMap,
+      (name) => `<span class="matrix-mention">${name}</span>`
+    );
+    expect(out).toContain('<span class="matrix-mention">worker</span>');
+  });
+
+  it('does not replace mentions inside tag attributes', () => {
+    const html =
+      '<a href="https://x/@worker:agentteams.io" title="@worker">link @worker</a>';
+    const out = resolveMentionsInHtml(html, memberMap);
+    expect(out).toContain('href="https://x/@worker:agentteams.io"');
+    expect(out).toContain('title="@worker"');
+    expect(out).toContain('link worker');
+  });
+
+  it('keeps unmatched mentions unchanged in html', () => {
+    expect(resolveMentionsInHtml('<p>@ghost</p>', memberMap)).toBe('<p>@ghost</p>');
+  });
+
+  it('returns html unchanged when memberMap is empty', () => {
+    expect(resolveMentionsInHtml('<p>@worker:agentteams.io</p>', {})).toBe(
+      '<p>@worker:agentteams.io</p>'
+    );
+  });
+});
+
+describe('resolveMentionsInText', () => {
+  it('delegates to resolveMentionsToDisplayNames', () => {
+    const memberMap = { '@worker:agentteams.io': 'worker' };
+    expect(resolveMentionsInText('hi @worker:agentteams.io', memberMap)).toBe('hi worker');
+    expect(resolveMentionsInText('hi @worker', memberMap)).toBe('hi worker');
   });
 });

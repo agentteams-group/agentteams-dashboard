@@ -7,9 +7,13 @@ interface EventTileProps {
   _message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
-  onReply?: (message: DisplayMessage) => void;
-  onCopy?: (message: DisplayMessage) => void;
-  onOpenThread?: (message: DisplayMessage) => void;
+  onReply?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => void;
+  onOpenThread?: (_message: DisplayMessage) => void;
+  onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
+  onDelete?: (_message: DisplayMessage) => void;
+  onResend?: (_message: DisplayMessage) => void;
+  onCancel?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
 }
 
@@ -20,6 +24,10 @@ export function EventTile({
   onReply,
   onCopy,
   onOpenThread,
+  onEdit,
+  onDelete,
+  onResend,
+  onCancel,
   memberMap,
 }: EventTileProps) {
   return (
@@ -30,6 +38,10 @@ export function EventTile({
       onReply={onReply}
       onCopy={onCopy}
       onOpenThread={onOpenThread}
+      onEdit={onEdit}
+      onDelete={onDelete}
+      onResend={onResend}
+      onCancel={onCancel}
       memberMap={memberMap}
     />
   );

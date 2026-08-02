@@ -39,7 +39,7 @@ describe('formatMatrixEvents', () => {
     expect(messages[1]).toMatchObject({ id: 'other', content: '另一条消息' });
   });
 
-  it('retains an orphaned revision as an independent message', () => {
+  it('retains an orphaned revision as an independent message under the root id', () => {
     const events = [
       message('revision', '更新内容', 100, {
         'm.relates_to': { rel_type: 'm.replace', event_id: 'missing-root' },
@@ -50,7 +50,7 @@ describe('formatMatrixEvents', () => {
     const messages = formatMatrixEvents(events, '@human:example.test');
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ id: 'revision', content: '更新内容', isStreaming: true });
+    expect(messages[0]).toMatchObject({ id: 'missing-root', eventId: 'missing-root', content: '更新内容', isStreaming: true, isEdited: true });
   });
 
   it('extracts text from structured message body parts', () => {
@@ -79,5 +79,101 @@ describe('formatMatrixEvents', () => {
     const messages = formatMatrixEvents(events, '@human:example.test');
 
     expect(messages[0].content).toBe('{"type":"tool_call","name":"search","arguments":{"query":"状态"}}');
+  });
+
+  it('filters thread replies out of the main timeline and counts them on the root', () => {
+    const events = [
+      message('root', '原始问题', 100),
+      message('other', '无关消息', 200),
+      message('reply-1', '线程回复一', 300, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+      message('reply-2', '线程回复二', 400, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: 'root', replyCount: 2, isThreadReply: false });
+    expect(messages[1]).toMatchObject({ id: 'other' });
+  });
+
+  it('exposes threadId on a thread reply event', () => {
+    const events = [
+      message('root', '原始问题', 100),
+      message('reply-1', '线程回复', 200, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0]).toMatchObject({ id: 'root', replyCount: 1 });
+    // The reply itself is hidden, so no DisplayMessage carries threadId in the main timeline.
+    expect(messages.some((m) => m.threadId)).toBe(false);
+  });
+
+  it('marks a revised message as edited and keeps the root event id', () => {
+    const events = [
+      message('root', '原内容', 100),
+      message('revision', '* 编辑后', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '编辑后' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'root', eventId: 'root', content: '编辑后', isEdited: true });
+  });
+
+  it('exposes eventId on a plain message', () => {
+    const events = [message('plain', '普通消息', 100)];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0]).toMatchObject({ id: 'plain', eventId: 'plain', isEdited: false });
+  });
+
+  it('drops messages that were redacted and ignores redaction events', () => {
+    const events = [
+      message('deleted', '这条被删除了', 100),
+      message('kept', '这条还在', 200),
+      {
+        event_id: 'redaction-1',
+        sender: '@human:example.test',
+        type: 'm.room.redaction',
+        origin_server_ts: 300,
+        redacts: 'deleted',
+        content: {},
+      } as unknown as MatrixEvent,
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'kept' });
+  });
+
+  it('skips a redacted message whose content was wiped by the homeserver', () => {
+    const events = [
+      {
+        event_id: 'wiped',
+        sender: '@manager:example.test',
+        type: 'm.room.message',
+        origin_server_ts: 100,
+        unsigned: { redacted_because: { event_id: 'redaction-1' } },
+        content: {},
+      } as unknown as MatrixEvent,
+      message('kept', '还在', 200),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'kept' });
   });
 });

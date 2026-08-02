@@ -18,7 +18,11 @@ interface ScrollPanelProps {
   loading?: boolean;
   emptyContent?: React.ReactNode;
   className?: string;
+  /** Called whenever the scroller enters or leaves the bottom (sticky) position. */
+  onAtBottomChange?: (_atBottom: boolean) => void;
 }
+
+const FIRST_ITEM_INDEX = 100000;
 
 export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>(function ScrollPanel(
   {
@@ -30,6 +34,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     loading,
     emptyContent,
     className,
+    onAtBottomChange,
   },
   ref
 ) {
@@ -44,11 +49,15 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     },
   }));
 
-  const handleRangeChanged = (range: { startIndex: number; endIndex: number }) => {
-    if (range.startIndex < 10 && hasNextPage && !isFetchingNextPage) {
+  const handleStartReached = React.useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
       onLoadMore();
     }
-  };
+  }, [hasNextPage, isFetchingNextPage, onLoadMore]);
+
+  const handleAtBottomChange = React.useCallback((atBottom: boolean) => {
+    onAtBottomChange?.(atBottom);
+  }, [onAtBottomChange]);
 
   if (loading && items.length === 0) {
     return (
@@ -85,25 +94,19 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
       data={items}
       itemContent={(_index, _item) => itemContent(_index, _item as GroupedMessage)}
       style={{ height: '100%' }}
+      // Offset indices so prepending older pages keeps the viewport anchored
+      // on the same message instead of jumping to the top.
+      firstItemIndex={FIRST_ITEM_INDEX}
+      initialTopMostItemIndex={items.length - 1}
+      // Sticky bottom: follow new messages only while the user is at the bottom.
+      followOutput="auto"
+      atBottomStateChange={handleAtBottomChange}
+      atBottomThreshold={60}
+      // Older messages live at the top of the list, so the pagination spinner
+      // and the load trigger both belong to the header edge.
+      startReached={handleStartReached}
       increaseViewportBy={{ top: 400, bottom: 400 }}
-      rangeChanged={handleRangeChanged}
       overscan={400}
-      components={{
-        Footer: () => {
-          if (!hasNextPage || isFetchingNextPage) return null;
-          return (
-            <div className="flex justify-center py-3">
-              <button
-                onClick={onLoadMore}
-                disabled={isFetchingNextPage}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {isFetchingNextPage ? '加载中...' : '加载更早消息'}
-              </button>
-            </div>
-          );
-        },
-      }}
     />
   );
 });

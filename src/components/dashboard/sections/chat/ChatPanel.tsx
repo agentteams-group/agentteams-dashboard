@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import { ChatRoom } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
@@ -11,10 +10,6 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ room, canSend = true, onSendMessage, className = '' }: ChatPanelProps) {
-  const handleSendMessage = useCallback((content: string, options?: { html?: boolean }, mentions?: MentionEntry[]) => {
-    onSendMessage?.(content, options, mentions);
-  }, [onSendMessage]);
-
   return (
     <div className={`flex h-full ${className}`}>
       {/* Main Chat Area */}

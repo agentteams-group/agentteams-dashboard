@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
@@ -39,6 +39,15 @@ export async function PUT(
     }
     if (mentions) {
       messageContent['m.mentions'] = mentions;
+    }
+    // Thread replies (m.thread), inline replies (m.in_reply_to) and edits
+    // (m.replace) all travel via m.relates_to; m.new_content carries the
+    // replacement body for edits.
+    if (relatesTo) {
+      messageContent['m.relates_to'] = relatesTo;
+    }
+    if (newContent) {
+      messageContent['m.new_content'] = newContent;
     }
 
     const controller = new AbortController();

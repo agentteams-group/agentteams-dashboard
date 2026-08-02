@@ -177,11 +177,14 @@ async function checkHigress(): Promise<NonNullable<InfrastructureInfo['higress']
     checkExternalService(HIGRESS_CONSOLE_ENDPOINT),
   ]);
 
+  // Runtime adaptation health tracks the Gateway data plane probe only.
+  // The optional Console management address keeps its own status so an
+  // unconfigured/unreachable Console does not mask a working Gateway.
   return {
     mode: HIGRESS_MODE,
     gateway,
     console,
-    healthy: gateway.state === 'reachable' && console.state === 'reachable',
+    healthy: gateway.state === 'reachable',
   };
 }
 

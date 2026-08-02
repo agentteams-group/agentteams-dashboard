@@ -58,6 +58,8 @@ import {
 } from '@/lib/higress-api';
 import { buildModelBindings } from '@/lib/model-bindings';
 import { useHigressConsoleAccess } from '@/hooks/use-higress-console-access';
+import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
+import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 
@@ -65,10 +67,15 @@ const newProviderForm = (): ProviderForm => ({
   name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [],
 });
 
-const newRouteForm = (): RouteForm => ({
+const newRouteForm = (providerNames: string[] = []): RouteForm => ({
   name: '',
-  pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
-  upstreams: [{ provider: '', weight: 100, modelMappings: [] }],
+  // Unified alias routing is constrained to the /v1 prefix (spec).
+  pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+  // With a single provider the upstream is preselected so creating a route
+  // after adding the first provider is a one-click submission.
+  upstreams: providerNames.length === 1
+    ? [{ provider: providerNames[0], weight: 100, modelMappings: [] }]
+    : [{ provider: '', weight: 100, modelMappings: [] }],
   modelPredicates: [],
   authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
 });
@@ -132,11 +139,34 @@ function MappingEditor({ value, onChange }: { value: ModelMappingRule[]; onChang
 function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provider: LlmProviderResponse | null; onOpenChange: (_open: boolean) => void }) {
   const create = useCreateModel();
   const update = useUpdateModel();
+  const createRoute = useCreateAiRoute();
+  const { data: routes } = useAiRoutes();
   const [form, setForm] = useState<ProviderForm>(() => provider ? providerToForm(provider) : newProviderForm());
   const [tokenInput, setTokenInput] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const editing = Boolean(provider);
   const pending = create.isPending || update.isPending;
+
+  // After creating a provider, wire it into an auto route so Manager/Worker
+  // forms can immediately select the configured model aliases. Skipped when the
+  // provider is already referenced by a route or when editing.
+  const autoWireProviderRoute = (providerName: string) => {
+    if ((routes ?? []).some((route) => route.upstreams.some((upstream) => upstream.provider === providerName))) return;
+    const routeName = `agentteams-${providerName}`;
+    const modelPredicates = form.modelMappings
+      .map((mapping) => ({ matchType: 'EXACT' as const, matchValue: mapping.pattern.trim() }))
+      .filter((predicate) => predicate.matchValue && !predicate.matchValue.includes('*') && !predicate.matchValue.startsWith('~'));
+    createRoute.mutate(serializeRouteForm({
+      name: routeName,
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+      upstreams: [{ provider: providerName, weight: 100, modelMappings: form.modelMappings }],
+      modelPredicates,
+      authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
+    }), {
+      onSuccess: () => toast.success(`已自动创建路由 ${routeName}，可在 Manager/Worker 中直接选择模型`),
+      onError: (error) => toast.error(`服务商已创建，但自动接入路由失败：${error.message}。可手动创建路由。`),
+    });
+  };
 
   const submit = () => {
     const tokens = tokenInput.split(',').map((token) => token.trim()).filter(Boolean);
@@ -145,7 +175,10 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
     if (nextErrors.length > 0) return setErrors(nextErrors);
     const onSuccess = () => onOpenChange(false);
     if (provider) update.mutate({ name: provider.name, data: serializeProviderForm(next, true) }, { onSuccess, onError: (error) => setErrors([error.message]) });
-    else create.mutate(serializeProviderForm(next) as Parameters<typeof create.mutate>[0], { onSuccess, onError: (error) => setErrors([error.message]) });
+    else {
+      const payload = serializeProviderForm(next) as Parameters<typeof create.mutate>[0];
+      create.mutate(payload, { onSuccess: () => { onSuccess(); autoWireProviderRoute(payload.name); }, onError: (error) => setErrors([error.message]) });
+    }
   };
 
   const failover = form.tokenFailoverConfig ?? { enabled: false, failureThreshold: 1, successThreshold: 1, healthCheckInterval: 30, healthCheckModel: '' };
@@ -166,7 +199,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
 function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpenChange }: { open: boolean; route: AiRoute | null; providerNames: string[]; fallbackConfigWritable: boolean; onOpenChange: (_open: boolean) => void }) {
   const create = useCreateAiRoute();
   const update = useUpdateAiRoute();
-  const [form, setForm] = useState<RouteForm>(() => route ? routeToForm(route) : newRouteForm());
+  const [form, setForm] = useState<RouteForm>(() => route ? routeToForm(route) : newRouteForm(providerNames));
   const [fallbackJson, setFallbackJson] = useState(() => route?.fallbackConfig ? JSON.stringify(route.fallbackConfig, null, 2) : '');
   const [errors, setErrors] = useState<string[]>([]);
   const editing = Boolean(route);
@@ -184,7 +217,7 @@ function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpe
   const updateUpstream = (index: number, patch: Partial<RouteForm['upstreams'][number]>) => setForm({ ...form, upstreams: form.upstreams.map((upstream, upstreamIndex) => upstreamIndex === index ? { ...upstream, ...patch } : upstream) });
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>{editing ? `编辑路由 - ${route?.name}` : '创建 AI 路由'}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
     <div className="grid gap-3 md:grid-cols-3"><div><Label>路由名称 *</Label><Input disabled={editing || pending} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div><div><Label>路径匹配类型</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value="PRE"><option value="PRE">前缀（PRE）</option></select></div><div><Label>路径匹配 *</Label><Input disabled={pending} value={form.pathPredicate.matchValue} onChange={(event) => setForm({ ...form, pathPredicate: { ...form.pathPredicate, matchValue: event.target.value } })} /></div></div>
-    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between"><Label>上游提供商与权重</Label><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setForm({ ...form, upstreams: [...form.upstreams, { provider: '', weight: 0, modelMappings: [] }] })}><Plus className="mr-1 size-3" />添加上游</Button></div>{form.upstreams.map((upstream, index) => <div className="space-y-2 rounded border p-3" key={index}><div className="grid gap-2 md:grid-cols-[1fr_110px_36px]"><select aria-label="上游提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={upstream.provider} onChange={(event) => updateUpstream(index, { provider: event.target.value })}><option value="">选择提供商...</option>{providerNames.map((name) => <option key={name} value={name}>{name}</option>)}</select><Input aria-label="上游权重" disabled={pending} type="number" min="0" max="100" value={upstream.weight} onChange={(event) => updateUpstream(index, { weight: Number(event.target.value) })} /><Button type="button" variant="ghost" size="icon" disabled={pending || form.upstreams.length === 1} aria-label="删除上游" onClick={() => setForm({ ...form, upstreams: form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div><MappingEditor value={upstream.modelMappings} onChange={(modelMappings) => updateUpstream(index, { modelMappings })} /></div>)}</div>
+    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between"><Label>上游提供商与权重</Label><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setForm({ ...form, upstreams: [...form.upstreams, { provider: '', weight: 0, modelMappings: [] }] })}><Plus className="mr-1 size-3" />添加上游</Button></div>{form.upstreams.map((upstream, index) => { const selectedByOthers = new Set(form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index).map((item) => item.provider).filter(Boolean)); return <div className="space-y-2 rounded border p-3" key={index}><div className="grid gap-2 md:grid-cols-[1fr_110px_36px]"><select aria-label="上游提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={upstream.provider} onChange={(event) => updateUpstream(index, { provider: event.target.value })}><option value="">选择提供商...</option>{providerNames.map((name) => <option key={name} value={name} disabled={selectedByOthers.has(name)}>{name}</option>)}</select><Input aria-label="上游权重" disabled={pending} type="number" min="0" max="100" value={upstream.weight} onChange={(event) => updateUpstream(index, { weight: Number(event.target.value) })} /><Button type="button" variant="ghost" size="icon" disabled={pending || form.upstreams.length === 1} aria-label="删除上游" onClick={() => setForm({ ...form, upstreams: form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div><MappingEditor value={upstream.modelMappings} onChange={(modelMappings) => updateUpstream(index, { modelMappings })} /></div>; })}</div>
     <div className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between"><Label>请求模型匹配</Label><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setForm({ ...form, modelPredicates: [...form.modelPredicates, { matchType: 'EXACT', matchValue: '' }] })}><Plus className="mr-1 size-3" />添加匹配</Button></div>{form.modelPredicates.map((predicate, index) => <div className="grid gap-2 md:grid-cols-[150px_1fr_36px]" key={index}><select aria-label="模型匹配类型" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={predicate.matchType} onChange={(event) => setForm({ ...form, modelPredicates: form.modelPredicates.map((item, itemIndex) => itemIndex === index ? { ...item, matchType: event.target.value } : item) })}><option value="EXACT">精确（EXACT）</option><option value="PRE">前缀（PRE）</option></select><Input aria-label="模型匹配值" disabled={pending} value={predicate.matchValue} placeholder="例如 team-chat" onChange={(event) => setForm({ ...form, modelPredicates: form.modelPredicates.map((item, itemIndex) => itemIndex === index ? { ...item, matchValue: event.target.value } : item) })} /><Button type="button" variant="ghost" size="icon" disabled={pending} aria-label="删除模型匹配" onClick={() => setForm({ ...form, modelPredicates: form.modelPredicates.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div>)}</div>
     <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="route-auth" className="size-4" type="checkbox" checked={form.authConfig.enabled} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, enabled: event.target.checked } })} /><Label htmlFor="route-auth">启用认证</Label></div>{form.authConfig.enabled && <div className="flex items-center gap-2"><Input id="key-auth" className="size-4" type="checkbox" checked={form.authConfig.allowedCredentialTypes.includes('key-auth')} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, allowedCredentialTypes: event.target.checked ? ['key-auth'] : [] } })} /><Label htmlFor="key-auth">Key Auth</Label></div>}</div>
     <div><Label>回退配置</Label>{fallbackConfigWritable ? <textarea disabled={pending} className="min-h-28 w-full rounded-md border border-input bg-transparent p-3 font-mono text-sm" value={fallbackJson} onChange={(event) => setFallbackJson(event.target.value)} placeholder={'{\n  "maxRetries": 2\n}'} /> : <p className="mt-2 rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">{summarizeFallbackConfig(route?.fallbackConfig)}。当前 Higress Console API 版本仅提供只读摘要。</p>}</div>
@@ -240,6 +273,7 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
 
 export function ModelsSection() {
   const consoleAccess = useHigressConsoleAccess();
+  const { data: infrastructure } = useInfrastructure();
   const providersQuery = useModels(consoleAccess.canManage);
   const routesQuery = useAiRoutes(consoleAccess.canManage);
   const { data: managers } = useManagers();
@@ -266,6 +300,7 @@ export function ModelsSection() {
   if (!consoleAccess.canManage) return <div className="space-y-4"><SectionHeader title="Higress Console 管理" description="模型提供商和 AI 路由由外部 Higress Console 管理" /><div className="rounded-lg border border-border/50 bg-muted/30 p-4 text-sm text-muted-foreground">{consoleAccess.isLoading ? '正在检查 Higress Console 状态...' : consoleAccess.reason}</div></div>;
   return <div className="space-y-6">
     <SectionHeader title="模型管理" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
+    <RuntimeStatusCard higress={infrastructure?.higress} />
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 模型提供商</CardTitle><CardDescription>协议、Token 故障转移、模型映射与公开高级配置</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button><span className="text-xs text-muted-foreground">共 {providers.length} 个提供商</span></div><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 路由</CardTitle><CardDescription>多上游权重、路径与模型匹配、认证和回退策略</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button><span className="text-xs text-muted-foreground">共 {routes.length} 条路由</span></div>{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">请求模型别名绑定</CardTitle><CardDescription>Manager 和 Worker 的模型别名将由 Higress 路由解析为具体提供商模型</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>请求模型别名</TableHead><TableHead>路由</TableHead><TableHead>提供商</TableHead><TableHead>目标模型</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无请求模型别名绑定</TableCell></TableRow> : modelBindings.map((binding) => <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}><TableCell className="font-mono text-xs">{binding.requestModelAlias}</TableCell><TableCell>{binding.routeName || '-'}</TableCell><TableCell>{binding.providerName || '-'}</TableCell><TableCell className="font-mono text-xs">{binding.targetModel || '-'}</TableCell><TableCell><Badge variant={binding.available ? 'default' : 'destructive'} className="text-[10px]">{binding.available ? '可用' : '不可用'}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
@@ -370,6 +405,30 @@ function ConsumerSection() {
     {consumersError && <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertTriangle className="size-4 shrink-0 mt-0.5" /><p>Consumer 列表加载失败: {formatErrorMessage(consumersError)}</p></div>}
     <Table><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>凭证</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{consumersLoading ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow> : !consumersLoading && consumers?.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">暂无 Consumer</TableCell></TableRow> : consumers?.map((consumer) => <TableRow key={consumer.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Key className="size-3.5 text-muted-foreground" />{consumer.name}</div></TableCell><TableCell>{consumer.status && <Badge variant="outline" className="text-[10px]">{consumer.status}</Badge>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" title="绑定到 AI 路由" aria-label={`绑定 ${consumer.name}`} onClick={() => handleBind(consumer.name)} disabled={bindConsumer.isPending || deleteConsumer.isPending}><Link2 className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="sm" aria-label={`删除 ${consumer.name}`} onClick={() => setConsumerPendingDeletion(consumer.name)} disabled={bindConsumer.isPending || deleteConsumer.isPending}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>
     <AlertDialog open={Boolean(consumerPendingDeletion)} onOpenChange={(open) => !open && !deleteConsumer.isPending && setConsumerPendingDeletion(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除 Consumer</AlertDialogTitle><AlertDialogDescription>将删除 {consumerPendingDeletion ?? ''} 的认证凭证。依赖该凭证的调用将无法通过 Higress 认证。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleteConsumer.isPending}>取消</AlertDialogCancel><AlertDialogAction disabled={deleteConsumer.isPending} onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleteConsumer.isPending && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </div>;
+}
+
+// ============ Runtime Model Access Status ============
+
+function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) {
+  const gateway = higress?.gateway;
+  let description: string;
+  if (higress?.mode === 'external') {
+    description = gateway?.state === 'reachable'
+      ? `Manager/Worker 经 Higress Gateway 服务访问模型：${gateway.endpoint}`
+      : '外部适配模式尚未配置可用的 Gateway 数据平面地址';
+  } else {
+    description = gateway?.state === 'reachable'
+      ? `嵌入模式经 Gateway 服务访问：${gateway.endpoint}；也可由 Controller 直连 LLM Provider`
+      : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）';
+  }
+  return <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-4">
+    <Zap className="size-4 shrink-0 text-emerald-500" />
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-medium">运行时模型访问方式</p>
+      <p className="mt-0.5 break-all text-xs text-muted-foreground">{description}</p>
+    </div>
+    <Badge variant="secondary" className="shrink-0 text-[10px]">{higress?.mode === 'external' ? 'external' : 'direct'}</Badge>
   </div>;
 }
 

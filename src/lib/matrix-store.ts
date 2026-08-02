@@ -16,6 +16,12 @@ interface MatrixState {
   // Sync
   syncToken: string | null;
   isSyncing: boolean;
+  /**
+   * Monotonic generation counter used to invalidate in-flight /sync loops.
+   * Bumped on logout so a long-poll response that arrives after logout cannot
+   * restart a sync loop with stale credentials.
+   */
+  syncGeneration: number;
 
   // Actions
   login: (_homeserver: string, _username: string, _password: string) => Promise<boolean>;
@@ -24,6 +30,7 @@ interface MatrixState {
   setHomeserver: (_url: string) => void;
   setSyncToken: (_token: string | null) => void;
   setSyncing: (_syncing: boolean) => void;
+  invalidateSyncGeneration: () => void;
 }
 
 const PERSISTED_KEY = 'matrix-store';
@@ -40,6 +47,7 @@ export const useMatrixStore = create<MatrixState>()(
       loginError: null,
       syncToken: null,
       isSyncing: false,
+      syncGeneration: 0,
 
       login: async (homeserver: string, username: string, password: string) => {
         set({ isLoggingIn: true, loginError: null });
@@ -81,7 +89,7 @@ export const useMatrixStore = create<MatrixState>()(
       },
 
       logout: () => {
-        set({
+        set((state) => ({
           accessToken: '',
           userId: '',
           deviceId: '',
@@ -89,12 +97,15 @@ export const useMatrixStore = create<MatrixState>()(
           loginError: null,
           syncToken: null,
           isSyncing: false,
-        });
+          // Invalidate any in-flight sync loops (see syncGeneration).
+          syncGeneration: state.syncGeneration + 1,
+        }));
       },
 
       setHomeserver: (url: string) => set({ homeserver: url }),
       setSyncToken: (token: string | null) => set({ syncToken: token }),
       setSyncing: (syncing: boolean) => set({ isSyncing: syncing }),
+      invalidateSyncGeneration: () => set((state) => ({ syncGeneration: state.syncGeneration + 1 })),
     }),
     {
       name: PERSISTED_KEY,

@@ -7,4 +7,3 @@ export * from './structures/ScrollPanel';
 export * from './views/EventTile';
 export * from './views/MessageBubble';
 export * from './grouper/MainGrouper';
-export * from './components/MessageInput';

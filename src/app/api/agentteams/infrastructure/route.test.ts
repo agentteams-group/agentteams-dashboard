@@ -130,7 +130,9 @@ describe('GET /api/agentteams/infrastructure', () => {
         state: 'unreachable',
         error: 'Console connection refused',
       },
-      healthy: false,
+      // Gateway is reachable, so runtime adaptation stays healthy even when
+      // the optional Console management endpoint is down.
+      healthy: true,
     });
   });
 });

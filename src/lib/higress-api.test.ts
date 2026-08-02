@@ -93,6 +93,41 @@ describe('Higress form serialization', () => {
       .toContain('上游厂商不存在: missing');
   });
 
+  it('rejects routes whose upstreams repeat the same provider', () => {
+    const route: RouteForm = {
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      upstreams: [
+        { provider: 'openai', weight: 50, modelMappings: [{ pattern: '*', targetModel: 'gpt-4.1' }] },
+        { provider: 'openai', weight: 50, modelMappings: [{ pattern: '*', targetModel: 'gpt-4.1' }] },
+        { provider: 'anthropic', weight: 0, modelMappings: [] },
+        { provider: 'anthropic', weight: 0, modelMappings: [] },
+      ],
+      modelPredicates: [],
+      authConfig: { enabled: false, allowedCredentialTypes: [] },
+    };
+
+    const errors = validateRouteForm(route, ['openai', 'anthropic']);
+    expect(errors).toContain('上游提供商不能重复: openai');
+    expect(errors).toContain('上游提供商不能重复: anthropic');
+  });
+
+  it('rejects model predicates with an empty match value', () => {
+    const route: RouteForm = {
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      upstreams: [{ provider: 'openai', weight: 100, modelMappings: [] }],
+      modelPredicates: [
+        { matchType: 'EXACT', matchValue: 'team-chat' },
+        { matchType: 'PRE', matchValue: '  ' },
+      ],
+      authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
+    };
+
+    const errors = validateRouteForm(route, ['openai']);
+    expect(errors).toContain('模型匹配值不能为空');
+  });
+
   it('preserves Controller-managed consumers when serializing route edits', () => {
     const route: RouteForm = {
       name: 'agentteams',

@@ -299,9 +299,20 @@ export function validateRouteForm(form: RouteForm, providerNames: string[]): str
   if (form.upstreams.length > 1 && form.upstreams.reduce((sum, upstream) => sum + upstream.weight, 0) !== 100) {
     errors.push('多个上游的权重总和必须为 100');
   }
+  const seenProviders = new Set<string>();
+  const duplicateProviders = new Set<string>();
+  for (const upstream of form.upstreams) {
+    if (!upstream.provider) continue;
+    if (seenProviders.has(upstream.provider)) duplicateProviders.add(upstream.provider);
+    seenProviders.add(upstream.provider);
+  }
+  for (const duplicate of duplicateProviders) errors.push(`上游提供商不能重复: ${duplicate}`);
   for (const upstream of form.upstreams) {
     if (!providerNames.includes(upstream.provider)) errors.push(`上游厂商不存在: ${upstream.provider}`);
     errors.push(...validateModelMappings(upstream.modelMappings));
+  }
+  for (const predicate of form.modelPredicates) {
+    if (!predicate.matchValue.trim()) errors.push('模型匹配值不能为空');
   }
   if (form.authConfig.enabled && form.authConfig.allowedCredentialTypes.length === 0) {
     errors.push('启用路由认证时至少需要一种凭据类型');

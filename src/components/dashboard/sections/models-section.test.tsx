@@ -42,6 +42,21 @@ vi.mock('@/hooks/use-agentteams-models', () => ({
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [{ model: 'team-chat' }] }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: () => ({ canManage: true, isLoading: false }) }));
+vi.mock('@/hooks/use-agentteams-infrastructure', () => ({
+  useInfrastructure: () => ({
+    data: {
+      higress: {
+        mode: 'external',
+        gateway: { state: 'reachable', endpoint: 'http://aigw-local.agentteams.io:8080' },
+        console: { state: 'reachable', endpoint: 'http://console.local' },
+        healthy: true,
+      },
+      services: [],
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
 vi.mock('@/hooks/use-agentteams-consumers', () => ({
   useConsumers: () => ({ data: [{ name: 'web-crawler', status: 'active' }], isLoading: false, error: null, listUnsupported: false }),
 }));

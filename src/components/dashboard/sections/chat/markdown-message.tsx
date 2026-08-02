@@ -13,7 +13,11 @@ import { useState } from 'react';
 import { StreamingCard } from './streaming-card';
 import { ThinkingCard } from './thinking-card';
 import { MermaidRenderer } from './mermaid-renderer';
-import { renderFormattedContent } from './format';
+import {
+  renderFormattedContent,
+  resolveMentionsInHtml,
+  resolveMentionsToDisplayNames,
+} from './format';
 
 interface MarkdownMessageProps {
   content: string;
@@ -23,19 +27,6 @@ interface MarkdownMessageProps {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   homeserver?: string;
   memberMap?: Record<string, string>;
-}
-
-function resolveUserIdToName(text: string, memberMap?: Record<string, string>): string {
-  if (!memberMap) return text;
-  return text.replace(/@([\w.-]+):([\w.-]+)/g, (match, localpart, server) => {
-    const userId = `@${localpart}:${server}`;
-    return memberMap[userId] || match;
-  }).replace(/@([\w.-]+)/g, (match, name) => {
-    const entry = Object.entries(memberMap).find(
-      ([userId, displayName]) => displayName.toLowerCase() === name.toLowerCase()
-    );
-    return entry ? entry[0] : match;
-  });
 }
 
 function CodeBlock({ language, children }: { language?: string; children: string }) {
@@ -127,10 +118,20 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
 
   const html = useMemo(() => {
     if (formattedContent) {
-      return renderFormattedContent(formattedContent, content).html;
+      const formatted = renderFormattedContent(formattedContent, content).html;
+      return resolveMentionsInHtml(
+        formatted,
+        memberMap,
+        (name) => `<span class="matrix-mention text-emerald-600 font-medium">${name}</span>`
+      );
     }
     return undefined;
-  }, [formattedContent, content]);
+  }, [formattedContent, content, memberMap]);
+
+  const resolvedContent = useMemo(
+    () => resolveMentionsToDisplayNames(content, memberMap),
+    [content, memberMap]
+  );
 
   // Render media messages (m.image, m.file)
   if (msgType === 'm.image' && resolvedMediaUrl) {
@@ -210,7 +211,6 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  const resolvedContent = useMemo(() => resolveUserIdToName(content, memberMap), [content, memberMap]);
   const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
   const hasMermaid = !!mermaidChart;
   const plainContent = hasMermaid ? resolvedContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : resolvedContent;

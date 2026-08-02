@@ -60,12 +60,41 @@ export interface MemberMap {
   [userId: string]: string;
 }
 
-export function resolveMentionsInText(text: string, memberMap: MemberMap): string {
-  return text.replace(/@([\w.-]+)/g, (match, displayName) => {
-    const entry = Object.entries(memberMap).find(
-      ([_, name]) => name.toLowerCase() === displayName.toLowerCase()
-    );
-    if (entry) return entry[0];
-    return match;
+const MENTION_PATTERN = /@[\w.-]+(?::[\w.-]+)?/g;
+
+function resolveMention(match: string, memberMap: MemberMap): string | null {
+  const direct = memberMap[match];
+  if (direct) return direct;
+  const shortName = match.slice(1).split(':')[0];
+  const byDisplayName = Object.entries(memberMap).find(
+    ([, displayName]) => displayName.toLowerCase() === shortName.toLowerCase()
+  );
+  return byDisplayName ? byDisplayName[1] : null;
+}
+
+export function resolveMentionsToDisplayNames(
+  text: string,
+  memberMap: MemberMap | undefined
+): string {
+  if (!memberMap || Object.keys(memberMap).length === 0) return text;
+  return text.replace(MENTION_PATTERN, (match) => resolveMention(match, memberMap) ?? match);
+}
+
+export function resolveMentionsInHtml(
+  html: string,
+  memberMap: MemberMap | undefined,
+  wrap?: (_escapedDisplayName: string) => string
+): string {
+  if (!memberMap || Object.keys(memberMap).length === 0) return html;
+  const render = wrap ?? ((name) => name);
+  return html.replace(/<[^>]*>|@[\w.-]+(?::[\w.-]+)?/g, (token) => {
+    if (token.startsWith('<')) return token;
+    const resolved = resolveMention(token, memberMap);
+    if (resolved === null) return token;
+    return render(escapeHtml(resolved));
   });
+}
+
+export function resolveMentionsInText(text: string, memberMap: MemberMap | undefined): string {
+  return resolveMentionsToDisplayNames(text, memberMap);
 }

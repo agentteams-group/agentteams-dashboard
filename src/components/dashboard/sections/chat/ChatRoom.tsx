@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from './ChatStore';
-import { MessageList } from './structures/MessageList';
+import { MessageList, type LocalOutboundMessage } from './structures/MessageList';
+import { ThreadPanel } from './structures/ThreadPanel';
 import type { ScrollPanelHandle } from './structures/ScrollPanel';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
@@ -10,6 +11,10 @@ import {
   useMatrixRoomMembers,
   useMatrixRoomState,
   useMatrixSendMessage,
+  useMatrixReadMarker,
+  useMatrixSetReadMarker,
+  useMatrixEditMessage,
+  useMatrixRedactMessage,
   formatMatrixEvents,
   type DisplayMessage,
   type RoomMember,
@@ -17,11 +22,11 @@ import {
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
-import { useMatrixSendTyping, useMatrixTypingUsers } from '@/hooks/use-matrix';
+import { useMatrixTypingUsers, useTypingNotification, useTypingSync } from '@/hooks/use-matrix';
 
 interface ChatRoomProps {
   roomId: string;
@@ -49,15 +54,27 @@ export function ChatRoom({
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
+  const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
-  const sendTyping = useMatrixSendTyping();
+  const editMutation = useMatrixEditMessage();
+  const redactMutation = useMatrixRedactMessage();
+  const setReadMarkerMutation = useMatrixSetReadMarker();
+  const readMarkerQuery = useMatrixReadMarker(roomId);
+  const { notifyTyping, stopTyping } = useTypingNotification(roomId);
   const typingUsers = useMatrixTypingUsers(roomId);
+  // Long-poll /sync so typing notifications from other members show up live.
+  useTypingSync(roomId);
   const scrollRef = useRef<ScrollPanelHandle>(null);
   const prevMsgCountRef = useRef(0);
+  const prevMsgLastIdRef = useRef<string | null>(null);
+  const atBottomRef = useRef(true);
+  const localCounterRef = useRef(0);
 
   const messagesQuery = useMatrixRoomMessages(roomId);
   const membersQuery = useMatrixRoomMembers(roomId);
@@ -103,21 +120,96 @@ export function ChatRoom({
     return initialMembers;
   }, [membersQuery.data, stateQuery.data, initialMembers]);
 
-  // Auto-scroll when new messages arrive
-  useEffect(() => {
-    if (autoScroll && formattedMessages.length > prevMsgCountRef.current) {
-      scrollRef.current?.scrollToBottom({ smooth: false });
-    }
-    prevMsgCountRef.current = formattedMessages.length;
-  }, [formattedMessages.length, autoScroll]);
+  // m.fully_read account-data marker → anchor for the "unread" divider line.
+  const readEventId = readMarkerQuery.data?.event_id ?? null;
 
-  // Watch for new messages while not auto-scrolling
+  // Persist the read marker to the last visible message whenever the user is
+  // pinned to the bottom (on arrival of new messages or on scroll-back-down).
+  const markAllRead = useCallback(() => {
+    const last = formattedMessages[formattedMessages.length - 1];
+    if (!last) return;
+    const target = last.eventId || last.id;
+    if (!target || target === readEventId || setReadMarkerMutation.isPending) return;
+    setReadMarkerMutation.mutate({ roomId, eventId: target });
+  }, [formattedMessages, readEventId, setReadMarkerMutation, roomId]);
+
+  // Single watcher for newly appended messages: scroll down when pinned to
+  // the bottom, otherwise accumulate a "new messages" counter for the badge.
   useEffect(() => {
-    if (!autoScroll && formattedMessages.length > prevMsgCountRef.current) {
-      setNewMessagesCount(c => c + (formattedMessages.length - prevMsgCountRef.current));
+    const lastId = formattedMessages.length > 0 ? formattedMessages[formattedMessages.length - 1].id : null;
+    const lastChanged = lastId !== prevMsgLastIdRef.current;
+    const countChanged = formattedMessages.length !== prevMsgCountRef.current;
+
+    if (lastChanged) {
+      const added = Math.max(0, formattedMessages.length - prevMsgCountRef.current);
+      if (autoScroll && atBottomRef.current) {
+        // followOutput already pins the list; this nudge covers media/resize.
+        scrollRef.current?.scrollToBottom({ smooth: false });
+        markAllRead();
+      } else if (added > 0) {
+        setNewMessagesCount(c => c + added);
+      }
+    } else if (countChanged && !autoScroll) {
+      // Only older pages were prepended; keep the badge untouched.
     }
+
     prevMsgCountRef.current = formattedMessages.length;
-  }, [formattedMessages.length, autoScroll]);
+    prevMsgLastIdRef.current = lastId;
+  }, [formattedMessages, autoScroll, markAllRead]);
+
+  const removeLocal = useCallback((clientId: string) => {
+    setLocalMessages(prev => prev.filter(m => m.clientId !== clientId));
+  }, []);
+
+  const patchLocal = useCallback((clientId: string, patch: Partial<LocalOutboundMessage>) => {
+    setLocalMessages(prev => prev.map(m => m.clientId === clientId ? { ...m, ...patch } : m));
+  }, []);
+
+  const sendOutbound = useCallback((params: {
+    content: string;
+    options?: { html?: boolean };
+    mentions?: MentionEntry[];
+    replyTo?: DisplayMessage | null;
+    clientId?: string;
+  }) => {
+    if (!roomId || !isLoggedIn || !userId) return;
+    const { content, options, mentions, replyTo, clientId } = params;
+    const mentionUserIds = mentions?.map(m => m.userId) || [];
+    const mentionData = mentionUserIds.length > 0
+      ? { 'm.mentions': { user_ids: mentionUserIds } }
+      : {};
+    const cid = clientId ?? `local-${Date.now()}-${++localCounterRef.current}`;
+
+    // First attempt renders an optimistic "sending" bubble; a retry keeps the
+    // existing entry and flips it back to sending.
+    if (!clientId) {
+      setLocalMessages(prev => [...prev, {
+        clientId: cid,
+        sender: userId,
+        senderShort: userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId,
+        content,
+        formattedContent: options?.html ? content : undefined,
+        mentions,
+        replyTo,
+        timestamp: Date.now(),
+        status: 'sending' as const,
+      }]);
+    }
+
+    sendMutation.mutate(
+      {
+        roomId,
+        body: content,
+        formattedBody: options?.html ? content : undefined,
+        extra: mentionData,
+        relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
+      },
+      {
+        onSuccess: () => removeLocal(cid),
+        onError: (err) => patchLocal(cid, { status: 'error', error: err.message }),
+      }
+    );
+  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal]);
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
     const trimmed = content.trim();
@@ -128,48 +220,114 @@ export function ChatRoom({
     }
     if (!roomId || !isLoggedIn) return;
 
-    const mentionUserIds = mentions?.map(m => m.userId) || [];
-    const mentionData = mentionUserIds.length > 0
-      ? { 'm.mentions': { user_ids: mentionUserIds } }
-      : {};
-
-    sendMutation.mutate({
-      roomId,
-      body: trimmed,
-      formattedBody: _options?.html ? trimmed : undefined,
-      extra: mentionData,
-    });
+    sendOutbound({ content: trimmed, options: _options, mentions, replyTo });
+    // Sending a message immediately ends the typing state, otherwise other
+    // members keep seeing "typing" for up to the full timeout window.
+    stopTyping();
     setInputValue('');
     setMentions([]);
     setReplyTo(null);
-  }, [roomId, isLoggedIn, sendMutation, onSendMessage]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);
-    if (content.trim() && userId) {
-      sendTyping.mutate({ roomId, typing: true });
+    if (content.trim()) {
+      notifyTyping();
+    } else {
+      stopTyping();
     }
-  }, [roomId, userId, sendTyping]);
-
-  const handleJumpToNew = useCallback(() => {
-    setNewMessagesCount(0);
-    setAutoScroll(true);
-    scrollRef.current?.scrollToBottom({ smooth: true });
-  }, [setAutoScroll]);
+  }, [notifyTyping, stopTyping]);
 
   const handleAutoScrollChange = useCallback((auto: boolean) => {
     setAutoScrollLocal(auto);
     setAutoScroll(auto);
   }, [setAutoScroll]);
 
+  const handleJumpToNew = useCallback(() => {
+    setNewMessagesCount(0);
+    handleAutoScrollChange(true);
+    scrollRef.current?.scrollToBottom({ smooth: true });
+  }, [handleAutoScrollChange]);
+
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    atBottomRef.current = atBottom;
+    if (atBottom) {
+      // Reaching the bottom marks everything as read.
+      setNewMessagesCount(0);
+      markAllRead();
+      if (!autoScroll) handleAutoScrollChange(true);
+    } else if (autoScroll) {
+      handleAutoScrollChange(false);
+    }
+  }, [autoScroll, handleAutoScrollChange, markAllRead]);
+
   const handleReply = useCallback((message: DisplayMessage) => {
     setReplyTo(message);
-    // Scroll to the replied message
-    scrollRef.current?.scrollToIndex(formattedMessages.length - 1);
-  }, [formattedMessages.length]);
+    const idx = formattedMessages.findIndex(m => m.id === message.id || m.eventId === message.eventId);
+    if (idx >= 0) {
+      // Scroll to the replied message.
+      scrollRef.current?.scrollToIndex(idx);
+    } else {
+      scrollRef.current?.scrollToBottom({ smooth: true });
+    }
+  }, [formattedMessages]);
 
   const handleCopy = useCallback((message: DisplayMessage) => {
     navigator.clipboard.writeText(message.content);
+  }, []);
+
+  const handleEditSubmit = useCallback(async (message: DisplayMessage, newContent: string) => {
+    if (!message.isMe) return;
+    setActionError(null);
+    await editMutation.mutateAsync({
+      roomId,
+      eventId: message.eventId || message.id,
+      body: newContent,
+    });
+  }, [roomId, editMutation]);
+
+  const handleDelete = useCallback((message: DisplayMessage) => {
+    // Locally tracked (failed) messages are dropped without a server call.
+    if (message.status === 'error' || message.id.startsWith('local-')) {
+      removeLocal(message.id);
+      return;
+    }
+    if (!message.isMe) return;
+    if (!window.confirm('确定删除这条消息吗？此操作不可撤销。')) return;
+    setActionError(null);
+    redactMutation.mutate(
+      { roomId, eventId: message.eventId || message.id },
+      { onError: (err) => setActionError(err.message) }
+    );
+  }, [roomId, redactMutation, removeLocal]);
+
+  const handleResendLocal = useCallback((message: DisplayMessage) => {
+    const local = localMessages.find(m => m.clientId === message.id);
+    if (!local) return;
+    setActionError(null);
+    patchLocal(local.clientId, { status: 'sending', error: undefined });
+    sendOutbound({
+      content: local.content,
+      options: local.formattedContent ? { html: true } : undefined,
+      mentions: local.mentions,
+      replyTo: local.replyTo,
+      clientId: local.clientId,
+    });
+  }, [localMessages, patchLocal, sendOutbound]);
+
+  const handleCancelLocal = useCallback((message: DisplayMessage) => {
+    removeLocal(message.id);
+  }, [removeLocal]);
+
+  const memberMap = useMemo(
+    () => Object.fromEntries(roomMembers.map(m => [m.userId, m.displayName])),
+    [roomMembers]
+  );
+
+  const handleOpenThread = useCallback((message: DisplayMessage) => {
+    // A thread panel replaces the member list, element-web style.
+    setShowMembers(false);
+    setActiveThread(message);
   }, []);
 
   const header = useMemo(() => (
@@ -210,6 +368,19 @@ export function ChatRoom({
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {header}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          {actionError && (
+            <div className="flex items-center gap-2 px-4 py-1.5 bg-red-500/10 border-b border-red-500/20 text-xs text-red-600 dark:text-red-400 shrink-0">
+              <span className="truncate flex-1">{actionError}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 shrink-0 hover:text-red-700"
+                onClick={() => setActionError(null)}
+              >
+                <PanelRightClose className="w-3 h-3" />
+              </Button>
+            </div>
+          )}
           {replyTo && (
             <div className="flex items-center gap-2 px-4 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-400 shrink-0">
               <span>回复 {replyTo.senderShort}:</span>
@@ -227,6 +398,8 @@ export function ChatRoom({
           <MessageList
             ref={scrollRef}
             messages={formattedMessages}
+            localMessages={localMessages}
+            readEventId={readEventId}
             hasNextPage={messagesQuery.hasNextPage || false}
             isFetchingNextPage={messagesQuery.isFetchingNextPage}
             onLoadMore={loadMore}
@@ -235,9 +408,27 @@ export function ChatRoom({
             _onSend={handleSend}
             onReply={handleReply}
             onCopy={handleCopy}
-            memberMap={Object.fromEntries(roomMembers.map(m => [m.userId, m.displayName]))}
+            onOpenThread={handleOpenThread}
+            onEdit={handleEditSubmit}
+            onDelete={handleDelete}
+            onResend={handleResendLocal}
+            onCancel={handleCancelLocal}
+            memberMap={memberMap}
+            onAtBottomChange={handleAtBottomChange}
             className="flex-1 min-h-0"
           />
+          {/* Floating "new messages" badge, element-web style jump-to-latest */}
+          {newMessagesCount > 0 && (
+            <div className="relative shrink-0">
+              <button
+                onClick={handleJumpToNew}
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-3 py-1.5 text-xs shadow-lg hover:bg-primary/90 transition-colors"
+              >
+                <ArrowDown className="w-3 h-3" />
+                {newMessagesCount} 条新消息
+              </button>
+            </div>
+          )}
           <TypingIndicator users={typingUsers} />
           <ChatComposer
             value={inputValue}
@@ -253,8 +444,8 @@ export function ChatRoom({
             }}
             onMentionsChange={setMentions}
           />
+          </div>
         </div>
-      </div>
 
       {/* Members sidebar */}
       {showMembers && (
@@ -295,6 +486,16 @@ export function ChatRoom({
             })}
           </div>
         </div>
+      )}
+
+      {/* Thread sidebar */}
+      {activeThread && (
+        <ThreadPanel
+          roomId={roomId}
+          rootMessage={activeThread}
+          memberMap={memberMap}
+          onClose={() => setActiveThread(null)}
+        />
       )}
     </div>
   );

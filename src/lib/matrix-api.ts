@@ -74,6 +74,17 @@ export interface MatrixMessagesResponse {
   end: string;
 }
 
+export interface MatrixRelationsResponse {
+  chunk: MatrixEvent[];
+  next_batch?: string;
+}
+
+export interface MatrixReadMarker {
+  event_id?: string;
+  /** Server timestamp of the last read event, if known. */
+  origin_server_ts?: number;
+}
+
 export interface MatrixMembersResponse {
   chunk: MatrixEvent[];
 }
@@ -154,6 +165,57 @@ export const matrixApi = {
     return res.json();
   },
 
+  getRoomRelations: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string,
+    eventId: string,
+    relType = 'm.thread',
+    options: { limit?: number; from?: string } = {}
+  ): Promise<MatrixRelationsResponse> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/relations/${encodeURIComponent(eventId)}/${relType}`,
+      { homeserver, limit: options.limit || 30, from: options.from }
+    );
+    const res = await fetch(url, { headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, 'Failed to get thread relations');
+    return res.json();
+  },
+
+  getReadMarker: async (
+    homeserver: string,
+    accessToken: string,
+    userId: string,
+    roomId: string
+  ): Promise<MatrixReadMarker> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/read-marker`,
+      { homeserver, userId }
+    );
+    const res = await fetch(url, { headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, 'Failed to get read marker');
+    return res.json();
+  },
+
+  setReadMarker: async (
+    homeserver: string,
+    accessToken: string,
+    userId: string,
+    roomId: string,
+    eventId: string
+  ): Promise<void> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/read-marker`,
+      { homeserver, userId }
+    );
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: buildHeaders(accessToken, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ event_id: eventId }),
+    });
+    await throwIfNotOk(res, 'Failed to set read marker');
+  },
+
   getRoomMembers: async (homeserver: string, accessToken: string, roomId: string): Promise<MatrixMembersResponse> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/members`, { homeserver });
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
@@ -214,7 +276,7 @@ export const matrixApi = {
     accessToken: string,
     roomId: string,
     body: string,
-    options: { msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] } } = {}
+    options: { msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown> } = {}
   ): Promise<{ event_id: string }> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, { homeserver });
     const messageBody: Record<string, unknown> = {
@@ -226,12 +288,66 @@ export const matrixApi = {
     if (options.url) messageBody.url = options.url;
     if (options.info) messageBody.info = options.info;
     if (options.mentions) messageBody['m.mentions'] = options.mentions;
+    // Thread replies carry an m.thread relation pointing at the root event.
+    if (options.relatesTo) messageBody['m.relates_to'] = options.relatesTo;
+    // Edits carry the replacement content under m.new_content.
+    if (options.newContent) messageBody['m.new_content'] = options.newContent;
     const res = await fetch(url, {
       method: 'PUT',
       headers: buildHeaders(accessToken, { 'Content-Type': 'application/json' }),
       body: JSON.stringify(messageBody),
     });
     await throwIfNotOk(res, 'Failed to send message');
+    return res.json();
+  },
+
+  /**
+   * Edit an existing message by sending an m.replace relation. The body sent
+   * to the homeserver is the spec-mandated "* <new body>" fallback while the
+   * real content lives in m.new_content.
+   */
+  editMessage: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string,
+    eventId: string,
+    body: string,
+    options: { msgtype?: string; format?: string; formattedBody?: string; mentions?: { user_ids: string[] } } = {}
+  ): Promise<{ event_id: string }> => {
+    const { msgtype = 'm.text', format = 'org.matrix.custom.html', formattedBody, mentions } = options;
+    const newContent: Record<string, unknown> = { msgtype, body };
+    if (formattedBody) {
+      newContent.format = format;
+      newContent.formatted_body = formattedBody;
+    }
+    return matrixApi.sendMessage(homeserver, accessToken, roomId, `* ${body}`, {
+      msgtype,
+      format: formattedBody ? format : undefined,
+      formattedBody,
+      mentions,
+      relatesTo: { rel_type: 'm.replace', event_id: eventId },
+      newContent,
+    });
+  },
+
+  /** Redact (delete) a message via m.room.redaction. */
+  redactMessage: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string,
+    eventId: string,
+    reason?: string
+  ): Promise<{ event_id: string }> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/redact/${encodeURIComponent(eventId)}`,
+      { homeserver }
+    );
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: buildHeaders(accessToken, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+    await throwIfNotOk(res, 'Failed to delete message');
     return res.json();
   },
 };

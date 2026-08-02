@@ -1,5 +1,5 @@
 // React Query hooks for Matrix Client-Server API
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { matrixApi, MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -130,18 +130,114 @@ export function useMatrixSendMessage() {
   const { homeserver, accessToken } = useMatrixParams();
 
   return useMutation({
-    mutationFn: async ({ roomId, body, formattedBody, extra, mentions }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown>; mentions?: { user_ids: string[] } }) => {
+    mutationFn: async ({ roomId, body, formattedBody, extra, mentions, relatesTo }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } } }) => {
       if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
       return matrixApi.sendMessage(homeserver, accessToken, roomId, body, {
         format: formattedBody ? 'org.matrix.custom.html' : undefined,
         formattedBody,
         mentions,
+        relatesTo,
         ...extra,
       });
     },
     onSuccess: (_, variables) => {
       // Invalidate messages query to refetch
       queryClient.invalidateQueries({ queryKey: ['matrix-messages', variables.roomId] });
+      // Thread replies must refresh the thread view too.
+      if (variables.relatesTo?.rel_type === 'm.thread') {
+        queryClient.invalidateQueries({ queryKey: ['matrix-thread', variables.roomId, variables.relatesTo.event_id] });
+      }
+    },
+  });
+}
+
+// ============ Thread Messages ============
+
+/**
+ * Fetches the replies in a thread (relations of type m.thread pointing at the
+ * root event). Used by ThreadPanel; thread replies are excluded from the main
+ * timeline by formatMatrixEvents.
+ */
+export function useMatrixThreadMessages(roomId: string | null, threadId: string | null) {
+  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+
+  return useQuery({
+    queryKey: ['matrix-thread', roomId, threadId],
+    queryFn: async () => {
+      if (!homeserver || !accessToken || !roomId || !threadId) {
+        return { chunk: [], next_batch: '' };
+      }
+      return matrixApi.getRoomRelations(homeserver, accessToken, roomId, threadId, 'm.thread', {
+        limit: 50,
+      });
+    },
+    enabled: isLoggedIn && !!roomId && !!threadId && !!homeserver && !!accessToken,
+    staleTime: 5000,
+    refetchInterval: 10000, // Keep the thread live while it is open
+  });
+}
+
+// ============ Read Marker (m.fully_read) ============
+
+export function useMatrixReadMarker(roomId: string | null) {
+  const { homeserver, accessToken, isLoggedIn, userId } = useMatrixParams();
+
+  return useQuery({
+    queryKey: ['matrix-read-marker', roomId],
+    queryFn: async () => {
+      if (!homeserver || !accessToken || !userId || !roomId) return { event_id: '' };
+      return matrixApi.getReadMarker(homeserver, accessToken, userId, roomId);
+    },
+    enabled: isLoggedIn && !!roomId && !!userId && !!homeserver && !!accessToken,
+    staleTime: 30000,
+  });
+}
+
+export function useMatrixSetReadMarker() {
+  const queryClient = useQueryClient();
+  const { homeserver, accessToken, userId } = useMatrixParams();
+
+  return useMutation({
+    mutationFn: async ({ roomId, eventId }: { roomId: string; eventId: string }) => {
+      if (!homeserver || !accessToken || !userId) return;
+      return matrixApi.setReadMarker(homeserver, accessToken, userId, roomId, eventId);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['matrix-read-marker', variables.roomId] });
+    },
+  });
+}
+
+// ============ Edit / Redact Message Mutations ============
+
+export function useMatrixEditMessage() {
+  const queryClient = useQueryClient();
+  const { homeserver, accessToken } = useMatrixParams();
+
+  return useMutation({
+    mutationFn: async ({ roomId, eventId, body, msgtype }: { roomId: string; eventId: string; body: string; msgtype?: string }) => {
+      if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
+      return matrixApi.editMessage(homeserver, accessToken, roomId, eventId, body, { msgtype });
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['matrix-messages', variables.roomId] });
+      queryClient.invalidateQueries({ queryKey: ['matrix-thread', variables.roomId] });
+    },
+  });
+}
+
+export function useMatrixRedactMessage() {
+  const queryClient = useQueryClient();
+  const { homeserver, accessToken } = useMatrixParams();
+
+  return useMutation({
+    mutationFn: async ({ roomId, eventId, reason }: { roomId: string; eventId: string; reason?: string }) => {
+      if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
+      return matrixApi.redactMessage(homeserver, accessToken, roomId, eventId, reason);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['matrix-messages', variables.roomId] });
+      queryClient.invalidateQueries({ queryKey: ['matrix-thread', variables.roomId] });
     },
   });
 }
@@ -170,6 +266,66 @@ export function useMatrixSendTyping() {
       return matrixApi.sendTyping(homeserver, accessToken, roomId, userId, typing);
     },
   });
+}
+
+/**
+ * Higher-level typing notifier that mirrors element-web behaviour:
+ * - `notifyTyping()` starts (or refreshes) a typing notification and arms an
+ *   idle timer that automatically sends `typing: false` after the user stops
+ *   typing. It also throttles refresh notifications so we never send more
+ *   than one `typing: true` per throttle window.
+ * - `stopTyping()` immediately sends `typing: false` and disarms the timer.
+ *
+ * The caller MUST invoke `stopTyping()` on unmount / room switch so the
+ * homeserver does not keep showing a stale "typing" state for up to 30s.
+ */
+export function useTypingNotification(roomId: string | null, options: { idleMs?: number; throttleMs?: number } = {}) {
+  const { idleMs = 4000, throttleMs = 4000 } = options;
+  const { homeserver, accessToken, userId, isLoggedIn } = useMatrixParams();
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentRef = useRef(0);
+  const isTypingRef = useRef(false);
+
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+  }, []);
+
+  const send = useCallback((typing: boolean) => {
+    if (!homeserver || !accessToken || !userId || !roomId || !isLoggedIn) return;
+    matrixApi.sendTyping(homeserver, accessToken, roomId, userId, typing).catch(() => {
+      // fire-and-forget
+    });
+  }, [homeserver, accessToken, userId, roomId, isLoggedIn]);
+
+  const stopTyping = useCallback(() => {
+    clearIdleTimer();
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      send(false);
+    }
+  }, [clearIdleTimer, send]);
+
+  const notifyTyping = useCallback(() => {
+    const now = Date.now();
+    if (!isTypingRef.current || now - lastSentRef.current >= throttleMs) {
+      isTypingRef.current = true;
+      lastSentRef.current = now;
+      send(true);
+    }
+    clearIdleTimer();
+    idleTimerRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      send(false);
+    }, idleMs);
+  }, [clearIdleTimer, send, idleMs, throttleMs]);
+
+  // Stop typing on unmount / room switch
+  useEffect(() => stopTyping, [stopTyping]);
+
+  return { notifyTyping, stopTyping };
 }
 
 // ============ Typing Users Hook ============
@@ -201,15 +357,21 @@ export function useTypingSync(roomId: string | null) {
   useEffect(() => {
     if (!isLoggedIn || !homeserver || !accessToken || !roomId) return;
 
+    // Capture the sync generation at loop start. If the user logs out (which
+    // bumps the generation), an in-flight long-poll response arriving after
+    // logout must not schedule another request with the old access token.
+    const generation = useMatrixStore.getState().syncGeneration;
+    const isStale = () => useMatrixStore.getState().syncGeneration !== generation;
+
     let syncToken: string | undefined;
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const poll = async () => {
-      if (cancelled) return;
+      if (cancelled || isStale()) return;
       try {
         const resp = await matrixApi.sync(homeserver, accessToken, syncToken, 5000);
-        if (cancelled) return;
+        if (cancelled || isStale()) return;
         syncToken = resp.next_batch;
 
         // Process typing events from joined rooms
@@ -234,7 +396,7 @@ export function useTypingSync(roomId: string | null) {
         // Silently ignore sync errors for typing
       }
 
-      if (!cancelled) {
+      if (!cancelled && !isStale()) {
         timeoutId = setTimeout(poll, 3000); // Poll every 3s for typing
       }
     };
@@ -302,8 +464,10 @@ export interface DisplayMessage {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   /** Whether this message is still being streamed (AI response in progress) */
   isStreaming?: boolean;
-  /** Thread ID if this message has replies */
+  /** Root event ID if this message is a reply in a thread (hidden from main timeline). */
   threadId?: string;
+  /** Whether this message is itself a thread reply (not the root). */
+  isThreadReply?: boolean;
   /** Number of replies in thread */
   replyCount?: number;
   /** Whether this message has been edited */
@@ -341,18 +505,35 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     ? event.sender.split(':')[0].slice(1)
     : event.sender;
 
+  // Redacted (deleted) messages have their content wiped by the homeserver;
+  // treat them as gone so the timeline drops them instead of showing blanks.
+  const rawContent = (event.content ?? {}) as MatrixEvent['content'];
+  if (
+    !rawContent.msgtype &&
+    !rawContent.body &&
+    !rawContent['m.relates_to']
+  ) {
+    return null;
+  }
+
   // Edited messages (m.replace): render the replacement content instead of
   // the stale fallback body ("* ..."). The manager delivers final answers by
   // editing its "处理中..." placeholder, so without this the room shows the
   // edit fallback as a separate, ugly message.
-  let content = event.content;
+  let content = rawContent;
   const relatesTo = content['m.relates_to'] as { rel_type?: string } | undefined;
-  if (relatesTo?.rel_type === 'm.replace') {
+  const isEdited = relatesTo?.rel_type === 'm.replace';
+  if (isEdited) {
     const newContent = content['m.new_content'] as typeof content | undefined;
     if (newContent && typeof newContent === 'object') {
       content = { ...content, ...newContent };
     }
   }
+
+  // A thread reply carries an m.thread relation pointing at the thread root.
+  const threadRelation = content['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;
+  const isThreadReply = threadRelation?.rel_type === 'm.thread';
+  const threadRootId = isThreadReply ? threadRelation?.event_id : undefined;
 
   return {
     id: event.event_id,
@@ -366,6 +547,10 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     mediaUrl: content.url as string | undefined,
     mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
     isStreaming: isMatrixStreaming(content),
+    isEdited,
+    eventId: event.event_id,
+    threadId: isThreadReply ? threadRootId : undefined,
+    isThreadReply,
   };
 }
 
@@ -381,12 +566,30 @@ function isMatrixStreaming(content: MatrixEvent['content']): boolean {
 /**
  * Collapses Matrix message revisions into their root event so a streaming
  * response stays in one position while the homeserver publishes edits.
+ *
+ * Thread replies (m.thread relations) never render in the main timeline —
+ * they are filtered out and their count is attached to the thread root so the
+ * UI can show a "↩ N" thread summary badge. Full thread contents are fetched
+ * on demand via the thread relations API (useMatrixThreadMessages).
  */
 export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
   const messages = new Map<string, DisplayMessage>();
   const pendingRevisions = new Map<string, DisplayMessage>();
+  const replyCounts = new Map<string, number>();
+
+  // Collect target ids of redaction events so deleted messages are dropped.
+  const redactedIds = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'm.room.redaction') {
+      const redacts = (event as { redacts?: string }).redacts;
+      if (redacts) redactedIds.add(redacts);
+    }
+  }
 
   for (const event of [...events].sort((a, b) => a.origin_server_ts - b.origin_server_ts)) {
+    if (redactedIds.has(event.event_id)) continue;
+    if (event.type === 'm.room.redaction') continue;
+
     const formatted = formatMatrixEvent(event, currentUserId);
     if (!formatted) continue;
 
@@ -399,24 +602,44 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     if (rootId) {
       const root = messages.get(rootId);
       if (root) {
-        messages.set(rootId, { ...formatted, id: rootId, timestamp: root.timestamp });
+        // Re-render the root in place, but keep the original event id so read
+        // markers and edits still resolve to the root event.
+        messages.set(rootId, {
+          ...formatted,
+          id: rootId,
+          eventId: rootId,
+          timestamp: root.timestamp,
+          isEdited: true,
+        });
       } else {
         pendingRevisions.set(rootId, formatted);
       }
       continue;
     }
 
+    // Thread replies stay out of the main timeline; just tally them.
+    if (formatted.isThreadReply && formatted.threadId) {
+      replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
+      continue;
+    }
+
     const revision = pendingRevisions.get(event.event_id);
     messages.set(
       event.event_id,
-      revision ? { ...revision, id: event.event_id, timestamp: formatted.timestamp } : formatted
+      revision ? { ...revision, id: event.event_id, eventId: event.event_id, timestamp: formatted.timestamp } : formatted
     );
     pendingRevisions.delete(event.event_id);
   }
 
-  for (const revision of pendingRevisions.values()) {
-    messages.set(revision.id, revision);
+  for (const [rootId, revision] of pendingRevisions) {
+    messages.set(rootId, { ...revision, id: rootId, eventId: rootId, isEdited: true });
   }
 
-  return [...messages.values()].sort((a, b) => a.timestamp - b.timestamp);
+  const result = [...messages.values()];
+  for (const message of result) {
+    const count = replyCounts.get(message.id);
+    if (count) message.replyCount = count;
+  }
+
+  return result.sort((a, b) => a.timestamp - b.timestamp);
 }
