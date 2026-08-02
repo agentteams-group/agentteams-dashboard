@@ -51,6 +51,49 @@ export const useTypingStore = create<TypingStore>()((set, get) => ({
 
 // ============ Room Messages (Infinite Scroll) ============
 
+/** Latest read position of a user in a room (from m.read receipts). */
+export interface ReadReceiptEntry {
+  eventId: string;
+  ts: number;
+}
+
+interface ReceiptStore {
+  /** roomId -> userId -> latest m.read receipt. */
+  receipts: Record<string, Record<string, ReadReceiptEntry>>;
+  setRoomReceipts: (_roomId: string, _receipts: Record<string, ReadReceiptEntry>) => void;
+}
+
+export const useReceiptStore = create<ReceiptStore>()((set) => ({
+  receipts: {},
+  setRoomReceipts: (roomId: string, receipts: Record<string, ReadReceiptEntry>) =>
+    set((state) => ({
+      receipts: { ...state.receipts, [roomId]: receipts },
+    })),
+}));
+
+const EMPTY_RECEIPTS: Record<string, ReadReceiptEntry> = {};
+
+/** Latest m.read receipts of every other user in a room. */
+export function useMatrixReadReceipts(roomId: string | null): Record<string, ReadReceiptEntry> {
+  const receipts = useReceiptStore((s) => s.receipts[roomId ?? ''] ?? EMPTY_RECEIPTS);
+  return receipts;
+}
+
+/**
+ * True when at least one other user has sent a read receipt at or past this
+ * message (element-web-style "✓✓ read" indicator for my own messages).
+ */
+export function isMessageReadByOthers(
+  message: Pick<DisplayMessage, 'isMe' | 'timestamp'>,
+  currentUserId: string | null | undefined,
+  receipts: Record<string, ReadReceiptEntry>
+): boolean {
+  if (!message.isMe || !currentUserId) return false;
+  return Object.entries(receipts).some(
+    ([userId, receipt]) => userId !== currentUserId && receipt.ts >= message.timestamp
+  );
+}
+
 export function useMatrixRoomMessages(roomId: string | null) {
   const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
 
@@ -353,6 +396,7 @@ export function useMatrixTypingUsers(roomId: string): TypingUser[] {
 export function useTypingSync(roomId: string | null) {
   const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
   const setTypingUsers = useTypingStore((s) => s.setTypingUsers);
+  const setRoomReceipts = useReceiptStore((s) => s.setRoomReceipts);
 
   useEffect(() => {
     if (!isLoggedIn || !homeserver || !accessToken || !roomId) return;
@@ -374,13 +418,14 @@ export function useTypingSync(roomId: string | null) {
         if (cancelled || isStale()) return;
         syncToken = resp.next_batch;
 
-        // Process typing events from joined rooms
+        // Process typing + read receipts from ephemeral events
         const joinedRooms = resp.rooms?.join;
         if (joinedRooms) {
           for (const [rid, roomData] of Object.entries(joinedRooms)) {
             const ephemeralEvents = roomData.ephemeral?.events || [];
             for (const event of ephemeralEvents) {
-              if (event.type === 'm.typing' && rid === roomId) {
+              if (rid !== roomId) continue;
+              if (event.type === 'm.typing') {
                 const typingUserIds = (event.content?.user_ids as string[]) || [];
                 // Convert to TypingUser objects (we'll use userId as displayName for now)
                 const users = typingUserIds.map((uid) => ({
@@ -388,6 +433,25 @@ export function useTypingSync(roomId: string | null) {
                   displayName: uid.startsWith('@') ? uid.split(':')[0].slice(1) : uid,
                 }));
                 setTypingUsers(rid, users);
+              } else if (event.type === 'm.receipt') {
+                // content = { $eventId: { m.read: { @user:server: { ts } } } }
+                const content = (event.content ?? {}) as Record<
+                  string,
+                  Record<string, Record<string, { ts?: number }> | undefined>
+                >;
+                const existing = useReceiptStore.getState().receipts[rid] ?? {};
+                const next = { ...existing };
+                for (const [eventId, relations] of Object.entries(content)) {
+                  const readBy = relations?.['m.read'];
+                  if (!readBy) continue;
+                  for (const [userId, info] of Object.entries(readBy)) {
+                    next[userId] = {
+                      eventId,
+                      ts: typeof info?.ts === 'number' ? info.ts : Date.now(),
+                    };
+                  }
+                }
+                setRoomReceipts(rid, next);
               }
             }
           }
@@ -408,7 +472,7 @@ export function useTypingSync(roomId: string | null) {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [homeserver, accessToken, isLoggedIn, roomId, setTypingUsers]);
+  }, [homeserver, accessToken, isLoggedIn, roomId, setTypingUsers, setRoomReceipts]);
 }
 
 // ============ Login Mutation ============
@@ -464,6 +528,8 @@ export interface DisplayMessage {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   /** Whether this message is still being streamed (AI response in progress) */
   isStreaming?: boolean;
+  /** Agent run status from org.agentteams.status / content.status (streaming, in_progress, success, failed...). */
+  agentStatus?: string;
   /** Root event ID if this message is a reply in a thread (hidden from main timeline). */
   threadId?: string;
   /** Whether this message is itself a thread reply (not the root). */
@@ -547,6 +613,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     mediaUrl: content.url as string | undefined,
     mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
     isStreaming: isMatrixStreaming(content),
+    agentStatus: isMatrixAgentStatus(content),
     isEdited,
     eventId: event.event_id,
     threadId: isThreadReply ? threadRootId : undefined,
@@ -561,6 +628,13 @@ function isMatrixStreaming(content: MatrixEvent['content']): boolean {
     || content.streaming === true
     || status === 'streaming'
     || status === 'in_progress';
+}
+
+/** Agent run status badge value, e.g. `streaming`, `in_progress`, `success`, `failed`. */
+export function isMatrixAgentStatus(content: MatrixEvent['content']): string | undefined {
+  const status = content['org.agentteams.status'] ?? content.status;
+  if (typeof status === 'string' && status.length > 0) return status;
+  return undefined;
 }
 
 /**

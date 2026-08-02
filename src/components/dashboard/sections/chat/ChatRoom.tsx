@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from './ChatStore';
-import { MessageList, type LocalOutboundMessage } from './structures/MessageList';
+import { MessageList, type LocalOutboundMessage, type ChatSystemNotice } from './structures/MessageList';
 import { ThreadPanel } from './structures/ThreadPanel';
 import type { ScrollPanelHandle } from './structures/ScrollPanel';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -20,6 +20,8 @@ import {
   type RoomMember,
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
+import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
+import { useMatrixReadReceipts } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Users, PanelRightClose, ArrowDown } from 'lucide-react';
@@ -59,6 +61,8 @@ export function ChatRoom({
   const [inputValue, setInputValue] = useState('');
   const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
+  const noticeCounterRef = useRef(0);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
@@ -82,6 +86,8 @@ export function ChatRoom({
   const stateQuery = useMatrixRoomState(roomId);
 
   const currentUserId = userId;
+  // Latest m.read receipts of every member, used for the ✓✓ read indicator.
+  const readReceipts = useMatrixReadReceipts(roomId);
 
   const allEvents = useMemo<MatrixEvent[]>(() => {
     if (!messagesQuery.isSuccess || !messagesQuery.data) return [];
@@ -184,6 +190,22 @@ export function ChatRoom({
     setLocalMessages(prev => prev.map(m => m.clientId === clientId ? { ...m, ...patch } : m));
   }, []);
 
+  const pushSystemNotice = useCallback((notice: ChatSystemNotice) => {
+    setSystemNotices(prev => {
+      // De-duplicate on identical messages: refresh the countdown instead of
+      // stacking an endless pile of banners on repeated throttling.
+      const existing = prev.find(n => n.kind === notice.kind && n.message === notice.message);
+      if (existing) {
+        return prev.map(n =>
+          n.id === existing.id
+            ? { ...n, createdAt: Date.now(), retryAfterMs: notice.retryAfterMs, autoRetry: notice.autoRetry }
+            : n
+        );
+      }
+      return [...prev, notice];
+    });
+  }, []);
+
   const sendOutbound = useCallback((params: {
     content: string;
     options?: { html?: boolean };
@@ -242,10 +264,25 @@ export function ChatRoom({
       },
       {
         onSuccess: () => removeLocal(cid),
-        onError: (err) => patchLocal(cid, { status: 'error', error: err.message }),
+        onError: (err) => {
+          patchLocal(cid, { status: 'error', error: err.message });
+          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo }, ++noticeCounterRef.current));
+        },
       }
     );
-  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal]);
+  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal, pushSystemNotice]);
+
+  const removeSystemNotice = useCallback((notice: ChatSystemNotice) => {
+    setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
+  }, []);
+
+  const handleRetryNotice = useCallback((notice: ChatSystemNotice) => {
+    const payload = notice.retryPayload;
+    setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
+    if (payload && roomId && isLoggedIn && userId) {
+      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo });
+    }
+  }, [sendOutbound, roomId, isLoggedIn, userId]);
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
     const trimmed = content.trim();
@@ -451,6 +488,11 @@ export function ChatRoom({
             onCancel={handleCancelLocal}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
+            notices={systemNotices}
+            onRetryNotice={handleRetryNotice}
+            onDismissNotice={removeSystemNotice}
+            readReceipts={readReceipts}
+            currentUserId={currentUserId}
             className="flex-1 min-h-0"
           />
           {/* Floating "new messages" badge, element-web style jump-to-latest */}
@@ -535,4 +577,32 @@ export function ChatRoom({
       )}
     </div>
   );
+}
+
+function buildSystemNoticeFromError(
+  err: unknown,
+  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null },
+  id: number
+): ChatSystemNotice {
+  const retryAfterMs = getRateLimitRetryDelay(err);
+  const isRateLimited = err instanceof MatrixRequestError && err.isRateLimited;
+  if (isRateLimited) {
+    return {
+      id,
+      kind: 'rate-limited',
+      message: `消息发送失败：服务商限流中，${Math.ceil(retryAfterMs / 1000)} 秒后自动重试`,
+      createdAt: Date.now(),
+      retryAfterMs,
+      autoRetry: true,
+      retryPayload: payload,
+    };
+  }
+  return {
+    id,
+    kind: 'error',
+    message: `消息发送失败：${err instanceof Error ? err.message : '未知错误'}`,
+    createdAt: Date.now(),
+    autoRetry: false,
+    retryPayload: payload,
+  };
 }

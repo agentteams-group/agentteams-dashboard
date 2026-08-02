@@ -121,8 +121,51 @@ function buildMatrixUrl(path: string, params: Record<string, string | number | u
 
 async function throwIfNotOk(res: Response, fallback: string): Promise<void> {
   if (res.ok) return;
-  const data = await res.json().catch(() => ({ error: fallback }));
-  throw new Error(data.error || `${fallback}: ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  const errcode = typeof data.errcode === 'string' ? data.errcode : undefined;
+  const error = typeof data.error === 'string' ? data.error : fallback;
+  const retryAfterMs =
+    typeof data.retry_after_ms === 'number'
+      ? data.retry_after_ms
+      : typeof data.retry_after_ms === 'string'
+        ? Number(data.retry_after_ms)
+        : undefined;
+  throw new MatrixRequestError(error, errcode, res.status, retryAfterMs);
+}
+
+/**
+ * Structured Matrix Client-Server error. Carries the standard `errcode`
+ * (e.g. M_LIMIT_EXCEEDED), the HTTP status and — when the homeserver throttles
+ * the client — the suggested `retry_after_ms` so the UI can surface a
+ * "rate limited, retry in Ns" hint inside the conversation.
+ */
+export class MatrixRequestError extends Error {
+  readonly errcode: string | undefined;
+  readonly status: number;
+  readonly retryAfterMs: number | undefined;
+
+  constructor(message: string, errcode: string | undefined, status: number, retryAfterMs?: number) {
+    super(message);
+    this.name = 'MatrixRequestError';
+    this.errcode = errcode;
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+
+  get isRateLimited(): boolean {
+    return this.errcode === 'M_LIMIT_EXCEEDED' || this.status === 429;
+  }
+}
+
+/**
+ * Number of milliseconds until the rate limit lifts, bounded to a sane window
+ * so the UI never shows a multi-hour countdown. Falls back to a 30s default.
+ */
+export function getRateLimitRetryDelay(err: unknown): number {
+  if (err instanceof MatrixRequestError && err.isRateLimited && err.retryAfterMs) {
+    return Math.min(err.retryAfterMs, 5 * 60 * 1000);
+  }
+  return 30 * 1000;
 }
 
 export const matrixApi = {

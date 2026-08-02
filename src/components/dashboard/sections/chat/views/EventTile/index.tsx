@@ -2,6 +2,7 @@
 
 import { MessageBubble } from '../MessageBubble';
 import type { DisplayMessage } from '@/hooks/use-matrix';
+import type { ReadReceiptEntry } from '@/hooks/use-matrix';
 
 interface EventTileProps {
   _message: DisplayMessage;
@@ -15,6 +16,8 @@ interface EventTileProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
+  readReceipts?: Record<string, ReadReceiptEntry>;
+  currentUserId?: string | null;
 }
 
 export function EventTile({
@@ -29,6 +32,8 @@ export function EventTile({
   onResend,
   onCancel,
   memberMap,
+  readReceipts,
+  currentUserId,
 }: EventTileProps) {
   return (
     <MessageBubble
@@ -43,6 +48,8 @@ export function EventTile({
       onResend={onResend}
       onCancel={onCancel}
       memberMap={memberMap}
+      readReceipts={readReceipts}
+      currentUserId={currentUserId}
     />
   );
 }

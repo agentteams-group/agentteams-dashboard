@@ -5,7 +5,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
+import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
+import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -19,6 +21,9 @@ interface MessageBubbleProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
+  /** Latest m.read receipts of every user in the room (for ✓✓ read indicator). */
+  readReceipts?: Record<string, ReadReceiptEntry>;
+  currentUserId?: string | null;
 }
 
 function MessageTime({ timestamp }: { timestamp: number }) {
@@ -98,6 +103,8 @@ export function MessageBubble({
   onResend,
   onCancel,
   memberMap,
+  readReceipts,
+  currentUserId,
 }: MessageBubbleProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -107,6 +114,30 @@ export function MessageBubble({
 
   const showAvatar = !isContinuation && showSender;
   const actionsVisible = isHovered || showActions;
+
+  // element-web style delivery state for my own messages:
+  // sending → spinner, sent → single ✓, read by another member → double ✓✓.
+  const isReadByOthers =
+    message.isMe && !message.status && !!readReceipts
+      ? isMessageReadByOthers(message, currentUserId, readReceipts)
+      : false;
+
+  // Agent run status badge (org.agentteams.status). Only shown on other
+  // members' messages (agent runs), not for the user's own bubbles.
+  const agentStatusBadge = (() => {
+    if (message.isMe || !message.agentStatus) return null;
+    const status = message.agentStatus;
+    if (status === 'streaming' || status === 'in_progress' || status === 'running') {
+      return { label: '运行中', className: 'bg-sky-500/15 text-sky-600' };
+    }
+    if (status === 'success' || status === 'completed' || status === 'done') {
+      return { label: '已完成', className: 'bg-emerald-500/15 text-emerald-600' };
+    }
+    if (status === 'failed' || status === 'error') {
+      return { label: '失败', className: 'bg-red-500/15 text-red-600' };
+    }
+    return { label: status, className: 'bg-muted text-muted-foreground' };
+  })();
 
   const startEdit = useCallback(() => {
     setEditValue(message.content);
@@ -169,6 +200,11 @@ export function MessageBubble({
                 <span className="animate-pulse">streaming</span>
               </Badge>
             )}
+            {agentStatusBadge && !message.isStreaming && (
+              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${agentStatusBadge.className}`}>
+                {agentStatusBadge.label}
+              </span>
+            )}
             {message.isEdited && (
               <span className="text-[10px] text-muted-foreground italic">(edited)</span>
             )}
@@ -223,10 +259,24 @@ export function MessageBubble({
             </div>
           )}
 
-          <div className={`text-[10px] ${
+          <div className={`flex items-center gap-1 text-[10px] ${
             isContinuation && !isHovered && !showActions ? 'opacity-0 group-hover/message:opacity-100' : ''
           }`}>
             <MessageTime timestamp={message.timestamp} />
+            {/* element-web style delivery ticks for my own messages */}
+            {message.isMe && message.status === 'sending' && (
+              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" aria-label="发送中" />
+            )}
+            {message.isMe && message.status === 'error' && (
+              <span className="text-red-500 font-medium" title="发送失败">!</span>
+            )}
+            {message.isMe && !message.status && (
+              isReadByOthers ? (
+                <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+              ) : (
+                <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
+              )
+            )}
           </div>
         </div>
 

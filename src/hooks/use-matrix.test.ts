@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MatrixEvent } from '@/lib/matrix-api';
-import { formatMatrixEvents } from './use-matrix';
+import { formatMatrixEvents, isMessageReadByOthers } from './use-matrix';
 
 function message(
   eventId: string,
@@ -175,5 +175,60 @@ describe('formatMatrixEvents', () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ id: 'kept' });
+  });
+
+  it('extracts the agent run status from org.agentteams.status', () => {
+    const events = [
+      message('run', '处理中...', 100, { 'org.agentteams.status': 'in_progress' }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0].agentStatus).toBe('in_progress');
+    expect(messages[0].isStreaming).toBe(true);
+  });
+
+  it('leaves agentStatus undefined when no status is present', () => {
+    const events = [message('plain', '普通消息', 100)];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0].agentStatus).toBeUndefined();
+  });
+});
+
+describe('isMessageReadByOthers', () => {
+  const base = { isMe: true, timestamp: 100 };
+
+  it('returns true when another member has read past the message', () => {
+    const receipts = {
+      '@agent:example.test': { eventId: '$1', ts: 150 },
+    };
+    expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(true);
+  });
+
+  it('returns false when the other member read receipt is older', () => {
+    const receipts = {
+      '@agent:example.test': { eventId: '$1', ts: 50 },
+    };
+    expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
+  });
+
+  it('ignores the sender own receipt', () => {
+    const receipts = {
+      '@human:example.test': { eventId: '$1', ts: 150 },
+    };
+    expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
+  });
+
+  it('returns false for messages that are not mine', () => {
+    const receipts = {
+      '@agent:example.test': { eventId: '$1', ts: 150 },
+    };
+    expect(isMessageReadByOthers({ isMe: false, timestamp: 100 }, '@human:example.test', receipts)).toBe(false);
+  });
+
+  it('returns false when no receipts exist', () => {
+    expect(isMessageReadByOthers(base, '@human:example.test', {})).toBe(false);
   });
 });
