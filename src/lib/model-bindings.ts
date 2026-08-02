@@ -26,28 +26,48 @@ function routeMatchesAlias(route: AiRoute, alias: string): boolean {
   });
 }
 
-function targetModelForAlias(mapping: Record<string, string> | undefined, alias: string): string {
-  if (!mapping) return '';
-  const exact = mapping[alias]?.trim();
-  if (exact) return exact;
+// Higress ai-proxy / model-mapper semantics for a modelMapping table:
+//   - an exact key wins over wildcard keys
+//   - `*` is the fallback wildcard (and `gpt-3-*` style prefixes also match)
+//   - a target of "" means "keep the original request model name" (passthrough)
+//   - no mapping at all also forwards the request model name unchanged
+//   - a configured mapping with no matching key makes the request fail
+function resolveTargetModel(
+  mapping: Record<string, string> | undefined,
+  alias: string,
+): { target: string; passthrough: boolean } {
+  if (!mapping) return { target: alias, passthrough: true };
+  const exact = mapping[alias];
+  if (typeof exact === 'string') {
+    const trimmed = exact.trim();
+    return trimmed ? { target: trimmed, passthrough: false } : { target: alias, passthrough: true };
+  }
   const matchedPattern = Object.keys(mapping).find((pattern) => matchesPattern(alias, pattern));
-  return matchedPattern ? mapping[matchedPattern].trim() : '';
+  if (matchedPattern !== undefined) {
+    const value = mapping[matchedPattern];
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    return trimmed ? { target: trimmed, passthrough: false } : { target: alias, passthrough: true };
+  }
+  return { target: '', passthrough: false };
 }
 
-// Higress maps the *request model name* to a provider-supported model name in
-// the provider's rawConfigs.modelMapping (ai-proxy). Its keys are therefore
-// valid request model aliases, and a route upstream that lacks its own mapping
-// still resolves through the provider mapping. Guard against non-string values
-// because rawConfigs is untyped in the Console response.
-function providerModelMapping(provider: LlmProviderResponse | undefined): Record<string, string> | undefined {
-  if (!provider) return undefined;
-  const mapping = provider.rawConfigs?.modelMapping;
+// Normalize an untyped mapping value into a Record<string,string>, treating an
+// empty (or fully non-string) mapping as "not configured".
+function normalizeMapping(mapping: unknown): Record<string, string> | undefined {
   if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) return undefined;
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(mapping)) {
     if (typeof value === 'string') result[key] = value;
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+// Higress maps the *request model name* to a provider-supported model name in
+// the provider's rawConfigs.modelMapping (ai-proxy). Its keys are therefore
+// valid request model aliases, and a route upstream that lacks its own mapping
+// still resolves through the provider mapping.
+function providerModelMapping(provider: LlmProviderResponse | undefined): Record<string, string> | undefined {
+  return normalizeMapping(provider?.rawConfigs?.modelMapping);
 }
 
 export function buildModelBindings(
@@ -77,13 +97,16 @@ export function buildModelBindings(
 
     for (const upstream of route.upstreams) {
       const provider = providersByName.get(upstream.provider);
-      // Route-level mapping wins; fall back to the provider-level mapping when
-      // the upstream has no entry for this alias.
       const providerMapping = providerModelMapping(provider);
       for (const requestModelAlias of routeAliases) {
-        const targetModel =
-          targetModelForAlias(upstream.modelMapping, requestModelAlias) ||
-          targetModelForAlias(providerMapping, requestModelAlias);
+        // ai-proxy: when the route upstream declares a modelMapping it fully
+        // overrides the provider-level mapping; otherwise the provider mapping
+        // applies. No mapping (or a matched mapping with an empty target) means
+        // the request model name is forwarded unchanged, which is callable.
+        const routeMapping = normalizeMapping(upstream.modelMapping);
+        const mapping = routeMapping ?? providerMapping;
+        const resolved = resolveTargetModel(mapping, requestModelAlias);
+        const targetModel = resolved.passthrough ? requestModelAlias : resolved.target;
         const binding: AgentTeamsModelBinding = {
           requestModelAlias,
           routeName: route.name,

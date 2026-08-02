@@ -62,3 +62,12 @@ This file records user instructions, preferences, and teachings for reference in
   - Typing indicator pipeline: ChatRoom uses `useTypingNotification` (throttle 4s, idle-stop 4s, stop on send/unmount) for outgoing, and `useTypingSync` (long-poll /sync) for incoming. `matrix-store.syncGeneration` is bumped on logout to kill in-flight sync loops with stale tokens.
   - `atBottomStateChange` from react-virtuoso drives both the autoScroll flag and the "N 条新消息" jump-to-latest badge in ChatRoom; do not duplicate scroll-position math elsewhere.
   - Removed dead components: chat/message-bubble.tsx (legacy) and chat/components/MessageInput.tsx (legacy); active ones are views/MessageBubble.tsx and chat-composer.tsx.
+
+[Project Knowledge Summary]
+- Date: 2026-08-02
+- Context: Discovered by Agent while fixing Higress route alias binding "不可用" misreport for sensenova-6.7-flash-lite
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Higress ai-proxy / model-mapper semantics: `modelMapping` with an empty-string target `""` means "keep the original request model name" (passthrough); a route/upstream that declares no mapping at all also forwards the request model name unchanged and is callable. Only a *configured* mapping with no matching key (exact, `gpt-3-*` prefix, or `*` fallback) makes the request fail. When checking a model binding's availability, passthrough must count as available with `targetModel` equal to the alias.
+  - `rawConfigs.modelMapping` on a Higress provider is untyped in the Console response, so values must be type-guarded to strings before use.
+  - When a route upstream declares its own `modelMapping`, it fully overrides the provider-level `rawConfigs.modelMapping` (ai-proxy route config wins); it does not fall back to the provider mapping when a key is missing.

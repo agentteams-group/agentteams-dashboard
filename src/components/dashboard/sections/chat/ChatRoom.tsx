@@ -75,6 +75,7 @@ export function ChatRoom({
   const prevMsgLastIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
   const localCounterRef = useRef(0);
+  const didInitialScrollRef = useRef(false);
 
   const messagesQuery = useMatrixRoomMessages(roomId);
   const membersQuery = useMatrixRoomMembers(roomId);
@@ -156,6 +157,19 @@ export function ChatRoom({
     prevMsgCountRef.current = formattedMessages.length;
     prevMsgLastIdRef.current = lastId;
   }, [formattedMessages, autoScroll, markAllRead]);
+
+  // Landing position for a freshly opened room: Virtuoso's
+  // initialTopMostItemIndex only applies at mount time, when the list is still
+  // empty, so the first load after data arrives must scroll to the latest
+  // message explicitly. Without this the room opens at the top and the user
+  // has to pull down manually.
+  useEffect(() => {
+    if (!messagesQuery.isSuccess || formattedMessages.length === 0) return;
+    if (didInitialScrollRef.current) return;
+    didInitialScrollRef.current = true;
+    scrollRef.current?.scrollToBottom({ smooth: false });
+    markAllRead();
+  }, [messagesQuery.isSuccess, formattedMessages, markAllRead]);
 
   const removeLocal = useCallback((clientId: string) => {
     setLocalMessages(prev => prev.filter(m => m.clientId !== clientId));

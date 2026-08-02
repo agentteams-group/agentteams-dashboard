@@ -12,6 +12,7 @@ import type {
   CreateConsumerRequest,
   WorkerResponse,
   WorkerPhase,
+  TeamResponse,
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
 import { useNotificationStore } from '@/lib/notification-store';
@@ -200,6 +201,11 @@ export function useDeleteTeam() {
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteTeam(name),
     onSuccess: (_, name) => {
+      // Optimistically drop the team so the table updates immediately even if
+      // the follow-up refetch is slow or the controller is still converging.
+      queryClient.setQueryData<TeamResponse[]>(['agentteams-teams'], (old) =>
+        (old ?? []).filter((team) => team.name !== name),
+      );
       queryClient.invalidateQueries({ queryKey: ['agentteams-teams'] });
       queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
       toast.success(`团队 "${name}" 已删除`);

@@ -205,4 +205,95 @@ describe('model bindings', () => {
       available: true,
     }]);
   });
+
+  it('treats an upstream without any modelMapping as a callable passthrough', () => {
+    // Higress ai-proxy forwards the request model name unchanged when neither
+    // the route upstream nor the provider declares a mapping, so the binding
+    // must be usable instead of showing "-" / 不可用.
+    const bindings = buildModelBindings(
+      ['sensenova-6.7-flash-lite'],
+      [{
+        name: 'default-ai-route',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        upstreams: [{ provider: 'openai-compat', weight: 100 }],
+      }],
+      [{ name: 'openai-compat', type: 'openai', tokenCount: 1 }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'sensenova-6.7-flash-lite',
+      routeName: 'default-ai-route',
+      providerName: 'openai-compat',
+      targetModel: 'sensenova-6.7-flash-lite',
+      available: true,
+    }]);
+  });
+
+  it('treats an empty-string mapping target as a callable passthrough', () => {
+    // model-mapper semantics: a target of "" keeps the original model name.
+    const bindings = buildModelBindings(
+      ['team-chat'],
+      [{
+        name: 'chat',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+        upstreams: [{ provider: 'openai', weight: 100, modelMapping: { '*': '' } }],
+      }],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'team-chat',
+      routeName: 'chat',
+      providerName: 'openai',
+      targetModel: 'team-chat',
+      available: true,
+    }]);
+  });
+
+  it('keeps an alias unavailable when a route mapping exists but does not match', () => {
+    // Once a route upstream declares its own modelMapping it overrides the
+    // provider-level mapping; a request model with no matching key fails, so
+    // it must not fall back to the provider mapping.
+    const bindings = buildModelBindings(
+      ['sensenova-6.7-flash-lite'],
+      [{
+        name: 'ark',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        modelPredicates: [{ matchType: 'PRE', matchValue: 'sensenova-' }],
+        upstreams: [{ provider: 'ark', weight: 100, modelMapping: { 'ark-code-latest': 'ark-code-latest' } }],
+      }],
+      [{ name: 'ark', type: 'ark', tokenCount: 1, rawConfigs: { modelMapping: { 'sensenova-6.7-flash-lite': 'ep-sensenova' } } }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'sensenova-6.7-flash-lite',
+      routeName: 'ark',
+      providerName: 'ark',
+      targetModel: '',
+      available: false,
+    }]);
+  });
+
+  it('resolves a provider mapping when the route upstream declares none', () => {
+    // A route upstream that only sets provider/weight still resolves aliases
+    // through the provider-level modelMapping.
+    const bindings = buildModelBindings(
+      ['ark-code-latest'],
+      [{
+        name: 'ark',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        modelPredicates: [{ matchType: 'PRE', matchValue: 'ark-' }],
+        upstreams: [{ provider: 'ark', weight: 100 }],
+      }],
+      [{ name: 'ark', type: 'ark', tokenCount: 1, rawConfigs: { modelMapping: { 'ark-code-latest': 'ep-ark' } } }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'ark-code-latest',
+      routeName: 'ark',
+      providerName: 'ark',
+      targetModel: 'ep-ark',
+      available: true,
+    }]);
+  });
 });

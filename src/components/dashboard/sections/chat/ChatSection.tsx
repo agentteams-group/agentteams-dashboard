@@ -10,7 +10,6 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import {
   useMatrixRoomMembers,
   useMatrixRoomState,
-  formatMatrixEvents,
   type RoomMember,
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
@@ -126,7 +125,10 @@ export function ChatSection() {
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
             {selectedRoom ? (
-              <ChatPanel room={selectedRoom} />
+              // key forces a fresh ChatRoom instance per room so input,
+              // in-flight local messages and scroll state never leak across
+              // rooms when switching conversations.
+              <ChatPanel key={selectedRoom.id} room={selectedRoom} />
             ) : (
               <ChatEmptyState
                 isLoggedIn={isLoggedIn}

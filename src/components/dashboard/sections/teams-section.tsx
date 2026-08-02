@@ -170,6 +170,19 @@ export function TeamsSection() {
           next.delete(teamName);
           return next;
         });
+        // Verify the delete actually landed on the controller: re-fetch the
+        // list after a short settling window. If the team still shows up, the
+        // controller either rejected the delete asynchronously or the room /
+        // workers are still converging, so surface it instead of silently
+        // showing the optimistic removal.
+        window.setTimeout(() => {
+          void refetch().then((result) => {
+            const stillExists = result.data?.some((team) => team.name === teamName);
+            if (stillExists) {
+              toast.warning(`团队 "${teamName}" 可能未完全删除，请检查后端状态`);
+            }
+          });
+        }, 2000);
       },
       onError: () => {
         setDeletingTeamNames((previous) => {
@@ -179,7 +192,7 @@ export function TeamsSection() {
         });
       },
     });
-  }, [deleteTarget, deleteTeam]);
+  }, [deleteTarget, deleteTeam, refetch]);
 
   const openEdit = useCallback((team: TeamResponse) => {
     setEditTeam(team);
