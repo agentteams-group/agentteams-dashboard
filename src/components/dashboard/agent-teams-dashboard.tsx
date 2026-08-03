@@ -41,6 +41,7 @@ import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
 const WorkersSection = lazy(() => import('./sections/workers-section').then(m => ({ default: m.WorkersSection })));
+const SkillsSection = lazy(() => import('./sections/skills-section').then(m => ({ default: m.SkillsSection })));
 const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ default: m.TeamsSection })));
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
@@ -51,6 +52,7 @@ const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ de
 const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
   workers: WorkersSection,
+  skills: SkillsSection,
   teams: TeamsSection,
   managers: ManagersSection,
   humans: HumansSection,
