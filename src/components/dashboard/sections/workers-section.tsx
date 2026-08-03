@@ -146,6 +146,7 @@ export function WorkersSection() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ skillName: string; description: string; filesCount: number; note?: string } | null>(null);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
 
@@ -309,10 +310,18 @@ export function WorkersSection() {
   const handleUpload = useCallback(
     async (file: File | null) => {
       if (!file) return;
+      setUploadResult(null);
       setUploading(true);
       try {
-        await agentteamsApi.uploadPackage(file);
-        setUploadOpen(false);
+        const result = await agentteamsApi.uploadPackage(file);
+        setUploadResult({
+          skillName: result.skillName,
+          description: result.description,
+          filesCount: result.filesCount,
+          note: result.note,
+        });
+      } catch {
+        // error is handled by the API layer
       } finally {
         setUploading(false);
       }
@@ -594,9 +603,10 @@ export function WorkersSection() {
 
       <WorkerUploadDialog
         open={uploadOpen}
-        onOpenChange={setUploadOpen}
+        onOpenChange={(open) => { if (!open) setUploadResult(null); setUploadOpen(open); }}
         isUploading={uploading}
         onFileChange={handleUpload}
+        result={uploadResult}
       />
 
       <ConfirmDeleteDialog

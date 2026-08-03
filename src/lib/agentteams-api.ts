@@ -555,7 +555,7 @@ export const agentteamsApi = {
     proxyRequest<void>(`/gateway/consumers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // Packages
-  uploadPackage: async (file: File): Promise<{ packageUri: string }> => {
+  uploadPackage: async (file: File): Promise<WorkerSkillUploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     const res = await fetch(apiUrl('/api/agentteams/packages'), {
@@ -566,7 +566,7 @@ export const agentteamsApi = {
       const text = await res.text().catch(() => '');
       throw new ApiError(`Upload failed ${res.status}: ${text}`, res.status, '/packages');
     }
-    return res.json();
+    return res.json() as Promise<WorkerSkillUploadResponse>;
   },
 
   // Infrastructure
