@@ -97,3 +97,16 @@ This file records user instructions, preferences, and teachings for reference in
   - Higress ai-proxy / model-mapper semantics: `modelMapping` with an empty-string target `""` means "keep the original request model name" (passthrough); a route/upstream that declares no mapping at all also forwards the request model name unchanged and is callable. Only a *configured* mapping with no matching key (exact, `gpt-3-*` prefix, or `*` fallback) makes the request fail. When checking a model binding's availability, passthrough must count as available with `targetModel` equal to the alias.
   - `rawConfigs.modelMapping` on a Higress provider is untyped in the Console response, so values must be type-guarded to strings before use.
   - When a route upstream declares its own `modelMapping`, it fully overrides the provider-level `rawConfigs.modelMapping` (ai-proxy route config wins); it does not fall back to the provider mapping when a key is missing.
+
+[Project Knowledge Summary]
+- Date: 2026-08-03
+- Context: 发现 Worker 容器无法读取 Dashboard 分发的技能包
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Worker 容器启动时缺少 AGENTTEAMS_FS_BUCKET 环境变量
+  - Dashboard 上传技能包到 MinIO 的 agentteams-storage bucket，路径为 agents/{workerName}/skills/{skillName}/
+  - Worker 容器只有 FS_ENDPOINT/ACCESS_KEY/SECRET_KEY，没有配置 FS_BUCKET
+  - 修复方案：在 worker 启动脚本中添加工具变量 AGENTTEAMS_FS_BUCKET=${AGENTTEAMS_FS_BUCKET:-agentteams-storage}
+  - 受影响的 Worker 需要重新创建才能生效
+  - PR: 待创建
+
