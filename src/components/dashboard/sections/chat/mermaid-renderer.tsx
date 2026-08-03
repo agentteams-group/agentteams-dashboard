@@ -15,11 +15,11 @@ const MermaidBlock = memo(function MermaidBlock({ chart }: MermaidBlockProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setSvg(null);
 
     const initAndRender = async () => {
+      setLoading(true);
+      setError(null);
+      setSvg(null);
       try {
         const mod = await import('mermaid');
         if (cancelled) return;

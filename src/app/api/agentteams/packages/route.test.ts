@@ -86,9 +86,8 @@ describe('POST /packages', () => {
   it('accepts a valid multipart request and returns success', async () => {
     const req = buildMultipartRequest(validZip);
     const res = await POST(req);
-    const text = await res.text();
-    console.log('DEBUG status:', res.status, 'body:', text);
     expect(res.status).toBe(200);
+    const text = await res.text();
     const json = JSON.parse(text);
     expect(json).toHaveProperty('success', true);
     expect(json).toHaveProperty('skillName', 'test-package');

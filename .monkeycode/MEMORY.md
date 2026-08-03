@@ -31,6 +31,32 @@ This file records user instructions, preferences, and teachings for reference in
 ## Entries
 
 [Project Knowledge Summary]
+- Date: 2026-08-03
+- Context: Agent fixed skill upload 502 error caused by Uint8Array type mismatch
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - MinIO SDK `putObject` third argument requires `stream.Readable | Buffer | string`, NOT `Uint8Array`
+  - `parseSkillPackage` returns file data as `Uint8Array` in `f.data`
+  - Fix: always wrap with `Buffer.from(f.data)` before passing to `putObject`
+  - Affected routes: `src/app/api/agentteams/packages/route.ts` and `src/app/api/agentteams/workers/[name]/skills/route.ts`
+  - PR #28: https://github.com/agentteams-group/agentteams-dashboard/pull/28
+
+[Project Knowledge Summary]
+- Date: 2026-08-03
+- Context: Agent implemented MCP server CRUD feature for skills management section
+- Category: Build Methods
+- Instructions:
+  - MCP servers are now managed via dedicated API routes: GET/POST /api/agentteams/mcps and GET/PUT/DELETE /api/agentteams/mcps/[name]
+  - MCP data is persisted to MinIO under mcp-servers/{name}.json
+  - New hooks: useMcpServers, useMcpServer, useCreateMcpServer, useUpdateMcpServer, useDeleteMcpServer
+  - New component: src/components/dashboard/sections/mcps/mcp-server-dialog.tsx (uses react-hook-form)
+  - SkillsSection now integrates MCP management with add/edit/delete buttons
+  - react-hook-form is now a dependency (added in this session)
+  - Label: MCP server name must match /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+  - transport values are 'sse' or 'streaminghttp'
+  - PR #27 created: https://github.com/agentteams-group/agentteams-dashboard/pull/27
+
+[Project Knowledge Summary]
 - Date: 2026-07-29
 - Context: Discovered by Agent while verifying resource deletion locking
 - Category: Environment Configuration

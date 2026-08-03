@@ -3,7 +3,6 @@ import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import {
   parseSkillPackage,
   skillObjectKey,
-  workerSkillsPrefix,
   SKILL_PACKAGE_MAX_BYTES,
 } from '@/lib/skill-package';
 
