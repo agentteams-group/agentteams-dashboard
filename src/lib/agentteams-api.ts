@@ -3,6 +3,7 @@
 
 import { ApiError, NetworkError } from '@/lib/api-error';
 import { apiUrl } from '@/lib/api-base';
+import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
 
 // ============ Response Types ============
 
@@ -764,6 +765,107 @@ export const agentteamsApi = {
       }
       await r.json();
       return undefined;
+    });
+  },
+
+  // Skill Center
+  listSkills: (queryParams?: string): Promise<{ skills: SkillEntry[]; total: number }> => {
+    const query = queryParams ? `?${queryParams}` : '';
+    return proxyRequest<{ skills: SkillEntry[]; total: number }>(`/api/agentteams/skills${query}`);
+  },
+
+  getSkill: (name: string): Promise<SkillEntry> =>
+    proxyRequest<SkillEntry>(`/api/agentteams/skills/${encodeURIComponent(name)}`),
+
+  createSkill: (file: File): Promise<SkillEntry & { success: boolean; conflict?: boolean }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = fetch(apiUrl('/api/agentteams/skills'), {
+      method: 'POST',
+      body: form,
+    });
+    return res.then(async (r) => {
+      const json = await r.json() as Record<string, unknown>;
+      if (!r.ok) {
+        if (r.status === 409 && json.conflict) {
+          return {
+            success: false,
+            conflict: true,
+            name: (json.existing as SkillEntry)?.name ?? '',
+            description: (json.existing as SkillEntry)?.description ?? '',
+            source: (json.existing as SkillEntry)?.source ?? 'custom',
+            sourceAlias: (json.existing as SkillEntry)?.sourceAlias,
+            version: (json.existing as SkillEntry)?.version,
+            createdAt: (json.existing as SkillEntry)?.createdAt ?? '',
+            updatedAt: (json.existing as SkillEntry)?.updatedAt ?? '',
+            fileCount: (json.existing as SkillEntry)?.fileCount ?? 0,
+          } as SkillEntry & { success: boolean; conflict: boolean };
+        }
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`上传技能失败: ${r.status} ${text}`, r.status, '/skills');
+      }
+      return json as unknown as SkillEntry & { success: boolean };
+    });
+  },
+
+  updateSkill: (name: string, data: { description?: string; version?: string }): Promise<SkillEntry> => {
+    const res = fetch(apiUrl(`/api/agentteams/skills/${encodeURIComponent(name)}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`更新技能失败: ${r.status} ${text}`, r.status, `/skills/${name}`);
+      }
+      return r.json() as Promise<SkillEntry>;
+    });
+  },
+
+  deleteSkill: (name: string): Promise<void> => {
+    const res = fetch(apiUrl(`/api/agentteams/skills/${encodeURIComponent(name)}`), {
+      method: 'DELETE',
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`删除技能失败: ${r.status} ${text}`, r.status, `/skills/${name}`);
+      }
+      await r.json();
+      return undefined;
+    });
+  },
+
+  // Nacos Config
+  getNacosConfig: (): Promise<NacosConfig | null> =>
+    proxyRequest<{ config: NacosConfig | null }>('/api/agentteams/skills/nacos/config').then((r) => r.config),
+
+  updateNacosConfig: (config: NacosConfig): Promise<NacosConfig> => {
+    const res = fetch(apiUrl('/api/agentteams/skills/nacos/config'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`更新 Nacos 配置失败: ${r.status} ${text}`, r.status, '/skills/nacos/config');
+      }
+      return r.json() as Promise<NacosConfig>;
+    });
+  },
+
+  syncNacosSkills: (): Promise<{ synced: number }> => {
+    const res = fetch(apiUrl('/api/agentteams/skills/nacos/sync'), {
+      method: 'POST',
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`Nacos 同步失败: ${r.status} ${text}`, r.status, '/skills/nacos/sync');
+      }
+      return r.json() as Promise<{ synced: number }>;
     });
   },
 };
