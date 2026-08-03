@@ -322,6 +322,19 @@ export interface PresignDownloadResponse {
   url: string;
 }
 
+export interface McpServerConfig {
+  name: string;
+  url: string;
+  transport: 'sse' | 'streaminghttp';
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface McpServerListResponse {
+  servers: McpServerConfig[];
+}
+
 export interface WorkerSkillsListResponse {
   skills: string[];
 }
@@ -702,4 +715,55 @@ export const agentteamsApi = {
   // Setup
   ensureAiGateway: (): Promise<{ success: boolean; message?: string }> =>
     proxyRequest<{ success: boolean; message?: string }>('/setup/ensure-ai', { method: 'POST' }),
+
+  // MCP Servers
+  listMcpServers: (): Promise<McpServerListResponse> =>
+    proxyRequest<McpServerListResponse>('/api/agentteams/mcps'),
+
+  getMcpServer: (name: string): Promise<McpServerConfig> =>
+    proxyRequest<McpServerConfig>(`/api/agentteams/mcps/${encodeURIComponent(name)}`),
+
+  createMcpServer: (data: { name: string; url: string; transport: string; description?: string }): Promise<McpServerConfig & { success: boolean }> => {
+    const res = fetch(apiUrl('/api/agentteams/mcps'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`创建 MCP 服务器失败: ${r.status} ${text}`, r.status, '/mcps');
+      }
+      return r.json() as Promise<McpServerConfig & { success: boolean }>;
+    });
+  },
+
+  updateMcpServer: (name: string, data: { url?: string; transport?: string; description?: string }): Promise<McpServerConfig & { success: boolean }> => {
+    const res = fetch(apiUrl(`/api/agentteams/mcps/${encodeURIComponent(name)}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`更新 MCP 服务器失败: ${r.status} ${text}`, r.status, `/mcps/${name}`);
+      }
+      return r.json() as Promise<McpServerConfig & { success: boolean }>;
+    });
+  },
+
+  deleteMcpServer: (name: string): Promise<void> => {
+    const res = fetch(apiUrl(`/api/agentteams/mcps/${encodeURIComponent(name)}`), {
+      method: 'DELETE',
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`删除 MCP 服务器失败: ${r.status} ${text}`, r.status, `/mcps/${name}`);
+      }
+      await r.json();
+      return undefined;
+    });
+  },
 };
