@@ -70,6 +70,7 @@ describe('GET /workers/[name]/skills', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toHaveProperty('skills');
+    expect(Array.isArray(json.skills)).toBe(true);
   });
 });
 

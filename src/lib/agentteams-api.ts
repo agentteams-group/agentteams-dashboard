@@ -660,17 +660,20 @@ export const agentteamsApi = {
   listWorkerSkills: (workerName: string) =>
     proxyRequest<WorkerSkillsListResponse>(`/workers/${encodeURIComponent(workerName)}/skills`),
 
-  uploadWorkerSkill: (workerName: string, file: File): Promise<WorkerSkillUploadResponse> =>
-    fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills`), {
+  uploadWorkerSkill: (workerName: string, file: File): Promise<WorkerSkillUploadResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills`), {
       method: 'POST',
-      body: file,
+      body: form,
     }).then(async (res) => {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new ApiError(`上传技能包失败: ${res.status} ${text}`, res.status, `/workers/${workerName}/skills`);
       }
       return res.json() as Promise<WorkerSkillUploadResponse>;
-    }),
+    });
+  },
 
   // Logs
   getLogs: (component: string, options?: { tail?: number; since?: string; level?: string }) => {
