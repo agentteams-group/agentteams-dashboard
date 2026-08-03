@@ -322,6 +322,19 @@ export interface PresignDownloadResponse {
   url: string;
 }
 
+export interface WorkerSkillsListResponse {
+  skills: string[];
+}
+
+export interface WorkerSkillUploadResponse {
+  success: boolean;
+  skillName: string;
+  description: string;
+  filesCount: number;
+  prefix: string;
+  note?: string;
+}
+
 export interface LogLine {
   timestamp: string;
   level: string;
@@ -642,6 +655,22 @@ export const agentteamsApi = {
       throw new ApiError(`Upload failed: ${res.status} ${text}`, res.status, url);
     }
   },
+
+  // Worker skills distribution
+  listWorkerSkills: (workerName: string) =>
+    proxyRequest<WorkerSkillsListResponse>(`/workers/${encodeURIComponent(workerName)}/skills`),
+
+  uploadWorkerSkill: (workerName: string, file: File): Promise<WorkerSkillUploadResponse> =>
+    fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills`), {
+      method: 'POST',
+      body: file,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ApiError(`上传技能包失败: ${res.status} ${text}`, res.status, `/workers/${workerName}/skills`);
+      }
+      return res.json() as Promise<WorkerSkillUploadResponse>;
+    }),
 
   // Logs
   getLogs: (component: string, options?: { tail?: number; since?: string; level?: string }) => {

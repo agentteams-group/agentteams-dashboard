@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Link2,
   Wifi,
+  Upload,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +22,8 @@ import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useSearch } from '@/lib/search-context';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { WORKER_PHASE_BADGE_CLASSES, MANAGER_PHASE_BADGE_CLASSES } from '@/lib/phase-colors';
+import { SkillDistributeDialog } from '@/components/dashboard/sections/skills/skill-distribute-dialog';
+import { Button } from '@/components/ui/button';
 
 
 interface SkillInfo {
@@ -162,6 +165,7 @@ export function SkillsSection() {
   const [localFilter, setLocalFilter] = useState('');
   const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [mcpExpanded, setMcpExpanded] = useState<Set<string>>(new Set());
+  const [distributeOpen, setDistributeOpen] = useState(false);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -314,6 +318,12 @@ export function SkillsSection() {
         description="Worker 技能和 MCP 服务器配置一览"
         onRefresh={handleRefresh}
         isRefreshing={isRefetching}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setDistributeOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            分发技能
+          </Button>
+        }
       />
 
       {/* Stats Banner */}
@@ -512,6 +522,7 @@ export function SkillsSection() {
           </div>
         )}
       </div>
+      <SkillDistributeDialog dialogOpen={distributeOpen} onOpenChange={setDistributeOpen} />
     </div>
   );
 }
