@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     for (const f of parsed.files) {
       const key = skillObjectKey('global', parsed.skillName, f.relativePath);
-      await client.putObject(bucket, key, f.data, f.data.byteLength, {
+      await client.putObject(bucket, key, Buffer.from(f.data), f.data.byteLength, {
         'Content-Type': 'application/octet-stream',
       });
     }
