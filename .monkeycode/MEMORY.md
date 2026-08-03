@@ -32,6 +32,21 @@ This file records user instructions, preferences, and teachings for reference in
 
 [Project Knowledge Summary]
 - Date: 2026-08-03
+- Context: Agent implemented Skill Center feature (skill-center) with issue-spec workflow
+- Category: Build Methods
+- Instructions:
+  - New API routes: GET/POST /api/agentteams/skills, GET/PUT/DELETE /api/agentteams/skills/[name], GET/PUT /api/agentteams/skills/nacos/config, POST /api/agentteams/skills/nacos/sync
+  - New hooks: src/hooks/use-skill-center.ts (useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill), src/hooks/use-nacos-config.ts (useNacosConfig, useUpdateNacosConfig, useNacosSync)
+  - New components: src/components/dashboard/sections/skills/skill-center.tsx, skill-upload-dialog.tsx, nacos-config-dialog.tsx, skill-selector.tsx
+  - SkillCenter replaces skills-section.tsx's dynamic skill view; Worker skill selection now uses SkillSelector component instead of comma-separated input
+  - Skills stored in MinIO `skills` bucket with metadata at `skills/{name}.json`
+  - Nacos config persisted to `.skill-center-config.json` in project root
+  - TypeScript namespace should NOT be used in server-side config modules (causes @typescript-eslint/no-namespace error)
+  - createSkill API returns 409 on conflict with `{ success: false, conflict: true, existing: SkillEntry }`; client handles via response status, not return value
+  - PR #33 created: https://github.com/agentteams-group/agentteams-dashboard/pull/33
+
+[Project Knowledge Summary]
+- Date: 2026-08-03
 - Context: Agent fixed skill upload 502 error caused by Uint8Array type mismatch
 - Category: Troubleshooting & Debugging
 - Instructions:
