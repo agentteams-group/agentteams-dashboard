@@ -28,7 +28,7 @@ import { Users, PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
-import { useMatrixTypingUsers, useTypingNotification, useTypingSync } from '@/hooks/use-matrix';
+import { useMatrixTypingUsers, useTypingNotification, useTypingSync, useMatrixUploadMedia } from '@/hooks/use-matrix';
 
 interface ChatRoomProps {
   roomId: string;
@@ -62,10 +62,12 @@ export function ChatRoom({
   const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const noticeCounterRef = useRef(0);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
+  const uploadMutation = useMatrixUploadMedia();
   const editMutation = useMatrixEditMessage();
   const redactMutation = useMatrixRedactMessage();
   const setReadMarkerMutation = useMatrixSetReadMarker();
@@ -283,6 +285,52 @@ export function ChatRoom({
       sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo });
     }
   }, [sendOutbound, roomId, isLoggedIn, userId]);
+
+  // Upload a file to the Matrix homeserver, then send it as an m.image /
+  // m.file message so it appears in the room timeline like any other message.
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!roomId || !isLoggedIn || !userId) return;
+    setIsUploading(true);
+    const cid = `local-${Date.now()}-${++localCounterRef.current}`;
+    const isImage = file.type.startsWith('image/');
+    setLocalMessages(prev => [...prev, {
+      clientId: cid,
+      sender: userId,
+      senderShort: userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId,
+      content: file.name,
+      timestamp: Date.now(),
+      status: 'sending' as const,
+    }]);
+    try {
+      const { content_uri } = await uploadMutation.mutateAsync({ roomId, file });
+      const extra: Record<string, unknown> = {
+        msgtype: isImage ? 'm.image' : 'm.file',
+        url: content_uri,
+        info: {
+          mimetype: file.type || 'application/octet-stream',
+          size: file.size,
+        },
+      };
+      sendMutation.mutate(
+        { roomId, body: file.name, extra },
+        {
+          onSuccess: () => removeLocal(cid),
+          onError: (err) => {
+            patchLocal(cid, { status: 'error', error: err.message });
+            pushSystemNotice(buildSystemNoticeFromError(err, { content: file.name }, ++noticeCounterRef.current));
+          },
+        }
+      );
+    } catch (err) {
+      patchLocal(cid, {
+        status: 'error',
+        error: err instanceof Error ? err.message : '上传失败',
+      });
+      pushSystemNotice(buildSystemNoticeFromError(err, { content: file.name }, ++noticeCounterRef.current));
+    } finally {
+      setIsUploading(false);
+    }
+  }, [roomId, isLoggedIn, userId, uploadMutation, sendMutation, removeLocal, patchLocal, pushSystemNotice]);
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
     const trimmed = content.trim();
@@ -517,6 +565,8 @@ export function ChatRoom({
             placeholder={replyTo ? `回复 ${replyTo.senderShort}... (Enter 发送)` : `发送消息到 ${roomName}... (Enter 发送, Shift+Enter 换行)`}
             disabled={!canSend || !isLoggedIn}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
+            onFileUpload={handleFileUpload}
+            isUploading={isUploading}
             onSlashCommand={(cmd) => {
               if (cmd === 'members') setShowMembers(v => !v);
             }}
