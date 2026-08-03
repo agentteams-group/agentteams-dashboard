@@ -13,17 +13,32 @@ import {
   Link2,
   Wifi,
   Upload,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useManagers } from '@/hooks/use-agentteams-managers';
+import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useSearch } from '@/lib/search-context';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { WORKER_PHASE_BADGE_CLASSES, MANAGER_PHASE_BADGE_CLASSES } from '@/lib/phase-colors';
 import { SkillDistributeDialog } from '@/components/dashboard/sections/skills/skill-distribute-dialog';
 import { Button } from '@/components/ui/button';
+import { McpServerDialog } from '@/components/dashboard/sections/mcps/mcp-server-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 
 interface SkillInfo {
@@ -31,13 +46,6 @@ interface SkillInfo {
   workers: { name: string; phase: string; runtime: string }[];
   managers: { name: string; phase: string }[];
   totalCount: number;
-}
-
-interface MCPServerInfo {
-  name: string;
-  url: string;
-  transport: string;
-  workers: string[];
 }
 
 function SkillCard({ skill, isExpanded, onToggle }: {
@@ -161,11 +169,16 @@ function SkillCard({ skill, isExpanded, onToggle }: {
 export function SkillsSection() {
   const { data: workers, refetch, isRefetching } = useWorkers();
   const { data: managers } = useManagers();
+  const { data: mcpServerList } = useMcpServers();
+  const deleteMcp = useDeleteMcpServer();
   const { searchQuery } = useSearch();
   const [localFilter, setLocalFilter] = useState('');
   const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [mcpExpanded, setMcpExpanded] = useState<Set<string>>(new Set());
   const [distributeOpen, setDistributeOpen] = useState(false);
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
+  const [editingMcp, setEditingMcp] = useState<{ name: string; url: string; transport: 'sse' | 'streaminghttp' } | undefined>();
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -240,25 +253,24 @@ export function SkillsSection() {
     return Array.from(skillMap.values()).sort((a, b) => b.totalCount - a.totalCount);
   }, [workers, managers]);
 
-  // Extract MCP server configurations from workers
+  // MCP servers from API
   const mcpServers = useMemo(() => {
-    const serverMap = new Map<string, MCPServerInfo>();
-
-    workers?.forEach((w) => {
-      const mcpConfigs = w.mcpServers;
-      if (mcpConfigs && Array.isArray(mcpConfigs)) {
-        mcpConfigs.forEach((mcp) => {
-          const key = `${mcp.name}-${mcp.url}`;
-          if (!serverMap.has(key)) {
-            serverMap.set(key, { name: mcp.name, url: mcp.url, transport: mcp.transport, workers: [] });
-          }
-          serverMap.get(key)!.workers.push(w.name);
-        });
-      }
+    const serverMap = new Map<string, { name: string; url: string; transport: string; workers: string[]; description?: string }>();
+    mcpServerList?.forEach((s) => {
+      serverMap.set(s.name, { name: s.name, url: s.url, transport: s.transport, workers: [], description: s.description });
     });
-
+    workers?.forEach((w) => {
+      w.mcpServers?.forEach((mcp) => {
+        const existing = serverMap.get(mcp.name);
+        if (existing) {
+          if (!existing.workers.includes(w.name)) {
+            existing.workers.push(w.name);
+          }
+        }
+      });
+    });
     return Array.from(serverMap.values());
-  }, [workers]);
+  }, [mcpServerList, workers]);
 
   // Worker skills summary (which worker has which skill)
   const workerSkillMap = useMemo(() => {
@@ -446,6 +458,15 @@ export function SkillsSection() {
           <Server className="w-5 h-5 text-emerald-500" />
           MCP 服务器配置
           <Badge variant="outline" className="text-[10px]">{filteredMcp.length}</Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 text-xs"
+            onClick={() => { setEditingMcp(undefined); setMcpDialogOpen(true); }}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            添加
+          </Button>
         </h2>
         {filteredMcp.length === 0 ? (
           <Card className="glass-card">
@@ -453,7 +474,7 @@ export function SkillsSection() {
               <Server className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">
                 {mcpServers.length === 0
-                  ? '暂无 MCP 服务器配置。可在创建/编辑 Worker 时添加 MCP 服务器。'
+                  ? '暂无 MCP 服务器配置。点击"添加"按钮创建新的 MCP 服务器。'
                   : '没有匹配的 MCP 服务器'}
               </p>
             </CardContent>
@@ -484,12 +505,29 @@ export function SkillsSection() {
                             <Link2 className="w-3 h-3 inline mr-1" />
                             {mcp.url}
                           </p>
+                          {mcp.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[400px]">{mcp.description}</p>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <Badge variant="outline" className="text-[10px]">
                           {mcp.workers.length} Worker
                         </Badge>
+                        <button
+                          onClick={() => setEditingMcp({ name: mcp.name, url: mcp.url, transport: mcp.transport as 'sse' | 'streaminghttp' })}
+                          className="p-1.5 hover:bg-accent rounded"
+                          title="编辑"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(mcp.name)}
+                          className="p-1.5 hover:bg-destructive/10 rounded"
+                          title="删除"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
                         <button
                           onClick={() => toggleMcp(mcp.name)}
                           className="p-1 hover:bg-accent rounded"
@@ -523,6 +561,35 @@ export function SkillsSection() {
         )}
       </div>
       <SkillDistributeDialog dialogOpen={distributeOpen} onOpenChange={setDistributeOpen} />
+      <McpServerDialog
+        open={mcpDialogOpen}
+        onOpenChange={setMcpDialogOpen}
+        server={editingMcp}
+      />
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除 MCP 服务器"{deleteTarget}"吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (deleteTarget) {
+                  await deleteMcp.mutateAsync(deleteTarget);
+                  setDeleteTarget(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
