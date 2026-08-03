@@ -19,11 +19,11 @@ export async function POST(
       return NextResponse.json({ error: 'Missing file' }, { status: 400 });
     }
 
-    // Forward to Matrix media upload endpoint
-    const targetUrl = `${homeserver}/_matrix/media/v3/upload`;
-
-    const uploadFormData = new FormData();
-    uploadFormData.append('file', file);
+    // Matrix media upload expects the raw file bytes as the request body with
+    // a Content-Type matching the file's MIME type — not a multipart wrapper.
+    const filename = file.name;
+    const targetUrl = `${homeserver}/_matrix/media/v3/upload?filename=${encodeURIComponent(filename)}`;
+    const fileBuffer = await file.arrayBuffer();
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000); // 60s for large files
@@ -34,8 +34,9 @@ export async function POST(
         signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': file.type || 'application/octet-stream',
         },
-        body: uploadFormData,
+        body: fileBuffer,
       });
 
       const data = await res.json();

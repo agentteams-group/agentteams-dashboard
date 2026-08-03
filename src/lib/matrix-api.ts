@@ -302,7 +302,7 @@ export const matrixApi = {
     roomId: string,
     file: File
   ): Promise<{ content_uri: string }> => {
-    const url = apiUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/upload?homeserver=${encodeURIComponent(homeserver)}`);
+    const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/upload`, { homeserver });
     const formData = new FormData();
     formData.append('file', file);
     const res = await fetch(url, {
