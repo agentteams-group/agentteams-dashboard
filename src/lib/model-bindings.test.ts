@@ -501,7 +501,6 @@ describe('model bindings', () => {
       conflict: false,
     }));
   });
-});
 
   it('filters passthrough when explicit available binding exists for the same alias', () => {
     // User scenario: workers switched to test-qwen3.6. agentteams-test has
@@ -539,3 +538,4 @@ describe('model bindings', () => {
       passthrough: false,
     });
   });
+});
