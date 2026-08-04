@@ -719,10 +719,10 @@ export const agentteamsApi = {
 
   // MCP Servers
   listMcpServers: (): Promise<McpServerListResponse> =>
-    proxyRequest<McpServerListResponse>('/api/agentteams/mcps'),
+    proxyRequest<McpServerListResponse>('/mcps'),
 
   getMcpServer: (name: string): Promise<McpServerConfig> =>
-    proxyRequest<McpServerConfig>(`/api/agentteams/mcps/${encodeURIComponent(name)}`),
+    proxyRequest<McpServerConfig>(`/mcps/${encodeURIComponent(name)}`),
 
   createMcpServer: (data: { name: string; url: string; transport: string; description?: string }): Promise<McpServerConfig & { success: boolean }> => {
     const res = fetch(apiUrl('/api/agentteams/mcps'), {
@@ -771,11 +771,11 @@ export const agentteamsApi = {
   // Skill Center
   listSkills: (queryParams?: string): Promise<{ skills: SkillEntry[]; total: number }> => {
     const query = queryParams ? `?${queryParams}` : '';
-    return proxyRequest<{ skills: SkillEntry[]; total: number }>(`/api/agentteams/skills${query}`);
+    return proxyRequest<{ skills: SkillEntry[]; total: number }>(`/skills${query}`);
   },
 
   getSkill: (name: string): Promise<SkillEntry> =>
-    proxyRequest<SkillEntry>(`/api/agentteams/skills/${encodeURIComponent(name)}`),
+    proxyRequest<SkillEntry>(`/skills/${encodeURIComponent(name)}`),
 
   createSkill: (file: File): Promise<SkillEntry & { success: boolean; conflict?: boolean }> => {
     const form = new FormData();
@@ -839,7 +839,7 @@ export const agentteamsApi = {
 
   // Nacos Config
   getNacosConfig: (): Promise<NacosConfig | null> =>
-    proxyRequest<{ config: NacosConfig | null }>('/api/agentteams/skills/nacos/config').then((r) => r.config),
+    proxyRequest<{ config: NacosConfig | null }>('/skills/nacos/config').then((r) => r.config),
 
   updateNacosConfig: (config: NacosConfig): Promise<NacosConfig> => {
     const res = fetch(apiUrl('/api/agentteams/skills/nacos/config'), {
