@@ -125,3 +125,14 @@ This file records user instructions, preferences, and teachings for reference in
   - 受影响的 Worker 需要重新创建才能生效
   - PR: 待创建
 
+[Project Knowledge Summary]
+- Date: 2026-08-03
+- Context: Agent fixed P1 (Nacos skills not persisted) and P2 (cross-source name uniqueness) review findings in skill center
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - syncNacosSkills() in src/lib/skill-center-storage.ts persists Nacos skill metadata to MinIO skills bucket (source='nacos')
+  - Custom skills take precedence: if a custom skill exists with same name, Nacos sync skips it and updates updatedAt only
+  - GET /api/agentteams/skills returns all skills from MinIO (no need for separate Nacos query at request time)
+  - POST /api/agentteams/skills checks name uniqueness across ALL sources (custom + nacos), returns 409 with existing entry
+  - The shared storage module skill-center-storage.ts should be used by both route.ts and sync/route.ts to avoid duplication
+

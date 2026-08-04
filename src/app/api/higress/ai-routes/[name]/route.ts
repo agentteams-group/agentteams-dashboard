@@ -1,6 +1,6 @@
-// GET/PUT/DELETE /api/higress/ai-routes/[name] — Single AI Route operations
+// PUT/DELETE /api/higress/ai-routes/[name] — Single AI Route operations
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../../proxy-helper';
+import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, prepareAiRoutePayload } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 import { validateAiRoutePayload } from '@/lib/higress-api';
 
@@ -12,31 +12,6 @@ function unwrapData(body: unknown): unknown {
   return body && typeof body === 'object' && !Array.isArray(body) && 'data' in body
     ? (body as Record<string, unknown>).data
     : body;
-}
-
-// GET — Get a single AI route
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ name: string }> }
-) {
-  const { name } = await params;
-  try {
-    const rejected = await requireHigressConsoleAccess(request);
-    if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
-    const { response, body } = await callHigressConsole(
-      `/v1/ai/routes/${encodeURIComponent(name)}`,
-      { method: 'GET', cookie }
-    );
-
-    if (!response.ok) {
-      return higressErrorResponse(response, body);
-    }
-
-    return NextResponse.json({ ...(unwrapData(body) as Record<string, unknown>), fallbackConfigWritable: isFallbackConfigWriteEnabled() });
-  } catch (err: unknown) {
-    return higressProxyErrorResponse(err, 'Failed to get route');
-  }
 }
 
 // PUT — Update an AI route

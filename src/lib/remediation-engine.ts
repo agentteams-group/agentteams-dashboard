@@ -84,28 +84,6 @@ export function determineRemediation(violation: PolicyViolation): RemediationAct
 }
 
 /**
- * Execute a remediation action.
- * Returns a function that takes the mutation hooks as arguments.
- * This is designed to be called from a React component.
- */
-export function getRemediationDescription(action: RemediationAction): string {
-  switch (action.action) {
-    case 'restart':
-      return `重启 Worker "${action.entityName}"`;
-    case 'wake':
-      return `唤醒 Worker "${action.entityName}"`;
-    case 'sleep':
-      return `休眠 Worker "${action.entityName}"`;
-    case 'notify':
-      return `通知: ${action.reason}`;
-    case 'flag':
-      return `标记: ${action.reason}`;
-    default:
-      return action.reason;
-  }
-}
-
-/**
  * Process violations and return remediation actions to execute.
  * Filters by rate limit and deduplication.
  */

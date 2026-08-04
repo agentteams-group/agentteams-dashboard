@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { DELETE, GET, PUT } from './route';
+import { DELETE, PUT } from './route';
 import { callHigressConsole } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 
@@ -20,21 +20,6 @@ describe('AI provider item route', () => {
   afterEach(() => {
     vi.resetAllMocks();
     mockRequireAccess.mockResolvedValue(null);
-  });
-
-  it('masks tokens from a single provider response', async () => {
-    mockCallHigressConsole.mockResolvedValue({
-      response: new Response(null, { status: 200 }),
-      body: { name: 'provider/a', tokens: ['secret'] },
-    });
-
-    const response = await GET(new NextRequest('http://dashboard.test/api/higress/ai-providers/provider%2Fa'), params);
-
-    await expect(response.json()).resolves.toEqual({ name: 'provider/a', tokenCount: 1 });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers/provider%2Fa', {
-      method: 'GET',
-      cookie: null,
-    });
   });
 
   it('uses the URL provider name when an update omits it', async () => {

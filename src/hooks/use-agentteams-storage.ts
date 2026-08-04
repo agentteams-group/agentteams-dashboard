@@ -96,16 +96,4 @@ export function useBulkDeleteObjects() {
   });
 }
 
-// Presigned URL variants kept for advanced use-cases; the UI uses the proxied
-// download/upload helpers above so the browser never needs direct MinIO access.
-export function usePresignDownload() {
-  return useMutation({
-    mutationFn: ({ bucket, key }: { bucket: string; key: string }) => agentteamsApi.presignDownload(bucket, key),
-  });
-}
 
-export function usePresignUpload() {
-  return useMutation({
-    mutationFn: ({ bucket, key, contentType }: { bucket: string; key: string; contentType?: string }) => agentteamsApi.presignUpload(bucket, key, contentType),
-  });
-}

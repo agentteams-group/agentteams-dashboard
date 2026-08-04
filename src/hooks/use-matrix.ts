@@ -149,24 +149,7 @@ export function useMatrixRoomState(roomId: string | null) {
   });
 }
 
-// ============ Joined Rooms ============
 
-export function useMatrixJoinedRooms() {
-  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
-
-  return useQuery({
-    queryKey: ['matrix-joined-rooms'],
-    queryFn: async () => {
-      if (!homeserver || !accessToken) return { joined_rooms: [] };
-      return matrixApi.getJoinedRooms(homeserver, accessToken);
-    },
-    enabled: isLoggedIn && !!homeserver && !!accessToken,
-    staleTime: 30000,
-    refetchInterval: 30000,
-  });
-}
-
-// ============ Send Message Mutation ============
 
 export function useMatrixSendMessage() {
   const queryClient = useQueryClient();
@@ -486,23 +469,6 @@ export function useMatrixLogin() {
       return true;
     },
   });
-}
-
-// ============ Helper: Extract room name from state ============
-
-export function getRoomNameFromState(stateEvents: { type: string; state_key: string; content: Record<string, unknown> }[]): string {
-  const nameEvent = stateEvents.find(e => e.type === 'm.room.name');
-  if (nameEvent?.content?.name) return nameEvent.content.name as string;
-
-  const canonicalAlias = stateEvents.find(e => e.type === 'm.room.canonical_alias');
-  if (canonicalAlias?.content?.alias) return canonicalAlias.content.alias as string;
-
-  return '';
-}
-
-export function getRoomTopicFromState(stateEvents: { type: string; state_key: string; content: Record<string, unknown> }[]): string {
-  const topicEvent = stateEvents.find(e => e.type === 'm.room.topic');
-  return (topicEvent?.content?.topic as string) || '';
 }
 
 // ============ Helper: Format Matrix event for display ============

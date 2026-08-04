@@ -1,4 +1,4 @@
-// GET/PUT/DELETE /api/higress/ai-providers/[name] — Single AI Provider operations
+// PUT/DELETE /api/higress/ai-providers/[name] — Single AI Provider operations
 import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
@@ -21,31 +21,6 @@ function maskProvider(provider: unknown) {
   const tokens = Array.isArray(source.tokens) ? source.tokens : [];
   const { tokens: _, ...rest } = source;
   return { ...rest, tokenCount: tokens.length };
-}
-
-// GET — Get a single provider
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ name: string }> }
-) {
-  const { name } = await params;
-  try {
-    const rejected = await requireHigressConsoleAccess(request);
-    if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
-    const { response, body } = await callHigressConsole(
-      `/v1/ai/providers/${encodeURIComponent(name)}`,
-      { method: 'GET', cookie }
-    );
-
-    if (!response.ok) {
-      return higressErrorResponse(response, body);
-    }
-
-    return NextResponse.json(maskProvider(unwrapData(body)));
-  } catch (err: unknown) {
-    return higressProxyErrorResponse(err, 'Failed to get provider');
-  }
 }
 
 // PUT — Update a provider
