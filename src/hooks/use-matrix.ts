@@ -281,19 +281,6 @@ export function useMatrixUploadMedia() {
   });
 }
 
-// ============ Send Typing Notification ============
-
-export function useMatrixSendTyping() {
-  const { homeserver, accessToken, userId } = useMatrixParams();
-
-  return useMutation({
-    mutationFn: async ({ roomId, typing }: { roomId: string; typing: boolean }) => {
-      if (!homeserver || !accessToken || !userId) return;
-      return matrixApi.sendTyping(homeserver, accessToken, roomId, userId, typing);
-    },
-  });
-}
-
 /**
  * Higher-level typing notifier that mirrors element-web behaviour:
  * - `notifyTyping()` starts (or refreshes) a typing notification and arms an

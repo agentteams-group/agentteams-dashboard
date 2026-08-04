@@ -16,24 +16,6 @@ export interface RemediationAction {
   error?: string;
 }
 
-// Rate limit: max N remediation actions per minute
-const MAX_ACTIONS_PER_MINUTE = 10;
-const actionTimestamps: number[] = [];
-
-function canExecute(): boolean {
-  const now = Date.now();
-  const oneMinuteAgo = now - 60_000;
-  // Clean old timestamps
-  while (actionTimestamps.length > 0 && actionTimestamps[0] < oneMinuteAgo) {
-    actionTimestamps.shift();
-  }
-  return actionTimestamps.length < MAX_ACTIONS_PER_MINUTE;
-}
-
-function recordExecution() {
-  actionTimestamps.push(Date.now());
-}
-
 /**
  * Determine what remediation action to take for a given violation.
  * Returns null if no automatic action is appropriate.
@@ -81,37 +63,4 @@ export function determineRemediation(violation: PolicyViolation): RemediationAct
     action: 'flag',
     reason: `策略 "${violation.policyName}" 违规: ${violation.message}`,
   };
-}
-
-/**
- * Process violations and return remediation actions to execute.
- * Filters by rate limit and deduplication.
- */
-export function planRemediations(
-  violations: PolicyViolation[],
-  recentActions: RemediationAction[]
-): RemediationAction[] {
-  if (!canExecute()) return [];
-
-  const actions: RemediationAction[] = [];
-  const recentTargets = new Set(
-    recentActions
-      .filter((a) => a.executedAt && Date.now() - a.executedAt < 300_000) // 5 min cooldown
-      .map((a) => `${a.entityType}:${a.entityName}:${a.action}`)
-  );
-
-  for (const violation of violations) {
-    const action = determineRemediation(violation);
-    if (!action) continue;
-
-    // Deduplicate: don't re-act on same entity+action within 5 min
-    const key = `${action.entityType}:${action.entityName}:${action.action}`;
-    if (recentTargets.has(key)) continue;
-
-    if (!canExecute()) break;
-    recordExecution();
-    actions.push(action);
-  }
-
-  return actions;
 }
