@@ -9,6 +9,7 @@ import {
   getSkillMetadata,
   saveSkillMetadata,
   listSkills,
+  listGlobalSkills,
 } from '@/lib/skill-center-storage';
 import {
   SkillEntry,
@@ -31,7 +32,19 @@ export async function GET(request: NextRequest) {
     const client = createMinioClient();
     await ensureSkillsBucket(client);
 
-    const allSkills = await listSkills(client);
+    const [metadataSkills, globalSkills] = await Promise.all([
+      listSkills(client),
+      listGlobalSkills(client, bucket),
+    ]);
+
+    // Merge: metadata (custom/nacos) takes precedence over global (builtin)
+    // entries with the same name.
+    const byName = new Map<string, SkillEntry>();
+    for (const s of globalSkills) byName.set(s.name, s);
+    for (const s of metadataSkills) byName.set(s.name, s);
+    const allSkills = Array.from(byName.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
 
     // Filter by source
     let filtered = allSkills;

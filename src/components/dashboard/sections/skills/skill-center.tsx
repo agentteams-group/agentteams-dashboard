@@ -23,11 +23,12 @@ import { NacosConfigDialog } from './nacos-config-dialog';
 
 interface SkillCenterProps {
   onRefresh?: () => void;
+  mcpServers?: { name: string; url: string; transport: string }[];
 }
 
-export function SkillCenter({ onRefresh }: SkillCenterProps) {
+export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'custom' | 'nacos'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'custom' | 'nacos' | 'builtin'>('all');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [nacosConfigOpen, setNacosConfigOpen] = useState(false);
   const [_editingSkill, _setEditingSkill] = useState<SkillEntry | null>(null);
@@ -60,6 +61,14 @@ export function SkillCenter({ onRefresh }: SkillCenterProps) {
     return skills.filter((s) => s.source === sourceFilter);
   }, [skills, sourceFilter]);
 
+  const filteredMcp = useMemo(() => {
+    const q = search.toLowerCase();
+    if (!q) return mcpServers;
+    return mcpServers.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q)
+    );
+  }, [mcpServers, search]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -90,20 +99,21 @@ export function SkillCenter({ onRefresh }: SkillCenterProps) {
         </div>
         <select
           value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value as 'all' | 'custom' | 'nacos')}
+          onChange={(e) => setSourceFilter(e.target.value as 'all' | 'custom' | 'nacos' | 'builtin')}
           className="rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="all">全部</option>
+          <option value="builtin">内置</option>
           <option value="custom">自定义</option>
           <option value="nacos">Nacos</option>
         </select>
       </div>
 
-      {filteredSkills.length === 0 ? (
+      {filteredSkills.length === 0 && filteredMcp.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              {skills.length === 0 ? '暂无技能，点击"上传技能"添加' : '没有匹配的技能'}
+              {skills.length === 0 && mcpServers.length === 0 ? '暂无技能，点击"上传技能"添加' : '没有匹配的技能'}
             </p>
           </CardContent>
         </Card>
@@ -128,6 +138,10 @@ export function SkillCenter({ onRefresh }: SkillCenterProps) {
                     {skill.source === 'nacos' ? (
                       <Badge variant="outline" className="text-xs">
                         {skill.sourceAlias || 'Nacos'}
+                      </Badge>
+                    ) : skill.source === 'builtin' ? (
+                      <Badge variant="outline" className="text-xs">
+                        内置
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="text-xs">
@@ -159,6 +173,21 @@ export function SkillCenter({ onRefresh }: SkillCenterProps) {
                         </>
                       )}
                     </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredMcp.map((mcp) => (
+                <tr key={`mcp-${mcp.name}`} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="p-3 font-mono font-medium">{mcp.name}</td>
+                  <td className="p-3 max-w-xs truncate font-mono text-muted-foreground" title={mcp.url}>
+                    {mcp.url}
+                  </td>
+                  <td className="p-3">
+                    <Badge variant="outline" className="text-xs">MCP</Badge>
+                  </td>
+                  <td className="p-3 text-muted-foreground">—</td>
+                  <td className="p-3 text-right">
+                    <span className="text-xs text-muted-foreground">{mcp.transport}</span>
                   </td>
                 </tr>
               ))}

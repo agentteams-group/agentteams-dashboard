@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Bot, Crown, Server, Upload, Plus, Wifi } from 'lucide-react';
+import { Server, Upload, Plus, Wifi } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useSearch } from '@/lib/search-context';
 import { SkillDistributeDialog } from '@/components/dashboard/sections/skills/skill-distribute-dialog';
@@ -24,14 +23,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { SkillCenter } from '@/components/dashboard/sections/skills/skill-center';
 
-interface WorkerSkillInfo {
-  workerName: string;
-  skills: string[];
-}
-
 export function SkillsSection() {
-  const { data: workers, refetch, isRefetching } = useWorkers();
-  const { data: managers } = useManagers();
+  const { data: _workers, refetch, isRefetching } = useWorkers();
   const { data: mcpServerList } = useMcpServers();
   const deleteMcp = useDeleteMcpServer();
   const { searchQuery } = useSearch();
@@ -45,20 +38,6 @@ export function SkillsSection() {
     refetch();
   }, [refetch]);
 
-  // Worker skills summary (which worker has which skill)
-  const workerSkillMap = useMemo(() => {
-    const map = new Map<string, string[]>();
-    workers?.forEach((w) => {
-      const skills: string[] = [];
-      if (w.role) skills.push(w.role);
-      if (w.skills && w.skills.length > 0) skills.push(...w.skills);
-      if (skills.length > 0) {
-        map.set(w.name, skills);
-      }
-    });
-    return map;
-  }, [workers]);
-
   const filteredMcp = useMemo(() => {
     const q = (searchQuery || localFilter).toLowerCase();
     if (!q) return mcpServerList || [];
@@ -68,13 +47,6 @@ export function SkillsSection() {
         (s.url || '').toLowerCase().includes(q)
     );
   }, [mcpServerList, searchQuery, localFilter]);
-
-  const skillWorkers: WorkerSkillInfo[] = useMemo(() => {
-    return Array.from(workerSkillMap.entries()).map(([workerName, skills]) => ({
-      workerName,
-      skills,
-    }));
-  }, [workerSkillMap]);
 
   return (
     <div className="space-y-6">
@@ -92,73 +64,6 @@ export function SkillsSection() {
       />
 
       <SkillCenter onRefresh={handleRefresh} />
-
-      {/* Worker Skill Map */}
-      {workerSkillMap.size > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Bot className="w-5 h-5 text-emerald-500" />
-            Worker 技能映射
-            <Badge variant="outline" className="text-[10px]">{workerSkillMap.size} Workers</Badge>
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {skillWorkers.map(({ workerName, skills }) => (
-              <Card key={workerName} className="glass-card">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Bot className="w-4 h-4 text-emerald-500" />
-                    <span className="font-medium text-sm">{workerName}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {skills.map((skill) => (
-                      <Badge key={skill} variant="outline" className="text-xs">
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Manager Skills Overview */}
-      {managers && managers.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Crown className="w-5 h-5 text-violet-500" />
-            Manager 技能概览
-            <Badge variant="outline" className="text-[10px]">{managers.length} Managers</Badge>
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {managers.map((m) => (
-              <Card key={m.name} className="glass-card">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Crown className="w-4 h-4 text-violet-500" />
-                    <span className="font-medium text-sm">{m.name}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {m.phase}
-                    </Badge>
-                  </div>
-                  {m.skills && m.skills.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {m.skills.map((skill) => (
-                        <Badge key={skill} variant="secondary" className="text-xs">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">暂无技能</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* MCP Server Section */}
       <div>

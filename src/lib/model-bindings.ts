@@ -121,7 +121,12 @@ export function buildModelBindings(
           routeName: route.name,
           providerName: upstream.provider,
           targetModel,
-          available: Boolean(provider && provider.tokenCount > 0 && targetModel),
+          // Passthrough bindings (empty-predicate route with no explicit mapping)
+          // are NOT marked as available since the alias-to-target relationship
+          // has not been explicitly configured and verified. They remain
+          // callable at the gateway level but should display as "未验证" in the
+          // UI so the user knows the mapping is implicit, not explicit.
+          available: !isPassthrough && Boolean(provider && provider.tokenCount > 0 && targetModel),
           passthrough: isPassthrough,
         };
         const key = bindingKey(binding);
