@@ -5,10 +5,12 @@ import {
   SKILLS_BUCKET,
   SKILLS_METADATA_PREFIX,
   SKILL_NAME_PATTERN,
+  GLOBAL_SKILLS_PREFIX,
+  CUSTOM_SKILL_MARKER,
 } from './skill-center-types';
-import { isValidNameSegment } from './skill-package';
+import { isValidNameSegment, parseSkillFrontmatter } from './skill-package';
 
-export { SKILLS_BUCKET, SKILLS_METADATA_PREFIX, SKILL_NAME_PATTERN };
+export { SKILLS_BUCKET, SKILLS_METADATA_PREFIX, SKILL_NAME_PATTERN, GLOBAL_SKILLS_PREFIX, CUSTOM_SKILL_MARKER };
 
 /**
  * Ensure the skills bucket exists, creating it if necessary
@@ -73,6 +75,126 @@ export async function listSkills(client: any): Promise<SkillEntry[]> {
   }
 
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Collects immediate "directory" prefixes under a base prefix. Returns a
+ * unique sorted list of the first path segment after the base prefix.
+ */
+export function collectFirstLevelPrefixes(
+  client: any,
+  bucket: string,
+  basePrefix: string
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const names = new Set<string>();
+    const stream = client.listObjects(bucket, basePrefix, false);
+    stream.on('data', (obj: Record<string, unknown>) => {
+      if (typeof obj.prefix === 'string' && obj.prefix.startsWith(basePrefix)) {
+        const remainder = obj.prefix.slice(basePrefix.length).replace(/\/+$/, '');
+        const first = remainder.split('/')[0];
+        if (first) names.add(first);
+      }
+    });
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Array.from(names).sort()));
+  });
+}
+
+/** Counts objects under a prefix by listing them. */
+export function countObjectsUnderPrefix(
+  client: any,
+  bucket: string,
+  prefix: string
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    const stream = client.listObjects(bucket, prefix, true);
+    stream.on('data', () => {
+      count += 1;
+    });
+    stream.on('error', reject);
+    stream.on('end', () => resolve(count));
+  });
+}
+
+async function readObjectText(
+  client: any,
+  bucket: string,
+  key: string
+): Promise<string | null> {
+  try {
+    const data = await client.getObject(bucket, key);
+    const chunks: Buffer[] = [];
+    for await (const chunk of data as AsyncIterable<Buffer>) {
+      chunks.push(chunk as Buffer);
+    }
+    return Buffer.concat(chunks).toString('utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true when the skill prefix carries the "uploaded by dashboard" marker. */
+async function isCustomSkill(
+  client: any,
+  bucket: string,
+  skillPrefix: string
+): Promise<boolean> {
+  try {
+    const data = await client.getObject(bucket, `${skillPrefix}${CUSTOM_SKILL_MARKER}`);
+    await data.resume?.();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Reads description from a skill's SKILL.md if present, otherwise undefined. */
+async function readSkillDescription(
+  client: any,
+  bucket: string,
+  skillPrefix: string
+): Promise<string> {
+  const skillMd = await readObjectText(client, bucket, `${skillPrefix}SKILL.md`);
+  if (!skillMd) return '';
+  try {
+    return parseSkillFrontmatter(skillMd).description ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Lists globally-distributed skills stored under `agents/global/skills/` in
+ * the main bucket. Each skill name is a first-level directory prefix. Skills
+ * carrying the custom marker are tagged source='custom', otherwise 'builtin'.
+ */
+export async function listGlobalSkills(
+  client: any,
+  bucket: string
+): Promise<SkillEntry[]> {
+  const names = await collectFirstLevelPrefixes(client, bucket, GLOBAL_SKILLS_PREFIX);
+  const now = new Date().toISOString();
+  const entries: SkillEntry[] = [];
+  for (const name of names) {
+    if (!isValidNameSegment(name)) continue;
+    const prefix = `${GLOBAL_SKILLS_PREFIX}${name}/`;
+    const [description, fileCount, custom] = await Promise.all([
+      readSkillDescription(client, bucket, prefix),
+      countObjectsUnderPrefix(client, bucket, prefix),
+      isCustomSkill(client, bucket, prefix),
+    ]);
+    entries.push({
+      name,
+      description,
+      source: custom ? 'custom' : 'builtin',
+      createdAt: now,
+      updatedAt: now,
+      fileCount,
+    });
+  }
+  return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

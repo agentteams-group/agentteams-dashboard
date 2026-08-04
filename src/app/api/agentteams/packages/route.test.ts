@@ -95,4 +95,17 @@ describe('POST /packages', () => {
     expect(json).toHaveProperty('filesCount', 1);
     expect(json).toHaveProperty('packageUri');
   });
+
+  it('writes the custom marker after uploading', async () => {
+    const { createMinioClient } = await import('@/lib/minio-client');
+    const client = createMinioClient();
+    const req = buildMultipartRequest(validZip);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const putObject = client.putObject as ReturnType<typeof vi.fn>;
+    const markerCall = putObject.mock.calls.find(
+      ([, key]) => String(key).endsWith('.agentteams-custom')
+    );
+    expect(markerCall).toBeDefined();
+  });
 });
