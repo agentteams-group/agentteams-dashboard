@@ -502,3 +502,40 @@ describe('model bindings', () => {
     }));
   });
 });
+
+  it('filters passthrough when explicit available binding exists for the same alias', () => {
+    // User scenario: workers switched to test-qwen3.6. agentteams-test has
+    // modelPredicates + upstream mapping; default-ai-route is empty-predicate.
+    // The passthrough row must be filtered out, not shown alongside the
+    // explicit binding.
+    const bindings = buildModelBindings(
+      ['test-qwen3.6', 'test-qwen3.6', 'test-qwen3.6'],
+      [
+        {
+          name: 'default-ai-route',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'openai-compat', weight: 100 }],
+        },
+        {
+          name: 'agentteams-test',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          modelPredicates: [{ matchType: 'EXACT', matchValue: 'test-qwen3.6' }],
+          upstreams: [{ provider: 'test', weight: 100, modelMapping: { 'test-qwen3.6': 'qwen3.6-plus' } }],
+        },
+      ],
+      [
+        { name: 'openai-compat', type: 'openai', tokenCount: 1 },
+        { name: 'test', type: 'openai', tokenCount: 1 },
+      ],
+    );
+    // Only agentteams-test row; default-ai-route passthrough is filtered out
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({
+      requestModelAlias: 'test-qwen3.6',
+      routeName: 'agentteams-test',
+      targetModel: 'qwen3.6-plus',
+      available: true,
+      conflict: false,
+      passthrough: false,
+    });
+  });
