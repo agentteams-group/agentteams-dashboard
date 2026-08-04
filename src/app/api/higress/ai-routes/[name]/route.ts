@@ -3,16 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, prepareAiRoutePayload } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 import { validateAiRoutePayload } from '@/lib/higress-api';
-
-function getSessionCookie(request: NextRequest): string | null {
-  return request.headers.get('cookie');
-}
-
-function unwrapData(body: unknown): unknown {
-  return body && typeof body === 'object' && !Array.isArray(body) && 'data' in body
-    ? (body as Record<string, unknown>).data
-    : body;
-}
+import { getSessionCookie, unwrapData } from '../../helpers';
 
 // PUT — Update an AI route
 export async function PUT(

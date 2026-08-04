@@ -3,25 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 import { validateProviderPayload } from '@/lib/higress-api';
-
-function getSessionCookie(request: NextRequest): string | null {
-  return request.headers.get('cookie');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function unwrapData(body: unknown): unknown {
-  return isRecord(body) && 'data' in body ? body.data : body;
-}
-
-function maskProvider(provider: unknown) {
-  const source = isRecord(provider) ? provider : {};
-  const tokens = Array.isArray(source.tokens) ? source.tokens : [];
-  const { tokens: _, ...rest } = source;
-  return { ...rest, tokenCount: tokens.length };
-}
+import { getSessionCookie, isRecord, unwrapData, maskProvider } from '../../helpers';
 
 // PUT — Update a provider
 export async function PUT(
