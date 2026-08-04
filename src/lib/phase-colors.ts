@@ -13,26 +13,6 @@ export const WORKER_PHASE_COLORS: Record<string, string> = {
   Updating: '#8b5cf6',
 };
 
-export const TEAM_PHASE_COLORS: Record<string, string> = {
-  Pending: '#f59e0b',
-  Active: '#10b981',
-  Degraded: '#f97316',
-  Failed: '#ef4444',
-};
-
-export const MANAGER_PHASE_COLORS: Record<string, string> = {
-  Running: '#10b981',
-  Pending: '#f59e0b',
-  Failed: '#ef4444',
-};
-
-export const RUNTIME_COLORS: Record<string, string> = {
-  openclaw: '#14b8a6',
-  copaw: '#10b981',
-  hermes: '#06b6d4',
-  openhuman: '#8b5cf6',
-  qwenpaw: '#f59e0b',
-};
 
 // ============ Chinese Labels ============
 
@@ -106,24 +86,4 @@ export const HUMAN_PHASE_BADGE_CLASSES: Record<string, string> = {
 
 // ============ Badge Variant Helper ============
 
-export function phaseToBadgeVariant(
-  phase: string
-): 'default' | 'secondary' | 'destructive' | 'outline' {
-  switch (phase) {
-    case 'Running':
-    case 'Ready':
-    case 'Active':
-      return 'default';
-    case 'Failed':
-      return 'destructive';
-    case 'Pending':
-    case 'Updating':
-    case 'Sleeping':
-      return 'secondary';
-    case 'Stopped':
-    case 'Degraded':
-      return 'outline';
-    default:
-      return 'secondary';
-  }
-}
+

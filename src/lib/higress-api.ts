@@ -14,7 +14,6 @@
 
 import { apiUrl } from '@/lib/api-base';
 
-export const HIGRESS_CONSOLE_API_VERSION = 'v1';
 
 export interface FallbackConfig {
   enabled?: boolean;

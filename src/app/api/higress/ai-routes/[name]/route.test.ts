@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { DELETE, GET, PUT } from './route';
-import { callHigressConsole, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../../proxy-helper';
+import { DELETE, PUT } from './route';
+import { callHigressConsole, prepareAiRoutePayload } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 
 vi.mock('../../proxy-helper', () => ({
   callHigressConsole: vi.fn(),
   higressErrorResponse: vi.fn((response: Response, body: unknown) => Response.json(body, { status: response.status })),
   higressProxyErrorResponse: vi.fn((error: unknown) => Response.json({ success: false, error: error instanceof Error ? error.message : 'proxy failed' }, { status: 502 })),
-  isFallbackConfigWriteEnabled: vi.fn(() => true),
   prepareAiRoutePayload: vi.fn((payload: Record<string, unknown>) => payload),
 }));
 
@@ -16,7 +15,6 @@ vi.mock('../../access', () => ({ requireHigressConsoleAccess: vi.fn() }));
 
 const mockCallHigressConsole = vi.mocked(callHigressConsole);
 const mockRequireAccess = vi.mocked(requireHigressConsoleAccess);
-const mockIsFallbackConfigWriteEnabled = vi.mocked(isFallbackConfigWriteEnabled);
 const mockPrepareAiRoutePayload = vi.mocked(prepareAiRoutePayload);
 const params = { params: Promise.resolve({ name: 'team/chat' }) };
 const route = {
@@ -29,25 +27,6 @@ describe('AI route item route', () => {
   afterEach(() => {
     vi.resetAllMocks();
     mockRequireAccess.mockResolvedValue(null);
-    mockIsFallbackConfigWriteEnabled.mockReturnValue(true);
-  });
-
-  it('gets an encoded route and returns fallback write capability', async () => {
-    mockIsFallbackConfigWriteEnabled.mockReturnValue(false);
-    mockCallHigressConsole.mockResolvedValue({
-      response: new Response(null, { status: 200 }),
-      body: { name: 'team/chat' },
-    });
-
-    const response = await GET(new NextRequest('http://dashboard.test/api/higress/ai-routes/team%2Fchat', {
-      headers: { cookie: 'higress_session=session-value' },
-    }), params);
-
-    await expect(response.json()).resolves.toEqual({ name: 'team/chat', fallbackConfigWritable: false });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/routes/team%2Fchat', {
-      method: 'GET',
-      cookie: 'higress_session=session-value',
-    });
   });
 
   it('prepares a valid route update and preserves its session cookie', async () => {

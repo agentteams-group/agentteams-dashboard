@@ -95,19 +95,6 @@ export function checkPermission(
 }
 
 /**
- * Get all permissions a human has on a specific resource.
- */
-export function getEffectivePermissions(
-  human: HumanResponse,
-  resourceType: 'worker' | 'team',
-  resourceName: string,
-  customRules: RBACRule[] = []
-): Permission[] {
-  const allPerms: Permission[] = ['view', 'create', 'update', 'delete', 'wake', 'sleep', 'ensure-ready'];
-  return allPerms.filter((perm) => checkPermission(human, perm, resourceType, resourceName, customRules).allowed);
-}
-
-/**
  * Get a summary of a human's access scope.
  */
 export function getAccessSummary(human: HumanResponse): {

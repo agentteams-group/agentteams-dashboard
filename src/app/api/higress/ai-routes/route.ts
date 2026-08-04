@@ -3,18 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../proxy-helper';
 import { requireHigressConsoleAccess } from '../access';
 import { validateAiRoutePayload } from '@/lib/higress-api';
-
-function getSessionCookie(request: NextRequest): string | null {
-  return request.headers.get('cookie');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function unwrapData(body: unknown): unknown {
-  return isRecord(body) && 'data' in body ? body.data : body;
-}
+import { getSessionCookie, isRecord, unwrapData } from '../helpers';
 
 function getRoutes(body: unknown): unknown[] {
   const data = unwrapData(body);

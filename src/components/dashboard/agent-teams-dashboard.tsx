@@ -193,8 +193,8 @@ export function AgentTeamsDashboard() {
         if (msg.includes('团队') || msg.includes('team')) sectionSet.add('teams');
         if (msg.includes('manager')) sectionSet.add('managers');
         if (msg.includes('matrix') || msg.includes('聊天') || msg.includes('chat')) sectionSet.add('chat');
-        if (msg.includes('infra') || msg.includes('基础设施')) sectionSet.add('ops');
-        if (msg.includes('k8s') || msg.includes('kubernetes')) sectionSet.add('ops');
+        if (msg.includes('infra') || msg.includes('基础设施')) { /* ops section removed */ }
+        if (msg.includes('k8s') || msg.includes('kubernetes')) { /* ops section removed */ }
       }
     });
     return sectionSet;

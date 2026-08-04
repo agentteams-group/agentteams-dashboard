@@ -100,23 +100,4 @@ export async function validateHigressSession(request: NextRequest): Promise<bool
   }
 }
 
-/**
- * Returns true if a usable server-side auth token is actually available,
- * verifying the file is readable (not just that the env var is set).
- */
-export async function hasServerAuthToken(): Promise<boolean> {
-  if (process.env.AGENTTEAMS_AUTH_TOKEN) {
-    return true;
-  }
-  const tokenFile = process.env.AGENTTEAMS_AUTH_TOKEN_FILE;
-  if (!tokenFile) {
-    return false;
-  }
-  try {
-    const fs = await import('fs');
-    const token = fs.readFileSync(tokenFile, 'utf-8').trim();
-    return token.length > 0;
-  } catch {
-    return false;
-  }
-}
+

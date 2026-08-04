@@ -85,5 +85,3 @@ export function createMinioClient(config?: MinioConfig): Minio.Client {
     region: cfg.region,
   });
 }
-
-export { Minio };

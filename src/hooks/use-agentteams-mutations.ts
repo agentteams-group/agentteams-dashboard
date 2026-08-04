@@ -6,7 +6,6 @@ import type {
   CreateTeamRequest,
   UpdateTeamRequest,
   CreateHumanRequest,
-  UpdateHumanRequest,
   CreateManagerRequest,
   UpdateManagerRequest,
   CreateConsumerRequest,
@@ -400,23 +399,3 @@ export function useBindConsumer() {
   });
 }
 
-// Human Update Mutation
-export function useUpdateHuman() {
-  const queryClient = useQueryClient();
-  const addNotification = useNotify();
-
-  return useMutation({
-    mutationFn: ({ name, data }: { name: string; data: UpdateHumanRequest }) =>
-      agentteamsApi.updateHuman(name, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['agentteams-humans'] });
-      queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
-      toast.success(`用户 "${variables.name}" 更新成功`);
-      addNotification({ type: 'success', title: '用户更新成功', message: `用户 "${variables.name}" 已更新` });
-    },
-    onError: (err, variables) => {
-      toast.error(`用户 "${variables.name}" 更新失败: ${formatErrorMessage(err)}`);
-      addNotification({ type: 'error', title: '用户更新失败', message: formatErrorMessage(err) });
-    },
-  });
-}

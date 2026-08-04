@@ -87,14 +87,6 @@ export function computeAgentHealth(worker: WorkerResponse): AgentHealthScore {
   };
 }
 
-/** Get the Tailwind color class for a health score */
-export function healthScoreColor(score: number): string {
-  if (score >= 80) return 'text-emerald-500';
-  if (score >= 60) return 'text-green-500';
-  if (score >= 40) return 'text-amber-500';
-  return 'text-red-500';
-}
-
 /** Get the stroke color for the SVG ring */
 export function healthScoreStrokeColor(score: number): string {
   if (score >= 80) return '#10b981'; // emerald-500

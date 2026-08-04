@@ -3,31 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse } from '../proxy-helper';
 import { requireHigressConsoleAccess } from '../access';
 import { validateProviderPayload } from '@/lib/higress-api';
-
-function getSessionCookie(request: NextRequest): string | null {
-  return request.headers.get('cookie');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function unwrapData(body: unknown): unknown {
-  return isRecord(body) && 'data' in body ? body.data : body;
-}
+import { getSessionCookie, isRecord, unwrapData, maskProvider } from '../helpers';
 
 function getProviders(body: unknown): Array<Record<string, unknown>> {
   const data = unwrapData(body);
   if (Array.isArray(data)) return data.filter(isRecord);
   if (isRecord(data) && Array.isArray(data.providers)) return data.providers.filter(isRecord);
   return [];
-}
-
-function maskProvider(provider: unknown) {
-  const source = isRecord(provider) ? provider : {};
-  const tokens = Array.isArray(source.tokens) ? source.tokens : [];
-  const { tokens: _, ...rest } = source;
-  return { ...rest, tokenCount: tokens.length };
 }
 
 // GET — List all LLM providers
