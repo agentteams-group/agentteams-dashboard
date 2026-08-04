@@ -136,3 +136,15 @@ This file records user instructions, preferences, and teachings for reference in
   - POST /api/agentteams/skills checks name uniqueness across ALL sources (custom + nacos), returns 409 with existing entry
   - The shared storage module skill-center-storage.ts should be used by both route.ts and sync/route.ts to avoid duplication
 
+
+[Project Knowledge Summary]
+- Date: 2026-08-04
+- Context: Agent completed code quality optimization workflow via issue-spec (issues #34-36, PR #37)
+- Category: Workflow & Collaboration
+- Instructions:
+  - issue-spec workflow: Proposal #34 → Design #36 → Implement #35, with comments tracking task completion
+  - Phase 1 (zombie code): remove orphaned files + unused exports + dead GET handlers, then fix notification logic references
+  - Phase 2 (deduplication): extract shared helpers into a dedicated file (e.g. src/app/api/higress/helpers.ts)
+  - Phase 3 (deps): only remove deps with zero direct imports; verify transitive deps are safe to keep
+  - Phase 4 (bugs): verify type-checker behavior before changing const/let; ESLint prefer-const is a reliable guide
+  - models-section.test.tsx has a flaky timeout under full suite run (passes in isolation); use --retry=2 for CI
