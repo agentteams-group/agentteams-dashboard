@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { SkillEntry } from '@/lib/skill-center-types';
 
-export function useSkills(search?: string, source?: 'custom' | 'nacos' | null) {
+export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builtin' | null) {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (source) params.set('source', source);

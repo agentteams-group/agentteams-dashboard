@@ -5,6 +5,7 @@ import {
   skillObjectKey,
   SKILL_PACKAGE_MAX_BYTES,
 } from '@/lib/skill-package';
+import { GLOBAL_SKILLS_PREFIX, CUSTOM_SKILL_MARKER } from '@/lib/skill-center-types';
 
 export async function POST(request: NextRequest) {
   const contentType = request.headers.get('content-type') || '';
@@ -50,6 +51,11 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/octet-stream',
       });
     }
+
+    // Write the custom marker so the skills catalog can tag this upload as
+    // source='custom' rather than treating it as a built-in skill.
+    const markerKey = `${GLOBAL_SKILLS_PREFIX}${parsed.skillName}/${CUSTOM_SKILL_MARKER}`;
+    await client.putObject(bucket, markerKey, Buffer.alloc(0), 0);
 
     return NextResponse.json({
       success: true,

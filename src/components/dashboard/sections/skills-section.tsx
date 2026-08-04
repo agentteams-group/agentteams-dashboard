@@ -91,7 +91,7 @@ export function SkillsSection() {
         }
       />
 
-      <SkillCenter onRefresh={handleRefresh} />
+      <SkillCenter onRefresh={handleRefresh} mcpServers={mcpServerList || []} />
 
       {/* Worker Skill Map */}
       {workerSkillMap.size > 0 && (
