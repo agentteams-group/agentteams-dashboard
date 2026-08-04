@@ -419,4 +419,86 @@ describe('model bindings', () => {
       conflict: false,
     }));
   });
+
+  it('enumerates configured mapping keys even when no instance uses them', () => {
+    // Bug scenario: adding a model mapping (test-qwen3.6 -> qwen3.6-plus) to a
+    // new provider creates agentteams-test with modelPredicates and upstream
+    // modelMapping, but the binding table was empty because no instance used
+    // test-qwen3.6 yet.
+    const bindings = buildModelBindings(
+      // Workers still use qwen3.6-plus; test-qwen3.6 has not been selected
+      ['qwen3.6-plus', 'qwen3.6-plus', 'qwen3.6-plus'],
+      [
+        {
+          name: 'default-ai-route',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'openai-compat', weight: 100 }],
+        },
+        {
+          name: 'agentteams-test',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          modelPredicates: [{ matchType: 'EXACT', matchValue: 'test-qwen3.6' }],
+          upstreams: [{ provider: 'test', weight: 100, modelMapping: { 'test-qwen3.6': 'qwen3.6-plus' } }],
+        },
+      ],
+      [
+        { name: 'openai-compat', type: 'openai', tokenCount: 1 },
+        { name: 'test', type: 'openai', tokenCount: 1 },
+      ],
+    );
+
+    // test-qwen3.6 should appear as available even though no instance uses it
+    const testBinding = bindings.find((b) => b.requestModelAlias === 'test-qwen3.6');
+    expect(testBinding).toBeDefined();
+    expect(testBinding).toMatchObject({
+      requestModelAlias: 'test-qwen3.6',
+      routeName: 'agentteams-test',
+      providerName: 'test',
+      targetModel: 'qwen3.6-plus',
+      available: true,
+      conflict: false,
+      passthrough: false,
+    });
+    // qwen3.6-plus should NOT be shown as available from default-ai-route
+    const qwenPassthrough = bindings.find((b) =>
+      b.requestModelAlias === 'qwen3.6-plus' && b.routeName === 'default-ai-route',
+    );
+    expect(qwenPassthrough?.available).toBe(false);
+    expect(qwenPassthrough?.passthrough).toBe(true);
+  });
+
+  it('shows explicit-mapping binding instead of passthrough for same alias on conflicting routes', () => {
+    // When a specific route (agentteams-test) has an explicit mapping for an
+    // alias that also matches default-ai-route via passthrough, the binding
+    // table should show the explicit mapping, not the passthrough.
+    const bindings = buildModelBindings(
+      ['test-qwen3.6'],
+      [
+        {
+          name: 'default-ai-route',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'openai-compat', weight: 100 }],
+        },
+        {
+          name: 'agentteams-test',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          modelPredicates: [{ matchType: 'EXACT', matchValue: 'test-qwen3.6' }],
+          upstreams: [{ provider: 'test', weight: 100, modelMapping: { 'test-qwen3.6': 'qwen3.6-plus' } }],
+        },
+      ],
+      [
+        { name: 'openai-compat', type: 'openai', tokenCount: 1 },
+        { name: 'test', type: 'openai', tokenCount: 1 },
+      ],
+    );
+
+    // The explicit binding wins; default-ai-route passthrough is filtered out
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toEqual(expect.objectContaining({
+      requestModelAlias: 'test-qwen3.6',
+      routeName: 'agentteams-test',
+      available: true,
+      conflict: false,
+    }));
+  });
 });

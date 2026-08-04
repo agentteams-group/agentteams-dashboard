@@ -72,6 +72,50 @@ function providerModelMapping(provider: LlmProviderResponse | undefined): Record
   return normalizeMapping(provider?.rawConfigs?.modelMapping);
 }
 
+// Collect all request model aliases that should appear in the binding table.
+// This includes instance aliases (from managers/workers) plus configured
+// aliases from route upstream mappings and modelPredicates, ensuring that
+// newly configured mappings appear even before any instance uses them.
+function collectAllAliases(
+  instanceAliases: RequestModelAlias[],
+  routes: AiRoute[],
+  providers: LlmProviderResponse[],
+): Set<string> {
+  const aliases = new Set<string>();
+  // Instance aliases
+  for (const alias of instanceAliases) {
+    if (typeof alias === 'string' && alias.trim()) aliases.add(alias.trim());
+  }
+  // Route upstream modelMapping keys
+  for (const route of routes) {
+    for (const upstream of route.upstreams) {
+      const mapping = normalizeMapping(upstream.modelMapping);
+      if (mapping) {
+        for (const key of Object.keys(mapping)) {
+          if (key && !key.includes('*') && !key.startsWith('~')) aliases.add(key);
+        }
+      }
+    }
+    // Route modelPredicates (EXACT)
+    for (const predicate of route.modelPredicates ?? []) {
+      if (predicate.matchType === 'EXACT') {
+        const alias = typeof predicate.matchValue === 'string' ? predicate.matchValue.trim() : '';
+        if (alias && !alias.includes('*') && !alias.startsWith('~')) aliases.add(alias);
+      }
+    }
+  }
+  // Provider-level modelMapping keys
+  for (const provider of providers) {
+    const mapping = providerModelMapping(provider);
+    if (mapping) {
+      for (const key of Object.keys(mapping)) {
+        if (key && !key.includes('*') && !key.startsWith('~')) aliases.add(key);
+      }
+    }
+  }
+  return aliases;
+}
+
 export function buildModelBindings(
   aliases: RequestModelAlias[],
   routes: AiRoute[],
@@ -88,6 +132,10 @@ export function buildModelBindings(
       .map((alias) => alias.trim())
       .filter(Boolean),
   );
+  // Enumerate bindings for all known aliases (instance + configured mappings)
+  // so that newly configured mappings appear in the table even before any
+  // instance uses them.
+  const allAliases = collectAllAliases(aliases, routes, providers);
   // A route may list the same provider twice (e.g. duplicated upstreams), which
   // would otherwise emit fully identical rows for the table. Deduplicate on the
   // (requestModelAlias, routeName, providerName) key, keeping the first row.
@@ -95,7 +143,7 @@ export function buildModelBindings(
   const bindingKey = (binding: { requestModelAlias: string; routeName: string; providerName: string }) =>
     `${binding.requestModelAlias}\u0000${binding.routeName}\u0000${binding.providerName}`;
   for (const route of routes) {
-    const routeAliases = [...requestedAliases].filter((alias) => routeMatchesAlias(route, alias));
+    const routeAliases = [...allAliases].filter((alias) => routeMatchesAlias(route, alias));
 
     for (const upstream of route.upstreams) {
       const provider = providersByName.get(upstream.provider);
