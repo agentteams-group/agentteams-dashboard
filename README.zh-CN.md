@@ -204,7 +204,7 @@ docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.0.0 .
 
 ## 🧪 质量保障
 
-- **单元测试**：vitest + Testing Library（150+ 用例，`npm test`）
+- **单元测试**：vitest + Testing Library（350+ 用例，`npm test`）
 - **代码规范**：ESLint 零问题（`npm run lint`）
 - **类型安全**：strict TypeScript（`npm run typecheck`）
 - **可复现构建**：`npm ci` + lockfile，多架构 Docker 镜像（`make help`）

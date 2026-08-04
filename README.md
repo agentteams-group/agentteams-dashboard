@@ -204,7 +204,7 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 ## 🧪 Quality
 
-- **Unit tests** with vitest + Testing Library (150+ tests, `npm test`)
+- **Unit tests** with vitest + Testing Library (350+ tests, `npm test`)
 - **Lint-clean** ESLint configuration (`npm run lint`)
 - **Type-safe** with strict TypeScript (`npm run typecheck`)
 - **Reproducible builds** via `npm ci` + lockfile and multi-arch Docker images (`make help`)
