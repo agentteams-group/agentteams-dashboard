@@ -83,8 +83,8 @@ export function parseA2uiContent(
 
   const blocks: ParsedA2uiBlock[] = [];
   let hasA2ui = false;
-  let hasThinking = false;
-  let hasToolCall = false;
+  const hasThinking = false;
+  const hasToolCall = false;
 
   // Prefer formatted_body if available (HTML)
   const content = formattedBody || body;
