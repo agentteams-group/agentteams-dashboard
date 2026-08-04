@@ -7,6 +7,8 @@ export interface AgentTeamsModelBinding {
   providerName: string;
   targetModel: string;
   available: boolean;
+  conflict?: boolean;
+  passthrough?: boolean;
 }
 
 function matchesPattern(value: string, pattern: string): boolean {
@@ -107,12 +109,20 @@ export function buildModelBindings(
         const mapping = routeMapping ?? providerMapping;
         const resolved = resolveTargetModel(mapping, requestModelAlias);
         const targetModel = resolved.passthrough ? requestModelAlias : resolved.target;
+        // A binding is passthrough when the route upstream has no explicit
+        // modelMapping AND the route has no modelPredicates (empty-predicate
+        // routes match all aliases). The binding remains callable but should
+        // be visually distinct from an explicit alias-to-target mapping.
+        const isPassthrough = resolved.passthrough &&
+          (!routeMapping || Object.keys(routeMapping).length === 0) &&
+          (!route.modelPredicates || route.modelPredicates.length === 0);
         const binding: AgentTeamsModelBinding = {
           requestModelAlias,
           routeName: route.name,
           providerName: upstream.provider,
           targetModel,
           available: Boolean(provider && provider.tokenCount > 0 && targetModel),
+          passthrough: isPassthrough,
         };
         const key = bindingKey(binding);
         if (seenBindings.has(key)) continue;
@@ -133,6 +143,18 @@ export function buildModelBindings(
   bindings = bindings.filter(
     (binding) => binding.available || !availableAliases.has(binding.requestModelAlias),
   );
+
+  // Detect conflicts: when the same alias is bound to multiple different routes.
+  const aliasRouteCount = new Map<string, number>();
+  for (const binding of bindings) {
+    if (!binding.conflict) {
+      aliasRouteCount.set(binding.requestModelAlias, (aliasRouteCount.get(binding.requestModelAlias) ?? 0) + 1);
+    }
+  }
+  for (const binding of bindings) {
+    const count = aliasRouteCount.get(binding.requestModelAlias) ?? 0;
+    binding.conflict = count > 1;
+  }
 
   for (const requestModelAlias of requestedAliases) {
     if (!bindings.some((binding) => binding.requestModelAlias === requestModelAlias)) {

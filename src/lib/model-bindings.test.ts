@@ -13,7 +13,7 @@ describe('model bindings', () => {
       [{ name: 'openai', type: 'openai', tokenCount: 1 }],
     );
 
-    expect(bindings).toEqual([{
+    expect(bindings).toMatchObject([{
       requestModelAlias: 'team-chat',
       routeName: 'chat',
       providerName: 'openai',
@@ -56,9 +56,9 @@ describe('model bindings', () => {
       [{ name: 'openai', type: 'openai', tokenCount: 1 }],
     );
 
-    expect(bindings).toContainEqual({
+    expect(bindings).toContainEqual(expect.objectContaining({
       requestModelAlias: 'team-chat', routeName: 'team-route', providerName: 'openai', targetModel: 'gpt-4.1', available: true,
-    });
+    }));
     expect(hasUnavailableModelAliases(['team-chat'], bindings)).toBe(false);
     expect(hasUnavailableModelAliases(['other-chat'], bindings)).toBe(true);
   });
@@ -112,6 +112,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'gpt-4.1',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
     const keys = bindings.map((binding) => `${binding.requestModelAlias}\u0000${binding.routeName}\u0000${binding.providerName}`);
     expect(new Set(keys).size).toBe(keys.length);
@@ -134,6 +136,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'gpt-4.1',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -154,6 +158,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'gpt-4.1',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -173,6 +179,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'gpt-4.1',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -203,6 +211,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'gpt-4.1',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -226,6 +236,8 @@ describe('model bindings', () => {
       providerName: 'openai-compat',
       targetModel: 'sensenova-6.7-flash-lite',
       available: true,
+      passthrough: true,
+      conflict: false,
     }]);
   });
 
@@ -247,6 +259,8 @@ describe('model bindings', () => {
       providerName: 'openai',
       targetModel: 'team-chat',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -271,6 +285,8 @@ describe('model bindings', () => {
       providerName: 'ark',
       targetModel: '',
       available: false,
+      conflict: false,
+      passthrough: false,
     }]);
   });
 
@@ -294,6 +310,106 @@ describe('model bindings', () => {
       providerName: 'ark',
       targetModel: 'ep-ark',
       available: true,
+      conflict: false,
+      passthrough: false,
     }]);
+  });
+
+  it('marks a binding as passthrough when a route has empty predicates and no upstream mapping', () => {
+    // Empty-predicate routes match all aliases; without explicit upstream mapping
+    // the binding is a passthrough and should be distinguishable from explicit
+    // alias-to-target mappings in the UI.
+    const bindings = buildModelBindings(
+      ['sensenova-6.7-flash-lite'],
+      [{
+        name: 'default-ai-route',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        upstreams: [{ provider: 'openai-compat', weight: 100 }],
+      }],
+      [{ name: 'openai-compat', type: 'openai', tokenCount: 1 }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'sensenova-6.7-flash-lite',
+      routeName: 'default-ai-route',
+      providerName: 'openai-compat',
+      targetModel: 'sensenova-6.7-flash-lite',
+      available: true,
+      passthrough: true,
+      conflict: false,
+    }]);
+  });
+
+  it('does not mark a binding as passthrough when the route has explicit modelPredicates', () => {
+    const bindings = buildModelBindings(
+      ['team-chat'],
+      [{
+        name: 'chat',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+        upstreams: [{ provider: 'openai', weight: 100 }],
+      }],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }],
+    );
+
+    expect(bindings).toEqual([{
+      requestModelAlias: 'team-chat',
+      routeName: 'chat',
+      providerName: 'openai',
+      targetModel: 'team-chat',
+      available: true,
+      passthrough: false,
+      conflict: false,
+    }]);
+  });
+
+  it('marks bindings as conflicting when the same alias matches multiple routes', () => {
+    // Two routes with empty modelPredicates both match the same alias.
+    const bindings = buildModelBindings(
+      ['team-chat'],
+      [
+        {
+          name: 'default-ai-route',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'openai', weight: 100 }],
+        },
+        {
+          name: 'agentteams-team',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'deepseek', weight: 100 }],
+        },
+      ],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }, { name: 'deepseek', type: 'deepseek', tokenCount: 1 }],
+    );
+
+    expect(bindings).toContainEqual(
+      expect.objectContaining({ requestModelAlias: 'team-chat', conflict: true }),
+    );
+  });
+
+  it('marks a binding as conflicting when it matches both an empty-predicate route and a specific route', () => {
+    const bindings = buildModelBindings(
+      ['team-chat'],
+      [
+        {
+          name: 'default-ai-route',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          upstreams: [{ provider: 'openai', weight: 100 }],
+        },
+        {
+          name: 'agentteams-team',
+          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+          modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+          upstreams: [{ provider: 'deepseek', weight: 100, modelMapping: { 'team-chat': 'deepseek-v3' } }],
+        },
+      ],
+      [{ name: 'openai', type: 'openai', tokenCount: 1 }, { name: 'deepseek', type: 'deepseek', tokenCount: 1 }],
+    );
+
+    // team-chat matches default-ai-route (empty predicates) and agentteams-team (exact predicate).
+    // Both routes match, so conflict should be true.
+    expect(bindings).toContainEqual(
+      expect.objectContaining({ requestModelAlias: 'team-chat', conflict: true }),
+    );
   });
 });
