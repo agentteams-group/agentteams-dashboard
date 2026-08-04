@@ -216,10 +216,11 @@ describe('model bindings', () => {
     }]);
   });
 
-  it('treats an upstream without any modelMapping as a callable passthrough', () => {
+  it('treats an upstream without any modelMapping as a passthrough (unverified)', () => {
     // Higress ai-proxy forwards the request model name unchanged when neither
-    // the route upstream nor the provider declares a mapping, so the binding
-    // must be usable instead of showing "-" / 不可用.
+    // the route upstream nor the provider declares a mapping. The binding is
+    // technically callable but should NOT be marked as "available" since the
+    // alias-to-target relationship has not been explicitly configured.
     const bindings = buildModelBindings(
       ['sensenova-6.7-flash-lite'],
       [{
@@ -235,7 +236,7 @@ describe('model bindings', () => {
       routeName: 'default-ai-route',
       providerName: 'openai-compat',
       targetModel: 'sensenova-6.7-flash-lite',
-      available: true,
+      available: false,
       passthrough: true,
       conflict: false,
     }]);
@@ -317,8 +318,8 @@ describe('model bindings', () => {
 
   it('marks a binding as passthrough when a route has empty predicates and no upstream mapping', () => {
     // Empty-predicate routes match all aliases; without explicit upstream mapping
-    // the binding is a passthrough and should be distinguishable from explicit
-    // alias-to-target mappings in the UI.
+    // the binding is a passthrough. Since the alias-to-target relationship is
+    // implicit, the binding should NOT be marked as available in the UI.
     const bindings = buildModelBindings(
       ['sensenova-6.7-flash-lite'],
       [{
@@ -334,7 +335,7 @@ describe('model bindings', () => {
       routeName: 'default-ai-route',
       providerName: 'openai-compat',
       targetModel: 'sensenova-6.7-flash-lite',
-      available: true,
+      available: false,
       passthrough: true,
       conflict: false,
     }]);
@@ -363,31 +364,35 @@ describe('model bindings', () => {
     }]);
   });
 
-  it('marks bindings as conflicting when the same alias matches multiple routes', () => {
-    // Two routes with empty modelPredicates both match the same alias.
+  it('marks bindings as passthrough (unverified) when a route has empty predicates and no upstream mapping', () => {
+    // Empty-predicate routes match all aliases; without explicit upstream mapping
+    // the binding is a passthrough and should NOT be marked as available since
+    // the alias-to-target relationship is implicit, not explicitly configured.
     const bindings = buildModelBindings(
-      ['team-chat'],
-      [
-        {
-          name: 'default-ai-route',
-          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
-          upstreams: [{ provider: 'openai', weight: 100 }],
-        },
-        {
-          name: 'agentteams-team',
-          pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
-          upstreams: [{ provider: 'deepseek', weight: 100 }],
-        },
-      ],
-      [{ name: 'openai', type: 'openai', tokenCount: 1 }, { name: 'deepseek', type: 'deepseek', tokenCount: 1 }],
+      ['sensenova-6.7-flash-lite'],
+      [{
+        name: 'default-ai-route',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+        upstreams: [{ provider: 'openai-compat', weight: 100 }],
+      }],
+      [{ name: 'openai-compat', type: 'openai', tokenCount: 1 }],
     );
 
-    expect(bindings).toContainEqual(
-      expect.objectContaining({ requestModelAlias: 'team-chat', conflict: true }),
-    );
+    expect(bindings).toEqual([{
+      requestModelAlias: 'sensenova-6.7-flash-lite',
+      routeName: 'default-ai-route',
+      providerName: 'openai-compat',
+      targetModel: 'sensenova-6.7-flash-lite',
+      available: false,
+      passthrough: true,
+      conflict: false,
+    }]);
   });
 
-  it('marks a binding as conflicting when it matches both an empty-predicate route and a specific route', () => {
+  it('filters out passthrough binding when an explicit binding is available for the same alias', () => {
+    // When a specific route already provides an available binding for an alias,
+    // the empty-predicate route's passthrough binding should be filtered out
+    // rather than shown as a conflict.
     const bindings = buildModelBindings(
       ['team-chat'],
       [
@@ -406,10 +411,13 @@ describe('model bindings', () => {
       [{ name: 'openai', type: 'openai', tokenCount: 1 }, { name: 'deepseek', type: 'deepseek', tokenCount: 1 }],
     );
 
-    // team-chat matches default-ai-route (empty predicates) and agentteams-team (exact predicate).
-    // Both routes match, so conflict should be true.
-    expect(bindings).toContainEqual(
-      expect.objectContaining({ requestModelAlias: 'team-chat', conflict: true }),
-    );
+    // Only agentteams-team binding remains; default-ai-route passthrough is filtered out
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toEqual(expect.objectContaining({
+      requestModelAlias: 'team-chat',
+      routeName: 'agentteams-team',
+      available: true,
+      conflict: false,
+    }));
   });
 });
