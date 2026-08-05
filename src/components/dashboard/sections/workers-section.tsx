@@ -285,15 +285,31 @@ export function WorkersSection() {
     }
   }, [aiRoutes, providers]);
 
+  const syncWorkerSkills = useCallback(async (workerName: string, skillNames: string[]) => {
+    if (!skillNames.length) return;
+    for (const skillName of skillNames) {
+      try {
+        const file = await agentteamsApi.downloadSkill(skillName);
+        await agentteamsApi.uploadWorkerSkill(workerName, file);
+      } catch {
+        // skip failed skills; individual failures do not block the others
+      }
+    }
+  }, []);
+
   const handleCreate = useCallback(() => {
     warnIfModelAliasUnbound(newWorker.model);
     createWorker.mutate(newWorker, {
-      onSuccess: () => {
+      onSuccess: (worker) => {
         setCreateOpen(false);
         setNewWorker({ name: '', runtime: 'openclaw' });
+        const skills = newWorker.skills;
+        if (skills?.length && worker) {
+          void syncWorkerSkills(worker.name, skills);
+        }
       },
     });
-  }, [createWorker, newWorker, warnIfModelAliasUnbound]);
+  }, [createWorker, newWorker, warnIfModelAliasUnbound, syncWorkerSkills]);
 
   const handleDelete = useCallback(() => {
     if (!deleteTarget) return;
@@ -360,10 +376,14 @@ export function WorkersSection() {
           if (editForm.model?.trim() && editForm.model !== editWorker.model) {
             toast.info(runtimeModelUpdateMessage(editForm.runtime ?? editWorker.runtime));
           }
+          const skills = editForm.skills;
+          if (skills?.length) {
+            void syncWorkerSkills(editWorker.name, skills);
+          }
         },
       }
     );
-  }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound]);
+  }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound, syncWorkerSkills]);
 
   const handleConfigApply = useCallback(() => {
     setConfigError(null);

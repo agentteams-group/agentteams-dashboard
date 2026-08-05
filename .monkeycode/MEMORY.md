@@ -148,3 +148,14 @@ This file records user instructions, preferences, and teachings for reference in
   - Phase 3 (deps): only remove deps with zero direct imports; verify transitive deps are safe to keep
   - Phase 4 (bugs): verify type-checker behavior before changing const/let; ESLint prefer-const is a reliable guide
   - models-section.test.tsx has a flaky timeout under full suite run (passes in isolation); use --retry=2 for CI
+
+[Project Knowledge Summary]
+- Date: 2026-08-05
+- Context: Agent added tests for SkillUploadDialog and investigated upload button disabled issue
+- Category: Testing Methods
+- Instructions:
+  - SkillUploadDialog button disabled logic: `isReady = !!file && !!preview && !createMutation.isPending`, button disabled when `!isReady || createMutation.isPending`
+  - handleClose resets file/preview state but does NOT call createMutation.reset() - mutation state persists across dialog reopen
+  - Test mock pattern: use static vi.mock at module level for hooks and skill-package; avoid vi.doMock with await in beforeEach
+  - File input has no label text; use document.querySelector('input[type="file"]') instead of screen.getByLabelText
+  - 368 tests pass across 46 test files; typecheck clean

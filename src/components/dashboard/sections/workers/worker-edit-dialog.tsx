@@ -89,7 +89,7 @@ export function WorkerEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>技能（逗号分隔）</Label>
+            <Label>技能（逗号/分号分隔）</Label>
             <Input
               value={value.skills?.join(', ') || ''}
               onChange={(e) =>
@@ -97,13 +97,13 @@ export function WorkerEditDialog({
                   ...value,
                   skills: e.target.value
                     ? e.target.value
-                        .split(',')
+                        .split(/[,，;；]\s*/)
                         .map((s) => s.trim())
                         .filter(Boolean)
                     : [],
                 })
               }
-              placeholder="skill1, skill2, skill3"
+              placeholder="skill1, skill2，skill3; skill4"
             />
           </div>
           <div className="space-y-2">

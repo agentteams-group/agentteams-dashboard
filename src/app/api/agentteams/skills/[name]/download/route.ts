@@ -1,0 +1,104 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
+import { isValidNameSegment } from '@/lib/skill-package';
+import {
+  SkillEntry,
+  SKILLS_BUCKET,
+  SKILLS_METADATA_PREFIX,
+} from '@/lib/skill-center-types';
+import { zipSync } from 'fflate';
+
+async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
+  const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
+  try {
+    const stream = await client.getObject(SKILLS_BUCKET, key);
+    const data = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', reject);
+    });
+    return JSON.parse(data.toString('utf-8')) as SkillEntry;
+  } catch {
+    return null;
+  }
+}
+
+async function listSkillFiles(client: any, skillName: string): Promise<string[]> {
+  const prefix = `${skillName}/`;
+  const files: string[] = [];
+  const stream = client.listObjects(SKILLS_BUCKET, prefix, false);
+
+  for await (const obj of stream) {
+    if (obj.objectName.endsWith('/')) continue;
+    files.push(obj.objectName.replace(prefix, ''));
+  }
+
+  return files.sort();
+}
+
+async function readObject(client: any, skillName: string, relativePath: string): Promise<Buffer> {
+  const key = `${skillName}/${relativePath}`;
+  const stream = await client.getObject(SKILLS_BUCKET, key);
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    stream.on('end', () => resolve());
+    stream.on('error', reject);
+  });
+  return Buffer.concat(chunks);
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ name: string }> }
+) {
+  const { name } = await params;
+  if (!isValidNameSegment(name)) {
+    return NextResponse.json({ error: '非法技能名称' }, { status: 400 });
+  }
+
+  const bucket = getMinioBucket();
+  if (!bucket) {
+    return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
+  }
+
+  try {
+    const client = createMinioClient();
+    const metadata = await getSkillMetadata(client, name);
+    if (!metadata) {
+      return NextResponse.json({ error: '技能不存在' }, { status: 404 });
+    }
+
+    // Nacos skills cannot be downloaded as a package (no file data in skills bucket)
+    if (metadata.source === 'nacos') {
+      return NextResponse.json({ error: 'Nacos 来源的技能暂不支持下载' }, { status: 403 });
+    }
+
+    const fileNames = await listSkillFiles(client, name);
+    if (fileNames.length === 0) {
+      return NextResponse.json({ error: '技能文件不存在' }, { status: 404 });
+    }
+
+    const entries: Record<string, Uint8Array> = {};
+    for (const fileName of fileNames) {
+      const data = await readObject(client, name, fileName);
+      entries[fileName] = new Uint8Array(data);
+    }
+
+    const zipBytes = zipSync(entries);
+    const zipBuffer = Buffer.from(zipBytes);
+
+    return new NextResponse(zipBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${name}.zip"`,
+        'Content-Length': String(zipBuffer.length),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}
