@@ -7,6 +7,9 @@ interface McpServerConfig {
   name: string;
   url: string;
   transport: string;
+  type?: string;
+  timeout?: number;
+  headers?: Record<string, string>;
   description?: string;
   createdAt: string;
   updatedAt: string;
@@ -66,7 +69,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid MCP server name' }, { status: 400 });
   }
 
-  let body: { url?: string; transport?: string; description?: string };
+  let body: { url?: string; transport?: string; type?: string; timeout?: number; headers?: Record<string, string>; description?: string };
   try {
     body = await request.json();
   } catch {
@@ -108,6 +111,9 @@ export async function PUT(
     ...existing,
     url,
     transport,
+    type: body.type !== undefined ? body.type : existing.type,
+    timeout: body.timeout !== undefined ? body.timeout : existing.timeout,
+    headers: body.headers !== undefined ? body.headers : existing.headers,
     description,
     updatedAt: new Date().toISOString(),
   };

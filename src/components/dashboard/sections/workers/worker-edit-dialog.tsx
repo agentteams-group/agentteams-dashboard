@@ -20,7 +20,8 @@ import { Button } from '@/components/ui/button';
 import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
-import { McpServersField } from './worker-create-dialog';
+import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
+import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -71,8 +72,6 @@ export function WorkerEditDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {/* Standalone Worker CRD only allows openclaw/copaw/hermes/qwenpaw;
-                    openhuman is valid for team members only (teams CRD). */}
                 <SelectItem value="openclaw">OpenClaw</SelectItem>
                 <SelectItem value="copaw">CoPaw</SelectItem>
                 <SelectItem value="hermes">Hermes</SelectItem>
@@ -89,21 +88,10 @@ export function WorkerEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>技能（逗号/分号分隔）</Label>
-            <Input
-              value={value.skills?.join(', ') || ''}
-              onChange={(e) =>
-                onChange({
-                  ...value,
-                  skills: e.target.value
-                    ? e.target.value
-                        .split(/[,，;；]\s*/)
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                    : [],
-                })
-              }
-              placeholder="skill1, skill2，skill3; skill4"
+            <Label>技能</Label>
+            <SkillSelector
+              value={value.skills || []}
+              onChange={(skills) => onChange({ ...value, skills: skills.length ? skills : undefined })}
             />
           </div>
           <div className="space-y-2">
@@ -114,10 +102,13 @@ export function WorkerEditDialog({
               placeholder="agent1, agent2"
             />
           </div>
-          <McpServersField
-            value={value.mcpServers || []}
-            onChange={(mcpServers) => onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })}
-          />
+          <div className="space-y-2">
+            <Label>MCP Servers</Label>
+            <McpSelector
+              value={value.mcpServers || []}
+              onChange={(mcpServers) => onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

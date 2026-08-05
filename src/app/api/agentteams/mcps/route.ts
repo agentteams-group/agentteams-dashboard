@@ -7,6 +7,9 @@ interface McpServerConfig {
   name: string;
   url: string;
   transport: string;
+  type?: string;
+  timeout?: number;
+  headers?: Record<string, string>;
   description?: string;
   createdAt: string;
   updatedAt: string;
@@ -72,14 +75,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
 
-  let body: { name?: string; url?: string; transport?: string; description?: string };
+  let body: { name?: string; url?: string; transport?: string; type?: string; timeout?: number; headers?: Record<string, string>; description?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: '请求体格式错误' }, { status: 400 });
   }
 
-  const { name, url, transport, description } = body;
+  const { name, url, transport, type, timeout, headers, description } = body;
 
   if (!name || !isValidMcpName(name)) {
     return NextResponse.json({ error: 'MCP 服务器名称不合法（仅允许字母、数字、点、下划线、连字符）' }, { status: 400 });
@@ -96,6 +99,9 @@ export async function POST(request: NextRequest) {
     name,
     url,
     transport,
+    type: type || undefined,
+    timeout: timeout || undefined,
+    headers: headers || undefined,
     description: description || undefined,
     createdAt: now,
     updatedAt: now,

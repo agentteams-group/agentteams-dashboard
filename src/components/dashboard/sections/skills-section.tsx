@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Server, Upload, Plus, Wifi } from 'lucide-react';
+import { Server, Upload, Plus, Wifi, Pencil, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -121,14 +121,14 @@ export function SkillsSection() {
                         className="p-1.5 hover:bg-accent rounded"
                         title="编辑"
                       >
-                        <Plus className="w-3.5 h-3.5 text-muted-foreground" />
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
                       <button
                         onClick={() => setDeleteTarget(mcp.name)}
                         className="p-1.5 hover:bg-destructive/10 rounded"
                         title="删除"
                       >
-                        <Plus className="w-3.5 h-3.5 text-muted-foreground" />
+                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
                     </div>
                   </div>

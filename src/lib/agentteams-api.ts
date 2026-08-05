@@ -301,9 +301,19 @@ export interface McpServerConfig {
   name: string;
   url: string;
   transport: 'sse' | 'streaminghttp';
+  type?: 'streamable-http-proxy' | 'sse-proxy' | 'rest-to-mcp';
+  timeout?: number;
+  headers?: Record<string, string>;
   description?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface McpTestResult {
+  success: boolean;
+  message: string;
+  statusCode?: number;
+  latencyMs?: number;
 }
 
 export interface McpServerListResponse {
@@ -729,6 +739,19 @@ export const agentteamsApi = {
       }
       await r.json();
       return undefined;
+    });
+  },
+
+  testMcpServer: (data: { url: string; transport: string; timeout?: number }): Promise<McpTestResult> => {
+    const res = fetch(apiUrl('/api/agentteams/mcps/test'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.then(async (r) => {
+      const json = await r.json() as McpTestResult;
+      if (!r.ok) throw new ApiError(json.message || '连通性测试失败', r.status, '/mcps/test');
+      return json;
     });
   },
 

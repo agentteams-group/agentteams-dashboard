@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
-import type { McpServerConfig } from '@/lib/agentteams-api';
+import type { McpServerConfig, McpTestResult } from '@/lib/agentteams-api';
 
 export function useMcpServers(): UseQueryResult<McpServerConfig[], Error> {
   return useQuery<McpServerConfig[], Error>({
@@ -28,7 +28,7 @@ export function useMcpServer(name: string) {
 export function useCreateMcpServer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; url: string; transport: string; description?: string }) =>
+    mutationFn: (data: { name: string; url: string; transport: string; type?: string; timeout?: number; headers?: Record<string, string>; description?: string }) =>
       agentteamsApi.createMcpServer(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agentteams-mcps'] });
@@ -39,7 +39,7 @@ export function useCreateMcpServer() {
 export function useUpdateMcpServer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, data }: { name: string; data: { url?: string; transport?: string; description?: string } }) =>
+    mutationFn: ({ name, data }: { name: string; data: { url?: string; transport?: string; type?: string; timeout?: number; headers?: Record<string, string>; description?: string } }) =>
       agentteamsApi.updateMcpServer(name, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agentteams-mcps'] });
@@ -54,5 +54,12 @@ export function useDeleteMcpServer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agentteams-mcps'] });
     },
+  });
+}
+
+export function useTestMcpServer() {
+  return useMutation({
+    mutationFn: (data: { url: string; transport: string; timeout?: number }) =>
+      agentteamsApi.testMcpServer(data),
   });
 }
