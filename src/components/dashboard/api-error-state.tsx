@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { WifiOff, Settings, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -13,12 +14,18 @@ interface ApiErrorStateProps {
 export function ApiErrorState({ message, onRetry }: ApiErrorStateProps) {
   const { openSettings } = useAgentTeamsStore();
   const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleRetry = () => {
-    if (onRetry) {
-      onRetry();
-    } else {
-      queryClient.invalidateQueries();
+  const handleRetry = async () => {
+    setIsRefreshing(true);
+    try {
+      if (onRetry) {
+        onRetry();
+      } else {
+        queryClient.invalidateQueries();
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -36,8 +43,8 @@ export function ApiErrorState({ message, onRetry }: ApiErrorStateProps) {
           <Settings className="w-4 h-4 mr-1.5" />
           连接设置
         </Button>
-        <Button variant="outline" size="sm" onClick={handleRetry}>
-          <RefreshCw className="w-4 h-4 mr-1.5" />
+        <Button variant="outline" size="sm" onClick={handleRetry} disabled={isRefreshing}>
+          <RefreshCw className={`w-4 h-4 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           重试
         </Button>
       </div>

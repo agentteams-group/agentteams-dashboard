@@ -39,7 +39,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
-  const { data: result = { skills: [], total: 0 }, refetch, error, isError } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
+  const { data: result = { skills: [], total: 0 }, refetch, error, isError, isRefetching } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
   const skills = result.skills;
   const total = result.total;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -84,8 +84,8 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="h-4 w-4 mr-1" />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefetching}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
             刷新
           </Button>
           <Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>

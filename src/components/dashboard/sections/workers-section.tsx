@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowUpDown, Bot, CheckSquare, Download, FileCode, LayoutGrid, List, Plus, Square, Upload, X } from 'lucide-react';
+import { ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -147,6 +147,7 @@ export function WorkersSection() {
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ skillName: string; description: string; filesCount: number; note?: string } | null>(null);
+  const [syncingSkills, setSyncingSkills] = useState<{ workerName: string; skills: string[]; done: string[]; failed: string[] } | null>(null);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
 
@@ -287,14 +288,24 @@ export function WorkersSection() {
 
   const syncWorkerSkills = useCallback(async (workerName: string, skillNames: string[]) => {
     if (!skillNames.length) return;
+    setSyncingSkills({ workerName, skills: skillNames, done: [], failed: [] });
     for (const skillName of skillNames) {
       try {
-        const file = await agentteamsApi.downloadSkill(skillName);
+        let file: File;
+        try {
+          file = await agentteamsApi.downloadSkill(skillName);
+        } catch (downloadErr) {
+          // Nacos skills return 403 from the generic download endpoint; fall back to Nacos-specific endpoint
+          file = await agentteamsApi.downloadNacosSkill(skillName);
+        }
         await agentteamsApi.uploadWorkerSkill(workerName, file);
+        setSyncingSkills((prev) => prev && { ...prev, done: [...prev.done, skillName] });
       } catch {
-        // skip failed skills; individual failures do not block the others
+        setSyncingSkills((prev) => prev && { ...prev, failed: [...prev.failed, skillName] });
+        toast.warning(`技能 "${skillName}" 安装失败，已跳过`);
       }
     }
+    setSyncingSkills(null);
   }, []);
 
   const handleCreate = useCallback(() => {
@@ -414,6 +425,27 @@ export function WorkersSection() {
 
   return (
     <div className="space-y-6">
+      {syncingSkills && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            <span>正在为 Worker <strong>{syncingSkills.workerName}</strong> 安装技能...</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {syncingSkills.skills.map((s) => {
+              const done = syncingSkills.done.includes(s);
+              const failed = syncingSkills.failed.includes(s);
+              return (
+                <span key={s} className={`flex items-center gap-1 px-2 py-0.5 rounded ${done ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : failed ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300'}`}>
+                  {done ? <CheckCircle className="h-3 w-3" /> : failed ? <XCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}
+                  {s}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <SectionHeader
         title="Workers"
         description="管理和监控 AI Agent Workers"

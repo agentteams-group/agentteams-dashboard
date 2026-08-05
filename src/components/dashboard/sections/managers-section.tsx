@@ -215,25 +215,15 @@ export function ManagersSection() {
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!managers || managers.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
-            <Button
-              size="sm"
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Manager
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={!managers || managers.length === 0}
+          >
+            <Download className="w-4 h-4 mr-1" aria-hidden="true" />
+            导出 JSON
+          </Button>
         }
       />
 

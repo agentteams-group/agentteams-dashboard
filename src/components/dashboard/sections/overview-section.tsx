@@ -18,6 +18,7 @@ import {
   XCircle,
   AlertTriangle,
   Info,
+  RefreshCw,
   Plus,
   Crown,
   UserPlus,
@@ -214,7 +215,8 @@ function RuntimeInfoCard({ agentteamsVersion }: { agentteamsVersion?: string }) 
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">运行信息</CardTitle>
           <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            {isFetching ? '刷新中...' : '刷新'}
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isFetching ? 'animate-spin' : ''}`} />
+            刷新
           </Button>
         </div>
       </CardHeader>
