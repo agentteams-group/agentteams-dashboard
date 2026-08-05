@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '技能包超过 64 MB 大小限制' }, { status: 400 });
     }
 
+    const overwrite = form.get('overwrite') === 'true';
+
     const bytes = new Uint8Array(await file.arrayBuffer());
     let parsed;
     try {
@@ -112,14 +114,32 @@ export async function POST(request: NextRequest) {
     // Check for name conflict with ANY existing skill (custom or nacos)
     const existing = await getSkillMetadata(client, parsed.skillName);
     if (existing) {
-      return NextResponse.json(
-        {
-          error: `技能 "${parsed.skillName}" 已存在`,
-          conflict: true,
-          existing: existing,
-        },
-        { status: 409 }
-      );
+      if (!overwrite) {
+        return NextResponse.json(
+          {
+            error: `技能 "${parsed.skillName}" 已存在`,
+            conflict: true,
+            existing: existing,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (existing.source === 'nacos') {
+        return NextResponse.json(
+          { error: 'Nacos 来源的技能不可覆盖' },
+          { status: 403 }
+        );
+      }
+
+      // Delete old skill files before overwriting
+      const oldPrefix = `${parsed.skillName}/`;
+      const oldStream = client.listObjects(SKILLS_BUCKET, oldPrefix, false);
+      for await (const obj of oldStream) {
+        if (obj.name) {
+          await client.removeObject(SKILLS_BUCKET, obj.name);
+        }
+      }
     }
 
     const now = new Date().toISOString();
@@ -128,7 +148,7 @@ export async function POST(request: NextRequest) {
       description: parsed.description,
       source: 'custom',
       version: parsed.version,
-      createdAt: now,
+      createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       fileCount: parsed.files.length,
     };

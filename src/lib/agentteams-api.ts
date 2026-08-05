@@ -776,9 +776,12 @@ export const agentteamsApi = {
     });
   },
 
-  createSkill: (file: File): Promise<SkillEntry & { success: boolean; conflict?: boolean }> => {
+  createSkill: (file: File, overwrite = false): Promise<SkillEntry & { success: boolean; conflict?: boolean }> => {
     const form = new FormData();
     form.append('file', file);
+    if (overwrite) {
+      form.append('overwrite', 'true');
+    }
     const res = fetch(apiUrl('/api/agentteams/skills'), {
       method: 'POST',
       body: form,

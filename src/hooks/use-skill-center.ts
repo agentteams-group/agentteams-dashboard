@@ -31,7 +31,8 @@ export function useSkill(name: string) {
 export function useCreateSkill() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => agentteamsApi.createSkill(file),
+    mutationFn: ({ file, overwrite = false }: { file: File; overwrite?: boolean }) =>
+      agentteamsApi.createSkill(file, overwrite),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agentteams-skills'] });
     },

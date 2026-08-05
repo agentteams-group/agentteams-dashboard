@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search, Plus, Pencil, Trash2, RefreshCw, Info } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -38,9 +38,8 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
-  const [_conflictSkill, _setConflictSkill] = useState<SkillEntry | null>(null);
 
-  const { data: result = { skills: [], total: 0 }, refetch } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
+  const { data: result = { skills: [], total: 0 }, refetch, error, isError } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
   const skills = result.skills;
   const total = result.total;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -121,7 +120,17 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         </select>
       </div>
 
-      {filteredSkills.length === 0 && filteredMcp.length === 0 ? (
+      {isError && (
+        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">获取技能列表失败</p>
+            <p className="mt-1">{error?.message ?? '无法连接后端服务，请检查 API 状态'}</p>
+          </div>
+        </div>
+      )}
+
+      {!isError && filteredSkills.length === 0 && filteredMcp.length === 0 && (
         <Card>
           <CardContent className="p-8 text-center">
             <p className="text-sm text-muted-foreground">
@@ -129,7 +138,9 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
             </p>
           </CardContent>
         </Card>
-      ) : (
+      )}
+
+      {!isError && (filteredSkills.length > 0 || filteredMcp.length > 0) && (
         <div className="border rounded-md">
           <table className="w-full text-sm">
             <thead>
@@ -216,7 +227,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         </div>
       )}
 
-      {total > PAGE_SIZE && (
+      {!isError && total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>共 {total} 项，第 {page}/{totalPages} 页</span>
           <div className="flex gap-1">
@@ -244,7 +255,6 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onSuccess={handleUploadSuccess}
-        onConflict={_setConflictSkill}
       />
 
       <NacosConfigDialog

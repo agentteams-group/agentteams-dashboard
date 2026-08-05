@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, Check, AlertCircle, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,6 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { useCreateSkill } from '@/hooks/use-skill-center';
 import type { SkillEntry } from '@/lib/skill-center-types';
@@ -27,6 +37,7 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
   const [preview, setPreview] = useState<{ name: string; description: string } | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [conflictSkill, setConflictSkill] = useState<SkillEntry | null>(null);
 
   const createMutation = useCreateSkill();
 
@@ -69,11 +80,12 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
     }
   }, [file]);
 
-  const handleUpload = useCallback(async () => {
+  const handleUpload = useCallback(async (overwrite = false) => {
     if (!file) return;
     try {
-      const result = await createMutation.mutateAsync(file);
+      const result = await createMutation.mutateAsync({ file, overwrite });
       if (result.conflict) {
+        setConflictSkill(result as SkillEntry);
         onConflict?.(result as SkillEntry);
       } else {
         onSuccess?.(result);
@@ -83,118 +95,150 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
     }
   }, [file, createMutation, onSuccess, onConflict]);
 
+  const handleOverwriteConfirm = useCallback(async () => {
+    setConflictSkill(null);
+    await handleUpload(true);
+  }, [handleUpload]);
+
   const handleClose = useCallback(() => {
     setFile(null);
     setPreview(null);
     setParseError(null);
+    setConflictSkill(null);
     onOpenChange(false);
   }, [onOpenChange]);
 
   const isReady = !!file && !!preview && !createMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
-        <DialogHeader>
-          <DialogTitle>上传技能包</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">技能包 (ZIP) *</label>
-            <div
-              className={`relative rounded-md border-2 border-dashed p-6 text-center transition-colors ${
-                dragging
-                  ? 'border-primary bg-primary/5'
-                  : 'border-dashed border-border hover:border-primary/50'
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-            >
-              <input
-                type="file"
-                accept=".zip"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={handleFileChange}
-              />
-              {file ? (
-                <div className="flex flex-col items-center gap-2">
-                  <Check className="h-6 w-6 text-green-500" />
-                  <p className="text-sm font-medium">{file.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(file.size / 1024).toFixed(1)} KB
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2 relative z-10"
-                    onClick={handleParse}
-                    disabled={parsing}
-                  >
-                    {parsing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '解析预览'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <Upload className="h-6 w-6 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    拖拽 ZIP 文件到此处，或点击选择
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    须包含 SKILL.md（含 name / description 字段）
-                  </p>
-                </div>
-              )}
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-lg max-w-[95vw]">
+          <DialogHeader>
+            <DialogTitle>上传技能包</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">技能包 (ZIP) *</label>
+              <div
+                className={`relative rounded-md border-2 border-dashed p-6 text-center transition-colors ${
+                  dragging
+                    ? 'border-primary bg-primary/5'
+                    : 'border-dashed border-border hover:border-primary/50'
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
+                <input
+                  type="file"
+                  accept=".zip"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={handleFileChange}
+                />
+                {file ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <Check className="h-6 w-6 text-green-500" />
+                    <p className="text-sm font-medium">{file.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 relative z-10"
+                      onClick={handleParse}
+                      disabled={parsing}
+                    >
+                      {parsing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '解析预览'}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <Upload className="h-6 w-6 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      拖拽 ZIP 文件到此处，或点击选择
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      须包含 SKILL.md（含 name / description 字段）
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {parseError && (
+              <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <p>{parseError}</p>
+              </div>
+            )}
+
+            {preview && (
+              <div className="space-y-2 p-3 rounded-md bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">技能名称</Badge>
+                  <span className="font-mono text-sm">{preview.name}</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Badge variant="secondary">描述</Badge>
+                  <span className="text-sm text-muted-foreground">{preview.description}</span>
+                </div>
+              </div>
+            )}
+
+            {createMutation.isError && (
+              <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <p>{createMutation.error?.message ?? '上传失败'}</p>
+              </div>
+            )}
           </div>
 
-          {parseError && (
-            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>{parseError}</p>
-            </div>
-          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={handleClose}>
+              取消
+            </Button>
+            <Button onClick={() => handleUpload(false)} disabled={!isReady || createMutation.isPending}>
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  上传中...
+                </>
+              ) : (
+                '上传'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {preview && (
-            <div className="space-y-2 p-3 rounded-md bg-muted/50">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">技能名称</Badge>
-                <span className="font-mono text-sm">{preview.name}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <Badge variant="secondary">描述</Badge>
-                <span className="text-sm text-muted-foreground">{preview.description}</span>
-              </div>
-            </div>
-          )}
-
-          {createMutation.isError && (
-            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>{createMutation.error?.message ?? '上传失败'}</p>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={handleClose}>
-            取消
-          </Button>
-          <Button onClick={handleUpload} disabled={!isReady || createMutation.isPending}>
-            {createMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                上传中...
-              </>
-            ) : (
-              '上传'
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <AlertDialog open={!!conflictSkill} onOpenChange={(open) => !open && setConflictSkill(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              技能已存在
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                技能 <span className="font-mono font-medium text-foreground">{conflictSkill?.name}</span> 已存在
+                {conflictSkill?.version ? `（版本 ${conflictSkill.version}）` : ''}。
+              </p>
+              <p>上传新版本将覆盖已有技能的所有文件。是否继续？</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConflictSkill(null)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleOverwriteConfirm}>
+              覆盖上传
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
