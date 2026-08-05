@@ -26,6 +26,7 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<{ name: string; description: string } | null>(null);
   const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const createMutation = useCreateSkill();
 
@@ -53,13 +54,16 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
   const handleParse = useCallback(async () => {
     if (!file) return;
     setParsing(true);
+    setParseError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const { parseSkillPackage } = await import('@/lib/skill-package');
       const parsed = parseSkillPackage(bytes);
       setPreview({ name: parsed.skillName, description: parsed.description });
-    } catch {
-      // Invalid package, preview will remain null
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '技能包格式无效';
+      setParseError(message);
+      setPreview(null);
     } finally {
       setParsing(false);
     }
@@ -82,6 +86,7 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
   const handleClose = useCallback(() => {
     setFile(null);
     setPreview(null);
+    setParseError(null);
     onOpenChange(false);
   }, [onOpenChange]);
 
@@ -146,6 +151,13 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
             </div>
           </div>
 
+          {parseError && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>{parseError}</p>
+            </div>
+          )}
+
           {preview && (
             <div className="space-y-2 p-3 rounded-md bg-muted/50">
               <div className="flex items-center gap-2">
@@ -167,7 +179,7 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={handleClose}>
             取消
           </Button>
