@@ -208,40 +208,95 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
   }
 
   const [, hostPort, namespace] = urlMatch;
-  const apiBase = `http://${hostPort}`;
-  const listUrl = `${apiBase}/nacos/v1/ns/catalog/services?pageNo=1&pageSize=100&namespaceId=${encodeURIComponent(namespace)}`;
+  const protocol = config.protocol || 'http';
+  const prefix = config.apiPrefix ?? '/nacos';
+  const mode = config.mode || 'services';
+  const apiBase = `${protocol}://${hostPort}`;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  // Login is always at /v1/auth/login regardless of mode
+  let accessToken = '';
   if (config.username && config.password) {
-    headers['Authorization'] = `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`;
+    try {
+      const loginUrl = `${apiBase}/v1/auth/login`;
+      const loginRes = await fetch(loginUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username: config.username, password: config.password }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (loginRes.ok) {
+        const loginData = await loginRes.json() as { accessToken?: string };
+        accessToken = loginData.accessToken || '';
+      }
+    } catch {
+      // auth failed, continue without token
+    }
+  }
+
+  const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
+  const nsParam = `namespaceId=${encodeURIComponent(namespace)}`;
+
+  let listUrl: string;
+  if (mode === 'skills') {
+    // Nacos 3.2+ Skill Registry: /v3/console/ai/skills/list
+    listUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
+  } else {
+    // Traditional service discovery: {prefix}/v1/ns/catalog/services
+    listUrl = `${apiBase}${prefix}/v1/ns/catalog/services?pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
   }
 
   let nacosSkills: SkillEntry[] = [];
   try {
-    const response = await fetch(listUrl, { headers, signal: AbortSignal.timeout(10000) });
+    const response = await fetch(listUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
     if (!response.ok) {
       return {
         nacosSkills: [],
-        updatedConfig: { ...config, lastSyncAt: new Date().toISOString(), lastSyncStatus: 'error' as const, lastSyncError: `Nacos 请求失败: ${response.status}` },
+        updatedConfig: { ...config, lastSyncAt: new Date().toISOString(), lastSyncStatus: 'error' as const, lastSyncError: `Nacos 请求失败: HTTP ${response.status}` },
       };
     }
 
-    const data = await response.json() as { data: { groupName?: string; serviceName?: string; description?: string }[] };
-    if (data.data) {
-      nacosSkills = data.data
-        .filter((item): item is { serviceName: string; description?: string; groupName?: string } => !!item.serviceName)
-        .map((item) => ({
-          name: item.serviceName,
-          description: item.description || '',
-          source: 'nacos' as const,
-          sourceAlias: config.registryUrl,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          fileCount: 0,
-        }));
+    const data = await response.json();
+    const allItems: Record<string, unknown>[] = [];
+
+    if (mode === 'skills') {
+      // Nacos 3.2 skill registry: { code: 0, data: { pageItems, pagesAvailable } }
+      const body = data as { code?: number; data?: { pageItems?: Record<string, unknown>[]; pagesAvailable?: number } };
+      if (body.code === 0 && body.data) {
+        allItems.push(...(body.data.pageItems || []));
+        // Fetch remaining pages
+        for (let page = 2; page <= (body.data.pagesAvailable || 1); page++) {
+          const pagedUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=${page}&pageSize=500&${nsParam}${tokenParam}`;
+          const pagedRes = await fetch(pagedUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
+          if (pagedRes.ok) {
+            const pagedData = await pagedRes.json() as { data?: { pageItems?: Record<string, unknown>[] } };
+            if (pagedData.data?.pageItems) {
+              allItems.push(...pagedData.data.pageItems);
+            }
+          }
+        }
+      }
+    } else {
+      // Traditional naming: { code: 200, data: { serviceList } }
+      if (data?.code === 200 && data?.data) {
+        const rawData = data.data as { count?: number; serviceList?: Record<string, unknown>[] };
+        if (Array.isArray(rawData.serviceList)) {
+          allItems.push(...rawData.serviceList);
+        }
+      }
     }
+
+    nacosSkills = allItems
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        name: typeof item.name === 'string' ? item.name : (typeof item.serviceName === 'string' ? item.serviceName : ''),
+        description: typeof item.description === 'string' ? item.description : '',
+        source: 'nacos' as const,
+        sourceAlias: config.registryUrl,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        fileCount: 0,
+      }))
+      .filter((s) => !!s.name);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Nacos 连接失败';
     return {

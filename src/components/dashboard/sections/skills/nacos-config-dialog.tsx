@@ -12,6 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useNacosConfig, useUpdateNacosConfig, useNacosSync } from '@/hooks/use-nacos-config';
 
@@ -27,6 +34,9 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
 
   const [registryUrl, setRegistryUrl] = useState(config?.registryUrl || '');
   const [namespace, setNamespace] = useState(config?.namespace || 'public');
+  const [protocol, setProtocol] = useState<'http' | 'https'>(config?.protocol || 'http');
+  const [apiPrefix, setApiPrefix] = useState(config?.apiPrefix ?? '/nacos');
+  const [mode, setMode] = useState<'services' | 'skills'>(config?.mode || 'services');
   const [username, setUsername] = useState(config?.username || '');
   const [password, setPassword] = useState(config?.password || '');
 
@@ -34,10 +44,13 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
     await updateMutation.mutateAsync({
       registryUrl,
       namespace,
+      protocol,
+      apiPrefix: apiPrefix ?? '/nacos',
+      mode,
       username: username || undefined,
       password: password || undefined,
     });
-  }, [registryUrl, namespace, username, password, updateMutation]);
+  }, [registryUrl, namespace, protocol, apiPrefix, mode, username, password, updateMutation]);
 
   const handleSync = useCallback(async () => {
     await syncMutation.mutateAsync();
@@ -61,12 +74,53 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
             <Input
               value={registryUrl}
               onChange={(e) => setRegistryUrl(e.target.value)}
-              placeholder="nacos://market.agentteams.io:80/public"
+              placeholder="nacos://host:port/namespace"
             />
             <p className="text-xs text-muted-foreground">
               格式：nacos://host:port/namespace
             </p>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>协议</Label>
+              <Select value={protocol} onValueChange={(v) => setProtocol(v as 'http' | 'https')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="https">HTTPS</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>模式</Label>
+              <Select value={mode} onValueChange={(v) => setMode(v as 'services' | 'skills')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="services">服务发现 (Nacos 2.x)</SelectItem>
+                  <SelectItem value="skills">Skill 注册中心 (Nacos 3.2+)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {mode === 'services' && (
+            <div className="space-y-2">
+              <Label>API 路径前缀</Label>
+              <Input
+                value={apiPrefix}
+                onChange={(e) => setApiPrefix(e.target.value)}
+                placeholder="/nacos"
+              />
+              <p className="text-xs text-muted-foreground">
+                默认 /nacos，某些部署为 /
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>命名空间</Label>
