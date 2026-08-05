@@ -30,7 +30,7 @@ async function listSkillFiles(client: any, skillName: string): Promise<string[]>
   const stream = client.listObjects(SKILLS_BUCKET, prefix, false);
 
   for await (const obj of stream) {
-    if (obj.objectName.endsWith('/')) continue;
+    if (obj?.objectName?.endsWith('/')) continue;
     files.push(obj.objectName.replace(prefix, ''));
   }
 
