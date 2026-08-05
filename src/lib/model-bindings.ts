@@ -174,7 +174,7 @@ export function buildModelBindings(
           // has not been explicitly configured and verified. They remain
           // callable at the gateway level but should display as "未验证" in the
           // UI so the user knows the mapping is implicit, not explicit.
-          available: !isPassthrough && Boolean(provider && provider.tokenCount > 0 && targetModel),
+          available: !isPassthrough && Boolean(provider && targetModel),
           passthrough: isPassthrough,
         };
         const key = bindingKey(binding);

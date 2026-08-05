@@ -26,7 +26,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { id: 'overview', label: '总览', icon: LayoutDashboard },
   { id: 'workers', label: 'Workers', icon: Bot },
-  { id: 'skills', label: '技能', icon: Sparkles },
+  { id: 'skills', label: '技能中心', icon: Sparkles },
   { id: 'teams', label: '团队', icon: Users },
   { id: 'managers', label: 'Managers', icon: Crown },
   { id: 'humans', label: 'Humans', icon: UserCheck },
