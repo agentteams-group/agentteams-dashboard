@@ -130,7 +130,7 @@ export function SkillUploadDialog({ open, onOpenChange, onSuccess, onConflict }:
                   <Button
                     variant="outline"
                     size="sm"
-                    className="mt-2"
+                    className="mt-2 relative z-10"
                     onClick={handleParse}
                     disabled={parsing}
                   >
