@@ -28,22 +28,42 @@ AgentTeams 通过 **Higress AI 网关** 管理所有对大语言模型的访问�
 ### 可选字段
 
 - **协议**：`openai/v1`（默认，绝大多数提供商兼容）或 `original`
-- **自定义 Base URL**：仅 openai/ollama/vllm/openrouter 四类显示此字段，用于指向代理或私服地址
+- **网关路径前缀**：AI 网关路由匹配路径，默认 `/v1`。百炼 DashScope 如使用 `/compatible-mode/v1` 路径，可在此修改
+- **自定义 Base URL**：仅 `openai`/`ollama`/`vllm`/`openrouter` 四类显示此字段
 - **Token 故障转移**：当一个 Token 连续失败 N 次后自动切换到下一个 Token
+- **测试连通性**：填入 API Key 后点击按钮，直接向提供商 API 发送探测请求，验证 Key 和端点是否可用
 
-### 操作示例
+### 常见配置示例
 
+#### DeepSeek 官方
 ```
-名称: deepseek-provider
 类型: deepseek
 协议: openai/v1
-API Key: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-模型映射:
-  请求模型: team-chat    目标模型: deepseek-chat
-  请求模型: team-reasoner 目标模型: deepseek-reasoner
+API Key: sk-从DeepSeek官网获取
+模型映射: team-chat -> deepseek-chat
 ```
 
-**点击"创建提供商"后**，系统会自动生成一条 AI 路由，将你配置的模型映射接入网关。提示 "已自动创建路由" 即表示成功。
+#### 火山引擎 DeepSeek
+```
+类型: 字节豆包
+协议: openai/v1
+API Key: 从火山引擎方舟平台获取的 ARK API Key
+模型映射: team-chat -> deepseek-v3-250324
+```
+火山引擎与豆包共享 ARK API 基础设施，内置端点为 `https://ark.cn-beijing.volces.com/api/v3`。
+
+#### 百炼 DeepSeek
+```
+类型: 通义千问 (Qwen)
+协议: openai/v1
+API Key: 从阿里云百炼控制台获取的 DashScope API Key
+模型映射: team-chat -> deepseek-r1
+```
+百炼与通义千问共享 DashScope API 基础设施，内置端点为 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
+
+> 如果内置端点不可用，可改用 `openai` 类型 + 自定义 Base URL：
+> - 火山引擎：Base URL 填 `https://ark.cn-beijing.volces.com/api/v3`
+> - 百炼：Base URL 填 `https://dashscope.aliyuncs.com/compatible-mode/v1`
 
 ---
 
@@ -51,80 +71,25 @@ API Key: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 自动创建（推荐）
 
-创建 Provider 时如果填写了模型映射，系统会自动创建路由 `agentteams-{provider名称}`，无需手动操作。
+创建 Provider 时如果填写了模型映射，系统会自动创建路由 `agentteams-{provider名称}`，使用表单中配置的**网关路径前缀**（默认 `/v1`）。
 
-### 手动创建（当需要自定义路由时）
+### 手动创建
 
-如果自动创建失败，或你需要多个 Provider 做负载均衡/故障转移，在 "AI 路由" 卡片点击 "创建 AI 路由"。
-
-| 字段 | 说明 |
-|------|------|
-| 路由名称 | 唯一标识 |
-| 路径匹配 | 固定 `/v1` （OpenAI 兼容路径前缀） |
-| 上游提供商 | 选择 Provider 并设权重（100 为独占） |
-| 请求模型匹配 | 精确匹配别名，如 `team-chat` |
-| 启用认证 | 必须开启（Consumer 凭证认证） |
+如果自动创建失败，或需要多个 Provider 做负载均衡，在 "AI 路由" 卡片手动创建。
 
 ---
 
 ## 第三步：创建 Consumer（API 认证凭证）
 
-Worker 通过 Consumer 凭证认证后才能调用 AI 路由。在 "Consumers" 区域操作。
+点击 "添加 Consumer"，输入名称，API Key 留空自动生成。
 
-### 操作
-
-点击 "添加 Consumer"，输入名称（如 `worker-consumer`），API Key 可留空自动生成。
-
-**重要**：创建成功后，API Key **仅在当前页面显示一次**，必须立即复制保存。
-
-创建后 Consumer 会自动绑定到所有 AI 路由，无需手动操作。
+**重要**：API Key 仅在当前页面显示一次，必须立即复制保存。
 
 ---
 
 ## 第四步：在 Worker/Manager 中选择模型
 
-配置完以上三步后，进入 Worker 创建/编辑面板，在 "请求模型别名" 下拉中即可看到你配置的模型别名（如 `team-chat`）。
-
-### 模型别名的三种状态
-
-| 状态 | 含义 | 选择后能否工作 |
-|------|------|---------------|
-| 已配置 (configured) | 已有 AI 路由指向该别名 | 可以，直接使用 |
-| 内置 (builtin) | 系统中预定义的别名，但尚无路由 | 需要先按上述步骤配置路由 |
-| 冲突 | 多个路由匹配同一别名 | 不建议选择，需修复路由冲突 |
-
----
-
-## 完整示例：用 DeepSeek 跑通
-
-### 1. 创建 Provider
-
-```
-名称: deepseek
-类型: deepseek
-API Key: sk-你的deepseek密钥
-模型映射:
-  team-chat -> deepseek-chat
-```
-
-### 2. 创建 Consumer
-
-```
-名称: my-consumer
-API Key: 留空自动生成
-```
-
-复制生成的 API Key 妥善保存。
-
-### 3. 创建 Worker
-
-```
-名称: test-worker
-运行时: OpenClaw
-请求模型别名: team-chat（下拉框中可见）
-```
-
-Worker 创建后即可通过 AI 网关访问 DeepSeek 模型。
+进入 Worker 创建/编辑面板，在 "请求模型别名" 下拉中即可看到配置的模型别名。
 
 ---
 
@@ -132,19 +97,16 @@ Worker 创建后即可通过 AI 网关访问 DeepSeek 模型。
 
 ### Q: 创建 Provider 后 Worker 下拉仍看不到模型？
 
-检查：
-1. AI 路由是否已创建（查看 "请求模型别名绑定" 表，确认 alias 状态为"可用"）
-2. 模型映射中的 "请求模型" 值是否与 Worker 表单中的下拉选项一致
-3. Consumer 是否已创建并绑定
+检查 AI 路由 modelPredicates 是否匹配你的别名，以及 Consumer 是否已创建。
 
 ### Q: Worker 调用模型返回 401？
 
-Consumer 凭证未正确传递或被删除。重新创建 Consumer 获取新 Key。
+Consumer 凭证未正确传递或被删除。重新创建 Consumer。
 
-### Q: 想用多个模型提供商做负载均衡？
+### Q: 路径前缀应该填什么？
 
-在 AI 路由中添加多个上游 Provider，各设不同权重。例如 deepseek 权重 70、qwen 权重 30。
+通常保持默认 `/v1`。如果提供商 API 使用特殊路径前缀（如百炼 `/compatible-mode/v1`），修改此字段使网关路由能正确匹配 Worker 发出的请求。
 
-### Q: API Key 轮换如何操作？
+### Q: 测试连通性按钮有什么用？
 
-编辑 Provider，在 "新增 Token" 字段输入新 Key（多 Key 用逗号分隔）。开启 Token 故障转移实现自动切换。
+在创建提供商之前验证 API Key 和端点的可用性。直连提供商 API，不经过网关，能快速定位 Key 错误或网络不通的问题。
