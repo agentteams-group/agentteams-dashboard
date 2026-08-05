@@ -91,15 +91,15 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
             : '选择技能...'}
         </Button>
 
-        <DialogContent className="sm:max-w-md max-w-[95vw]">
+        <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
           <DialogHeader>
             <DialogTitle>选择技能</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 py-3">
+          <div className="space-y-3 py-3 overflow-hidden">
             <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
                 <Input
                   placeholder="搜索技能..."
                   value={search}
@@ -110,7 +110,7 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
               <select
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as 'all' | 'custom' | 'nacos')}
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                className="rounded-md border border-input bg-background px-2 py-1 text-sm shrink-0"
               >
                 <option value="all">全部</option>
                 <option value="custom">自定义</option>
@@ -118,7 +118,7 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
               </select>
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-1">
+            <div className="max-h-60 min-h-0 overflow-y-auto space-y-1">
               {availableSkills.length === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-4">
                   {skills.length === 0 ? '暂无可用技能' : '没有匹配的技能'}
@@ -127,25 +127,25 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
                 availableSkills.map((skill) => (
                   <button
                     key={skill.name}
-                    className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-muted text-left"
+                    className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-muted text-left min-w-0"
                     onClick={() => handleSelect(skill)}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-medium">{skill.name}</span>
+                        <span className="font-mono text-sm font-medium truncate">{skill.name}</span>
                         {skill.source === 'nacos' ? (
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="outline" className="text-[10px] shrink-0">
                             {skill.sourceAlias || 'Nacos'}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px]">
+                          <Badge variant="secondary" className="text-[10px] shrink-0">
                             自定义
                           </Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
                     </div>
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-green-500 shrink-0" />
                   </button>
                 ))
               )}
