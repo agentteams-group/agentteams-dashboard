@@ -777,6 +777,18 @@ export const agentteamsApi = {
   getSkill: (name: string): Promise<SkillEntry> =>
     proxyRequest<SkillEntry>(`/skills/${encodeURIComponent(name)}`),
 
+  downloadSkill: (name: string): Promise<File> => {
+    const url = apiUrl(`/api/agentteams/skills/${encodeURIComponent(name)}/download`);
+    return fetch(url).then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ApiError(`下载技能失败: ${res.status} ${text}`, res.status, `/skills/${name}/download`);
+      }
+      const blob = await res.blob();
+      return new File([blob], `${name}.zip`, { type: 'application/zip' });
+    });
+  },
+
   createSkill: (file: File): Promise<SkillEntry & { success: boolean; conflict?: boolean }> => {
     const form = new FormData();
     form.append('file', file);
