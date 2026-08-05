@@ -538,4 +538,24 @@ describe('model bindings', () => {
       passthrough: false,
     });
   });
+
+  it('strips trailing * from PRE predicate matchValue before prefix matching', () => {
+    // Higress Console stores PRE predicates with a wildcard suffix like "kimi-*"
+    // which must be matched as a literal prefix after stripping the trailing *.
+    const bindings = buildModelBindings(
+      ['kimi-k3'],
+      [{
+        name: 'ark',
+        pathPredicate: { matchType: 'PRE', matchValue: '/v3' },
+        modelPredicates: [{ matchType: 'PRE', matchValue: 'kimi-*' }],
+        upstreams: [{ provider: 'ark', weight: 100, modelMapping: { 'kimi-k3': 'kimi-k3' } }],
+      }],
+      [{ name: 'ark', type: 'openai', tokenCount: 1 }],
+    );
+    expect(bindings[0]).toMatchObject({
+      requestModelAlias: 'kimi-k3',
+      routeName: 'ark',
+      available: true,
+    });
+  });
 });

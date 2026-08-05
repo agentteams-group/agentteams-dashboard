@@ -34,6 +34,7 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
 
   const [registryUrl, setRegistryUrl] = useState(config?.registryUrl || '');
   const [namespace, setNamespace] = useState(config?.namespace || 'public');
+  const [alias, setAlias] = useState(config?.alias || '');
   const [protocol, setProtocol] = useState<'http' | 'https'>(config?.protocol || 'http');
   const [apiPrefix, setApiPrefix] = useState(config?.apiPrefix ?? '/nacos');
   const [mode, setMode] = useState<'services' | 'skills'>(config?.mode || 'services');
@@ -44,13 +45,14 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
     await updateMutation.mutateAsync({
       registryUrl,
       namespace,
+      alias: alias || undefined,
       protocol,
       apiPrefix: apiPrefix ?? '/nacos',
       mode,
       username: username || undefined,
       password: password || undefined,
     });
-  }, [registryUrl, namespace, protocol, apiPrefix, mode, username, password, updateMutation]);
+  }, [registryUrl, namespace, alias, protocol, apiPrefix, mode, username, password, updateMutation]);
 
   const handleSync = useCallback(async () => {
     await syncMutation.mutateAsync();
@@ -78,6 +80,18 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
             />
             <p className="text-xs text-muted-foreground">
               格式：nacos://host:port/namespace
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>显示别名</Label>
+            <Input
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              placeholder="例如：公司 Nacos"
+            />
+            <p className="text-xs text-muted-foreground">
+              列表中使用简短别名代替长 URL
             </p>
           </div>
 

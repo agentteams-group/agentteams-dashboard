@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Check, X } from 'lucide-react';
+import { Search, Plus, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,8 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
   const [filter, setFilter] = useState<'all' | 'custom' | 'nacos'>('all');
   const [open, setOpen] = useState(false);
 
-  const { data: skills = [] } = useSkills(search || undefined, filter === 'all' ? null : filter);
+  const { data: result = { skills: [], total: 0 } } = useSkills(search || undefined, filter === 'all' ? null : filter);
+  const skills = result.skills;
 
   const selectedSkills = useMemo(
     () => skills.filter((s) => value.includes(s.name)),
@@ -44,6 +45,13 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
       } else {
         onChange([...value, skill.name]);
       }
+    },
+    [value, onChange]
+  );
+
+  const handleRemove = useCallback(
+    (name: string) => {
+      onChange(value.filter((v) => v !== name));
     },
     [value, onChange]
   );
@@ -66,11 +74,16 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
           <Badge
             key={skill.name}
             variant="secondary"
-            className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground group"
-            onClick={() => handleSelect(skill)}
+            className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground group pr-1"
           >
-            {skill.name}
-            <X className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100" />
+            <span className="max-w-[160px] truncate">{skill.name}</span>
+            <X
+              className="ml-1 h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemove(skill.name);
+              }}
+            />
           </Badge>
         ))}
         {value.length === 0 && (
@@ -87,7 +100,7 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
         >
           <Search className="h-4 w-4 mr-2" />
           {value.length > 0
-            ? `${value.length} 个技能已选择，点击选择更多...`
+            ? `${value.length} 个技能已选择，点击查看更多...`
             : '选择技能...'}
         </Button>
 
@@ -127,15 +140,16 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
                 availableSkills.map((skill) => (
                   <button
                     key={skill.name}
-                    className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-muted text-left min-w-0"
+                    className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted text-left min-w-0"
                     onClick={() => handleSelect(skill)}
                   >
+                    <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-medium truncate">{skill.name}</span>
+                        <span className="font-mono text-sm font-medium truncate max-w-[180px]">{skill.name}</span>
                         {skill.source === 'nacos' ? (
                           <Badge variant="outline" className="text-[10px] shrink-0">
-                            {skill.sourceAlias || 'Nacos'}
+                            Nacos
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-[10px] shrink-0">
@@ -143,9 +157,8 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[280px]">{skill.description}</p>
                     </div>
-                    <Check className="h-4 w-4 text-green-500 shrink-0" />
                   </button>
                 ))
               )}
@@ -153,11 +166,27 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
 
             {selectedSkills.length > 0 && (
               <div className="pt-2 border-t">
-                <p className="text-xs text-muted-foreground mb-2">已选择 ({selectedSkills.length}):</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  已选择 ({selectedSkills.length}):
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1 text-xs text-destructive hover:text-destructive ml-2"
+                    onClick={() => onChange([])}
+                  >
+                    全部取消
+                  </Button>
+                </p>
                 <div className="flex flex-wrap gap-1">
                   {selectedSkills.map((skill) => (
-                    <Badge key={skill.name} variant="secondary" className="text-xs">
-                      {skill.name}
+                    <Badge
+                      key={skill.name}
+                      variant="secondary"
+                      className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground text-xs pr-1"
+                      onClick={() => handleRemove(skill.name)}
+                    >
+                      <span className="max-w-[140px] truncate">{skill.name}</span>
+                      <X className="ml-1 h-3 w-3 shrink-0" />
                     </Badge>
                   ))}
                 </div>

@@ -24,7 +24,11 @@ function routeMatchesAlias(route: AiRoute, alias: string): boolean {
     const raw = predicate.matchValue;
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) return false;
-    return predicate.matchType === 'PRE' ? alias.startsWith(value) : matchesPattern(alias, value);
+    if (predicate.matchType === 'PRE') {
+      const prefix = value.replace(/\*+$/, '');
+      return Boolean(prefix) && alias.startsWith(prefix);
+    }
+    return matchesPattern(alias, value);
   });
 }
 

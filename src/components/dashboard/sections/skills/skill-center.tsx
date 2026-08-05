@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { Search, Plus, Pencil, Trash2, RefreshCw, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import { SkillEntry } from '@/lib/skill-center-types';
 import { SkillUploadDialog } from './skill-upload-dialog';
 import { NacosConfigDialog } from './nacos-config-dialog';
 import { SkillEditDialog } from './skill-edit-dialog';
+import { SkillDetailDialog } from './skill-detail-dialog';
 
 interface SkillCenterProps {
   onRefresh?: () => void;
@@ -34,10 +35,20 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [nacosConfigOpen, setNacosConfigOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<SkillEntry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SkillEntry | null>(null);
+  const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [_conflictSkill, _setConflictSkill] = useState<SkillEntry | null>(null);
 
-  const { data: skills = [], refetch } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter);
+  const { data: result = { skills: [], total: 0 }, refetch } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
+  const skills = result.skills;
+  const total = result.total;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const deleteMutation = useDeleteSkill();
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sourceFilter]);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -137,7 +148,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                   <td className="p-3 max-w-xs truncate">{skill.description}</td>
                   <td className="p-3">
                     {skill.source === 'nacos' ? (
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className="text-xs max-w-[120px] truncate" title={skill.sourceAlias}>
                         {skill.sourceAlias || 'Nacos'}
                       </Badge>
                     ) : skill.source === 'builtin' ? (
@@ -153,6 +164,14 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                   <td className="p-3">{skill.fileCount}</td>
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setDetailSkill(skill)}
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </Button>
                       {skill.source === 'custom' && (
                         <>
                           <Button
@@ -197,6 +216,30 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         </div>
       )}
 
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>共 {total} 项，第 {page}/{totalPages} 页</span>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
+      )}
+
       <SkillUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
@@ -214,6 +257,12 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         open={!!editingSkill}
         onOpenChange={(open) => !open && setEditingSkill(null)}
         onSuccess={handleRefresh}
+      />
+
+      <SkillDetailDialog
+        skill={detailSkill}
+        open={!!detailSkill}
+        onOpenChange={(open) => !open && setDetailSkill(null)}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

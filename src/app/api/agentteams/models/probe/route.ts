@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PROVIDER_ENDPOINTS: Record<string, string> = {
+const PROVIDER_BASES: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   azure: 'https://{resource}.openai.azure.com',
   claude: 'https://api.anthropic.com/v1',
@@ -32,18 +32,43 @@ const PROVIDER_ENDPOINTS: Record<string, string> = {
   coze: 'https://api.coze.cn/v1',
 };
 
-function getChatEndpoint(type: string, protocol: string, baseUrl?: string): string {
-  if (protocol === 'original') {
-    if (type === 'claude') return 'https://api.anthropic.com/v1/messages';
-    if (type === 'gemini') return 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
-    // For non-openai protocols, fall back to a generic chat endpoint
-    const base = baseUrl || PROVIDER_ENDPOINTS[type];
+interface ProbeTarget {
+  url: string;
+  method: 'GET' | 'POST';
+  body?: string;
+}
+
+function buildProbe(type: string, protocol: string, baseUrl?: string): ProbeTarget {
+  if (protocol === 'openai/v1') {
+    const base = (baseUrl || PROVIDER_BASES[type])?.replace(/\/$/, '');
     if (!base) throw new Error(`不支持的提供商类型: ${type}，请提供自定义 Base URL`);
-    return `${base.replace(/\/$/, '')}/chat/completions`;
+    return { url: `${base}/models`, method: 'GET' };
   }
-  const base = baseUrl || PROVIDER_ENDPOINTS[type];
+
+  if (type === 'claude') {
+    return {
+      url: 'https://api.anthropic.com/v1/messages',
+      method: 'POST',
+      body: JSON.stringify({ model: 'claude-3-haiku-20240307', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+    };
+  }
+
+  if (type === 'gemini') {
+    return {
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+      method: 'POST',
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+    };
+  }
+
+  const base = (baseUrl || PROVIDER_BASES[type])?.replace(/\/$/, '');
   if (!base) throw new Error(`不支持的提供商类型: ${type}，请提供自定义 Base URL`);
-  return `${base.replace(/\/$/, '')}/chat/completions`;
+  return { url: `${base}/models`, method: 'GET' };
+}
+
+function authHeader(type: string, token: string): Record<string, string> {
+  if (type === 'azure') return { 'api-key': token };
+  return { Authorization: `Bearer ${token}` };
 }
 
 export async function POST(request: NextRequest) {
@@ -60,9 +85,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: '请先输入 API Key' }, { status: 400 });
   }
 
-  let endpoint: string;
+  let target: ProbeTarget;
   try {
-    endpoint = getChatEndpoint(type, protocol, baseUrl);
+    target = buildProbe(type, protocol, baseUrl);
   } catch (err: unknown) {
     return NextResponse.json({ success: false, message: err instanceof Error ? err.message : '无法确定 API 端点' }, { status: 400 });
   }
@@ -72,26 +97,13 @@ export async function POST(request: NextRequest) {
 
   const startedAt = Date.now();
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (type === 'doubao') {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else if (type === 'azure') {
-      headers['api-key'] = token;
-    } else {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: 'ping',
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 1,
-      }),
+    const res = await fetch(target.url, {
+      method: target.method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader(type, token),
+      },
+      body: target.body,
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -103,14 +115,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: `连接成功 (HTTP ${res.status})`, latencyMs });
     }
 
-    const isAuthError = res.status === 401 || res.status === 403;
-    if (isAuthError) {
+    if (res.status === 401 || res.status === 403) {
       return NextResponse.json({ success: false, message: `认证失败 (HTTP ${res.status})，请检查 API Key 是否正确`, latencyMs });
     }
 
     return NextResponse.json({
       success: false,
-      message: `请求失败 HTTP ${res.status}: ${resText.slice(0, 100)}`,
+      message: `请求失败 HTTP ${res.status}: ${resText.slice(0, 120)}`,
       latencyMs,
     });
   } catch (err: unknown) {

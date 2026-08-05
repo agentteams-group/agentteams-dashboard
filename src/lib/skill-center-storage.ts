@@ -291,7 +291,7 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
         name: typeof item.name === 'string' ? item.name : (typeof item.serviceName === 'string' ? item.serviceName : ''),
         description: typeof item.description === 'string' ? item.description : '',
         source: 'nacos' as const,
-        sourceAlias: config.registryUrl,
+        sourceAlias: config.alias || config.registryUrl,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         fileCount: 0,

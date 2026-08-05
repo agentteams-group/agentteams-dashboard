@@ -9,6 +9,7 @@ import path from 'path';
 export interface NacosConfig {
   registryUrl: string;
   namespace: string;
+  alias?: string;
   protocol?: 'http' | 'https';
   apiPrefix?: string;
   mode?: 'services' | 'skills';

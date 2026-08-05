@@ -17,14 +17,14 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  let body: { registryUrl?: string; namespace?: string; protocol?: 'http' | 'https'; apiPrefix?: string; mode?: 'services' | 'skills'; username?: string; password?: string };
+  let body: { registryUrl?: string; namespace?: string; alias?: string; protocol?: 'http' | 'https'; apiPrefix?: string; mode?: 'services' | 'skills'; username?: string; password?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: '请求体格式错误' }, { status: 400 });
   }
 
-  const { registryUrl, namespace, protocol, apiPrefix, mode, username, password } = body;
+  const { registryUrl, namespace, alias, protocol, apiPrefix, mode, username, password } = body;
 
   if (!registryUrl || !isValidNacosUrl(registryUrl)) {
     return NextResponse.json(
@@ -37,6 +37,7 @@ export async function PUT(request: NextRequest) {
     const newConfig: NacosConfig = {
       registryUrl,
       namespace: namespace || 'public',
+      alias: alias || undefined,
       protocol: protocol || 'http',
       apiPrefix: apiPrefix || '/nacos',
       mode: mode || 'services',

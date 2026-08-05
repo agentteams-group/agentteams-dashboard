@@ -2,19 +2,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { SkillEntry } from '@/lib/skill-center-types';
 
-export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builtin' | null) {
+export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builtin' | null, page?: number, pageSize?: number) {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (source) params.set('source', source);
+  if (page) params.set('page', String(page));
+  if (pageSize) params.set('pageSize', String(pageSize));
   const query = params.toString();
 
-  return useQuery<SkillEntry[], Error>({
+  return useQuery<{ skills: SkillEntry[]; total: number }, Error>({
     queryKey: ['agentteams-skills', query],
-    queryFn: async () => {
-      const res = await agentteamsApi.listSkills(query);
-      return res.skills;
-    },
-    placeholderData: [] as SkillEntry[],
+    queryFn: () => agentteamsApi.listSkills(query),
+    placeholderData: { skills: [], total: 0 },
     throwOnError: false,
   });
 }

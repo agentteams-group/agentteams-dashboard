@@ -141,7 +141,9 @@ export function ModelSelector({
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          在「模型管理」配置模型别名后，此处会提供可选项。
+          {uniqueOptions.length === 0
+            ? '在「模型管理」创建提供商并配置模型映射，保存后此处即可选择。或手动输入模型别名。'
+            : '在「模型管理」配置模型别名后，此处会提供可选项。'}
         </p>
       )}
     </div>
