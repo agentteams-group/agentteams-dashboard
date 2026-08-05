@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, Clock, Gauge, Globe, Info, Key, Link2, Loader2, Monitor, Pencil, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, Clock, Gauge, Globe, Info, Key, Link2, Loader2, Monitor, Pencil, Play, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,13 +64,12 @@ import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 
 const newProviderForm = (): ProviderForm => ({
-  name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [],
+  name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [], pathPrefix: '/v1',
 });
 
-const newRouteForm = (providerNames: string[] = []): RouteForm => ({
+const newRouteForm = (providerNames: string[] = [], pathPrefix = '/v1'): RouteForm => ({
   name: '',
-  // Unified alias routing is constrained to the /v1 prefix (spec).
-  pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+  pathPredicate: { matchType: 'PRE', matchValue: pathPrefix },
   // With a single provider the upstream is preselected so creating a route
   // after adding the first provider is a one-click submission.
   upstreams: providerNames.length === 1
@@ -95,6 +94,7 @@ function providerToForm(provider: LlmProviderResponse): ProviderForm {
     protocol: provider.protocol === 'original' ? 'original' : 'openai/v1',
     tokens: [],
     baseUrl: typeof rawConfigs.openaiCustomUrl === 'string' ? rawConfigs.openaiCustomUrl : '',
+    pathPrefix: typeof rawConfigs.pathPrefix === 'string' ? rawConfigs.pathPrefix : '/v1',
     tokenFailoverConfig: provider.tokenFailoverConfig,
     modelMappings: mappingRules(rawConfigs.modelMapping),
   };
@@ -148,6 +148,8 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
   const [form, setForm] = useState<ProviderForm>(() => provider ? providerToForm(provider) : newProviderForm());
   const [tokenInput, setTokenInput] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
   const editing = Boolean(provider);
   const pending = create.isPending || update.isPending;
 
@@ -168,7 +170,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
       .filter((predicate) => predicate.matchValue && !predicate.matchValue.includes('*') && !predicate.matchValue.startsWith('~'));
     createRoute.mutate(serializeRouteForm({
       name: routeName,
-      pathPredicate: { matchType: 'PRE', matchValue: '/v1' },
+      pathPredicate: { matchType: 'PRE', matchValue: form.pathPrefix || '/v1' },
       upstreams: [{ provider: providerName, weight: 100, modelMappings: form.modelMappings }],
       modelPredicates,
       authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
@@ -176,6 +178,30 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
       onSuccess: () => toast.success(`已自动创建路由 ${routeName}，可在 Manager/Worker 中直接选择模型`),
       onError: (error) => toast.error(`服务商已创建，但自动接入路由失败：${error.message}。可手动创建路由。`),
     });
+  };
+
+  const handleTest = async () => {
+    setTestResult(null);
+    const token = tokenInput.split(',')[0]?.trim() || '';
+    setTesting(true);
+    try {
+      const res = await fetch('/api/agentteams/models/probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: form.type,
+          protocol: form.protocol,
+          token,
+          baseUrl: form.baseUrl || undefined,
+        }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ success: false, message: err instanceof Error ? err.message : '请求失败' });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const submit = () => {
@@ -193,12 +219,14 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
 
   const failover = form.tokenFailoverConfig ?? { enabled: false, failureThreshold: 1, successThreshold: 1, healthCheckInterval: 30, healthCheckModel: '' };
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{editing ? `编辑提供商 - ${provider?.name}` : '创建提供商'}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-4">
       <div><Label>名称 *</Label><Input disabled={editing || pending} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div>
       <div><Label>类型 *</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>{PROVIDER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div>
       <div><Label>协议</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.protocol} onChange={(event) => setForm({ ...form, protocol: event.target.value as ProviderForm['protocol'] })}><option value="openai/v1">openai/v1</option><option value="original">original</option></select></div>
+      <div><Label>网关路径前缀</Label><Input disabled={pending} value={form.pathPrefix || '/v1'} onChange={(event) => setForm({ ...form, pathPrefix: event.target.value })} placeholder="/v1" /></div>
     </div>
-    <div><Label>{editing ? `新增 Token（当前 ${provider?.tokenCount ?? 0} 个，留空保留）` : 'API Key *（多个用逗号分隔）'}</Label><Input disabled={pending} type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} /></div>
+    <div><Label>{editing ? `新增 Token（当前 ${provider?.tokenCount ?? 0} 个，留空保留）` : 'API Key *（多个用逗号分隔）'}</Label><div className="flex gap-2"><Input disabled={pending || testing} type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="flex-1" /><Button type="button" variant="outline" size="sm" disabled={testing || (!tokenInput && !editing)} onClick={handleTest}>{testing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Play className="w-3.5 h-3.5 mr-1" />}测试连通性</Button></div></div>
+    {testResult && <div className={`flex items-center gap-2 text-xs p-2 rounded ${testResult.success ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'}`}>{testResult.success ? <Zap className="w-3.5 h-3.5 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}{testResult.message}{testResult.latencyMs != null && <span className="text-muted-foreground">({testResult.latencyMs}ms)</span>}</div>}
     {PROVIDERS_NEED_BASE_URL.has(form.type) && <div><Label>自定义 Base URL</Label><Input disabled={pending} value={form.baseUrl ?? ''} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></div>}
     <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="provider-failover" className="size-4" type="checkbox" checked={failover.enabled} disabled={pending} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, enabled: event.target.checked } })} /><Label htmlFor="provider-failover">启用 Token 故障转移</Label></div>{failover.enabled && <div className="grid gap-3 md:grid-cols-4"><div><Label>失败阈值</Label><Input disabled={pending} type="number" min="1" value={failover.failureThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, failureThreshold: Number(event.target.value) } })} /></div><div><Label>成功阈值</Label><Input disabled={pending} type="number" min="1" value={failover.successThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, successThreshold: Number(event.target.value) } })} /></div><div><Label>检查间隔（秒）</Label><Input disabled={pending} type="number" min="1" value={failover.healthCheckInterval} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckInterval: Number(event.target.value) } })} /></div><div><Label>健康检查模型</Label><Input disabled={pending} value={failover.healthCheckModel} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckModel: event.target.value } })} /></div></div>}</div>
     <MappingEditor value={form.modelMappings} onChange={(modelMappings) => setForm({ ...form, modelMappings })} />

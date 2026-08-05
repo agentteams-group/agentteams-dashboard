@@ -116,6 +116,7 @@ export interface ProviderForm {
   protocol: 'openai/v1' | 'original';
   tokens: string[];
   baseUrl?: string;
+  pathPrefix?: string;
   tokenFailoverConfig?: LlmProvider['tokenFailoverConfig'];
   modelMappings: ModelMappingRule[];
 }
@@ -289,6 +290,7 @@ export function validateProviderForm(form: ProviderForm, isUpdate = false): stri
 export function serializeProviderForm(form: ProviderForm, isUpdate = false): CreateLlmProviderRequest | UpdateLlmProviderRequest {
   const rawConfigs = {
     ...(form.baseUrl?.trim() ? { openaiCustomUrl: form.baseUrl.trim() } : {}),
+    ...(form.pathPrefix && form.pathPrefix !== '/v1' ? { pathPrefix: form.pathPrefix } : {}),
     ...(form.modelMappings.length > 0 ? { modelMapping: serializeModelMappings(form.modelMappings) } : {}),
   };
   const common = {
