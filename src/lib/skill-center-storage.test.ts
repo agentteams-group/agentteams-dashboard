@@ -36,7 +36,7 @@ function makeClient(objects: Record<string, string>) {
       on: (event: string, cb: (_arg: unknown) => void) => {
         if (event === 'data') {
           while (idx < events.length) {
-            cb({ objectName: events[idx] });
+            cb({ name: events[idx] });
             idx += 1;
           }
         }

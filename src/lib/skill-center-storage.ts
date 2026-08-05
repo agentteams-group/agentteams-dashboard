@@ -64,8 +64,8 @@ export async function listSkills(client: any): Promise<SkillEntry[]> {
   const stream = client.listObjects(SKILLS_BUCKET, SKILLS_METADATA_PREFIX, true);
 
   for await (const obj of stream) {
-    if (!obj?.objectName?.endsWith('.json')) continue;
-    const name = obj.objectName.replace(SKILLS_METADATA_PREFIX, '').replace('.json', '');
+    if (!obj.name?.endsWith('.json')) continue;
+    const name = obj.name.replace(SKILLS_METADATA_PREFIX, '').replace('.json', '');
     if (!isValidNameSegment(name) || !SKILL_NAME_PATTERN.test(name)) continue;
 
     const metadata = await getSkillMetadata(client, name);

@@ -42,7 +42,7 @@ function makeStream(data: Uint8Array) {
   } as any;
 }
 
-function makeListIterator(items: { objectName: string }[]) {
+function makeListIterator(items: { name: string }[]) {
   let i = 0;
   return {
     [Symbol.asyncIterator]() {
@@ -137,8 +137,8 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
       .mockResolvedValueOnce(makeStream(scriptContent));
     mockList.mockReturnValue(
       makeListIterator([
-        { objectName: 'my-skill/SKILL.md' },
-        { objectName: 'my-skill/scripts/run.sh' },
+        { name: 'my-skill/SKILL.md' },
+        { name: 'my-skill/scripts/run.sh' },
       ]),
     );
 

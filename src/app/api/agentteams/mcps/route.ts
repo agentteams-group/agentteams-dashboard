@@ -37,8 +37,8 @@ export async function GET() {
     const servers: McpServerConfig[] = [];
 
     for (const obj of objects) {
-      const key = obj.objectName;
-      if (!key.endsWith('.json')) continue;
+      const key = obj.name;
+      if (!key?.endsWith('.json')) continue;
       const name = key.slice(MCP_SERVERS_PREFIX.length, -5);
       if (!isValidMcpName(name)) continue;
 
