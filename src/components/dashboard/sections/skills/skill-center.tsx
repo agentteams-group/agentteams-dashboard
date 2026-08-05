@@ -20,6 +20,7 @@ import { useSkills, useDeleteSkill } from '@/hooks/use-skill-center';
 import { SkillEntry } from '@/lib/skill-center-types';
 import { SkillUploadDialog } from './skill-upload-dialog';
 import { NacosConfigDialog } from './nacos-config-dialog';
+import { SkillEditDialog } from './skill-edit-dialog';
 
 interface SkillCenterProps {
   onRefresh?: () => void;
@@ -31,7 +32,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'custom' | 'nacos' | 'builtin'>('all');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [nacosConfigOpen, setNacosConfigOpen] = useState(false);
-  const [_editingSkill, _setEditingSkill] = useState<SkillEntry | null>(null);
+  const [editingSkill, setEditingSkill] = useState<SkillEntry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SkillEntry | null>(null);
   const [_conflictSkill, _setConflictSkill] = useState<SkillEntry | null>(null);
 
@@ -158,7 +159,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0"
-                            onClick={() => _setEditingSkill(skill)}
+                            onClick={() => setEditingSkill(skill)}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -206,6 +207,13 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
       <NacosConfigDialog
         open={nacosConfigOpen}
         onOpenChange={setNacosConfigOpen}
+      />
+
+      <SkillEditDialog
+        skill={editingSkill}
+        open={!!editingSkill}
+        onOpenChange={(open) => !open && setEditingSkill(null)}
+        onSuccess={handleRefresh}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

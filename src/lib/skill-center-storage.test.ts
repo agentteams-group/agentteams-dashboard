@@ -10,42 +10,32 @@ function makeClient(objects: Record<string, string>) {
       prefixes.add(`${parts.slice(0, i).join('/')}/`);
     }
   }
-  const emitter = (events: string[]) => {
-    let idx = 0;
-    let done = false;
-    return {
-      on: (event: string, cb: (_arg: unknown) => void) => {
-        if (event === 'data') {
-          while (idx < events.length) {
-            cb({ prefix: events[idx] });
-            idx += 1;
-          }
-        }
-        if (event === 'end' && !done) {
-          done = true;
-          setTimeout(() => cb(null), 0);
-        }
-        return undefined;
-      },
-    };
-  };
   const streamEmitter = (events: string[]) => {
     let idx = 0;
-    let done = false;
     return {
-      on: (event: string, cb: (_arg: unknown) => void) => {
-        if (event === 'data') {
-          while (idx < events.length) {
-            cb({ name: events[idx] });
-            idx += 1;
-          }
-        }
-        if (event === 'end' && !done) {
-          done = true;
-          setTimeout(() => cb(null), 0);
-        }
-        return undefined;
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            const val = events[idx++];
+            return { done: !val, value: val ? { name: val } : undefined };
+          },
+        };
       },
+      on: () => undefined,
+    };
+  };
+  const emitter = (events: string[]) => {
+    let idx = 0;
+    return {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            const val = events[idx++];
+            return { done: !val, value: val ? { prefix: val, size: 0 } : undefined };
+          },
+        };
+      },
+      on: () => undefined,
     };
   };
   return {

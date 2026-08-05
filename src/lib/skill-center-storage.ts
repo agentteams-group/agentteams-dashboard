@@ -81,41 +81,35 @@ export async function listSkills(client: any): Promise<SkillEntry[]> {
  * Collects immediate "directory" prefixes under a base prefix. Returns a
  * unique sorted list of the first path segment after the base prefix.
  */
-export function collectFirstLevelPrefixes(
+export async function collectFirstLevelPrefixes(
   client: any,
   bucket: string,
   basePrefix: string
 ): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const names = new Set<string>();
-    const stream = client.listObjects(bucket, basePrefix, false);
-    stream.on('data', (obj: Record<string, unknown>) => {
-      if (typeof obj.prefix === 'string' && obj.prefix.startsWith(basePrefix)) {
-        const remainder = obj.prefix.slice(basePrefix.length).replace(/\/+$/, '');
-        const first = remainder.split('/')[0];
-        if (first) names.add(first);
-      }
-    });
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Array.from(names).sort()));
-  });
+  const names = new Set<string>();
+  const stream = client.listObjects(bucket, basePrefix, false);
+  for await (const obj of stream) {
+    if (typeof obj.prefix === 'string' && obj.prefix.startsWith(basePrefix)) {
+      const remainder = obj.prefix.slice(basePrefix.length).replace(/\/+$/, '');
+      const first = remainder.split('/')[0];
+      if (first) names.add(first);
+    }
+  }
+  return Array.from(names).sort();
 }
 
 /** Counts objects under a prefix by listing them. */
-export function countObjectsUnderPrefix(
+export async function countObjectsUnderPrefix(
   client: any,
   bucket: string,
   prefix: string
 ): Promise<number> {
-  return new Promise((resolve, reject) => {
-    let count = 0;
-    const stream = client.listObjects(bucket, prefix, true);
-    stream.on('data', () => {
-      count += 1;
-    });
-    stream.on('error', reject);
-    stream.on('end', () => resolve(count));
-  });
+  let count = 0;
+  const stream = client.listObjects(bucket, prefix, true);
+  for await (const _obj of stream) {
+    count += 1;
+  }
+  return count;
 }
 
 async function readObjectText(
