@@ -113,7 +113,3 @@ export function useDeleteAiRoute() {
     },
   });
 }
-
-// Legacy compatibility — expose ModelResponse shape from LlmProviderResponse
-// This keeps ModelSelector and other consumers working without changes
-export type { LlmProviderResponse as ModelResponse };

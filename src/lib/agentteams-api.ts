@@ -275,32 +275,6 @@ export interface InfrastructureInfo {
   controller?: { healthy: boolean; version: string };
 }
 
-export interface ModelResponse {
-  name: string;
-  provider: string;
-  baseUrl?: string;
-  apiKeyMasked?: string;
-  capabilities?: string[];
-  default?: boolean;
-}
-
-export interface CreateModelRequest {
-  name: string;
-  provider: string;
-  apiKey: string;
-  baseUrl?: string;
-  capabilities?: string[];
-  default?: boolean;
-}
-
-export interface UpdateModelRequest {
-  provider?: string;
-  apiKey?: string;
-  baseUrl?: string;
-  capabilities?: string[];
-  default?: boolean;
-}
-
 export interface BucketResponse {
   name: string;
   createdAt?: string;
@@ -585,16 +559,6 @@ export const agentteamsApi = {
 
   // Infrastructure
   getInfrastructure: () => proxyRequest<InfrastructureInfo>('/infrastructure'),
-
-  // Models — now managed via Higress Console API (see higress-api.ts)
-  // Legacy stubs kept for backward compatibility; prefer higressApi.* for new code
-  listModels: async (): Promise<ModelResponse[]> => [],
-  getModel: async (_name: string): Promise<ModelResponse | null> => null,
-  createModel: async (_data: CreateModelRequest): Promise<ModelResponse> => { throw new Error('Use higressApi.createProvider instead'); },
-  updateModel: async (_name: string, _data: UpdateModelRequest): Promise<ModelResponse> => { throw new Error('Use higressApi.updateProvider instead'); },
-  deleteModel: async (_name: string): Promise<void> => { throw new Error('Use higressApi.deleteProvider instead'); },
-  getDefaultModel: async (): Promise<ModelResponse | null> => null,
-  setDefaultModel: async (_name: string): Promise<void> => { throw new Error('Use higressApi instead'); },
 
   // Storage
   listBuckets: async (): Promise<BucketResponse[]> => {
