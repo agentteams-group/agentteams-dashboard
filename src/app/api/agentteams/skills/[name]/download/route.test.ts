@@ -63,7 +63,7 @@ function buildRequest(name: string): NextRequest {
 
 describe('GET /api/agentteams/skills/[name]/download', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('returns 400 for an invalid skill name', async () => {
@@ -81,7 +81,7 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
     expect(json.error).toContain('技能不存在');
   });
 
-  it('returns 403 for nacos-sourced skills', async () => {
+  it('returns 403 for nacos-sourced skills without cached files', async () => {
     const metadata = {
       name: 'nacos-skill',
       description: 'From nacos',
@@ -99,6 +99,30 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
     expect(res.status).toBe(403);
     const json = await res.json();
     expect(json.error).toContain('Nacos');
+  });
+
+  it('serves nacos-sourced skill from cache when files exist', async () => {
+    const metadata = {
+      name: 'cached-nacos',
+      description: 'Cached nacos skill',
+      source: 'nacos',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      fileCount: 1,
+    };
+    const mdContent = new TextEncoder().encode('---\nname: cached-nacos\ndescription: Cached\n---\nHello');
+    mockGet
+      .mockResolvedValueOnce(makeStream(new TextEncoder().encode(JSON.stringify(metadata))))
+      .mockResolvedValueOnce(makeStream(mdContent));
+    mockList
+      .mockReturnValueOnce(makeListIterator([{ name: 'cached-nacos/skill.md' }]))
+      .mockReturnValueOnce(makeListIterator([{ name: 'cached-nacos/skill.md' }]));
+
+    const res = await GET(buildRequest('cached-nacos'), { params: Promise.resolve({ name: 'cached-nacos' }) });
+    expect(res.status).toBe(200);
+    const blob = await res.blob();
+    expect(blob.size).toBeGreaterThan(0);
+    expect(res.headers.get('Content-Type')).toBe('application/zip');
   });
 
   it('returns 404 when skill has no files', async () => {
