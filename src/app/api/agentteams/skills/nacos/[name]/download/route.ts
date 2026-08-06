@@ -9,6 +9,7 @@ import {
 } from '@/lib/skill-center-types';
 import { zipSync } from 'fflate';
 import { fetchNacosSkillZip, cacheSkillContent } from '@/lib/nacos-fetcher';
+import type { NacosZipResult } from '@/lib/nacos-fetcher';
 
 async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
@@ -105,17 +106,19 @@ export async function GET(
     }
 
     // Not cached — fetch from Nacos
-    const result = await fetchNacosSkillZip(name, config);
-    if (!result) {
+    let nacosResult: NacosZipResult;
+    try {
+      nacosResult = await fetchNacosSkillZip(name, config);
+    } catch (nacosErr) {
       return NextResponse.json({
-        error: `无法从 Nacos 获取技能 "${name}" 的内容。请确认 Nacos 配置和权限。`,
+        error: nacosErr instanceof Error ? nacosErr.message : 'Nacos 下载失败',
       }, { status: 502 });
     }
 
     // Parse the ZIP to extract and cache files
     try {
       const { unzipSync } = await import('fflate');
-      const entries = unzipSync(result.zipBytes);
+      const entries = unzipSync(nacosResult.zipBytes);
       const files = Object.entries(entries).map(([relativePath, data]) => ({
         relativePath,
         data: data as Uint8Array,
@@ -127,7 +130,7 @@ export async function GET(
 
       await cacheSkillContent(client, name, files);
 
-      const zipBuffer = Buffer.from(result.zipBytes);
+      const zipBuffer = Buffer.from(nacosResult.zipBytes);
       return new NextResponse(zipBuffer, {
         status: 200,
         headers: {
@@ -138,7 +141,7 @@ export async function GET(
       });
     } catch {
       // If the content is not a valid ZIP, return it as-is (might be raw bytes)
-      const zipBuffer = Buffer.from(result.zipBytes);
+      const zipBuffer = Buffer.from(nacosResult.zipBytes);
       return new NextResponse(zipBuffer, {
         status: 200,
         headers: {

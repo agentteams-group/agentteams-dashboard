@@ -6,8 +6,8 @@ export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builti
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (source) params.set('source', source);
-  if (page) params.set('page', String(page));
-  if (pageSize) params.set('pageSize', String(pageSize));
+  params.set('page', String(page || 1));
+  params.set('pageSize', String(pageSize || 200));
   const query = params.toString();
 
   return useQuery<{ skills: SkillEntry[]; total: number }, Error>({
