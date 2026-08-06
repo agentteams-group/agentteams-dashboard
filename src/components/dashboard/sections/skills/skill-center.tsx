@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,10 +44,6 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const total = result.total;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const deleteMutation = useDeleteSkill();
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, sourceFilter]);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -104,13 +100,13 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
           <Input
             placeholder="搜索技能..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-9"
           />
         </div>
         <select
           value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value as 'all' | 'custom' | 'nacos' | 'builtin')}
+          onChange={(e) => { setSourceFilter(e.target.value as 'all' | 'custom' | 'nacos' | 'builtin'); setPage(1); }}
           className="rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="all">全部</option>

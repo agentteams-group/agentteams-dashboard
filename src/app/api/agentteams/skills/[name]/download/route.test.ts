@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { zipSync } from 'fflate';
 
 // --- Mock minio-client ---
 const mockGet = vi.fn();
@@ -27,7 +26,7 @@ const scriptContent = new TextEncoder().encode('echo hello');
 function makeStream(data: Uint8Array) {
   const buf = Buffer.from(data);
   return {
-    on: vi.fn(function on(this: any, event: string, cb: (...args: unknown[]) => void) {
+    on: vi.fn(function on(this: any, event: string, cb: (..._args: unknown[]) => void) {
       if (event === 'data') {
         setImmediate(() => cb(buf));
       }

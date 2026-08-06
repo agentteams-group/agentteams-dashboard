@@ -294,7 +294,7 @@ export function WorkersSection() {
         let file: File;
         try {
           file = await agentteamsApi.downloadSkill(skillName);
-        } catch (downloadErr) {
+        } catch {
           // Nacos skills return 403 from the generic download endpoint; fall back to Nacos-specific endpoint
           file = await agentteamsApi.downloadNacosSkill(skillName);
         }

@@ -24,7 +24,7 @@ export interface SelectedMcpServer {
 
 interface McpSelectorProps {
   value: SelectedMcpServer[];
-  onChange: (mcps: SelectedMcpServer[]) => void;
+  onChange: (_mcps: SelectedMcpServer[]) => void;
 }
 
 export function McpSelector({ value, onChange }: McpSelectorProps) {

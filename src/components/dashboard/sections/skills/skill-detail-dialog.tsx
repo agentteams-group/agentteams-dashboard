@@ -1,6 +1,5 @@
 'use client';
 
-import { Info } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { SkillEntry } from '@/lib/skill-center-types';
 

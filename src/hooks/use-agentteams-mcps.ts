@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
-import type { McpServerConfig, McpTestResult } from '@/lib/agentteams-api';
+import type { McpServerConfig } from '@/lib/agentteams-api';
 
 export function useMcpServers(): UseQueryResult<McpServerConfig[], Error> {
   return useQuery<McpServerConfig[], Error>({

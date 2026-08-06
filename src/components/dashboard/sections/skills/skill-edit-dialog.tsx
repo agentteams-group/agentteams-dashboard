@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -22,19 +22,11 @@ interface SkillEditDialogProps {
 }
 
 export function SkillEditDialog({ skill, open, onOpenChange, onSuccess }: SkillEditDialogProps) {
-  const [description, setDescription] = useState('');
-  const [version, setVersion] = useState('');
+  const [description, setDescription] = useState(skill?.description || '');
+  const [version, setVersion] = useState(skill?.version || '');
   const [error, setError] = useState('');
 
   const updateMutation = useUpdateSkill();
-
-  useEffect(() => {
-    if (open && skill) {
-      setDescription(skill.description || '');
-      setVersion(skill.version || '');
-      setError('');
-    }
-  }, [open, skill]);
 
   const handleSave = useCallback(async () => {
     if (!skill) return;
@@ -54,7 +46,7 @@ export function SkillEditDialog({ skill, open, onOpenChange, onSuccess }: SkillE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
+      <DialogContent key={skill?.name ?? 'new'} className="sm:max-w-md max-w-[95vw] overflow-hidden">
         <DialogHeader>
           <DialogTitle>编辑技能</DialogTitle>
         </DialogHeader>
