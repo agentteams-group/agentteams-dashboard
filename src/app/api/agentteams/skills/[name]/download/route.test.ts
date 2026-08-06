@@ -15,6 +15,20 @@ vi.mock('@/lib/minio-client', () => ({
   getMinioBucket: () => 'agentteams-fs',
 }));
 
+// --- Mock nacos config ---
+const mockGetNacosConfig = vi.fn().mockReturnValue(null);
+vi.mock('@/lib/skill-center-config', () => ({
+  getNacosConfig: mockGetNacosConfig,
+}));
+
+// --- Mock nacos fetcher ---
+const mockFetchNacosSkillZip = vi.fn().mockResolvedValue(null);
+const mockCacheSkillContent = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/nacos-fetcher', () => ({
+  fetchNacosSkillZip: mockFetchNacosSkillZip,
+  cacheSkillContent: mockCacheSkillContent,
+}));
+
 // Import after mocking
 const { GET } = await import('./route');
 
@@ -81,7 +95,7 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
     expect(json.error).toContain('技能不存在');
   });
 
-  it('returns 403 for nacos-sourced skills without cached files', async () => {
+  it('returns 400 for nacos-sourced skills when nacos is not configured', async () => {
     const metadata = {
       name: 'nacos-skill',
       description: 'From nacos',
@@ -96,7 +110,7 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
     mockList.mockReturnValue(makeListIterator([]));
 
     const res = await GET(buildRequest('nacos-skill'), { params: Promise.resolve({ name: 'nacos-skill' }) });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('Nacos');
   });
