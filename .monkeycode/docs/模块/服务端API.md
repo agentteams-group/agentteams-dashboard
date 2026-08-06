@@ -12,6 +12,13 @@
 | `/api/agentteams/workers/{name}/*` | Controller | 状态、唤醒、休眠和就绪 |
 | `/api/agentteams/{healthz,status,version,cluster-status,setup}` | Controller | 健康、版本、集群和初始化 |
 | `/api/agentteams/storage/*` | MinIO SDK | bucket、对象、上传下载与预签名 |
+| `/api/agentteams/skills` | MinIO SDK | 技能列表、搜索、分页与上传（含覆盖） |
+| `/api/agentteams/skills/[name]` | MinIO SDK | 单个技能读取、更新与删除 |
+| `/api/agentteams/skills/[name]/download` | MinIO SDK | 下载技能 ZIP 包 |
+| `/api/agentteams/skills/nacos/config` | 本地文件 | Nacos 配置读写 |
+| `/api/agentteams/skills/nacos/sync` | Nacos API | 触发技能元数据同步 |
+| `/api/agentteams/skills/nacos/[name]/download` | Nacos + MinIO | 按需拉取并缓存 Nacos 技能内容 |
+| `/api/agentteams/workers/[name]/skills` | Controller | 向 Worker 推送技能包 |
 | `/api/matrix/*` | Matrix Client-Server API | 登录、同步、房间、消息、媒体和输入状态 |
 | `/api/higress/*` | Higress Console | Provider 和 AI Route 管理 |
 

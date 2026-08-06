@@ -48,6 +48,35 @@ Dashboard 仅代理其中的 ai-providers 与 ai-routes 子集；完整控制面
 | `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT | MCP Server 与 Consumer 授权 | 否 |
 | `/system/higress-config` | GET/PUT | 网关配置（如 stream idleTimeout） | 否 |
 
+## 技能中心与 Nacos 集成契约
+
+### 技能来源与元数据
+
+`SkillEntry` 定义技能的核心属性：`name`、`description`、`source`（`custom`/`nacos`/`builtin`）、`sourceAlias`、`version`、`createdAt`、`updatedAt`、`fileCount`。MinIO `skills` bucket 中元数据结构为 `skills/{name}.json`，文件内容存储在 `{name}/` 前缀下。
+
+### 技能上传与覆盖
+
+`POST /api/agentteams/skills` 接受 multipart/form-data，包含 `file`（ZIP 包）和可选的 `overwrite=true` 字段：
+
+- 技能不存在：直接创建，`source` 设为 `custom`，返回 201。
+- 技能已存在（`overwrite=false`）：返回 409 与 `conflict: true`，附带现有技能元数据。
+- 技能已存在（`overwrite=true`）：删除旧文件后覆盖。Nacos 来源技能不可覆盖（返回 403）。
+- 覆盖时 `createdAt` 保留原始时间，`updatedAt` 更新为当前时间。
+
+### Nacos 技能下载
+
+`GET /api/agentteams/skills/nacos/{name}/download` 专用于 Nacos 来源技能的下载，支持 MinIO 缓存策略：
+
+1. 检查 MinIO 中是否已有该技能的文件内容（`{name}/` 前缀下），有则直接打包返回。
+2. 缓存未命中时，根据 Nacos 配置的 `mode` 从注册中心拉取：
+   - `skills` 模式：调用 `/v3/console/ai/skills/detail`，解析 base64 编码的 ZIP。
+   - `services` 模式：通过 `/v1/ns/catalog/services` 查找匹配服务，从 `homePageUrl` 下载 ZIP。
+3. 拉取成功后将文件缓存到 MinIO 以加速后续请求。
+
+### Worker 技能安装
+
+Worker 创建或编辑时指定的 `skills` 数组为技能名称列表。Dashboard 的 `syncWorkerSkills` 函数逐一处理：调用通用 `downloadSkill`，403 时降级到 `downloadNacosSkill`，获取 ZIP 后通过 `POST /api/agentteams/workers/{name}/skills` 推送到 Worker。安装过程在 UI 中展示进度（每个技能显示加载中/成功/失败状态），失败技能不阻塞其他技能的安装。
+
 ## Higress matchType 契约
 
 Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`；swagger 注释中的 `EXACT`/`PRE`/`REGEX` 是注解前缀而非线上值。序列化时 UI 的精确匹配 `EXACT` 映射为 `EQUAL`（`normalizeMatchTypeForApi`）；读取时 `EQUAL` 还原为 `EXACT`，并兼容旧版以 `^...$` 锚定的 `REGEX` 数据（`restoreMatchTypeFromApi`）。AI 路由强制 `pathPredicate.matchType === "PRE"`（否则返回 `pathPredicate must be of type PRE`），表单锁定为前缀；`modelPredicates` 仅允许 `EQUAL`/`PRE`（`AiModelPredicate` 拒绝正则）。`validateAiRoutePayload` 在提交前强制执行以上约束。
@@ -66,6 +95,13 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | `/api/higress/ai-providers/[name]` | Higress Console | 单个 Provider 读取、更新和删除 |
 | `/api/higress/ai-routes` | Higress Console | AI Route 列表和创建 |
 | `/api/higress/ai-routes/[name]` | Higress Console | 单个 AI Route 读取、更新和删除 |
+| `/api/agentteams/skills` | MinIO | 技能列表（支持 source、search、分页）与上传（支持 overwrite 覆盖） |
+| `/api/agentteams/skills/[name]` | MinIO | 单个技能元数据读取、更新与删除 |
+| `/api/agentteams/skills/[name]/download` | MinIO | 下载技能 ZIP 包 |
+| `/api/agentteams/skills/nacos/config` | 本地配置 | Nacos 注册中心配置的读取与写入 |
+| `/api/agentteams/skills/nacos/sync` | Nacos + MinIO | 触发从 Nacos 同步技能元数据 |
+| `/api/agentteams/skills/nacos/[name]/download` | Nacos + MinIO | 从 Nacos 拉取技能内容（支持 MinIO 缓存） |
+| `/api/agentteams/workers/[name]/skills` | Controller | 向 Worker 推送技能包 |
 | `/api/auth/*` | 本地或 Higress 会话 | 登录与会话状态 |
 
 ## 外部配置契约

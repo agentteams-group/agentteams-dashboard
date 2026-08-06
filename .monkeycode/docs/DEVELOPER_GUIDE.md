@@ -31,6 +31,31 @@ npm run dev
 - 测试与源码同目录，使用 `.test.ts` 或 `.test.tsx` 后缀。
 - 新增外部地址时，先定义服务端校验和超时边界，再连接 UI。
 
+## Nacos 技能集成
+
+技能中心支持从 Nacos 注册中心自动同步和下载技能包。配置 Nacos 连接的步骤：
+
+1. 在 Dashboard 的技能中心页面点击「Nacos 配置」，填入注册中心 URL（格式 `nacos://host:port/namespace`）。
+2. 选择同步模式：`services`（服务发现）或 `skills`（Nacos 3.2+ 技能 API）。
+3. 如有认证需求，填入用户名和密码。
+4. 点击「同步」按钮，Dashboard 从 Nacos 拉取技能元数据到 MinIO。
+5. 创建 Worker 时选择 Nacos 技能，Dashboard 自动按需从注册中心拉取内容并安装。
+
+调试 Nacos 集成时，检查 `src/app/api/agentteams/skills/nacos/` 下的路由日志和 MinIO `skills/` bucket 中的元数据 JSON 文件。Nacos 配置存储在本地文件系统中（`src/lib/skill-center-config.ts`）。
+
+## 技能中心开发
+
+新增技能相关功能时涉及的文件层次：
+
+1. `src/lib/skill-center-types.ts` — 类型与常量定义
+2. `src/lib/skill-center-storage.ts` — MinIO 存储操作（元数据 CRUD、全局技能扫描）
+3. `src/lib/skill-package.ts` — ZIP 解析（`parseSkillPackage`、`isValidNameSegment`）
+4. `src/app/api/agentteams/skills/` — API 路由端点
+5. `src/hooks/use-skill-center.ts` — 前端数据 hooks
+6. `src/components/dashboard/sections/skills/` — UI 组件
+
+技能包大小上限为 64 MB（`SKILL_PACKAGE_MAX_BYTES`），名称仅允许字母数字、点、下划线和中划线。
+
 ## Higress 改造流程
 
 1. 参考 `.monkeycode/specs/higress-ai-gateway/` 的需求、设计和任务清单。
