@@ -26,7 +26,7 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
   const [filter, setFilter] = useState<'all' | 'custom' | 'nacos'>('all');
   const [open, setOpen] = useState(false);
 
-  const { data: result = { skills: [], total: 0 } } = useSkills(search || undefined, filter === 'all' ? null : filter);
+  const { data: result = { skills: [], total: 0 }, isLoading, isError, error } = useSkills(search || undefined, filter === 'all' ? null : filter);
   const skills = result.skills;
 
   const selectedSkills = useMemo(
@@ -132,7 +132,13 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
             </div>
 
             <div className="max-h-60 min-h-0 overflow-y-auto space-y-1">
-              {availableSkills.length === 0 ? (
+              {isLoading ? (
+                <p className="text-center text-sm text-muted-foreground py-4">加载中...</p>
+              ) : isError ? (
+                <p className="text-center text-sm text-red-500 py-4">
+                  加载失败: {error instanceof Error ? error.message : '未知错误'}
+                </p>
+              ) : availableSkills.length === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-4">
                   {skills.length === 0 ? '暂无可用技能' : '没有匹配的技能'}
                 </p>

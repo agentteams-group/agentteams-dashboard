@@ -289,24 +289,39 @@ export function WorkersSection() {
   const syncWorkerSkills = useCallback(async (workerName: string, skillNames: string[]) => {
     if (!skillNames.length) return;
     setSyncingSkills({ workerName, skills: skillNames, done: [], failed: [] });
+    let uploadedCount = 0;
     for (const skillName of skillNames) {
       try {
         let file: File;
         try {
           file = await agentteamsApi.downloadSkill(skillName);
         } catch {
-          // Nacos skills return 403 from the generic download endpoint; fall back to Nacos-specific endpoint
           file = await agentteamsApi.downloadNacosSkill(skillName);
         }
         await agentteamsApi.uploadWorkerSkill(workerName, file);
         setSyncingSkills((prev) => prev && { ...prev, done: [...prev.done, skillName] });
+        uploadedCount += 1;
       } catch {
         setSyncingSkills((prev) => prev && { ...prev, failed: [...prev.failed, skillName] });
         toast.warning(`技能 "${skillName}" 安装失败，已跳过`);
       }
     }
     setSyncingSkills(null);
-  }, []);
+    // 有技能上传成功后，重启 Worker 以加载技能
+    if (uploadedCount > 0) {
+      try {
+        await new Promise<void>((resolve) => {
+          sleepWorker.mutate(workerName, { onSettled: () => resolve() });
+        });
+        await new Promise<void>((resolve) => {
+          wakeWorker.mutate(workerName, { onSettled: () => resolve() });
+        });
+        toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能并重启`);
+      } catch {
+        toast.warning(`技能已上传但 Worker 重启失败，最长约 60 秒内自动加载`);
+      }
+    }
+  }, [sleepWorker, wakeWorker]);
 
   const handleCreate = useCallback(() => {
     warnIfModelAliasUnbound(newWorker.model);
