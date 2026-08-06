@@ -16,7 +16,7 @@ vi.mock('@/lib/minio-client', () => ({
 }));
 
 // --- Mock nacos config ---
-const mockGetNacosConfig = vi.fn().mockReturnValue(null);
+const mockGetNacosConfig = vi.fn().mockResolvedValue(null);
 vi.mock('@/lib/skill-center-config', () => ({
   getNacosConfig: mockGetNacosConfig,
 }));

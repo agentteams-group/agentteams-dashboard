@@ -125,6 +125,21 @@ function runtimeModelUpdateMessage(runtime: CreateWorkerRequest['runtime'] | und
   return '模型配置已保存。Controller 将在下一次运行时调谐时加载新模型。';
 }
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((v, i) => v === sortedB[i]);
+}
+
+function mcpServersEqual(
+  a: { name: string; url: string; transport: string }[],
+  b: { name: string; url: string; transport: string }[]
+): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((s, i) => s.name === b[i].name && s.url === b[i].url && s.transport === b[i].transport);
+}
+
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
   const { isConnected } = useAgentTeamsStore();
@@ -395,6 +410,20 @@ export function WorkersSection() {
 
   const handleUpdate = useCallback(() => {
     if (!editWorker) return;
+
+    const hasChanges =
+      editForm.model !== (editWorker.model || '') ||
+      editForm.runtime !== editWorker.runtime ||
+      editForm.image !== (editWorker.image || '') ||
+      editForm.agents !== (editWorker.agents || '') ||
+      !arraysEqual(editForm.skills || [], editWorker.skills || []) ||
+      !mcpServersEqual(editForm.mcpServers || [], editWorker.mcpServers || []);
+
+    if (!hasChanges) {
+      closeEdit();
+      return;
+    }
+
     const { name: _ignored, ...data } = editForm;
     void _ignored;
     warnIfModelAliasUnbound(editForm.model);

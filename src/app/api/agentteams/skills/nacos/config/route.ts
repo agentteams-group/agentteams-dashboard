@@ -8,7 +8,7 @@ function isValidNacosUrl(url: string): boolean {
 
 export async function GET() {
   try {
-    const config = getNacosConfig();
+    const config = await getNacosConfig();
     return NextResponse.json({ config });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
       lastSyncError: undefined,
     };
 
-    setNacosConfig(newConfig);
+    await setNacosConfig(newConfig);
 
     return NextResponse.json({ success: true, config: newConfig });
   } catch (err: unknown) {

@@ -1,10 +1,11 @@
 /**
  * Skill Center configuration management
- * Stores Nacos registry configuration persistently
+ * Stores Nacos registry configuration persistently in MinIO
  */
 
-import fs from 'fs';
-import path from 'path';
+import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
+
+const CONFIG_OBJECT_KEY = 'skills/config/nacos.json';
 
 export interface NacosConfig {
   registryUrl: string;
@@ -25,31 +26,44 @@ export interface SkillCenterConfigData {
   updatedAt: string;
 }
 
-const CONFIG_PATH = path.join(process.cwd(), '.skill-center-config.json');
-
-export function getNacosConfig(): NacosConfig | null {
+export async function getNacosConfig(): Promise<NacosConfig | null> {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) return null;
-    const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as SkillCenterConfigData;
+    const client = createMinioClient();
+    const bucket = getMinioBucket();
+    if (!bucket) return null;
+
+    const stream = await client.getObject(bucket, CONFIG_OBJECT_KEY);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const data = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as SkillCenterConfigData;
     return data.nacos || null;
   } catch {
     return null;
   }
 }
 
-export function setNacosConfig(config: NacosConfig): void {
+export async function setNacosConfig(config: NacosConfig): Promise<void> {
+  const client = createMinioClient();
+  const bucket = getMinioBucket();
+  if (!bucket) throw new Error('MinIO 未配置');
+
   const data: SkillCenterConfigData = {
     nacos: config,
     updatedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
+  await client.putObject(bucket, CONFIG_OBJECT_KEY, JSON.stringify(data, null, 2), {
+    'Content-Type': 'application/json',
+  });
 }
 
-export function clearNacosConfig(): void {
+export async function clearNacosConfig(): Promise<void> {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      fs.unlinkSync(CONFIG_PATH);
-    }
+    const client = createMinioClient();
+    const bucket = getMinioBucket();
+    if (!bucket) return;
+    await client.removeObject(bucket, CONFIG_OBJECT_KEY);
   } catch {
     // ignore
   }

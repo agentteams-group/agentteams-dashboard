@@ -41,7 +41,7 @@ export async function GET(
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
 
-  const config = getNacosConfig();
+  const config = await getNacosConfig();
   if (!config) {
     return NextResponse.json({ error: 'Nacos 未配置' }, { status: 400 });
   }

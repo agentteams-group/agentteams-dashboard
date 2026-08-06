@@ -97,7 +97,7 @@ export async function GET(
         return serveZip(name, zipSync(entries));
       }
 
-      const config = getNacosConfig();
+      const config = await getNacosConfig();
       if (!config) {
         return NextResponse.json({ error: 'Nacos 未配置，无法自动拉取技能内容' }, { status: 400 });
       }

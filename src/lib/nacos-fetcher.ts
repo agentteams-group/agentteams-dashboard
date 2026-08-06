@@ -68,7 +68,7 @@ export async function fetchNacosSkillZip(
   config?: any
 ): Promise<NacosZipResult> {
   if (!config) {
-    config = getNacosConfig();
+    config = await getNacosConfig();
     if (!config) throw new Error('Nacos 未配置');
   }
 

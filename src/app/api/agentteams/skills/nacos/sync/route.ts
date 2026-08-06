@@ -3,7 +3,7 @@ import { getNacosConfig, setNacosConfig } from '@/lib/skill-center-config';
 import { syncNacosSkills } from '@/lib/skill-center-storage';
 
 export async function POST(_request: NextRequest) {
-  const config = getNacosConfig();
+  const config = await getNacosConfig();
   if (!config) {
     return NextResponse.json({ error: 'Nacos 未配置' }, { status: 400 });
   }
@@ -14,7 +14,7 @@ export async function POST(_request: NextRequest) {
 
   try {
     const { nacosSkills, updatedConfig } = await syncNacosSkills(config);
-    setNacosConfig(updatedConfig);
+    await setNacosConfig(updatedConfig);
 
     return NextResponse.json({
       success: true,

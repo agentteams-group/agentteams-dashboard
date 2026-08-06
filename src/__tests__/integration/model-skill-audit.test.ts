@@ -177,31 +177,31 @@ describe('技能存储常量', () => {
 describe('Nacos 配置读写', () => {
   it('getNacosConfig 无配置文件时返回 null', async () => {
     const { getNacosConfig } = await import('@/lib/skill-center-config');
-    const config = getNacosConfig();
+    const config = await getNacosConfig();
     // 期望: null (无配置文件) 或有值 (已有配置)
     expect(config === null || typeof config === 'object').toBe(true);
   });
 
   it('setNacosConfig + getNacosConfig 读写一致', async () => {
     const { getNacosConfig, setNacosConfig } = await import('@/lib/skill-center-config');
-    const original = getNacosConfig();
+    const original = await getNacosConfig();
     try {
-      setNacosConfig({
+      await setNacosConfig({
         registryUrl: 'nacos://test-audit:8848/audit-ns',
         namespace: 'audit-namespace',
         username: 'audit-user',
       });
-      const updated = getNacosConfig();
+      const updated = await getNacosConfig();
       expect(updated).not.toBeNull();
       expect(updated!.registryUrl).toBe('nacos://test-audit:8848/audit-ns');
       expect(updated!.namespace).toBe('audit-namespace');
       expect(updated!.username).toBe('audit-user');
     } finally {
       if (original) {
-        setNacosConfig(original);
+        await setNacosConfig(original);
       } else {
         const { clearNacosConfig } = await import('@/lib/skill-center-config');
-        clearNacosConfig();
+        await clearNacosConfig();
       }
     }
   });
