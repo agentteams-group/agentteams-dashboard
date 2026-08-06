@@ -180,7 +180,7 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
           {config?.lastSyncError && (
             <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <p>{config.lastSyncError}</p>
+              <p className="whitespace-pre-line">{config.lastSyncError}</p>
             </div>
           )}
 

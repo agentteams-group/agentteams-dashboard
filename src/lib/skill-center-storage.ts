@@ -215,6 +215,7 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
 
   // Login is always at /v1/auth/login regardless of mode
   let accessToken = '';
+  let loginInfo = '';
   if (config.username && config.password) {
     try {
       const loginUrl = `${apiBase}/v1/auth/login`;
@@ -227,10 +228,15 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
       if (loginRes.ok) {
         const loginData = await loginRes.json() as { accessToken?: string };
         accessToken = loginData.accessToken || '';
+        loginInfo = accessToken ? '已认证' : '登录成功但无 token';
+      } else {
+        loginInfo = `登录失败 HTTP ${loginRes.status}`;
       }
-    } catch {
-      // auth failed, continue without token
+    } catch (err) {
+      loginInfo = `登录异常: ${err instanceof Error ? err.message : 'unknown'}`;
     }
+  } else {
+    loginInfo = '无凭据，跳过登录';
   }
 
   const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
@@ -249,9 +255,16 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
   try {
     const response = await fetch(listUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
     if (!response.ok) {
+      let errorBody = '';
+      try { errorBody = await response.text(); } catch { /* ignore */ }
       return {
         nacosSkills: [],
-        updatedConfig: { ...config, lastSyncAt: new Date().toISOString(), lastSyncStatus: 'error' as const, lastSyncError: `Nacos 请求失败: HTTP ${response.status}` },
+        updatedConfig: {
+          ...config,
+          lastSyncAt: new Date().toISOString(),
+          lastSyncStatus: 'error' as const,
+          lastSyncError: `Nacos 请求失败: HTTP ${response.status}\n模式: ${mode}\n登录: ${loginInfo}\nURL: ${listUrl}\n响应: ${errorBody.substring(0, 500)}`,
+        },
       };
     }
 
