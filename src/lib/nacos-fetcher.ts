@@ -107,7 +107,7 @@ export async function fetchNacosSkillZip(
           }
         }
       }
-    } catch (fetchErr) {
+    } catch {
       diag.skillsDetailStatus = -1;
     }
   }
@@ -146,7 +146,7 @@ export async function fetchNacosSkillZip(
           }
         }
       }
-    } catch (fetchErr) {
+    } catch {
       diag.servicesListStatus = -1;
     }
   }
