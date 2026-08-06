@@ -7,6 +7,53 @@ import {
   SKILL_PACKAGE_MAX_BYTES,
   isValidNameSegment,
 } from '@/lib/skill-package';
+import { getAuthToken } from '../../proxy-helper';
+
+const SYNC_FAILED_NOTE = '技能已上传，Worker 最长约 5 分钟内自动发现';
+
+async function getControllerBaseUrl(): Promise<string> {
+  return (
+    process.env.AGENTTEAMS_CONTROLLER_URL ||
+    process.env.AGENTTEAMS_API_URL ||
+    'http://agentteams-controller:8090'
+  );
+}
+
+async function restartWorker(workerName: string): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = await getControllerBaseUrl();
+  const saToken = await getAuthToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (saToken) {
+    headers['authorization'] = `Bearer ${saToken}`;
+  }
+
+  // Sleep
+  try {
+    const sleepUrl = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}/sleep`;
+    const sleepRes = await fetch(sleepUrl, { method: 'POST', headers, signal: AbortSignal.timeout(10000) });
+    if (!sleepRes.ok) {
+      return { ok: false, error: `sleep 失败 HTTP ${sleepRes.status}` };
+    }
+  } catch (err) {
+    return { ok: false, error: `sleep 异常: ${err instanceof Error ? err.message : 'unknown'}` };
+  }
+
+  // Small wait to ensure Worker settles
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Wake
+  try {
+    const wakeUrl = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}/wake`;
+    const wakeRes = await fetch(wakeUrl, { method: 'POST', headers, signal: AbortSignal.timeout(10000) });
+    if (!wakeRes.ok) {
+      return { ok: false, error: `wake 失败 HTTP ${wakeRes.status}` };
+    }
+  } catch (err) {
+    return { ok: false, error: `wake 异常: ${err instanceof Error ? err.message : 'unknown'}` };
+  }
+
+  return { ok: true };
+}
 
 export async function GET(
   _request: NextRequest,
@@ -98,13 +145,21 @@ export async function POST(
       });
     }
 
+    let note: string;
+    const restart = await restartWorker(name);
+    if (restart.ok) {
+      note = '已通知 Worker 加载新技能';
+    } else {
+      note = SYNC_FAILED_NOTE;
+    }
+
     return NextResponse.json({
       success: true,
       skillName: parsed.skillName,
       description: parsed.description,
       filesCount: parsed.files.length,
       prefix: workerSkillsPrefix(name),
-      note: 'Worker 最长约 60 秒内自动加载',
+      note,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown storage error';

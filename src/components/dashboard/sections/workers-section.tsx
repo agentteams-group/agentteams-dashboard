@@ -147,7 +147,7 @@ export function WorkersSection() {
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ skillName: string; description: string; filesCount: number; note?: string } | null>(null);
-  const [syncingSkills, setSyncingSkills] = useState<{ workerName: string; skills: string[]; done: string[]; failed: string[] } | null>(null);
+    const [syncingSkills, setSyncingSkills] = useState<{ workerName: string; skills: string[]; done: string[]; failed: string[]; restarting?: boolean; restarted?: boolean } | null>(null);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
 
@@ -306,21 +306,25 @@ export function WorkersSection() {
         toast.warning(`技能 "${skillName}" 安装失败，已跳过`);
       }
     }
-    setSyncingSkills(null);
-    // 有技能上传成功后，重启 Worker 以加载技能
-    if (uploadedCount > 0) {
-      try {
-        await new Promise<void>((resolve) => {
-          sleepWorker.mutate(workerName, { onSettled: () => resolve() });
-        });
-        await new Promise<void>((resolve) => {
-          wakeWorker.mutate(workerName, { onSettled: () => resolve() });
-        });
-        toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能并重启`);
-      } catch {
-        toast.warning(`技能已上传但 Worker 重启失败，最长约 60 秒内自动加载`);
-      }
+    if (uploadedCount === 0) {
+      setSyncingSkills(null);
+      return;
     }
+    setSyncingSkills((prev) => prev && { ...prev, restarting: true });
+    try {
+      await new Promise<void>((resolve) => {
+        sleepWorker.mutate(workerName, { onSettled: () => resolve() });
+      });
+      await new Promise<void>((resolve) => {
+        wakeWorker.mutate(workerName, { onSettled: () => resolve() });
+      });
+      setSyncingSkills((prev) => prev && { ...prev, restarting: false, restarted: true });
+      toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能并重启`);
+    } catch {
+      setSyncingSkills((prev) => prev && { ...prev, restarting: false });
+      toast.warning(`技能已上传但 Worker 重启失败，最长约 5 分钟内自动发现`);
+    }
+    setTimeout(() => setSyncingSkills(null), 3000);
   }, [sleepWorker, wakeWorker]);
 
   const handleCreate = useCallback(() => {
@@ -441,10 +445,16 @@ export function WorkersSection() {
   return (
     <div className="space-y-6">
       {syncingSkills && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        <div className={`rounded-md border p-3 text-sm ${syncingSkills.restarted ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200' : syncingSkills.restarting ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-            <span>正在为 Worker <strong>{syncingSkills.workerName}</strong> 安装技能...</span>
+            {syncingSkills.restarted ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
+            <span>
+              {syncingSkills.restarted
+                ? `Worker "${syncingSkills.workerName}" 技能安装完成并已重启`
+                : syncingSkills.restarting
+                  ? `正在重启 Worker "${syncingSkills.workerName}"...`
+                  : `正在为 Worker "${syncingSkills.workerName}" 安装技能...`}
+            </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {syncingSkills.skills.map((s) => {
