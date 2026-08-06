@@ -89,21 +89,37 @@ export async function fetchNacosSkillZip(
   const diag: NacosFetchDiagnostics = { mode };
 
   if (mode === 'skills') {
-    const detailUrl = `${apiBase}/v3/console/ai/skills/detail?skillName=${encodeURIComponent(skillName)}&${nsParam}${tokenParam}`;
-    diag.skillsDetailUrl = detailUrl;
+    // Nacos 3.x skill detail endpoint may not exist; use list to find skill metadata
+    const listUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
+    diag.skillsDetailUrl = listUrl;
     try {
-      const res = await fetch(detailUrl, {
+      const listRes = await fetch(listUrl, {
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15000),
       });
-      diag.skillsDetailStatus = res.status;
-      if (res.ok) {
-        const data = await res.json() as { code?: number; data?: { zip?: string; content?: string } };
-        diag.skillsDetailCode = data.code;
-        if (data.code === 0 && data.data) {
-          const zipB64 = data.data.zip || data.data.content || '';
-          if (zipB64) {
-            return { zipBytes: Buffer.from(zipB64, 'base64'), source: 'skills-detail' };
+      diag.skillsDetailStatus = listRes.status;
+      if (listRes.ok) {
+        const listData = await listRes.json() as { code?: number; data?: { pageItems?: Array<{ name: string; from?: string; labels?: { latest?: string } }> } };
+        diag.skillsDetailCode = listData.code;
+        if (listData.code === 0 && listData.data?.pageItems) {
+          const skill = listData.data.pageItems.find((s) => s.name === skillName);
+          if (skill?.from) {
+            const version = skill.labels?.latest || 'main';
+            const githubUrl = `https://${skill.from}/archive/refs/heads/${version}.zip`;
+            diag.homePageUrl = githubUrl;
+            try {
+              const zipRes = await fetch(githubUrl, {
+                signal: AbortSignal.timeout(30000),
+                headers: { 'User-Agent': 'agentteams-dashboard' },
+              });
+              diag.homePageStatus = zipRes.status;
+              if (zipRes.ok) {
+                const buf = Buffer.from(await zipRes.arrayBuffer());
+                return { zipBytes: new Uint8Array(buf), source: 'github-archive' };
+              }
+            } catch {
+              diag.homePageStatus = -1;
+            }
           }
         }
       }
