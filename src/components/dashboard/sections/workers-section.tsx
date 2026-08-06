@@ -303,9 +303,21 @@ export function WorkersSection() {
 
   const syncWorkerSkills = useCallback(async (workerName: string, skillNames: string[]) => {
     if (!skillNames.length) return;
-    setSyncingSkills({ workerName, skills: skillNames, done: [], failed: [] });
+
+    let existing: string[] = [];
+    try {
+      const res = await agentteamsApi.listWorkerSkills(workerName);
+      existing = res.skills || [];
+    } catch {
+      // if we can't fetch, sync all to be safe
+    }
+
+    const newSkills = skillNames.filter((s) => !existing.includes(s));
+    if (!newSkills.length) return;
+
+    setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [] });
     let uploadedCount = 0;
-    for (const skillName of skillNames) {
+    for (const skillName of newSkills) {
       try {
         let file: File;
         try {
