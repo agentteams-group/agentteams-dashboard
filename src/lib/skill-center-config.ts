@@ -53,7 +53,8 @@ export async function setNacosConfig(config: NacosConfig): Promise<void> {
     nacos: config,
     updatedAt: new Date().toISOString(),
   };
-  await client.putObject(bucket, CONFIG_OBJECT_KEY, JSON.stringify(data, null, 2), {
+  const body = JSON.stringify(data, null, 2);
+  await client.putObject(bucket, CONFIG_OBJECT_KEY, body, body.length, {
     'Content-Type': 'application/json',
   });
 }
