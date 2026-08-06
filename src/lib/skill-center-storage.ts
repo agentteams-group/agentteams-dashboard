@@ -336,10 +336,12 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
   const saved: SkillEntry[] = [];
   for (const skill of nacosSkills) {
     if (existingNames.has(skill.name)) {
-      // Custom skill takes precedence; update updatedAt
       const existing = existingSkills.find((s) => s.name === skill.name);
       if (existing) {
         existing.updatedAt = new Date().toISOString();
+        if (existing.source === 'nacos') {
+          existing.sourceAlias = skill.sourceAlias;
+        }
         await saveSkillMetadata(client, existing);
       }
       continue;

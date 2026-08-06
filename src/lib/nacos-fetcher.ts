@@ -104,21 +104,28 @@ export async function fetchNacosSkillZip(
         if (listData.code === 0 && listData.data?.pageItems) {
           const skill = listData.data.pageItems.find((s) => s.name === skillName);
           if (skill?.from) {
-            const version = skill.labels?.latest || 'main';
-            const githubUrl = `https://${skill.from}/archive/refs/heads/${version}.zip`;
-            diag.homePageUrl = githubUrl;
-            try {
-              const zipRes = await fetch(githubUrl, {
-                signal: AbortSignal.timeout(30000),
-                headers: { 'User-Agent': 'agentteams-dashboard' },
-              });
-              diag.homePageStatus = zipRes.status;
-              if (zipRes.ok) {
-                const buf = Buffer.from(await zipRes.arrayBuffer());
-                return { zipBytes: new Uint8Array(buf), source: 'github-archive' };
+            const version = skill.labels?.latest;
+            const candidateUrls = [
+              `https://${skill.from}/archive/refs/tags/${version}.zip`,
+              `https://${skill.from}/archive/refs/heads/${version}.zip`,
+              `https://${skill.from}/archive/refs/heads/main.zip`,
+            ];
+            for (const githubUrl of candidateUrls) {
+              diag.homePageUrl = githubUrl;
+              try {
+                const zipRes = await fetch(githubUrl, {
+                  signal: AbortSignal.timeout(30000),
+                  headers: { 'User-Agent': 'agentteams-dashboard' },
+                  redirect: 'follow',
+                });
+                diag.homePageStatus = zipRes.status;
+                if (zipRes.ok) {
+                  const buf = Buffer.from(await zipRes.arrayBuffer());
+                  return { zipBytes: new Uint8Array(buf), source: 'github-archive' };
+                }
+              } catch {
+                diag.homePageStatus = -1;
               }
-            } catch {
-              diag.homePageStatus = -1;
             }
           }
         }
