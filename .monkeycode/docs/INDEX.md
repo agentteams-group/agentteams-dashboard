@@ -12,5 +12,6 @@
 - [部署模式](./专有概念/部署模式.md)：`embedded` 与 `k8s` 的识别和可见性规则。
 - [模型别名绑定](./专有概念/模型别名绑定.md)：Higress external 模式的模型契约。
 - [技能中心](./专有概念/技能中心.md)：技能来源、生命周期与 Nacos 集成机制。
+- [AI 网关多服务商路由指南](./AI_GATEWAY_GUIDE.md)：Provider/AI Route 配置、Worker 运行时调用链路和多服务商路由机制。
 
 当前功能规格位于 `.monkeycode/specs/`。Higress 外部适配的实现计划位于 `.monkeycode/specs/higress-ai-gateway/tasklist.md`。
