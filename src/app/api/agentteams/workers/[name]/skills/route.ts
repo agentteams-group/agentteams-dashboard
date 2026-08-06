@@ -7,7 +7,7 @@ import {
   SKILL_PACKAGE_MAX_BYTES,
   isValidNameSegment,
 } from '@/lib/skill-package';
-import { getAuthToken } from '../../proxy-helper';
+import { getAuthToken } from '../../../proxy-helper';
 
 const SYNC_FAILED_NOTE = '技能已上传，Worker 最长约 5 分钟内自动发现';
 
