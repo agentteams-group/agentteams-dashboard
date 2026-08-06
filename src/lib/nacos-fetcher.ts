@@ -25,7 +25,7 @@ export async function cacheSkillContent(
 
 async function getNacosAccessToken(config: any): Promise<string> {
   const protocol = config.protocol || 'http';
-  const urlMatch = config.registryUrl.match(/^([^/]+)\/(.+)$/);
+  const urlMatch = config.registryUrl.match(/^nacos:\/\/([^/]+)\/(.+)$/);
   if (!urlMatch) return '';
   const [, hostPort] = urlMatch;
 
@@ -61,11 +61,12 @@ export async function fetchNacosSkillZip(
   const protocol = config.protocol || 'http';
   const prefix = config.apiPrefix ?? '/nacos';
   const mode = config.mode || 'services';
-  const apiBase = `${protocol}://${config.registryUrl}`;
 
-  const urlMatch = config.registryUrl.match(/^([^/]+)\/(.+)$/);
+  const urlMatch = config.registryUrl.match(/^nacos:\/\/([^/]+)\/(.+)$/);
   if (!urlMatch) return null;
-  const [, _hostPort, namespace] = urlMatch;
+  const [, hostPort, namespace] = urlMatch;
+
+  const apiBase = `${protocol}://${hostPort}`;
 
   const accessToken = await getNacosAccessToken(config);
   const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
