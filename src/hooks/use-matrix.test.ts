@@ -81,7 +81,7 @@ describe('formatMatrixEvents', () => {
     expect(messages[0].content).toBe('{"type":"tool_call","name":"search","arguments":{"query":"状态"}}');
   });
 
-  it('filters thread replies out of the main timeline and counts them on the root', () => {
+  it('shows thread replies in the main timeline and counts them on the root', () => {
     const events = [
       message('root', '原始问题', 100),
       message('other', '无关消息', 200),
@@ -95,9 +95,11 @@ describe('formatMatrixEvents', () => {
 
     const messages = formatMatrixEvents(events, '@human:example.test');
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(4);
     expect(messages[0]).toMatchObject({ id: 'root', replyCount: 2, isThreadReply: false });
     expect(messages[1]).toMatchObject({ id: 'other' });
+    expect(messages[2]).toMatchObject({ id: 'reply-1', threadId: 'root', isThreadReply: true });
+    expect(messages[3]).toMatchObject({ id: 'reply-2', threadId: 'root', isThreadReply: true });
   });
 
   it('exposes threadId on a thread reply event', () => {
@@ -111,8 +113,7 @@ describe('formatMatrixEvents', () => {
     const messages = formatMatrixEvents(events, '@human:example.test');
 
     expect(messages[0]).toMatchObject({ id: 'root', replyCount: 1 });
-    // The reply itself is hidden, so no DisplayMessage carries threadId in the main timeline.
-    expect(messages.some((m) => m.threadId)).toBe(false);
+    expect(messages[1]).toMatchObject({ id: 'reply-1', threadId: 'root', isThreadReply: true });
   });
 
   it('marks a revised message as edited and keeps the root event id', () => {
