@@ -364,16 +364,14 @@ export function useMatrixTypingUsers(roomId: string): TypingUser[] {
 // ============ Typing Sync (lightweight sync for typing notifications) ============
 
 export function useTypingSync(roomId: string | null) {
-  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+  const queryClient = useQueryClient();
+  const { homeserver, accessToken, isLoggedIn, userId } = useMatrixParams();
   const setTypingUsers = useTypingStore((s) => s.setTypingUsers);
   const setRoomReceipts = useReceiptStore((s) => s.setRoomReceipts);
 
   useEffect(() => {
     if (!isLoggedIn || !homeserver || !accessToken || !roomId) return;
 
-    // Capture the sync generation at loop start. If the user logs out (which
-    // bumps the generation), an in-flight long-poll response arriving after
-    // logout must not schedule another request with the old access token.
     const generation = useMatrixStore.getState().syncGeneration;
     const isStale = () => useMatrixStore.getState().syncGeneration !== generation;
 
@@ -384,27 +382,25 @@ export function useTypingSync(roomId: string | null) {
     const poll = async () => {
       if (cancelled || isStale()) return;
       try {
-        const resp = await matrixApi.sync(homeserver, accessToken, syncToken, 5000);
+        const resp = await matrixApi.sync(homeserver, accessToken, syncToken, 25000);
         if (cancelled || isStale()) return;
         syncToken = resp.next_batch;
 
-        // Process typing + read receipts from ephemeral events
         const joinedRooms = resp.rooms?.join;
         if (joinedRooms) {
           for (const [rid, roomData] of Object.entries(joinedRooms)) {
+            // Process ephemeral events (typing + receipts)
             const ephemeralEvents = roomData.ephemeral?.events || [];
             for (const event of ephemeralEvents) {
               if (rid !== roomId) continue;
               if (event.type === 'm.typing') {
                 const typingUserIds = (event.content?.user_ids as string[]) || [];
-                // Convert to TypingUser objects (we'll use userId as displayName for now)
                 const users = typingUserIds.map((uid) => ({
                   userId: uid,
                   displayName: uid.startsWith('@') ? uid.split(':')[0].slice(1) : uid,
                 }));
                 setTypingUsers(rid, users);
               } else if (event.type === 'm.receipt') {
-                // content = { $eventId: { m.read: { @user:server: { ts } } } }
                 const content = (event.content ?? {}) as Record<
                   string,
                   Record<string, Record<string, { ts?: number }> | undefined>
@@ -414,8 +410,8 @@ export function useTypingSync(roomId: string | null) {
                 for (const [eventId, relations] of Object.entries(content)) {
                   const readBy = relations?.['m.read'];
                   if (!readBy) continue;
-                  for (const [userId, info] of Object.entries(readBy)) {
-                    next[userId] = {
+                  for (const [uId, info] of Object.entries(readBy)) {
+                    next[uId] = {
                       eventId,
                       ts: typeof info?.ts === 'number' ? info.ts : Date.now(),
                     };
@@ -424,25 +420,81 @@ export function useTypingSync(roomId: string | null) {
                 setRoomReceipts(rid, next);
               }
             }
+
+            // Process timeline events for real-time message updates
+            const timelineEvents = roomData.timeline?.events || [];
+            if (timelineEvents.length > 0 && rid === roomId) {
+              mergeTimelineEvents(queryClient, rid, timelineEvents, userId);
+            }
           }
         }
       } catch {
-        // Silently ignore sync errors for typing
+        // Silently ignore sync errors
       }
 
       if (!cancelled && !isStale()) {
-        timeoutId = setTimeout(poll, 3000); // Poll every 3s for typing
+        timeoutId = setTimeout(poll, 1000); // Poll every 1s for real-time updates
       }
     };
 
-    // Delay first poll to avoid synchronous state update during user interaction
-    timeoutId = setTimeout(poll, 1000);
+    timeoutId = setTimeout(poll, 500);
 
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [homeserver, accessToken, isLoggedIn, roomId, setTypingUsers, setRoomReceipts]);
+  }, [homeserver, accessToken, isLoggedIn, roomId, userId, setTypingUsers, setRoomReceipts, queryClient]);
+}
+
+// ============ Timeline Event Merge (real-time message updates) ============
+
+/**
+ * Merge m.room.message events from /sync timeline into the query cache for a
+ * given room. Handles both new messages and m.replace edits (streaming updates).
+ * Called from useTypingSync to keep the message list fresh without full refetch.
+ */
+export function mergeTimelineEvents(
+  queryClient: ReturnType<typeof useQueryClient>,
+  roomId: string,
+  events: MatrixEvent[],
+  currentUserId: string
+): void {
+  for (const event of events) {
+    if (event.type !== 'm.room.message') continue;
+    const formatted = formatMatrixEvent(event, currentUserId);
+    if (!formatted) continue;
+
+    const relation = event.content['m.relates_to'] as {
+      rel_type?: string;
+      event_id?: string;
+    } | undefined;
+    const rootId = relation?.rel_type === 'm.replace' ? relation.event_id : undefined;
+
+    // Update the cache with the latest version of this message
+    const cacheKey = ['matrix-messages', roomId];
+    const existing = queryClient.getQueryData(cacheKey) as {
+      pages: Array<{ chunk: MatrixEvent[] }>;
+    } | undefined;
+
+    if (!existing) continue;
+
+    // Find which page contains this event and update it
+    const updatedPages = existing.pages.map((page) => {
+      const existingEventIds = new Set(page.chunk.map((e) => e.event_id));
+      if (existingEventIds.has(event.event_id) || (rootId && existingEventIds.has(rootId))) {
+        return { ...page, chunk: [...page.chunk.filter((e) => e.event_id !== event.event_id && e.event_id !== rootId), event] };
+      }
+      return page;
+    });
+
+    // Also add the event if it's new (not in any existing page)
+    const allEventIds = new Set(existing.pages.flatMap((p) => p.chunk.map((e) => e.event_id)));
+    if (!allEventIds.has(event.event_id) && !rootId || !allEventIds.has(rootId ?? '')) {
+      updatedPages[0] = { ...updatedPages[0], chunk: [event, ...updatedPages[0].chunk] };
+    }
+
+    queryClient.setQueryData(cacheKey, { ...existing, pages: updatedPages });
+  }
 }
 
 // ============ Login Mutation ============

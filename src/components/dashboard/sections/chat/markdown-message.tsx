@@ -66,7 +66,8 @@ type ContentPart =
 
 function parseCustomBlocks(content: string): ContentPart[] {
   const parts: ContentPart[] = [];
-  const regex = /(```card\n([\s\S]*?)\n```|&lt;details class="thinking"&gt;([\s\S]*?)&lt;\/details&gt;)/g;
+  // Match both escaped (&lt;details) and raw (<details) forms for thinking blocks
+  const regex = /(```card\n([\s\S]*?)\n```|&lt;|<)details\s+class="thinking"(?:&gt;|>)([\s\S]*?)(?:&lt;|<)\/details(?:&gt;|>)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 

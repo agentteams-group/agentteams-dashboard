@@ -8,6 +8,8 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
 import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { StreamingCard } from '../streaming-card';
+import { ThinkingCard } from '../thinking-card';
 import { parseA2uiContent, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
@@ -118,11 +120,14 @@ export function MessageBubble({
 
   const showAvatar = !isContinuation && showSender;
 
+  const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
+    return parseA2uiContent(message.content, message.formattedContent || undefined).blocks;
+  }, [message.content, message.formattedContent]);
+
   const confirmationBlocks = useMemo<ParsedA2uiBlock[]>(() => {
     if (!onSendConfirmation) return [];
-    const result = parseA2uiContent(message.content, message.formattedContent || undefined);
-    return result.blocks.filter((b) => b.type === 'confirmation');
-  }, [message.content, message.formattedContent, onSendConfirmation]);
+    return parsedBlocks.filter((b) => b.type === 'confirmation');
+  }, [parsedBlocks, onSendConfirmation]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
@@ -268,25 +273,40 @@ export function MessageBubble({
             </div>
           ) : (
             <div className={bubbleClasses}>
-              <MarkdownMessage
-                content={message.content}
-                formattedContent={message.formattedContent}
-                msgType={message.type}
-                mediaUrl={message.mediaUrl}
-                mediaInfo={message.mediaInfo}
-                memberMap={memberMap}
-              />
-              {confirmationBlocks.length > 0 && (
-                <div className="mt-2">
-                  {confirmationBlocks.map((block, idx) => (
-                    <ConfirmationCard
-                      key={idx}
-                      payload={block.payload as unknown as ConfirmationCardPayload}
-                      onApprove={handleConfirmationApprove}
-                      onReject={handleConfirmationReject}
-                    />
-                  ))}
-                </div>
+              {parsedBlocks.map((block, idx) => {
+                if (block.type === 'confirmation' && onSendConfirmation) {
+                  return (
+                    <div key={idx} className="mt-2">
+                      <ConfirmationCard
+                        payload={block.payload as unknown as ConfirmationCardPayload}
+                        onApprove={handleConfirmationApprove}
+                        onReject={handleConfirmationReject}
+                      />
+                    </div>
+                  );
+                }
+                if (block.type === 'tool_call') {
+                  return <StreamingCard key={idx} payload={block.payload as Record<string, unknown>} />;
+                }
+                if (block.type === 'thinking') {
+                  return <ThinkingCard key={idx} content={block.content || ''} isStreaming={message.isStreaming} />;
+                }
+                if (block.type === 'card') {
+                  return <StreamingCard key={idx} payload={block.payload as Record<string, unknown>} />;
+                }
+                // text, a2ui: render via MarkdownMessage
+                return null;
+              })}
+              {/* Render plain text / a2ui blocks as markdown */}
+              {parsedBlocks.filter((b) => b.type === 'text' || b.type === 'a2ui').length > 0 && (
+                <MarkdownMessage
+                  content={message.content}
+                  formattedContent={message.formattedContent}
+                  msgType={message.type}
+                  mediaUrl={message.mediaUrl}
+                  mediaInfo={message.mediaInfo}
+                  memberMap={memberMap}
+                />
               )}
             </div>
           )}
