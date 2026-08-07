@@ -148,4 +148,47 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.getByText('部署智能体')).toBeInTheDocument();
     expect(screen.getByLabelText('执行进度 1/2')).toBeInTheDocument();
   });
+
+  it('uses expanded widths for text bubbles and workflow cards', () => {
+    const textMessage = render(
+      <MessageBubble
+        message={{
+          id: '$wide-content',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '宽内容',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[92%]');
+    textMessage.unmount();
+
+    render(
+      <MessageBubble
+        message={{
+          id: '$wide-workflow',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '工作流内容',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          workflow: {
+            title: '宽工作流',
+            status: 'running',
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByText('宽工作流').closest('.max-w-4xl')).toBeInTheDocument();
+  });
 });

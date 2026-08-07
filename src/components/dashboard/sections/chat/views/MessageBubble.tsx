@@ -187,7 +187,7 @@ export function MessageBubble({
   }, [editValue, message, onEdit]);
 
   const bubbleClasses = [
-    'max-w-[80%] px-3 py-1.5 rounded-2xl text-sm break-words',
+    'max-w-[92%] px-3 py-1.5 rounded-2xl text-sm break-words',
     message.isMe
       ? 'bg-primary text-primary-foreground rounded-tr-sm'
       : 'bg-muted text-foreground rounded-tl-sm',
@@ -274,7 +274,7 @@ export function MessageBubble({
               {parsedBlocks.map((block, idx) => {
                 if (block.type === 'confirmation' && onSendConfirmation) {
                   return (
-                    <div key={idx} className="w-full max-w-2xl">
+                    <div key={idx} className="w-full max-w-4xl">
                       <ConfirmationCard
                         payload={block.payload as unknown as ConfirmationCardPayload}
                         onApprove={handleConfirmationApprove}
@@ -284,19 +284,19 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'tool_call') {
-                  return <div key={idx} className="w-full max-w-2xl"><ToolCallView payload={block.payload as ToolCallPayload} /></div>;
+                  return <div key={idx} className="w-full max-w-4xl"><ToolCallView payload={block.payload as ToolCallPayload} /></div>;
                 }
                 if (block.type === 'workflow') {
                   return <WorkflowCard key={idx} payload={block.payload as import('@/lib/a2ui/workflow').WorkflowPayload} />;
                 }
                 if (block.type === 'thinking') {
-                  return <div key={idx} className="w-full max-w-2xl"><ThinkingCard content={block.content || ''} isStreaming={message.isStreaming} /></div>;
+                  return <div key={idx} className="w-full max-w-4xl"><ThinkingCard content={block.content || ''} isStreaming={message.isStreaming} /></div>;
                 }
                 if (block.type === 'card') {
-                  return <div key={idx} className="w-full max-w-2xl"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
+                  return <div key={idx} className="w-full max-w-4xl"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
                 }
                 if (block.type === 'a2ui' && block.messages) {
-                  return <div key={idx} className="w-full max-w-2xl rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
+                  return <div key={idx} className="w-full max-w-4xl rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
                 }
                 if (block.type === 'text' && block.text) {
                   return (

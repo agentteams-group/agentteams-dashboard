@@ -1,7 +1,7 @@
 # Matrix 聊天重构技术设计
 
 Feature Name: matrix-chat-refactor
-Updated: 2026-08-01
+Updated: 2026-08-07
 
 ## 描述
 
@@ -149,6 +149,10 @@ const MESSAGE_RENDERERS: Record<string, Component> = {
 - 桌面端：鼠标悬停
 - 移动端：点击消息
 
+### 4.1 消息内容宽度
+
+`MessageBubble` 将普通文本气泡限制为消息列可用宽度的 92%，为左右对齐、头像列与操作栏保留空间。确认、工具调用、思考、流式、A2UI 与 workflow 等结构化内容使用 `max-w-4xl`，在宽面板中减少不必要换行，并由父级可用宽度约束小型面板。
+
 ### 5. ThreadPanel（线程面板）
 
 位置：`src/components/dashboard/sections/chat/structures/ThreadPanel.tsx`
@@ -259,6 +263,7 @@ interface Thread {
    - `MainGrouper` 分组逻辑
    - `ScrollPanel` 滚动行为
    - `EventTileActionBar` 操作权限
+   - `MessageBubble` 的普通消息与 workflow 宽度类
 
 2. **集成测试**：
    - 消息发送和接收
