@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useNacosConfig, useUpdateNacosConfig, useNacosSync } from '@/hooks/use-nacos-config';
+import type { NacosConfig } from '@/lib/skill-center-types';
 
 interface NacosConfigDialogProps {
   open: boolean;
@@ -29,6 +30,39 @@ interface NacosConfigDialogProps {
 
 export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps) {
   const { data: config } = useNacosConfig();
+
+  const configKey = config
+    ? JSON.stringify([
+        config.registryUrl,
+        config.namespace,
+        config.alias,
+        config.protocol,
+        config.apiPrefix,
+        config.mode,
+        config.username,
+        config.password,
+      ])
+    : 'empty';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open && (
+        <NacosConfigDialogContent
+          key={configKey}
+          config={config}
+          onOpenChange={onOpenChange}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+interface NacosConfigDialogContentProps {
+  config: NacosConfig | null | undefined;
+  onOpenChange: (_open: boolean) => void;
+}
+
+function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogContentProps) {
   const updateMutation = useUpdateNacosConfig();
   const syncMutation = useNacosSync();
 
@@ -65,8 +99,7 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
   const isReady = !!registryUrl && !updateMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
+    <DialogContent className="sm:max-w-lg max-w-[95vw]">
         <DialogHeader>
           <DialogTitle>Nacos 注册中心配置</DialogTitle>
         </DialogHeader>
@@ -222,7 +255,6 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
             )}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }
