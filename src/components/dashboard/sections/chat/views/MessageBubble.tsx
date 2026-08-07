@@ -281,7 +281,7 @@ export function MessageBubble({
                   {confirmationBlocks.map((block, idx) => (
                     <ConfirmationCard
                       key={idx}
-                      payload={block.payload as ConfirmationCardPayload}
+                      payload={block.payload as unknown as ConfirmationCardPayload}
                       onApprove={handleConfirmationApprove}
                       onReject={handleConfirmationReject}
                     />
