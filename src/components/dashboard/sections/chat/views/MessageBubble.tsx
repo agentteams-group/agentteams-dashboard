@@ -105,6 +105,7 @@ export function MessageBubble({
   onDelete,
   onResend,
   onCancel,
+  onSendConfirmation,
   memberMap,
   readReceipts,
   currentUserId,
