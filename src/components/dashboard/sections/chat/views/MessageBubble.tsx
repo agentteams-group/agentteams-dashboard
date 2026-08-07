@@ -121,11 +121,7 @@ export function MessageBubble({
   const confirmationBlocks = useMemo<ParsedA2uiBlock[]>(() => {
     if (!onSendConfirmation) return [];
     const result = parseA2uiContent(message.content, message.formattedContent || undefined);
-    const blocks = result.blocks.filter((b) => b.type === 'confirmation');
-    if (result.blocks.some((b) => b.type === 'confirmation')) {
-      console.log('[ConfirmationCard] Detected confirmation block:', result.blocks[0].payload);
-    }
-    return blocks;
+    return result.blocks.filter((b) => b.type === 'confirmation');
   }, [message.content, message.formattedContent, onSendConfirmation]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
