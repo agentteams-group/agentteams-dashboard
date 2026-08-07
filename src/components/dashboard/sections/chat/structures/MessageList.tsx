@@ -143,6 +143,7 @@ interface MessageListProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
+  onSendConfirmation?: (_content: string) => void;
   memberMap?: Record<string, string>;
   /** Called whenever the scroller enters or leaves the bottom position. */
   onAtBottomChange?: (_atBottom: boolean) => void;
@@ -172,6 +173,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     onDelete,
     onResend,
     onCancel,
+    onSendConfirmation,
     memberMap,
     onAtBottomChange,
     notices = [],
@@ -199,12 +201,13 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
         onDelete={onDelete}
         onResend={onResend}
         onCancel={onCancel}
+        onSendConfirmation={onSendConfirmation}
         memberMap={memberMap}
         readReceipts={readReceipts}
         currentUserId={currentUserId}
       />
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, memberMap, readReceipts, currentUserId]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, memberMap, readReceipts, currentUserId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would

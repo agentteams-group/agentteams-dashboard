@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
+import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { parseA2uiContent, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
 interface MessageBubbleProps {
@@ -20,6 +22,7 @@ interface MessageBubbleProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
+  onSendConfirmation?: (_content: string) => void;
   memberMap?: Record<string, string>;
   /** Latest m.read receipts of every user in the room (for ✓✓ read indicator). */
   readReceipts?: Record<string, ReadReceiptEntry>;
@@ -113,6 +116,22 @@ export function MessageBubble({
   const [editError, setEditError] = useState<string | null>(null);
 
   const showAvatar = !isContinuation && showSender;
+
+  const confirmationBlocks = useMemo<ParsedA2uiBlock[]>(() => {
+    if (!onSendConfirmation) return [];
+    const result = parseA2uiContent(message.content);
+    return result.blocks.filter((b) => b.type === 'confirmation');
+  }, [message.content, onSendConfirmation]);
+
+  const handleConfirmationApprove = useCallback((reply: string) => {
+    if (!onSendConfirmation) return;
+    onSendConfirmation(reply);
+  }, [onSendConfirmation]);
+
+  const handleConfirmationReject = useCallback((reply: string) => {
+    if (!onSendConfirmation) return;
+    onSendConfirmation(reply);
+  }, [onSendConfirmation]);
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
@@ -256,6 +275,18 @@ export function MessageBubble({
                 mediaInfo={message.mediaInfo}
                 memberMap={memberMap}
               />
+              {confirmationBlocks.length > 0 && (
+                <div className="mt-2">
+                  {confirmationBlocks.map((block, idx) => (
+                    <ConfirmationCard
+                      key={idx}
+                      payload={block.payload as ConfirmationCardPayload}
+                      onApprove={handleConfirmationApprove}
+                      onReject={handleConfirmationReject}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

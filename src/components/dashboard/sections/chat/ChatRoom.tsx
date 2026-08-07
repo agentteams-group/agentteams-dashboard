@@ -436,6 +436,10 @@ export function ChatRoom({
     });
   }, [localMessages, patchLocal, sendOutbound]);
 
+  const handleSendConfirmation = useCallback((content: string) => {
+    sendOutbound({ content });
+  }, [sendOutbound]);
+
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
     removeLocal(message.id);
   }, [removeLocal]);
@@ -534,6 +538,7 @@ export function ChatRoom({
             onDelete={handleDelete}
             onResend={handleResendLocal}
             onCancel={handleCancelLocal}
+            onSendConfirmation={handleSendConfirmation}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
             notices={systemNotices}
