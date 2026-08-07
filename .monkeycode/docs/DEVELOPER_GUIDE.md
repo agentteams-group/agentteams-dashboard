@@ -22,7 +22,8 @@ npm run dev
 | `npm start` | 启动生产构建 |
 | `npm run lint` | 运行 ESLint |
 | `npm run typecheck` | 运行 TypeScript 类型检查 |
-| `npm test` | 运行 Vitest 测试 |
+| `npm test` | 运行无需外部服务的 Vitest 单元与组件测试 |
+| `npm run test:integration` | 运行集成测试，需要 3000 端口开发服务与对应外部依赖配置 |
 
 ## 代码约定
 

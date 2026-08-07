@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { GroupedMessage } from '../grouper/MainGrouper';
 
 export interface ScrollPanelHandle {
@@ -29,15 +30,17 @@ interface ScrollPanelProps {
 const BOTTOM_THRESHOLD = 100;
 
 /**
- * Plain-scroll timeline (non-virtualized), mirroring the v1.2.0 chat behavior:
- * a freshly opened room lands on the latest message, new messages auto-scroll
- * only while the user is pinned to the bottom, and scrolling up pauses the
- * follow until the user returns (or clicks the jump-to-latest button).
+ * Virtualized timeline that preserves the chat behavior: a freshly opened room
+ * lands on the latest message, appended messages follow only while pinned to
+ * the bottom, and older messages load from the top edge.
  */
 export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>(function ScrollPanel(
   {
     items,
     itemContent,
+    hasNextPage,
+    isFetchingNextPage,
+    onLoadMore,
     loading,
     emptyContent,
     className,
@@ -45,16 +48,13 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   },
   ref
 ) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
   const initialMountRef = useRef(true);
-  const lastItemsCountRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
 
-  // Notify the parent whenever the scroller enters or leaves the bottom zone.
-  const handleScroll = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD;
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
     if (atBottomRef.current !== atBottom) {
       atBottomRef.current = atBottom;
       onAtBottomChange?.(atBottom);
@@ -62,53 +62,47 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   }, [onAtBottomChange]);
 
   // A freshly opened room should land on the latest message as soon as the
-  // first page arrives (the initial render is empty).
+  // first page arrives. Virtuoso preserves the visible anchor for prepended
+  // rows through stable item keys and its dynamic-height measurements.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || items.length === 0) return;
+    if (items.length === 0 || !initialMountRef.current) return;
     if (initialMountRef.current) {
       initialMountRef.current = false;
-      el.scrollTop = el.scrollHeight;
+      virtuosoRef.current?.scrollToIndex({ index: items.length - 1, align: 'end' });
+      atBottomRef.current = true;
       onAtBottomChange?.(true);
     }
   }, [items, onAtBottomChange]);
 
-  // Follow newly appended messages only while pinned to the bottom.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || items.length === 0) return;
-    const wasEmpty = lastItemsCountRef.current === 0;
-    const appended = items.length > lastItemsCountRef.current;
-    lastItemsCountRef.current = items.length;
-    if (appended && (atBottomRef.current || wasEmpty)) {
-      el.scrollTop = el.scrollHeight;
-      onAtBottomChange?.(true);
-    }
-  }, [items, onAtBottomChange]);
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
+  const highlightIndex = useCallback((index: number) => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightedIndex(index);
+    highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 1800);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     scrollToBottom: (_options = { smooth: true }) => {
-      const el = containerRef.current;
-      if (!el) return;
-      if (_options.smooth) {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-      } else {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (items.length === 0) return;
+      virtuosoRef.current?.scrollToIndex({
+        index: items.length - 1,
+        align: 'end',
+        behavior: _options.smooth ? 'smooth' : 'auto',
+      });
       atBottomRef.current = true;
       onAtBottomChange?.(true);
     },
     scrollToIndex: (index: number) => {
-      const el = containerRef.current;
-      if (!el) return;
-      const target = el.querySelector(`[data-timeline-index="${index}"]`);
-      if (target) {
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      } else {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (index < 0 || index >= items.length) return;
+      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
+      highlightIndex(index);
     },
-  }));
+  }), [highlightIndex, items.length, onAtBottomChange]);
 
   if (loading && items.length === 0) {
     return (
@@ -140,18 +134,35 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   }
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className={`flex-1 overflow-y-auto custom-scrollbar ${className ?? ''}`}
-    >
-      <div className="flex flex-col gap-0.5 px-4 py-2">
-        {items.map((item, index) => (
-          <div key={index} data-timeline-index={index}>
+    <>
+      <span className="sr-only" aria-live="polite">
+        {highlightedIndex === null ? '' : `已定位到第 ${highlightedIndex + 1} 条消息`}
+      </span>
+      <Virtuoso
+        ref={virtuosoRef}
+        className={`flex-1 custom-scrollbar ${className ?? ''}`}
+        data={items}
+        computeItemKey={(index, item) => {
+          const timelineItem = item as unknown as { key?: string; gm?: GroupedMessage };
+          return timelineItem.key ?? timelineItem.gm?.message.id ?? item.message?.id ?? index;
+        }}
+        itemContent={(index, item) => (
+          <div
+            data-timeline-index={index}
+            className={`px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
+              highlightedIndex === index ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
+            }`}
+          >
             {itemContent(index, item)}
           </div>
-        ))}
-      </div>
-    </div>
+        )}
+        atBottomThreshold={BOTTOM_THRESHOLD}
+        atBottomStateChange={handleAtBottomChange}
+        followOutput={(isAtBottom) => (atBottomRef.current || isAtBottom ? 'auto' : false)}
+        startReached={() => {
+          if (hasNextPage && !isFetchingNextPage) onLoadMore();
+        }}
+      />
+    </>
   );
 });

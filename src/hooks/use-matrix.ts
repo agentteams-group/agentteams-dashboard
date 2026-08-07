@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { matrixApi, MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import { create } from 'zustand';
 
 // Helper to get Matrix connection params
@@ -537,7 +538,9 @@ export interface DisplayMessage {
   isStreaming?: boolean;
   /** Agent run status from org.agentteams.status / content.status (streaming, in_progress, success, failed...). */
   agentStatus?: string;
-  /** Root event ID if this message is a reply in a thread (hidden from main timeline). */
+  /** Structured AgentTeams workflow data attached to this Matrix event. */
+  workflow?: WorkflowPayload;
+  /** Root event ID if this message is a reply in a thread. */
   threadId?: string;
   /** Whether this message is itself a thread reply (not the root). */
   isThreadReply?: boolean;
@@ -621,6 +624,9 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
     isStreaming: isMatrixStreaming(content),
     agentStatus: isMatrixAgentStatus(content),
+    workflow: isWorkflowPayload(content['agentteams.workflow'])
+      ? content['agentteams.workflow']
+      : undefined,
     isEdited,
     eventId: event.event_id,
     threadId: isThreadReply ? threadRootId : undefined,

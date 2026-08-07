@@ -196,6 +196,20 @@ describe('formatMatrixEvents', () => {
 
     expect(messages[0].agentStatus).toBeUndefined();
   });
+
+  it('extracts an AgentTeams workflow payload from a Matrix message', () => {
+    const workflow = {
+      title: '发布流程',
+      status: 'in_progress',
+      runId: 'run-1',
+      steps: [{ id: 'plan', title: '规划', status: 'completed' }],
+    };
+    const messages = formatMatrixEvents([
+      message('workflow', '正在执行', 100, { 'agentteams.workflow': workflow }),
+    ], '@human:example.test');
+
+    expect(messages[0].workflow).toEqual(workflow);
+  });
 });
 
 describe('isMessageReadByOthers', () => {

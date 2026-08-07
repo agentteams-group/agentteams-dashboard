@@ -11,6 +11,8 @@ import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
+import { WorkflowCard } from './workflow-card';
+import { ToolCallView, type ToolCallPayload } from './toolcalls';
 import { parseA2uiContent, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
@@ -122,8 +124,8 @@ export function MessageBubble({
   const showAvatar = !isContinuation && showSender;
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
-    return parseA2uiContent(message.content, message.formattedContent || undefined).blocks;
-  }, [message.content, message.formattedContent]);
+    return parseA2uiContent(message.content, message.formattedContent || undefined, message.workflow).blocks;
+  }, [message.content, message.formattedContent, message.workflow]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
@@ -282,7 +284,10 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'tool_call') {
-                  return <div key={idx} className="w-full max-w-2xl"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
+                  return <div key={idx} className="w-full max-w-2xl"><ToolCallView payload={block.payload as ToolCallPayload} /></div>;
+                }
+                if (block.type === 'workflow') {
+                  return <WorkflowCard key={idx} payload={block.payload as import('@/lib/a2ui/workflow').WorkflowPayload} />;
                 }
                 if (block.type === 'thinking') {
                   return <div key={idx} className="w-full max-w-2xl"><ThinkingCard content={block.content || ''} isStreaming={message.isStreaming} /></div>;

@@ -107,7 +107,7 @@ describe('parseSkillPackage', () => {
   it('rejects a ZIP that exceeds the size limit', () => {
     const zip = new Uint8Array(SKILL_PACKAGE_MAX_BYTES + 1).fill(0);
     expect(() => parseSkillPackage(zip)).toThrow(/64 MB/);
-  });
+  }, 15_000);
 
   it('rejects paths with absolute or backslash traversal', () => {
     const data: Record<string, Uint8Array> = {

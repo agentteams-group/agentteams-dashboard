@@ -216,11 +216,50 @@ Type /approve to approve, or send any message to deny.
     ]);
   });
 
+  it('preserves a suffix after an embedded repr', () => {
+    const result = parseA2uiContent(`${TOOL_CALL_REPR}\n工具调用完成。`);
+    expect(result.blocks).toEqual([
+      expect.objectContaining({ type: 'tool_call' }),
+      { type: 'text', text: '工具调用完成。' },
+    ]);
+  });
+
+  it('preserves text on both sides of an embedded repr', () => {
+    const result = parseA2uiContent(`正在调用工具...\n${TOOL_CALL_REPR}\n请稍候。`);
+    expect(result.blocks).toEqual([
+      { type: 'text', text: '正在调用工具...' },
+      expect.objectContaining({ type: 'tool_call' }),
+      { type: 'text', text: '请稍候。' },
+    ]);
+  });
+
+  it('parses multiple reprs while preserving the text between them', () => {
+    const result = parseA2uiContent(`${REASONING_REPR}\n正在读取文件...\n${TOOL_CALL_REPR}`);
+    expect(result.hasThinking).toBe(true);
+    expect(result.hasToolCall).toBe(true);
+    expect(result.blocks).toEqual([
+      expect.objectContaining({ type: 'thinking' }),
+      { type: 'text', text: '正在读取文件...' },
+      expect.objectContaining({ type: 'tool_call' }),
+    ]);
+  });
+
   it('leaves normal markdown messages untouched', () => {
     const result = parseA2uiContent('**加粗** 普通消息');
     expect(result.hasThinking).toBe(false);
     expect(result.hasToolCall).toBe(false);
     expect(result.blocks[0].type).toBe('text');
     expect(result.blocks[0].text).toBe('**加粗** 普通消息');
+  });
+
+  it('creates a workflow block from an AgentTeams workflow payload', () => {
+    const result = parseA2uiContent('正在执行', undefined, {
+      title: '发布流程',
+      status: 'in_progress',
+    });
+
+    expect(result.blocks).toEqual([
+      { type: 'workflow', payload: { title: '发布流程', status: 'in_progress' } },
+    ]);
   });
 });

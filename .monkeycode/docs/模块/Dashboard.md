@@ -12,7 +12,7 @@
 
 区块位于 `src/components/dashboard/sections/`：概览汇总资源和基础设施；Workers、Teams、Managers、Humans 提供资源操作；Chat 组合 Matrix 房间；Topology 绘制资源关系；Gateway 管理 Consumer 和 Higress Route；Policies、Sandbox、Compliance 提供治理能力。
 
-聊天区块位于 `src/components/dashboard/sections/chat/`：`a2ui/a2ui-chat-content.tsx` 解析 Matrix 消息中的 A2UI 协议、agent repr 与 legacy 块，流式输出由 `IncrementalA2uiRenderer` 增量渲染思考、工具调用、确认卡片与 Markdown 文本；AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
+聊天区块位于 `src/components/dashboard/sections/chat/`：`a2ui/a2ui-chat-content.tsx` 解析 Matrix 消息中的 A2UI 协议、agent repr、`agentteams.workflow` 与 legacy 块。Agent repr 可与状态文本交错出现，解析后按原顺序渲染文本、思考与工具调用内容；工具调用注册表为读取、写入、补丁、搜索、命令和目录工具提供专用卡片，其他工具使用通用卡片；workflow 卡片呈现运行状态、子智能体和步骤进度；流式输出由 `IncrementalA2uiRenderer` 增量渲染思考、工具调用、确认卡片与 Markdown 文本；AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
 
 ## 状态和数据流
 

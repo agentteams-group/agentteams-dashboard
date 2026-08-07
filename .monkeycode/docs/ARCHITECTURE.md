@@ -67,7 +67,9 @@ Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 
 
 位置：`src/components/dashboard/sections/chat/`、`src/lib/a2ui/parser.ts`
 
-Matrix 消息正文与 formatted_body 由 `parseA2uiContent` 解析为 A2UI 协议消息、agent 消息 repr、legacy thinking/卡片块与纯文本。流式输出使用 `IncrementalA2uiRenderer`：只对新增消息（`messages.slice(startIndex)`）增量处理，避免对完整消息列表的全量重处理破坏处理器内部 surface 状态；流式且长时间无 surface 时用静态提示替换三点动画。`A2uiChatContent` 通过 `looksLikeStructuredStreaming` 同时检查正文与 formatted_body 中的 A2UI 标记、agent repr 与 legacy 块，保证思考与工具调用在流式中以可折叠卡片呈现。
+Matrix 消息正文与 formatted_body 由 `parseA2uiContent` 解析为 A2UI 协议消息、agent 消息 repr、AgentTeams workflow、legacy thinking/卡片块与纯文本。单条 Matrix 消息可包含状态文本和多个 Agent repr；解析器以 repr 的完整边界逐段解析，并按原顺序保留普通文本、思考和工具调用块。工具调用经注册表按工具名分发为读取文件、写入文件、应用补丁、网页搜索、命令执行或目录列表卡片，未知工具使用通用兜底卡片。`agentteams.workflow` 字段会安全映射到 `DisplayMessage.workflow`，并由独立卡片展示运行状态、子智能体与步骤进度。流式输出使用 `IncrementalA2uiRenderer`：只对新增消息（`messages.slice(startIndex)`）增量处理，避免对完整消息列表的全量重处理破坏处理器内部 surface 状态；流式且长时间无 surface 时用静态提示替换三点动画。`A2uiChatContent` 通过 `looksLikeStructuredStreaming` 同时检查正文与 formatted_body 中的 A2UI 标记、agent repr 与 legacy 块，保证思考与工具调用在流式中以可折叠卡片呈现。
+
+聊天时间线由 `ScrollPanel` 的 `react-virtuoso` 容器承载，可测量动态高度消息、在顶部自动加载更早页并通过稳定消息键保持可视锚点。列表仅在用户停留于底部时跟随新增消息；跳转至指定消息会居中滚动、短暂高亮，并通过屏幕阅读器状态文本反馈定位结果。
 
 ### 技能中心
 

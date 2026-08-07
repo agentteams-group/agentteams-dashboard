@@ -27,8 +27,28 @@ describe('MessageBubble', () => {
 
     expect(screen.getByText('准备执行')).toBeInTheDocument();
     expect(screen.getByText('执行完成')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /read_file/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.queryByText(/"tool_name"/)).toBeNull();
+  });
+
+  it('uses the command renderer and safely displays invalid JSON arguments', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$command',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '```card\n{"type":"tool_call","tool_name":"execute_command","arguments":"not json","status":"success"}\n```',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /执行命令/ })).toBeInTheDocument();
   });
 
   it('renders A2UI protocol messages through the chat catalog', () => {
@@ -97,5 +117,35 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument();
+  });
+
+  it('renders AgentTeams workflow details from a structured message payload', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$workflow',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '正在执行',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          workflow: {
+            title: '发布流程',
+            status: 'in_progress',
+            runId: 'run-1',
+            subagents: [{ name: '部署智能体', status: 'running' }],
+            steps: [{ title: '规划', status: 'completed' }, { title: '发布', status: 'running' }],
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByText('发布流程')).toBeInTheDocument();
+    expect(screen.getByText('runId: run-1')).toBeInTheDocument();
+    expect(screen.getByText('部署智能体')).toBeInTheDocument();
+    expect(screen.getByLabelText('执行进度 1/2')).toBeInTheDocument();
   });
 });

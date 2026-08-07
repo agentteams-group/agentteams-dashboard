@@ -19,11 +19,12 @@
 
 import type { A2uiMessage } from '@a2ui/web_core/v0_9';
 import { tryParseAgentReprBlocks } from './agent-repr';
+import type { WorkflowPayload } from './workflow';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'card' | 'text';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
@@ -47,6 +48,8 @@ export interface A2uiParseResult {
 
 const A2UI_HTML_MARKER = /<!--a2ui:([\s\S]*?)-->/g;
 const A2UI_TEXT_MARKER = /```a2ui\n([\s\S]*?)\n```/g;
+const AGENT_REPR_START = /(?:sequence_number=\S+\s+)?object='message'\s/g;
+const AGENT_REPR_END = 'metadata={}';
 
 /**
  * Parse A2UI protocol messages from Matrix message content.
@@ -58,10 +61,21 @@ const A2UI_TEXT_MARKER = /```a2ui\n([\s\S]*?)\n```/g;
  */
 export function parseA2uiContent(
   body: string,
-  formattedBody?: string
+  formattedBody?: string,
+  workflow?: WorkflowPayload
 ): A2uiParseResult {
-  // 0. Agent message repr dumps (always in plain body, never formatted_body)
-  const agentBlocks = tryParseAgentReprBlocks(body);
+  if (workflow) {
+    return {
+      blocks: [{ type: 'workflow', payload: workflow }],
+      hasA2ui: false,
+      hasThinking: false,
+      hasToolCall: false,
+    };
+  }
+
+  // 0. Agent message repr dumps (always in plain body, never formatted_body).
+  // Runtime status text and multiple reprs may share a Matrix event body.
+  const agentBlocks = parseEmbeddedAgentReprBlocks(body);
   if (agentBlocks) {
     return {
       blocks: agentBlocks.blocks,
@@ -69,25 +83,6 @@ export function parseA2uiContent(
       hasThinking: agentBlocks.hasThinking,
       hasToolCall: agentBlocks.hasToolCall,
     };
-  }
-
-  // Runtime messages may prepend a human-readable status before the raw repr.
-  // Preserve that text while parsing the embedded repr into structured blocks.
-  const reprStart = body.search(/(?:sequence_number=\S+\s+)?object='message'\s/);
-  if (reprStart > 0) {
-    const reprBlocks = tryParseAgentReprBlocks(body.slice(reprStart));
-    if (reprBlocks) {
-      const prefix = body.slice(0, reprStart).trim();
-      return {
-        blocks: [
-          ...(prefix ? [{ type: 'text' as const, text: prefix }] : []),
-          ...reprBlocks.blocks,
-        ],
-        hasA2ui: false,
-        hasThinking: reprBlocks.hasThinking,
-        hasToolCall: reprBlocks.hasToolCall,
-      };
-    }
   }
 
   const confirmation = parseToolGuardConfirmation(body);
@@ -166,6 +161,41 @@ export function parseA2uiContent(
   }
 
   return { blocks, hasA2ui, hasThinking, hasToolCall };
+}
+
+function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
+  const blocks: ParsedA2uiBlock[] = [];
+  let hasThinking = false;
+  let hasToolCall = false;
+  let lastEnd = 0;
+  let parsedAny = false;
+
+  for (const match of body.matchAll(AGENT_REPR_START)) {
+    const start = match.index;
+    if (start === undefined) continue;
+
+    const endStart = body.indexOf(AGENT_REPR_END, start);
+    if (endStart < 0) continue;
+
+    const end = endStart + AGENT_REPR_END.length;
+    const reprBlocks = tryParseAgentReprBlocks(body.slice(start, end));
+    if (!reprBlocks) continue;
+
+    const textBefore = body.slice(lastEnd, start).trim();
+    if (textBefore) blocks.push({ type: 'text', text: textBefore });
+    blocks.push(...reprBlocks.blocks);
+    hasThinking ||= reprBlocks.hasThinking;
+    hasToolCall ||= reprBlocks.hasToolCall;
+    lastEnd = end;
+    parsedAny = true;
+  }
+
+  if (!parsedAny) return null;
+
+  const textAfter = body.slice(lastEnd).trim();
+  if (textAfter) blocks.push({ type: 'text', text: textAfter });
+
+  return { blocks, hasA2ui: false, hasThinking, hasToolCall };
 }
 
 /**
