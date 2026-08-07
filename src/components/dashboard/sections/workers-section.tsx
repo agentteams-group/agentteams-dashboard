@@ -253,6 +253,7 @@ export function WorkersSection() {
             settled += 1;
             clearWorkerDeleting(name);
             if (settled === names.length) {
+              void refetch();
               if (failed === 0) {
                 toast.success(`已删除 ${names.length} 个 Worker`);
               } else {
@@ -274,6 +275,7 @@ export function WorkersSection() {
     deleteWorker,
     markWorkersDeleting,
     clearWorkerDeleting,
+    refetch,
   ]);
 
   const handleExport = useCallback(() => {
@@ -376,9 +378,12 @@ export function WorkersSection() {
     deleteWorker.mutate(workerName, {
       onSuccess: () => setDeleteError(null),
       onError: (err) => setDeleteError({ worker: workerName, message: describeWorkerDeleteError(err, workerName) }),
-      onSettled: () => clearWorkerDeleting(workerName),
+      onSettled: () => {
+        clearWorkerDeleting(workerName);
+        void refetch();
+      },
     });
-  }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting]);
+  }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting, refetch]);
 
   const handleUpload = useCallback(
     async (file: File | null) => {
