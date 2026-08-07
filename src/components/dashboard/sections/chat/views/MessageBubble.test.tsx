@@ -63,6 +63,7 @@ describe('MessageBubble', () => {
     );
 
     expect(screen.getByText('A2UI 已渲染')).toBeInTheDocument();
+    expect(document.querySelector('.a2ui-message')).toBeInTheDocument();
   });
 
   it('renders Tool Guard approval prompts when confirmation replies are available', () => {

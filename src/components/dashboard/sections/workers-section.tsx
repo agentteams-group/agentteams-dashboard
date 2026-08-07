@@ -55,6 +55,9 @@ import { WorkerDetailDialog } from './workers/worker-detail-dialog';
 import { WorkerConfigDialog } from './workers/worker-config-dialog';
 import { WorkerUploadDialog } from './workers/worker-upload-dialog';
 
+const DELETE_REFRESH_INTERVAL_MS = 2_000;
+const DELETE_REFRESH_TIMEOUT_MS = 30_000;
+
 function RuntimeDistribution({ dist }: { dist: Record<string, number> }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -229,6 +232,26 @@ export function WorkersSection() {
     });
   }, []);
 
+  const waitForWorkersToDisappear = useCallback(async (names: string[]) => {
+    let remaining = names;
+    const deadline = Date.now() + DELETE_REFRESH_TIMEOUT_MS;
+
+    while (remaining.length > 0 && Date.now() < deadline) {
+      const result = await refetch();
+      const listedNames = new Set((result.data ?? []).map((worker) => worker.name));
+      const removed = remaining.filter((name) => !listedNames.has(name));
+      removed.forEach(clearWorkerDeleting);
+      remaining = remaining.filter((name) => listedNames.has(name));
+
+      if (remaining.length > 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, DELETE_REFRESH_INTERVAL_MS));
+      }
+    }
+
+    remaining.forEach(clearWorkerDeleting);
+    return remaining;
+  }, [clearWorkerDeleting, refetch]);
+
   const handleBulkAction = useCallback(() => {
     if (!bulkAction || selectedWorkers.size === 0) return;
     const names = Array.from(selectedWorkers).filter((name) => !deletingWorkerNames.has(name));
@@ -243,22 +266,34 @@ export function WorkersSection() {
       markWorkersDeleting(names);
       let settled = 0;
       let failed = 0;
+      const accepted: string[] = [];
       names.forEach((name) =>
         deleteWorker.mutate(name, {
+          onSuccess: () => {
+            accepted.push(name);
+            setDeleteError(null);
+          },
           onError: (err) => {
             failed += 1;
+            clearWorkerDeleting(name);
             setDeleteError({ worker: name, message: describeWorkerDeleteError(err, name) });
           },
           onSettled: () => {
             settled += 1;
-            clearWorkerDeleting(name);
             if (settled === names.length) {
-              void refetch();
-              if (failed === 0) {
-                toast.success(`已删除 ${names.length} 个 Worker`);
-              } else {
-                toast.error(`删除了 ${names.length - failed} 个，失败 ${failed} 个`);
+              if (accepted.length === 0) {
+                toast.error(`删除失败 ${failed} 个 Worker`);
+                return;
               }
+              void waitForWorkersToDisappear(accepted).then((remaining) => {
+                const removed = accepted.length - remaining.length;
+                if (remaining.length === 0) {
+                  toast.success(`已删除 ${removed} 个 Worker`);
+                } else {
+                  toast.warning(`${removed} 个 Worker 已移除，${remaining.length} 个仍在等待 Controller 完成删除`);
+                }
+                if (failed > 0) toast.error(`删除失败 ${failed} 个 Worker`);
+              });
             }
           },
         }),
@@ -275,7 +310,7 @@ export function WorkersSection() {
     deleteWorker,
     markWorkersDeleting,
     clearWorkerDeleting,
-    refetch,
+    waitForWorkersToDisappear,
   ]);
 
   const handleExport = useCallback(() => {
@@ -376,14 +411,22 @@ export function WorkersSection() {
     markWorkersDeleting([workerName]);
     setDeleteTarget(null);
     deleteWorker.mutate(workerName, {
-      onSuccess: () => setDeleteError(null),
-      onError: (err) => setDeleteError({ worker: workerName, message: describeWorkerDeleteError(err, workerName) }),
-      onSettled: () => {
+      onSuccess: () => {
+        setDeleteError(null);
+        void waitForWorkersToDisappear([workerName]).then((remaining) => {
+          if (remaining.length === 0) {
+            toast.success(`Worker "${workerName}" 已删除`);
+          } else {
+            toast.warning(`Worker "${workerName}" 仍在等待 Controller 完成删除`);
+          }
+        });
+      },
+      onError: (err) => {
         clearWorkerDeleting(workerName);
-        void refetch();
+        setDeleteError({ worker: workerName, message: describeWorkerDeleteError(err, workerName) });
       },
     });
-  }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting, refetch]);
+  }, [deleteTarget, deleteWorker, markWorkersDeleting, clearWorkerDeleting, waitForWorkersToDisappear]);
 
   const handleUpload = useCallback(
     async (file: File | null) => {

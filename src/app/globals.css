@@ -2,7 +2,40 @@
 @source "../components";
 @import "tw-animate-css";
 
-/* A2UI styles are handled by Tailwind classes in our custom catalog components */
+/* Keep A2UI's built-in catalog aligned with the Dashboard theme. */
+.a2ui-message {
+  --a2ui-color-surface: var(--card);
+  --a2ui-color-on-surface: var(--card-foreground);
+  --a2ui-color-background: var(--card);
+  --a2ui-color-on-background: var(--foreground);
+  --a2ui-color-primary: var(--primary);
+  --a2ui-color-on-primary: var(--primary-foreground);
+  --a2ui-color-secondary: var(--secondary);
+  --a2ui-color-on-secondary: var(--secondary-foreground);
+  --a2ui-color-border: var(--border);
+  --a2ui-border: 1px solid var(--border);
+  --a2ui-font-size-xs: 0.75rem;
+  --a2ui-font-size-s: 0.875rem;
+  --a2ui-font-size-m: 0.875rem;
+  --a2ui-font-size-l: 1rem;
+  --a2ui-font-size-xl: 1.125rem;
+  --a2ui-font-size-2xl: 1.25rem;
+  --a2ui-spacing-xs: 0.25rem;
+  --a2ui-spacing-s: 0.5rem;
+  --a2ui-spacing-m: 0.75rem;
+  --a2ui-spacing-l: 1rem;
+}
+
+.a2ui-message .a2ui-card {
+  margin: 0;
+  max-width: 100%;
+}
+
+.a2ui-message img,
+.a2ui-message video {
+  height: auto;
+  max-width: 100%;
+}
 
 @custom-variant dark (&:is(.dark *));
 

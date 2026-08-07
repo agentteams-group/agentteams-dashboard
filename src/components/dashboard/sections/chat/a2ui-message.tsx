@@ -17,7 +17,7 @@ export function A2uiMessage({ messages }: A2uiMessageProps) {
   }, [messages]);
 
   return (
-    <div className="my-2 space-y-2">
+    <div className="a2ui-message my-2 min-w-0 space-y-2">
       {surfaces.map((surface) => (
         <A2uiSurface key={surface.id} surface={surface} />
       ))}

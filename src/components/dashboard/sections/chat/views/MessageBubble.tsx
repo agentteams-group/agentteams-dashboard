@@ -268,11 +268,11 @@ export function MessageBubble({
               </div>
             </div>
           ) : (
-            <div className={bubbleClasses}>
+            <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
               {parsedBlocks.map((block, idx) => {
                 if (block.type === 'confirmation' && onSendConfirmation) {
                   return (
-                    <div key={idx} className="mt-2">
+                    <div key={idx} className="w-full max-w-2xl">
                       <ConfirmationCard
                         payload={block.payload as unknown as ConfirmationCardPayload}
                         onApprove={handleConfirmationApprove}
@@ -282,28 +282,29 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'tool_call') {
-                  return <StreamingCard key={idx} payload={block.payload as Record<string, unknown>} />;
+                  return <div key={idx} className="w-full max-w-2xl"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
                 }
                 if (block.type === 'thinking') {
-                  return <ThinkingCard key={idx} content={block.content || ''} isStreaming={message.isStreaming} />;
+                  return <div key={idx} className="w-full max-w-2xl"><ThinkingCard content={block.content || ''} isStreaming={message.isStreaming} /></div>;
                 }
                 if (block.type === 'card') {
-                  return <StreamingCard key={idx} payload={block.payload as Record<string, unknown>} />;
+                  return <div key={idx} className="w-full max-w-2xl"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
                 }
                 if (block.type === 'a2ui' && block.messages) {
-                  return <A2uiMessage key={idx} messages={block.messages} />;
+                  return <div key={idx} className="w-full max-w-2xl rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
                 }
                 if (block.type === 'text' && block.text) {
                   return (
-                    <MarkdownMessage
-                      key={idx}
-                      content={block.text}
-                      formattedContent={message.formattedContent ? block.text : undefined}
-                      msgType={message.type}
-                      mediaUrl={message.mediaUrl}
-                      mediaInfo={message.mediaInfo}
-                      memberMap={memberMap}
-                    />
+                    <div key={idx} className={bubbleClasses}>
+                      <MarkdownMessage
+                        content={block.text}
+                        formattedContent={message.formattedContent ? block.text : undefined}
+                        msgType={message.type}
+                        mediaUrl={message.mediaUrl}
+                        mediaInfo={message.mediaInfo}
+                        memberMap={memberMap}
+                      />
+                    </div>
                   );
                 }
                 return null;

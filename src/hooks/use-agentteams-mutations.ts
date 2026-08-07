@@ -65,8 +65,6 @@ export function useDeleteWorker() {
     },
     onSuccess: (_, name) => {
       queryClient.invalidateQueries({ queryKey: ['agentteams-cluster-status'] });
-      toast.success(`Worker "${name}" 已删除`);
-      addNotification({ type: 'success', title: 'Worker 已删除', message: `Worker "${name}" 已删除` });
       auditMutation('worker', name, 'delete');
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agentteams-workers'] }),
@@ -398,4 +396,3 @@ export function useBindConsumer() {
     },
   });
 }
-
