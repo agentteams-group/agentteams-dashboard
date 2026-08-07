@@ -64,4 +64,37 @@ describe('MessageBubble', () => {
 
     expect(screen.getByText('A2UI 已渲染')).toBeInTheDocument();
   });
+
+  it('renders Tool Guard approval prompts when confirmation replies are available', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$confirmation',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: `⏳ Waiting for approval / 等待审批
+
+Tool / 工具: execute_shell_command
+Triggered by / 触发来源: Tool Guard / 工具护栏
+Parameters / 参数:
+{
+  "command": "rm 123",
+  "timeout": 10
+}
+💡 Triggered by tool guardrails
+Type /approve to approve, or send any message to deny.`,
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={() => {}}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument();
+  });
 });

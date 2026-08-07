@@ -75,6 +75,15 @@ export function ThreadPanel({ roomId, rootMessage, memberMap, onClose }: ThreadP
     setInputValue('');
   }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id]);
 
+  const handleSendConfirmation = useCallback((content: string) => {
+    if (!isLoggedIn || sendMutation.isPending) return;
+    sendMutation.mutate({
+      roomId,
+      body: content,
+      relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
+    });
+  }, [isLoggedIn, sendMutation, roomId, rootMessage.id]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -116,6 +125,7 @@ export function ThreadPanel({ roomId, rootMessage, memberMap, onClose }: ThreadP
           isContinuation={false}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onSendConfirmation={handleSendConfirmation}
           memberMap={memberMap}
         />
         {threadQuery.isLoading ? (
@@ -141,6 +151,7 @@ export function ThreadPanel({ roomId, rootMessage, memberMap, onClose }: ThreadP
                 isContinuation={isContinuation}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onSendConfirmation={handleSendConfirmation}
                 memberMap={memberMap}
               />
             );
