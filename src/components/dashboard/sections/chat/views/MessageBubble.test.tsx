@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 
 vi.mock('../markdown-message', () => ({
   MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div>,
 }));
+
+afterEach(cleanup);
 
 describe('MessageBubble', () => {
   it('renders mixed text and tool blocks without repeating the raw card payload', () => {
@@ -190,5 +192,65 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     expect(screen.getByText('宽工作流').closest('.max-w-4xl')).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      runtime: 'Hermes',
+      content: '```card\n{"type":"tool_call","tool_name":"execute_command","status":"running","isStreaming":true}\n```',
+      isStreaming: true,
+      assertRendered: () => expect(screen.getByRole('button', { name: /执行命令/ })).toBeInTheDocument(),
+    },
+    {
+      runtime: 'OpenClaw',
+      content: '<details class="thinking">正在分析请求</details>',
+      isStreaming: true,
+      assertRendered: () => expect(screen.getByText('正在分析请求')).toBeInTheDocument(),
+    },
+    {
+      runtime: 'Human',
+      content: '普通文本消息',
+      assertRendered: () => expect(screen.getByText('普通文本消息')).toBeInTheDocument(),
+    },
+    {
+      runtime: 'Copaw',
+      content: `⏳ Waiting for approval / 等待审批
+
+Tool / 工具: execute_shell_command
+Triggered by / 触发来源: Tool Guard / 工具护栏
+Parameters / 参数:
+{ "command": "pwd" }
+
+Type /approve to approve, or send any message to deny.`,
+      assertRendered: () => expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument(),
+    },
+    {
+      runtime: 'QwenPaw',
+      content: "object='message' status='completed' error=None id='msg_qwen' type='reasoning' role='assistant' content=[TextContent(sequence_number=None, object='content', status=None, error=None, type='text', index=0, delta=None, msg_id='msg_qwen', text='正在推理')] code=None message=None usage=None metadata={}",
+      assertRendered: () => {
+        fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+        expect(screen.getByText('正在推理')).toBeInTheDocument();
+      },
+    },
+  ])('$runtime runtime message renders its supported content', ({ runtime, content, isStreaming, assertRendered }) => {
+    render(
+      <MessageBubble
+        message={{
+          id: `$${runtime.toLowerCase()}`,
+          sender: `@${runtime.toLowerCase()}:example.com`,
+          senderShort: runtime,
+          content,
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          isStreaming,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={() => {}}
+      />
+    );
+
+    assertRendered();
   });
 });
