@@ -489,7 +489,9 @@ export function mergeTimelineEvents(
 
     // Also add the event if it's new (not in any existing page)
     const allEventIds = new Set(existing.pages.flatMap((p) => p.chunk.map((e) => e.event_id)));
-    if (!allEventIds.has(event.event_id) && !rootId || !allEventIds.has(rootId ?? '')) {
+    const isNew = !allEventIds.has(event.event_id);
+    const isRootNew = rootId ? !allEventIds.has(rootId) : false;
+    if ((isNew && !rootId) || (rootId && isRootNew)) {
       updatedPages[0] = { ...updatedPages[0], chunk: [event, ...updatedPages[0].chunk] };
     }
 
