@@ -165,8 +165,8 @@ function parseToolGuardConfirmation(body: string): Record<string, unknown> | nul
     const match = body.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
     return match?.[1]?.trim();
   };
-  const parameters = body.match(/Parameters\s*\/\s*参数:\s*([\s\S]*?)(?=^💡|^⚠️|^❌|$)/mi)?.[1]?.trim();
-  const externalFiles = body.match(/Files outside workspace:\s*([\s\S]*?)(?=^⚠️|^❌|$)/mi)?.[1]?.trim();
+  const parameters = body.match(/Parameters\s*\/\s*参数:\s*([\s\S]*?)(?=💡|⚠️|❌|$)/)?.[1]?.trim();
+  const externalFiles = body.match(/Files outside workspace:\s*([\s\S]*?)(?=⚠️|❌|$)/)?.[1]?.trim();
 
   return {
     runtime: 'Tool Guard',
