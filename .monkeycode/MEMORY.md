@@ -30,6 +30,15 @@ This file records user instructions, preferences, and teachings for reference in
 
 ## Entries
 
+[User Instruction Summary]
+- Date: 2026-08-07
+- Context: Issue-native change management
+- Instructions:
+  - Use the issue-spec coordinator workflow for proposal, design, implementation, independent review, verification, durable projection, and closure work.
+  - Run issue-spec authentication and workflow validation before routing issue-native work.
+  - Agent-executed change-bearing PROCESS nodes use managed workspaces, a real non-Coordinator worker, and an independent reviewer for every active SPEC.
+  - For final issue-spec verification, forecast the final gate, resolve validator blockers, and run both compact and full authoritative verification before merge.
+
 [Project Knowledge Summary]
 - Date: 2026-08-03
 - Context: Agent implemented Skill Center feature (skill-center) with issue-spec workflow

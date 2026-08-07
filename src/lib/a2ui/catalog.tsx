@@ -5,6 +5,7 @@ import {
   Catalog,
 } from '@a2ui/web_core/v0_9';
 import {
+  basicCatalog,
   createComponentImplementation,
   type ReactComponentImplementation,
 } from '@a2ui/react/v0_9';
@@ -336,6 +337,7 @@ const StatusBadge = createComponentImplementation(
 export const agentteamsChatCatalog = new Catalog<ReactComponentImplementation>(
   'agentteams-chat',
   [
+    ...basicCatalog.components.values(),
     ThinkingBlock,
     ToolCallBlock,
     StreamingText,

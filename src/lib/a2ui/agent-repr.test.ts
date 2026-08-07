@@ -207,6 +207,15 @@ Type /approve to approve, or send any message to deny.
     expect(result.blocks[0].type).toBe('tool_call');
   });
 
+  it('preserves a prefix while parsing an embedded tool call repr', () => {
+    const result = parseA2uiContent(`正在调用工具...\n${TOOL_CALL_REPR}`);
+    expect(result.hasToolCall).toBe(true);
+    expect(result.blocks).toEqual([
+      { type: 'text', text: '正在调用工具...' },
+      expect.objectContaining({ type: 'tool_call' }),
+    ]);
+  });
+
   it('leaves normal markdown messages untouched', () => {
     const result = parseA2uiContent('**加粗** 普通消息');
     expect(result.hasThinking).toBe(false);

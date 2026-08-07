@@ -10,6 +10,7 @@ import { MarkdownMessage } from '../markdown-message';
 import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
+import { A2uiMessage } from '../a2ui-message';
 import { parseA2uiContent, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
@@ -123,11 +124,6 @@ export function MessageBubble({
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
     return parseA2uiContent(message.content, message.formattedContent || undefined).blocks;
   }, [message.content, message.formattedContent]);
-
-  const confirmationBlocks = useMemo<ParsedA2uiBlock[]>(() => {
-    if (!onSendConfirmation) return [];
-    return parsedBlocks.filter((b) => b.type === 'confirmation');
-  }, [parsedBlocks, onSendConfirmation]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
@@ -294,20 +290,24 @@ export function MessageBubble({
                 if (block.type === 'card') {
                   return <StreamingCard key={idx} payload={block.payload as Record<string, unknown>} />;
                 }
-                // text, a2ui: render via MarkdownMessage
+                if (block.type === 'a2ui' && block.messages) {
+                  return <A2uiMessage key={idx} messages={block.messages} />;
+                }
+                if (block.type === 'text' && block.text) {
+                  return (
+                    <MarkdownMessage
+                      key={idx}
+                      content={block.text}
+                      formattedContent={message.formattedContent ? block.text : undefined}
+                      msgType={message.type}
+                      mediaUrl={message.mediaUrl}
+                      mediaInfo={message.mediaInfo}
+                      memberMap={memberMap}
+                    />
+                  );
+                }
                 return null;
               })}
-              {/* Render plain text / a2ui blocks as markdown */}
-              {parsedBlocks.filter((b) => b.type === 'text' || b.type === 'a2ui').length > 0 && (
-                <MarkdownMessage
-                  content={message.content}
-                  formattedContent={message.formattedContent}
-                  msgType={message.type}
-                  mediaUrl={message.mediaUrl}
-                  mediaInfo={message.mediaInfo}
-                  memberMap={memberMap}
-                />
-              )}
             </div>
           )}
 

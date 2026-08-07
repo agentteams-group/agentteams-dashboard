@@ -71,6 +71,25 @@ export function parseA2uiContent(
     };
   }
 
+  // Runtime messages may prepend a human-readable status before the raw repr.
+  // Preserve that text while parsing the embedded repr into structured blocks.
+  const reprStart = body.search(/(?:sequence_number=\S+\s+)?object='message'\s/);
+  if (reprStart > 0) {
+    const reprBlocks = tryParseAgentReprBlocks(body.slice(reprStart));
+    if (reprBlocks) {
+      const prefix = body.slice(0, reprStart).trim();
+      return {
+        blocks: [
+          ...(prefix ? [{ type: 'text' as const, text: prefix }] : []),
+          ...reprBlocks.blocks,
+        ],
+        hasA2ui: false,
+        hasThinking: reprBlocks.hasThinking,
+        hasToolCall: reprBlocks.hasToolCall,
+      };
+    }
+  }
+
   const confirmation = parseToolGuardConfirmation(body);
   if (confirmation) {
     return {
