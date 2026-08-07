@@ -144,7 +144,13 @@ export function ChatRoom({
     if (!last) return;
     const target = last.eventId || last.id;
     if (!target || target === readEventId || setReadMarkerMutation.isPending) return;
-    setReadMarkerMutation.mutate({ roomId, eventId: target });
+    setReadMarkerMutation.mutate({ roomId, eventId: target }, {
+      onError: (err) => {
+        // m.fully_read may not be supported by all homeservers; silently ignore
+        const code = (err as { errcode?: string })?.errcode;
+        if (code !== 'M_BAD_JSON') console.warn('Failed to set read marker:', err);
+      },
+    });
   }, [formattedMessages, readEventId, setReadMarkerMutation, roomId]);
 
   // Single watcher for newly appended messages: scroll down when pinned to
