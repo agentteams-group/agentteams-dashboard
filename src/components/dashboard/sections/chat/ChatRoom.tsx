@@ -468,7 +468,7 @@ export function ChatRoom({
           <img src={avatar} alt={roomName} />
         </Avatar>
       ) : (
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/80 to-cyan-500/80 flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm">
            <span className="text-xs font-semibold text-white">{roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}

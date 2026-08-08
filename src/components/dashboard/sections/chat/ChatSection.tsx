@@ -80,7 +80,7 @@ export function ChatSection() {
         {/* Compact header bar */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shadow-sm">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-sm">
               <MessageSquare className="w-3.5 h-3.5 text-white" />
             </div>
             <div className="leading-tight">

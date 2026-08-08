@@ -13,10 +13,10 @@ export function ChatEmptyState({
   return (
     <div className="flex items-center justify-center h-full text-center p-8">
       <div className="max-w-md">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/15 to-cyan-500/15 flex items-center justify-center mx-auto mb-5">
-          <MessageSquare className="w-7 h-7 text-violet-500" aria-hidden="true" />
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center mx-auto mb-5">
+          <MessageSquare className="w-7 h-7 text-primary" aria-hidden="true" />
         </div>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-violet-500/80 mb-2">Agent Workspace</p>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-primary/80 mb-2">Agent Workspace</p>
         <h3 className="font-semibold text-xl mb-2">选择一个会话开始协作</h3>
         <p className="text-sm text-muted-foreground">
           从左侧房间列表中选择一个 Matrix 房间，即可查看消息记录和发送消息。
