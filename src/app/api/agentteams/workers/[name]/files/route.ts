@@ -42,7 +42,7 @@ export async function GET(
   try {
     const client = createMinioClient();
     if (subPrefix) {
-      const fullPrefix = `${name}/${subPrefix}`;
+      const fullPrefix = subPrefix.startsWith(`${name}/`) ? subPrefix : `${name}/${subPrefix}`;
       const objects = await listFiles(client, bucket, fullPrefix);
       return NextResponse.json({ objects, prefix: subPrefix });
     }
