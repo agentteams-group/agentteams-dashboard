@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   navItems,
+  navGroups,
   isNavItemVisible,
   type DeploymentMode,
+  type NavGroup,
 } from './nav-items';
 
 interface MobileSidebarProps {
@@ -20,6 +22,14 @@ interface MobileSidebarProps {
   onNavClick: (_sectionId: string) => void;
   onClose: () => void;
   mode?: DeploymentMode | null;
+}
+
+function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
+  return (
+    <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+      {group.label}
+    </div>
+  );
 }
 
 export function MobileSidebar({
@@ -35,6 +45,12 @@ export function MobileSidebar({
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
     [mode]
   );
+
+  // Group items by their group field
+  const groupedItems = navGroups.map((group) => ({
+    group,
+    items: visibleItems.filter((item) => item.group === group.id),
+  })).filter(({ items }) => items.length > 0);
 
   return (
     <AnimatePresence>
@@ -73,7 +89,10 @@ export function MobileSidebar({
 
             {/* Scrollable nav */}
             <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">
-              {visibleItems.map((item) => {
+              {groupedItems.map(({ group, items }) => (
+                <div key={group.id}>
+                  <GroupHeader group={group} />
+                  {items.map((item) => {
                     const Icon = item.icon;
                     const isActive = activeSection === item.id;
                     const count = countMap[item.id] ?? 0;
@@ -110,6 +129,8 @@ export function MobileSidebar({
                       </button>
                     );
                   })}
+                </div>
+              ))}
             </nav>
           </motion.aside>
         </>

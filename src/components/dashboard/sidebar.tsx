@@ -17,9 +17,11 @@ import {
 } from '@/components/ui/tooltip';
 import {
   navItems,
+  navGroups,
   isNavItemVisible,
   type NavItem,
   type DeploymentMode,
+  type NavGroup,
 } from './nav-items';
 
 // ──────────────────────────────────────────
@@ -110,6 +112,18 @@ function NavButton({
 }
 
 // ──────────────────────────────────────────
+// GroupHeader
+// ──────────────────────────────────────────
+
+function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
+  return (
+    <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+      {group.label}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────
 // Sidebar
 // ──────────────────────────────────────────
 
@@ -123,6 +137,12 @@ export function Sidebar({
   mode,
 }: SidebarProps) {
   const visibleItems = navItems.filter((item) => isNavItemVisible(item, mode));
+
+  // Group items by their group field
+  const groupedItems = navGroups.map((group) => ({
+    group,
+    items: visibleItems.filter((item) => item.group === group.id),
+  })).filter(({ items }) => items.length > 0);
 
   return (
     <aside
@@ -188,16 +208,21 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {visibleItems.map((item) => (
-          <NavButton
-            key={item.id}
-            item={item}
-            isActive={activeSection === item.id}
-            count={countMap[item.id] ?? 0}
-            hasNotification={sectionsWithNotifications.has(item.id)}
-            collapsed={collapsed}
-            onNavClick={onNavClick}
-          />
+        {groupedItems.map(({ group, items }) => (
+          <div key={group.id}>
+            {!collapsed && <GroupHeader group={group} />}
+            {items.map((item) => (
+              <NavButton
+                key={item.id}
+                item={item}
+                isActive={activeSection === item.id}
+                count={countMap[item.id] ?? 0}
+                hasNotification={sectionsWithNotifications.has(item.id)}
+                collapsed={collapsed}
+                onNavClick={onNavClick}
+              />
+            ))}
+          </div>
         ))}
       </nav>
 

@@ -28,6 +28,8 @@ interface MessageBubbleProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string) => void;
+  onOpenWorkerFiles?: () => void;
+  senderShort?: string;
   memberMap?: Record<string, string>;
   /** Latest m.read receipts of every user in the room (for ✓✓ read indicator). */
   readReceipts?: Record<string, ReadReceiptEntry>;
@@ -68,14 +70,15 @@ function ActionIcon({ path, size = 12, label }: { path: string; size?: number; l
   );
 }
 
-const ICON_PATHS = {
+  const ICON_PATHS = {
   reply: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-  copy: 'M9 9h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  copy: 'M9 9h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
   thread: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   edit: 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z',
   cancel: 'M6 6l12 12M18 6L6 18',
   resend: 'M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10',
+  folder: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
 };
 
 function ActionButton({
@@ -111,6 +114,8 @@ export function MessageBubble({
   onResend,
   onCancel,
   onSendConfirmation,
+  onOpenWorkerFiles,
+  senderShort,
   memberMap,
   readReceipts,
   currentUserId,
@@ -381,6 +386,9 @@ export function MessageBubble({
             )}
             {onCopy && (
               <ActionButton title="复制" icon={ICON_PATHS.copy} onClick={() => onCopy(message)} />
+            )}
+            {onOpenWorkerFiles && !message.isMe && senderShort && (
+              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={onOpenWorkerFiles} />
             )}
           </div>
         )}
