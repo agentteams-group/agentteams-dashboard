@@ -659,10 +659,9 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
  * Collapses Matrix message revisions into their root event so a streaming
  * response stays in one position while the homeserver publishes edits.
  *
- * Thread replies (m.thread relations) render in the main timeline and their
- * count is attached to the thread root so the UI can show a thread summary
- * badge. Full thread contents are also fetched on demand via the thread
- * relations API (useMatrixThreadMessages).
+ * Thread replies (m.thread relations) are counted on the root and fetched
+ * on demand by the thread panel. Keeping them out of the main timeline
+ * prevents runtime replies from appearing as duplicate top-level messages.
  */
 export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
   const messages = new Map<string, DisplayMessage>();
@@ -709,9 +708,11 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       continue;
     }
 
-    // Keep thread replies in the main timeline and tally them on the root.
+    // Thread replies belong to the thread panel. Keep their count on the root
+    // so the main timeline can expose an entry point for opening that panel.
     if (formatted.isThreadReply && formatted.threadId) {
       replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
+      continue;
     }
 
     const revision = pendingRevisions.get(event.event_id);

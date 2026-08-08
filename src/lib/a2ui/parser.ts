@@ -49,9 +49,9 @@ const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
 ]);
 
 /**
- * Reads the structured run payload attached to an AgentTeams Matrix event.
- * A run update carries every block accumulated so far, allowing an m.replace
- * revision to update the live response without losing completed tool calls.
+ * Reads an optional structured run payload attached by an AgentTeams runtime
+ * adapter. AgentTeams itself does not define this Matrix event schema, so it
+ * remains an opt-in compatibility path alongside the runtime repr parser.
  */
 export function parseAgentRunBlocks(value: unknown, isStreaming = false): ParsedA2uiBlock[] | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;

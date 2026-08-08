@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MatrixEvent } from '@/lib/matrix-api';
-import { formatMatrixEvents, isMessageReadByOthers } from './use-matrix';
+import { formatMatrixEvent, formatMatrixEvents, isMessageReadByOthers } from './use-matrix';
 
 function message(
   eventId: string,
@@ -111,7 +111,7 @@ describe('formatMatrixEvents', () => {
     expect(messages[0].content).toBe('{"type":"tool_call","name":"search","arguments":{"query":"状态"}}');
   });
 
-  it('shows thread replies in the main timeline and counts them on the root', () => {
+  it('keeps thread replies out of the main timeline and counts them on the root', () => {
     const events = [
       message('root', '原始问题', 100),
       message('other', '无关消息', 200),
@@ -125,25 +125,20 @@ describe('formatMatrixEvents', () => {
 
     const messages = formatMatrixEvents(events, '@human:example.test');
 
-    expect(messages).toHaveLength(4);
+    expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ id: 'root', replyCount: 2, isThreadReply: false });
     expect(messages[1]).toMatchObject({ id: 'other' });
-    expect(messages[2]).toMatchObject({ id: 'reply-1', threadId: 'root', isThreadReply: true });
-    expect(messages[3]).toMatchObject({ id: 'reply-2', threadId: 'root', isThreadReply: true });
   });
 
-  it('exposes threadId on a thread reply event', () => {
-    const events = [
-      message('root', '原始问题', 100),
+  it('exposes thread metadata before the reply enters the thread panel', () => {
+    const reply = formatMatrixEvent(
       message('reply-1', '线程回复', 200, {
         'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
       }),
-    ];
+      '@human:example.test'
+    );
 
-    const messages = formatMatrixEvents(events, '@human:example.test');
-
-    expect(messages[0]).toMatchObject({ id: 'root', replyCount: 1 });
-    expect(messages[1]).toMatchObject({ id: 'reply-1', threadId: 'root', isThreadReply: true });
+    expect(reply).toMatchObject({ id: 'reply-1', threadId: 'root', isThreadReply: true });
   });
 
   it('marks a revised message as edited and keeps the root event id', () => {
