@@ -41,19 +41,27 @@ export async function GET(
 
   try {
     const client = createMinioClient();
+
+    const resolvePrefix = (base: string): string =>
+      base.startsWith(`${name}/`) ? base : `${name}/${base}`;
+
+    const tryList = async (prefix: string) => await listFiles(client, bucket, prefix);
+
     if (subPrefix) {
-      const fullPrefix = subPrefix.startsWith(`${name}/`) ? subPrefix : `${name}/${subPrefix}`;
-      const objects = await listFiles(client, bucket, fullPrefix);
-      return NextResponse.json({ objects, prefix: subPrefix });
+      const direct = await tryList(resolvePrefix(subPrefix));
+      if (direct.length > 0) return NextResponse.json({ objects: direct, prefix: subPrefix });
+
+      const agentsFallback = await tryList(`agents/${resolvePrefix(subPrefix)}`);
+      return NextResponse.json({ objects: agentsFallback, prefix: subPrefix });
     }
 
     const rootPrefix = `${name}/`;
-    const rootObjects = await listFiles(client, bucket, rootPrefix);
+    const rootObjects = await tryList(rootPrefix);
     if (rootObjects.length > 0) {
       return NextResponse.json({ objects: rootObjects, prefix: '' });
     }
 
-    const agentsObjects = await listFiles(client, bucket, `agents/${rootPrefix}`);
+    const agentsObjects = await tryList(`agents/${rootPrefix}`);
     return NextResponse.json({ objects: agentsObjects, prefix: '' });
   } catch {
     return NextResponse.json({ error: '无法读取 Worker 文件' }, { status: 502 });
