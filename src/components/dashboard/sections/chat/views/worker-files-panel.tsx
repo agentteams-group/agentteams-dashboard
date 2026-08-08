@@ -58,6 +58,17 @@ function dirName(prefixKey: string): string {
   return trimmed.split('/').pop() || trimmed;
 }
 
+export function computeNextPrefix(currentPrefix: string, prefixKey: string): string {
+  const basePrefix = currentPrefix ? `${currentPrefix}` : '';
+  const subName = prefixKey.endsWith('/') ? prefixKey.slice(0, -1) : prefixKey;
+  const rel = basePrefix ? subName.slice(basePrefix.length) : subName;
+  const cleanRel = rel.endsWith('/') ? rel.slice(0, -1) : rel;
+  if (!cleanRel || cleanRel.includes('//')) {
+    return basePrefix;
+  }
+  return basePrefix ? `${basePrefix}${cleanRel}/` : `${cleanRel}/`;
+}
+
 interface WorkerFilesPanelProps {
   workerName: string;
 }
@@ -81,17 +92,7 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   };
 
   const navigateInto = (prefixKey: string) => {
-    const basePrefix = currentPrefix ? `${currentPrefix}` : '';
-    const subName = prefixKey.endsWith('/') ? prefixKey.slice(0, -1) : prefixKey;
-    const rel = basePrefix ? subName.slice(basePrefix.length + 1) : subName;
-    const cleanRel = rel.endsWith('/') ? rel.slice(0, -1) : rel;
-    if (!cleanRel || cleanRel.includes('//')) {
-      setCurrentPrefix(basePrefix);
-      setSelectedKey(null);
-      return;
-    }
-    const next = basePrefix ? `${basePrefix}${cleanRel}/` : `${cleanRel}/`;
-    setCurrentPrefix(next);
+    setCurrentPrefix(computeNextPrefix(currentPrefix, prefixKey));
     setSelectedKey(null);
   };
 
