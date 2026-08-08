@@ -97,3 +97,15 @@
 1. WHEN 聊天面板渲染普通文本消息，系统 SHALL 将消息气泡最大宽度设为可用消息列宽度的 92%
 2. WHEN 聊天面板渲染确认、工具调用、思考、流式、A2UI 或 workflow 内容，系统 SHALL 将内容最大宽度设为 4xl
 3. WHILE 消息内容使用扩展宽度，系统 SHALL 保留头像列、消息方向和操作栏布局
+
+### 需求 8：Matrix 聊天 2
+
+**用户故事：** 作为用户，我希望在 Dashboard 中使用基于 TDesign React Chat 的独立 Matrix 对话界面，同时继续使用既有 Matrix 房间和通信能力。
+
+#### 验收标准
+
+1. WHEN 用户选择“Matrix 聊天 2”，系统 SHALL 显示独立的 TDesign Chat 页面与现有 Matrix 房间列表
+2. WHEN 用户在聊天室 2 中选择既有房间，系统 SHALL 使用既有 Matrix 查询、同步和身份状态加载该房间消息
+3. WHEN 消息包含文本、思考或工具调用内容，系统 SHALL 映射为 TDesign 的 markdown、thinking 或 toolcall 内容
+4. WHEN 消息包含 A2UI 内容，系统 SHALL 显示兼容提示并保留原“Matrix 聊天”入口中的完整 A2UI 交互
+5. WHEN 用户通过聊天室 2 发送文本，系统 SHALL 复用既有 Matrix 发送接口将文本发送至当前房间
