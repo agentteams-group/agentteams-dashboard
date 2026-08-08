@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Readable } from 'stream';
+import type { Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 
 async function tryStatAndGet(
-  client: ReturnType<typeof createMinioClient>,
+  client: Client,
   bucket: string,
   key: string,
-): Promise<{ stat: Awaited<ReturnType<typeof client.statObject>>; stream: ReturnType<typeof client.getObject> } | null> {
+): Promise<{ stat: Awaited<ReturnType<Client['statObject']>>; stream: Readable } | null> {
   try {
     const stat = await client.statObject(bucket, key);
     const stream = await client.getObject(bucket, key);
