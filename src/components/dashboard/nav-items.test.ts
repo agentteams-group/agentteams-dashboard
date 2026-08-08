@@ -8,25 +8,20 @@ describe('Navigation with groups', () => {
     expect(ids).toEqual([
       'overview',
       'chat',
-      'docs',
       'workers',
       'managers',
       'teams',
       'humans',
       'skills',
-      'mcps',
       'models',
-      'logs',
-      'debug-export',
-      'trace-status',
-      'troubleshoot',
+      'docs',
     ]);
     expect(navItems.every((item) => 'group' in item)).toBe(true);
   });
 
   it('defines all navigation groups', () => {
     const groupIds = navGroups.map((g) => g.id);
-    expect(groupIds).toEqual(['core', 'runtime', 'resource', 'ops']);
+    expect(groupIds).toEqual(['core', 'runtime', 'resource']);
   });
 
   it('assigns correct groups to items', () => {
@@ -38,12 +33,8 @@ describe('Navigation with groups', () => {
     expect(groupMap.get('teams')).toBe('runtime');
     expect(groupMap.get('humans')).toBe('runtime');
     expect(groupMap.get('skills')).toBe('resource');
-    expect(groupMap.get('mcps')).toBe('resource');
     expect(groupMap.get('models')).toBe('resource');
-    expect(groupMap.get('logs')).toBe('ops');
-    expect(groupMap.get('debug-export')).toBe('ops');
-    expect(groupMap.get('trace-status')).toBe('ops');
-    expect(groupMap.get('troubleshoot')).toBe('ops');
+    expect(groupMap.get('docs')).toBe('footer');
   });
 
   it('maps every navigation entry to a section', () => {

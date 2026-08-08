@@ -14,7 +14,7 @@ import {
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { MessageSquare, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { MessageSquare, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buildRooms } from './room-builders';
 import { ChatAuthBadge } from './chat-auth-badge';
@@ -37,6 +37,7 @@ export function ChatSection() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
+  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
@@ -117,14 +118,29 @@ export function ChatSection() {
         {/* Main content: 2 or 3 column flex */}
         <div className="flex-1 flex min-h-0">
           {/* Left: Room list */}
-          <ChatRoomSidebar
-            rooms={rooms}
-            selectedRoomId={selectedRoomId}
-            onSelectRoom={setSelectedRoomId}
-            isLoggedIn={isLoggedIn}
-            userId={userId}
-            isLoading={isLoading}
-          />
+          {isRoomListCollapsed ? (
+            <div className="w-10 shrink-0 border-r border-border bg-muted/20 pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mx-auto h-7 w-7 p-0"
+                onClick={() => setIsRoomListCollapsed(false)}
+                title="显示会话列表"
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <ChatRoomSidebar
+              rooms={rooms}
+              selectedRoomId={selectedRoomId}
+              onSelectRoom={setSelectedRoomId}
+              isLoggedIn={isLoggedIn}
+              userId={userId}
+              isLoading={isLoading}
+              onCollapse={() => setIsRoomListCollapsed(true)}
+            />
+          )}
 
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">

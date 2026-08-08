@@ -66,7 +66,10 @@ export function ChatRoom({
   const [isUploading, setIsUploading] = useState(false);
   const [showWorkers, setShowWorkers] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
+  const [workerPaneWidth, setWorkerPaneWidth] = useState(320);
+  const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
   const noticeCounterRef = useRef(0);
+  const chatLayoutRef = useRef<HTMLDivElement>(null);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
@@ -85,6 +88,25 @@ export function ChatRoom({
   const atBottomRef = useRef(true);
   const localCounterRef = useRef(0);
   const didInitialScrollRef = useRef(false);
+
+  useEffect(() => {
+    if (!isResizingWorkerPane) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const layout = chatLayoutRef.current;
+      if (!layout) return;
+      const bounds = layout.getBoundingClientRect();
+      setWorkerPaneWidth(Math.min(600, Math.max(256, bounds.right - event.clientX)));
+    };
+    const stopResizing = () => setIsResizingWorkerPane(false);
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+    };
+  }, [isResizingWorkerPane]);
 
   const messagesQuery = useMatrixRoomMessages(roomId);
   const membersQuery = useMatrixRoomMembers(roomId);
@@ -514,10 +536,10 @@ export function ChatRoom({
         <FolderTree className="w-4 h-4" />
       </Button>
     </div>
-  ), [roomName, topic, avatar, roomMembers.length, showMembers]);
+  ), [roomName, topic, avatar, roomMembers.length, showMembers, showWorkers]);
 
   return (
-    <div className={`flex h-full ${className}`}>
+    <div ref={chatLayoutRef} className={`flex h-full ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}>
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {header}
@@ -652,37 +674,55 @@ export function ChatRoom({
 
       {/* Workers files sidebar */}
       {showWorkers && (
-        <div className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
-          <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-            <h4 className="font-semibold text-xs">工作目录</h4>
-            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => { setShowWorkers(false); setSelectedWorker(null); }}>
-              <PanelRightClose className="w-3 h-3" />
-            </Button>
-          </div>
-          <div className="p-2 border-b border-border">
-            <select
-              value={selectedWorker || ''}
-              onChange={(e) => setSelectedWorker(e.target.value || null)}
-              className="w-full text-xs rounded-md border border-input bg-background px-2 py-1.5"
-            >
-              <option value="">选择 Worker...</option>
-              {roomMembers
-                .filter(m => !m.userId.includes('human'))
-                .map(m => (
-                  <option key={m.userId} value={m.displayName}>{m.displayName}</option>
-                ))}
-            </select>
-          </div>
-          {selectedWorker ? (
-            <div className="flex-1 overflow-hidden">
-              <WorkerFilesPanel workerName={selectedWorker} />
+        <>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuemin={256}
+            aria-valuemax={600}
+            aria-valuenow={Math.round(workerPaneWidth)}
+            tabIndex={0}
+            className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60 focus:bg-primary/60 focus:outline-none"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setIsResizingWorkerPane(true);
+            }}
+          />
+          <div
+            className="shrink-0 border-l border-border bg-card overflow-hidden flex flex-col"
+            style={{ width: workerPaneWidth }}
+          >
+            <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
+              <h4 className="font-semibold text-xs">工作目录</h4>
+              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => { setShowWorkers(false); setSelectedWorker(null); }}>
+                <PanelRightClose className="w-3 h-3" />
+              </Button>
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <p className="text-xs text-muted-foreground text-center">选择一个 Worker 查看其工作目录</p>
+            <div className="p-2 border-b border-border">
+              <select
+                value={selectedWorker || ''}
+                onChange={(e) => setSelectedWorker(e.target.value || null)}
+                className="w-full text-xs rounded-md border border-input bg-background px-2 py-1.5"
+              >
+                <option value="">选择 Worker...</option>
+                {roomMembers
+                  .filter(m => !m.userId.includes('human'))
+                  .map(m => (
+                    <option key={m.userId} value={m.displayName}>{m.displayName}</option>
+                  ))}
+              </select>
             </div>
-          )}
-        </div>
+            {selectedWorker ? (
+              <div className="flex-1 overflow-hidden">
+                <WorkerFilesPanel workerName={selectedWorker} />
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-4">
+                <p className="text-xs text-muted-foreground text-center">选择一个 Worker 查看其工作目录</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
       {/* Thread sidebar */}
       {activeThread && (

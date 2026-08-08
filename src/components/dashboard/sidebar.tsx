@@ -137,6 +137,7 @@ export function Sidebar({
   mode,
 }: SidebarProps) {
   const visibleItems = navItems.filter((item) => isNavItemVisible(item, mode));
+  const footerItems = visibleItems.filter((item) => item.group === 'footer');
 
   // Group items by their group field
   const groupedItems = navGroups.map((group) => ({
@@ -225,6 +226,22 @@ export function Sidebar({
           </div>
         ))}
       </nav>
+
+      {footerItems.length > 0 && (
+        <div className="border-t border-border py-2">
+          {footerItems.map((item) => (
+            <NavButton
+              key={item.id}
+              item={item}
+              isActive={activeSection === item.id}
+              count={countMap[item.id] ?? 0}
+              hasNotification={sectionsWithNotifications.has(item.id)}
+              collapsed={collapsed}
+              onNavClick={onNavClick}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Collapse toggle */}
       <div className="p-2 border-t border-border">

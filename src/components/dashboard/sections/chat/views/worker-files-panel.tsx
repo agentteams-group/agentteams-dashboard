@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,9 +57,6 @@ interface WorkerFilesPanelProps {
 export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
-  const [filePaneWidth, setFilePaneWidth] = useState(50);
-  const [isResizing, setIsResizing] = useState(false);
-  const paneRef = useRef<HTMLDivElement>(null);
 
   const { data: objects, isLoading, error, refetch } = useWorkerFiles(workerName);
 
@@ -69,26 +66,6 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
     await refetch();
     setLastSyncTime(new Date());
   };
-
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const pane = paneRef.current;
-      if (!pane) return;
-      const bounds = pane.getBoundingClientRect();
-      const nextWidth = ((event.clientX - bounds.left) / bounds.width) * 100;
-      setFilePaneWidth(Math.min(75, Math.max(25, nextWidth)));
-    };
-    const stopResizing = () => setIsResizing(false);
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', stopResizing);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', stopResizing);
-    };
-  }, [isResizing]);
 
   if (!workerName) {
     return (
@@ -131,9 +108,9 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
         </div>
       </div>
 
-      <div ref={paneRef} className={`flex h-[calc(100vh-220px)] min-h-[400px] ${isResizing ? 'select-none' : ''}`}>
+      <div className="flex h-[calc(100vh-220px)] min-h-[400px] flex-col gap-4">
         {/* File list */}
-        <Card className="min-w-0 shrink-0" style={{ flexBasis: `${filePaneWidth}%` }}>
+        <Card className="min-h-0 flex-1">
           <CardHeader className="py-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <Folder className="h-4 w-4" />
@@ -141,7 +118,7 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <ScrollArea className="h-full max-h-[500px]">
+            <ScrollArea className="h-full">
               {isLoading ? (
                 <div className="p-4 space-y-2">
                   {Array.from({ length: 5 }).map((_, i) => (
@@ -190,22 +167,8 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
           </CardContent>
         </Card>
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuemin={25}
-          aria-valuemax={75}
-          aria-valuenow={Math.round(filePaneWidth)}
-          tabIndex={0}
-          className="mx-2 w-1 shrink-0 cursor-col-resize rounded bg-border hover:bg-primary/60 focus:bg-primary/60 focus:outline-none"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            setIsResizing(true);
-          }}
-        />
-
         {/* File preview */}
-        <Card className="min-w-0 flex-1">
+        <Card className="min-h-0 flex-1">
           <CardHeader className="py-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <FileText className="h-4 w-4" />

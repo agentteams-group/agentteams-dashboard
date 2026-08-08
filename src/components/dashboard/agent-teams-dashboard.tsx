@@ -48,11 +48,6 @@ const HumansSection = lazy(() => import('./sections/humans-section').then(m => (
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
 const ChatSection = lazy(() => import('./sections/chat/ChatSection').then(m => ({ default: m.ChatSection })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
-const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
-const LogsSection = lazy(() => import('./sections/logs-section').then(m => ({ default: m.LogsSection })));
-const DebugExportSection = lazy(() => import('./sections/debug-export-section').then(m => ({ default: m.DebugExportSection })));
-const TraceStatusSection = lazy(() => import('./sections/trace-status-section').then(m => ({ default: m.TraceStatusSection })));
-const TroubleshootSection = lazy(() => import('./sections/troubleshoot-section').then(m => ({ default: m.TroubleshootSection })));
 
 export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -64,11 +59,6 @@ export const sectionMap: Record<string, React.ComponentType> = {
   models: ModelsSection,
   chat: ChatSection,
   docs: DocsSection,
-  mcps: McpServersSection,
-  logs: LogsSection,
-  'debug-export': DebugExportSection,
-  'trace-status': TraceStatusSection,
-  troubleshoot: TroubleshootSection,
 };
 
 export function AgentTeamsDashboard() {

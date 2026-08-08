@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Search } from 'lucide-react';
+import { MessageSquare, PanelLeftClose, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RoomListItem } from './room-list-item';
@@ -20,6 +20,7 @@ export function ChatRoomSidebar({
   isLoggedIn,
   userId,
   isLoading,
+  onCollapse,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -27,6 +28,7 @@ export function ChatRoomSidebar({
   isLoggedIn: boolean;
   userId: string | null;
   isLoading: boolean;
+  onCollapse: () => void;
 }) {
   const [filter, setFilter] = useState('');
   const q = filter.toLowerCase();
@@ -45,7 +47,17 @@ export function ChatRoomSidebar({
       <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold tracking-wide">会话</span>
-          <span className="text-[10px] text-muted-foreground">{filtered.length} 个房间</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground">{filtered.length} 个房间</span>
+            <button
+              type="button"
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              onClick={onCollapse}
+              title="隐藏会话列表"
+            >
+              <PanelLeftClose className="w-3 h-3" />
+            </button>
+          </div>
         </div>
         <div className="relative">
           <Search
