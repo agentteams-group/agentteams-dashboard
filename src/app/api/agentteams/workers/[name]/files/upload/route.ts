@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 
+async function hasPrefix(client: ReturnType<typeof createMinioClient>, bucket: string, prefix: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const stream = client.listObjects(bucket, prefix, false);
+    stream.on('data', () => { stream.destroy(); resolve(true); });
+    stream.on('end', () => resolve(false));
+    stream.on('error', () => resolve(false));
+  });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ name: string }> },
@@ -25,11 +34,18 @@ export async function POST(
       return NextResponse.json({ error: '请选择要上传的文件' }, { status: 400 });
     }
 
-    const keyPrefix = subdir ? `${name}/${subdir}` : `${name}/`;
+    const client = createMinioClient();
+    const directRoot = `${name}/`;
+    const agentsRoot = `agents/${name}/`;
+    const rootPrefix = (await hasPrefix(client, bucket, directRoot)) ? directRoot : agentsRoot;
+
+    const dirSuffix = subdir
+      ? (subdir.startsWith(directRoot) ? subdir.slice(directRoot.length) : subdir)
+      : '';
+    const keyPrefix = `${rootPrefix}${dirSuffix}`;
     const safeFileName = file.name.replace(/[<>:"/\\|?*]/g, '_');
     const key = `${keyPrefix}${safeFileName}`;
 
-    const client = createMinioClient();
     const buffer = Buffer.from(await file.arrayBuffer());
     await client.putObject(bucket, key, buffer, file.size, {
       'content-type': file.type || 'application/octet-stream',
