@@ -81,11 +81,11 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex h-full flex-col gap-3">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Folder className="h-5 w-5 text-emerald-500" />
-          <span className="font-semibold">{workerName}</span>
+          <span className="font-semibold text-sm">{workerName}</span>
           <Badge variant="secondary" className="text-xs">
             工作目录
           </Badge>
@@ -108,19 +108,19 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
         </div>
       </div>
 
-      <div className="flex h-[calc(100vh-220px)] min-h-[400px] flex-col gap-4">
+      <div className="flex-1 min-h-0 flex flex-col gap-3">
         {/* File list */}
-        <Card className="min-h-0 flex-1">
-          <CardHeader className="py-3">
+        <Card className="flex flex-col min-h-0" style={{ flex: '0 0 45%' }}>
+          <CardHeader className="py-2 px-3 shrink-0">
             <CardTitle className="text-sm flex items-center gap-2">
               <Folder className="h-4 w-4" />
               文件列表
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
             <ScrollArea className="h-full">
               {isLoading ? (
-                <div className="p-4 space-y-2">
+                <div className="p-3 space-y-2">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Skeleton key={i} className="h-8 w-full" />
                   ))}
@@ -131,18 +131,18 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
                   加载失败
                 </div>
               ) : safeObjects.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">
+                <div className="p-6 text-center text-sm text-muted-foreground">
                   <Folder className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>该 Worker 尚未同步文件或目录</p>
                   <p className="mt-1 text-xs">请确认 Worker 已挂载对象存储并完成初始化</p>
                 </div>
               ) : (
-                <div className="py-2">
+                <div className="py-1">
                   {safeObjects.map((obj) => (
                     <button
                       key={obj.key}
                       onClick={() => setSelectedKey(obj.key)}
-                      className={`w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-accent transition-colors ${
+                      className={`w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-accent transition-colors ${
                         selectedKey === obj.key ? 'bg-accent border-l-2 border-emerald-500' : ''
                       }`}
                     >
@@ -155,7 +155,7 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
                         {obj.key.split('/').pop() || obj.key}
                       </span>
                       {!obj.isPrefix && (
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground shrink-0">
                           {formatSize(obj.size)}
                         </span>
                       )}
@@ -168,14 +168,14 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
         </Card>
 
         {/* File preview */}
-        <Card className="min-h-0 flex-1">
-          <CardHeader className="py-3">
+        <Card className="flex flex-col flex-1 min-h-0">
+          <CardHeader className="py-2 px-3 shrink-0">
             <CardTitle className="text-sm flex items-center gap-2">
               <FileText className="h-4 w-4" />
               {selectedKey ? selectedKey.split('/').pop() : '预览'}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0 h-[calc(100%-3rem)]">
+          <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
             {selectedKey ? (
               <FilePreview key={selectedKey} workerName={workerName} objectKey={selectedKey} />
             ) : (

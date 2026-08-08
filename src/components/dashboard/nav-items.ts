@@ -44,6 +44,7 @@ export const navGroups: { id: NavGroup; label: string }[] = [
   { id: 'core', label: '基础' },
   { id: 'runtime', label: '运行时' },
   { id: 'resource', label: '资源中心' },
+  { id: 'footer', label: '' },
 ];
 
 export function isNavItemVisible(

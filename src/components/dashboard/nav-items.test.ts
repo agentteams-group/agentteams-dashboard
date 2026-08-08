@@ -21,7 +21,7 @@ describe('Navigation with groups', () => {
 
   it('defines all navigation groups', () => {
     const groupIds = navGroups.map((g) => g.id);
-    expect(groupIds).toEqual(['core', 'runtime', 'resource']);
+    expect(groupIds).toEqual(['core', 'runtime', 'resource', 'footer']);
   });
 
   it('assigns correct groups to items', () => {

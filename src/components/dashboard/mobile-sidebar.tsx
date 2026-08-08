@@ -25,6 +25,7 @@ interface MobileSidebarProps {
 }
 
 function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
+  if (!group.label) return null;
   return (
     <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
       {group.label}
@@ -45,7 +46,6 @@ export function MobileSidebar({
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
     [mode]
   );
-  const footerItems = visibleItems.filter((item) => item.group === 'footer');
 
   // Group items by their group field
   const groupedItems = navGroups.map((group) => ({
@@ -133,29 +133,6 @@ export function MobileSidebar({
                 </div>
               ))}
             </nav>
-            {footerItems.length > 0 && (
-              <div className="border-t border-border py-2">
-                {footerItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavClick(item.id)}
-                      data-nav-section={item.id}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm ${
-                        isActive
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
-                          : 'text-muted-foreground hover:bg-accent'
-                      }`}
-                    >
-                      <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-500' : ''}`} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </motion.aside>
         </>
       )}
