@@ -23,6 +23,17 @@ export function useObjects(bucket: string | null, prefix?: string) {
   });
 }
 
+export function useWorkerFiles(workerName: string) {
+  return useQuery<StorageObject[]>({
+    queryKey: ['agentteams-worker-files', workerName],
+    queryFn: () => agentteamsApi.listWorkerFiles(workerName),
+    enabled: !!workerName,
+    retry: 1,
+    placeholderData: (previousData) => previousData,
+    throwOnError: false,
+  });
+}
+
 export function useDeleteObject() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -95,5 +106,4 @@ export function useBulkDeleteObjects() {
     },
   });
 }
-
 

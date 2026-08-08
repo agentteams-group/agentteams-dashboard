@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sectionMap } from './agent-teams-dashboard';
 import { navItems, navGroups } from './nav-items';
 
 describe('Navigation with groups', () => {
@@ -43,5 +44,9 @@ describe('Navigation with groups', () => {
     expect(groupMap.get('debug-export')).toBe('ops');
     expect(groupMap.get('trace-status')).toBe('ops');
     expect(groupMap.get('troubleshoot')).toBe('ops');
+  });
+
+  it('maps every navigation entry to a section', () => {
+    expect(navItems.map((item) => item.id).every((id) => sectionMap[id])).toBe(true);
   });
 });

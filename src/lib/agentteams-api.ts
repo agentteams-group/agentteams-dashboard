@@ -587,6 +587,15 @@ export const agentteamsApi = {
     return Array.isArray(result) ? result : (result as { objects: StorageObject[] }).objects ?? [];
   },
 
+  listWorkerFiles: async (workerName: string): Promise<StorageObject[]> => {
+    const result = await proxyRequest<StorageObject[] | { objects: StorageObject[] }>(
+      `/workers/${encodeURIComponent(workerName)}/files`,
+      { method: 'GET' }
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.objects ?? [];
+  },
+
   deleteObject: (bucket: string, key: string) =>
     proxyRequest<void>(`/storage/buckets/${encodeURIComponent(bucket)}/objects/${encodeURIComponent(key)}`, {
       method: 'DELETE',

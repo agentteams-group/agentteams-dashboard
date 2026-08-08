@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useObjects } from '@/hooks/use-agentteams-storage';
+import { useWorkerFiles } from '@/hooks/use-agentteams-storage';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import {
   File as FileIcon,
@@ -58,7 +58,7 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  const { data: objects, isLoading, error, refetch } = useObjects('agents', workerName);
+  const { data: objects, isLoading, error, refetch } = useWorkerFiles(workerName);
 
   const safeObjects = objects?.filter((obj) => isSafe(obj.key)) ?? [];
 
@@ -329,4 +329,3 @@ function TextViewer({ objectKey, ext }: { objectKey: string; ext?: string }) {
     </pre>
   );
 }
-
