@@ -57,8 +57,8 @@ Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr
 
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via a patch file under `install/patches/`. When applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
 
-- **Current Dashboard release**: `v1.2.1`
-- **Installer default**: `v1.2.0-beta.1`; set `AGENTTEAMS_DASHBOARD_VERSION=v1.2.1` to install the current release
+- **Current Dashboard release**: `v1.2.2`
+- **Installer default**: `v1.2.0-beta.1`; set `AGENTTEAMS_DASHBOARD_VERSION=v1.2.2` to install the current release
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -100,7 +100,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.1 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.2 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -132,10 +132,10 @@ docker run -d -p 13000:3000 \
   --name agentteams-dashboard \
   -e AGENTTEAMS_CONTROLLER_URL=http://host.docker.internal:8090 \
   -e NEXT_PUBLIC_MATRIX_API_URL=http://host.docker.internal:6167 \
-  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.1
+  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2
 
 # Or build from source
-docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.1 .
+docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2 .
 ```
 
 ## ⚙️ Configuration
