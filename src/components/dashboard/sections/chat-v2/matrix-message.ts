@@ -2,17 +2,8 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { parseA2uiContent } from '@/lib/a2ui/parser';
 
 type TDesignContent =
-  | { type: 'markdown'; data: string }
+  | { type: 'text' | 'markdown'; data: string }
   | { type: 'thinking'; data: { text: string; title: string } }
-  | {
-    type: 'toolcall';
-    data: {
-      toolCallId: string;
-      toolCallName: string;
-      args?: string;
-      result?: string;
-    };
-  };
 
 export interface TDesignMatrixMessage {
   id: string;
@@ -32,9 +23,9 @@ export function toTDesignMatrixMessage(message: DisplayMessage): TDesignMatrixMe
   const parsed = parseA2uiContent(message.content, message.formattedContent, message.workflow);
   const content: TDesignContent[] = [];
 
-  parsed.blocks.forEach((block, index) => {
+  parsed.blocks.forEach((block) => {
     if (block.type === 'text') {
-      content.push({ type: 'markdown', data: block.text || '' });
+      content.push({ type: message.isMe ? 'text' : 'markdown', data: block.text || '' });
       return;
     }
 
@@ -49,13 +40,21 @@ export function toTDesignMatrixMessage(message: DisplayMessage): TDesignMatrixMe
     if (block.type === 'tool_call') {
       const payload = block.payload;
       content.push({
-        type: 'toolcall',
-        data: {
-          toolCallId: `${message.id}-tool-${index}`,
-          toolCallName: String(payload?.tool_name || payload?.name || '工具调用'),
-          args: stringifyPayload(payload?.arguments as Record<string, unknown> | undefined),
-          result: typeof payload?.result === 'string' ? payload.result : undefined,
-        },
+        // Matrix tool cards have no registered TDesign tool renderer. Keep the full call visible.
+        type: 'markdown',
+        data: `### 工具调用：${String(payload?.tool_name || payload?.name || '工具调用')}
+
+#### 参数
+
+\`\`\`json
+${stringifyPayload(payload?.arguments as Record<string, unknown> | undefined)}
+\`\`\`${typeof payload?.result === 'string' ? `
+
+#### 结果
+
+\`\`\`
+${payload.result}
+\`\`\`` : ''}`,
       });
       return;
     }

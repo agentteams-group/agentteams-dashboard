@@ -16,12 +16,12 @@ function message(overrides: Partial<DisplayMessage> = {}): DisplayMessage {
 }
 
 describe('toTDesignMatrixMessage', () => {
-  it('maps a local Matrix message to a TDesign user markdown message', () => {
+  it('maps a local Matrix message to a TDesign user text message', () => {
     const adapted = toTDesignMatrixMessage(message({ isMe: true, content: 'hello **world**' }));
 
     expect(adapted.role).toBe('user');
     expect(adapted.status).toBe('complete');
-    expect(adapted.content).toEqual([{ type: 'markdown', data: 'hello **world**' }]);
+    expect(adapted.content).toEqual([{ type: 'text', data: 'hello **world**' }]);
   });
 
   it('maps legacy thinking content to TDesign thinking', () => {
@@ -34,19 +34,14 @@ describe('toTDesignMatrixMessage', () => {
     expect(adapted.content).toEqual([{ type: 'thinking', data: { text: 'checking Matrix state', title: '思考过程' } }]);
   });
 
-  it('maps legacy tool cards to TDesign tool calls', () => {
+  it('maps legacy tool cards to a visible Markdown summary', () => {
     const adapted = toTDesignMatrixMessage(message({
       content: '```card\n{"tool_name":"read_file","arguments":{"path":"README.md"},"result":"ok"}\n```',
     }));
 
     expect(adapted.content).toEqual([{
-      type: 'toolcall',
-      data: {
-        toolCallId: '$event-tool-0',
-        toolCallName: 'read_file',
-        args: '{\n  "path": "README.md"\n}',
-        result: 'ok',
-      },
+      type: 'markdown',
+      data: '### 工具调用：read_file\n\n#### 参数\n\n```json\n{\n  "path": "README.md"\n}\n```\n\n#### 结果\n\n```\nok\n```',
     }]);
   });
 
