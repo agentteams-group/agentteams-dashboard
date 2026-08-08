@@ -84,7 +84,13 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
     const basePrefix = currentPrefix ? `${currentPrefix}` : '';
     const subName = prefixKey.endsWith('/') ? prefixKey.slice(0, -1) : prefixKey;
     const rel = basePrefix ? subName.slice(basePrefix.length + 1) : subName;
-    const next = currentPrefix ? `${currentPrefix}${rel}/` : `${rel}/`;
+    const cleanRel = rel.endsWith('/') ? rel.slice(0, -1) : rel;
+    if (!cleanRel || cleanRel.includes('//')) {
+      setCurrentPrefix(basePrefix);
+      setSelectedKey(null);
+      return;
+    }
+    const next = basePrefix ? `${basePrefix}${cleanRel}/` : `${cleanRel}/`;
     setCurrentPrefix(next);
     setSelectedKey(null);
   };
