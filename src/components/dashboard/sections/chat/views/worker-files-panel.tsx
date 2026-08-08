@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   Upload,
   FolderOpen,
+  Download,
 } from 'lucide-react';
 import { MarkdownMessage } from '../markdown-message';
 import { MermaidRenderer } from '../mermaid-renderer';
@@ -227,21 +228,34 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
                   ))}
                   {/* Then files */}
                   {files.map((obj) => (
-                    <button
+                    <div
                       key={obj.key}
-                      onClick={() => setSelectedKey(obj.key)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors group ${
                         selectedKey === obj.key ? 'bg-accent border-l-2 border-emerald-500' : ''
                       }`}
                     >
-                      {getFileIcon(obj.key)}
-                      <span className="flex-1 text-left truncate font-mono text-xs">
-                        {obj.key.split('/').pop() || obj.key}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">
-                        {formatSize(obj.size)}
-                      </span>
-                    </button>
+                      <button
+                        onClick={() => setSelectedKey(obj.key)}
+                        className="flex items-center gap-3 flex-1 min-w-0"
+                      >
+                        {getFileIcon(obj.key)}
+                        <span className="flex-1 text-left truncate font-mono text-xs">
+                          {obj.key.split('/').pop() || obj.key}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {formatSize(obj.size)}
+                        </span>
+                      </button>
+                      <a
+                        href={agentteamsApi.downloadWorkerFileUrl(workerName, obj.key)}
+                        download
+                        className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-background text-muted-foreground hover:text-foreground transition-all"
+                        title="下载文件"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
                   ))}
                 </div>
               )}

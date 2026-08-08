@@ -24,6 +24,15 @@ function listFiles(client: ReturnType<typeof createMinioClient>, bucket: string,
   });
 }
 
+function stripAgentsPrefix(objects: StorageObject[]): StorageObject[] {
+  return objects.map((obj) => {
+    if (obj.key.startsWith('agents/')) {
+      return { ...obj, key: obj.key.slice('agents/'.length) };
+    }
+    return obj;
+  });
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ name: string }> },
@@ -51,7 +60,7 @@ export async function GET(
       const direct = await tryList(resolvePrefix(subPrefix));
       if (direct.length > 0) return NextResponse.json({ objects: direct, prefix: subPrefix });
 
-      const agentsFallback = await tryList(`agents/${resolvePrefix(subPrefix)}`);
+      const agentsFallback = stripAgentsPrefix(await tryList(`agents/${resolvePrefix(subPrefix)}`));
       return NextResponse.json({ objects: agentsFallback, prefix: subPrefix });
     }
 
@@ -61,7 +70,7 @@ export async function GET(
       return NextResponse.json({ objects: rootObjects, prefix: '' });
     }
 
-    const agentsObjects = await tryList(`agents/${rootPrefix}`);
+    const agentsObjects = stripAgentsPrefix(await tryList(`agents/${rootPrefix}`));
     return NextResponse.json({ objects: agentsObjects, prefix: '' });
   } catch {
     return NextResponse.json({ error: '无法读取 Worker 文件' }, { status: 502 });
