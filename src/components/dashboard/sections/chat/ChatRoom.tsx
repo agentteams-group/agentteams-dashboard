@@ -462,18 +462,21 @@ export function ChatRoom({
   }, []);
 
   const header = useMemo(() => (
-    <div className="flex items-center gap-2 px-4 py-3 border-b bg-card">
+    <div className="flex items-center gap-2 px-4 py-3 border-b bg-card/70 backdrop-blur-sm">
       {avatar ? (
         <Avatar className="w-8 h-8 shrink-0">
           <img src={avatar} alt={roomName} />
         </Avatar>
       ) : (
-        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-          <span className="text-xs font-medium">{roomName.charAt(0).toUpperCase()}</span>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/80 to-cyan-500/80 flex items-center justify-center shadow-sm">
+           <span className="text-xs font-semibold text-white">{roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <h3 className="font-medium text-sm truncate">{roomName}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-semibold text-sm truncate">{roomName}</h3>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
+        </div>
         {topic && (
           <p className="text-xs text-muted-foreground truncate">{topic}</p>
         )}

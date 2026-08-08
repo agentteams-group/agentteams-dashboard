@@ -78,11 +78,15 @@ export function ChatSection() {
     <ChatProvider>
       <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 overflow-hidden">
         {/* Compact header bar */}
-        <div className="shrink-0 px-3 py-1.5 border-b border-border flex items-center justify-between bg-card/30">
+        <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-emerald-500" />
-            <h2 className="text-sm font-semibold">Matrix 聊天</h2>
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">实时通信与人机协同</span>
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shadow-sm">
+              <MessageSquare className="w-3.5 h-3.5 text-white" />
+            </div>
+            <div className="leading-tight">
+              <h2 className="text-sm font-semibold">Agent Chat</h2>
+              <span className="text-[10px] text-muted-foreground hidden sm:inline">实时通信与人机协同</span>
+            </div>
           </div>
           <div className="flex items-center gap-1.5">
             <Button

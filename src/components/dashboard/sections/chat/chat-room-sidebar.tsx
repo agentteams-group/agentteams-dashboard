@@ -41,8 +41,12 @@ export function ChatRoomSidebar({
   const shortId = shortUserId(userId);
 
   return (
-    <div className="w-52 shrink-0 flex flex-col border-r border-border bg-card/20 overflow-hidden">
-      <div className="p-2.5 border-b border-border shrink-0">
+    <div className="w-56 shrink-0 flex flex-col border-r border-border bg-muted/20 overflow-hidden">
+      <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold tracking-wide">会话</span>
+          <span className="text-[10px] text-muted-foreground">{filtered.length} 个房间</span>
+        </div>
         <div className="relative">
           <Search
             className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground"
@@ -52,7 +56,7 @@ export function ChatRoomSidebar({
             placeholder="搜索房间..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="h-7 pl-7 text-xs bg-background/50"
+            className="h-8 pl-7 text-xs bg-background/70 rounded-lg"
           />
         </div>
       </div>
@@ -86,7 +90,7 @@ export function ChatRoomSidebar({
           ))
         )}
       </div>
-      <div className="p-2.5 border-t border-border shrink-0">
+      <div className="p-3 border-t border-border shrink-0 bg-card/30">
         {isLoggedIn ? (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
