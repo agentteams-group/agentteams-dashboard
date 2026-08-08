@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useWorkerFiles } from '@/hooks/use-agentteams-storage';
+import { useWorkerFiles, useUploadWorkerFile } from '@/hooks/use-agentteams-storage';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import {
   File as FileIcon,
@@ -18,11 +18,13 @@ import {
   Code,
   Maximize2,
   Minimize2,
+  ArrowLeft,
+  Upload,
+  FolderOpen,
 } from 'lucide-react';
 import { MarkdownMessage } from '../markdown-message';
 import { MermaidRenderer } from '../mermaid-renderer';
 
-// Sensitive patterns to filter out
 const SENSITIVE_PATTERNS = [
   /^\.hermes\/config\.yaml$/,
   /^\.ssh\//,
@@ -50,6 +52,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function dirName(prefixKey: string): string {
+  const trimmed = prefixKey.endsWith('/') ? prefixKey.slice(0, -1) : prefixKey;
+  return trimmed.split('/').pop() || trimmed;
+}
+
 interface WorkerFilesPanelProps {
   workerName: string;
 }
@@ -57,14 +64,52 @@ interface WorkerFilesPanelProps {
 export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [currentPrefix, setCurrentPrefix] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: objects, isLoading, error, refetch } = useWorkerFiles(workerName);
+  const { data: objects, isLoading, error, refetch } = useWorkerFiles(workerName, currentPrefix || undefined);
+  const uploadMutation = useUploadWorkerFile();
 
   const safeObjects = objects?.filter((obj) => isSafe(obj.key)) ?? [];
+  const dirs = safeObjects.filter((o) => o.isPrefix);
+  const files = safeObjects.filter((o) => !o.isPrefix);
 
   const handleRefresh = async () => {
     await refetch();
     setLastSyncTime(new Date());
+  };
+
+  const navigateInto = (prefixKey: string) => {
+    const basePrefix = currentPrefix ? `${currentPrefix}` : '';
+    const subName = prefixKey.endsWith('/') ? prefixKey.slice(0, -1) : prefixKey;
+    const rel = basePrefix ? subName.slice(basePrefix.length + 1) : subName;
+    const next = currentPrefix ? `${currentPrefix}${rel}/` : `${rel}/`;
+    setCurrentPrefix(next);
+    setSelectedKey(null);
+  };
+
+  const navigateUp = () => {
+    const trimmed = currentPrefix.endsWith('/') ? currentPrefix.slice(0, -1) : currentPrefix;
+    const parts = trimmed.split('/');
+    parts.pop();
+    setCurrentPrefix(parts.length > 0 ? `${parts.join('/')}/` : '');
+    setSelectedKey(null);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await uploadMutation.mutateAsync({
+        workerName,
+        file,
+        prefix: currentPrefix || undefined,
+      });
+      setLastSyncTime(new Date());
+    } catch {
+      // error handled by mutation state
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   if (!workerName) {
@@ -82,20 +127,49 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
 
   return (
     <div className="flex h-full flex-col gap-3">
+      {/* Toolbar */}
       <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Folder className="h-5 w-5 text-emerald-500" />
-          <span className="font-semibold text-sm">{workerName}</span>
-          <Badge variant="secondary" className="text-xs">
-            工作目录
-          </Badge>
+        <div className="flex items-center gap-2 min-w-0">
+          {currentPrefix ? (
+            <>
+              <Button variant="ghost" size="sm" className="h-7 px-2 shrink-0" onClick={navigateUp} title="返回上级">
+                <ArrowLeft className="h-3.5 w-3.5" />
+              </Button>
+              <FolderOpen className="h-4 w-4 text-emerald-500 shrink-0" />
+              <span className="text-xs font-mono truncate">{currentPrefix}</span>
+            </>
+          ) : (
+            <>
+              <Folder className="h-5 w-5 text-emerald-500 shrink-0" />
+              <span className="font-semibold text-sm truncate">{workerName}</span>
+              <Badge variant="secondary" className="text-xs shrink-0">
+                工作目录
+              </Badge>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           {lastSyncTime && (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">
               同步于 {lastSyncTime.toLocaleTimeString('zh-CN')}
             </span>
           )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+            title="上传文件"
+          >
+            <Upload className="h-3.5 w-3.5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -130,15 +204,29 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
                   <AlertCircle className="h-4 w-4" />
                   加载失败
                 </div>
-              ) : safeObjects.length === 0 ? (
+              ) : dirs.length === 0 && files.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
                   <Folder className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>该 Worker 尚未同步文件或目录</p>
-                  <p className="mt-1 text-xs">请确认 Worker 已挂载对象存储并完成初始化</p>
+                  <p>该目录为空</p>
+                  <p className="mt-1 text-xs">点击上方上传按钮添加文件</p>
                 </div>
               ) : (
                 <div className="py-1">
-                  {safeObjects.map((obj) => (
+                  {/* Directories first */}
+                  {dirs.map((obj) => (
+                    <button
+                      key={obj.key}
+                      onClick={() => navigateInto(obj.key)}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-accent transition-colors"
+                    >
+                      <Folder className="h-4 w-4 text-blue-500 shrink-0" />
+                      <span className="flex-1 text-left truncate font-mono text-xs">
+                        {dirName(obj.key)}/
+                      </span>
+                    </button>
+                  ))}
+                  {/* Then files */}
+                  {files.map((obj) => (
                     <button
                       key={obj.key}
                       onClick={() => setSelectedKey(obj.key)}
@@ -146,19 +234,13 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
                         selectedKey === obj.key ? 'bg-accent border-l-2 border-emerald-500' : ''
                       }`}
                     >
-                      {obj.isPrefix ? (
-                        <Folder className="h-4 w-4 text-blue-500 shrink-0" />
-                      ) : (
-                        getFileIcon(obj.key)
-                      )}
+                      {getFileIcon(obj.key)}
                       <span className="flex-1 text-left truncate font-mono text-xs">
                         {obj.key.split('/').pop() || obj.key}
                       </span>
-                      {!obj.isPrefix && (
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {formatSize(obj.size)}
-                        </span>
-                      )}
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        {formatSize(obj.size)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -197,7 +279,7 @@ function FilePreview({ workerName, objectKey }: { workerName: string; objectKey:
   const [expanded, setExpanded] = useState(false);
   const ext = objectKey.split('.').pop()?.toLowerCase();
   const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
-  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext || '');
+  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
 
   if (isImage) {
     const imageUrl = agentteamsApi.downloadWorkerFileUrl(workerName, objectKey);
@@ -294,7 +376,6 @@ function TextViewer({ workerName, objectKey, ext }: { workerName: string; object
     return <div className="p-4 text-sm text-muted-foreground">加载中...</div>;
   }
 
-  // Render based on extension
   if (ext === 'md' || ext === 'markdown') {
     return (
       <div className="p-4 overflow-auto max-h-[500px]">
@@ -311,7 +392,6 @@ function TextViewer({ workerName, objectKey, ext }: { workerName: string; object
     );
   }
 
-  // JSON with syntax highlighting
   if (ext === 'json') {
     let jsonContent: string;
     try {
@@ -323,7 +403,6 @@ function TextViewer({ workerName, objectKey, ext }: { workerName: string; object
     return <pre className="p-4 text-xs font-mono overflow-auto max-h-[500px] bg-muted rounded">{jsonContent}</pre>;
   }
 
-  // Plain text
   return (
     <pre className="p-4 text-xs font-mono overflow-auto max-h-[500px] bg-muted rounded whitespace-pre-wrap">
       {content}

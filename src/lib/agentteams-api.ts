@@ -587,13 +587,29 @@ export const agentteamsApi = {
     return Array.isArray(result) ? result : (result as { objects: StorageObject[] }).objects ?? [];
   },
 
-  listWorkerFiles: async (workerName: string): Promise<StorageObject[]> => {
+  listWorkerFiles: async (workerName: string, prefix?: string): Promise<StorageObject[]> => {
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
     const result = await proxyRequest<StorageObject[] | { objects: StorageObject[] }>(
-      `/workers/${encodeURIComponent(workerName)}/files`,
+      `/workers/${encodeURIComponent(workerName)}/files${query}`,
       { method: 'GET' }
     );
     if (!result || typeof result !== 'object') return [];
     return Array.isArray(result) ? result : result.objects ?? [];
+  },
+
+  uploadWorkerFile: async (workerName: string, file: File, prefix?: string): Promise<{ key: string; size: number }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    const res = await fetch(
+      apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/files/upload${query}`),
+      { method: 'POST', body: form },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(`文件上传失败: ${res.status} ${text}`, res.status, `/workers/${workerName}/files/upload`);
+    }
+    return res.json();
   },
 
   deleteObject: (bucket: string, key: string) =>

@@ -23,14 +23,27 @@ export function useObjects(bucket: string | null, prefix?: string) {
   });
 }
 
-export function useWorkerFiles(workerName: string) {
+export function useWorkerFiles(workerName: string, prefix?: string) {
   return useQuery<StorageObject[]>({
-    queryKey: ['agentteams-worker-files', workerName],
-    queryFn: () => agentteamsApi.listWorkerFiles(workerName),
+    queryKey: ['agentteams-worker-files', workerName, prefix ?? ''],
+    queryFn: () => agentteamsApi.listWorkerFiles(workerName, prefix || undefined),
     enabled: !!workerName,
     retry: 1,
     placeholderData: (previousData) => previousData,
     throwOnError: false,
+  });
+}
+
+export function useUploadWorkerFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workerName, file, prefix }: { workerName: string; file: File; prefix?: string }) =>
+      agentteamsApi.uploadWorkerFile(workerName, file, prefix),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['agentteams-worker-files', variables.workerName],
+      });
+    },
   });
 }
 

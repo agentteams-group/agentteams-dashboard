@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import type { StorageObject } from '@/lib/agentteams-api';
@@ -25,10 +25,11 @@ function listFiles(client: ReturnType<typeof createMinioClient>, bucket: string,
 }
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
+  const subPrefix = request.nextUrl.searchParams.get('prefix') ?? '';
   if (!isValidNameSegment(name)) {
     return NextResponse.json({ error: '非法 Worker 名' }, { status: 400 });
   }
@@ -40,13 +41,20 @@ export async function GET(
 
   try {
     const client = createMinioClient();
+    if (subPrefix) {
+      const fullPrefix = `${name}/${subPrefix}`;
+      const objects = await listFiles(client, bucket, fullPrefix);
+      return NextResponse.json({ objects, prefix: subPrefix });
+    }
+
     const rootPrefix = `${name}/`;
     const rootObjects = await listFiles(client, bucket, rootPrefix);
-    const objects = rootObjects.length > 0
-      ? rootObjects
-      : await listFiles(client, bucket, `agents/${rootPrefix}`);
+    if (rootObjects.length > 0) {
+      return NextResponse.json({ objects: rootObjects, prefix: '' });
+    }
 
-    return NextResponse.json({ objects });
+    const agentsObjects = await listFiles(client, bucket, `agents/${rootPrefix}`);
+    return NextResponse.json({ objects: agentsObjects, prefix: '' });
   } catch {
     return NextResponse.json({ error: '无法读取 Worker 文件' }, { status: 502 });
   }
