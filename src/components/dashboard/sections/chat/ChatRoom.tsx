@@ -24,11 +24,12 @@ import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose, ArrowDown } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown, FolderTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
 import { useMatrixTypingUsers, useTypingNotification, useTypingSync, useMatrixUploadMedia } from '@/hooks/use-matrix';
+import { WorkerFilesPanel } from './views/worker-files-panel';
 
 interface ChatRoomProps {
   roomId: string;
@@ -63,6 +64,8 @@ export function ChatRoom({
   const [actionError, setActionError] = useState<string | null>(null);
   const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showWorkers, setShowWorkers] = useState(false);
+  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
   const noticeCounterRef = useRef(0);
 
   const { userId, isLoggedIn } = useMatrixStore();
@@ -493,6 +496,23 @@ export function ChatRoom({
           {roomMembers.length}
         </Badge>
       </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 shrink-0"
+        onClick={() => {
+          if (showWorkers) {
+            setShowWorkers(false);
+            setSelectedWorker(null);
+          } else {
+            setShowWorkers(true);
+            setShowMembers(false);
+          }
+        }}
+        title={showWorkers ? '隐藏工作目录' : '显示工作目录'}
+      >
+        <FolderTree className="w-4 h-4" />
+      </Button>
     </div>
   ), [roomName, topic, avatar, roomMembers.length, showMembers]);
 
@@ -630,6 +650,40 @@ export function ChatRoom({
         </div>
       )}
 
+      {/* Workers files sidebar */}
+      {showWorkers && (
+        <div className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
+          <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
+            <h4 className="font-semibold text-xs">工作目录</h4>
+            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => { setShowWorkers(false); setSelectedWorker(null); }}>
+              <PanelRightClose className="w-3 h-3" />
+            </Button>
+          </div>
+          <div className="p-2 border-b border-border">
+            <select
+              value={selectedWorker || ''}
+              onChange={(e) => setSelectedWorker(e.target.value || null)}
+              className="w-full text-xs rounded-md border border-input bg-background px-2 py-1.5"
+            >
+              <option value="">选择 Worker...</option>
+              {roomMembers
+                .filter(m => !m.userId.includes('human'))
+                .map(m => (
+                  <option key={m.userId} value={m.displayName}>{m.displayName}</option>
+                ))}
+            </select>
+          </div>
+          {selectedWorker ? (
+            <div className="flex-1 overflow-hidden">
+              <WorkerFilesPanel workerName={selectedWorker} />
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center p-4">
+              <p className="text-xs text-muted-foreground text-center">选择一个 Worker 查看其工作目录</p>
+            </div>
+          )}
+        </div>
+      )}
       {/* Thread sidebar */}
       {activeThread && (
         <ThreadPanel
