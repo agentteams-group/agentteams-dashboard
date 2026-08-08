@@ -1,0 +1,10 @@
+# Keep host dependencies, generated assets, local state, and credentials out of
+# the image build context. The Dockerfile restores dependencies from package-lock.
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage

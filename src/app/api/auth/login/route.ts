@@ -68,24 +68,29 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
 async function loginViaHigress(username: string, password: string) {
   const consoleUrl = getHigressConsoleURL();
 
-  // 1. Initialize Higress Console admin account (idempotent).
-  try {
-    await callHigressConsole('/system/init', {
-      method: 'POST',
-      body: {
-        adminUser: {
-          name: username,
-          password,
-          displayName: username,
+  // Embedded/direct deployments retain the upstream idempotent initializer.
+  // External mode must never bootstrap or change a shared Console admin during
+  // a Dashboard login; it authenticates only against an already-provisioned
+  // Console account.
+  if (process.env.AGENTTEAMS_HIGRESS_ADAPTER_MODE !== 'external') {
+    try {
+      await callHigressConsole('/system/init', {
+        method: 'POST',
+        body: {
+          adminUser: {
+            name: username,
+            password,
+            displayName: username,
+          },
         },
-      },
-      consoleUrl,
-    });
-  } catch {
-    // continue to login attempt
+        consoleUrl,
+      });
+    } catch {
+      // Continue to the login attempt; initialization is best-effort only.
+    }
   }
 
-  // 2. Login to obtain the session cookie.
+  // Login to obtain the session cookie.
   const { response, body: loginBody } = await callHigressConsole('/session/login', {
     method: 'POST',
     body: { username, password },
@@ -96,8 +101,12 @@ async function loginViaHigress(username: string, password: string) {
     return higressErrorResponse(response, loginBody);
   }
 
-  // 3. Attempt Matrix login with the same credentials (non-blocking).
-  const matrix = await tryMatrixLogin(username, password);
+  // External mode has no browser-reachable Matrix endpoint and must not return
+  // an internal homeserver URL or Matrix access token to the Tailnet client.
+  // Direct deployments retain the upstream convenience auto-login behavior.
+  const matrix = process.env.AGENTTEAMS_HIGRESS_ADAPTER_MODE === 'external'
+    ? null
+    : await tryMatrixLogin(username, password);
 
   // Forward Set-Cookie headers from Higress Console back to the browser.
   const responseHeaders = new Headers();
