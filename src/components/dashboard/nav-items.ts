@@ -32,6 +32,7 @@ export const navItems: NavItem[] = [
   { id: 'humans', label: 'Humans', icon: UserCheck },
   { id: 'models', label: '模型管理', icon: Brain },
   { id: 'chat', label: 'Matrix 聊天', icon: MessageSquare },
+  { id: 'chat-v2', label: 'Matrix 聊天 2', icon: MessageSquare },
   { id: 'docs', label: '文档', icon: BookOpen },
 ];
 

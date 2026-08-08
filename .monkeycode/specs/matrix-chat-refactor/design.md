@@ -7,6 +7,12 @@ Updated: 2026-08-07
 
 基于 element-web 架构重构 Matrix 聊天模块，引入虚拟滚动、消息操作菜单、消息分组、新消息指示器和线程支持，同时保留现有 A2UI 渲染能力。
 
+## Matrix 聊天 2
+
+`src/components/dashboard/sections/chat-v2/` 是独立的 TDesign React Chat 界面。它复用 `useMatrixRoomMessages`、`useMatrixSendMessage`、`formatMatrixEvents` 和 `room-builders`，因此不创建新的 Matrix 房间或修改 Matrix 通信协议。
+
+`matrix-message.ts` 将 `DisplayMessage` 转为 TDesign Chat 消息内容：文本映射到 markdown，思考映射到 thinking，工具调用映射到 toolcall；workflow、确认与不支持的卡片以安全的 markdown 摘要呈现。A2UI 载荷只显示兼容提示，完整交互继续留在原 `chat/` 模块，确保两个界面互不干扰。
+
 ## 架构
 
 ```mermaid
