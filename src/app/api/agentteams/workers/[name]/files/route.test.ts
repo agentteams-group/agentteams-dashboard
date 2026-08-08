@@ -19,7 +19,7 @@ function createObjectStream(objects: Record<string, unknown>[]) {
 }
 
 describe('GET /api/agentteams/workers/[name]/files', () => {
-  it('reads the configured bucket with the Worker directory prefix', async () => {
+  it('reads a Worker root directory from the configured bucket', async () => {
     listObjects.mockReturnValue(createObjectStream([
       { name: 'manager/AGENTS.md', size: 120 },
       { prefix: 'manager/logs/' },
@@ -36,6 +36,22 @@ describe('GET /api/agentteams/workers/[name]/files', () => {
         { key: 'manager/AGENTS.md', size: 120 },
         { key: 'manager/logs/', size: 0, isPrefix: true },
       ],
+    });
+  });
+
+  it('falls back to the agents prefix for Worker files', async () => {
+    listObjects
+      .mockReturnValueOnce(createObjectStream([]))
+      .mockReturnValueOnce(createObjectStream([{ name: 'agents/ce1/AGENTS.md', size: 120 }]));
+
+    const response = await GET(new Request('http://localhost'), {
+      params: Promise.resolve({ name: 'ce1' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(listObjects).toHaveBeenLastCalledWith('agentteams-storage', 'agents/ce1/', false);
+    await expect(response.json()).resolves.toEqual({
+      objects: [{ key: 'agents/ce1/AGENTS.md', size: 120 }],
     });
   });
 

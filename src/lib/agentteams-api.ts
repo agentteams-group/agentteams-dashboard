@@ -640,6 +640,10 @@ export const agentteamsApi = {
     return apiUrl(`/api/agentteams/storage/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`);
   },
 
+  downloadWorkerFileUrl: (workerName: string, key: string): string => {
+    return apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/files/download?key=${encodeURIComponent(key)}`);
+  },
+
   uploadObject: async (bucket: string, key: string, file: File): Promise<void> => {
     const url = apiUrl(`/api/agentteams/storage/upload?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`);
     const res = await fetch(url, {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,6 +57,9 @@ interface WorkerFilesPanelProps {
 export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [filePaneWidth, setFilePaneWidth] = useState(50);
+  const [isResizing, setIsResizing] = useState(false);
+  const paneRef = useRef<HTMLDivElement>(null);
 
   const { data: objects, isLoading, error, refetch } = useWorkerFiles(workerName);
 
@@ -66,6 +69,26 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
     await refetch();
     setLastSyncTime(new Date());
   };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const pane = paneRef.current;
+      if (!pane) return;
+      const bounds = pane.getBoundingClientRect();
+      const nextWidth = ((event.clientX - bounds.left) / bounds.width) * 100;
+      setFilePaneWidth(Math.min(75, Math.max(25, nextWidth)));
+    };
+    const stopResizing = () => setIsResizing(false);
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+    };
+  }, [isResizing]);
 
   if (!workerName) {
     return (
@@ -108,9 +131,9 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
         </div>
       </div>
 
-      <div className="flex h-[calc(100vh-220px)] min-h-[400px] gap-4">
+      <div ref={paneRef} className={`flex h-[calc(100vh-220px)] min-h-[400px] ${isResizing ? 'select-none' : ''}`}>
         {/* File list */}
-        <Card className="flex-1">
+        <Card className="min-w-0 shrink-0" style={{ flexBasis: `${filePaneWidth}%` }}>
           <CardHeader className="py-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <Folder className="h-4 w-4" />
@@ -133,7 +156,8 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
               ) : safeObjects.length === 0 ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   <Folder className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>暂无文件</p>
+                  <p>该 Worker 尚未同步文件或目录</p>
+                  <p className="mt-1 text-xs">请确认 Worker 已挂载对象存储并完成初始化</p>
                 </div>
               ) : (
                 <div className="py-2">
@@ -166,8 +190,22 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
           </CardContent>
         </Card>
 
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={25}
+          aria-valuemax={75}
+          aria-valuenow={Math.round(filePaneWidth)}
+          tabIndex={0}
+          className="mx-2 w-1 shrink-0 cursor-col-resize rounded bg-border hover:bg-primary/60 focus:bg-primary/60 focus:outline-none"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            setIsResizing(true);
+          }}
+        />
+
         {/* File preview */}
-        <Card className="flex-1">
+        <Card className="min-w-0 flex-1">
           <CardHeader className="py-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <FileText className="h-4 w-4" />
@@ -176,7 +214,7 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
           </CardHeader>
           <CardContent className="p-0 h-[calc(100%-3rem)]">
             {selectedKey ? (
-              <FilePreview key={selectedKey} objectKey={selectedKey} />
+              <FilePreview key={selectedKey} workerName={workerName} objectKey={selectedKey} />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                 <div className="text-center">
@@ -192,14 +230,14 @@ export function WorkerFilesPanel({ workerName }: WorkerFilesPanelProps) {
   );
 }
 
-function FilePreview({ objectKey }: { objectKey: string }) {
+function FilePreview({ workerName, objectKey }: { workerName: string; objectKey: string }) {
   const [expanded, setExpanded] = useState(false);
   const ext = objectKey.split('.').pop()?.toLowerCase();
   const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext || '');
 
   if (isImage) {
-    const imageUrl = agentteamsApi.downloadObjectUrl('agents', objectKey);
+    const imageUrl = agentteamsApi.downloadWorkerFileUrl(workerName, objectKey);
     return (
       <div className="p-4">
         <img
@@ -221,7 +259,7 @@ function FilePreview({ objectKey }: { objectKey: string }) {
   }
 
   if (ext === 'svg') {
-    const url = agentteamsApi.downloadObjectUrl('agents', objectKey);
+    const url = agentteamsApi.downloadWorkerFileUrl(workerName, objectKey);
     return (
       <iframe
         src={url}
@@ -232,7 +270,7 @@ function FilePreview({ objectKey }: { objectKey: string }) {
   }
 
   if (!isTextFile) {
-    const url = agentteamsApi.downloadObjectUrl('agents', objectKey);
+    const url = agentteamsApi.downloadWorkerFileUrl(workerName, objectKey);
     return (
       <div className="p-4">
         <a
@@ -247,16 +285,16 @@ function FilePreview({ objectKey }: { objectKey: string }) {
     );
   }
 
-  return <TextViewer objectKey={objectKey} ext={ext} />;
+  return <TextViewer workerName={workerName} objectKey={objectKey} ext={ext} />;
 }
 
-function TextViewer({ objectKey, ext }: { objectKey: string; ext?: string }) {
+function TextViewer({ workerName, objectKey, ext }: { workerName: string; objectKey: string; ext?: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const url = agentteamsApi.downloadObjectUrl('agents', objectKey);
+    const url = agentteamsApi.downloadWorkerFileUrl(workerName, objectKey);
     fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -278,7 +316,7 @@ function TextViewer({ objectKey, ext }: { objectKey: string; ext?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [objectKey]);
+  }, [workerName, objectKey]);
 
   if (error) {
     return (

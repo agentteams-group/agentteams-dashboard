@@ -10,7 +10,8 @@
 export function apiUrl(path: string): string {
   // NEXT_PUBLIC_BASE_PATH is baked at build time by Next.js.
   const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
-  // Ensure trailing slash for API routes to avoid 308 redirect
-  const normalized = path.endsWith('/') ? path : `${path}/`;
-  return `${base}${normalized}`;
+  const [pathname, query] = path.split('?', 2);
+  // Ensure the path has a trailing slash without mutating query values.
+  const normalized = pathname.endsWith('/') ? pathname : `${pathname}/`;
+  return `${base}${normalized}${query ? `?${query}` : ''}`;
 }
