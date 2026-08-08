@@ -168,7 +168,7 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[92%]');
+    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(92%,72ch)]');
     textMessage.unmount();
 
     render(
@@ -191,7 +191,11 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByText('宽工作流').closest('.max-w-4xl')).toBeInTheDocument();
+    expect(
+      Array.from(document.querySelectorAll('div')).find((element) =>
+        element.classList.contains('w-[min(100%,56rem)]')
+      )
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -252,5 +256,32 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     assertRendered();
+  });
+
+  it('renders structured Agent run blocks as collapsible cards', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$agent-run',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '最终答案',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          agentBlocks: [
+            { type: 'thinking', content: '正在分析请求' },
+            { type: 'tool_call', payload: { tool_name: 'read_file', status: 'running' } },
+            { type: 'text', text: '最终答案' },
+          ],
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
+    expect(screen.getByText('最终答案')).toBeInTheDocument();
   });
 });

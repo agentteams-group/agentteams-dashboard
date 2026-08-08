@@ -44,6 +44,38 @@ export interface A2uiParseResult {
   hasToolCall: boolean;
 }
 
+const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
+  'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text',
+]);
+
+/**
+ * Reads the structured run payload attached to an AgentTeams Matrix event.
+ * A run update carries every block accumulated so far, allowing an m.replace
+ * revision to update the live response without losing completed tool calls.
+ */
+export function parseAgentRunBlocks(value: unknown, isStreaming = false): ParsedA2uiBlock[] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const blocks = (value as Record<string, unknown>).blocks;
+  if (!Array.isArray(blocks)) return undefined;
+
+  return blocks.flatMap((block): ParsedA2uiBlock[] => {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) return [];
+    const source = block as Record<string, unknown>;
+    const type = source.type;
+    if (typeof type !== 'string' || !AGENT_RUN_BLOCK_TYPES.has(type as ParsedA2uiBlock['type'])) return [];
+
+    const parsed: ParsedA2uiBlock = { type: type as ParsedA2uiBlock['type'] };
+    if (typeof source.content === 'string') parsed.content = source.content;
+    if (typeof source.text === 'string') parsed.text = source.text;
+    if (source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)) {
+      parsed.payload = source.payload as Record<string, unknown>;
+    }
+    if (Array.isArray(source.messages)) parsed.messages = source.messages as A2uiMessage[];
+    if (source.isStreaming === true || (isStreaming && type !== 'text')) parsed.isStreaming = true;
+    return [parsed];
+  });
+}
+
 // ─── Parsing ─────────────────────────────────────────────────────────────────
 
 const A2UI_HTML_MARKER = /<!--a2ui:([\s\S]*?)-->/g;

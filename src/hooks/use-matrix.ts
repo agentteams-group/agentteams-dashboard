@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { matrixApi, MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
+import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { create } from 'zustand';
 
 // Helper to get Matrix connection params
@@ -540,6 +541,8 @@ export interface DisplayMessage {
   agentStatus?: string;
   /** Structured AgentTeams workflow data attached to this Matrix event. */
   workflow?: WorkflowPayload;
+  /** Structured blocks for an Agent run, retained across streaming revisions. */
+  agentBlocks?: ParsedA2uiBlock[];
   /** Root event ID if this message is a reply in a thread. */
   threadId?: string;
   /** Whether this message is itself a thread reply (not the root). */
@@ -611,6 +614,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
   const isThreadReply = threadRelation?.rel_type === 'm.thread';
   const threadRootId = isThreadReply ? threadRelation?.event_id : undefined;
 
+  const isStreaming = isMatrixStreaming(content);
   return {
     id: event.event_id,
     sender: event.sender,
@@ -622,11 +626,12 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     isMe: event.sender === currentUserId,
     mediaUrl: content.url as string | undefined,
     mediaInfo: content.info as { mimetype?: string; size?: number; w?: number; h?: number } | undefined,
-    isStreaming: isMatrixStreaming(content),
+    isStreaming,
     agentStatus: isMatrixAgentStatus(content),
     workflow: isWorkflowPayload(content['agentteams.workflow'])
       ? content['agentteams.workflow']
       : undefined,
+    agentBlocks: parseAgentRunBlocks(content['org.agentteams.run'], isStreaming),
     isEdited,
     eventId: event.event_id,
     threadId: isThreadReply ? threadRootId : undefined,

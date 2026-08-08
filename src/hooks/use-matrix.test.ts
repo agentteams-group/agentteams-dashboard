@@ -67,6 +67,36 @@ describe('formatMatrixEvents', () => {
     expect(messages[0].content).toBe('第一段回复\n第二段回复');
   });
 
+  it('keeps structured Agent run blocks on the revised root message', () => {
+    const events = [
+      message('agent-root', '处理中...', 100),
+      message('agent-revision', '最终答案', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'agent-root' },
+        'm.new_content': {
+          msgtype: 'm.text',
+          body: '最终答案',
+          'org.agentteams.run': {
+            run_id: 'run-1',
+            blocks: [
+              { type: 'thinking', content: '正在分析', isStreaming: false },
+              { type: 'tool_call', payload: { tool_name: 'read_file', status: 'completed', result: 'ok' } },
+              { type: 'text', text: '最终答案' },
+            ],
+          },
+        },
+      }),
+    ];
+
+    const [displayMessage] = formatMatrixEvents(events, '@human:example.test');
+
+    expect(displayMessage).toMatchObject({ id: 'agent-root', content: '最终答案', isEdited: true });
+    expect(displayMessage.agentBlocks).toEqual([
+      { type: 'thinking', content: '正在分析' },
+      { type: 'tool_call', payload: { tool_name: 'read_file', status: 'completed', result: 'ok' } },
+      { type: 'text', text: '最终答案' },
+    ]);
+  });
+
   it('serializes structured parts without text instead of coercing them', () => {
     const events = [
       message(
