@@ -12,7 +12,6 @@ describe('MVP navigation', () => {
       'humans',
       'models',
       'chat',
-      'chat-v2',
       'docs',
     ]);
     expect(navItems.some((item) => 'group' in item)).toBe(false);

@@ -47,7 +47,6 @@ const ManagersSection = lazy(() => import('./sections/managers-section').then(m 
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
 const ChatSection = lazy(() => import('./sections/chat/ChatSection').then(m => ({ default: m.ChatSection })));
-const ChatV2Section = lazy(() => import('./sections/chat-v2/ChatV2Section').then(m => ({ default: m.ChatV2Section })));
 const DocsSection = lazy(() => import('./sections/docs-section').then(m => ({ default: m.DocsSection })));
 
 const sectionMap: Record<string, React.ComponentType> = {
@@ -59,7 +58,6 @@ const sectionMap: Record<string, React.ComponentType> = {
   humans: HumansSection,
   models: ModelsSection,
   chat: ChatSection,
-  'chat-v2': ChatV2Section,
   docs: DocsSection,
 };
 
@@ -283,11 +281,11 @@ export function AgentTeamsDashboard() {
 
             <ConnectionBanner />
 
-            {activeSection === 'chat' || activeSection === 'chat-v2' ? (
+            {activeSection === 'chat' ? (
               /* Chat mode: bypass <main> scroll container, fill all available space */
               <div className="flex-1 flex flex-col min-h-0">
                 <Suspense fallback={<SectionSkeleton />}>
-                  <ActiveSectionComponent />
+                  <ChatSection />
                 </Suspense>
               </div>
             ) : (

@@ -88,7 +88,7 @@ This file records user instructions, preferences, and teachings for reference in
   - The workspace currently has no installed Node.js dependencies; `npm test`, `npm run typecheck`, and `npm run lint` cannot resolve their project executables.
 
 [Project Knowledge Summary]
-- Date: 2026-08-07
+- Date: 2026-08-01
 - Context: Agent implemented Matrix chat UI restructure with virtualized message list
 - Category: Build Methods
 - Instructions:
@@ -97,8 +97,7 @@ This file records user instructions, preferences, and teachings for reference in
   - Extended DisplayMessage interface with threadId, replyCount, isEdited fields
   - All new code passes TypeScript and ESLint checks
   - Test suite: 259 tests pass
-- Build: `npm run build` compiles successfully
-- In this workspace, both `npm run dev` and `npm exec next dev -- -p 3000` can report Ready and then exit with code 0, leaving port 3000 unavailable to the preview proxy.
+  - Build: `npm run build` compiles successfully
   - Source files are in `/workspace/src/components/dashboard/sections/chat/`, NOT in `/workspace/packages/dashboard/src/`
   - ScrollPanel uses Virtuoso with `followOutput: 'auto'` for auto-scroll and `scrollTo({ top: MAX_SAFE_INTEGER })` for manual scroll-to-bottom
   - MessageList uses forwardRef to pass Virtuoso ref for imperative scrolling from ChatRoom
