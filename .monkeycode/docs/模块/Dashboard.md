@@ -12,7 +12,7 @@
 
 区块位于 `src/components/dashboard/sections/`：概览汇总资源和基础设施；Workers、Teams、Managers、Humans 提供资源操作；Chat 组合 Matrix 房间；Topology 绘制资源关系；Gateway 管理 Consumer 和 Higress Route；Policies、Sandbox、Compliance 提供治理能力。
 
-聊天区块位于 `src/components/dashboard/sections/chat/`：`a2ui/a2ui-chat-content.tsx` 解析 Matrix 消息中的 A2UI 协议、agent repr、`agentteams.workflow` 与 legacy 块。Agent repr 可与状态文本交错出现，解析后按原顺序渲染文本、思考与工具调用内容；工具调用注册表为读取、写入、补丁、搜索、命令和目录工具提供专用卡片，其他工具使用通用卡片；workflow 卡片呈现运行状态、子智能体和步骤进度；流式输出由 `IncrementalA2uiRenderer` 增量渲染思考、工具调用、确认卡片与 Markdown 文本；AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
+聊天区块位于 `src/components/dashboard/sections/chat/`。`ChatRoom` 组合房间侧栏、成员面板、`MessageList`、`ThreadPanel` 与输入框；`MessageBubble` 通过 `parseA2uiContent` 分发 A2UI、AgentScope runtime repr、`agentteams.workflow`、确认、思考、工具调用和 Markdown 块。`src/lib/a2ui/agent-repr.ts` 将 runtime `Message` repr 中的 reasoning、function call 和 function call output 映射为可折叠思考与工具调用卡片。`formatMatrixEvents` 合并 `m.replace` 修订，并将 `m.thread` 回复从主时间线收纳到由 `ThreadPanel` 按 relations API 加载的线程中。`org.agentteams.run` 仅作为 runtime adapter 的可选兼容载荷处理。AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
 
 ## 状态和数据流
 

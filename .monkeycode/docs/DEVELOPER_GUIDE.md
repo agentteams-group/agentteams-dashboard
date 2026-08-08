@@ -32,6 +32,13 @@ npm run dev
 - 测试与源码同目录，使用 `.test.ts` 或 `.test.tsx` 后缀。
 - 新增外部地址时，先定义服务端校验和超时边界，再连接 UI。
 
+## Matrix 聊天开发
+
+- `src/hooks/use-matrix.ts` 是 Matrix 展示事件的归一化入口：它合并 `m.replace`，统计 `m.thread` 回复，并将线程详情交由 `useMatrixThreadMessages` 通过 relations API 加载。
+- `src/lib/a2ui/parser.ts` 处理 A2UI、确认、工作流、legacy 内容和嵌入式 AgentScope runtime repr；`src/lib/a2ui/agent-repr.ts` 专门映射 reasoning 与工具调用消息。
+- `org.agentteams.run` 只用于已部署 runtime adapter 的兼容载荷。新运行时接入前应先提供真实 Matrix 事件样例，并扩展对应解析器与测试。
+- 修改消息关系或解析逻辑时，运行 `npm test -- --run src/hooks/use-matrix.test.ts src/lib/a2ui/agent-repr.test.ts`，再运行 `npm run typecheck` 和 `npm run lint`。
+
 ## Nacos 技能集成
 
 技能中心支持从 Nacos 注册中心自动同步和下载技能包。配置 Nacos 连接的步骤：

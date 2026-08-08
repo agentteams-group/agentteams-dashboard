@@ -65,11 +65,13 @@ Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 
 
 ### A2UI 聊天渲染
 
-位置：`src/components/dashboard/sections/chat/`、`src/lib/a2ui/parser.ts`
+位置：`src/components/dashboard/sections/chat/`、`src/hooks/use-matrix.ts`、`src/lib/a2ui/`
 
-Matrix 消息正文与 formatted_body 由 `parseA2uiContent` 解析为 A2UI 协议消息、agent 消息 repr、AgentTeams workflow、legacy thinking/卡片块与纯文本。单条 Matrix 消息可包含状态文本和多个 Agent repr；解析器以 repr 的完整边界逐段解析，并按原顺序保留普通文本、思考和工具调用块。工具调用经注册表按工具名分发为读取文件、写入文件、应用补丁、网页搜索、命令执行或目录列表卡片，未知工具使用通用兜底卡片。`agentteams.workflow` 字段会安全映射到 `DisplayMessage.workflow`，并由独立卡片展示运行状态、子智能体与步骤进度。流式输出使用 `IncrementalA2uiRenderer`：只对新增消息（`messages.slice(startIndex)`）增量处理，避免对完整消息列表的全量重处理破坏处理器内部 surface 状态；流式且长时间无 surface 时用静态提示替换三点动画。`A2uiChatContent` 通过 `looksLikeStructuredStreaming` 同时检查正文与 formatted_body 中的 A2UI 标记、agent repr 与 legacy 块，保证思考与工具调用在流式中以可折叠卡片呈现。
+`formatMatrixEvents` 按时间排序 Matrix 事件，将 `m.replace` 修订合并回根事件，保留根事件 ID 和时间戳以保证流式响应在时间线中的位置稳定。`m.thread` 回复只计入根事件的回复数；线程面板通过 relations API 按需获取完整回复，主时间线保持根消息视图。
 
-聊天时间线由 `ScrollPanel` 的 `react-virtuoso` 容器承载，可测量动态高度消息、在顶部自动加载更早页并通过稳定消息键保持可视锚点。列表仅在用户停留于底部时跟随新增消息；跳转至指定消息会居中滚动、短暂高亮，并通过屏幕阅读器状态文本反馈定位结果。
+`MessageBubble` 使用 `parseA2uiContent` 将正文和 `formatted_body` 解析为 A2UI 协议消息、AgentScope runtime `Message` repr、`agentteams.workflow`、Tool Guard 确认、legacy thinking/卡片块与纯文本。repr 解析器按消息边界保留正文、推理和函数调用信息，并映射为 Markdown、可折叠思考和工具调用卡片。`agentteams.workflow` 映射到专用工作流卡片。`org.agentteams.run` 是供 runtime adapter 使用的可选兼容载荷，并非 Dashboard 依赖的唯一消息协议。
+
+聊天时间线由 `ScrollPanel` 的 `react-virtuoso` 容器承载，可测量动态高度消息、在顶部加载更早页并通过稳定消息键保持可视锚点。列表仅在用户停留于底部时跟随新增消息；跳转至指定消息会居中滚动、短暂高亮，并通过屏幕阅读器状态文本反馈定位结果。文本气泡使用 `min(92%, 72ch)` 宽度上限，结构化卡片使用 `min(100%, 56rem)`，在窄面板中保持可用宽度。
 
 ### 技能中心
 

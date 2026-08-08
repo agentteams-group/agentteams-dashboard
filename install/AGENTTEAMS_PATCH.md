@@ -196,6 +196,7 @@ The patch does **not** add broad `agentteams-*` container cleanup. It only remov
 
 | Action | Command |
 |--------|---------|
+| Current Dashboard release | `v1.2.1` |
 | Standalone install | `bash install/agentteams-dashboard.sh` |
 | Update (pull latest) | `bash install/agentteams-dashboard.sh update` |
 | Uninstall | `bash install/agentteams-dashboard.sh uninstall` |

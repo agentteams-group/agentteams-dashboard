@@ -32,7 +32,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 | **Managers** | Manager 管理：模型配置、欢迎消息、协调团队/Worker |
 | **K8s** | Kubernetes CRD 资源卡片展示、YAML/JSON 预览 |
 | **Infrastructure** | 基础设施状态：Controller、Matrix、各组件健康度 |
-| **Chat** | Matrix 聊天集成：房间列表、成员、富消息渲染（A2UI） |
+| **Chat** | Matrix 聊天工作区：房间与成员导航、虚拟时间线、线程、编辑和运行时富消息渲染 |
 | **Security** | 权限矩阵、访问控制、安全策略展示 |
 | **Skills** | Skill/MCP 资源管理 |
 | **Architecture** | 架构图与组件关系说明 |
@@ -45,13 +45,20 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 - **运行时**：Node.js 20+
 - **部署**：Docker，Next.js standalone 输出
 
+## Matrix 聊天
+
+聊天工作区提供 Matrix 房间的虚拟化历史消息、未读感知滚动、消息操作、已读回执与按需加载的线程面板。根消息保留在主时间线；`m.thread` 回复会计入根消息，并在对应线程面板中加载。
+
+运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。
+
 ## 📦 快速开始
 
 ### 作为 AgentTeams 组件安装（推荐）
 
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
-- **默认版本**：`v1.2.0-beta.1`（通过 `AGENTTEAMS_DASHBOARD_VERSION` 配置，与 AgentTeams 版本独立）
+- **当前 Dashboard 发布标签**：`v1.2.1`
+- **安装器默认版本**：`v1.2.0-beta.1`；设置 `AGENTTEAMS_DASHBOARD_VERSION=v1.2.1` 可安装当前发布版本
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
 - **集成 PR**：https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -93,7 +100,7 @@ bash install/agentteams-dashboard.sh uninstall
 非交互安装示例：
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.0-beta.1 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.1 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -125,10 +132,10 @@ docker run -d -p 13000:3000 \
   --name agentteams-dashboard \
   -e AGENTTEAMS_CONTROLLER_URL=http://host.docker.internal:8090 \
   -e NEXT_PUBLIC_MATRIX_API_URL=http://host.docker.internal:6167 \
-  ghcr.io/agentteams-group/agentteams-dashboard:v1.0.0
+  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.1
 
 # 或从源码构建
-docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.0.0 .
+docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.1 .
 ```
 
 ## ⚙️ 环境变量
