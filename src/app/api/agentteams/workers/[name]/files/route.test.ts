@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { NextRequest } from 'next/server';
 import { describe, expect, it, vi } from 'vitest';
 import { GET } from './route';
 
@@ -11,7 +12,11 @@ vi.mock('@/lib/minio-client', () => ({
 
 function createObjectStream(objects: Record<string, unknown>[]) {
   const stream = new EventEmitter();
-  queueMicrotask(() => {
+  // setImmediate (not queueMicrotask): the handler only registers 'data'/'end'
+  // listeners after its `await params` continuation, which runs after the
+  // microtask queue. setImmediate fires after all microtasks, so the mock
+  // stream's events are always observed by the handler.
+  setImmediate(() => {
     objects.forEach((object) => stream.emit('data', object));
     stream.emit('end');
   });
@@ -25,7 +30,7 @@ describe('GET /api/agentteams/workers/[name]/files', () => {
       { prefix: 'manager/logs/' },
     ]));
 
-    const response = await GET(new Request('http://localhost'), {
+    const response = await GET(new NextRequest('http://localhost'), {
       params: Promise.resolve({ name: 'manager' }),
     });
 
@@ -36,6 +41,7 @@ describe('GET /api/agentteams/workers/[name]/files', () => {
         { key: 'manager/AGENTS.md', size: 120 },
         { key: 'manager/logs/', size: 0, isPrefix: true },
       ],
+      prefix: '',
     });
   });
 
@@ -44,19 +50,20 @@ describe('GET /api/agentteams/workers/[name]/files', () => {
       .mockReturnValueOnce(createObjectStream([]))
       .mockReturnValueOnce(createObjectStream([{ name: 'agents/ce1/AGENTS.md', size: 120 }]));
 
-    const response = await GET(new Request('http://localhost'), {
+    const response = await GET(new NextRequest('http://localhost'), {
       params: Promise.resolve({ name: 'ce1' }),
     });
 
     expect(response.status).toBe(200);
     expect(listObjects).toHaveBeenLastCalledWith('agentteams-storage', 'agents/ce1/', false);
     await expect(response.json()).resolves.toEqual({
-      objects: [{ key: 'agents/ce1/AGENTS.md', size: 120 }],
+      objects: [{ key: 'ce1/AGENTS.md', size: 120 }],
+      prefix: '',
     });
   });
 
   it('rejects an unsafe Worker name', async () => {
-    const response = await GET(new Request('http://localhost'), {
+    const response = await GET(new NextRequest('http://localhost'), {
       params: Promise.resolve({ name: '../manager' }),
     });
 
