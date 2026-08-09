@@ -102,6 +102,7 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | `/api/agentteams/skills/nacos/sync` | Nacos + MinIO | 触发从 Nacos 同步技能元数据 |
 | `/api/agentteams/skills/nacos/[name]/download` | Nacos + MinIO | 从 Nacos 拉取技能内容（支持 MinIO 缓存） |
 | `/api/agentteams/workers/[name]/skills` | Controller | 向 Worker 推送技能包 |
+| `/api/agentteams/debug-log` | Controller + Matrix | 一键收集调试日志：容器诊断/日志、Agent 会话、Matrix 消息，脱敏后打包 ZIP 下载 |
 | `/api/auth/*` | 本地或 Higress 会话 | 登录与会话状态 |
 
 ## 外部配置契约
@@ -125,7 +126,7 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 
 Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对象；`enabled`、`maxRetries`、`retryOn`、`retryStatusCodes` 和 `fallbacks` 执行受限类型校验，Console 返回的未知字段会保留并以摘要形式展示。
 
-验证记录：`npm run lint`、`npm run typecheck` 与 `git diff --check` 已通过。`npm test -- infrastructure` 通过 4 项测试，Higress 相关专项测试通过 20 项。完整 `npm test` 的其余 10 个 Hook 测试受全局 `node_modules` 引入的 React 双实例影响，相关功能代码未参与这些失败。
+验证记录：`npm run lint`、`npm run typecheck` 与 `git diff --check` 已通过。完整 `npm test` 全量通过（58 个测试文件 445 个用例）。
 
 ## 安全边界
 

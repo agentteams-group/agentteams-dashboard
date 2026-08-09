@@ -14,6 +14,8 @@
 
 聊天区块位于 `src/components/dashboard/sections/chat/`。`ChatRoom` 组合房间侧栏、成员面板、`MessageList`、`ThreadPanel` 与输入框；`MessageBubble` 通过 `parseA2uiContent` 分发 A2UI、AgentScope runtime repr、`agentteams.workflow`、确认、思考、工具调用和 Markdown 块。`src/lib/a2ui/agent-repr.ts` 将 runtime `Message` repr 中的 reasoning、function call 和 function call output 映射为可折叠思考与工具调用卡片。`formatMatrixEvents` 合并 `m.replace` 修订，并将 `m.thread` 回复从主时间线收纳到由 `ThreadPanel` 按 relations API 加载的线程中。`org.agentteams.run` 仅作为 runtime adapter 的可选兼容载荷处理。AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
 
+设置对话框（`settings-dialog.tsx`）包含三个页签：连接（连接参数与 Controller/Matrix 状态）、AI 诊断（`troubleshoot-tab.tsx`，AI 生成诊断结论）、日志收集（`debug-log-tab.tsx`）。日志收集页签通过 `POST /api/agentteams/debug-log` 一键采集容器诊断/日志、Agent 会话与 Matrix 消息，PII 脱敏后打包 ZIP 下载（详见 `docs/debug-log-collection.md`）。
+
 ## 状态和数据流
 
 TanStack Query 保存服务端资源缓存。Worker、Team、Manager、Human 查询默认每 15 秒轮询，基础设施和模型查询默认每 30 秒轮询。`use-agentteams-mutations.ts` 负责缓存失效、部分 Worker 乐观更新、Toast、通知和审计事件分发。

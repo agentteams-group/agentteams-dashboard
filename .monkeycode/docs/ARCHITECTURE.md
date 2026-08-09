@@ -25,6 +25,7 @@ src/
       agentteams/
         skills/        技能 CRUD、上传下载与分发
           nacos/        Nacos 技能下载、配置管理与同步
+        debug-log/     一键调试日志收集（容器诊断、会话、Matrix 消息打包 ZIP）
   components/          Dashboard、认证、设置与 UI 组件
     dashboard/
       sections/

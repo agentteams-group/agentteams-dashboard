@@ -35,6 +35,7 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 | **Chat** | Matrix workspaces: room and member navigation, virtualized timeline, threads, edits, rich runtime message rendering |
 | **Security** | Permission matrix, access control and security policy views |
 | **Skills** | Skill / MCP resource management |
+| **Debug Log** | One-click debug log collection: bundled ZIP with container diagnostics, agent sessions and Matrix messages, PII-redacted by default |
 | **Architecture** | Architecture diagram and component relationships |
 
 ## 🛠 Tech Stack
@@ -211,7 +212,7 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 ## 🧪 Quality
 
-- **Unit tests** with vitest + Testing Library (350+ tests, `npm test`)
+- **Unit tests** with vitest + Testing Library (445 tests across 58 files, `npm test`)
 - **Lint-clean** ESLint configuration (`npm run lint`)
 - **Type-safe** with strict TypeScript (`npm run typecheck`)
 - **Reproducible builds** via `npm ci` + lockfile and multi-arch Docker images (`make help`)

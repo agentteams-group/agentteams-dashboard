@@ -19,6 +19,7 @@
 | `/api/agentteams/skills/nacos/sync` | Nacos API | 触发技能元数据同步 |
 | `/api/agentteams/skills/nacos/[name]/download` | Nacos + MinIO | 按需拉取并缓存 Nacos 技能内容 |
 | `/api/agentteams/workers/[name]/skills` | Controller | 向 Worker 推送技能包 |
+| `/api/agentteams/debug-log` | Controller + Matrix | 一键收集调试日志：容器诊断/日志、Agent 会话、Matrix 消息，脱敏后打包 ZIP 下载 |
 | `/api/matrix/*` | Matrix Client-Server API | 登录、同步、房间、消息、媒体和输入状态 |
 | `/api/higress/*` | Higress Console | Provider 和 AI Route 管理 |
 

@@ -17,7 +17,7 @@ AgentTeams 主仓库提供了独立 Python 脚本 `scripts/export-debug-log.py`�
 | Matrix 消息 | Tuwunel Homeserver | 读 `~/agentteams-manager.env` 取 Manager/Admin 密码登录 Matrix，遍历 joined_rooms 分页拉取 `/messages` | `matrix-messages/<Room>_<roomid>.jsonl` |
 | Agent 会话 | 各容器内 session 文件 | `docker exec` 探测 OpenClaw / Hermes / CoPaw 三种 runtime 的 session 目录，按时间过滤后 cat 出来 | `agent-sessions/<容器>/<session>.jsonl` |
 | 容器诊断 | Docker Engine | `docker ps/inspect/logs --since` | `container-logs/<容器>.log + .state.json` |
-| PII 脱敏 | 全部产出 | 20 条正则（身份证/手机号/邮箱/银行卡/IP/各类 API Key/Bearer/secret KV/Matrix token 等） | 默认开启，`--no-redact` 关闭 |
+| PII 脱敏 | 全部产出 | 19 条正则（身份证/手机号/邮箱/银行卡/IP/各类 API Key/Bearer/secret KV/Matrix token 等） | 默认开启，`--no-redact` 关闭 |
 | 汇总 | — | — | `summary.txt`，落盘 `debug-log/<时间戳>/` |
 
 ### 1.2 痛点与目标
@@ -90,7 +90,7 @@ Dashboard 的 Chat 模块要求用户登录 Matrix，`matrix-store`（zustand pe
 | 容器列表/状态/日志 | 本地 `docker ps/inspect/logs` | Controller Docker 代理 GET | 等价 |
 | Agent 会话采集 | 本地 `docker exec` | 代理 exec create + start | 等价，且做了批量化优化（见 §4.3） |
 | Matrix 消息 | env 文件拿 Manager/Admin 密码登录 | 浏览器当前用户 token | 身份语义更准确；未登录则降级跳过 |
-| PII 脱敏 | 20 条正则 | 同规则 TypeScript 移植 | 规则一致，修正 1 处原脚本缺陷（见 §4.1） |
+| PII 脱敏 | 19 条正则 | 同规则 TypeScript 移植 | 规则一致，修正 1 处原脚本缺陷（见 §4.1） |
 | 产物 | 落盘 `debug-log/<ts>/` 目录 | 内存打包 ZIP 下载 | 不落盘、无状态 |
 | 时间范围 | `--range 10m/1h/1d` | 同名参数 | 一致 |
 | 容器/房间过滤 | `--container/--room` | 同名参数 | 一致 |
@@ -107,8 +107,9 @@ src/app/api/agentteams/debug-log/
 ├── docker.ts         # Controller Docker 代理客户端（list/inspect/logs/exec + 流解复用）
 ├── matrix.ts         # Matrix 消息导出（joined_rooms + 分页 messages + 事件格式化）
 ├── sessions.ts       # Agent 会话导出（三 runtime 探测 + 按时间过滤）
-├── redact.ts         # PII 脱敏（20 条规则）
-└── redact.test.ts    # 脱敏单测 16 例
+├── redact.ts         # PII 脱敏（19 条规则）
+├── redact.test.ts    # 脱敏单测 20 例
+└── route.test.ts     # 路由单测 6 例
 
 src/components/dashboard/settings/
 └── debug-log-tab.tsx # 「日志收集」页签 UI
@@ -122,7 +123,7 @@ src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个�
 
 ### 4.1 `redact.ts` — PII 脱敏
 
-- 完整移植原脚本 20 条正则：身份证、手机号、邮箱、银行卡、IP、阿里云 AK/SK、AWS AK、OpenAI/Anthropic/DashScope/DeepSeek Key、Bearer、通用 secret KV、Matrix token、32+ 位 hex、护照、SSN；
+- 完整移植原脚本 19 条正则：身份证、手机号、邮箱、银行卡、IP、阿里云 AK/SK、AWS AK、OpenAI/Anthropic/DashScope/DeepSeek Key、Bearer、通用 secret KV、Matrix token、32+ 位 hex、护照、SSN；
 - `keepPrefix` 规则（Bearer / SECRET_KV / ALIYUN_SK）保留 key 名只遮蔽值，替换为 `$1****`；
 - `redactJsonStrings()` 递归处理 JSON：字段名命中 `SECRET_FIELD_PATTERN`（password/token/apiKey…）直接置 `****`，否则递归脱敏字符串；
 - **修正原脚本一处缺陷**：Python 版 `ALIYUN_SK` 正则的捕获组 1 是 secret 值本身，`\1****` 替换会把 secret 原文保留下来（key 名反而被吃掉）。TS 版调整为捕获组 1 = key 名前缀，真正遮蔽密钥值；
@@ -151,7 +152,8 @@ src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个�
 ### 4.4 `route.ts` — 主路由
 
 - `POST /api/agentteams/debug-log/`，`export const dynamic = 'force-dynamic'`、`maxDuration = 300`；
-- 请求体：`{ range='1h', redact=true, container?, room?, messagesOnly?, homeserver? }`；`range` 解析规则与原脚本一致（`10m/1h/1d`…）；
+- 请求体：`{ range='1h', redact=true, container?, room?, messagesOnly?, homeserver? }`；`range` 解析规则与原脚本一致（`10m/1h/1d`…），上限 30 天；
+- **硬限制**：最多采集 100 个容器（超出截断并记 Note）、全包体积上限 256 MiB（超出提前终止并记 Note）、采集截止时间 240s（早于 maxDuration 停止，留足打包时间）、Note 单条长度上限 500 字符；
 - Matrix 凭证：`Authorization` 头取 token（沿用 `/api/matrix/*` 约定），homeserver 从 body 或 `?homeserver=` 取；**任一缺失则跳过 Matrix 导出并在 summary 注明**（降级而非报错）；
 - 编排顺序：容器列表（两个收集器共用）→ 容器诊断（inspect + logs）→ Agent 会话 → Matrix 消息；每个收集器独立容错，异常全部收敛为 summary 里的 Notes；
 - 产物：`summary.txt`（时间范围/脱敏状态/三路计数/Notes）+ 全部文件 `zipSync(level:6)`，响应头 `Content-Disposition: attachment; filename="agentteams-debug-log-<ts>.zip"`，`Cache-Control: no-store`。
@@ -163,9 +165,9 @@ src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个�
 - 点击「一键收集并下载」：`fetch(apiUrl('/api/agentteams/debug-log'))`（apiUrl 自动补 basePath + 尾斜杠，规避 trailingSlash 308 重定向丢 POST body 的问题）；已登录 Matrix 时自动带上 `Authorization` 头和 homeserver；
 - 响应处理：非 2xx 解析 JSON error 弹 toast；成功则读 `content-disposition` 文件名，`URL.createObjectURL` + 隐形 `<a download>` 触发浏览器下载，toast 提示文件名；全程 loading 态（收集耗时可能数十秒）。
 
-### 4.6 测试 `redact.test.ts`
+### 4.6 测试 `redact.test.ts` + `route.test.ts`
 
-16 个用例覆盖：各类正则的遮蔽、keepPrefix 规则的 key 保留、普通文本不误伤、JSON 递归脱敏、secret 字段名置空、数组顶层等边界。
+`redact.test.ts` 20 个用例覆盖：各类正则的遮蔽、keepPrefix 规则的 key 保留、普通文本不误伤、JSON 递归脱敏、secret 字段名置空、数组顶层等边界。`route.test.ts` 6 个用例覆盖：null/数组请求体返回 400、range 非字符串返回 400、redact 非布尔返回 400、超长 range 返回 400、空采集返回含 summary.txt 的 ZIP。
 
 ---
 
@@ -178,10 +180,11 @@ Headers:
   Authorization: Bearer <matrix-token>        # 可选；提供则导出 Matrix 消息
 Body:
 {
-  "range": "1h",            # 10m|30m|1h|6h|1d，支持 N(m|min|h|hr|hour|d|day)
+  "range": "1h",            # 10m|30m|1h|6h|1d，支持 N(m|min|h|hr|hour|d|day)，上限 30d
   "redact": true,           # 默认 true
   "container": "worker",    # 可选，子串过滤容器
   "room": "Worker",         # 可选，子串过滤房间名/ID
+  "messagesOnly": true,     # 可选，Matrix 导出仅保留消息事件（丢弃 typing/read 等）
   "homeserver": "http://..."# 可选（也可走 ?homeserver=）
 }
 Response 200:
@@ -207,7 +210,7 @@ container-logs/<container>.state.json
 1. **凭证零落盘**：Matrix token 仅在请求头中瞬时使用；Controller SA token 服务端每请求重读（支持轮转）；ZIP 全程内存组装，不写磁盘；
 2. **SSRF 防护**：homeserver 复用 `validateHomeserverUrl()`（白名单 + 私网地址拦截）；controller 地址复用 `getControllerUrl()` 的 host 白名单；
 3. **权限收敛**：Docker 侧只用到 controller 代理已放行的只读 GET + exec；Matrix 侧以当前登录用户身份导出，天然只能看到自己有权访问的房间；
-4. **PII 默认脱敏**：20 条规则默认开启，用户显式关闭才产出原文；
+4. **PII 默认脱敏**：19 条规则默认开启，用户显式关闭才产出原文；
 5. **输入校验**：range 格式校验、容器/房间过滤仅作子串匹配、容器名经 Docker API 自身校验（代理层还有 `name` 字符白名单）。
 
 ## 7. 性能与可靠性
@@ -221,10 +224,10 @@ container-logs/<container>.state.json
 
 | 检查 | 结果 |
 |---|---|
-| `npm run typecheck` | 新增代码 0 错误（仅存量 `workers/[name]/files/route.test.ts` 3 处历史错误，与本次无关） |
+| `npm run typecheck` | 0 错误 |
 | `npx eslint <变更文件>` | 0 错误 0 警告 |
-| `vitest run src/app/api/agentteams/debug-log` | **16/16 通过** |
-| `npm test` 全量 | 304/307 通过；3 个失败位于存量 `workers/[name]/skills/route.test.ts`（vitest fork worker 启动超时，Windows 环境问题，与本次变更无关） |
+| `vitest run src/app/api/agentteams/debug-log` | **26/26 通过**（redact 20 + route 6） |
+| `npm test` 全量 | **445/445 通过**（58 个测试文件） |
 | `npm run build` | 生产构建通过（Next.js standalone 产物含新路由与页签） |
 
 ## 9. 已知限制与后续路线

@@ -35,6 +35,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 | **Chat** | Matrix 聊天工作区：房间与成员导航、虚拟时间线、线程、编辑和运行时富消息渲染 |
 | **Security** | 权限矩阵、访问控制、安全策略展示 |
 | **Skills** | Skill/MCP 资源管理 |
+| **Debug Log** | 一键收集调试日志：容器诊断、Agent 会话、Matrix 消息打包成 ZIP 下载，默认 PII 脱敏 |
 | **Architecture** | 架构图与组件关系说明 |
 
 ## 🛠 技术栈
@@ -211,7 +212,7 @@ docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2 .
 
 ## 🧪 质量保障
 
-- **单元测试**：vitest + Testing Library（350+ 用例，`npm test`）
+- **单元测试**：vitest + Testing Library（58 个测试文件共 445 个用例，`npm test`）
 - **代码规范**：ESLint 零问题（`npm run lint`）
 - **类型安全**：strict TypeScript（`npm run typecheck`）
 - **可复现构建**：`npm ci` + lockfile，多架构 Docker 镜像（`make help`）
