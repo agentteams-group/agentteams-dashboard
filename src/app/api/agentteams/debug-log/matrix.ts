@@ -118,12 +118,15 @@ export async function exportMatrixMessages(options: {
   redact: boolean;
   roomFilter?: string;
   messagesOnly?: boolean;
+  stop?: () => boolean;
 }): Promise<MatrixExportResult> {
-  const { homeserver, token, sinceEpochSec, redact, roomFilter, messagesOnly } = options;
+  const { homeserver, token, sinceEpochSec, redact, roomFilter, messagesOnly, stop } = options;
 
   // Defense in depth: the homeserver must pass the same allowlist / SSRF
-  // checks as the regular Matrix proxy routes.
-  validateHomeserverUrl(homeserver);
+  // checks as the regular Matrix proxy routes. requireAllowlist additionally
+  // refuses to forward the user's access token to any public host that is not
+  // on the (built-in or configured) allowlist.
+  validateHomeserverUrl(homeserver, { requireAllowlist: true });
 
   const result: MatrixExportResult = { rooms: 0, messages: 0, files: {} };
 
@@ -139,6 +142,7 @@ export async function exportMatrixMessages(options: {
   const sinceTsMs = Math.floor(sinceEpochSec * 1000);
 
   for (const roomId of rooms) {
+    if (stop?.()) break;
     let roomName = '';
     try {
       const data = await matrixApi(

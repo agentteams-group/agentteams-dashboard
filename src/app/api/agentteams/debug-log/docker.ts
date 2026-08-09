@@ -6,17 +6,69 @@
 const DOCKER_API_VERSION = 'v1.41';
 const EXEC_TIMEOUT_MS = 30000;
 const REQUEST_TIMEOUT_MS = 60000;
+// Cap a single Docker response so a stuck or oversized stream cannot exhaust
+// memory; the route enforces a separate aggregate budget across all files.
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 export interface DockerContext {
   controllerUrl: string;
   token?: string;
 }
 
+interface DockerFetchResult {
+  ok: boolean;
+  status: number;
+  data: ArrayBuffer;
+}
+
+/** Read a response body up to a byte limit. The read shares the same
+ *  AbortSignal deadline as the fetch, so a stalled body is aborted too. */
+async function readBodyWithLimit(
+  res: Response,
+  limitBytes: number
+): Promise<ArrayBuffer> {
+  if (!res.body) return new ArrayBuffer(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > limitBytes) {
+          throw new Error(`Response body exceeds size limit of ${limitBytes} bytes`);
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (chunks.length === 0) return new ArrayBuffer(0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
+}
+
+function decodeBody(data: ArrayBuffer): string {
+  return new TextDecoder('utf-8').decode(data);
+}
+
+function truncateText(text: string, max = 500): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 async function dockerFetch(
   ctx: DockerContext,
   path: string,
   options: { method?: string; body?: unknown; timeout?: number } = {}
-): Promise<Response> {
+): Promise<DockerFetchResult> {
   const { method = 'GET', body, timeout = REQUEST_TIMEOUT_MS } = options;
   const url = new URL(`/docker/${DOCKER_API_VERSION}${path}`, ctx.controllerUrl).toString();
 
@@ -27,12 +79,14 @@ async function dockerFetch(
     if (ctx.token) headers['Authorization'] = `Bearer ${ctx.token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-    return await fetch(url, {
+    const res = await fetch(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    const data = await readBodyWithLimit(res, MAX_RESPONSE_BYTES);
+    return { ok: res.ok, status: res.status, data };
   } finally {
     clearTimeout(timer);
   }
@@ -62,11 +116,14 @@ export function demuxDockerStream(buffer: ArrayBuffer): string {
 /** List agentteams-* container names (running and stopped). */
 export async function listAgentTeamsContainers(ctx: DockerContext): Promise<string[]> {
   const filters = encodeURIComponent(JSON.stringify({ name: ['agentteams-'] }));
-  const res = await dockerFetch(ctx, `/containers/json?all=1&filters=${filters}`);
-  if (!res.ok) {
-    throw new Error(`Docker API returned ${res.status} while listing containers`);
+  const { ok, status, data } = await dockerFetch(
+    ctx,
+    `/containers/json?all=1&filters=${filters}`
+  );
+  if (!ok) {
+    throw new Error(`Docker API returned ${status} while listing containers`);
   }
-  const containers = (await res.json()) as Array<{ Names?: string[] }>;
+  const containers = JSON.parse(decodeBody(data)) as Array<{ Names?: string[] }>;
   const names = containers
     .flatMap((c) => c.Names ?? [])
     .map((n) => n.replace(/^\//, ''))
@@ -86,25 +143,28 @@ export async function inspectContainer(
   ctx: DockerContext,
   name: string
 ): Promise<ContainerDiagnostic> {
-  const res = await dockerFetch(ctx, `/containers/${encodeURIComponent(name)}/json`);
-  if (!res.ok) {
+  const { ok, status, data } = await dockerFetch(
+    ctx,
+    `/containers/${encodeURIComponent(name)}/json`
+  );
+  if (!ok) {
     return {
       container: name,
       image: '',
       restart_count: null,
-      state: { inspect_error: `Docker API returned ${res.status}` },
+      state: { inspect_error: `Docker API returned ${status}` },
     };
   }
-  const data = (await res.json()) as {
+  const parsed = JSON.parse(decodeBody(data)) as {
     State?: unknown;
     Config?: { Image?: string };
     RestartCount?: number;
   };
   return {
     container: name,
-    image: data.Config?.Image ?? '',
-    restart_count: typeof data.RestartCount === 'number' ? data.RestartCount : null,
-    state: data.State ?? null,
+    image: parsed.Config?.Image ?? '',
+    restart_count: typeof parsed.RestartCount === 'number' ? parsed.RestartCount : null,
+    state: parsed.State ?? null,
   };
 }
 
@@ -114,15 +174,14 @@ export async function getContainerLogs(
   name: string,
   sinceEpochSec: number
 ): Promise<string> {
-  const res = await dockerFetch(
+  const { ok, status, data } = await dockerFetch(
     ctx,
     `/containers/${encodeURIComponent(name)}/logs?stdout=1&stderr=1&timestamps=1&since=${Math.floor(sinceEpochSec)}`
   );
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Docker logs returned ${res.status}: ${text}`);
+  if (!ok) {
+    throw new Error(`Docker logs returned ${status}: ${truncateText(decodeBody(data))}`);
   }
-  return demuxDockerStream(await res.arrayBuffer());
+  return demuxDockerStream(data);
 }
 
 /** docker exec sh -c <cmd> → combined stdout (mirrors the Python docker_exec helper). */
@@ -146,22 +205,24 @@ export async function dockerExec(
     }
   );
   if (!createRes.ok) {
-    const text = await createRes.text().catch(() => '');
-    throw new Error(`exec create failed (${createRes.status}): ${text}`);
+    throw new Error(
+      `exec create failed (${createRes.status}): ${truncateText(decodeBody(createRes.data))}`
+    );
   }
-  const { Id } = (await createRes.json()) as { Id?: string };
-  if (!Id) {
+  const created = JSON.parse(decodeBody(createRes.data)) as { Id?: string };
+  if (!created.Id) {
     throw new Error('exec create returned no Id');
   }
 
-  const startRes = await dockerFetch(ctx, `/exec/${Id}/start`, {
+  const startRes = await dockerFetch(ctx, `/exec/${created.Id}/start`, {
     method: 'POST',
     body: { Detach: false, Tty: false },
     timeout: EXEC_TIMEOUT_MS,
   });
   if (!startRes.ok) {
-    const text = await startRes.text().catch(() => '');
-    throw new Error(`exec start failed (${startRes.status}): ${text}`);
+    throw new Error(
+      `exec start failed (${startRes.status}): ${truncateText(decodeBody(startRes.data))}`
+    );
   }
-  return demuxDockerStream(await startRes.arrayBuffer());
+  return demuxDockerStream(startRes.data);
 }

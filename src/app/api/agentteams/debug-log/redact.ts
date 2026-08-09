@@ -32,8 +32,9 @@ const PII_PATTERNS: RedactPattern[] = [
     name: 'SECRET_KV',
     keepPrefix: true,
     pattern:
-      /((?:password|passwd|pwd|secret|token|api_?key|access_?key|secret_?key|private_?key|credential|appkey|app_?secret|auth_?token|signing_?key|client_?secret|master_?key)\s*[:=]\s*)(\S+)/gi,
+      /((?:password|passwd|pwd|secret|token|access_?token|refresh_?token|id_?token|api_?key|access_?key|secret_?key|private_?key|credential|appkey|app_?secret|auth_?token|signing_?key|client_?secret|master_?key)\s*[:=]\s*)(\S+)/gi,
   },
+  { name: 'JWT', keepPrefix: false, pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g },
   { name: 'MATRIX_TOKEN', keepPrefix: false, pattern: /\bsyt_[A-Za-z0-9_\-]{10,}\b/g },
   { name: 'HEX_SECRET', keepPrefix: false, pattern: /\b[A-Fa-f0-9]{32,}\b/g },
   { name: 'PASSPORT', keepPrefix: false, pattern: /\b[EeGg]\d{8}\b/g },
@@ -41,7 +42,7 @@ const PII_PATTERNS: RedactPattern[] = [
 ];
 
 const SECRET_FIELD_PATTERN =
-  /^(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key(?:[_-]?secret)?|secret[_-]?access[_-]?key|secret[_-]?key|private[_-]?key|credential|app[_-]?key|app[_-]?secret|auth[_-]?token|signing[_-]?key|client[_-]?secret|master[_-]?key)$/i;
+  /^(?:password|passwd|pwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|accessToken|refreshToken|idToken|api[_-]?key|access[_-]?key(?:[_-]?secret)?|secret[_-]?access[_-]?key|secret[_-]?key|private[_-]?key|credential|app[_-]?key|app[_-]?secret|auth[_-]?token|signing[_-]?key|client[_-]?secret|master[_-]?key)$/i;
 
 export function redactPii(text: string): string {
   if (!text) return text;

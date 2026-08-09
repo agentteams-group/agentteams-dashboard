@@ -55,6 +55,19 @@ describe('redactPii', () => {
     );
   });
 
+  it('masks JWTs', () => {
+    const jwt =
+      'token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c end';
+    expect(redactPii(jwt)).toBe('token **** end');
+  });
+
+  it('masks access_token / refresh_token key-value pairs', () => {
+    expect(redactPii('access_token=syt_abcdefghij1234')).toBe('access_token=****');
+    expect(redactPii('refresh_token: abcdefghijklmnopqrstuvwxyz123456')).toBe(
+      'refresh_token: ****'
+    );
+  });
+
   it('leaves ordinary text untouched', () => {
     const text = 'Worker agentteams-worker-a woke up in room !abc:example';
     expect(redactPii(text)).toBe(text);
@@ -82,6 +95,36 @@ describe('redactJsonStrings', () => {
     expect(
       redactJsonStrings({ password: 'hunter2', nested: { apiKey: 'abc' }, note: 'fine' })
     ).toEqual({ password: '****', nested: { apiKey: '****' }, note: 'fine' });
+  });
+
+  it('blanks access/refresh/id token fields in all common spellings', () => {
+    expect(
+      redactJsonStrings({
+        access_token: 'a',
+        accessToken: 'b',
+        refresh_token: 'c',
+        refreshToken: 'd',
+        id_token: 'e',
+        idToken: 'f',
+        note: 'fine',
+      })
+    ).toEqual({
+      access_token: '****',
+      accessToken: '****',
+      refresh_token: '****',
+      refreshToken: '****',
+      id_token: '****',
+      idToken: '****',
+      note: 'fine',
+    });
+  });
+
+  it('redacts JWT strings nested in objects', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    expect(redactJsonStrings({ profile: { session: jwt } })).toEqual({
+      profile: { session: '****' },
+    });
   });
 
   it('handles arrays at the top level', () => {

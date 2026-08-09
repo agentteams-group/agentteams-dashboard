@@ -67,6 +67,11 @@ function isPrivateIpv6(hostname: string): boolean {
 
 export interface ValidateHomeserverOptions {
   allowPrivateNetwork?: boolean;
+  // When true the URL must match the allowlist (configured or built-in) even
+  // when no MATRIX_HOMESERVER_ALLOWLIST env is set. Use this for routes that
+  // forward the user's access token to the homeserver, so the token is never
+  // sent to an arbitrary public host the operator has not approved.
+  requireAllowlist?: boolean;
 }
 
 export class HomeserverValidationError extends Error {
@@ -117,7 +122,9 @@ export function validateHomeserverUrl(
   }
 
   // An explicitly configured allowlist is exclusive: anything not on it is rejected.
-  if (process.env.MATRIX_HOMESERVER_ALLOWLIST) {
+  // requireAllowlist makes the built-in allowlist exclusive too, so credentials
+  // are only ever sent to an approved host.
+  if (process.env.MATRIX_HOMESERVER_ALLOWLIST || options.requireAllowlist) {
     throw new HomeserverValidationError('host is not in the allowlist');
   }
 

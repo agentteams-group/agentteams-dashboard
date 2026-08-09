@@ -4,11 +4,25 @@
 // proxy). To keep the number of exec round-trips low, each export stage is
 // batched into a single sh script whose output is split locally.
 
+import { randomBytes } from 'node:crypto';
 import { redactJsonStrings, redactPii } from './redact';
 import { dockerExec, DockerContext } from './docker';
 
-const FILE_MARKER = '===DEBUGLOG_FILE===';
-const INDEX_MARKER = '===DEBUGLOG_INDEX===';
+// Per-export random markers. A marker is generated once per collection so a
+// session file containing a literal marker line cannot split or truncate the
+// batched output (a fixed marker would be trivially forgeable).
+interface BatchMarkers {
+  file: string;
+  index: string;
+}
+
+function makeBatchMarkers(): BatchMarkers {
+  const token = randomBytes(16).toString('hex');
+  return {
+    file: `===DEBUGLOG_FILE_${token}===`,
+    index: `===DEBUGLOG_INDEX_${token}===`,
+  };
+}
 
 export interface SessionExportResult {
   containers: number;
@@ -29,13 +43,16 @@ function sanitizeFilename(name: string): string {
 }
 
 /** Split a batched `echo MARKER path; cat path` output into per-file chunks. */
-function splitBatchedFiles(raw: string): Array<{ path: string; content: string }> {
+function splitBatchedFiles(
+  raw: string,
+  fileMarker: string
+): Array<{ path: string; content: string }> {
   const files: Array<{ path: string; content: string }> = [];
   let current: { path: string; lines: string[] } | null = null;
   for (const line of raw.split('\n')) {
-    if (line.startsWith(FILE_MARKER)) {
+    if (line.startsWith(fileMarker)) {
       if (current) files.push({ path: current.path, content: current.lines.join('\n') });
-      current = { path: line.slice(FILE_MARKER.length).trim(), lines: [] };
+      current = { path: line.slice(fileMarker.length).trim(), lines: [] };
     } else if (current) {
       current.lines.push(line);
     }
@@ -112,21 +129,22 @@ async function exportOpenClawSessions(
   sinceEpochSec: number,
   redact: boolean,
   out: SessionExportResult,
-  prefix: string
+  prefix: string,
+  markers: BatchMarkers
 ): Promise<void> {
   const script = [
     `for f in '${sessionsDir}'/*.jsonl; do`,
     `  [ -f "$f" ] || continue`,
-    `  echo "${FILE_MARKER} $f"`,
+    `  echo "${markers.file} $f"`,
     `  cat "$f"`,
     'done',
-    `echo "${INDEX_MARKER}"`,
+    `echo "${markers.index}"`,
     `cat '${sessionsDir}/sessions.json' 2>/dev/null || true`,
   ].join('\n');
 
   const raw = await dockerExec(ctx, container, script);
-  const [filesPart, indexPart] = raw.split(INDEX_MARKER);
-  const files = splitBatchedFiles(filesPart);
+  const [filesPart, indexPart] = raw.split(markers.index);
+  const files = splitBatchedFiles(filesPart, markers.file);
 
   for (const file of files) {
     const filename = file.path.split('/').pop() ?? '';
@@ -178,17 +196,18 @@ async function exportCopawSessions(
   sinceEpochSec: number,
   redact: boolean,
   out: SessionExportResult,
-  prefix: string
+  prefix: string,
+  markers: BatchMarkers
 ): Promise<void> {
   const script = [
     `find '${sessionsDir}' -name '*.json' -type f 2>/dev/null | while read f; do`,
-    `  echo "${FILE_MARKER} $f"`,
+    `  echo "${markers.file} $f"`,
     `  cat "$f"`,
     'done',
   ].join('\n');
 
   const raw = await dockerExec(ctx, container, script);
-  const files = splitBatchedFiles(raw);
+  const files = splitBatchedFiles(raw, markers.file);
 
   for (const file of files) {
     let data: {
@@ -264,18 +283,19 @@ async function exportHermesSessions(
   sinceEpochSec: number,
   redact: boolean,
   out: SessionExportResult,
-  prefix: string
+  prefix: string,
+  markers: BatchMarkers
 ): Promise<void> {
   const script = [
     `for f in '${sessionsDir}'/*.jsonl; do`,
     `  [ -f "$f" ] || continue`,
-    `  echo "${FILE_MARKER} $f"`,
+    `  echo "${markers.file} $f"`,
     `  cat "$f"`,
     'done',
   ].join('\n');
 
   const raw = await dockerExec(ctx, container, script);
-  const files = splitBatchedFiles(raw);
+  const files = splitBatchedFiles(raw, markers.file);
 
   for (const file of files) {
     const filename = file.path.split('/').pop() ?? '';
@@ -314,17 +334,17 @@ async function exportHermesSessions(
     `if command -v python3 >/dev/null 2>&1 && [ -f '${hermesHome}/state.db' ]; then`,
     `  python3 -c "import json,sqlite3;conn=sqlite3.connect('${hermesHome}/state.db');conn.row_factory=sqlite3.Row;rows=conn.execute('SELECT * FROM sessions ORDER BY started_at DESC LIMIT 200').fetchall();print(json.dumps([dict(r) for r in rows],ensure_ascii=False))" 2>/dev/null || true`,
     'fi',
-    `echo "${INDEX_MARKER}"`,
+    `echo "${markers.index}"`,
     `for n in agent.log errors.log gateway.log; do`,
     `  if [ -f '${hermesHome}/logs/'"$n" ]; then`,
-    `    echo "${FILE_MARKER} $n"`,
+    `    echo "${markers.file} $n"`,
     `    cat '${hermesHome}/logs/'"$n"`,
     '  fi',
     'done',
   ].join('\n');
 
   const aux = await dockerExec(ctx, container, auxScript);
-  const [dbPart, logsPart] = aux.split(INDEX_MARKER);
+  const [dbPart, logsPart] = aux.split(markers.index);
 
   const dbRaw = (dbPart ?? '').trim();
   if (dbRaw) {
@@ -337,7 +357,7 @@ async function exportHermesSessions(
     }
   }
 
-  for (const log of splitBatchedFiles(logsPart ?? '')) {
+  for (const log of splitBatchedFiles(logsPart ?? '', markers.file)) {
     if (!log.content.trim()) continue;
     out.files[`${prefix}/${sanitizeFilename(log.path)}`] = redact
       ? redactPii(log.content)
@@ -353,7 +373,8 @@ export async function exportAgentSessions(
   ctx: DockerContext,
   containers: string[],
   sinceEpochSec: number,
-  redact: boolean
+  redact: boolean,
+  stop?: () => boolean
 ): Promise<SessionExportResult> {
   const out: SessionExportResult = {
     containers: 0,
@@ -363,7 +384,10 @@ export async function exportAgentSessions(
     errors: [],
   };
 
+  const markers = makeBatchMarkers();
+
   for (const container of containers) {
+    if (stop?.()) break;
     const prefix = `agent-sessions/${sanitizeFilename(container)}`;
     try {
       const { runtime, sessionsDir } = await detectRuntime(ctx, container);
@@ -371,16 +395,18 @@ export async function exportAgentSessions(
 
       const before = out.sessions;
       if (runtime === 'openclaw') {
-        await exportOpenClawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix);
+        await exportOpenClawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
       } else if (runtime === 'hermes') {
-        await exportHermesSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix);
+        await exportHermesSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
       } else {
-        await exportCopawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix);
+        await exportCopawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
       }
       if (out.sessions > before) out.containers += 1;
     } catch (err) {
+      // Redact upstream error bodies (which may echo tokens) before they land
+      // in summary.txt, regardless of the user's redact toggle.
       out.errors.push(
-        `${container}: ${err instanceof Error ? err.message : 'session export failed'}`
+        redactPii(`${container}: ${err instanceof Error ? err.message : 'session export failed'}`)
       );
     }
   }

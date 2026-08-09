@@ -88,4 +88,33 @@ describe('validateHomeserverUrl', () => {
       expect((err as HomeserverValidationError).reason).toMatch(/private network/);
     }
   });
+
+  it('requireAllowlist accepts an allowlisted host', () => {
+    const out = validateHomeserverUrl('https://matrix.org', { requireAllowlist: true });
+    expect(out.hostname).toBe('matrix.org');
+  });
+
+  it('requireAllowlist rejects a host outside the allowlist', () => {
+    expect(() =>
+      validateHomeserverUrl('https://attacker.example', { requireAllowlist: true })
+    ).toThrow(HomeserverValidationError);
+  });
+
+  it('requireAllowlist without env still rejects unknown public hosts and keeps built-ins', () => {
+    const saved = process.env.MATRIX_HOMESERVER_ALLOWLIST;
+    delete process.env.MATRIX_HOMESERVER_ALLOWLIST;
+    try {
+      expect(() =>
+        validateHomeserverUrl('https://attacker.example', { requireAllowlist: true })
+      ).toThrow(HomeserverValidationError);
+      const out = validateHomeserverUrl('https://matrix.org', { requireAllowlist: true });
+      expect(out.hostname).toBe('matrix.org');
+    } finally {
+      if (saved === undefined) {
+        delete process.env.MATRIX_HOMESERVER_ALLOWLIST;
+      } else {
+        process.env.MATRIX_HOMESERVER_ALLOWLIST = saved;
+      }
+    }
+  });
 });
