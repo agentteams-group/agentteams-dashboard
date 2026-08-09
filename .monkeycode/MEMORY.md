@@ -176,3 +176,11 @@ This file records user instructions, preferences, and teachings for reference in
 - Instructions:
   - Fixed pre-existing failures in `src/app/api/agentteams/workers/[name]/files/route.test.ts`: (1) it passed `new Request(...)` but the handler reads `request.nextUrl.searchParams`, so the typecheck failed (`Request` not assignable to `NextRequest`) and vitest threw `Cannot read properties of undefined (reading 'searchParams')`; fix = import `NextRequest` from 'next/server' and construct `new NextRequest('http://localhost')`. (2) `createObjectStream` used `queueMicrotask`, which fires BEFORE the handler registers 'data'/'end' listeners (handler waits on its `await params` continuation, which runs after the microtask queue), so events were lost and tests hung until timeout; fix = use `setImmediate` (fires after all microtasks). (3) assertions were stale: handler returns `prefix: ''` and strips `agents/` via `stripAgentsPrefix`; updated expected objects accordingly.
   - debug-log validation status: homeserver-allowlist (15), redact (20), route (6) tests all pass; lint clean; typecheck clean for the 9 debug-log files.
+
+[Project Knowledge Summary]
+- Date: 2026-08-09
+- Context: Discovered by Agent while updating v1.2.2 tag to current main and syncing docs with code
+- Category: Testing Methods
+- Instructions:
+  - Full test suite is `npm test -- --reporter=dot` via vitest; current baseline is 445/445 passing across 58 test files (~88s runtime). `npm run typecheck` reports 0 errors (the historical `workers/[name]/files/route.test.ts` failures are fixed).
+  - `v1.2.2` tag was force-moved from 9097262 to the current main HEAD (59ae215) after the debug-log + worker-files merge; install docs still reference `v1.2.0-beta.1` as the installer default tag.
