@@ -21,9 +21,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Wifi, WifiOff, Loader2, RotateCcw, Clock, Server, History, Stethoscope } from 'lucide-react';
+import { Wifi, WifiOff, Loader2, RotateCcw, Clock, Server, History, Stethoscope, FileDown } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { TroubleshootTab } from './settings/troubleshoot-tab';
+import { DebugLogTab } from './settings/debug-log-tab';
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -119,11 +120,15 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="connection">连接</TabsTrigger>
             <TabsTrigger value="troubleshoot">
               <Stethoscope className="w-3.5 h-3.5 mr-1" />
               AI 诊断
+            </TabsTrigger>
+            <TabsTrigger value="debug-log">
+              <FileDown className="w-3.5 h-3.5 mr-1" />
+              日志收集
             </TabsTrigger>
           </TabsList>
 
@@ -306,6 +311,10 @@ export function SettingsDialog() {
 
           <TabsContent value="troubleshoot" className="py-4">
             <TroubleshootTab />
+          </TabsContent>
+
+          <TabsContent value="debug-log" className="py-4">
+            <DebugLogTab />
           </TabsContent>
         </Tabs>
 

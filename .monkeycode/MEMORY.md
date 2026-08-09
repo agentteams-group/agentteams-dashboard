@@ -81,11 +81,11 @@ This file records user instructions, preferences, and teachings for reference in
   - PR #27 created: https://github.com/agentteams-group/agentteams-dashboard/pull/27
 
 [Project Knowledge Summary]
-- Date: 2026-07-29
-- Context: Discovered by Agent while verifying resource deletion locking
+- Date: 2026-08-09
+- Context: Updated during PR #78 debug-log review validation
 - Category: Environment Configuration
 - Instructions:
-  - The workspace currently has no installed Node.js dependencies; `npm test`, `npm run typecheck`, and `npm run lint` cannot resolve their project executables.
+  - Dependencies are installed via `npm ci --no-audit --no-fund` (lockfile is current); after that `npm run typecheck` / `npm run lint` / `npm test` resolve their executables.
 
 [Project Knowledge Summary]
 - Date: 2026-08-01
@@ -168,3 +168,11 @@ This file records user instructions, preferences, and teachings for reference in
   - Test mock pattern: use static vi.mock at module level for hooks and skill-package; avoid vi.doMock with await in beforeEach
   - File input has no label text; use document.querySelector('input[type="file"]') instead of screen.getByLabelText
   - 368 tests pass across 46 test files; typecheck clean
+
+[Project Knowledge Summary]
+- Date: 2026-08-09
+- Context: Discovered by Agent while validating PR #78 debug-log changes; fixed same day
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Fixed pre-existing failures in `src/app/api/agentteams/workers/[name]/files/route.test.ts`: (1) it passed `new Request(...)` but the handler reads `request.nextUrl.searchParams`, so the typecheck failed (`Request` not assignable to `NextRequest`) and vitest threw `Cannot read properties of undefined (reading 'searchParams')`; fix = import `NextRequest` from 'next/server' and construct `new NextRequest('http://localhost')`. (2) `createObjectStream` used `queueMicrotask`, which fires BEFORE the handler registers 'data'/'end' listeners (handler waits on its `await params` continuation, which runs after the microtask queue), so events were lost and tests hung until timeout; fix = use `setImmediate` (fires after all microtasks). (3) assertions were stale: handler returns `prefix: ''` and strips `agents/` via `stripAgentsPrefix`; updated expected objects accordingly.
+  - debug-log validation status: homeserver-allowlist (15), redact (20), route (6) tests all pass; lint clean; typecheck clean for the 9 debug-log files.
