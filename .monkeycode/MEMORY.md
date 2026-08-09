@@ -183,4 +183,4 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Testing Methods
 - Instructions:
   - Full test suite is `npm test -- --reporter=dot` via vitest; current baseline is 445/445 passing across 58 test files (~88s runtime). `npm run typecheck` reports 0 errors (the historical `workers/[name]/files/route.test.ts` failures are fixed).
-  - `v1.2.2` tag was force-moved from 9097262 to the current main HEAD (59ae215) after the debug-log + worker-files merge; install docs still reference `v1.2.0-beta.1` as the installer default tag.
+  - `v1.2.2` tag was force-moved from 9097262 to the current main HEAD (4b5f0f3) after the debug-log + worker-files merge; the Dashboard installers default to `v1.2.2` (install/agentteams-install.sh, install/agentteams-dashboard.sh, install/agentteams-dashboard.ps1).

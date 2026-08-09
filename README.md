@@ -59,7 +59,7 @@ Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via a patch file under `install/patches/`. When applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
 
 - **Current Dashboard release**: `v1.2.2`
-- **Installer default**: `v1.2.0-beta.1`; set `AGENTTEAMS_DASHBOARD_VERSION=v1.2.2` to install the current release
+- **Installer default**: `v1.2.2`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -86,7 +86,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.0-beta.1` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.2` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 

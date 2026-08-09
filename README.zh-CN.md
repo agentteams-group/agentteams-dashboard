@@ -59,7 +59,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
 - **当前 Dashboard 发布标签**：`v1.2.2`
-- **安装器默认版本**：`v1.2.0-beta.1`；设置 `AGENTTEAMS_DASHBOARD_VERSION=v1.2.2` 可安装当前发布版本
+- **安装器默认版本**：`v1.2.2`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
 - **集成 PR**：https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -86,7 +86,7 @@ bash install/agentteams-dashboard.sh uninstall
 |------|------|--------|
 | `AGENTTEAMS_DASHBOARD` | 是否安装 Dashboard（`1`=安装，`0`=跳过） | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Dashboard 主机端口 | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.0-beta.1` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.2` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Dashboard 完整镜像名 | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL（共享登录，显式配置优先） | 自动探测 |
 

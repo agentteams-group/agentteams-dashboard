@@ -14,7 +14,7 @@ param(
     [ValidateSet("install", "update", "uninstall")]
     [string]$Action = "install",
 
-    [string]$DashboardVersion = "v1.2.0-beta.1",
+    [string]$DashboardVersion = "v1.2.2",
     [int]$Port = 13000,
     [string]$Image = "",
     [string]$ControllerUrl = "http://agentteams-controller:8090",

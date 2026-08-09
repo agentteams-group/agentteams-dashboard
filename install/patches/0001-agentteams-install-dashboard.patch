@@ -105,7 +105,7 @@ index 7515f7a..d3afa70 100755
 +    else
 +        fail "Exec quick-start: wrong port (got: $(echo "${_qs_result}" | grep RESULT_PORT))"
 +    fi
-+    if echo "${_qs_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.2.0-beta.1"; then
++    if echo "${_qs_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.2.2"; then
 +        pass "Exec quick-start: image tag matches default version"
 +    else
 +        fail "Exec quick-start: wrong image (got: $(echo "${_qs_result}" | grep RESULT_IMAGE))"

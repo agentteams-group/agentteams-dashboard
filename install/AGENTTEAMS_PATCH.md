@@ -133,7 +133,7 @@ The patch adds the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENTTEAMS_DASHBOARD` | `1` | Install Dashboard? (1=yes, 0=no) |
-| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.2.0-beta.1` | Dashboard version tag (independent of AgentTeams version) |
+| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.2.2` | Dashboard version tag (independent of AgentTeams version) |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | derived | Full image reference (uses `AGENTTEAMS_DASHBOARD_VERSION`) |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | auto-detected | Higress Console URL for shared login |
@@ -169,7 +169,7 @@ The patch adds the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DASHBOARD_CONTEXT` | `../agentteams-dashboard` | Path to dashboard source tree |
-| `DASHBOARD_VERSION` | `v1.2.0-beta.1` | Dashboard version tag |
+| `DASHBOARD_VERSION` | `v1.2.2` | Dashboard version tag |
 | `DASHBOARD_IMAGE` | derived | Full image reference |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 

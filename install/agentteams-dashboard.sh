@@ -17,7 +17,7 @@ set -euo pipefail
 CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
-DEFAULT_DASHBOARD_VERSION="v1.2.0-beta.1"
+DEFAULT_DASHBOARD_VERSION="v1.2.2"
 # Must match the Makefile image coordinates (REGISTRY/REPO/name).
 DEFAULT_REGISTRY="higress-registry.cn-hangzhou.cr.aliyuncs.com"
 DEFAULT_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:${DEFAULT_DASHBOARD_VERSION}"
