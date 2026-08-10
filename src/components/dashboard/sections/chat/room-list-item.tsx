@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Bot, Crown, Hash, UserCheck, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/dashboard/copy-button';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './room-info';
 
 const PHASE_COLOR: Record<string, string> = {
@@ -48,9 +49,20 @@ export function RoomListItem({
   isSelected: boolean;
   onClick: () => void;
 }) {
+  // Clear the unread red dot immediately on click. The actual m.fully_read
+  // upload (and any subsequent server-confirmed reset) is handled by
+  // ChatRoom's markAllRead — but doing this here too means the badge
+  // disappears the moment the user selects the room, even before the
+  // message query resolves.
+  const handleClick = () => {
+    if (room.unreadCount && room.unreadCount > 0) {
+      useRoomMetaStore.getState().clearUnread(room.id);
+    }
+    onClick();
+  };
   return (
     <motion.button
-      onClick={onClick}
+      onClick={handleClick}
       className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
         isSelected
           ? 'bg-emerald-500/10 border border-emerald-500/30'

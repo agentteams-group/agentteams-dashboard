@@ -87,14 +87,24 @@ export interface RoomMeta {
   unreadCount?: number;
   unreadHighlightCount?: number;
   updatedAt: number;
+  /**
+   * Epoch ms at which the user last marked this room as read locally.
+   * Used to ignore stale `unread_notifications` from the homeserver for
+   * a short grace period (some self-hosted homeservers don't reset the
+   * counter on `m.fully_read` and keep returning the old count).
+   */
+  clearedAt?: number;
 }
 
 interface RoomMetaStore {
   meta: Record<string, RoomMeta>;
-  setRoomMeta: (_roomId: string, _meta: Partial<Omit<RoomMeta, 'updatedAt'>>) => void;
+  setRoomMeta: (_roomId: string, _meta: Partial<Omit<RoomMeta, 'updatedAt' | 'clearedAt'>>) => void;
   clearUnread: (_roomId: string) => void;
   forgetRoom: (_roomId: string) => void;
 }
+
+/** How long after clearUnread we ignore stale unread counts from /sync. */
+const UNREAD_GRACE_MS = 30_000;
 
 export const useRoomMetaStore = create<RoomMetaStore>()((set) => ({
   meta: {},
@@ -102,6 +112,16 @@ export const useRoomMetaStore = create<RoomMetaStore>()((set) => ({
     set((state) => {
       const prev = state.meta[roomId] ?? { updatedAt: 0 };
       const next: RoomMeta = { ...prev, ...partial, updatedAt: Date.now() };
+
+      // If the user just marked this room as read locally, ignore any
+      // incoming non-zero unread counts from /sync until the grace
+      // period elapses. lastMessageTs still flows through so the sidebar
+      // recency sort remains accurate.
+      if (prev.clearedAt && Date.now() - prev.clearedAt < UNREAD_GRACE_MS) {
+        if ((partial.unreadCount ?? 0) > 0) delete next.unreadCount;
+        if ((partial.unreadHighlightCount ?? 0) > 0) delete next.unreadHighlightCount;
+      }
+
       if (
         prev.lastMessageTs === next.lastMessageTs &&
         prev.unreadCount === next.unreadCount &&
@@ -114,11 +134,33 @@ export const useRoomMetaStore = create<RoomMetaStore>()((set) => ({
   clearUnread: (roomId) =>
     set((state) => {
       const prev = state.meta[roomId];
-      if (!prev || (prev.unreadCount === 0 && prev.unreadHighlightCount === 0)) return state;
+      if (!prev || (prev.unreadCount === 0 && prev.unreadHighlightCount === 0)) {
+        // Still stamp clearedAt so a future server-confirmed non-zero value
+        // gets suppressed in the grace window.
+        if (!prev?.clearedAt) {
+          return {
+            meta: {
+              ...state.meta,
+              [roomId]: {
+                ...(prev ?? { updatedAt: 0 }),
+                clearedAt: Date.now(),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }
+        return state;
+      }
       return {
         meta: {
           ...state.meta,
-          [roomId]: { ...prev, unreadCount: 0, unreadHighlightCount: 0, updatedAt: Date.now() },
+          [roomId]: {
+            ...prev,
+            unreadCount: 0,
+            unreadHighlightCount: 0,
+            clearedAt: Date.now(),
+            updatedAt: Date.now(),
+          },
         },
       };
     }),
