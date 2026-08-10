@@ -674,12 +674,21 @@ export const agentteamsApi = {
   },
 
   // Worker skills distribution
-  listWorkerSkills: (workerName: string) =>
-    proxyRequest<WorkerSkillsListResponse>(`/workers/${encodeURIComponent(workerName)}/skills`),
+  listWorkerSkills: (workerName: string, runtime?: string | null) => {
+    const qs = runtime ? `?runtime=${encodeURIComponent(runtime)}` : '';
+    return proxyRequest<WorkerSkillsListResponse>(
+      `/workers/${encodeURIComponent(workerName)}/skills${qs}`,
+    );
+  },
 
-  uploadWorkerSkill: (workerName: string, file: File): Promise<WorkerSkillUploadResponse> => {
+  uploadWorkerSkill: (
+    workerName: string,
+    file: File,
+    runtime?: string | null,
+  ): Promise<WorkerSkillUploadResponse> => {
     const form = new FormData();
     form.append('file', file);
+    if (runtime) form.append('runtime', runtime);
     return fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills`), {
       method: 'POST',
       body: form,

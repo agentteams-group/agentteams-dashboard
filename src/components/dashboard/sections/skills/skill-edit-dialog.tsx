@@ -31,11 +31,21 @@ export function SkillEditDialog({ skill, open, onOpenChange, onSuccess }: SkillE
   const handleSave = useCallback(async () => {
     if (!skill) return;
     setError('');
+    // Only include fields the user actually touched so the server can
+    // distinguish "explicitly cleared" (empty string) from "untouched"
+    // (omitted). Sending the raw value when the input is non-empty lets
+    // intentional edits through; sending undefined when empty avoids
+    // clobbering the server-side value with an empty string.
+    const data: { description?: string; version?: string } = {};
+    if (description !== (skill.description ?? '')) data.description = description;
+    if (version !== (skill.version ?? '')) data.version = version || undefined;
+    if (Object.keys(data).length === 0) {
+      onOpenChange(false);
+      onSuccess?.();
+      return;
+    }
     try {
-      await updateMutation.mutateAsync({
-        name: skill.name,
-        data: { description, version: version || undefined },
-      });
+      await updateMutation.mutateAsync({ name: skill.name, data });
       onOpenChange(false);
       onSuccess?.();
     } catch (err) {

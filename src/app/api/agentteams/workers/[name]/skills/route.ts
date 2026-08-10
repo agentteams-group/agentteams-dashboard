@@ -56,8 +56,10 @@ async function restartWorker(workerName: string): Promise<{ ok: boolean; error?:
 }
 
 export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ name: string }> },
+  request: NextRequest,
+  {
+    params,
+  }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
   if (!isValidNameSegment(name)) {
@@ -71,7 +73,11 @@ export async function GET(
   }
 
   try {
-    const prefix = workerSkillsPrefix(name);
+    // The frontend passes the worker's runtime via ?runtime= so we list
+    // skills from the correct workspace path. Falls back to the canonical
+    // skills/ directory when omitted.
+    const runtime = request.nextUrl.searchParams.get('runtime') || null;
+    const prefix = workerSkillsPrefix(name, runtime);
     const skills = new Set<string>();
 
     const stream = client.listObjects(bucket, prefix, false);
@@ -138,8 +144,14 @@ export async function POST(
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    // The frontend includes the worker's runtime in the multipart body when
+    // known. Different runtimes read skills from different on-disk paths
+    // (e.g. QwenPaw from `.qwenpaw/workspaces/default/skills/`) which we
+    // mirror in MinIO so the worker side finds the files where it expects.
+    const runtime = (form.get('runtime') as string | null) || null;
+
     for (const f of parsed.files) {
-      const key = skillObjectKey(name, parsed.skillName, f.relativePath);
+      const key = skillObjectKey(name, parsed.skillName, f.relativePath, runtime);
       await client.putObject(bucket, key, Buffer.from(f.data), f.data.byteLength, {
         'Content-Type': 'application/octet-stream',
       });
@@ -158,7 +170,8 @@ export async function POST(
       skillName: parsed.skillName,
       description: parsed.description,
       filesCount: parsed.files.length,
-      prefix: workerSkillsPrefix(name),
+      prefix: workerSkillsPrefix(name, runtime),
+      runtime: runtime ?? 'openclaw',
       note,
     });
   } catch (err: unknown) {

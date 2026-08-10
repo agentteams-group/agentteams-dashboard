@@ -101,8 +101,13 @@ export async function PUT(
 
     const updated: SkillEntry = {
       ...metadata,
-      description: body.description ?? metadata.description,
-      version: body.version ?? metadata.version,
+      // Use `!== undefined` (not `??`) so that an empty string submitted
+      // explicitly through the edit dialog is preserved — only an absent
+      // field falls back to the existing value. Otherwise a user clearing
+      // the description input would wipe the original description.
+      description:
+        body.description !== undefined ? body.description : metadata.description,
+      version: body.version !== undefined ? body.version : metadata.version,
       updatedAt: new Date().toISOString(),
     };
 

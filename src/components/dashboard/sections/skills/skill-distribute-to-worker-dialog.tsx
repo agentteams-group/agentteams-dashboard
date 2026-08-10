@@ -66,7 +66,17 @@ export function SkillDistributeToWorkerDialog({
     // Step 2: Upload to worker
     setStep('uploading');
     try {
-      await agentteamsApi.uploadWorkerSkill(selectedWorker, file);
+      // Look up the worker's runtime so the server can write the skill
+      // files to the correct on-disk path. Different runtimes read from
+      // different workspace roots (QwenPaw uses .qwenpaw/workspaces/default/,
+      // Copaw uses .copaw/workspaces/default/, others use the canonical
+      // skills/ directory).
+      const targetWorker = workers.find((w) => w.name === selectedWorker);
+      await agentteamsApi.uploadWorkerSkill(
+        selectedWorker,
+        file,
+        targetWorker?.runtime,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传技能到 Worker 失败');
       setStep('idle');

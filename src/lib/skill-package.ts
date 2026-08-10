@@ -1,11 +1,16 @@
 import { unzipSync } from 'fflate';
+import type { WorkerRuntime } from './agentteams-api';
 
 /**
  * Skill package parsing and validation for Dashboard-driven skill distribution.
  *
  * A skill package is a ZIP archive whose single top-level skill directory must
  * contain a SKILL.md with `name` and `description` frontmatter. Files are
- * written to the worker's storage prefix `agents/{workerName}/skills/{skillName}/`.
+ * written to the worker's storage prefix. The exact prefix depends on the
+ * worker's runtime — QwenPaw reads from `.qwenpaw/workspaces/default/skills/`,
+ * Copaw from `.copaw/workspaces/default/skills/`, while OpenClaw / Hermes /
+ * OpenHuman read from the canonical `skills/` directory. The mapping lives
+ * in {@link runtimeSkillsSubpath} so it can be unit-tested in isolation.
  */
 
 /** Maximum accepted skill package size (matches controller package upload cap). */
@@ -184,11 +189,49 @@ export function parseSkillPackage(zipData: Uint8Array): ParsedSkillPackage {
 }
 
 /**
- * Builds the storage key for a skill file under a worker's skill prefix.
+ * Build the per-runtime subpath under `agents/{workerName}/` where skills
+ * are stored. Returns the trailing-slash fragment that prefixes the skill
+ * folder name.
+ *
+ *   openclaw    → skills/
+ *   hermes      → skills/        (Hermes reads skills from the same root)
+ *   openhuman   → skills/        (OpenHuman agents don't ship a separate
+ *                                  workspace; verified by the install script
+ *                                  which places their working files under
+ *                                  the agent root)
+ *   copaw       → .copaw/workspaces/default/skills/
+ *   qwenpaw     → .qwenpaw/workspaces/default/skills/
+ *   (undefined) → skills/        (fallback for older workers without runtime)
+ */
+export function runtimeSkillsSubpath(runtime?: string | null): string {
+  switch (runtime) {
+    case 'copaw':
+      return '.copaw/workspaces/default/skills/';
+    case 'qwenpaw':
+      return '.qwenpaw/workspaces/default/skills/';
+    case 'openclaw':
+    case 'hermes':
+    case 'openhuman':
+    default:
+      return 'skills/';
+  }
+}
+
+/**
+ * Build the storage key for a skill file under a worker's skills prefix.
  * Callers must have already validated both names with {@link isValidNameSegment};
  * this function asserts the invariant and rejects path escape defensively.
+ *
+ * When `runtime` is provided the per-runtime subpath is used (see
+ * {@link runtimeSkillsSubpath}); otherwise falls back to the canonical
+ * `skills/` directory.
  */
-export function skillObjectKey(workerName: string, skillName: string, relativePath: string): string {
+export function skillObjectKey(
+  workerName: string,
+  skillName: string,
+  relativePath: string,
+  runtime?: string | null,
+): string {
   if (!isValidNameSegment(workerName) || !isValidNameSegment(skillName)) {
     throw new SkillPackageError('Worker 名或技能名不合法。');
   }
@@ -196,13 +239,13 @@ export function skillObjectKey(workerName: string, skillName: string, relativePa
   if (cleanRelative === null) {
     throw new SkillPackageError(`技能文件路径不合法：${relativePath}`);
   }
-  return `agents/${workerName}/skills/${skillName}/${cleanRelative}`;
+  return `agents/${workerName}/${runtimeSkillsSubpath(runtime)}${skillName}/${cleanRelative}`;
 }
 
-/** Returns the worker's skills prefix: `agents/{workerName}/skills/`. */
-export function workerSkillsPrefix(workerName: string): string {
+/** Returns the worker's skills prefix, optionally scoped to a runtime. */
+export function workerSkillsPrefix(workerName: string, runtime?: string | null): string {
   if (!isValidNameSegment(workerName)) {
     throw new SkillPackageError('Worker 名不合法。');
   }
-  return `agents/${workerName}/skills/`;
+  return `agents/${workerName}/${runtimeSkillsSubpath(runtime)}`;
 }
