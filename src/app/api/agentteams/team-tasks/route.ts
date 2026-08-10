@@ -1,53 +1,42 @@
 // GET /api/agentteams/team-tasks
 //
-// Aggregate task data persisted by AgentTeams workers/managers into a
-// normalized list of task entries. The server side is the only place that
-// knows the configured MinIO bucket (it comes from
-// AGENTTEAMS_FS_BUCKET / AGENTTEAMS_MINIO_BUCKET env vars), so probing
-// candidate prefixes must happen here.
+// Aggregate task and project data persisted by AgentTeams workers / managers
+// into a normalized list of entries. Scoped to the configured MinIO bucket
+// (AGENTTEAMS_FS_BUCKET / AGENTTEAMS_MINIO_BUCKET). No Matrix traffic —
+// this endpoint intentionally only reads from MinIO so callers can populate
+// a task board without paying for /sync.
 //
-// IMPORTANT — primary data source is Matrix room history, not MinIO.
-// As confirmed by the operator:
+// Storage layout (per the AgentTeams upstream task-management /
+// project-management skills, see manager/agent/skills/{task,project}-management
+// in https://github.com/agentscope-ai/AgentTeams):
 //
-//   "任务协作数据实际落在 teams/tech-commercialization/shared/knowledge/ 下,
-//    以 snspd-tech-to-scenario-20260809-* 形式存在；项目元数据则在
-//    teams/tech-commercialization/shared/projects/。不过当前这些目录在
-//    MinIO 侧只有占位目录，具体文件是否已同步到本地镜像还需要 file-sync
-//    后再读。"
+//   shared/tasks/{task-id}/
+//     meta.json     { task_id, task_title, assigned_to, room_id,
+//                     project_id, status, depends_on, assigned_at,
+//                     completed_at, ... }
+//     spec.md       human-readable spec written by the manager
+//     plan.md       worker-written execution plan
+//     result.md     worker-written final report; first non-empty line
+//                     after `## Outcome` is one of:
+//                       SUCCESS | SUCCESS_WITH_NOTES |
+//                       REVISION_NEEDED | BLOCKED
 //
-// Concretely: Leader and Workers report task status in Matrix rooms
-// (`m.room.message` payloads with `agentteams.workflow` and
-// `org.agentteams.status` keys). Dashboard's Matrix sync already
-// extracts these into the live task store; this endpoint is a *fallback*
-// that scans MinIO for any persisted file copies.
+//   shared/projects/{project-id}/
+//     meta.json     { project_id, project_name, status, workers[],
+//                     leader, project_room_id, created_at, ... }
+//     plan.md       project-wide plan with sections `## Phase N: <name>`
+//                     and lines like `- [ ] task-...  <title>  (owner: alice)`
+//                     whose bracket prefix tracks phase/task progress.
 //
-// MinIO storage layout (team-scoped, per the actual file-sync source):
+//   agents/{worker-name}/task-history.json   per-worker flat array of
+//     finished task records (backup/audit trail).
 //
-//   teams/{team-name}/shared/knowledge/{name}.md   <- team task notes
-//   teams/{team-name}/shared/projects/{name}/      <- project directory
-//     meta.json                                    <- project metadata
-//     plan.md
-//
-//   agents/{worker-name}/task-history.json        <- per-worker flat array
-//
-// We probe in priority order:
-//   1) teams/{team}/shared/knowledge/   — primary (team-scoped task notes)
-//   2) teams/{team}/shared/projects/     — project metadata
-//   3) agents/*/task-history.json       — per-worker history
-//   4) shared/tasks/, shared/projects/   — older (un-scoped) layout
-//   5) team/, teams/, team-tasks/        — legacy fallbacks
-//
-// Per-task meta.json may be: single object, top-level array, or
-// { tasks: [...] } envelope. unwrapFileContent() handles all three.
-//
-// Response:
-//   {
-//     tasks: TaskEntry[],
-//     scannedKeys: string[],
-//     matchedPrefixes: string[],
-//     bucket: string,
-//     scannedAt: epoch ms
-//   }
+// We probe in priority order, each task contributing independently to the
+// final list:
+//   1) shared/tasks/         — per-task directory (meta.json + plan.md
+//                              + result.md when present)
+//   2) shared/projects/      — per-project directory (meta.json + plan.md)
+//   3) agents/*/task-history.json — per-worker audit log
 //
 // Empty arrays are returned on any error (network, missing bucket, etc.)
 // so the dashboard degrades gracefully and shows a diagnostic banner.
@@ -58,72 +47,158 @@ import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 
 export const dynamic = 'force-dynamic';
 
-interface RawTask {
-  runId?: string;
-  title?: string;
-  name?: string;
-  status?: string;
-  roomId?: string;
-  senderMatrixUserId?: string;
-  createdAt?: string | number;
-  updatedAt?: string | number;
-  subagents?: unknown;
-  steps?: unknown;
-  [k: string]: unknown;
+// ----- Public response types -----
+
+export type TaskStatus =
+  | 'pending'
+  | 'assigned'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'unknown';
+
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'unknown';
+
+export type TaskOutcome = 'SUCCESS' | 'SUCCESS_WITH_NOTES' | 'REVISION_NEEDED' | 'BLOCKED' | null;
+
+export interface PhasePlan {
+  /** "Phase 1", "Phase 2: design", or whatever the manager wrote. */
+  heading: string;
+  /** Tasks listed under this phase. */
+  items: PlanItem[];
 }
 
-export interface TaskEntry {
-  runId: string;
+export interface PlanItem {
+  /** Raw bracket prefix: '[ ]', '[~]', '[x]', '[!]', '[→]'. */
+  marker: string;
+  /** The task id if it can be parsed (matches `task-YYYYMMDD-HHMMSS`). */
+  taskId?: string;
+  /** Owner name as parsed from `(owner: <name>)`; otherwise undefined. */
+  owner?: string;
+  /** Free-form title text after the task id. */
+  text: string;
+  /** True when marker is `[~]` (in-progress). */
+  inProgress: boolean;
+  /** True when marker is `[x]`. */
+  done: boolean;
+  /** True when marker is `[!]`. */
+  blocked: boolean;
+}
+
+export interface TaskBoardTask {
+  runId: string; // canonical id (meta.json's task_id; falls back to runId/run_id for legacy)
   title: string;
-  status: string;
+  status: TaskStatus;
+  /** Owning worker Matrix user id or display name. */
+  assignedTo: string;
+  /** Owning project id when the task was created under a project. */
+  projectId?: string;
+  /** Matrix room id where the manager / worker is collaborating. */
   roomId: string;
-  senderMatrixUserId: string;
+  /** Worker dependency ids. */
+  dependsOn: string[];
+  /** Epoch ms. */
   createdAt: number;
-  updatedAt: number;
-  subagents: RawTask[];
-  steps: RawTask[];
-  /** MinIO prefix this task came from (e.g. "teams/tech-co/shared/projects/snspd"). */
+  /** Epoch ms, only set when status === 'completed'. */
+  completedAt?: number;
+  /** Parsed from result.md `## Outcome`. */
+  outcome: TaskOutcome;
+  /** Free-form spec body if the file is small (< 4 KB). */
+  spec?: string;
+  /** Where the entry was loaded from — `shared/tasks/{id}`, etc. */
   source: string;
 }
 
-interface ScannedSource {
-  /** Display name for matchedPrefixes list. */
-  prefix: string;
-  /** Type of source so the response can distinguish them. */
-  kind:
-    | 'team-knowledge'
-    | 'team-projects'
-    | 'worker-history'
-    | 'unscoped-shared'
-    | 'legacy-aggregated';
-  /** Object keys actually read. */
-  scannedKeys: string[];
+export interface TaskBoardProject {
+  runId: string; // project id
+  name: string;
+  status: ProjectStatus;
+  /** Project room id. */
+  roomId: string;
+  /** Leader (Manager) display name. */
+  leader?: string;
+  /** Worker display names listed on the project. */
+  workers: string[];
+  /** Phase headings + their plan items. */
+  phases: PhasePlan[];
+  /** Epoch ms. */
+  createdAt: number;
+  /** Epoch ms, set when status === 'completed'. */
+  completedAt?: number;
+  source: string;
 }
 
-const TEAMS_PREFIX = 'teams/';
+export interface TeamTasksResponse {
+  tasks: TaskBoardTask[];
+  projects: TaskBoardProject[];
+  scannedKeys: string[];
+  matchedPrefixes: string[];
+  bucket: string | null;
+  scannedAt: number;
+  error?: string;
+}
+
+// ----- Internals -----
+
+const SHARED_TASKS_PREFIX = 'shared/tasks/';
+const SHARED_PROJECTS_PREFIX = 'shared/projects/';
 const AGENTS_PREFIX = 'agents/';
 const WORKER_HISTORY_FILENAME = 'task-history.json';
 
-const PRIMARY_PROBES: ReadonlyArray<{ prefix: string; kind: ScannedSource['kind'] }> = [
-  // Per the operator-confirmed layout, the team-scoped knowledge/ dir
-  // holds the bulk of the cross-room task notes. We don't know the team
-  // name ahead of time, so we list `teams/` first and walk every team
-  // subdir for its `shared/knowledge/` and `shared/projects/` children.
-  { prefix: 'teams/', kind: 'team-knowledge' },
-  { prefix: 'agents/', kind: 'worker-history' },
-];
+const SPEC_MAX_BYTES = 4 * 1024;
 
-const LEGACY_PROBES: ReadonlyArray<{ prefix: string; kind: ScannedSource['kind'] }> = [
-  { prefix: 'shared/tasks/', kind: 'unscoped-shared' },
-  { prefix: 'shared/projects/', kind: 'unscoped-shared' },
-  { prefix: 'shared/teams/', kind: 'legacy-aggregated' },
-  { prefix: 'shared/team-tasks/', kind: 'legacy-aggregated' },
-  { prefix: 'team/', kind: 'legacy-aggregated' },
-  { prefix: 'teams/', kind: 'legacy-aggregated' },
-  { prefix: 'team-tasks/', kind: 'legacy-aggregated' },
-];
+interface RawMeta {
+  task_id?: string;
+  taskId?: string;
+  runId?: string;
+  run_id?: string;
+  id?: string;
+  task_title?: string;
+  title?: string;
+  name?: string;
+  status?: string;
+  assigned_to?: string;
+  owner?: string;
+  project_id?: string;
+  projectId?: string;
+  room_id?: string;
+  roomId?: string;
+  depends_on?: string[];
+  dependsOn?: string[];
+  assigned_at?: string | number;
+  created_at?: string | number;
+  completed_at?: string | number;
+  [k: string]: unknown;
+}
 
-const LEGACY_FILE_NAMES = ['tasks.json', 'task.json'] as const;
+interface RawProjectMeta {
+  project_id?: string;
+  projectId?: string;
+  runId?: string;
+  run_id?: string;
+  id?: string;
+  project_name?: string;
+  name?: string;
+  title?: string;
+  status?: string;
+  project_room_id?: string;
+  roomId?: string;
+  room_id?: string;
+  leader?: string;
+  leaderName?: string;
+  workers?: string[];
+  members?: string[];
+  created_at?: string | number;
+  confirmed_at?: string | number;
+  completed_at?: string | number;
+  [k: string]: unknown;
+}
+
+interface ListResult {
+  prefixes: string[];
+  files: string[];
+}
 
 function toEpochMs(v: string | number | undefined, fallback: number): number {
   if (typeof v === 'number') return v;
@@ -138,69 +213,209 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function normalizeTask(
-  raw: RawTask,
-  now: number,
-  source: string,
-): TaskEntry | null {
-  if (!isObject(raw)) return null;
-  // runId may live under several keys depending on the writer.
-  const runId =
-    typeof raw.runId === 'string'
-      ? raw.runId
-      : typeof raw.run_id === 'string'
-        ? raw.run_id
-        : typeof raw.id === 'string'
-          ? raw.id
-          : typeof raw.taskId === 'string'
-            ? raw.taskId
-            : null;
-  if (!runId) return null;
+function normalizeStatus(raw?: string): TaskStatus {
+  if (!raw) return 'unknown';
+  const lower = raw.toLowerCase();
+  if (lower === 'pending' || lower === 'queued' || lower === 'planning') return 'pending';
+  if (lower === 'assigned' || lower === 'todo' || lower === 'open') return 'assigned';
+  if (
+    lower === 'in_progress' ||
+    lower === 'in-progress' ||
+    lower === 'inprogress' ||
+    lower === 'running' ||
+    lower === 'active' ||
+    lower === 'working'
+  )
+    return 'in_progress';
+  if (lower === 'completed' || lower === 'success' || lower === 'done' || lower === 'finished')
+    return 'completed';
+  if (lower === 'failed' || lower === 'error') return 'failed';
+  if (lower === 'blocked' || lower === 'paused' || lower === 'waiting') return 'blocked';
+  return 'unknown';
+}
 
-  const created = toEpochMs(raw.createdAt, now);
-  const updated = toEpochMs(raw.updatedAt, created);
+function normalizeProjectStatus(raw?: string): ProjectStatus {
+  if (!raw) return 'unknown';
+  const lower = raw.toLowerCase();
+  if (lower === 'planning' || lower === 'draft') return 'planning';
+  if (lower === 'active' || lower === 'in_progress' || lower === 'running') return 'active';
+  if (lower === 'paused' || lower === 'blocked') return 'paused';
+  if (lower === 'completed' || lower === 'done' || lower === 'finished') return 'completed';
+  return 'unknown';
+}
+
+function pickRunId(meta: RawMeta): string | null {
+  if (typeof meta.task_id === 'string') return meta.task_id;
+  if (typeof meta.taskId === 'string') return meta.taskId;
+  if (typeof meta.runId === 'string') return meta.runId;
+  if (typeof meta.run_id === 'string') return meta.run_id;
+  if (typeof meta.id === 'string') return meta.id;
+  return null;
+}
+
+function pickProjectId(meta: RawProjectMeta): string | null {
+  if (typeof meta.project_id === 'string') return meta.project_id;
+  if (typeof meta.projectId === 'string') return meta.projectId;
+  if (typeof meta.runId === 'string') return meta.runId;
+  if (typeof meta.run_id === 'string') return meta.run_id;
+  if (typeof meta.id === 'string') return meta.id;
+  return null;
+}
+
+function normalizeTask(
+  meta: RawMeta,
+  source: string,
+  now: number,
+  outcome: TaskOutcome,
+  spec?: string,
+): TaskBoardTask | null {
+  if (!isObject(meta)) return null;
+  const runId = pickRunId(meta);
+  if (!runId) return null;
+  const created = toEpochMs(
+    meta.assigned_at ?? meta.created_at,
+    now,
+  );
+  const completed = toEpochMs(meta.completed_at, 0) || undefined;
+  const status = normalizeStatus(meta.status);
   return {
     runId,
     title:
-      (typeof raw.title === 'string' && raw.title) ||
-      (typeof raw.name === 'string' && raw.name) ||
+      (typeof meta.task_title === 'string' && meta.task_title) ||
+      (typeof meta.title === 'string' && meta.title) ||
+      (typeof meta.name === 'string' && meta.name) ||
       '未命名任务',
-    status: typeof raw.status === 'string' ? raw.status : 'unknown',
-    roomId: typeof raw.roomId === 'string' ? raw.roomId : '',
-    senderMatrixUserId:
-      typeof raw.senderMatrixUserId === 'string' ? raw.senderMatrixUserId : '',
+    status,
+    assignedTo:
+      (typeof meta.assigned_to === 'string' && meta.assigned_to) ||
+      (typeof meta.owner === 'string' && meta.owner) ||
+      '',
+    projectId:
+      (typeof meta.project_id === 'string' && meta.project_id) ||
+      (typeof meta.projectId === 'string' && meta.projectId) ||
+      undefined,
+    roomId:
+      (typeof meta.room_id === 'string' && meta.room_id) ||
+      (typeof meta.roomId === 'string' && meta.roomId) ||
+      '',
+    dependsOn: Array.isArray(meta.depends_on)
+      ? (meta.depends_on as string[]).filter((d) => typeof d === 'string')
+      : Array.isArray(meta.dependsOn)
+        ? (meta.dependsOn as string[]).filter((d) => typeof d === 'string')
+        : [],
     createdAt: created,
-    updatedAt: updated,
-    subagents: Array.isArray(raw.subagents) ? (raw.subagents as RawTask[]) : [],
-    steps: Array.isArray(raw.steps) ? (raw.steps as RawTask[]) : [],
+    completedAt: status === 'completed' ? completed : undefined,
+    outcome,
+    spec,
     source,
   };
 }
 
-function unwrapFileContent(parsed: unknown): RawTask[] {
-  if (Array.isArray(parsed)) return parsed as RawTask[];
-  if (isObject(parsed) && Array.isArray(parsed.tasks)) {
-    return parsed.tasks as RawTask[];
-  }
-  if (isObject(parsed) && typeof parsed.runId === 'string') {
-    return [parsed as RawTask];
-  }
-  if (isObject(parsed)) {
-    const looksLikeTask =
-      typeof parsed.title === 'string' ||
-      typeof parsed.name === 'string' ||
-      typeof parsed.runId === 'string' ||
-      typeof parsed.run_id === 'string' ||
-      typeof parsed.status === 'string';
-    if (looksLikeTask) return [parsed as RawTask];
-  }
-  return [];
+function normalizeProject(
+  meta: RawProjectMeta,
+  source: string,
+  now: number,
+  phases: PhasePlan[],
+): TaskBoardProject | null {
+  if (!isObject(meta)) return null;
+  const runId = pickProjectId(meta);
+  if (!runId) return null;
+  const created = toEpochMs(meta.created_at ?? meta.confirmed_at, now);
+  const completed = toEpochMs(meta.completed_at, 0) || undefined;
+  return {
+    runId,
+    name:
+      (typeof meta.project_name === 'string' && meta.project_name) ||
+      (typeof meta.name === 'string' && meta.name) ||
+      (typeof meta.title === 'string' && meta.title) ||
+      runId,
+    status: normalizeProjectStatus(meta.status),
+    roomId:
+      (typeof meta.project_room_id === 'string' && meta.project_room_id) ||
+      (typeof meta.roomId === 'string' && meta.roomId) ||
+      (typeof meta.room_id === 'string' && meta.room_id) ||
+      '',
+    leader:
+      (typeof meta.leader === 'string' && meta.leader) ||
+      (typeof meta.leaderName === 'string' && meta.leaderName) ||
+      undefined,
+    workers: Array.isArray(meta.workers)
+      ? (meta.workers as string[]).filter((w) => typeof w === 'string')
+      : Array.isArray(meta.members)
+        ? (meta.members as string[]).filter((w) => typeof w === 'string')
+        : [],
+    phases,
+    createdAt: created,
+    completedAt: normalizeProjectStatus(meta.status) === 'completed' ? completed : undefined,
+    source,
+  };
 }
 
-interface ListResult {
-  prefixes: string[];
-  files: string[];
+// ----- plan.md / result.md parsers -----
+
+const PLAN_TASK_ID_RE = /task-\d{8}-\d{6}/;
+const PLAN_OWNER_RE = /\(owner:\s*([^)\s]+)\s*\)/i;
+const PHASE_HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/;
+
+const RESULT_OUTCOME_RE =
+  /^##\s+Outcome\s*[:：]?\s*([A-Z_]+).*$/im;
+
+function parseOutcomeFromResult(resultMd: string | null): TaskOutcome {
+  if (!resultMd) return null;
+  const match = resultMd.match(RESULT_OUTCOME_RE);
+  if (!match) return null;
+  const raw = match[1].toUpperCase();
+  if (raw === 'SUCCESS') return 'SUCCESS';
+  if (raw === 'SUCCESS_WITH_NOTES') return 'SUCCESS_WITH_NOTES';
+  if (raw === 'REVISION_NEEDED') return 'REVISION_NEEDED';
+  if (raw === 'BLOCKED') return 'BLOCKED';
+  return null;
 }
+
+function parsePlan(planMd: string | null): PhasePlan[] {
+  if (!planMd) return [];
+  const lines = planMd.split(/\r?\n/);
+  const phases: PhasePlan[] = [];
+  let current: PhasePlan | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line) continue;
+
+    const heading = line.match(PHASE_HEADING_RE);
+    if (heading) {
+      const headingText = heading[2].trim();
+      if (/^phase\b/i.test(headingText)) {
+        current = { heading: headingText, items: [] };
+        phases.push(current);
+        continue;
+      }
+      // Non-phase heading ends the current phase list.
+      current = null;
+      continue;
+    }
+
+    const itemMatch = line.match(/^[-*]\s+\[([ x~!→])\]\s+(.+)$/);
+    if (itemMatch && current) {
+      const marker = `[${itemMatch[1]}]`;
+      const rest = itemMatch[2].trim();
+      const idMatch = rest.match(PLAN_TASK_ID_RE);
+      const ownerMatch = rest.match(PLAN_OWNER_RE);
+      current.items.push({
+        marker,
+        taskId: idMatch ? idMatch[0] : undefined,
+        owner: ownerMatch ? ownerMatch[1] : undefined,
+        text: rest,
+        inProgress: itemMatch[1] === '~',
+        done: itemMatch[1] === 'x',
+        blocked: itemMatch[1] === '!',
+      });
+    }
+  }
+  return phases;
+}
+
+// ----- MinIO IO -----
 
 async function listAtPrefix(
   client: Client,
@@ -227,240 +442,151 @@ async function getObjectText(
   client: Client,
   bucket: string,
   key: string,
+  maxBytes = 256 * 1024,
 ): Promise<string | null> {
   try {
+    const stat = await client.statObject(bucket, key);
+    if (stat.size > maxBytes) return null;
     const stream = await client.getObject(bucket, key);
     return new Promise<string | null>((resolve, reject) => {
       const chunks: Buffer[] = [];
-      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let total = 0;
+      stream.on('data', (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > maxBytes) {
+          stream.destroy();
+          resolve(null);
+          return;
+        }
+        chunks.push(chunk);
+      });
       stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
       stream.on('error', reject);
-      stream.on('close', () =>
-        resolve(Buffer.concat(chunks).toString('utf-8')),
-      );
+      stream.on('close', () => resolve(Buffer.concat(chunks).toString('utf-8')));
     });
   } catch {
     return null;
   }
 }
 
-/**
- * Probe a team-scoped path: list every entry under
- * `teams/{team}/{subdir}/` and parse any .json files as task metadata.
- * .md files are also surfaced for the diagnostic banner but contribute
- * no task records (we don't try to extract structured data from prose).
- */
-async function collectTeamScoped(
-  client: Client,
-  bucket: string,
-  teamPrefix: string, // e.g. "teams/tech-co/"
-  subdir: 'knowledge' | 'projects',
-  now: number,
-): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
-  const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
-  const list = await listAtPrefix(client, bucket, `${teamPrefix}shared/${subdir}/`).catch(() => null);
-  if (!list) return result;
+// ----- Source collectors -----
 
-  // Layout A (knowledge): bare .md/.json files directly under shared/knowledge/
-  for (const fileKey of list.files) {
-    if (!/\.(json|md)$/i.test(fileKey)) continue;
-    result.scannedKeys.push(fileKey);
-    if (!/\.json$/i.test(fileKey)) continue; // .md contributes no task records
-    const text = await getObjectText(client, bucket, fileKey);
-    if (!text) continue;
-    try {
-      const parsed = JSON.parse(text);
-      const source = fileKey.replace(/\.json$/, '');
-      for (const t of unwrapFileContent(parsed)) {
-        const entry = normalizeTask(t, now, source);
-        if (entry) result.tasks.push(entry);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // Layout B (projects): sub-directories each containing meta.json + plan.md
-  for (const projectPrefix of list.prefixes) {
-    const metaKey = `${projectPrefix}meta.json`;
-    const text = await getObjectText(client, bucket, metaKey);
-    if (!text) continue;
-    result.scannedKeys.push(metaKey);
-    try {
-      const parsed = JSON.parse(text);
-      const source = projectPrefix.replace(/\/$/, '');
-      for (const t of unwrapFileContent(parsed)) {
-        const entry = normalizeTask(t, now, source);
-        if (entry) result.tasks.push(entry);
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return result;
-}
-
-/**
- * Walk every team under `teams/` and collect both `shared/knowledge/`
- * and `shared/projects/`. Returns merged results across all teams.
- */
-async function collectAllTeams(
+async function collectSharedTasks(
   client: Client,
   bucket: string,
   now: number,
-): Promise<{
-  tasks: TaskEntry[];
-  scannedKeys: string[];
-  matched: { prefix: string; kind: ScannedSource['kind'] }[];
-}> {
-  const result = {
-    tasks: [] as TaskEntry[],
-    scannedKeys: [] as string[],
-    matched: [] as { prefix: string; kind: ScannedSource['kind'] }[],
-  };
+): Promise<{ tasks: TaskBoardTask[]; scannedKeys: string[] }> {
+  const out = { tasks: [] as TaskBoardTask[], scannedKeys: [] as string[] };
   let list: ListResult;
   try {
-    list = await listAtPrefix(client, bucket, TEAMS_PREFIX);
+    list = await listAtPrefix(client, bucket, SHARED_TASKS_PREFIX);
   } catch {
-    return result;
+    return out;
   }
-
-  // Each entry is either a sub-team directory (isPrefix) or a bare file
-  // (unlikely at the teams/ root, but possible). We only care about
-  // team directories.
-  for (const teamPrefix of list.prefixes) {
-    const knowledge = await collectTeamScoped(
+  for (const taskPrefix of list.prefixes) {
+    const metaKey = `${taskPrefix}meta.json`;
+    const metaText = await getObjectText(client, bucket, metaKey);
+    if (!metaText) continue;
+    out.scannedKeys.push(metaKey);
+    let meta: RawMeta;
+    try {
+      meta = JSON.parse(metaText);
+    } catch {
+      continue;
+    }
+    const source = taskPrefix.replace(/\/$/, '');
+    // result.md drives the outcome field.
+    const resultText = await getObjectText(
       client,
       bucket,
-      teamPrefix,
-      'knowledge',
-      now,
+      `${taskPrefix}result.md`,
     );
-    if (knowledge.scannedKeys.length > 0) {
-      result.scannedKeys.push(...knowledge.scannedKeys);
-      result.tasks.push(...knowledge.tasks);
-      result.matched.push({
-        prefix: `${teamPrefix}shared/knowledge/`,
-        kind: 'team-knowledge',
-      });
-    }
-    const projects = await collectTeamScoped(
+    if (resultText) out.scannedKeys.push(`${taskPrefix}result.md`);
+    const outcome = parseOutcomeFromResult(resultText);
+    // spec.md is optional and bounded.
+    const specText = await getObjectText(
       client,
       bucket,
-      teamPrefix,
-      'projects',
-      now,
+      `${taskPrefix}spec.md`,
+      SPEC_MAX_BYTES,
     );
-    if (projects.scannedKeys.length > 0) {
-      result.scannedKeys.push(...projects.scannedKeys);
-      result.tasks.push(...projects.tasks);
-      result.matched.push({
-        prefix: `${teamPrefix}shared/projects/`,
-        kind: 'team-projects',
-      });
-    }
+    if (specText) out.scannedKeys.push(`${taskPrefix}spec.md`);
+    const task = normalizeTask(meta, source, now, outcome, specText ?? undefined);
+    if (task) out.tasks.push(task);
   }
-  return result;
+  return out;
 }
 
-/**
- * Each worker's `task-history.json` is a flat array of task objects.
- */
+async function collectSharedProjects(
+  client: Client,
+  bucket: string,
+  now: number,
+): Promise<{ projects: TaskBoardProject[]; scannedKeys: string[] }> {
+  const out = { projects: [] as TaskBoardProject[], scannedKeys: [] as string[] };
+  let list: ListResult;
+  try {
+    list = await listAtPrefix(client, bucket, SHARED_PROJECTS_PREFIX);
+  } catch {
+    return out;
+  }
+  for (const projectPrefix of list.prefixes) {
+    const metaKey = `${projectPrefix}meta.json`;
+    const metaText = await getObjectText(client, bucket, metaKey);
+    if (!metaText) continue;
+    out.scannedKeys.push(metaKey);
+    let meta: RawProjectMeta;
+    try {
+      meta = JSON.parse(metaText);
+    } catch {
+      continue;
+    }
+    const source = projectPrefix.replace(/\/$/, '');
+    const planText = await getObjectText(
+      client,
+      bucket,
+      `${projectPrefix}plan.md`,
+    );
+    if (planText) out.scannedKeys.push(`${projectPrefix}plan.md`);
+    const phases = parsePlan(planText);
+    const project = normalizeProject(meta, source, now, phases);
+    if (project) out.projects.push(project);
+  }
+  return out;
+}
+
 async function collectWorkerHistories(
   client: Client,
   bucket: string,
   now: number,
-): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
-  const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
+): Promise<{ tasks: TaskBoardTask[]; scannedKeys: string[] }> {
+  const out = { tasks: [] as TaskBoardTask[], scannedKeys: [] as string[] };
   let list: ListResult;
   try {
     list = await listAtPrefix(client, bucket, AGENTS_PREFIX);
   } catch {
-    return result;
+    return out;
   }
   await Promise.all(
     list.prefixes.map(async (agentPrefix) => {
       const key = `${agentPrefix}${WORKER_HISTORY_FILENAME}`;
       const text = await getObjectText(client, bucket, key);
       if (!text) return;
-      result.scannedKeys.push(key);
+      out.scannedKeys.push(key);
+      let parsed: unknown;
       try {
-        const parsed = JSON.parse(text);
-        const source = agentPrefix.replace(/\/$/, '');
-        for (const t of unwrapFileContent(parsed)) {
-          const entry = normalizeTask(t, now, source);
-          if (entry) result.tasks.push(entry);
-        }
+        parsed = JSON.parse(text);
       } catch {
-        // ignore
+        return;
+      }
+      const arr = Array.isArray(parsed) ? parsed : [];
+      for (const raw of arr) {
+        if (!isObject(raw)) continue;
+        const task = normalizeTask(raw as RawMeta, agentPrefix, now, null);
+        if (task) out.tasks.push(task);
       }
     }),
   );
-  return result;
-}
-
-/**
- * Legacy aggregated layouts: `team/{name}/tasks.json` or bare .json
- * files under team/, teams/, shared/team-tasks/, etc.
- */
-async function collectLegacyAggregates(
-  client: Client,
-  bucket: string,
-  now: number,
-): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
-  const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
-  for (const probe of LEGACY_PROBES) {
-    if (probe.kind === 'team-knowledge') continue; // handled by collectAllTeams
-    if (probe.kind === 'worker-history') continue; // handled by collectWorkerHistories
-    let list: ListResult;
-    try {
-      list = await listAtPrefix(client, bucket, probe.prefix);
-    } catch {
-      continue;
-    }
-    if (list.prefixes.length === 0 && list.files.length === 0) continue;
-
-    // Layout A: prefix/{team}/tasks.json
-    for (const subPrefix of list.prefixes) {
-      for (const filename of LEGACY_FILE_NAMES) {
-        const key = `${subPrefix}${filename}`;
-        const text = await getObjectText(client, bucket, key);
-        if (text) {
-          result.scannedKeys.push(key);
-          try {
-            const parsed = JSON.parse(text);
-            const source = subPrefix.replace(/\/$/, '');
-            for (const t of unwrapFileContent(parsed)) {
-              const entry = normalizeTask(t, now, source);
-              if (entry) result.tasks.push(entry);
-            }
-          } catch {
-            // ignore
-          }
-          break;
-        }
-      }
-    }
-
-    // Layout B: bare .json files directly under the prefix
-    for (const fileKey of list.files) {
-      if (!/\.json$/i.test(fileKey)) continue;
-      const text = await getObjectText(client, bucket, fileKey);
-      if (!text) continue;
-      result.scannedKeys.push(fileKey);
-      try {
-        const parsed = JSON.parse(text);
-        const source = probe.prefix.replace(/\/$/, '');
-        for (const t of unwrapFileContent(parsed)) {
-          const entry = normalizeTask(t, now, source);
-          if (entry) result.tasks.push(entry);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return result;
+  return out;
 }
 
 export async function GET() {
@@ -469,6 +595,7 @@ export async function GET() {
     return NextResponse.json(
       {
         tasks: [],
+        projects: [],
         scannedKeys: [],
         matchedPrefixes: [],
         bucket: null,
@@ -486,6 +613,7 @@ export async function GET() {
     return NextResponse.json(
       {
         tasks: [],
+        projects: [],
         scannedKeys: [],
         matchedPrefixes: [],
         bucket,
@@ -497,54 +625,47 @@ export async function GET() {
   }
 
   const now = Date.now();
+  const [tasksSrc, projectsSrc, historySrc] = await Promise.all([
+    collectSharedTasks(client, bucket, now),
+    collectSharedProjects(client, bucket, now),
+    collectWorkerHistories(client, bucket, now),
+  ]);
 
-  // 1. Primary: team-scoped shared/knowledge/ and shared/projects/ for
-  //    every team. Walks teams/ then descends into each team's shared/.
-  const teams = await collectAllTeams(client, bucket, now);
+  // Merge by runId. shared/tasks/ entries win over worker history so the
+  // canonical state takes precedence.
+  const taskById = new Map<string, TaskBoardTask>();
+  for (const t of [...tasksSrc.tasks, ...historySrc.tasks]) {
+    taskById.set(t.runId, t);
+  }
 
-  // 2. Per-worker task history.
-  const histories = await collectWorkerHistories(client, bucket, now);
-
-  // 3. Legacy fallbacks (best-effort, lower priority).
-  const legacy = await collectLegacyAggregates(client, bucket, now);
-
-  // Merge by runId. Primary sources (team/worker) win; legacy is only
-  // used to fill gaps. Newer updatedAt overrides older.
-  const byRunId = new Map<string, TaskEntry>();
-  const order = [...teams.tasks, ...histories.tasks, ...legacy.tasks];
-  for (const t of order) {
-    const existing = byRunId.get(t.runId);
-    if (!existing) {
-      byRunId.set(t.runId, t);
-    } else if (t.updatedAt > existing.updatedAt) {
-      byRunId.set(t.runId, {
-        ...t,
-        subagents: t.subagents.length ? t.subagents : existing.subagents,
-        steps: t.steps.length ? t.steps : existing.steps,
-      });
+  // Project tasks are referenced from their plan.md; back-link tasks to
+  // projects via projectId when both are present.
+  const projectById = new Map<string, TaskBoardProject>();
+  for (const p of projectsSrc.projects) {
+    projectById.set(p.runId, p);
+  }
+  for (const t of taskById.values()) {
+    if (t.projectId && projectById.has(t.projectId)) {
+      const proj = projectById.get(t.projectId);
+      if (proj && !proj.workers.includes(t.assignedTo) && t.assignedTo) {
+        // The task's owner may be missing from the project-level workers
+        // list. Don't auto-merge; plan.md is the source of truth here.
+      }
     }
   }
-  const tasks = Array.from(byRunId.values()).sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  );
 
   const matchedPrefixes: string[] = [];
-  for (const m of teams.matched) {
-    matchedPrefixes.push(`${m.prefix} (${m.kind})`);
-  }
-  if (histories.scannedKeys.length > 0) {
-    matchedPrefixes.push('agents/ (worker-history)');
-  }
-  if (legacy.scannedKeys.length > 0) {
-    matchedPrefixes.push('legacy (legacy-aggregated)');
-  }
+  if (tasksSrc.scannedKeys.length > 0) matchedPrefixes.push(SHARED_TASKS_PREFIX);
+  if (projectsSrc.scannedKeys.length > 0) matchedPrefixes.push(SHARED_PROJECTS_PREFIX);
+  if (historySrc.scannedKeys.length > 0) matchedPrefixes.push(`${AGENTS_PREFIX} (worker-history)`);
 
   return NextResponse.json({
-    tasks,
+    tasks: Array.from(taskById.values()).sort((a, b) => b.createdAt - a.createdAt),
+    projects: Array.from(projectById.values()).sort((a, b) => b.createdAt - a.createdAt),
     scannedKeys: [
-      ...teams.scannedKeys,
-      ...histories.scannedKeys,
-      ...legacy.scannedKeys,
+      ...tasksSrc.scannedKeys,
+      ...projectsSrc.scannedKeys,
+      ...historySrc.scannedKeys,
     ],
     matchedPrefixes,
     bucket,
@@ -555,5 +676,11 @@ export async function GET() {
 /** Test-only export. */
 export const __test__ = {
   normalizeTask,
-  unwrapFileContent,
+  normalizeProject,
+  parsePlan,
+  parseOutcomeFromResult,
+  pickRunId,
+  pickProjectId,
+  normalizeStatus,
+  normalizeProjectStatus,
 };

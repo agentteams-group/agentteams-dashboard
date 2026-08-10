@@ -31,7 +31,7 @@ export const navItems: NavItem[] = [
   { id: 'overview', label: '总览', icon: LayoutDashboard, group: 'core' },
   { id: 'chat', label: '聊天', icon: MessageSquare, group: 'core' },
   // 运行时分组
-  { id: 'tasks', label: '任务', icon: ListTodo, group: 'runtime' },
+  { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime' },
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, group: 'runtime' },
   { id: 'teams', label: '团队', icon: Users, group: 'runtime' },
