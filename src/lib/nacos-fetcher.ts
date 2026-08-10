@@ -148,7 +148,7 @@ function buildSingleSkillZip(
   return { zipBytes: zipSync(skillFiles), resolvedName };
 }
 
-async function getNacosAccessToken(config: any): Promise<string> {
+export async function getNacosAccessToken(config: any): Promise<string> {
   const protocol = config.protocol || 'http';
   const urlMatch = config.registryUrl.match(/^nacos:\/\/([^/]+)\/(.+)$/);
   if (!urlMatch) return '';
@@ -172,6 +172,70 @@ async function getNacosAccessToken(config: any): Promise<string> {
     // auth failed, continue without token
   }
   return '';
+}
+
+/**
+ * Download a single skill ZIP via Nacos Console API.
+ * This is the preferred path — Nacos handles monorepo extraction server-side.
+ * Returns null if the download failed (caller should fall back to GitHub).
+ */
+async function fetchNacosSkillZipByConsoleDownload(
+  apiBase: string,
+  namespace: string,
+  skillName: string,
+  version: string,
+  accessToken: string
+): Promise<NacosZipResult | null> {
+  const params = new URLSearchParams({
+    namespaceId: namespace,
+    skillName,
+    version,
+  });
+  if (accessToken) params.set('accessToken', accessToken);
+
+  const downloadUrl = `${apiBase}/v3/console/ai/skills/version/download?${params.toString()}`;
+
+  const res = await fetch(downloadUrl, {
+    signal: AbortSignal.timeout(30000),
+    headers: { 'Accept': 'application/zip' },
+  });
+
+  if (!res.ok) return null;
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('zip') && !contentType.includes('octet-stream')) return null;
+
+  const buf = new Uint8Array(await res.arrayBuffer());
+  if (buf.length === 0) return null;
+
+  // The ZIP from Console API has files prefixed with "{skillName}/".
+  // Strip the prefix so the worker sees flat files like SKILL.md.
+  const entries = unzipSync(buf);
+  const stripped: Record<string, Uint8Array> = {};
+  const prefix = `${skillName}/`;
+  let resolvedName = skillName;
+
+  for (const [path, data] of Object.entries(entries)) {
+    if (!path.startsWith(prefix)) continue;
+    const relative = path.substring(prefix.length);
+    if (!relative) continue;
+    stripped[relative] = data;
+
+    // Extract resolved name from SKILL.md frontmatter
+    if (relative === 'SKILL.md') {
+      const content = new TextDecoder().decode(data);
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+      if (nameMatch) resolvedName = nameMatch[1].trim();
+    }
+  }
+
+  if (Object.keys(stripped).length === 0) return null;
+
+  return {
+    zipBytes: zipSync(stripped),
+    resolvedName,
+    source: 'nacos-console',
+  };
 }
 
 export async function fetchNacosSkillZip(
@@ -214,8 +278,25 @@ export async function fetchNacosSkillZip(
         diag.skillsDetailCode = listData.code;
         if (listData.code === 0 && listData.data?.pageItems) {
           const skill = listData.data.pageItems.find((s) => s.name === skillName);
-          if (skill?.from) {
-            const version = skill.labels?.latest;
+          if (!skill) {
+            throw new Error(`技能 "${skillName}" 未在 Nacos 中注册`);
+          }
+
+          // 1. Preferred: Console download (Nacos handles monorepo extraction server-side)
+          const version = skill.labels?.latest;
+          if (version) {
+            try {
+              const consoleResult = await fetchNacosSkillZipByConsoleDownload(
+                apiBase, namespace, skillName, version, accessToken
+              );
+              if (consoleResult) return consoleResult;
+            } catch {
+              // fall through to GitHub archive
+            }
+          }
+
+          // 2. Fallback: GitHub archive download
+          if (skill.from) {
             const candidateUrls = [
               `https://${skill.from}/archive/refs/tags/${version}.zip`,
               `https://${skill.from}/archive/refs/heads/${version}.zip`,

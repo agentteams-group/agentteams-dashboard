@@ -157,12 +157,20 @@ export async function POST(
       });
     }
 
+    // When ?restart=false the caller will batch multiple skill uploads
+    // and trigger a single restart via POST /workers/{name}/restart.
+    const shouldRestart = request.nextUrl.searchParams.get('restart') !== 'false';
+
     let note: string;
-    const restart = await restartWorker(name);
-    if (restart.ok) {
-      note = '已通知 Worker 加载新技能';
+    if (shouldRestart) {
+      const restart = await restartWorker(name);
+      if (restart.ok) {
+        note = '已通知 Worker 加载新技能';
+      } else {
+        note = SYNC_FAILED_NOTE;
+      }
     } else {
-      note = SYNC_FAILED_NOTE;
+      note = '技能文件已写入，等待批量重启';
     }
 
     return NextResponse.json({

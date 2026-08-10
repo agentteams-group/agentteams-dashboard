@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Send, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Check, AlertCircle, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,12 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useWorkerSkills } from '@/hooks/use-agentteams-worker-skills';
 import { agentteamsApi } from '@/lib/agentteams-api';
 
-type DistributeStep = 'idle' | 'downloading' | 'uploading' | 'done';
+type WorkerStatus = 'pending' | 'uploading' | 'done' | 'failed';
+
+interface WorkerDistributeState {
+  name: string;
+  status: WorkerStatus;
+  note?: string;
+}
 
 export function SkillDistributeToWorkerDialog({
   skillName,
@@ -26,29 +30,35 @@ export function SkillDistributeToWorkerDialog({
   open: boolean;
   onOpenChange: (_open: boolean) => void;
 }) {
-  const [selectedWorker, setSelectedWorker] = useState('');
-  const [step, setStep] = useState<DistributeStep>('idle');
+  const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
+  const [step, setStep] = useState<'idle' | 'downloading' | 'uploading' | 'restarting' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [resultNote, setResultNote] = useState<string | null>(null);
+  const [workerStates, setWorkerStates] = useState<WorkerDistributeState[]>([]);
 
   const { data: workers = [] } = useWorkers();
-  const { data: existingSkills = [] } = useWorkerSkills(selectedWorker || null);
 
   const handleClose = useCallback(() => {
-    setSelectedWorker('');
+    setSelectedWorkers([]);
     setStep('idle');
     setError(null);
-    setResultNote(null);
+    setWorkerStates([]);
     onOpenChange(false);
   }, [onOpenChange]);
 
+  const toggleWorker = useCallback((workerName: string) => {
+    setSelectedWorkers((prev) =>
+      prev.includes(workerName)
+        ? prev.filter((w) => w !== workerName)
+        : [...prev, workerName]
+    );
+  }, []);
+
   const handleDistribute = useCallback(async () => {
-    if (!selectedWorker) return;
+    if (!selectedWorkers.length) return;
 
     setError(null);
-    setResultNote(null);
 
-    // Step 1: Download skill
+    // Step 1: Download skill once
     setStep('downloading');
     let file: File;
     try {
@@ -63,47 +73,73 @@ export function SkillDistributeToWorkerDialog({
       return;
     }
 
-    // Step 2: Upload to worker
+    // Step 2: Upload to all workers without restarting
     setStep('uploading');
-    try {
-      // Look up the worker's runtime so the server can write the skill
-      // files to the correct on-disk path. Different runtimes read from
-      // different workspace roots (QwenPaw uses .qwenpaw/workspaces/default/,
-      // Copaw uses .copaw/workspaces/default/, others use the canonical
-      // skills/ directory).
-      const targetWorker = workers.find((w) => w.name === selectedWorker);
-      const res = await agentteamsApi.uploadWorkerSkill(
-        selectedWorker,
-        file,
-        targetWorker?.runtime,
-      );
-      // The server already restarted the worker (sleep → wake) after
-      // storing the skill files. Use the server's note as-is.
-      setResultNote(res.note ?? '已通知 Worker 加载新技能');
+    const states: WorkerDistributeState[] = selectedWorkers.map((name) => ({
+      name,
+      status: 'pending',
+    }));
+    setWorkerStates([...states]);
 
-      // Update the worker's spec.skills so the Controller-managed
-      // resource stays in sync with the files on disk.
+    for (let i = 0; i < selectedWorkers.length; i++) {
+      const workerName = selectedWorkers[i];
+      const targetWorker = workers.find((w) => w.name === workerName);
+
+      setWorkerStates((prev) =>
+        prev.map((s) => (s.name === workerName ? { ...s, status: 'uploading' as WorkerStatus } : s))
+      );
+
       try {
-        const existingSkills = targetWorker?.skills ?? [];
-        const skillNameFromPackage = res.skillName;
-        if (!existingSkills.includes(skillNameFromPackage)) {
-          await agentteamsApi.updateWorker(selectedWorker, {
-            skills: [...existingSkills, skillNameFromPackage],
-          });
+        const res = await agentteamsApi.uploadWorkerSkill(
+          workerName,
+          file,
+          targetWorker?.runtime,
+          { restart: false },
+        );
+
+        // Update spec.skills
+        try {
+          const existingSkills = targetWorker?.skills ?? [];
+          const resolvedName = res.skillName;
+          if (!existingSkills.includes(resolvedName)) {
+            await agentteamsApi.updateWorker(workerName, {
+              skills: [...existingSkills, resolvedName],
+            });
+          }
+        } catch {
+          // best-effort
         }
-      } catch {
-        // Updating spec.skills is best-effort; the files are already in place.
+
+        setWorkerStates((prev) =>
+          prev.map((s) =>
+            s.name === workerName ? { ...s, status: 'done' as WorkerStatus, note: res.note } : s
+          )
+        );
+      } catch (err) {
+        setWorkerStates((prev) =>
+          prev.map((s) =>
+            s.name === workerName
+              ? { ...s, status: 'failed' as WorkerStatus, note: err instanceof Error ? err.message : '上传失败' }
+              : s
+          )
+        );
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '上传技能到 Worker 失败');
-      setStep('idle');
-      return;
+    }
+
+    // Step 3: Restart all workers that succeeded
+    setStep('restarting');
+    for (const s of states) {
+      if (s.status !== 'done') continue;
+      try {
+        await agentteamsApi.restartWorker(s.name);
+      } catch {
+        // restart failed but files are in place
+      }
     }
 
     setStep('done');
-  }, [selectedWorker, skillName, workers]);
+  }, [selectedWorkers, skillName, workers]);
 
-  const isReady = !!selectedWorker && step === 'idle';
   const isRunning = step !== 'idle' && step !== 'done';
 
   return (
@@ -117,28 +153,58 @@ export function SkillDistributeToWorkerDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Skill name display */}
           <div className="p-3 rounded-md bg-muted/50 border">
             <p className="text-xs text-muted-foreground">技能</p>
             <p className="font-mono font-medium">{skillName}</p>
           </div>
 
-          {/* Worker selector */}
+          {/* Multi-worker selector */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">目标 Worker *</label>
-            <select
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={selectedWorker}
-              onChange={(e) => setSelectedWorker(e.target.value)}
-              disabled={isRunning}
-            >
-              <option value="">-- 选择 Worker --</option>
-              {workers.map((w) => (
-                <option key={w.name} value={w.name}>
-                  {w.name} ({w.runtime})
-                </option>
-              ))}
-            </select>
+            <label className="text-sm font-medium">
+              目标 Worker * ({selectedWorkers.length} 个已选)
+            </label>
+            {isRunning ? (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {workerStates.map((ws) => (
+                  <div key={ws.name} className="flex items-center justify-between px-3 py-1.5 rounded border text-sm">
+                    <span className="font-mono">{ws.name}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        ws.status === 'uploading' ? 'bg-muted text-muted-foreground' :
+                        ws.status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                        ws.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                        'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {ws.status === 'uploading' ? '上传中' : ws.status === 'done' ? '完成' : ws.status === 'failed' ? '失败' : '等待'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
+                {workers.length === 0 && (
+                  <p className="p-3 text-sm text-muted-foreground">暂无可用的 Worker</p>
+                )}
+                {workers.map((w) => {
+                  const selected = selectedWorkers.includes(w.name);
+                  return (
+                    <button
+                      key={w.name}
+                      type="button"
+                      className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-muted/50 transition-colors ${selected ? 'bg-primary/5' : ''}`}
+                      onClick={() => toggleWorker(w.name)}
+                    >
+                      <div>
+                        <span className="font-mono">{w.name}</span>
+                        <span className="text-muted-foreground ml-2 text-xs">({w.runtime})</span>
+                      </div>
+                      {selected && <Check className="h-4 w-4 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Progress steps */}
@@ -146,13 +212,18 @@ export function SkillDistributeToWorkerDialog({
             <div className="space-y-2 p-3 rounded-md border bg-muted/30">
               <StepItem
                 label="下载技能包"
-                step={step}
-                active="downloading"
+                activeStep={step}
+                stepKey="downloading"
               />
               <StepItem
-                label="上传到 Worker"
-                step={step}
-                active="uploading"
+                label={`上传到 ${selectedWorkers.length} 个 Worker`}
+                activeStep={step}
+                stepKey="uploading"
+              />
+              <StepItem
+                label="重启 Worker"
+                activeStep={step}
+                stepKey="restarting"
               />
             </div>
           )}
@@ -165,37 +236,28 @@ export function SkillDistributeToWorkerDialog({
             </div>
           )}
 
-          {/* Success display */}
+          {/* Done summary */}
           {step === 'done' && (
-            <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
-              <Check className="h-4 w-4 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">分发成功</p>
-                <p className="text-xs opacity-80 mt-1">
-                  技能 "{skillName}" 已分发到 Worker "{selectedWorker}"
-                </p>
-                {resultNote && (
-                  <p className="text-xs opacity-75 mt-0.5">{resultNote}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Existing skills on worker */}
-          {selectedWorker && existingSkills.length > 0 && (
             <div className="space-y-2">
-              <p className="text-sm font-medium">该 Worker 已有技能</p>
-              <div className="flex flex-wrap gap-1">
-                {existingSkills.map((s) => (
-                  <Badge
-                    key={s}
-                    variant={s === skillName ? 'default' : 'secondary'}
-                    className="text-xs"
-                  >
-                    {s}
-                  </Badge>
-                ))}
+              <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                <p>
+                  技能 "{skillName}" 已分发到 {workerStates.filter((s) => s.status === 'done').length} 个 Worker
+                  {workerStates.filter((s) => s.status === 'failed').length > 0 &&
+                    `，${workerStates.filter((s) => s.status === 'failed').length} 个失败`}
+                </p>
               </div>
+              {workerStates.some((s) => s.status === 'failed') && (
+                <div className="space-y-1">
+                  {workerStates.filter((s) => s.status === 'failed').map((s) => (
+                    <div key={s.name} className="flex items-center gap-2 px-3 py-1 rounded border border-red-200 text-sm text-red-600">
+                      <X className="h-3 w-3" />
+                      <span className="font-mono">{s.name}</span>
+                      <span className="text-xs opacity-75">{s.note}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -209,15 +271,15 @@ export function SkillDistributeToWorkerDialog({
           ) : (
             <Button
               onClick={handleDistribute}
-              disabled={!isReady}
+              disabled={selectedWorkers.length === 0 || isRunning}
             >
               {isRunning ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {step === 'downloading' ? '下载中...' : '上传中...'}
+                  {step === 'downloading' ? '下载中...' : step === 'uploading' ? '上传中...' : '重启中...'}
                 </>
               ) : (
-                '分发技能'
+                `分发到 ${selectedWorkers.length || ''} 个 Worker`
               )}
             </Button>
           )}
@@ -227,10 +289,20 @@ export function SkillDistributeToWorkerDialog({
   );
 }
 
-function StepItem({ label, step, active }: { label: string; step: DistributeStep; active: DistributeStep }) {
-  const doneSteps: DistributeStep[] = ['downloading', 'uploading', 'done'];
-  const activeIdx = doneSteps.indexOf(active);
-  const stepIdx = doneSteps.indexOf(step);
+type DistributeStep = 'idle' | 'downloading' | 'uploading' | 'restarting' | 'done';
+
+function StepItem({
+  label,
+  activeStep,
+  stepKey,
+}: {
+  label: string;
+  activeStep: DistributeStep;
+  stepKey: DistributeStep;
+}) {
+  const order: DistributeStep[] = ['downloading', 'uploading', 'restarting', 'done'];
+  const activeIdx = order.indexOf(activeStep);
+  const stepIdx = order.indexOf(stepKey);
 
   let state: 'pending' | 'running' | 'done';
   if (stepIdx < activeIdx) state = 'done';

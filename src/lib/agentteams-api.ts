@@ -685,11 +685,14 @@ export const agentteamsApi = {
     workerName: string,
     file: File,
     runtime?: string | null,
+    options?: { restart?: boolean },
   ): Promise<WorkerSkillUploadResponse> => {
     const form = new FormData();
     form.append('file', file);
     if (runtime) form.append('runtime', runtime);
-    return fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills`), {
+    const restart = options?.restart ?? true;
+    const url = apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/skills?restart=${restart}`);
+    return fetch(url, {
       method: 'POST',
       body: form,
     }).then(async (res) => {
@@ -698,6 +701,18 @@ export const agentteamsApi = {
         throw new ApiError(`上传技能包失败: ${res.status} ${text}`, res.status, `/workers/${workerName}/skills`);
       }
       return res.json() as Promise<WorkerSkillUploadResponse>;
+    });
+  },
+
+  restartWorker: (workerName: string): Promise<{ success: boolean; note: string; skills?: string[] }> => {
+    return fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/restart`), {
+      method: 'POST',
+    }).then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ApiError(`Worker 重启失败: ${res.status} ${text}`, res.status, `/workers/${workerName}/restart`);
+      }
+      return res.json();
     });
   },
 
@@ -919,5 +934,33 @@ export const agentteamsApi = {
       }
       return r.json() as Promise<{ synced: number }>;
     });
+  },
+
+  fullSyncNacosSkills: (): Promise<{ success: boolean; downloaded: number; skipped: number; failed: number }> => {
+    const res = fetch(apiUrl('/api/agentteams/skills/nacos/full-sync'), {
+      method: 'POST',
+    });
+    return res.then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new ApiError(`Nacos 全量同步失败: ${r.status} ${text}`, r.status, '/skills/nacos/full-sync');
+      }
+      return r.json();
+    });
+  },
+
+  getNacosSyncStatus: (): Promise<{
+    nacosConfigured: boolean;
+    lastSyncAt: string | null;
+    lastSyncStatus: string | null;
+    versionCacheSize: number;
+    versionCache: Record<string, string>;
+  }> => {
+    return proxyRequest('/skills/nacos/status');
+  },
+
+  // AgentSpecs
+  listAgentSpecs: (): Promise<{ items: Array<{ name: string; description: string; version: string; from: string; scope: string }>; note?: string }> => {
+    return proxyRequest('/agentspecs/nacos/list');
   },
 };

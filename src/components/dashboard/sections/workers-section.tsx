@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -180,6 +180,7 @@ export function WorkersSection() {
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
+  const [agentSpecs, setAgentSpecs] = useState<Array<{ name: string; description: string; version: string }>>([]);
   const modelOptions = useMemo(
     () => buildModelSelectionOptions(aiRoutes ?? [], providers ?? []),
     [aiRoutes, providers],
@@ -353,8 +354,11 @@ export function WorkersSection() {
     if (!newSkills.length) return;
 
     setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [] });
-    let uploadedCount = 0;
+
+    const targetWorker = workers?.find((w) => w.name === workerName);
     let uploadedSkillNames: string[] = [];
+
+    // Phase 1: upload all skills without restarting
     for (const skillName of newSkills) {
       try {
         let file: File;
@@ -363,34 +367,42 @@ export function WorkersSection() {
         } catch {
           file = await agentteamsApi.downloadNacosSkill(skillName);
         }
-        const res = await agentteamsApi.uploadWorkerSkill(workerName, file);
+        const res = await agentteamsApi.uploadWorkerSkill(
+          workerName, file,
+          targetWorker?.runtime,
+          { restart: false },
+        );
         setSyncingSkills((prev) => prev && { ...prev, done: [...prev.done, skillName] });
-        uploadedCount += 1;
         uploadedSkillNames.push(res.skillName);
       } catch {
         setSyncingSkills((prev) => prev && { ...prev, failed: [...prev.failed, skillName] });
         toast.warning(`技能 "${skillName}" 安装失败，已跳过`);
       }
     }
-    if (uploadedCount === 0) {
+
+    if (uploadedSkillNames.length === 0) {
       setSyncingSkills(null);
       return;
     }
 
-    // The server already restarts the worker (sleep → wake) after each
-    // upload, so we only need to update spec.skills to keep the
-    // Controller-managed resource in sync.
+    // Phase 2: update spec.skills
     try {
-      const currentWorker = workers?.find((w) => w.name === workerName);
-      const existingSpecSkills = currentWorker?.skills ?? [];
+      const existingSpecSkills = targetWorker?.skills ?? [];
       const merged = [...new Set([...existingSpecSkills, ...uploadedSkillNames])];
       await agentteamsApi.updateWorker(workerName, { skills: merged });
     } catch {
       // spec.skills update is best-effort; files are already in place.
     }
 
+    // Phase 3: single restart
+    try {
+      await agentteamsApi.restartWorker(workerName);
+    } catch {
+      // restart failed but skills are on disk
+    }
+
     setSyncingSkills((prev) => prev && { ...prev, restarted: true });
-    toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能`);
+    toast.success(`已为 Worker "${workerName}" 安装 ${uploadedSkillNames.length} 个技能`);
     setTimeout(() => setSyncingSkills(null), 3000);
   }, [sleepWorker, wakeWorker, workers]);
 
@@ -407,6 +419,19 @@ export function WorkersSection() {
       },
     });
   }, [createWorker, newWorker, warnIfModelAliasUnbound, syncWorkerSkills]);
+
+  useEffect(() => {
+    if (!createOpen) return;
+    agentteamsApi.listAgentSpecs().then((data) => {
+      if (data.items?.length) {
+        setAgentSpecs(data.items.map((it) => ({
+          name: it.name,
+          description: it.description,
+          version: it.version,
+        })));
+      }
+    }).catch(() => {});
+  }, [createOpen]);
 
   const handleDelete = useCallback(() => {
     if (!deleteTarget) return;
@@ -737,6 +762,7 @@ export function WorkersSection() {
         isPending={createWorker.isPending}
         onSubmit={handleCreate}
         modelOptions={modelOptions}
+        agentSpecs={agentSpecs}
       />
 
       <WorkerEditDialog
