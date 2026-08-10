@@ -74,6 +74,68 @@ export const useReceiptStore = create<ReceiptStore>()((set) => ({
     })),
 }));
 
+/**
+ * Room-level meta derived from /sync:
+ *  - latest message timestamp (used to sort room list with newest on top)
+ *  - unread counts from unread_notifications
+ *
+ * Stored in a small zustand store so that any code with the room id can
+ * read these without re-running React Query per sidebar item.
+ */
+export interface RoomMeta {
+  lastMessageTs?: number;
+  unreadCount?: number;
+  unreadHighlightCount?: number;
+  updatedAt: number;
+}
+
+interface RoomMetaStore {
+  meta: Record<string, RoomMeta>;
+  setRoomMeta: (_roomId: string, _meta: Partial<Omit<RoomMeta, 'updatedAt'>>) => void;
+  clearUnread: (_roomId: string) => void;
+  forgetRoom: (_roomId: string) => void;
+}
+
+export const useRoomMetaStore = create<RoomMetaStore>()((set) => ({
+  meta: {},
+  setRoomMeta: (roomId, partial) =>
+    set((state) => {
+      const prev = state.meta[roomId] ?? { updatedAt: 0 };
+      const next: RoomMeta = { ...prev, ...partial, updatedAt: Date.now() };
+      if (
+        prev.lastMessageTs === next.lastMessageTs &&
+        prev.unreadCount === next.unreadCount &&
+        prev.unreadHighlightCount === next.unreadHighlightCount
+      ) {
+        return state;
+      }
+      return { meta: { ...state.meta, [roomId]: next } };
+    }),
+  clearUnread: (roomId) =>
+    set((state) => {
+      const prev = state.meta[roomId];
+      if (!prev || (prev.unreadCount === 0 && prev.unreadHighlightCount === 0)) return state;
+      return {
+        meta: {
+          ...state.meta,
+          [roomId]: { ...prev, unreadCount: 0, unreadHighlightCount: 0, updatedAt: Date.now() },
+        },
+      };
+    }),
+  forgetRoom: (roomId) =>
+    set((state) => {
+      if (!(roomId in state.meta)) return state;
+      const next = { ...state.meta };
+      delete next[roomId];
+      return { meta: next };
+    }),
+}));
+
+/** Read-only accessor for a single room's meta. */
+export function useRoomMeta(roomId: string | null): RoomMeta | undefined {
+  return useRoomMetaStore((s) => (roomId ? s.meta[roomId] : undefined));
+}
+
 const EMPTY_RECEIPTS: Record<string, ReadReceiptEntry> = {};
 
 /** Latest m.read receipts of every other user in a room. */
@@ -454,6 +516,27 @@ export function useTypingSync(roomId: string | null) {
 
             if (timelineEvents.length > 0 && rid === roomId) {
               mergeTimelineEvents(queryClient, rid, timelineEvents, userId);
+            }
+
+            // Update room-level meta (last message ts + unread counts) so the
+            // chat sidebar can sort by recency and badge unread count. Derived
+            // purely from /sync; no extra network calls needed.
+            const unread = roomData.unread_notifications;
+            const lastEventTs = timelineEvents.reduce<number | undefined>(
+              (max, e) =>
+                typeof e.origin_server_ts === 'number' && e.origin_server_ts > (max ?? 0)
+                  ? e.origin_server_ts
+                  : max,
+              undefined,
+            );
+            const metaPartial: Partial<Omit<RoomMeta, 'updatedAt'>> = {};
+            if (typeof lastEventTs === 'number') metaPartial.lastMessageTs = lastEventTs;
+            if (unread) {
+              metaPartial.unreadCount = unread.notification_count;
+              metaPartial.unreadHighlightCount = unread.highlight_count;
+            }
+            if (Object.keys(metaPartial).length > 0) {
+              useRoomMetaStore.getState().setRoomMeta(rid, metaPartial);
             }
           }
         }

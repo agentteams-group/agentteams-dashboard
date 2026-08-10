@@ -41,6 +41,7 @@ import { useActiveSection } from '@/components/dashboard/use-active-section';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
+import { useTeamTasks, mergeTasks, useLogTeamTaskScan } from '@/hooks/use-team-tasks';
 import {
   actorFromManager,
   actorFromWorker,
@@ -268,7 +269,23 @@ export function TasksSection() {
   const [perspective, setPerspective] = useState<PerspectiveState>({ kind: 'all', id: '' });
   const { setActiveSection } = useActiveSection();
 
-  const tasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
+  const liveTasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
+  // Persisted tasks live on MinIO under `team/{name}/tasks.json` (and a few
+  // alternative layouts). MinIO data wins on conflict because it represents
+  // the controller's canonical state. The hook also surfaces the file
+  // discovery results for diagnostic display below.
+  const {
+    data: persisted,
+    isLoading: persistedLoading,
+    refetch: refetchPersisted,
+  } = useTeamTasks({ refetchInterval: 8000 });
+  const persistedTasks = persisted?.tasks ?? [];
+  const tasks = useMemo(
+    () => mergeTasks(persistedTasks, liveTasks),
+    [persistedTasks, liveTasks],
+  );
+  useLogTeamTaskScan(persisted?.matchedPrefixes ?? [], persisted?.scannedKeys ?? []);
+
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const clearTasks = useTaskStore((s) => s.clearTasks);
   const [reloadKey, setReloadKey] = useState(0);
@@ -342,7 +359,8 @@ export function TasksSection() {
   const handleReload = useCallback(() => {
     clearTasks();
     setReloadKey((k) => k + 1);
-  }, [clearTasks]);
+    refetchPersisted();
+  }, [clearTasks, refetchPersisted]);
 
   const toggleExpand = useCallback((runId: string) => {
     setExpanded((prev) => {
@@ -394,10 +412,21 @@ export function TasksSection() {
             : '需要先登录 Matrix 才能拉取任务数据'
         }
         actions={
-          <Button variant="outline" size="sm" onClick={handleReload} title="清空当前任务并等待新事件">
-            <Loader2 className="h-3.5 w-3.5 mr-1" />
-            重新加载
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline" title="持久化数据来自 MinIO，实时数据来自 Matrix workflow 消息">
+              持久 {persistedTasks.length} · 实时 {liveTasks.length}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReload}
+              disabled={persistedLoading}
+              title="清空 Matrix 缓存并重新拉取 MinIO 任务文件"
+            >
+              <Loader2 className={`h-3.5 w-3.5 mr-1 ${persistedLoading ? 'animate-spin' : ''}`} />
+              重新加载
+            </Button>
+          </div>
         }
       />
       {/* Reload trigger — re-renders this hidden block to force a fresh sync cycle */}

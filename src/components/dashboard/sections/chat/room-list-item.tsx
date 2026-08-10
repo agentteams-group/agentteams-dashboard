@@ -87,11 +87,27 @@ export function RoomListItem({
             <CopyButton text={room.id} className="h-5 w-5" />
           </div>
         </div>
-        {room.members && room.members.length > 0 && (
+        {room.unreadCount !== undefined && room.unreadCount > 0 ? (
+          <Badge
+            variant={room.unreadHighlightCount ? 'destructive' : 'default'}
+            className={`text-[10px] shrink-0 ${
+              room.unreadHighlightCount
+                ? ''
+                : 'bg-emerald-500 hover:bg-emerald-500 text-white'
+            }`}
+            title={
+              room.unreadHighlightCount
+                ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
+                : `${room.unreadCount} 条未读`
+            }
+          >
+            {room.unreadCount > 99 ? '99+' : room.unreadCount}
+          </Badge>
+        ) : room.members && room.members.length > 0 ? (
           <Badge variant="secondary" className="text-[10px] shrink-0">
             {room.members.length}
           </Badge>
-        )}
+        ) : null}
       </div>
     </motion.button>
   );

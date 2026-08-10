@@ -21,7 +21,7 @@ import {
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
-import { useMatrixReadReceipts } from '@/hooks/use-matrix';
+import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Users, PanelRightClose, ArrowDown, FolderTree } from 'lucide-react';
@@ -169,6 +169,9 @@ export function ChatRoom({
     if (!last) return;
     const target = last.eventId || last.id;
     if (!target || target === readEventId || setReadMarkerMutation.isPending) return;
+    // Optimistically clear the sidebar badge so the UI feels snappy;
+    // the next /sync cycle will confirm the server-side reset.
+    useRoomMetaStore.getState().clearUnread(roomId);
     setReadMarkerMutation.mutate({ roomId, eventId: target }, {
       onError: (err) => {
         // m.fully_read may not be supported by all homeservers; silently ignore

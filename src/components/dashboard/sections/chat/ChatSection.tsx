@@ -10,13 +10,14 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import {
   useMatrixRoomMembers,
   useMatrixRoomState,
+  useRoomMetaStore,
   type RoomMember,
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { MessageSquare, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { buildRooms } from './room-builders';
+import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
 import { ChatAuthBadge } from './chat-auth-badge';
 import { ChatRoomSidebar } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
@@ -42,7 +43,14 @@ export function ChatSection() {
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
 
-  const rooms = useMemo(() => buildRooms(workers, teams, managers), [workers, teams, managers]);
+  // Per-room meta (lastMessageTs + unread counts) feeds the sidebar sort and
+  // badge. We don't re-sort on every keystroke — just pass the meta to
+  // buildRooms and sort at the boundary.
+  const roomMeta = useRoomMetaStore((s) => s.meta);
+  const rooms = useMemo(
+    () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId)),
+    [workers, teams, managers, roomMeta],
+  );
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) || null,
     [rooms, selectedRoomId],
