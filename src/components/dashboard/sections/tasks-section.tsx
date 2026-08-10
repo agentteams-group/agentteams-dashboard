@@ -17,6 +17,7 @@ import {
   User,
   Users,
   Eye,
+  FolderTree,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -447,8 +448,8 @@ export function TasksSection() {
               </p>
               <p className="text-muted-foreground">
                 Bucket: <code className="font-mono">{persisted?.bucket ?? '(未配置)'}</code> ·
-                候选路径: <code className="font-mono">team/, teams/, shared/teams/, shared/tasks/</code> ·
-                匹配 prefix: <code className="font-mono">{persisted?.matchedPrefixes.join(', ') || '(无)'}</code>
+                候选路径: <code className="font-mono">shared/tasks/, shared/projects/, agents/&#123;worker&#125;/task-history.json</code> ·
+                匹配: <code className="font-mono">{persisted?.matchedPrefixes.join(', ') || '(无)'}</code>
               </p>
               {persisted?.error && (
                 <p className="text-muted-foreground">错误: {persisted.error}</p>
@@ -570,7 +571,8 @@ export function TasksSection() {
                   Manager Agent 开始工作后，任务将自动出现在这里
                 </p>
                 <p className="text-xs text-muted-foreground/70 mt-3">
-                  任务数据来自 Matrix 房间中的 agentteams.workflow 消息，首次同步最长需要 15 秒
+                  任务数据来自 MinIO <code className="font-mono">shared/tasks/&#123;id&#125;/meta.json</code> 与 Matrix 实时 workflow 消息。
+                  Manager 完成任务创建后最长 8s 自动同步。
                 </p>
               </>
             ) : (
@@ -644,6 +646,15 @@ export function TasksSection() {
                             <MessageSquare className="h-3 w-3" />
                             {roomDisplayName(task.roomId)}
                           </span>
+                          {(task as { source?: string }).source && (
+                            <span
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                              title={`MinIO 源: ${(task as { source?: string }).source}`}
+                            >
+                              <FolderTree className="h-3 w-3" />
+                              {(task as { source?: string }).source?.replace(/^shared\/(tasks|projects)\//, '$1/').replace(/^agents\//, 'worker ')}
+                            </span>
+                          )}
                           <span>{new Date(task.updatedAt).toLocaleTimeString()}</span>
                         </div>
                       </div>

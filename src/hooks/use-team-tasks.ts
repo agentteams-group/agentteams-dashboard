@@ -7,9 +7,15 @@ import type { TaskEntry } from '@/lib/task-store';
 
 /**
  * Persisted task format returned by GET /api/agentteams/team-tasks. Mirrors
- * TaskEntry but with epoch ms fields.
+ * TaskEntry but adds a `source` field describing where the record came from
+ * (e.g. "shared/tasks/abc12" or "agents/tech-verify") so the task panel can
+ * surface provenance when the same task id is observed from multiple sources.
  */
 export interface PersistedTaskEntry extends TaskEntry {
+  /** MinIO prefix the record was loaded from (e.g. "shared/tasks/abc12"). */
+  source?: string;
+  /** Owning worker (only populated for worker-history sourced tasks). */
+  workerName?: string;
   bucket?: string | null;
   scannedAt?: number;
 }
@@ -28,9 +34,10 @@ const QUERY_KEY = ['team-tasks'] as const;
 /**
  * Hook: load persisted task data from the server-side aggregator at
  * `/api/agentteams/team-tasks`. The server reads the configured MinIO
- * bucket from env and probes several candidate prefixes (`team/`, `teams/`,
- * `shared/teams/`, `shared/tasks/`, `team-tasks/`) so we don't need to
- * hard-code a bucket name in the client.
+ * bucket from env and probes the real storage layout (each task is its own
+ * directory under `shared/tasks/{task-id}/` with a `meta.json`; projects
+ * live under `shared/projects/`; per-worker history under
+ * `agents/{worker}/task-history.json`).
  *
  * The response includes:
  *  - `tasks`: normalized TaskEntry[] ready for the task panel
