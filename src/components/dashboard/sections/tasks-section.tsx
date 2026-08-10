@@ -284,7 +284,11 @@ export function TasksSection() {
     () => mergeTasks(persistedTasks, liveTasks),
     [persistedTasks, liveTasks],
   );
-  useLogTeamTaskScan(persisted?.matchedPrefixes ?? [], persisted?.scannedKeys ?? []);
+  useLogTeamTaskScan(
+    persisted?.matchedPrefixes ?? [],
+    persisted?.scannedKeys ?? [],
+    persisted?.error,
+  );
 
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const clearTasks = useTaskStore((s) => s.clearTasks);
@@ -431,6 +435,28 @@ export function TasksSection() {
       />
       {/* Reload trigger — re-renders this hidden block to force a fresh sync cycle */}
       <div data-reload-key={reloadKey} hidden />
+
+      {/* Diagnostic banner when MinIO data source is unavailable or empty. */}
+      {(persisted?.error || (persisted && !persistedLoading && persistedTasks.length === 0 && (persisted?.matchedPrefixes.length ?? 0) === 0)) && (
+        <Card className="glass-card border-amber-500/30 bg-amber-500/5">
+          <CardContent className="p-3 flex items-start gap-2 text-xs">
+            <Loader2 className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="font-medium text-amber-700 dark:text-amber-400">
+                {persisted?.error ? 'MinIO 任务数据源不可用' : 'MinIO 中未找到任务文件'}
+              </p>
+              <p className="text-muted-foreground">
+                Bucket: <code className="font-mono">{persisted?.bucket ?? '(未配置)'}</code> ·
+                候选路径: <code className="font-mono">team/, teams/, shared/teams/, shared/tasks/</code> ·
+                匹配 prefix: <code className="font-mono">{persisted?.matchedPrefixes.join(', ') || '(无)'}</code>
+              </p>
+              {persisted?.error && (
+                <p className="text-muted-foreground">错误: {persisted.error}</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats cards */}
       <div className="grid grid-cols-3 gap-3">

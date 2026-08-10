@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
-import { buildRooms, filterRooms } from './room-builders';
+import { buildRooms, filterRooms, sortRoomsByRecency } from './room-builders';
 import type { RoomInfo } from './room-info';
 
 const team = (overrides: Partial<TeamResponse> = {}): TeamResponse => ({
@@ -130,5 +130,49 @@ describe('filterRooms', () => {
 
   it('returns empty for no match', () => {
     expect(filterRooms(rooms, 'zzz')).toEqual([]);
+  });
+});
+
+describe('sortRoomsByRecency', () => {
+  const make = (overrides: Partial<RoomInfo>): RoomInfo => ({
+    id: overrides.id ?? '!r:m',
+    name: overrides.name ?? 'r',
+    type: overrides.type ?? 'team',
+    members: overrides.members ?? [],
+    ...overrides,
+  });
+
+  it('returns empty for empty input', () => {
+    expect(sortRoomsByRecency([])).toEqual([]);
+  });
+
+  it('unread rooms float above read rooms', () => {
+    const read = make({ id: 'a', name: 'A', lastMessageTs: 5000 });
+    const unread = make({ id: 'b', name: 'B', lastMessageTs: 100, unreadCount: 1 });
+    const out = sortRoomsByRecency([read, unread]);
+    expect(out.map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it('unread with highlight pinned above unread without', () => {
+    const plain = make({ id: 'p', name: 'P', unreadCount: 5 });
+    const highlight = make({ id: 'h', name: 'H', unreadCount: 1, unreadHighlightCount: 1 });
+    const out = sortRoomsByRecency([plain, highlight]);
+    expect(out.map((r) => r.id)).toEqual(['h', 'p']);
+  });
+
+  it('among read rooms, sort by lastMessageTs desc', () => {
+    const older = make({ id: 'o', name: 'O', lastMessageTs: 100 });
+    const newer = make({ id: 'n', name: 'N', lastMessageTs: 200 });
+    const noTs = make({ id: 'x', name: 'X' });
+    const out = sortRoomsByRecency([noTs, older, newer]);
+    expect(out.map((r) => r.id)).toEqual(['n', 'o', 'x']);
+  });
+
+  it('does not mutate input array', () => {
+    const a = make({ id: 'a', name: 'A', lastMessageTs: 100 });
+    const b = make({ id: 'b', name: 'B', lastMessageTs: 200 });
+    const input = [a, b];
+    sortRoomsByRecency(input);
+    expect(input).toEqual([a, b]);
   });
 });

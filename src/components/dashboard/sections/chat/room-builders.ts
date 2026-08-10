@@ -95,12 +95,20 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
 }
 
 /**
- * Sort rooms so the most recent activity floats to the top. Rooms without a
- * lastMessageTs (i.e. no /sync activity yet) are pushed to the bottom but
- * keep a stable relative order.
+ * Sort rooms so unread rooms float to the top, then break ties by
+ * latest activity, then alphabetically. Rooms with unread highlights
+ * (e.g. @mentions) are pinned to the very top.
  */
 export function sortRoomsByRecency(rooms: RoomInfo[]): RoomInfo[] {
   return [...rooms].sort((a, b) => {
+    const aUnread = (a.unreadCount ?? 0) > 0;
+    const bUnread = (b.unreadCount ?? 0) > 0;
+    if (aUnread !== bUnread) return aUnread ? -1 : 1;
+
+    const aHighlight = (a.unreadHighlightCount ?? 0) > 0;
+    const bHighlight = (b.unreadHighlightCount ?? 0) > 0;
+    if (aUnread && bUnread && aHighlight !== bHighlight) return aHighlight ? -1 : 1;
+
     const ta = a.lastMessageTs ?? 0;
     const tb = b.lastMessageTs ?? 0;
     if (ta !== tb) return tb - ta;

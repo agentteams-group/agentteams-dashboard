@@ -88,25 +88,23 @@ export function RoomListItem({
           </div>
         </div>
         {room.unreadCount !== undefined && room.unreadCount > 0 ? (
-          <Badge
-            variant={room.unreadHighlightCount ? 'destructive' : 'default'}
-            className={`text-[10px] shrink-0 ${
+          <span
+            className={`shrink-0 rounded-full ${
               room.unreadHighlightCount
-                ? ''
-                : 'bg-emerald-500 hover:bg-emerald-500 text-white'
+                ? 'h-2.5 w-2.5 bg-red-500 ring-2 ring-red-500/30'
+                : 'h-2 w-2 bg-red-500'
             }`}
+            aria-label={
+              room.unreadHighlightCount
+                ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
+                : `${room.unreadCount} 条未读`
+            }
             title={
               room.unreadHighlightCount
                 ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
                 : `${room.unreadCount} 条未读`
             }
-          >
-            {room.unreadCount > 99 ? '99+' : room.unreadCount}
-          </Badge>
-        ) : room.members && room.members.length > 0 ? (
-          <Badge variant="secondary" className="text-[10px] shrink-0">
-            {room.members.length}
-          </Badge>
+          />
         ) : null}
       </div>
     </motion.button>
