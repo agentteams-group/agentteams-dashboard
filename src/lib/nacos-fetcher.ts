@@ -1,8 +1,11 @@
 import { getNacosConfig } from '@/lib/skill-center-config';
 import { SKILLS_BUCKET } from '@/lib/skill-center-types';
+import { unzipSync, zipSync } from 'fflate';
 
 export interface NacosZipResult {
   zipBytes: Uint8Array;
+  /** The resolved skill name from SKILL.md (may differ from the Nacos registry name). */
+  resolvedName: string;
   source: string;
 }
 
@@ -25,6 +28,8 @@ export async function cacheSkillContent(
   skillName: string,
   files: { relativePath: string; data: Uint8Array }[]
 ): Promise<void> {
+  // Clear existing cached files before writing new ones.
+  await deleteSkillCache(client, skillName);
   for (const f of files) {
     const key = `${skillName}/${f.relativePath}`;
     await client.putObject(
@@ -35,6 +40,112 @@ export async function cacheSkillContent(
       { 'Content-Type': 'application/octet-stream' }
     );
   }
+}
+
+async function deleteSkillCache(client: any, skillName: string): Promise<void> {
+  const prefix = `${skillName}/`;
+  try {
+    const objs: string[] = [];
+    const stream = client.listObjects(SKILLS_BUCKET, prefix, true);
+    await new Promise<void>((resolve, reject) => {
+      stream.on('data', (obj: { name?: string }) => {
+        if (obj.name) objs.push(obj.name);
+      });
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    if (objs.length > 0) {
+      await client.removeObjects(SKILLS_BUCKET, objs);
+    }
+  } catch {
+    // If we can't clean old cache, write-through still works; stale files
+    // will be orphaned but won't break anything.
+  }
+}
+
+/** Extract the single skill matching requestedName from a monorepo-style ZIP. */
+function extractSkillFromMonorepo(
+  zipBytes: Uint8Array,
+  requestedName: string
+): { zipBytes: Uint8Array; resolvedName: string } {
+  const entries: Record<string, Uint8Array> = unzipSync(zipBytes);
+  const paths = Object.keys(entries);
+
+  // Heuristic: strip the top-level archive directory (e.g. `marketingskills-main/`)
+  let rootPrefix = '';
+  for (const p of paths) {
+    const slash = p.indexOf('/');
+    if (slash > 0 && !p.startsWith('.github') && !p.startsWith('.claude-plugin')) {
+      rootPrefix = p.substring(0, slash + 1);
+      break;
+    }
+  }
+
+  // Method 1: directory name match
+  const dirPath = `${rootPrefix}skills/${requestedName}/`;
+  if (paths.some((p) => p.startsWith(dirPath))) {
+    return buildSingleSkillZip(entries, dirPath, requestedName);
+  }
+
+  // Method 2: search SKILL.md frontmatter `name` field
+  for (const path of paths) {
+    if (!path.includes('/skills/') || !path.endsWith('/SKILL.md')) continue;
+    const content = new TextDecoder().decode(entries[path]);
+    const nameMatch = content.match(/^name:\s*(.+)$/m);
+    if (!nameMatch || nameMatch[1].trim() !== requestedName) continue;
+    const skillsIdx = path.indexOf('/skills/') + 8;
+    const skillDir = path.substring(0, path.indexOf('/', skillsIdx) + 1);
+    return buildSingleSkillZip(entries, skillDir, nameMatch[1].trim());
+  }
+
+  // Method 3: try partial prefix match (e.g. "ab-test-setup" could be an
+  // alias for "ab-testing" in the monorepo)
+  for (const path of paths) {
+    if (!path.includes('/skills/') || !path.endsWith('/SKILL.md')) continue;
+    const skillsIdx = path.indexOf('/skills/') + 8;
+    const dirName = path.substring(skillsIdx, path.indexOf('/', skillsIdx));
+    const content = new TextDecoder().decode(entries[path]);
+    const nameMatch = content.match(/^name:\s*(.+)$/m);
+    const internalName = nameMatch?.[1]?.trim() || '';
+    if (
+      internalName &&
+      (requestedName.includes(internalName) || internalName.includes(requestedName) ||
+       requestedName.replace(/[_-]/g, '') === internalName.replace(/[_-]/g, ''))
+    ) {
+      const skillDir = path.substring(0, skillsIdx + dirName.length + 1);
+      return buildSingleSkillZip(entries, skillDir, internalName);
+    }
+  }
+
+  const available: string[] = [];
+  for (const path of paths) {
+    if (path.includes('/skills/') && path.endsWith('/SKILL.md')) {
+      const parts = path.split('/');
+      const skillsIdx = parts.indexOf('skills');
+      if (skillsIdx >= 0 && skillsIdx + 1 < parts.length) {
+        available.push(parts[skillsIdx + 1]);
+      }
+    }
+  }
+  throw new Error(
+    `无法在技能仓库中找到 "${requestedName}"（仓库中可用的技能目录: ${[...new Set(available)].join(', ')}）。请检查 Nacos 中技能名称是否与仓库目录名一致。`
+  );
+}
+
+function buildSingleSkillZip(
+  entries: Record<string, Uint8Array>,
+  dirPrefix: string,
+  resolvedName: string
+): { zipBytes: Uint8Array; resolvedName: string } {
+  const skillFiles: Record<string, Uint8Array> = {};
+  for (const [path, data] of Object.entries(entries)) {
+    if (!path.startsWith(dirPrefix) || path === dirPrefix) continue;
+    skillFiles[path.substring(dirPrefix.length)] = data;
+  }
+  if (Object.keys(skillFiles).length === 0) {
+    throw new Error(`技能目录 "${dirPrefix}" 为空`);
+  }
+  return { zipBytes: zipSync(skillFiles), resolvedName };
 }
 
 async function getNacosAccessToken(config: any): Promise<string> {
@@ -121,7 +232,8 @@ export async function fetchNacosSkillZip(
                 diag.homePageStatus = zipRes.status;
                 if (zipRes.ok) {
                   const buf = Buffer.from(await zipRes.arrayBuffer());
-                  return { zipBytes: new Uint8Array(buf), source: 'github-archive' };
+                  const extracted = extractSkillFromMonorepo(new Uint8Array(buf), skillName);
+                  return { zipBytes: extracted.zipBytes, resolvedName: extracted.resolvedName, source: 'github-archive' };
                 }
               } catch {
                 diag.homePageStatus = -1;
@@ -163,7 +275,10 @@ export async function fetchNacosSkillZip(
               diag.homePageContentType = zipRes.headers.get('content-type') || undefined;
               if (zipRes.ok && zipRes.headers.get('content-type')?.includes('zip')) {
                 const buf = Buffer.from(await zipRes.arrayBuffer());
-                return { zipBytes: new Uint8Array(buf), source: 'homePageUrl' };
+                // services mode typically returns a single-skill ZIP directly,
+                // but we still extract in case it's a monorepo.
+                const extracted = extractSkillFromMonorepo(new Uint8Array(buf), skillName);
+                return { zipBytes: extracted.zipBytes, resolvedName: extracted.resolvedName, source: 'homePageUrl' };
               }
             }
           }

@@ -7,6 +7,7 @@ import {
   SKILLS_BUCKET,
   SKILLS_METADATA_PREFIX,
 } from '@/lib/skill-center-types';
+import { saveSkillMetadata } from '@/lib/skill-center-storage';
 import { zipSync, unzipSync } from 'fflate';
 import { fetchNacosSkillZip, cacheSkillContent } from '@/lib/nacos-fetcher';
 import type { NacosZipResult } from '@/lib/nacos-fetcher';
@@ -38,6 +39,12 @@ async function listSkillFiles(client: any, skillName: string): Promise<string[]>
   }
 
   return files.sort();
+}
+
+/** Returns true when cached files appear to be from a monorepo (multiple SKILL.md). */
+function isMonorepoCache(fileNames: string[]): boolean {
+  const skillMds = fileNames.filter((f) => f.endsWith('SKILL.md'));
+  return skillMds.length > 1;
 }
 
 async function readObject(client: any, skillName: string, relativePath: string): Promise<Buffer> {
@@ -88,7 +95,9 @@ export async function GET(
     if (metadata.source === 'nacos') {
       const fileNames = await listSkillFiles(client, name);
 
-      if (fileNames.length > 0) {
+      // Transition: previously the whole monorepo was cached under this
+      // skill's key. Detect that and re-extract from Nacos.
+      if (fileNames.length > 0 && !isMonorepoCache(fileNames)) {
         const entries: Record<string, Uint8Array> = {};
         for (const fileName of fileNames) {
           const data = await readObject(client, name, fileName);
@@ -97,6 +106,7 @@ export async function GET(
         return serveZip(name, zipSync(entries));
       }
 
+      // Cache is empty or is a stale monorepo — fetch from Nacos.
       const config = await getNacosConfig();
       if (!config) {
         return NextResponse.json({ error: 'Nacos 未配置，无法自动拉取技能内容' }, { status: 400 });
@@ -125,7 +135,13 @@ export async function GET(
         // non-zip content, skip caching
       }
 
-      return serveZip(name, nacosResult.zipBytes);
+      // Update metadata name if the SKILL.md resolved a different name.
+      if (nacosResult.resolvedName && nacosResult.resolvedName !== metadata.name) {
+        metadata.name = nacosResult.resolvedName;
+        await saveSkillMetadata(client, metadata);
+      }
+
+      return serveZip(nacosResult.resolvedName || name, nacosResult.zipBytes);
     }
 
     const fileNames = await listSkillFiles(client, name);
