@@ -22,12 +22,21 @@ interface AgentTeamsState {
   connectionLatency: number | null;
   connectionHistory: ConnectionAttempt[];
 
+  /**
+   * Whether the 任务看板 nav item is visible. Defaults to true so new
+   * users see the board; existing installs keep their current setting
+   * via persisted localStorage. Hidden = the nav item is removed, the
+   * section route still works if navigated to directly.
+   */
+  taskBoardVisible: boolean;
+
   setControllerUrl: (_url: string) => void;
   checkConnection: () => Promise<boolean>;
   openSettings: () => void;
   closeSettings: () => void;
   setAutoReconnect: (_val: boolean) => void;
   setReconnectInterval: (_ms: number) => void;
+  setTaskBoardVisible: (_val: boolean) => void;
   addConnectionAttempt: (_attempt: ConnectionAttempt) => void;
 }
 
@@ -49,6 +58,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       lastConnectedAt: null,
       connectionLatency: null,
       connectionHistory: [],
+      taskBoardVisible: true,
 
       setControllerUrl: (url: string) => {
         set({ controllerUrl: url });
@@ -123,6 +133,10 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         set({ reconnectInterval: ms });
       },
 
+      setTaskBoardVisible: (val: boolean) => {
+        set({ taskBoardVisible: val });
+      },
+
       addConnectionAttempt: (attempt: ConnectionAttempt) => {
         const history = [attempt, ...get().connectionHistory].slice(0, MAX_HISTORY);
         set({ connectionHistory: history });
@@ -136,6 +150,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         autoReconnect: state.autoReconnect,
         reconnectInterval: state.reconnectInterval,
         lastConnectedAt: state.lastConnectedAt,
+        taskBoardVisible: state.taskBoardVisible,
       }),
       migrate: (persistedState) => {
         // Clear the legacy hard-coded default so the dashboard falls back to

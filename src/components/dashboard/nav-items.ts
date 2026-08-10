@@ -11,6 +11,7 @@ import {
   ListTodo,
   type LucideIcon,
 } from 'lucide-react';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 export const STORAGE_KEY = 'agentteams-active-section';
 
@@ -25,13 +26,15 @@ export interface NavItem {
   group: NavGroup;
   /** Visible in these modes only. Omit = visible everywhere. */
   modes?: DeploymentMode[];
+  /** When true, the item is hidden if the matching feature flag is off. */
+  hiddenByFlag?: 'taskBoard';
 }
 
 export const navItems: NavItem[] = [
   { id: 'overview', label: '总览', icon: LayoutDashboard, group: 'core' },
   { id: 'chat', label: '聊天', icon: MessageSquare, group: 'core' },
   // 运行时分组
-  { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime' },
+  { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime', hiddenByFlag: 'taskBoard' },
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, group: 'runtime' },
   { id: 'teams', label: '团队', icon: Users, group: 'runtime' },
@@ -53,6 +56,12 @@ export function isNavItemVisible(
   item: NavItem,
   mode: DeploymentMode | null | undefined
 ): boolean {
+  if (item.hiddenByFlag === 'taskBoard') {
+    // Read from the live zustand store so changes take effect immediately
+    // when the user toggles the setting in the settings dialog.
+    const visible = useAgentTeamsStore.getState().taskBoardVisible;
+    if (!visible) return false;
+  }
   if (!item.modes) return true;
   if (!mode) return true;
   return item.modes.includes(mode);
@@ -65,6 +74,7 @@ export interface CreateAction {
   section: string;
   group?: NavGroup;
   modes?: DeploymentMode[];
+  hiddenByFlag?: 'taskBoard';
 }
 
 export const createActions: readonly CreateAction[] = [
@@ -78,6 +88,10 @@ export function isCreateActionVisible(
   action: CreateAction,
   mode: DeploymentMode | null | undefined
 ): boolean {
+  if (action.hiddenByFlag === 'taskBoard') {
+    const visible = useAgentTeamsStore.getState().taskBoardVisible;
+    if (!visible) return false;
+  }
   if (!action.modes) return true;
   if (!mode) return true;
   return action.modes.includes(mode);

@@ -72,7 +72,8 @@ export function AgentTeamsDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { isConnected, openSettings, controllerUrl, connectionLatency, reconnectInterval } = useAgentTeamsStore();
+  const { isConnected, openSettings, controllerUrl, connectionLatency, reconnectInterval,
+    taskBoardVisible } = useAgentTeamsStore();
   const { isLoggedIn: matrixLoggedIn, isSyncing: matrixSyncing } = useMatrixStore();
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
@@ -91,7 +92,7 @@ export function AgentTeamsDashboard() {
 
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
-    [mode]
+    [mode, taskBoardVisible]
   );
 
   const visibleCreateActions = useMemo(

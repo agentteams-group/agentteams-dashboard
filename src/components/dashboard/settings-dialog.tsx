@@ -21,7 +21,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Wifi, WifiOff, Loader2, RotateCcw, Clock, Server, History, Stethoscope, FileDown } from 'lucide-react';
+import {
+  Wifi,
+  WifiOff,
+  Loader2,
+  RotateCcw,
+  Clock,
+  Server,
+  History,
+  Stethoscope,
+  FileDown,
+  LayoutGrid,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { TroubleshootTab } from './settings/troubleshoot-tab';
 import { DebugLogTab } from './settings/debug-log-tab';
@@ -48,6 +61,8 @@ export function SettingsDialog() {
     connectionLatency,
     lastConnectedAt,
     connectionHistory,
+    taskBoardVisible,
+    setTaskBoardVisible,
   } = useAgentTeamsStore();
 
   const { data: infrastructure } = useInfrastructure();
@@ -120,7 +135,7 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="connection">连接</TabsTrigger>
             <TabsTrigger value="troubleshoot">
               <Stethoscope className="w-3.5 h-3.5 mr-1" />
@@ -129,6 +144,10 @@ export function SettingsDialog() {
             <TabsTrigger value="debug-log">
               <FileDown className="w-3.5 h-3.5 mr-1" />
               日志收集
+            </TabsTrigger>
+            <TabsTrigger value="display">
+              <LayoutGrid className="w-3.5 h-3.5 mr-1" />
+              显示
             </TabsTrigger>
           </TabsList>
 
@@ -315,6 +334,29 @@ export function SettingsDialog() {
 
           <TabsContent value="debug-log" className="py-4">
             <DebugLogTab />
+          </TabsContent>
+
+          <TabsContent value="display" className="space-y-4 py-4">
+            {/* Task board visibility */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="flex items-center gap-2">
+                  {taskBoardVisible ? (
+                    <Eye className="w-3.5 h-3.5" />
+                  ) : (
+                    <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  任务看板
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  关闭后侧边栏的「任务看板」导航项会隐藏,直接访问 URL 仍然可以打开该 section
+                </p>
+              </div>
+              <Switch
+                checked={taskBoardVisible}
+                onCheckedChange={setTaskBoardVisible}
+              />
+            </div>
           </TabsContent>
         </Tabs>
 

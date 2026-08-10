@@ -13,6 +13,7 @@ import {
   type DeploymentMode,
   type NavGroup,
 } from './nav-items';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -42,9 +43,10 @@ export function MobileSidebar({
   onClose,
   mode,
 }: MobileSidebarProps) {
+  const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const visibleItems = useMemo(
     () => navItems.filter((item) => isNavItemVisible(item, mode)),
-    [mode]
+    [mode, taskBoardVisible]
   );
 
   // Group items by their group field
