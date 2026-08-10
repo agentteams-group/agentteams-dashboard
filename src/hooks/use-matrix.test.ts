@@ -111,16 +111,17 @@ describe('formatMatrixEvents', () => {
     expect(messages[0].content).toBe('{"type":"tool_call","name":"search","arguments":{"query":"状态"}}');
   });
 
-  it('keeps thread replies out of the main timeline and counts them on the root', () => {
+  it('keeps cross-user thread replies out of the main timeline and counts them on the root', () => {
+    // Thread replies from a different sender than the root go to the thread panel.
     const events = [
-      message('root', '原始问题', 100),
+      { ...message('root', '原始问题', 100), sender: '@bot:example.test' },
       message('other', '无关消息', 200),
-      message('reply-1', '线程回复一', 300, {
+      { ...message('reply-1', '线程回复一', 300, {
         'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
-      }),
-      message('reply-2', '线程回复二', 400, {
+      }), sender: '@human:example.test' },
+      { ...message('reply-2', '线程回复二', 400, {
         'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
-      }),
+      }), sender: '@human:example.test' },
     ];
 
     const messages = formatMatrixEvents(events, '@human:example.test');
@@ -128,6 +129,26 @@ describe('formatMatrixEvents', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ id: 'root', replyCount: 2, isThreadReply: false });
     expect(messages[1]).toMatchObject({ id: 'other' });
+  });
+
+  it('keeps self-thread-replies in the main timeline (agent continuing its own response)', () => {
+    // When an agent sends a thread reply to its own root (e.g. Hermes
+    // delivering the main answer), keep it inline so it's visible.
+    const events = [
+      message('root', '处理中...', 100),
+      message('reply-1', '实际回答', 200, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+      message('other', '另一条消息', 300),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(3);
+    expect(messages[0].id).toBe('root');
+    expect(messages[0].replyCount).toBeFalsy();
+    expect(messages[1]).toMatchObject({ id: 'reply-1', isThreadReply: true, threadId: 'root' });
+    expect(messages[2]).toMatchObject({ id: 'other' });
   });
 
   it('exposes thread metadata before the reply enters the thread panel', () => {

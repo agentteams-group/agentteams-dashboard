@@ -354,6 +354,7 @@ export function WorkersSection() {
 
     setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [] });
     let uploadedCount = 0;
+    let uploadedSkillNames: string[] = [];
     for (const skillName of newSkills) {
       try {
         let file: File;
@@ -362,9 +363,10 @@ export function WorkersSection() {
         } catch {
           file = await agentteamsApi.downloadNacosSkill(skillName);
         }
-        await agentteamsApi.uploadWorkerSkill(workerName, file);
+        const res = await agentteamsApi.uploadWorkerSkill(workerName, file);
         setSyncingSkills((prev) => prev && { ...prev, done: [...prev.done, skillName] });
         uploadedCount += 1;
+        uploadedSkillNames.push(res.skillName);
       } catch {
         setSyncingSkills((prev) => prev && { ...prev, failed: [...prev.failed, skillName] });
         toast.warning(`技能 "${skillName}" 安装失败，已跳过`);
@@ -374,22 +376,23 @@ export function WorkersSection() {
       setSyncingSkills(null);
       return;
     }
-    setSyncingSkills((prev) => prev && { ...prev, restarting: true });
+
+    // The server already restarts the worker (sleep → wake) after each
+    // upload, so we only need to update spec.skills to keep the
+    // Controller-managed resource in sync.
     try {
-      await new Promise<void>((resolve) => {
-        sleepWorker.mutate(workerName, { onSettled: () => resolve() });
-      });
-      await new Promise<void>((resolve) => {
-        wakeWorker.mutate(workerName, { onSettled: () => resolve() });
-      });
-      setSyncingSkills((prev) => prev && { ...prev, restarting: false, restarted: true });
-      toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能并重启`);
+      const currentWorker = workers?.find((w) => w.name === workerName);
+      const existingSpecSkills = currentWorker?.skills ?? [];
+      const merged = [...new Set([...existingSpecSkills, ...uploadedSkillNames])];
+      await agentteamsApi.updateWorker(workerName, { skills: merged });
     } catch {
-      setSyncingSkills((prev) => prev && { ...prev, restarting: false });
-      toast.warning(`技能已上传但 Worker 重启失败，最长约 5 分钟内自动发现`);
+      // spec.skills update is best-effort; files are already in place.
     }
+
+    setSyncingSkills((prev) => prev && { ...prev, restarted: true });
+    toast.success(`已为 Worker "${workerName}" 安装 ${uploadedCount} 个技能`);
     setTimeout(() => setSyncingSkills(null), 3000);
-  }, [sleepWorker, wakeWorker]);
+  }, [sleepWorker, wakeWorker, workers]);
 
   const handleCreate = useCallback(() => {
     warnIfModelAliasUnbound(newWorker.model);
@@ -534,15 +537,13 @@ export function WorkersSection() {
   return (
     <div className="space-y-6">
       {syncingSkills && (
-        <div className={`rounded-md border p-3 text-sm ${syncingSkills.restarted ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200' : syncingSkills.restarting ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>
+        <div className={`rounded-md border p-3 text-sm ${syncingSkills.restarted ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>
           <div className="flex items-center gap-2">
             {syncingSkills.restarted ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
             <span>
               {syncingSkills.restarted
-                ? `Worker "${syncingSkills.workerName}" 技能安装完成并已重启`
-                : syncingSkills.restarting
-                  ? `正在重启 Worker "${syncingSkills.workerName}"...`
-                  : `正在为 Worker "${syncingSkills.workerName}" 安装技能...`}
+                ? `Worker "${syncingSkills.workerName}" 技能安装完成`
+                : `正在为 Worker "${syncingSkills.workerName}" 安装技能...`}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">

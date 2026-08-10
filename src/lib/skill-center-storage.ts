@@ -305,6 +305,9 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
         description: typeof item.description === 'string' ? item.description : '',
         source: 'nacos' as const,
         sourceAlias: config.alias || config.namespace || config.registryUrl.replace(/^nacos:\/\//, '').split('/').pop() || config.registryUrl,
+        nacosVersion: typeof (item.labels as Record<string, unknown> | undefined)?.latest === 'string'
+          ? (item.labels as Record<string, unknown>).latest as string
+          : undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         fileCount: 0,
@@ -332,17 +335,30 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
   const existingSkills = await listSkills(client);
   const existingNames = new Set(existingSkills.map((s) => s.name));
 
-  // Persist Nacos skills that don't conflict with custom skills
+  // Persist Nacos skills. For custom skills with the same name we only
+  // refresh the source alias and timestamp. For nacos skills we update
+  // in place when the version or description has changed so that
+  // previously-distributed skill content stays fresh.
   const saved: SkillEntry[] = [];
   for (const skill of nacosSkills) {
     if (existingNames.has(skill.name)) {
       const existing = existingSkills.find((s) => s.name === skill.name);
-      if (existing) {
+      if (!existing) continue;
+      if (existing.source !== 'nacos') {
+        existing.sourceAlias = skill.sourceAlias;
         existing.updatedAt = new Date().toISOString();
-        if (existing.source === 'nacos') {
-          existing.sourceAlias = skill.sourceAlias;
-        }
         await saveSkillMetadata(client, existing);
+        continue;
+      }
+      const versionChanged = skill.nacosVersion && skill.nacosVersion !== existing.nacosVersion;
+      const descChanged = skill.description && skill.description !== existing.description;
+      if (versionChanged || descChanged) {
+        existing.description = skill.description || existing.description;
+        existing.nacosVersion = skill.nacosVersion ?? existing.nacosVersion;
+        existing.sourceAlias = skill.sourceAlias;
+        existing.updatedAt = new Date().toISOString();
+        await saveSkillMetadata(client, existing);
+        saved.push(existing);
       }
       continue;
     }

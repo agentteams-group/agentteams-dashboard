@@ -15,7 +15,7 @@ import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useWorkerSkills } from '@/hooks/use-agentteams-worker-skills';
 import { agentteamsApi } from '@/lib/agentteams-api';
 
-type DistributeStep = 'idle' | 'downloading' | 'uploading' | 'restarting' | 'done';
+type DistributeStep = 'idle' | 'downloading' | 'uploading' | 'done';
 
 export function SkillDistributeToWorkerDialog({
   skillName,
@@ -72,30 +72,36 @@ export function SkillDistributeToWorkerDialog({
       // Copaw uses .copaw/workspaces/default/, others use the canonical
       // skills/ directory).
       const targetWorker = workers.find((w) => w.name === selectedWorker);
-      await agentteamsApi.uploadWorkerSkill(
+      const res = await agentteamsApi.uploadWorkerSkill(
         selectedWorker,
         file,
         targetWorker?.runtime,
       );
+      // The server already restarted the worker (sleep → wake) after
+      // storing the skill files. Use the server's note as-is.
+      setResultNote(res.note ?? '已通知 Worker 加载新技能');
+
+      // Update the worker's spec.skills so the Controller-managed
+      // resource stays in sync with the files on disk.
+      try {
+        const existingSkills = targetWorker?.skills ?? [];
+        const skillNameFromPackage = res.skillName;
+        if (!existingSkills.includes(skillNameFromPackage)) {
+          await agentteamsApi.updateWorker(selectedWorker, {
+            skills: [...existingSkills, skillNameFromPackage],
+          });
+        }
+      } catch {
+        // Updating spec.skills is best-effort; the files are already in place.
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传技能到 Worker 失败');
       setStep('idle');
       return;
     }
 
-    // Step 3: Restart worker (sleep + wake)
-    setStep('restarting');
-    try {
-      await agentteamsApi.sleepWorker(selectedWorker);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await agentteamsApi.wakeWorker(selectedWorker);
-      setResultNote('已通知 Worker 加载新技能');
-    } catch {
-      setResultNote('技能已上传，Worker 最长约 5 分钟内自动发现');
-    }
-
     setStep('done');
-  }, [selectedWorker, skillName]);
+  }, [selectedWorker, skillName, workers]);
 
   const isReady = !!selectedWorker && step === 'idle';
   const isRunning = step !== 'idle' && step !== 'done';
@@ -147,11 +153,6 @@ export function SkillDistributeToWorkerDialog({
                 label="上传到 Worker"
                 step={step}
                 active="uploading"
-              />
-              <StepItem
-                label="重启 Worker 加载技能"
-                step={step}
-                active="restarting"
               />
             </div>
           )}
@@ -213,7 +214,7 @@ export function SkillDistributeToWorkerDialog({
               {isRunning ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {step === 'downloading' ? '下载中...' : step === 'uploading' ? '上传中...' : '重启中...'}
+                  {step === 'downloading' ? '下载中...' : '上传中...'}
                 </>
               ) : (
                 '分发技能'
@@ -227,7 +228,7 @@ export function SkillDistributeToWorkerDialog({
 }
 
 function StepItem({ label, step, active }: { label: string; step: DistributeStep; active: DistributeStep }) {
-  const doneSteps: DistributeStep[] = ['downloading', 'uploading', 'restarting', 'done'];
+  const doneSteps: DistributeStep[] = ['downloading', 'uploading', 'done'];
   const activeIdx = doneSteps.indexOf(active);
   const stepIdx = doneSteps.indexOf(step);
 

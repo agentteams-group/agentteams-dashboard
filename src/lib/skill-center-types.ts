@@ -8,6 +8,7 @@ export interface SkillEntry {
   source: 'custom' | 'nacos' | 'builtin';
   sourceAlias?: string;
   version?: string;
+  nacosVersion?: string;
   createdAt: string;
   updatedAt: string;
   fileCount: number;
