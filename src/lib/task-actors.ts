@@ -44,3 +44,29 @@ export function actorFromWorker(w: WorkerResponse, t?: TeamResponse): ActorLooku
 export function actorFromTeam(t: TeamResponse): ActorLookup {
   return { roomIds: teamRoomIds(t), matrixUserId: '' };
 }
+
+/**
+ * Leader perspective: a Manager acting as leader of one or more Teams.
+ *
+ * The Leader's "task board" is the union of every team room they lead —
+ * teamRoomID + leaderDMRoomID for each Team where this Manager is leader —
+ * plus the Manager's own rooms (in case the Leader posts workflow from
+ * their DM room).
+ *
+ * This matches how a real Leader would look at "tasks for my teams":
+ * they see workflow messages that originated in any of their team rooms
+ * (regardless of whether the sender is the Leader, a Worker, or another
+ * agent acting inside the team).
+ */
+export function actorAsLeader(
+  manager: ManagerResponse,
+  teams: TeamResponse[] | undefined,
+): ActorLookup {
+  const ledTeams = (teams ?? []).filter((t) => t.leaderName === manager.name);
+  const ids = new Set<string>(managerRoomIds(manager));
+  for (const t of ledTeams) {
+    for (const rid of teamRoomIds(t)) ids.add(rid);
+  }
+  return { roomIds: ids, matrixUserId: manager.matrixUserID || '' };
+}
+

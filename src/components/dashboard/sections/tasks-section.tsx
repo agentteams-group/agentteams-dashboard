@@ -45,6 +45,7 @@ import {
   actorFromManager,
   actorFromWorker,
   actorFromTeam,
+  actorAsLeader,
 } from '@/lib/task-actors';
 import type { WorkflowItem } from '@/lib/a2ui/workflow';
 
@@ -53,7 +54,7 @@ const ERROR_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
 const RUNNING_STATUSES = new Set(['in_progress', 'running']);
 
 type StatusFilter = 'all' | 'running' | 'completed' | 'failed';
-type PerspectiveKind = 'all' | 'manager' | 'team' | 'worker';
+type PerspectiveKind = 'all' | 'manager' | 'leader' | 'team' | 'worker';
 
 function taskStatus(task: TaskEntry): StatusFilter {
   if (COMPLETE_STATUSES.has(task.status)) return 'completed';
@@ -286,12 +287,21 @@ export function TasksSection() {
     if (perspective.kind === 'all' || !perspective.id) return tasks;
 
     if (perspective.kind === 'manager') {
+      // Manager 全局视角:该 Manager 作为 sender 发出的 workflow 任务(跨 Team、跨房间)
       const mgr = (managers ?? []).find((m) => m.name === perspective.id);
       if (!mgr) return [];
       const lookup = actorFromManager(mgr);
       return tasks.filter(
         (t) => t.senderMatrixUserId === lookup.matrixUserId || lookup.roomIds.has(t.roomId),
       );
+    }
+    if (perspective.kind === 'leader') {
+      // Leader 视角:该 Manager 领导的 Team 房间内产生的所有 workflow 任务
+      // (leader 自己发的 + Worker 发的 + 其他 agent 在 Team 房间发的)
+      const mgr = (managers ?? []).find((m) => m.name === perspective.id);
+      if (!mgr) return [];
+      const lookup = actorAsLeader(mgr, teams);
+      return tasks.filter((t) => lookup.roomIds.has(t.roomId));
     }
     if (perspective.kind === 'team') {
       const team = (teams ?? []).find((t) => t.teamName === perspective.id);
@@ -361,7 +371,8 @@ export function TasksSection() {
   }, []);
 
   const perspectiveOptions = useMemo(() => {
-    if (perspective.kind === 'manager') {
+    if (perspective.kind === 'manager' || perspective.kind === 'leader') {
+      // Leader 视角:用 Manager 列表(可下钻到任意 Manager,它可能领导 0..N 个 Team)
       return (managers ?? []).map((m) => ({ value: m.name, label: m.name }));
     }
     if (perspective.kind === 'team') {
@@ -413,15 +424,23 @@ export function TasksSection() {
         <div className="flex items-center gap-1">
           {([
             ['all', '全部', null],
-            ['manager', 'Manager 视角', Crown],
-            ['team', 'Team 视角', Users],
-            ['worker', 'Worker 视角', User],
+            ['manager', 'Manager 全局', Crown],
+            ['leader', 'Leader 团队', Users],
+            ['team', 'Team', Users],
+            ['worker', 'Worker', User],
           ] as const).map(([key, label, Icon]) => (
             <Button
               key={key}
               variant={perspective.kind === key ? 'default' : 'outline'}
               size="sm"
               onClick={() => handlePerspectiveKindChange(key as PerspectiveKind)}
+              title={
+                key === 'manager'
+                  ? '看某个 Manager 作为 sender 产生的全部任务(跨 Team)'
+                  : key === 'leader'
+                  ? '看某个 Manager 作为 leader 领导的 Team 房间内的所有任务'
+                  : undefined
+              }
             >
               {Icon && <Icon className="h-3.5 w-3.5 mr-1" />}
               {label}
@@ -438,7 +457,13 @@ export function TasksSection() {
               <SelectValue placeholder="选择目标..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">全部{perspective.kind === 'manager' ? ' Manager' : perspective.kind === 'team' ? ' Team' : ' Worker'}</SelectItem>
+              <SelectItem value="__all__">
+                全部
+                {perspective.kind === 'manager' && ' Manager'}
+                {perspective.kind === 'leader' && ' Leader'}
+                {perspective.kind === 'team' && ' Team'}
+                {perspective.kind === 'worker' && ' Worker'}
+              </SelectItem>
               {perspectiveOptions.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}

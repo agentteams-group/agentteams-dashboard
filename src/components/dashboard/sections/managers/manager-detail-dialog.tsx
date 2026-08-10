@@ -12,7 +12,7 @@ import { RUNTIME_LABELS, WORKER_PHASE_BADGE_CLASSES } from '@/lib/phase-colors';
 import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { getManagedTeams, getManagedWorkers, getManagerSkills } from './manager-selectors';
 import { useTaskStore, selectTaskList } from '@/lib/task-store';
-import { actorFromManager } from '@/lib/task-actors';
+import { actorFromManager, actorAsLeader } from '@/lib/task-actors';
 
 const DETAIL_FIELDS: Array<[string, (_m: ManagerResponse) => string]> = [
   ['名称', (m) => m.name],
@@ -41,6 +41,39 @@ function DetailRow({ label, value, copy }: { label: string; value: string; copy?
   );
 }
 
+function renderTaskRow(
+  task: { runId: string; title: string; status: string; updatedAt: number },
+  perspective: 'global' | 'leader',
+) {
+  const running = task.status === 'in_progress' || task.status === 'running';
+  const complete = task.status === 'completed' || task.status === 'success' || task.status === 'done';
+  const failed = task.status === 'failed' || task.status === 'error' || task.status === 'cancelled';
+  const Accent = perspective === 'global' ? Crown : ListTodo;
+  return (
+    <div
+      key={task.runId}
+      className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted/30 text-xs"
+    >
+      {complete ? (
+        <CircleCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+      ) : failed ? (
+        <CircleX className="h-3.5 w-3.5 text-red-500 shrink-0" />
+      ) : (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500 shrink-0" />
+      )}
+      <Accent className="h-3 w-3 text-violet-500 shrink-0" />
+      <span className="flex-1 truncate">{task.title}</span>
+      <span className="font-mono text-[10px] text-muted-foreground">
+        {task.runId.slice(0, 8)}
+      </span>
+      <span className="text-muted-foreground text-[10px]">
+        {new Date(task.updatedAt).toLocaleTimeString()}
+      </span>
+      {running && <Badge variant="outline" className="text-[9px] px-1 py-0">进行中</Badge>}
+    </div>
+  );
+}
+
 export function ManagerDetailDialog({
   manager,
   workers,
@@ -56,22 +89,36 @@ export function ManagerDetailDialog({
   const managedTeams = manager ? getManagedTeams(teams, manager.name) : [];
   const managedWorkers = manager ? getManagedWorkers(workers, teams, manager.name) : [];
 
-  // Live in-flight tasks for this Manager (from Matrix workflow messages).
-  // Filter by both senderMatrixUserId and room membership to catch workflow
-  // messages that came from this Manager into any room it owns.
+  // Live in-flight tasks for this Manager, sliced into two perspectives:
+  //  - globalTasks: workflow messages where the Manager is the sender (its
+  //    own dispatched tasks, regardless of which room they ended up in)
+  //  - leaderTasks: workflow messages that originated in any Team room the
+  //    Manager leads (covers Worker-reported sub-flows inside the team)
   const tasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
-  const managerTasks = useMemo(() => {
-    if (!manager) return [];
-    const lookup = actorFromManager(manager);
-    return tasks
-      .filter(
-        (t) => t.senderMatrixUserId === lookup.matrixUserId || lookup.roomIds.has(t.roomId),
-      )
-      .slice(0, 8);
-  }, [manager, tasks]);
-  const runningCount = managerTasks.filter((t) => t.status === 'in_progress' || t.status === 'running').length;
-  const completedCount = managerTasks.filter((t) => t.status === 'completed' || t.status === 'success' || t.status === 'done').length;
-  const failedCount = managerTasks.filter((t) => t.status === 'failed' || t.status === 'error' || t.status === 'cancelled').length;
+  const { globalTasks, leaderTasks } = useMemo(() => {
+    if (!manager) return { globalTasks: [], leaderTasks: [] };
+    const global = actorFromManager(manager);
+    const leader = actorAsLeader(manager, teams);
+    return {
+      globalTasks: tasks
+        .filter(
+          (t) =>
+            t.senderMatrixUserId === global.matrixUserId || global.roomIds.has(t.roomId),
+        )
+        .slice(0, 8),
+      leaderTasks: tasks
+        .filter((t) => leader.roomIds.has(t.roomId) && !(global.roomIds.has(t.roomId) && t.senderMatrixUserId === global.matrixUserId))
+        .slice(0, 8),
+    };
+  }, [manager, tasks, teams]);
+
+  const countByStatus = (arr: typeof tasks) => ({
+    running: arr.filter((t) => t.status === 'in_progress' || t.status === 'running').length,
+    completed: arr.filter((t) => t.status === 'completed' || t.status === 'success' || t.status === 'done').length,
+    failed: arr.filter((t) => t.status === 'failed' || t.status === 'error' || t.status === 'cancelled').length,
+  });
+  const globalCounts = countByStatus(globalTasks);
+  const leaderCounts = countByStatus(leaderTasks);
 
   return (
     <Dialog open={!!manager} onOpenChange={onOpenChange}>
@@ -147,62 +194,77 @@ export function ManagerDetailDialog({
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-muted-foreground flex items-center gap-1.5">
-                  <ListTodo className="h-3.5 w-3.5" />
-                  进行中任务
+                  <Crown className="h-3.5 w-3.5" />
+                  Manager 全局任务
                 </p>
                 <div className="flex items-center gap-2 text-[10px]">
-                  {runningCount > 0 && (
+                  {globalCounts.running > 0 && (
                     <span className="flex items-center gap-0.5 text-violet-600 dark:text-violet-400">
                       <Loader2 className="h-3 w-3" />
-                      {runningCount}
+                      {globalCounts.running}
                     </span>
                   )}
-                  {completedCount > 0 && (
+                  {globalCounts.completed > 0 && (
                     <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
                       <CircleCheck className="h-3 w-3" />
-                      {completedCount}
+                      {globalCounts.completed}
                     </span>
                   )}
-                  {failedCount > 0 && (
+                  {globalCounts.failed > 0 && (
                     <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
                       <CircleX className="h-3 w-3" />
-                      {failedCount}
+                      {globalCounts.failed}
                     </span>
                   )}
                 </div>
               </div>
-              {managerTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground">该 Manager 暂无 Matrix workflow 任务记录</p>
+              {globalTasks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">该 Manager 暂无 sender 任务</p>
               ) : (
                 <div className="space-y-1.5">
-                  {managerTasks.map((task) => {
-                    const running = task.status === 'in_progress' || task.status === 'running';
-                    const complete = task.status === 'completed' || task.status === 'success' || task.status === 'done';
-                    const failed = task.status === 'failed' || task.status === 'error' || task.status === 'cancelled';
-                    return (
-                      <div
-                        key={task.runId}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted/30 text-xs"
-                      >
-                        {complete ? (
-                          <CircleCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                        ) : failed ? (
-                          <CircleX className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                        ) : (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500 shrink-0" />
-                        )}
-                        <Crown className="h-3 w-3 text-violet-500 shrink-0" />
-                        <span className="flex-1 truncate">{task.title}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {task.runId.slice(0, 8)}
-                        </span>
-                        <span className="text-muted-foreground text-[10px]">
-                          {new Date(task.updatedAt).toLocaleTimeString()}
-                        </span>
-                        {running && <Badge variant="outline" className="text-[9px] px-1 py-0">进行中</Badge>}
-                      </div>
-                    );
-                  })}
+                  {globalTasks.map((task) => renderTaskRow(task, 'global'))}
+                </div>
+              )}
+            </div>
+            <div className="pt-2">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-muted-foreground flex items-center gap-1.5">
+                  <ListTodo className="h-3.5 w-3.5" />
+                  Leader 团队任务
+                  <span className="text-[10px] text-muted-foreground/70">
+                    ({managedTeams.length} 个团队)
+                  </span>
+                </p>
+                <div className="flex items-center gap-2 text-[10px]">
+                  {leaderCounts.running > 0 && (
+                    <span className="flex items-center gap-0.5 text-violet-600 dark:text-violet-400">
+                      <Loader2 className="h-3 w-3" />
+                      {leaderCounts.running}
+                    </span>
+                  )}
+                  {leaderCounts.completed > 0 && (
+                    <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                      <CircleCheck className="h-3 w-3" />
+                      {leaderCounts.completed}
+                    </span>
+                  )}
+                  {leaderCounts.failed > 0 && (
+                    <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                      <CircleX className="h-3 w-3" />
+                      {leaderCounts.failed}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {leaderTasks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {managedTeams.length > 0
+                    ? '这些团队房间内暂无 workflow 任务'
+                    : '该 Manager 当前不是任何 Team 的 leader'}
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {leaderTasks.map((task) => renderTaskRow(task, 'leader'))}
                 </div>
               )}
             </div>
