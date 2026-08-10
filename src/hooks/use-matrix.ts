@@ -6,6 +6,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { create } from 'zustand';
+import { useTaskStore } from '@/lib/task-store';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -425,6 +426,24 @@ export function useTypingSync(roomId: string | null) {
 
             // Process timeline events for real-time message updates
             const timelineEvents = roomData.timeline?.events || [];
+
+            // Extract workflow tasks from ALL rooms' timeline events
+            for (const event of timelineEvents) {
+              if (event.type === 'm.room.message') {
+                const workflow = event.content?.['agentteams.workflow'];
+                if (isWorkflowPayload(workflow)) {
+                  useTaskStore.getState().upsertTask({
+                    runId: workflow.runId || workflow.run_id || event.event_id,
+                    title: workflow.title || workflow.name || '未命名任务',
+                    status: workflow.status || 'unknown',
+                    roomId: rid,
+                    subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
+                    steps: Array.isArray(workflow.steps) ? workflow.steps : [],
+                  });
+                }
+              }
+            }
+
             if (timelineEvents.length > 0 && rid === roomId) {
               mergeTimelineEvents(queryClient, rid, timelineEvents, userId);
             }

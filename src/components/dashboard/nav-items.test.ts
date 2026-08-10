@@ -8,6 +8,7 @@ describe('Navigation with groups', () => {
     expect(ids).toEqual([
       'overview',
       'chat',
+      'tasks',
       'workers',
       'managers',
       'teams',
@@ -28,6 +29,7 @@ describe('Navigation with groups', () => {
     const groupMap = new Map(navItems.map((item) => [item.id, item.group]));
     expect(groupMap.get('overview')).toBe('core');
     expect(groupMap.get('chat')).toBe('core');
+    expect(groupMap.get('tasks')).toBe('runtime');
     expect(groupMap.get('workers')).toBe('runtime');
     expect(groupMap.get('managers')).toBe('runtime');
     expect(groupMap.get('teams')).toBe('runtime');
