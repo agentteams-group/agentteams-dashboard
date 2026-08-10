@@ -13,7 +13,7 @@ import {
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { agentteamsApi } from '@/lib/agentteams-api';
 
-type WorkerStatus = 'pending' | 'uploading' | 'done' | 'failed';
+type WorkerStatus = 'pending' | 'uploading' | 'restarting' | 'done' | 'failed';
 
 interface WorkerDistributeState {
   name: string;
@@ -75,14 +75,15 @@ export function SkillDistributeToWorkerDialog({
 
     // Step 2: Upload to all workers without restarting
     setStep('uploading');
-    const states: WorkerDistributeState[] = selectedWorkers.map((name) => ({
+    const initialStates: WorkerDistributeState[] = selectedWorkers.map((name) => ({
       name,
       status: 'pending',
     }));
-    setWorkerStates([...states]);
+    setWorkerStates([...initialStates]);
 
-    for (let i = 0; i < selectedWorkers.length; i++) {
-      const workerName = selectedWorkers[i];
+    const uploadedOk: string[] = [];
+
+    for (const workerName of selectedWorkers) {
       const targetWorker = workers.find((w) => w.name === workerName);
 
       setWorkerStates((prev) =>
@@ -110,35 +111,71 @@ export function SkillDistributeToWorkerDialog({
           // best-effort
         }
 
+        uploadedOk.push(workerName);
         setWorkerStates((prev) =>
           prev.map((s) =>
-            s.name === workerName ? { ...s, status: 'done' as WorkerStatus, note: res.note } : s
+            s.name === workerName
+              ? { ...s, status: 'done' as WorkerStatus, note: res.note ?? '上传成功' }
+              : s
           )
         );
       } catch (err) {
         setWorkerStates((prev) =>
           prev.map((s) =>
             s.name === workerName
-              ? { ...s, status: 'failed' as WorkerStatus, note: err instanceof Error ? err.message : '上传失败' }
+              ? {
+                  ...s,
+                  status: 'failed' as WorkerStatus,
+                  note: err instanceof Error ? err.message : '上传失败',
+                }
               : s
           )
         );
       }
     }
 
-    // Step 3: Restart all workers that succeeded
+    // Step 3: Restart workers that uploaded successfully (use local success list, not stale state)
     setStep('restarting');
-    for (const s of states) {
-      if (s.status !== 'done') continue;
+    for (const workerName of uploadedOk) {
+      setWorkerStates((prev) =>
+        prev.map((s) =>
+          s.name === workerName
+            ? { ...s, status: 'restarting' as WorkerStatus, note: '重启中...' }
+            : s
+        )
+      );
       try {
-        await agentteamsApi.restartWorker(s.name);
-      } catch {
-        // restart failed but files are in place
+        const restartRes = await agentteamsApi.restartWorker(workerName);
+        setWorkerStates((prev) =>
+          prev.map((s) =>
+            s.name === workerName
+              ? {
+                  ...s,
+                  status: 'done' as WorkerStatus,
+                  note: restartRes.note || '已重启',
+                }
+              : s
+          )
+        );
+      } catch (err) {
+        // Files are in place; surface restart failure so user can ensure-ready manually.
+        setWorkerStates((prev) =>
+          prev.map((s) =>
+            s.name === workerName
+              ? {
+                  ...s,
+                  status: 'failed' as WorkerStatus,
+                  note: `上传成功但重启失败: ${err instanceof Error ? err.message : 'unknown'}`,
+                }
+              : s
+          )
+        );
       }
     }
 
     setStep('done');
   }, [selectedWorkers, skillName, workers]);
+
 
   const isRunning = step !== 'idle' && step !== 'done';
 
@@ -170,13 +207,24 @@ export function SkillDistributeToWorkerDialog({
                     <span className="font-mono">{ws.name}</span>
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        ws.status === 'uploading' ? 'bg-muted text-muted-foreground' :
-                        ws.status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                        ws.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-                        'bg-muted text-muted-foreground'
+                        ws.status === 'uploading' || ws.status === 'restarting'
+                          ? 'bg-muted text-muted-foreground'
+                          : ws.status === 'done'
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                            : ws.status === 'failed'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                              : 'bg-muted text-muted-foreground'
                       }`}
                     >
-                      {ws.status === 'uploading' ? '上传中' : ws.status === 'done' ? '完成' : ws.status === 'failed' ? '失败' : '等待'}
+                      {ws.status === 'uploading'
+                        ? '上传中'
+                        : ws.status === 'restarting'
+                          ? '重启中'
+                          : ws.status === 'done'
+                            ? '完成'
+                            : ws.status === 'failed'
+                              ? '失败'
+                              : '等待'}
                     </span>
                   </div>
                 ))}

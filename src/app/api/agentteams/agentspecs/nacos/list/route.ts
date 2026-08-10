@@ -4,6 +4,9 @@ import { getNacosAccessToken } from '@/lib/nacos-fetcher';
 
 export const dynamic = 'force-dynamic';
 
+const PAGE_SIZE = 500;
+const MAX_PAGES = 20;
+
 export interface AgentSpecSummary {
   name: string;
   description: string;
@@ -30,38 +33,55 @@ export async function GET() {
   const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
   const nsParam = `namespaceId=${encodeURIComponent(namespace)}`;
 
+  const items: AgentSpecSummary[] = [];
   try {
-    const listUrl = `${apiBase}/v3/console/ai/agentspecs/list?${nsParam}${tokenParam}`;
-    const res = await fetch(listUrl, {
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return NextResponse.json({
-        items: [],
-        note: `AgentSpecs API 返回 HTTP ${res.status}: ${text.substring(0, 200)}`,
+    // Fetch all pages; each page request carries a large pageSize so most
+    // registries resolve in one request.
+    for (let pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
+      const listUrl =
+        `${apiBase}/v3/console/ai/agentspecs/list?${nsParam}${tokenParam}` +
+        `&pageNo=${pageNo}&pageSize=${PAGE_SIZE}`;
+      const res = await fetch(listUrl, {
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15000),
       });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return NextResponse.json({
+          items,
+          note: `AgentSpecs API 返回 HTTP ${res.status}: ${text.substring(0, 200)}`,
+        });
+      }
+
+      const data = (await res.json()) as {
+        code?: number;
+        data?: {
+          totalCount?: number;
+          pagesAvailable?: number;
+          pageItems?: Array<{ name: string; description?: string; labels?: { latest?: string }; from?: string; scope?: string }>;
+        };
+      };
+
+      const pageItems = data.data?.pageItems ?? [];
+      items.push(
+        ...pageItems.map((item) => ({
+          name: item.name,
+          description: item.description ?? '',
+          version: item.labels?.latest ?? '',
+          from: item.from ?? '',
+          scope: item.scope ?? 'PUBLIC',
+        })),
+      );
+
+      const pagesAvailable = data.data?.pagesAvailable ?? 1;
+      if (pageNo >= pagesAvailable || pageItems.length === 0) break;
     }
-
-    const data = await res.json() as {
-      code?: number;
-      data?: { pageItems?: Array<{ name: string; description?: string; labels?: { latest?: string }; from?: string; scope?: string }> };
-    };
-
-    const items: AgentSpecSummary[] = (data.data?.pageItems ?? []).map((item) => ({
-      name: item.name,
-      description: item.description ?? '',
-      version: item.labels?.latest ?? '',
-      from: item.from ?? '',
-      scope: item.scope ?? 'PUBLIC',
-    }));
 
     return NextResponse.json({ items });
   } catch (err) {
     return NextResponse.json({
-      items: [],
+      items,
       note: `AgentSpecs API 不可用: ${err instanceof Error ? err.message : 'unknown'}`,
     });
   }

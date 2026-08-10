@@ -49,9 +49,10 @@ export function ModelSelector({
 
   if (customActive) {
     return (
-      <div className="space-y-1.5">
-        <div className="flex gap-2">
+      <div className="space-y-1.5 min-w-0 w-full">
+        <div className="flex gap-2 min-w-0">
           <Input
+            className="min-w-0 flex-1"
             value={value ?? ''}
             onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
@@ -74,7 +75,7 @@ export function ModelSelector({
             </Button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground break-words">
           自定义请求模型别名，将由通配符路由或服务端绑定校验处理。
         </p>
       </div>
@@ -82,7 +83,7 @@ export function ModelSelector({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 min-w-0 w-full">
       <Select
         value={value ?? ''}
         onValueChange={(next) => {
@@ -95,16 +96,16 @@ export function ModelSelector({
         }}
         disabled={disabled}
       >
-        <SelectTrigger className="w-full" aria-label="请求模型别名">
+        <SelectTrigger className="w-full min-w-0" aria-label="请求模型别名">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="max-w-[min(100vw-2rem,28rem)]">
           {uniqueOptions.map((option) => (
-            <SelectItem key={option.alias} value={option.alias}>
-              <span className="flex items-center gap-1.5">
-                <span className="font-mono">{option.alias}</span>
+            <SelectItem key={option.alias} value={option.alias} className="min-w-0">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="font-mono truncate">{option.alias}</span>
                 {option.kind === 'builtin' && (
-                  <Badge variant="secondary" className="text-[9px]">
+                  <Badge variant="secondary" className="text-[9px] shrink-0">
                     <Sparkles className="mr-0.5 size-2.5" />
                     内置
                   </Badge>
@@ -131,16 +132,16 @@ export function ModelSelector({
         </SelectContent>
       </Select>
       {selectedOption?.kind === 'configured' && selectedOption.binding ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground break-words">
           通过路由 {selectedOption.binding.routeName} 转发至{' '}
           {selectedOption.binding.providerName} / {selectedOption.binding.targetModel}
         </p>
       ) : selectedOption?.kind === 'builtin' ? (
-        <p className="text-xs text-amber-600/80">
+        <p className="text-xs text-amber-600/80 break-words">
           内置模型别名，请求经 AI 网关 Consumer 凭证转发；需先在「模型管理」为其配置路由映射。
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground break-words">
           {uniqueOptions.length === 0
             ? '在「模型管理」创建提供商并配置模型映射，保存后此处即可选择。或手动输入模型别名。'
             : '在「模型管理」配置模型别名后，此处会提供可选项。'}

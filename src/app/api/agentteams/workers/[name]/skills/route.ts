@@ -7,52 +7,12 @@ import {
   SKILL_PACKAGE_MAX_BYTES,
   isValidNameSegment,
 } from '@/lib/skill-package';
-import { getAuthToken } from '../../../proxy-helper';
+import { restartWorkerForSkillReload } from '@/lib/worker-restart';
 
 const SYNC_FAILED_NOTE = '技能已上传，Worker 最长约 5 分钟内自动发现';
 
-async function getControllerBaseUrl(): Promise<string> {
-  return (
-    process.env.AGENTTEAMS_CONTROLLER_URL ||
-    process.env.AGENTTEAMS_API_URL ||
-    'http://agentteams-controller:8090'
-  );
-}
-
 async function restartWorker(workerName: string): Promise<{ ok: boolean; error?: string }> {
-  const baseUrl = await getControllerBaseUrl();
-  const saToken = await getAuthToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (saToken) {
-    headers['authorization'] = `Bearer ${saToken}`;
-  }
-
-  // Sleep
-  try {
-    const sleepUrl = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}/sleep`;
-    const sleepRes = await fetch(sleepUrl, { method: 'POST', headers, signal: AbortSignal.timeout(10000) });
-    if (!sleepRes.ok) {
-      return { ok: false, error: `sleep 失败 HTTP ${sleepRes.status}` };
-    }
-  } catch (err) {
-    return { ok: false, error: `sleep 异常: ${err instanceof Error ? err.message : 'unknown'}` };
-  }
-
-  // Small wait to ensure Worker settles
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // Wake
-  try {
-    const wakeUrl = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}/wake`;
-    const wakeRes = await fetch(wakeUrl, { method: 'POST', headers, signal: AbortSignal.timeout(10000) });
-    if (!wakeRes.ok) {
-      return { ok: false, error: `wake 失败 HTTP ${wakeRes.status}` };
-    }
-  } catch (err) {
-    return { ok: false, error: `wake 异常: ${err instanceof Error ? err.message : 'unknown'}` };
-  }
-
-  return { ok: true };
+  return restartWorkerForSkillReload(workerName);
 }
 
 export async function GET(

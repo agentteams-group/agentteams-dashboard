@@ -17,6 +17,11 @@ const noNameZip = zipSync({
   'SKILL.md': new TextEncoder().encode('---\ndescription: no name\n---\n'),
 });
 
+// Mock the controller restart path (no real controller in tests).
+vi.mock('@/lib/worker-restart', () => ({
+  restartWorkerForSkillReload: vi.fn().mockResolvedValue({ ok: true, phase: 'Running' }),
+}));
+
 // Mock minio-client.
 vi.mock('@/lib/minio-client', () => {
   const mockClient = {

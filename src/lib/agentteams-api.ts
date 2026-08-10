@@ -963,4 +963,20 @@ export const agentteamsApi = {
   listAgentSpecs: (): Promise<{ items: Array<{ name: string; description: string; version: string; from: string; scope: string }>; note?: string }> => {
     return proxyRequest('/agentspecs/nacos/list');
   },
+
+  getAgentSpecDetail: (
+    name: string,
+    version: string,
+  ): Promise<{
+    name: string;
+    image?: string;
+    runtime: 'openclaw';
+    soul?: string;
+    description: string;
+    version: string;
+    from: string;
+  }> => {
+    const qs = `?name=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}`;
+    return proxyRequest(`/agentspecs/nacos/detail${qs}`);
+  },
 };
