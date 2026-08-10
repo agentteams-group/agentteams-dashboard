@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle, Send } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import { SkillUploadDialog } from './skill-upload-dialog';
 import { NacosConfigDialog } from './nacos-config-dialog';
 import { SkillEditDialog } from './skill-edit-dialog';
 import { SkillDetailDialog } from './skill-detail-dialog';
+import { SkillDistributeToWorkerDialog } from './skill-distribute-to-worker-dialog';
 
 interface SkillCenterProps {
   onRefresh?: () => void;
@@ -36,6 +37,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [editingSkill, setEditingSkill] = useState<SkillEntry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SkillEntry | null>(null);
   const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(null);
+  const [distributeSkill, setDistributeSkill] = useState<SkillEntry | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
@@ -175,6 +177,15 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0"
+                        title="分发到 Worker"
+                        onClick={() => setDistributeSkill(skill)}
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
                         onClick={() => setDetailSkill(skill)}
                       >
                         <Info className="h-3.5 w-3.5" />
@@ -269,6 +280,12 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         skill={detailSkill}
         open={!!detailSkill}
         onOpenChange={(open) => !open && setDetailSkill(null)}
+      />
+
+      <SkillDistributeToWorkerDialog
+        skillName={distributeSkill?.name ?? ''}
+        open={!!distributeSkill}
+        onOpenChange={(open) => !open && setDistributeSkill(null)}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
