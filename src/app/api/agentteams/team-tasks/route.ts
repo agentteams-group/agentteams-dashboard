@@ -6,38 +6,39 @@
 // AGENTTEAMS_FS_BUCKET / AGENTTEAMS_MINIO_BUCKET env vars), so probing
 // candidate prefixes must happen here.
 //
-// Storage layout (per docs/k8s-native-agent-orch.md and the manager's
-// task-management skills):
+// IMPORTANT — primary data source is Matrix room history, not MinIO.
+// As confirmed by the operator:
 //
-//   shared/tasks/{task-id}/
-//     meta.json     <-- canonical task metadata (title/status/runId/...)
-//     spec.md
-//     result.md
+//   "任务协作数据实际落在 teams/tech-commercialization/shared/knowledge/ 下,
+//    以 snspd-tech-to-scenario-20260809-* 形式存在；项目元数据则在
+//    teams/tech-commercialization/shared/projects/。不过当前这些目录在
+//    MinIO 侧只有占位目录，具体文件是否已同步到本地镜像还需要 file-sync
+//    后再读。"
+//
+// Concretely: Leader and Workers report task status in Matrix rooms
+// (`m.room.message` payloads with `agentteams.workflow` and
+// `org.agentteams.status` keys). Dashboard's Matrix sync already
+// extracts these into the live task store; this endpoint is a *fallback*
+// that scans MinIO for any persisted file copies.
+//
+// MinIO storage layout (team-scoped, per the actual file-sync source):
+//
+//   teams/{team-name}/shared/knowledge/{name}.md   <- team task notes
+//   teams/{team-name}/shared/projects/{name}/      <- project directory
+//     meta.json                                    <- project metadata
 //     plan.md
-//     base/         <-- task workspace files
-//     progress/     <-- progress log
 //
-//   shared/projects/{project-id}/
-//     meta.json
-//     plan.md
-//
-//   agents/{worker-name}/task-history.json   <-- per-worker task history array
-//
-// Team-scoped data is not stored under a `team/` prefix; teams are a
-// communication topology rather than a storage root. Cross-team task
-// records still land in `shared/tasks/`.
+//   agents/{worker-name}/task-history.json        <- per-worker flat array
 //
 // We probe in priority order:
-//   1) shared/tasks/        — primary (each task is its own directory)
-//   2) shared/projects/     — project-level task metadata
-//   3) agents/*/task-history.json — per-worker task history
-//   4) shared/team-tasks/   — older aggregated layout
-//   5) team/                — legacy candidate (some controllers still use)
-//   6) team-tasks/          — legacy candidate
+//   1) teams/{team}/shared/knowledge/   — primary (team-scoped task notes)
+//   2) teams/{team}/shared/projects/     — project metadata
+//   3) agents/*/task-history.json       — per-worker history
+//   4) shared/tasks/, shared/projects/   — older (un-scoped) layout
+//   5) team/, teams/, team-tasks/        — legacy fallbacks
 //
-// Each per-task meta.json is a single object (not an array). The
-// per-worker task-history.json IS an array. Both shapes are accepted via
-// unwrapFileContent().
+// Per-task meta.json may be: single object, top-level array, or
+// { tasks: [...] } envelope. unwrapFileContent() handles all three.
 //
 // Response:
 //   {
@@ -81,7 +82,7 @@ export interface TaskEntry {
   updatedAt: number;
   subagents: RawTask[];
   steps: RawTask[];
-  /** Source prefix this task came from (e.g. "shared/tasks/abc12"). */
+  /** MinIO prefix this task came from (e.g. "teams/tech-co/shared/projects/snspd"). */
   source: string;
 }
 
@@ -89,23 +90,38 @@ interface ScannedSource {
   /** Display name for matchedPrefixes list. */
   prefix: string;
   /** Type of source so the response can distinguish them. */
-  kind: 'shared-tasks-dir' | 'shared-projects-dir' | 'worker-history' | 'legacy-aggregated';
+  kind:
+    | 'team-knowledge'
+    | 'team-projects'
+    | 'worker-history'
+    | 'unscoped-shared'
+    | 'legacy-aggregated';
   /** Object keys actually read. */
   scannedKeys: string[];
 }
 
-const SHARED_TASKS_PREFIX = 'shared/tasks/';
-const SHARED_PROJECTS_PREFIX = 'shared/projects/';
+const TEAMS_PREFIX = 'teams/';
 const AGENTS_PREFIX = 'agents/';
 const WORKER_HISTORY_FILENAME = 'task-history.json';
 
-const LEGACY_PREFIXES = [
-  'shared/team-tasks/',
-  'shared/teams/',
-  'team/',
-  'teams/',
-  'team-tasks/',
-] as const;
+const PRIMARY_PROBES: ReadonlyArray<{ prefix: string; kind: ScannedSource['kind'] }> = [
+  // Per the operator-confirmed layout, the team-scoped knowledge/ dir
+  // holds the bulk of the cross-room task notes. We don't know the team
+  // name ahead of time, so we list `teams/` first and walk every team
+  // subdir for its `shared/knowledge/` and `shared/projects/` children.
+  { prefix: 'teams/', kind: 'team-knowledge' },
+  { prefix: 'agents/', kind: 'worker-history' },
+];
+
+const LEGACY_PROBES: ReadonlyArray<{ prefix: string; kind: ScannedSource['kind'] }> = [
+  { prefix: 'shared/tasks/', kind: 'unscoped-shared' },
+  { prefix: 'shared/projects/', kind: 'unscoped-shared' },
+  { prefix: 'shared/teams/', kind: 'legacy-aggregated' },
+  { prefix: 'shared/team-tasks/', kind: 'legacy-aggregated' },
+  { prefix: 'team/', kind: 'legacy-aggregated' },
+  { prefix: 'teams/', kind: 'legacy-aggregated' },
+  { prefix: 'team-tasks/', kind: 'legacy-aggregated' },
+];
 
 const LEGACY_FILE_NAMES = ['tasks.json', 'task.json'] as const;
 
@@ -121,12 +137,6 @@ function toEpochMs(v: string | number | undefined, fallback: number): number {
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
-
-/** Test-only export. Normalize a raw task record into a TaskEntry. */
-export const __test__ = {
-  normalizeTask,
-  unwrapFileContent,
-};
 
 function normalizeTask(
   raw: RawTask,
@@ -175,8 +185,6 @@ function unwrapFileContent(parsed: unknown): RawTask[] {
   if (isObject(parsed) && typeof parsed.runId === 'string') {
     return [parsed as RawTask];
   }
-  // Some writers stash the id as `taskId` or `id` — fall through to the
-  // single-object path so the caller can decide.
   if (isObject(parsed)) {
     const looksLikeTask =
       typeof parsed.title === 'string' ||
@@ -237,80 +245,126 @@ async function getObjectText(
 }
 
 /**
- * Source 1 (primary): `shared/tasks/{taskId}/meta.json` for every subdir
- * under `shared/tasks/`. Each task is its own directory.
+ * Probe a team-scoped path: list every entry under
+ * `teams/{team}/{subdir}/` and parse any .json files as task metadata.
+ * .md files are also surfaced for the diagnostic banner but contribute
+ * no task records (we don't try to extract structured data from prose).
  */
-async function collectSharedTasks(
+async function collectTeamScoped(
   client: Client,
   bucket: string,
+  teamPrefix: string, // e.g. "teams/tech-co/"
+  subdir: 'knowledge' | 'projects',
   now: number,
 ): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
   const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
-  let list: ListResult;
-  try {
-    list = await listAtPrefix(client, bucket, SHARED_TASKS_PREFIX);
-  } catch {
-    return result;
+  const list = await listAtPrefix(client, bucket, `${teamPrefix}shared/${subdir}/`).catch(() => null);
+  if (!list) return result;
+
+  // Layout A (knowledge): bare .md/.json files directly under shared/knowledge/
+  for (const fileKey of list.files) {
+    if (!/\.(json|md)$/i.test(fileKey)) continue;
+    result.scannedKeys.push(fileKey);
+    if (!/\.json$/i.test(fileKey)) continue; // .md contributes no task records
+    const text = await getObjectText(client, bucket, fileKey);
+    if (!text) continue;
+    try {
+      const parsed = JSON.parse(text);
+      const source = fileKey.replace(/\.json$/, '');
+      for (const t of unwrapFileContent(parsed)) {
+        const entry = normalizeTask(t, now, source);
+        if (entry) result.tasks.push(entry);
+      }
+    } catch {
+      // ignore
+    }
   }
-  // listObjects(bucket, prefix, false) returns one entry per non-recursive
-  // child: prefixes (sub-directories) and files. We expect only prefixes
-  // here; bare .json files at this level are rare but still handled.
-  for (const subPrefix of list.prefixes) {
-    const metaKey = `${subPrefix}meta.json`;
+
+  // Layout B (projects): sub-directories each containing meta.json + plan.md
+  for (const projectPrefix of list.prefixes) {
+    const metaKey = `${projectPrefix}meta.json`;
     const text = await getObjectText(client, bucket, metaKey);
     if (!text) continue;
     result.scannedKeys.push(metaKey);
     try {
       const parsed = JSON.parse(text);
+      const source = projectPrefix.replace(/\/$/, '');
       for (const t of unwrapFileContent(parsed)) {
-        const entry = normalizeTask(t, now, subPrefix.replace(/\/$/, ''));
+        const entry = normalizeTask(t, now, source);
         if (entry) result.tasks.push(entry);
       }
     } catch {
-      // ignore parse errors
+      // ignore
     }
   }
   return result;
 }
 
 /**
- * Source 2: `shared/projects/{projectId}/meta.json` may embed tasks under
- * a `tasks` key. Projects can outlive individual tasks and act as a
- * secondary record.
+ * Walk every team under `teams/` and collect both `shared/knowledge/`
+ * and `shared/projects/`. Returns merged results across all teams.
  */
-async function collectSharedProjects(
+async function collectAllTeams(
   client: Client,
   bucket: string,
   now: number,
-): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
-  const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
+): Promise<{
+  tasks: TaskEntry[];
+  scannedKeys: string[];
+  matched: { prefix: string; kind: ScannedSource['kind'] }[];
+}> {
+  const result = {
+    tasks: [] as TaskEntry[],
+    scannedKeys: [] as string[],
+    matched: [] as { prefix: string; kind: ScannedSource['kind'] }[],
+  };
   let list: ListResult;
   try {
-    list = await listAtPrefix(client, bucket, SHARED_PROJECTS_PREFIX);
+    list = await listAtPrefix(client, bucket, TEAMS_PREFIX);
   } catch {
     return result;
   }
-  for (const subPrefix of list.prefixes) {
-    const metaKey = `${subPrefix}meta.json`;
-    const text = await getObjectText(client, bucket, metaKey);
-    if (!text) continue;
-    result.scannedKeys.push(metaKey);
-    try {
-      const parsed = JSON.parse(text);
-      for (const t of unwrapFileContent(parsed)) {
-        const entry = normalizeTask(t, now, subPrefix.replace(/\/$/, ''));
-        if (entry) result.tasks.push(entry);
-      }
-    } catch {
-      // ignore parse errors
+
+  // Each entry is either a sub-team directory (isPrefix) or a bare file
+  // (unlikely at the teams/ root, but possible). We only care about
+  // team directories.
+  for (const teamPrefix of list.prefixes) {
+    const knowledge = await collectTeamScoped(
+      client,
+      bucket,
+      teamPrefix,
+      'knowledge',
+      now,
+    );
+    if (knowledge.scannedKeys.length > 0) {
+      result.scannedKeys.push(...knowledge.scannedKeys);
+      result.tasks.push(...knowledge.tasks);
+      result.matched.push({
+        prefix: `${teamPrefix}shared/knowledge/`,
+        kind: 'team-knowledge',
+      });
+    }
+    const projects = await collectTeamScoped(
+      client,
+      bucket,
+      teamPrefix,
+      'projects',
+      now,
+    );
+    if (projects.scannedKeys.length > 0) {
+      result.scannedKeys.push(...projects.scannedKeys);
+      result.tasks.push(...projects.tasks);
+      result.matched.push({
+        prefix: `${teamPrefix}shared/projects/`,
+        kind: 'team-projects',
+      });
     }
   }
   return result;
 }
 
 /**
- * Source 3: each worker's `task-history.json` is a flat array of task
- * objects keyed by task id.
+ * Each worker's `task-history.json` is a flat array of task objects.
  */
 async function collectWorkerHistories(
   client: Client,
@@ -332,12 +386,13 @@ async function collectWorkerHistories(
       result.scannedKeys.push(key);
       try {
         const parsed = JSON.parse(text);
+        const source = agentPrefix.replace(/\/$/, '');
         for (const t of unwrapFileContent(parsed)) {
-          const entry = normalizeTask(t, now, agentPrefix.replace(/\/$/, ''));
+          const entry = normalizeTask(t, now, source);
           if (entry) result.tasks.push(entry);
         }
       } catch {
-        // ignore parse errors
+        // ignore
       }
     }),
   );
@@ -345,9 +400,8 @@ async function collectWorkerHistories(
 }
 
 /**
- * Source 4-6 (legacy): aggregated files like `team/{name}/tasks.json` or
- * `shared/team-tasks/{id}.json`. Kept for backward compatibility with
- * older controller / agent builds. Lower priority than primary sources.
+ * Legacy aggregated layouts: `team/{name}/tasks.json` or bare .json
+ * files under team/, teams/, shared/team-tasks/, etc.
  */
 async function collectLegacyAggregates(
   client: Client,
@@ -355,10 +409,12 @@ async function collectLegacyAggregates(
   now: number,
 ): Promise<{ tasks: TaskEntry[]; scannedKeys: string[] }> {
   const result = { tasks: [] as TaskEntry[], scannedKeys: [] as string[] };
-  for (const prefix of LEGACY_PREFIXES) {
+  for (const probe of LEGACY_PROBES) {
+    if (probe.kind === 'team-knowledge') continue; // handled by collectAllTeams
+    if (probe.kind === 'worker-history') continue; // handled by collectWorkerHistories
     let list: ListResult;
     try {
-      list = await listAtPrefix(client, bucket, prefix);
+      list = await listAtPrefix(client, bucket, probe.prefix);
     } catch {
       continue;
     }
@@ -373,8 +429,9 @@ async function collectLegacyAggregates(
           result.scannedKeys.push(key);
           try {
             const parsed = JSON.parse(text);
+            const source = subPrefix.replace(/\/$/, '');
             for (const t of unwrapFileContent(parsed)) {
-              const entry = normalizeTask(t, now, subPrefix.replace(/\/$/, ''));
+              const entry = normalizeTask(t, now, source);
               if (entry) result.tasks.push(entry);
             }
           } catch {
@@ -393,8 +450,9 @@ async function collectLegacyAggregates(
       result.scannedKeys.push(fileKey);
       try {
         const parsed = JSON.parse(text);
+        const source = probe.prefix.replace(/\/$/, '');
         for (const t of unwrapFileContent(parsed)) {
-          const entry = normalizeTask(t, now, prefix.replace(/\/$/, ''));
+          const entry = normalizeTask(t, now, source);
           if (entry) result.tasks.push(entry);
         }
       } catch {
@@ -439,73 +497,63 @@ export async function GET() {
   }
 
   const now = Date.now();
-  const sources: ScannedSource[] = [];
 
-  // 1. Primary: shared/tasks/{taskId}/meta.json
-  const shared = await collectSharedTasks(client, bucket, now);
-  if (shared.scannedKeys.length > 0) {
-    sources.push({
-      prefix: SHARED_TASKS_PREFIX,
-      kind: 'shared-tasks-dir',
-      scannedKeys: shared.scannedKeys,
-    });
-  }
+  // 1. Primary: team-scoped shared/knowledge/ and shared/projects/ for
+  //    every team. Walks teams/ then descends into each team's shared/.
+  const teams = await collectAllTeams(client, bucket, now);
 
-  // 2. Secondary: shared/projects/{projectId}/meta.json
-  const projects = await collectSharedProjects(client, bucket, now);
-  if (projects.scannedKeys.length > 0) {
-    sources.push({
-      prefix: SHARED_PROJECTS_PREFIX,
-      kind: 'shared-projects-dir',
-      scannedKeys: projects.scannedKeys,
-    });
-  }
-
-  // 3. Per-worker: agents/{workerName}/task-history.json
+  // 2. Per-worker task history.
   const histories = await collectWorkerHistories(client, bucket, now);
-  if (histories.scannedKeys.length > 0) {
-    sources.push({
-      prefix: AGENTS_PREFIX,
-      kind: 'worker-history',
-      scannedKeys: histories.scannedKeys,
-    });
-  }
 
-  // 4-6. Legacy layouts (team/, teams/, team-tasks/, shared/team-tasks/, shared/teams/)
+  // 3. Legacy fallbacks (best-effort, lower priority).
   const legacy = await collectLegacyAggregates(client, bucket, now);
-  if (legacy.scannedKeys.length > 0) {
-    sources.push({
-      prefix: 'legacy',
-      kind: 'legacy-aggregated',
-      scannedKeys: legacy.scannedKeys,
-    });
-  }
 
-  // Merge all sources. Each task's runId is the natural key — later
-  // sources can refine but we keep the first observed one to avoid
-  // confusing users with fluctuating titles.
+  // Merge by runId. Primary sources (team/worker) win; legacy is only
+  // used to fill gaps. Newer updatedAt overrides older.
   const byRunId = new Map<string, TaskEntry>();
-  for (const t of [...shared.tasks, ...projects.tasks, ...histories.tasks, ...legacy.tasks]) {
+  const order = [...teams.tasks, ...histories.tasks, ...legacy.tasks];
+  for (const t of order) {
     const existing = byRunId.get(t.runId);
     if (!existing) {
       byRunId.set(t.runId, t);
-    } else {
-      // Keep the more recent updatedAt; if equal, prefer the higher-priority
-      // source (shared.tasks > projects > histories > legacy).
-      if (t.updatedAt > existing.updatedAt) {
-        byRunId.set(t.runId, { ...t, subagents: t.subagents.length ? t.subagents : existing.subagents, steps: t.steps.length ? t.steps : existing.steps });
-      }
+    } else if (t.updatedAt > existing.updatedAt) {
+      byRunId.set(t.runId, {
+        ...t,
+        subagents: t.subagents.length ? t.subagents : existing.subagents,
+        steps: t.steps.length ? t.steps : existing.steps,
+      });
     }
   }
   const tasks = Array.from(byRunId.values()).sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
 
+  const matchedPrefixes: string[] = [];
+  for (const m of teams.matched) {
+    matchedPrefixes.push(`${m.prefix} (${m.kind})`);
+  }
+  if (histories.scannedKeys.length > 0) {
+    matchedPrefixes.push('agents/ (worker-history)');
+  }
+  if (legacy.scannedKeys.length > 0) {
+    matchedPrefixes.push('legacy (legacy-aggregated)');
+  }
+
   return NextResponse.json({
     tasks,
-    scannedKeys: sources.flatMap((s) => s.scannedKeys),
-    matchedPrefixes: sources.map((s) => `${s.prefix} (${s.kind})`),
+    scannedKeys: [
+      ...teams.scannedKeys,
+      ...histories.scannedKeys,
+      ...legacy.scannedKeys,
+    ],
+    matchedPrefixes,
     bucket,
     scannedAt: now,
   });
 }
+
+/** Test-only export. */
+export const __test__ = {
+  normalizeTask,
+  unwrapFileContent,
+};

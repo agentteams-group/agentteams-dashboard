@@ -448,7 +448,7 @@ export function TasksSection() {
               </p>
               <p className="text-muted-foreground">
                 Bucket: <code className="font-mono">{persisted?.bucket ?? '(未配置)'}</code> ·
-                候选路径: <code className="font-mono">shared/tasks/, shared/projects/, agents/&#123;worker&#125;/task-history.json</code> ·
+                候选路径: <code className="font-mono">teams/&#123;team&#125;/shared/&#123;knowledge,projects&#125;/, agents/&#123;worker&#125;/task-history.json</code> ·
                 匹配: <code className="font-mono">{persisted?.matchedPrefixes.join(', ') || '(无)'}</code>
               </p>
               {persisted?.error && (
@@ -571,8 +571,8 @@ export function TasksSection() {
                   Manager Agent 开始工作后，任务将自动出现在这里
                 </p>
                 <p className="text-xs text-muted-foreground/70 mt-3">
-                  任务数据来自 MinIO <code className="font-mono">shared/tasks/&#123;id&#125;/meta.json</code> 与 Matrix 实时 workflow 消息。
-                  Manager 完成任务创建后最长 8s 自动同步。
+                  任务数据主要来自 Matrix 房间消息（Leader/Worker 汇报阶段、状态、交付物路径）。
+                  MinIO 同步后会落入 <code className="font-mono">teams/&#123;team&#125;/shared/&#123;knowledge,projects&#125;/</code>，当前仅占位。
                 </p>
               </>
             ) : (
@@ -652,7 +652,10 @@ export function TasksSection() {
                               title={`MinIO 源: ${(task as { source?: string }).source}`}
                             >
                               <FolderTree className="h-3 w-3" />
-                              {(task as { source?: string }).source?.replace(/^shared\/(tasks|projects)\//, '$1/').replace(/^agents\//, 'worker ')}
+                              {(task as { source?: string }).source
+                                ?.replace(/^teams\/([^/]+)\/shared\/(knowledge|projects)\//, '$1/$2/')
+                                .replace(/^agents\/([^/]+)\/$/, 'worker $1/')
+                                .replace(/\/$/, '')}
                             </span>
                           )}
                           <span>{new Date(task.updatedAt).toLocaleTimeString()}</span>
