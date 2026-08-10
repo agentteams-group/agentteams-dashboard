@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { motion } from 'framer-motion';
 import {
   ListTodo,
@@ -139,7 +140,7 @@ export function TasksSection() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const tasks = useTaskStore((s) => selectTaskList(s.tasks));
+  const tasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
 
   const filtered = useMemo(() => {
     return tasks.filter((t) => {

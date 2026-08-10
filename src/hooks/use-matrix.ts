@@ -6,7 +6,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { create } from 'zustand';
-import { useTaskStore } from '@/lib/task-store';
+import { useTaskStore, markEventSeen } from '@/lib/task-store';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -432,14 +432,20 @@ export function useTypingSync(roomId: string | null) {
               if (event.type === 'm.room.message') {
                 const workflow = event.content?.['agentteams.workflow'];
                 if (isWorkflowPayload(workflow)) {
-                  useTaskStore.getState().upsertTask({
-                    runId: workflow.runId || workflow.run_id || event.event_id,
-                    title: workflow.title || workflow.name || '未命名任务',
-                    status: workflow.status || 'unknown',
-                    roomId: rid,
-                    subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
-                    steps: Array.isArray(workflow.steps) ? workflow.steps : [],
-                  });
+                  // Deduplicate by event_id to prevent re-processing across sync cycles
+                  if (markEventSeen(event.event_id)) continue;
+
+                  useTaskStore.getState().upsertTask(
+                    {
+                      runId: workflow.runId || workflow.run_id || event.event_id,
+                      title: workflow.title || workflow.name || '未命名任务',
+                      status: workflow.status || 'unknown',
+                      roomId: rid,
+                      subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
+                      steps: Array.isArray(workflow.steps) ? workflow.steps : [],
+                    },
+                    event.origin_server_ts ?? undefined,
+                  );
                 }
               }
             }
