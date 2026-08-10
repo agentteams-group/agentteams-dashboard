@@ -40,7 +40,16 @@ export function useTaskSync() {
     let timeoutId: ReturnType<typeof setTimeout>;
 
     /** Extract and persist workflow events from a list of timeline events. */
-    const ingestEvents = (rid: string, timelineEvents: Array<{ event_id: string; type: string; content?: Record<string, unknown>; origin_server_ts?: number }>) => {
+    const ingestEvents = (
+      rid: string,
+      timelineEvents: Array<{
+        event_id: string;
+        type: string;
+        sender?: string;
+        content?: Record<string, unknown>;
+        origin_server_ts?: number;
+      }>,
+    ) => {
       for (const event of timelineEvents) {
         if (event.type !== 'm.room.message') continue;
         const workflow = event.content?.['agentteams.workflow'];
@@ -53,8 +62,10 @@ export function useTaskSync() {
             title: workflow.title || workflow.name || '未命名任务',
             status: workflow.status || 'unknown',
             roomId: rid,
+            senderMatrixUserId: event.sender || '',
             subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
             steps: Array.isArray(workflow.steps) ? workflow.steps : [],
+            createdAt: event.origin_server_ts,
           },
           event.origin_server_ts ?? undefined,
         );

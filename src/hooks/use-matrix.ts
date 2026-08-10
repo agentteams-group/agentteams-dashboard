@@ -441,8 +441,10 @@ export function useTypingSync(roomId: string | null) {
                       title: workflow.title || workflow.name || '未命名任务',
                       status: workflow.status || 'unknown',
                       roomId: rid,
+                      senderMatrixUserId: event.sender || '',
                       subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
                       steps: Array.isArray(workflow.steps) ? workflow.steps : [],
+                      createdAt: event.origin_server_ts,
                     },
                     event.origin_server_ts ?? undefined,
                   );

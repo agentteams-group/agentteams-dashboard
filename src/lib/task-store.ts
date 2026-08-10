@@ -6,16 +6,20 @@ export interface TaskEntry {
   title: string;
   status: string;
   roomId: string;
+  /** Matrix user id (@alice:server) who sent the workflow message — usually the Manager. */
+  senderMatrixUserId: string;
+  /** epoch ms from Matrix origin_server_ts at first ingest. */
+  createdAt: number;
   subagents: WorkflowItem[];
   steps: WorkflowItem[];
-  updatedAt: number; // epoch ms
+  updatedAt: number;
 }
 
 interface TaskStore {
   tasks: Record<string, TaskEntry>;
   upsertTask: (
-    task: Omit<TaskEntry, 'updatedAt'>,
-    timestamp?: number, // pass from caller to avoid Date.now() inside setter
+    task: Omit<TaskEntry, 'updatedAt' | 'createdAt'> & { createdAt?: number },
+    timestamp?: number,
   ) => void;
   clearTasks: () => void;
 }
@@ -39,12 +43,14 @@ export const useTaskStore = create<TaskStore>()((set) => ({
 
       if (!hasMoreData && existing) return state;
 
+      const now = timestamp ?? Date.now();
       return {
         tasks: {
           ...state.tasks,
           [task.runId]: {
             ...task,
-            updatedAt: timestamp ?? Date.now(),
+            createdAt: existing?.createdAt ?? task.createdAt ?? now,
+            updatedAt: now,
           },
         },
       };
@@ -65,7 +71,25 @@ export function markEventSeen(eventId: string): boolean {
   return false;
 }
 
-/** Derive a sorted task list from the store. */
+/** Derive a sorted task list from the store (most recently updated first). */
 export function selectTaskList(tasks: Record<string, TaskEntry>): TaskEntry[] {
   return Object.values(tasks).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Filter tasks sent by a specific Matrix user (e.g. a particular Manager). */
+export function selectTasksBySender(
+  tasks: Record<string, TaskEntry>,
+  matrixUserId: string,
+): TaskEntry[] {
+  if (!matrixUserId) return [];
+  return selectTaskList(tasks).filter((t) => t.senderMatrixUserId === matrixUserId);
+}
+
+/** Filter tasks originated from any of the given Matrix rooms. */
+export function selectTasksByRooms(
+  tasks: Record<string, TaskEntry>,
+  roomIds: Set<string>,
+): TaskEntry[] {
+  if (roomIds.size === 0) return [];
+  return selectTaskList(tasks).filter((t) => roomIds.has(t.roomId));
 }

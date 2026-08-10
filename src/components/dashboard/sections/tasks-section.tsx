@@ -13,16 +13,39 @@ import {
   ChevronDown,
   ChevronUp,
   MessageSquare,
+  Crown,
+  User,
+  Users,
+  Eye,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { useTaskStore, selectTaskList, type TaskEntry } from '@/lib/task-store';
+import {
+  useTaskStore,
+  selectTaskList,
+  type TaskEntry,
+} from '@/lib/task-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
+import { useManagers } from '@/hooks/use-agentteams-managers';
+import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useTeams } from '@/hooks/use-agentteams-teams';
+import {
+  actorFromManager,
+  actorFromWorker,
+  actorFromTeam,
+} from '@/lib/task-actors';
 import type { WorkflowItem } from '@/lib/a2ui/workflow';
 
 const COMPLETE_STATUSES = new Set(['completed', 'success', 'done']);
@@ -30,6 +53,7 @@ const ERROR_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
 const RUNNING_STATUSES = new Set(['in_progress', 'running']);
 
 type StatusFilter = 'all' | 'running' | 'completed' | 'failed';
+type PerspectiveKind = 'all' | 'manager' | 'team' | 'worker';
 
 function taskStatus(task: TaskEntry): StatusFilter {
   if (COMPLETE_STATUSES.has(task.status)) return 'completed';
@@ -64,8 +88,77 @@ function roomDisplayName(roomId: string): string {
   return local.length > 24 ? local.slice(0, 22) + '...' : local;
 }
 
-function TaskDetail({ task }: { task: TaskEntry }) {
+interface ActorContext {
+  /** Resolve a Matrix user id to a Manager name. */
+  managerByUserId: Map<string, string>;
+  /** Resolve a Matrix user id to a Worker name. */
+  workerByUserId: Map<string, string>;
+  /** Resolve a Matrix room id to a Manager name. */
+  managerByRoomId: Map<string, string>;
+  /** Resolve a Matrix room id to a Team name. */
+  teamByRoomId: Map<string, string>;
+  /** Resolve a Matrix room id to a Worker name. */
+  workerByRoomId: Map<string, string>;
+}
+
+function buildActorContext(
+  managers: { name: string; matrixUserID?: string; roomID?: string; leaderDMRoomID?: string }[] | undefined,
+  workers: { name: string; matrixUserID?: string; roomID?: string; team?: string }[] | undefined,
+  teams: { teamName: string; teamRoomID?: string; leaderDMRoomID?: string; workerNames?: string[] }[] | undefined,
+): ActorContext {
+  const managerByUserId = new Map<string, string>();
+  const workerByUserId = new Map<string, string>();
+  const managerByRoomId = new Map<string, string>();
+  const teamByRoomId = new Map<string, string>();
+  const workerByRoomId = new Map<string, string>();
+
+  for (const m of managers ?? []) {
+    if (m.matrixUserID) managerByUserId.set(m.matrixUserID, m.name);
+    if (m.roomID) managerByRoomId.set(m.roomID, m.name);
+    if (m.leaderDMRoomID) managerByRoomId.set(m.leaderDMRoomID, m.name);
+  }
+  // Index workers by team first for fallback resolution
+  const workerByTeam = new Map<string, string[]>();
+  for (const w of workers ?? []) {
+    if (w.matrixUserID) workerByUserId.set(w.matrixUserID, w.name);
+    if (w.roomID) workerByRoomId.set(w.roomID, w.name);
+    if (w.team) {
+      const list = workerByTeam.get(w.team) ?? [];
+      list.push(w.name);
+      workerByTeam.set(w.team, list);
+    }
+  }
+  for (const t of teams ?? []) {
+    if (t.teamRoomID) teamByRoomId.set(t.teamRoomID, t.teamName);
+    if (t.leaderDMRoomID) teamByRoomId.set(t.leaderDMRoomID, t.teamName);
+    for (const wn of t.workerNames ?? []) {
+      // Mark team ownership for workers that don't have their own room mapping yet
+      // (some workflows target the team room, not a specific worker room)
+    }
+    void workerByTeam;
+  }
+
+  return {
+    managerByUserId,
+    workerByUserId,
+    managerByRoomId,
+    teamByRoomId,
+    workerByRoomId,
+  };
+}
+
+function TaskDetail({
+  task,
+  actors,
+}: {
+  task: TaskEntry;
+  actors: ActorContext;
+}) {
   const completedSteps = task.steps.filter((s) => COMPLETE_STATUSES.has(s.status || '')).length;
+  const managerName = actors.managerByUserId.get(task.senderMatrixUserId);
+  const roomManagerName = actors.managerByRoomId.get(task.roomId);
+  const roomTeamName = actors.teamByRoomId.get(task.roomId);
+  const roomWorkerName = actors.workerByRoomId.get(task.roomId);
 
   return (
     <div className="space-y-4 px-3 pb-3">
@@ -123,7 +216,31 @@ function TaskDetail({ task }: { task: TaskEntry }) {
       )}
 
       {/* Metadata */}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground pt-2 border-t">
+      <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pt-2 border-t">
+        {managerName && (
+          <span className="flex items-center gap-1 text-violet-600 dark:text-violet-400">
+            <Crown className="h-3 w-3" />
+            {managerName}
+          </span>
+        )}
+        {roomTeamName && (
+          <span className="flex items-center gap-1">
+            <Users className="h-3 w-3" />
+            {roomTeamName}
+          </span>
+        )}
+        {roomWorkerName && (
+          <span className="flex items-center gap-1">
+            <User className="h-3 w-3" />
+            {roomWorkerName}
+          </span>
+        )}
+        {!managerName && roomManagerName && (
+          <span className="flex items-center gap-1 text-violet-600 dark:text-violet-400">
+            <Crown className="h-3 w-3" />
+            {roomManagerName}
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <MessageSquare className="h-3 w-3" />
           {roomDisplayName(task.roomId)}
@@ -137,10 +254,17 @@ function TaskDetail({ task }: { task: TaskEntry }) {
   );
 }
 
+interface PerspectiveState {
+  kind: PerspectiveKind;
+  /** Selected id (Manager name / Team name / Worker name). Empty string = "all". */
+  id: string;
+}
+
 export function TasksSection() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [perspective, setPerspective] = useState<PerspectiveState>({ kind: 'all', id: '' });
   const { setActiveSection } = useActiveSection();
 
   const tasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
@@ -148,21 +272,67 @@ export function TasksSection() {
   const clearTasks = useTaskStore((s) => s.clearTasks);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const { data: managers } = useManagers();
+  const { data: workers } = useWorkers();
+  const { data: teams } = useTeams();
+
+  const actors = useMemo(
+    () => buildActorContext(managers, workers, teams),
+    [managers, workers, teams],
+  );
+
+  /** All task data after perspective filter, before status/search filters. */
+  const perspectiveFiltered = useMemo(() => {
+    if (perspective.kind === 'all' || !perspective.id) return tasks;
+
+    if (perspective.kind === 'manager') {
+      const mgr = (managers ?? []).find((m) => m.name === perspective.id);
+      if (!mgr) return [];
+      const lookup = actorFromManager(mgr);
+      return tasks.filter(
+        (t) => t.senderMatrixUserId === lookup.matrixUserId || lookup.roomIds.has(t.roomId),
+      );
+    }
+    if (perspective.kind === 'team') {
+      const team = (teams ?? []).find((t) => t.teamName === perspective.id);
+      if (!team) return [];
+      const lookup = actorFromTeam(team);
+      return tasks.filter((t) => lookup.roomIds.has(t.roomId));
+    }
+    if (perspective.kind === 'worker') {
+      const worker = (workers ?? []).find((w) => w.name === perspective.id);
+      if (!worker) return [];
+      const workerTeam = (teams ?? []).find((t) => t.teamName === worker.team);
+      const lookup = actorFromWorker(worker, workerTeam);
+      return tasks.filter(
+        (t) => t.senderMatrixUserId === lookup.matrixUserId || lookup.roomIds.has(t.roomId),
+      );
+    }
+    return tasks;
+  }, [tasks, perspective, managers, workers, teams]);
+
+  const filtered = useMemo(() => {
+    return perspectiveFiltered.filter((t) => {
+      if (statusFilter !== 'all' && taskStatus(t) !== statusFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        const mgrName = actors.managerByUserId.get(t.senderMatrixUserId) || '';
+        if (
+          !t.title.toLowerCase().includes(q) &&
+          !t.runId.toLowerCase().includes(q) &&
+          !mgrName.toLowerCase().includes(q)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [perspectiveFiltered, statusFilter, search, actors]);
+
   const handleReload = useCallback(() => {
     clearTasks();
     setReloadKey((k) => k + 1);
   }, [clearTasks]);
-
-  const filtered = useMemo(() => {
-    return tasks.filter((t) => {
-      if (statusFilter !== 'all' && taskStatus(t) !== statusFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!t.title.toLowerCase().includes(q) && !t.runId.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [tasks, statusFilter, search]);
 
   const toggleExpand = useCallback((runId: string) => {
     setExpanded((prev) => {
@@ -177,14 +347,31 @@ export function TasksSection() {
     let running = 0;
     let completed = 0;
     let failed = 0;
-    for (const t of tasks) {
+    for (const t of perspectiveFiltered) {
       const s = taskStatus(t);
       if (s === 'running') running++;
       else if (s === 'completed') completed++;
       else if (s === 'failed') failed++;
     }
     return { running, completed, failed };
-  }, [tasks]);
+  }, [perspectiveFiltered]);
+
+  const handlePerspectiveKindChange = useCallback((kind: PerspectiveKind) => {
+    setPerspective({ kind, id: '' });
+  }, []);
+
+  const perspectiveOptions = useMemo(() => {
+    if (perspective.kind === 'manager') {
+      return (managers ?? []).map((m) => ({ value: m.name, label: m.name }));
+    }
+    if (perspective.kind === 'team') {
+      return (teams ?? []).map((t) => ({ value: t.teamName, label: t.teamName }));
+    }
+    if (perspective.kind === 'worker') {
+      return (workers ?? []).map((w) => ({ value: w.name, label: w.name }));
+    }
+    return [];
+  }, [perspective.kind, managers, workers, teams]);
 
   return (
     <div className="space-y-6">
@@ -221,12 +408,52 @@ export function TasksSection() {
         ))}
       </div>
 
-      {/* Filters */}
+      {/* Perspective + filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
+          {([
+            ['all', '全部', null],
+            ['manager', 'Manager 视角', Crown],
+            ['team', 'Team 视角', Users],
+            ['worker', 'Worker 视角', User],
+          ] as const).map(([key, label, Icon]) => (
+            <Button
+              key={key}
+              variant={perspective.kind === key ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => handlePerspectiveKindChange(key as PerspectiveKind)}
+            >
+              {Icon && <Icon className="h-3.5 w-3.5 mr-1" />}
+              {label}
+            </Button>
+          ))}
+        </div>
+
+        {perspective.kind !== 'all' && (
+          <Select
+            value={perspective.id || '__all__'}
+            onValueChange={(v) => setPerspective((p) => ({ ...p, id: v === '__all__' ? '' : v }))}
+          >
+            <SelectTrigger className="w-[180px] h-9">
+              <SelectValue placeholder="选择目标..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部{perspective.kind === 'manager' ? ' Manager' : perspective.kind === 'team' ? ' Team' : ' Worker'}</SelectItem>
+              {perspectiveOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索任务名称或 Run ID..."
+            placeholder="搜索任务名称 / Run ID / Manager 名称..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -294,6 +521,7 @@ export function TasksSection() {
             const isExpanded = expanded.has(task.runId);
             const completedSteps = task.steps.filter((s) => COMPLETE_STATUSES.has(s.status || '')).length;
             const totalSteps = task.steps.length;
+            const senderName = actors.managerByUserId.get(task.senderMatrixUserId);
 
             return (
               <motion.div
@@ -323,6 +551,12 @@ export function TasksSection() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm truncate">{task.title}</span>
                           <StatusBadge status={task.status} />
+                          {senderName && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-500/40 text-violet-600 dark:text-violet-400">
+                              <Crown className="h-2.5 w-2.5 mr-0.5" />
+                              {senderName}
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                           <span className="font-mono">{task.runId.slice(0, 8)}</span>
@@ -354,7 +588,7 @@ export function TasksSection() {
                   </button>
 
                   {/* Expanded detail */}
-                  {isExpanded && <TaskDetail task={task} />}
+                  {isExpanded && <TaskDetail task={task} actors={actors} />}
                 </Card>
               </motion.div>
             );
@@ -368,6 +602,17 @@ export function TasksSection() {
           <CardContent className="p-8 text-center">
             <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">没有匹配的任务</p>
+            {perspective.kind !== 'all' && perspective.id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-3"
+                onClick={() => setPerspective({ kind: 'all', id: '' })}
+              >
+                <Eye className="h-3.5 w-3.5 mr-1" />
+                清除视角过滤
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
