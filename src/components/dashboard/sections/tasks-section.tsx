@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { useTaskStore, selectTaskList, type TaskEntry } from '@/lib/task-store';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { useActiveSection } from '@/components/dashboard/use-active-section';
 import type { WorkflowItem } from '@/lib/a2ui/workflow';
 
 const COMPLETE_STATUSES = new Set(['completed', 'success', 'done']);
@@ -139,8 +141,17 @@ export function TasksSection() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const { setActiveSection } = useActiveSection();
 
   const tasks = useTaskStore(useShallow((s) => selectTaskList(s.tasks)));
+  const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
+  const clearTasks = useTaskStore((s) => s.clearTasks);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const handleReload = useCallback(() => {
+    clearTasks();
+    setReloadKey((k) => k + 1);
+  }, [clearTasks]);
 
   const filtered = useMemo(() => {
     return tasks.filter((t) => {
@@ -179,8 +190,20 @@ export function TasksSection() {
     <div className="space-y-6">
       <SectionHeader
         title="任务面板"
-        description="实时查看 AgentTeams 任务分解与执行状态"
+        description={
+          matrixLoggedIn
+            ? '实时查看 AgentTeams 任务分解与执行状态'
+            : '需要先登录 Matrix 才能拉取任务数据'
+        }
+        actions={
+          <Button variant="outline" size="sm" onClick={handleReload} title="清空当前任务并等待新事件">
+            <Loader2 className="h-3.5 w-3.5 mr-1" />
+            重新加载
+          </Button>
+        }
       />
+      {/* Reload trigger — re-renders this hidden block to force a fresh sync cycle */}
+      <div data-reload-key={reloadKey} hidden />
 
       {/* Stats cards */}
       <div className="grid grid-cols-3 gap-3">
@@ -233,10 +256,33 @@ export function TasksSection() {
         <Card className="glass-card">
           <CardContent className="p-12 text-center">
             <ListTodo className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-sm font-medium">暂无任务</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Manager Agent 开始工作后，任务将自动出现在这里
-            </p>
+            {matrixLoggedIn ? (
+              <>
+                <p className="text-sm font-medium">暂无任务</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Manager Agent 开始工作后，任务将自动出现在这里
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-3">
+                  任务数据来自 Matrix 房间中的 agentteams.workflow 消息，首次同步最长需要 15 秒
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">尚未登录 Matrix</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  任务面板依赖 Matrix 房间消息，请先在「聊天」中登录
+                </p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setActiveSection('chat')}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                  前往聊天登录
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

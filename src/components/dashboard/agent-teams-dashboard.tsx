@@ -37,6 +37,7 @@ import {
 } from './nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
+import { useTaskSync } from '@/hooks/use-task-sync';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -78,6 +79,10 @@ export function AgentTeamsDashboard() {
   const { data: versionData } = useVersion();
   usePhaseWatcher();
   useAgentTeamsStatus();
+  // Keep the task panel populated regardless of which section is active.
+  // Runs its own lightweight Matrix sync loop (workflow events only) and is
+  // independent of the chat section's full sync loop.
+  useTaskSync();
   const { data: workers } = useWorkers();
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
