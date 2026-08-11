@@ -104,6 +104,13 @@ const TASK_STATUS_COLUMNS: Array<{
     color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
     icon: AlertTriangle,
   },
+  {
+    key: 'unknown',
+    label: '未知',
+    description: '状态未知',
+    color: 'text-gray-500 bg-gray-500/10 border-gray-500/30',
+    icon: Eye,
+  },
 ];
 
 const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
