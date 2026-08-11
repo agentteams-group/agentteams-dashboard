@@ -55,8 +55,8 @@ function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: 
     <Avatar className="w-8 h-8 shrink-0">
       <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
         isMe
-          ? 'bg-emerald-500/20 text-emerald-400'
-          : 'bg-violet-500/20 text-violet-300'
+          ? 'bg-emerald-500/30 text-emerald-300'
+          : 'bg-sky-500/30 text-sky-300'
       }`}>
         {senderShort.slice(0, 2).toUpperCase()}
       </div>
