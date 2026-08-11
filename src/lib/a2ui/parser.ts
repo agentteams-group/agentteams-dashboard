@@ -24,7 +24,7 @@ import type { WorkflowPayload } from './workflow';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
@@ -37,6 +37,13 @@ export interface ParsedA2uiBlock {
   isStreaming?: boolean;
 }
 
+/** Payload of an attachment block (upstream F7 long-message fallback). */
+export interface AttachmentPayload {
+  url: string;
+  filename: string;
+  mimetype: string;
+}
+
 export interface A2uiParseResult {
   blocks: ParsedA2uiBlock[];
   hasA2ui: boolean;
@@ -45,7 +52,7 @@ export interface A2uiParseResult {
 }
 
 const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
-  'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text',
+  'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text', 'attachment',
 ]);
 
 /**
@@ -127,28 +134,50 @@ export function parseA2uiContent(
     };
   }
 
-  const blocks: ParsedA2uiBlock[] = [];
-  let hasA2ui = false;
-  const hasThinking = false;
-  const hasToolCall = false;
+  // 1. A2UI protocol markers (if any), with surrounding non-A2UI text.
+  const markerBlocks = parseA2uiMarkers(body, formattedBody);
+  if (markerBlocks) {
+    return {
+      blocks: markerBlocks,
+      hasA2ui: true,
+      hasThinking: false,
+      hasToolCall: false,
+    };
+  }
 
-  // Prefer formatted_body if available (HTML)
+  // 2. No A2UI markers found: try legacy format parsing.
+  return parseLegacyContent(body, formattedBody);
+}
+
+/**
+ * Extract A2UI protocol markers from Matrix message content, preserving any
+ * surrounding non-A2UI text as text/legacy blocks. Returns null when the
+ * body contains no A2UI markers.
+ *
+ * While streaming (`isStreaming`), an unclosed fence/comment marker produces
+ * a placeholder `a2ui` block (rendered as a loading state) instead of falling
+ * through to the text fallback, so a half-written payload does not flash as
+ * raw text between streaming frames.
+ */
+export function parseA2uiMarkers(
+  body: string,
+  formattedBody?: string,
+  isStreaming = false
+): ParsedA2uiBlock[] | null {
   const content = formattedBody || body;
   const isHtml = !!formattedBody;
 
-  // Track consumed ranges to avoid double-parsing
-  const consumed: [number, number][] = [];
-  let lastEnd = 0;
+  const blocks: ParsedA2uiBlock[] = [];
+  let hasA2ui = false;
 
-  // 1. Extract A2UI protocol markers
   const a2uiRegex = isHtml ? A2UI_HTML_MARKER : A2UI_TEXT_MARKER;
   let match: RegExpExecArray | null;
+  let lastEnd = 0;
 
   while ((match = a2uiRegex.exec(content)) !== null) {
     const start = match.index;
     const end = start + match[0].length;
 
-    // Add text before this marker
     if (start > lastEnd) {
       const textBefore = content.slice(lastEnd, start).trim();
       if (textBefore) {
@@ -156,30 +185,29 @@ export function parseA2uiContent(
       }
     }
 
-    // Parse the A2UI JSON
     try {
       const jsonStr = isHtml ? decodeHtmlEntities(match[1]) : match[1];
       const parsed = JSON.parse(jsonStr);
-
-      // Handle array of messages or single message
       const messages = Array.isArray(parsed) ? parsed : [parsed];
       blocks.push({ type: 'a2ui', messages });
       hasA2ui = true;
     } catch {
-      // Invalid JSON, treat as text
       blocks.push({ type: 'text', text: match[0] });
     }
 
-    consumed.push([start, end]);
     lastEnd = end;
   }
 
-  // 2. If no A2UI markers found, try legacy format parsing
   if (!hasA2ui) {
-    return parseLegacyContent(body, formattedBody);
+    // Streaming tolerance: an in-progress A2UI marker renders as a loading
+    // placeholder rather than the unclosed JSON as raw text. Once streaming
+    // ends the marker either parses normally or degrades to text.
+    if (isStreaming && hasUnclosedA2uiMarker(content, isHtml)) {
+      return [{ type: 'a2ui', isStreaming: true }];
+    }
+    return null;
   }
 
-  // 3. Add remaining text after last marker
   if (lastEnd < content.length) {
     const textAfter = content.slice(lastEnd).trim();
     if (textAfter) {
@@ -187,15 +215,29 @@ export function parseA2uiContent(
     }
   }
 
-  // If no blocks found, treat entire content as text
   if (blocks.length === 0) {
     blocks.push({ type: 'text', text: body });
   }
 
-  return { blocks, hasA2ui, hasThinking, hasToolCall };
+  return blocks;
 }
 
-function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
+/**
+ * Detect a not-yet-closed A2UI marker: an opening ```a2ui fence without a
+ * closing fence, or an opening `<!--a2ui:` comment without `-->`.
+ */
+function hasUnclosedA2uiMarker(content: string, isHtml: boolean): boolean {
+  if (isHtml) {
+    const start = content.indexOf('<!--a2ui:');
+    return start >= 0 && !content.includes('-->', start);
+  }
+  const fenceIndex = content.indexOf('```a2ui');
+  if (fenceIndex < 0) return false;
+  const after = content.slice(fenceIndex + '```a2ui'.length);
+  return !/```/.test(after);
+}
+
+export function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
   const blocks: ParsedA2uiBlock[] = [];
   let hasThinking = false;
   let hasToolCall = false;
@@ -234,7 +276,7 @@ function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
  * Recognize the text confirmation prompt emitted by Tool Guard. The runtime
  * consumes `/approve` for approval and treats every other reply as a denial.
  */
-function parseToolGuardConfirmation(body: string): Record<string, unknown> | null {
+export function parseToolGuardConfirmation(body: string): Record<string, unknown> | null {
   if (
     !/Waiting for approval\s*\/\s*等待审批/i.test(body) ||
     !/Type\s+\/approve\s+to approve, or send any message to deny\./i.test(body)
@@ -261,9 +303,31 @@ function parseToolGuardConfirmation(body: string): Record<string, unknown> | nul
 }
 
 /**
+ * Parse the upstream F7 long-message fallback metadata. When a reply exceeds
+ * the 64KB safety threshold the runtime uploads the full text as a Matrix
+ * attachment and tags the event with `com.agentteams.long_message`:
+ * `{ version, url: 'mxc://...', filename, mimetype }`.
+ */
+export function parseLongMessage(value: unknown): AttachmentPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const url = source.url;
+  const filename = source.filename;
+  const mimetype = source.mimetype;
+  if (
+    typeof url !== 'string' ||
+    typeof filename !== 'string' ||
+    typeof mimetype !== 'string'
+  ) {
+    return null;
+  }
+  return { url, filename, mimetype };
+}
+
+/**
  * Parse legacy custom block formats (```card, <details class="thinking">)
  */
-function parseLegacyContent(
+export function parseLegacyContent(
   body: string,
   formattedBody?: string
 ): A2uiParseResult {
@@ -340,6 +404,56 @@ function parseLegacyContent(
 }
 
 /**
+ * Hermes tool-call Markdown convention:
+ *
+ *   🔧 **tool_name**
+ *   ```
+ *   {"argument": "value"}
+ *   ```
+ *
+ * The agent runtime posts tool invocations as plain Markdown; without this
+ * recognition the timeline renders a raw bold line and a wide code fence.
+ */
+export function parseHermesToolCalls(body: string): ParsedA2uiBlock[] | null {
+  const pattern = /🔧\s*\*\*([^*\n]+)\*\*\s*\n```[^\n]*\n([\s\S]*?)\n```/g;
+  const blocks: ParsedA2uiBlock[] = [];
+  let lastEnd = 0;
+  let matched = false;
+
+  for (const match of body.matchAll(pattern)) {
+    matched = true;
+    const start = match.index ?? 0;
+    const before = body.slice(lastEnd, start).trim();
+    if (before) blocks.push({ type: 'text', text: before });
+
+    const toolName = match[1].trim();
+    const rawArguments = (match[2] ?? '').trim();
+    let argumentsPayload: Record<string, unknown> | string;
+    try {
+      const parsed = JSON.parse(rawArguments) as unknown;
+      argumentsPayload =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : { value: parsed };
+    } catch {
+      argumentsPayload = rawArguments ? { value: rawArguments } : {};
+    }
+
+    blocks.push({
+      type: 'tool_call',
+      payload: { tool_name: toolName, arguments: argumentsPayload },
+    });
+    lastEnd = start + match[0].length;
+  }
+
+  if (!matched) return null;
+
+  const after = body.slice(lastEnd).trim();
+  if (after) blocks.push({ type: 'text', text: after });
+  return blocks;
+}
+
+/**
  * Parse non-A2UI blocks (thinking, tool_call, text) from a text segment
  */
 function parseNonA2uiBlocks(text: string, isHtml: boolean): ParsedA2uiBlock[] {
@@ -401,101 +515,3 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#39;/g, "'");
 }
 
-/**
- * Convert legacy card/tool_call payload to A2UI protocol messages
- */
-export function legacyToA2uiMessages(
-  payload: Record<string, unknown>,
-  surfaceId: string,
-  isToolCall: boolean
-): A2uiMessage[] {
-  if (isToolCall) {
-    return [
-      {
-        version: 'v0.9' as const,
-        createSurface: { surfaceId, catalogId: 'agentteams-chat' },
-      },
-      {
-        version: 'v0.9' as const,
-        updateComponents: {
-          surfaceId,
-          components: [
-            {
-              id: 'root',
-              component: 'ToolCallBlock',
-              toolName: payload.tool_name || payload.name || '工具调用',
-              arguments: payload.arguments || payload.args,
-              result: payload.result,
-              status: payload.status || (payload.error ? 'error' : 'success'),
-              isStreaming: payload.isStreaming || false,
-            },
-          ],
-        },
-      },
-    ] as unknown as A2uiMessage[];
-  }
-
-  return [
-    {
-      version: 'v0.9' as const,
-      createSurface: { surfaceId, catalogId: 'agentteams-chat' },
-    },
-    {
-      version: 'v0.9' as const,
-      updateComponents: {
-        surfaceId,
-        components: [
-          {
-            id: 'root',
-            component: 'Column',
-            children: ['title', 'content'],
-          },
-          {
-            id: 'title',
-            component: 'Text',
-            text: payload.title || '卡片',
-            variant: 'h4',
-          },
-          {
-            id: 'content',
-            component: 'MarkdownBlock',
-            content: typeof payload.content === 'string'
-              ? payload.content
-              : JSON.stringify(payload, null, 2),
-          },
-        ],
-      },
-    },
-  ] as unknown as A2uiMessage[];
-}
-
-/**
- * Convert legacy thinking content to A2UI protocol messages
- */
-export function thinkingToA2uiMessages(
-  content: string,
-  surfaceId: string,
-  isStreaming = false
-): A2uiMessage[] {
-  return [
-    {
-      version: 'v0.9' as const,
-      createSurface: { surfaceId, catalogId: 'agentteams-chat' },
-    },
-    {
-      version: 'v0.9' as const,
-      updateComponents: {
-        surfaceId,
-        components: [
-          {
-            id: 'root',
-            component: 'ThinkingBlock',
-            content,
-            title: '思考过程',
-            isStreaming,
-          },
-        ],
-      },
-    },
-  ] as unknown as A2uiMessage[];
-}

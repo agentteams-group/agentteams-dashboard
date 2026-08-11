@@ -13,7 +13,9 @@ import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
-import { parseA2uiContent, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
+import { normalizeToBlocks } from '@/lib/a2ui/normalize';
+import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
+import { AttachmentCard } from '../attachment-card';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
 interface MessageBubbleProps {
@@ -50,11 +52,11 @@ function MessageTime({ timestamp }: { timestamp: number }) {
 
 function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: boolean }) {
   return (
-    <Avatar className="w-7 h-7 shrink-0">
-      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-medium ${
+    <Avatar className="w-8 h-8 shrink-0">
+      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
         isMe
-          ? 'bg-primary/20 text-primary'
-          : 'bg-muted text-muted-foreground'
+          ? 'bg-emerald-500/30 text-emerald-300'
+          : 'bg-sky-500/30 text-sky-300'
       }`}>
         {senderShort.slice(0, 2).toUpperCase()}
       </div>
@@ -129,9 +131,14 @@ export function MessageBubble({
   const showAvatar = !isContinuation && showSender;
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
-    return message.agentBlocks
-      ?? parseA2uiContent(message.content, message.formattedContent || undefined, message.workflow).blocks;
-  }, [message.content, message.formattedContent, message.workflow, message.agentBlocks]);
+    return normalizeToBlocks({
+      body: message.content,
+      formattedBody: message.formattedContent || undefined,
+      content: message.rawContent ?? {},
+      isStreaming: !!message.isStreaming,
+      isMine: message.isMe,
+    });
+  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
@@ -193,10 +200,10 @@ export function MessageBubble({
   }, [editValue, message, onEdit]);
 
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3 py-1.5 rounded-2xl text-sm break-words',
+    'w-fit max-w-[min(92%,72ch)] px-3 py-2 rounded-2xl text-sm break-words leading-relaxed',
     message.isMe
-      ? 'bg-primary text-primary-foreground rounded-tr-sm'
-      : 'bg-muted text-foreground rounded-tl-sm',
+      ? 'bg-emerald-600 text-white rounded-tr-sm shadow-md shadow-emerald-500/10'
+      : 'bg-card text-foreground rounded-tl-sm',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -221,7 +228,7 @@ export function MessageBubble({
       <div className={`flex-1 min-w-0 flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
           <div className={`flex items-center gap-1.5 mb-0.5 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-xs font-medium ${message.isMe ? 'text-primary' : 'text-foreground'}`}>
+            <span className={`text-xs font-semibold ${message.isMe ? 'text-emerald-300' : 'text-foreground'}`}>
               {message.senderShort}
             </span>
             {message.isStreaming && (
@@ -301,8 +308,25 @@ export function MessageBubble({
                 if (block.type === 'card') {
                   return <div key={idx} className="w-[min(100%,56rem)] max-w-full"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
                 }
+                if (block.type === 'a2ui' && block.isStreaming) {
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm">
+                      <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>正在生成交互内容...</span>
+                      </div>
+                    </div>
+                  );
+                }
                 if (block.type === 'a2ui' && block.messages) {
                   return <div key={idx} className="w-[min(100%,56rem)] max-w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
+                }
+                if (block.type === 'attachment' && block.payload) {
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <AttachmentCard payload={block.payload as unknown as AttachmentPayload} />
+                    </div>
+                  );
                 }
                 if (block.type === 'text' && block.text) {
                   return (
@@ -314,6 +338,7 @@ export function MessageBubble({
                         mediaUrl={message.mediaUrl}
                         mediaInfo={message.mediaInfo}
                         memberMap={memberMap}
+                        isStreaming={message.isStreaming}
                       />
                     </div>
                   );

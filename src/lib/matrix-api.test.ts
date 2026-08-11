@@ -76,3 +76,31 @@ describe('getRateLimitRetryDelay', () => {
     expect(getRateLimitRetryDelay(new Error('boom'))).toBe(30 * 1000);
   });
 });
+
+describe('sendReadReceipt', () => {
+  it('POSTs an m.read receipt to the receipt proxy route', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+
+    await matrixApi.sendReadReceipt('https://hs.test', 'token', '!room:test', '$event:example.com');
+
+    const [url, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(
+      '/api/matrix/rooms/!room%3Atest/receipt/?homeserver=' +
+        encodeURIComponent('https://hs.test')
+    );
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body as string)).toEqual({ eventId: '$event:example.com' });
+    expect(options.headers.Authorization).toBe('Bearer token');
+  });
+
+  it('throws when the homeserver rejects the receipt', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('nope', { status: 403 })) as unknown as typeof fetch;
+
+    const err = await matrixApi
+      .sendReadReceipt('https://hs.test', 'token', '!room:test', '$event:example.com')
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(MatrixRequestError);
+    expect(err.status).toBe(403);
+  });
+});

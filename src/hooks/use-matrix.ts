@@ -6,7 +6,6 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { create } from 'zustand';
-import { useTaskStore, markEventSeen } from '@/lib/task-store';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -98,6 +97,14 @@ export interface RoomMeta {
 
 interface RoomMetaStore {
   meta: Record<string, RoomMeta>;
+  /**
+   * The room currently open in the chat panel (null when none is selected).
+   * The global sync loop only merges timeline events into the message cache
+   * for this room, so per-room updates never fight over the React Query
+   * cache while the user switches conversations.
+   */
+  activeRoomId: string | null;
+  setActiveRoomId: (_roomId: string | null) => void;
   setRoomMeta: (_roomId: string, _meta: Partial<Omit<RoomMeta, 'updatedAt' | 'clearedAt'>>) => void;
   clearUnread: (_roomId: string) => void;
   forgetRoom: (_roomId: string) => void;
@@ -108,6 +115,8 @@ const UNREAD_GRACE_MS = 30_000;
 
 export const useRoomMetaStore = create<RoomMetaStore>()((set) => ({
   meta: {},
+  activeRoomId: null,
+  setActiveRoomId: (roomId) => set(() => ({ activeRoomId: roomId })),
   setRoomMeta: (roomId, partial) =>
     set((state) => {
       const prev = state.meta[roomId] ?? { updatedAt: 0 };
@@ -341,6 +350,24 @@ export function useMatrixSetReadMarker() {
   });
 }
 
+/**
+ * Sends an m.read receipt for a message. Best-effort: failures are logged and
+ * never disturb the UI (the read position still flows through m.fully_read).
+ */
+export function useMatrixSendReadReceipt() {
+  const { homeserver, accessToken } = useMatrixParams();
+
+  return useMutation({
+    mutationFn: async ({ roomId, eventId }: { roomId: string; eventId: string }) => {
+      if (!homeserver || !accessToken) return;
+      return matrixApi.sendReadReceipt(homeserver, accessToken, roomId, eventId);
+    },
+    onError: (err) => {
+      console.warn('Failed to send read receipt:', err);
+    },
+  });
+}
+
 // ============ Edit / Redact Message Mutations ============
 
 export function useMatrixEditMessage() {
@@ -468,144 +495,13 @@ export function useMatrixTypingUsers(roomId: string): TypingUser[] {
   return useMemo(() => typingUsers.filter((u) => u.userId !== userId), [typingUsers, userId]);
 }
 
-// ============ Typing Sync (lightweight sync for typing notifications) ============
-
-export function useTypingSync(roomId: string | null) {
-  const queryClient = useQueryClient();
-  const { homeserver, accessToken, isLoggedIn, userId } = useMatrixParams();
-  const setTypingUsers = useTypingStore((s) => s.setTypingUsers);
-  const setRoomReceipts = useReceiptStore((s) => s.setRoomReceipts);
-
-  useEffect(() => {
-    if (!isLoggedIn || !homeserver || !accessToken || !roomId) return;
-
-    const generation = useMatrixStore.getState().syncGeneration;
-    const isStale = () => useMatrixStore.getState().syncGeneration !== generation;
-
-    let syncToken: string | undefined;
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
-
-    const poll = async () => {
-      if (cancelled || isStale()) return;
-      try {
-        const resp = await matrixApi.sync(homeserver, accessToken, syncToken, 25000);
-        if (cancelled || isStale()) return;
-        syncToken = resp.next_batch;
-
-        const joinedRooms = resp.rooms?.join;
-        if (joinedRooms) {
-          for (const [rid, roomData] of Object.entries(joinedRooms)) {
-            // Process ephemeral events (typing + receipts)
-            const ephemeralEvents = roomData.ephemeral?.events || [];
-            for (const event of ephemeralEvents) {
-              if (rid !== roomId) continue;
-              if (event.type === 'm.typing') {
-                const typingUserIds = (event.content?.user_ids as string[]) || [];
-                const users = typingUserIds.map((uid) => ({
-                  userId: uid,
-                  displayName: uid.startsWith('@') ? uid.split(':')[0].slice(1) : uid,
-                }));
-                setTypingUsers(rid, users);
-              } else if (event.type === 'm.receipt') {
-                const content = (event.content ?? {}) as Record<
-                  string,
-                  Record<string, Record<string, { ts?: number }> | undefined>
-                >;
-                const existing = useReceiptStore.getState().receipts[rid] ?? {};
-                const next = { ...existing };
-                for (const [eventId, relations] of Object.entries(content)) {
-                  const readBy = relations?.['m.read'];
-                  if (!readBy) continue;
-                  for (const [uId, info] of Object.entries(readBy)) {
-                    next[uId] = {
-                      eventId,
-                      ts: typeof info?.ts === 'number' ? info.ts : Date.now(),
-                    };
-                  }
-                }
-                setRoomReceipts(rid, next);
-              }
-            }
-
-            // Process timeline events for real-time message updates
-            const timelineEvents = roomData.timeline?.events || [];
-
-            // Extract workflow tasks from ALL rooms' timeline events
-            for (const event of timelineEvents) {
-              if (event.type === 'm.room.message') {
-                const workflow = event.content?.['agentteams.workflow'];
-                if (isWorkflowPayload(workflow)) {
-                  // Deduplicate by event_id to prevent re-processing across sync cycles
-                  if (markEventSeen(event.event_id)) continue;
-
-                  useTaskStore.getState().upsertTask(
-                    {
-                      runId: workflow.runId || workflow.run_id || event.event_id,
-                      title: workflow.title || workflow.name || '未命名任务',
-                      status: workflow.status || 'unknown',
-                      roomId: rid,
-                      senderMatrixUserId: event.sender || '',
-                      subagents: Array.isArray(workflow.subagents) ? workflow.subagents : [],
-                      steps: Array.isArray(workflow.steps) ? workflow.steps : [],
-                      createdAt: event.origin_server_ts,
-                    },
-                    event.origin_server_ts ?? undefined,
-                  );
-                }
-              }
-            }
-
-            if (timelineEvents.length > 0 && rid === roomId) {
-              mergeTimelineEvents(queryClient, rid, timelineEvents, userId);
-            }
-
-            // Update room-level meta (last message ts + unread counts) so the
-            // chat sidebar can sort by recency and badge unread count. Derived
-            // purely from /sync; no extra network calls needed.
-            const unread = roomData.unread_notifications;
-            const lastEventTs = timelineEvents.reduce<number | undefined>(
-              (max, e) =>
-                typeof e.origin_server_ts === 'number' && e.origin_server_ts > (max ?? 0)
-                  ? e.origin_server_ts
-                  : max,
-              undefined,
-            );
-            const metaPartial: Partial<Omit<RoomMeta, 'updatedAt'>> = {};
-            if (typeof lastEventTs === 'number') metaPartial.lastMessageTs = lastEventTs;
-            if (unread) {
-              metaPartial.unreadCount = unread.notification_count;
-              metaPartial.unreadHighlightCount = unread.highlight_count;
-            }
-            if (Object.keys(metaPartial).length > 0) {
-              useRoomMetaStore.getState().setRoomMeta(rid, metaPartial);
-            }
-          }
-        }
-      } catch {
-        // Silently ignore sync errors
-      }
-
-      if (!cancelled && !isStale()) {
-        timeoutId = setTimeout(poll, 1000); // Poll every 1s for real-time updates
-      }
-    };
-
-    timeoutId = setTimeout(poll, 500);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [homeserver, accessToken, isLoggedIn, roomId, userId, setTypingUsers, setRoomReceipts, queryClient]);
-}
-
 // ============ Timeline Event Merge (real-time message updates) ============
 
 /**
  * Merge m.room.message events from /sync timeline into the query cache for a
  * given room. Handles both new messages and m.replace edits (streaming updates).
- * Called from useTypingSync to keep the message list fresh without full refetch.
+ * Called from useGlobalMatrixSync to keep the message list fresh without full
+ * refetch.
  */
 export function mergeTimelineEvents(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -695,6 +591,8 @@ export interface DisplayMessage {
   workflow?: WorkflowPayload;
   /** Structured blocks for an Agent run, retained across streaming revisions. */
   agentBlocks?: ParsedA2uiBlock[];
+  /** Original event.content (after m.replace merge), for normalizeToBlocks. */
+  rawContent?: Record<string, unknown>;
   /** Root event ID if this message is a reply in a thread. */
   threadId?: string;
   /** Whether this message is itself a thread reply (not the root). */
@@ -784,6 +682,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
       ? content['agentteams.workflow']
       : undefined,
     agentBlocks: parseAgentRunBlocks(content['org.agentteams.run'], isStreaming),
+    rawContent: content as Record<string, unknown>,
     isEdited,
     eventId: event.event_id,
     threadId: isThreadReply ? threadRootId : undefined,
@@ -808,8 +707,9 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
 }
 
 /**
- * Collapses Matrix message revisions into their root event so a streaming
- * response stays in one position while the homeserver publishes edits.
+ * Collapses Matrix message revisions into their root event. Agent revisions
+ * are sorted by the edit time so the final answer lands after the run's
+ * process messages; human edits keep the original position.
  *
  * Thread replies (m.thread relations) are counted on the root and fetched
  * on demand by the thread panel. Keeping them out of the main timeline
@@ -847,11 +747,17 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       if (root) {
         // Re-render the root in place, but keep the original event id so read
         // markers and edits still resolve to the root event.
+        //
+        // Timestamp policy: agent answers are delivered by editing an early
+        // placeholder ("处理中..."), while the run's process messages
+        // (thinking / tool calls) arrive in between. Sorting the revised root
+        // by the edit time places the final answer after those messages.
+        // Human edits (typo fixes) keep the original position.
         messages.set(rootId, {
           ...formatted,
           id: rootId,
           eventId: rootId,
-          timestamp: root.timestamp,
+          timestamp: root.isMe ? root.timestamp : Math.max(root.timestamp, formatted.timestamp),
           isEdited: true,
         });
       } else {
@@ -863,13 +769,17 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     // Thread replies belong to the thread panel. Keep their count on the root
     // so the main timeline can expose an entry point for opening that panel.
     //
-    // Exception: when the reply sender matches the root's sender (agent
-    // continuing its own response — e.g. Hermes delivering the main answer
-    // as a thread reply to its own placeholder), keep it inline so the real
-    // content is visible in the main timeline.
+    // Exceptions:
+    // 1. When the reply sender matches the root's sender (agent continuing
+    //    its own response — e.g. Hermes delivering the main answer as a thread
+    //    reply to its own placeholder), keep it inline.
+    // 2. When the root is the current user's message and the reply is from an
+    //    agent — the agent's final answer should stay in the main timeline,
+    //    not be hidden in a sub-thread.
     if (formatted.isThreadReply && formatted.threadId) {
       const rootMessage = messages.get(formatted.threadId);
-      if (!rootMessage || rootMessage.sender !== formatted.sender) {
+      const isUserRoot = rootMessage?.sender === currentUserId;
+      if (!rootMessage || (rootMessage.sender !== formatted.sender && !isUserRoot)) {
         replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
         continue;
       }
@@ -878,7 +788,16 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     const revision = pendingRevisions.get(event.event_id);
     messages.set(
       event.event_id,
-      revision ? { ...revision, id: event.event_id, eventId: event.event_id, timestamp: formatted.timestamp } : formatted
+      revision
+        ? {
+            ...revision,
+            id: event.event_id,
+            eventId: event.event_id,
+            // Same policy as the in-place merge above: agent answers sort at
+            // the edit time, human edits stay at the original position.
+            timestamp: formatted.isMe ? formatted.timestamp : Math.max(formatted.timestamp, revision.timestamp),
+          }
+        : formatted
     );
     pendingRevisions.delete(event.event_id);
   }

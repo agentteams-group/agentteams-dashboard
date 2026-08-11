@@ -179,8 +179,14 @@ export const matrixApi = {
     return res.json();
   },
 
-  sync: async (homeserver: string, accessToken: string, since?: string, timeout = 30000): Promise<MatrixSyncResponse> => {
-    const url = buildMatrixUrl('/api/matrix/sync', { homeserver, timeout, since });
+  sync: async (
+    homeserver: string,
+    accessToken: string,
+    since?: string,
+    timeout = 30000,
+    filter?: string,
+  ): Promise<MatrixSyncResponse> => {
+    const url = buildMatrixUrl('/api/matrix/sync', { homeserver, timeout, since, filter });
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
     await throwIfNotOk(res, 'Sync failed');
     return res.json();
@@ -257,6 +263,29 @@ export const matrixApi = {
       body: JSON.stringify({ event_id: eventId }),
     });
     await throwIfNotOk(res, 'Failed to set read marker');
+  },
+
+  /**
+   * Send an m.read receipt so the homeserver clears the unread counter and
+   * other members see our read position. Best-effort: failures are logged by
+   * the caller and never disturb the UI.
+   */
+  sendReadReceipt: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string,
+    eventId: string
+  ): Promise<void> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/receipt`,
+      { homeserver }
+    );
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: buildHeaders(accessToken, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ eventId }),
+    });
+    await throwIfNotOk(res, 'Failed to send read receipt');
   },
 
   getRoomMembers: async (homeserver: string, accessToken: string, roomId: string): Promise<MatrixMembersResponse> => {

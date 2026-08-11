@@ -95,23 +95,22 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
 }
 
 /**
- * Sort rooms so unread rooms float to the top, then break ties by
- * latest activity, then alphabetically. Rooms with unread highlights
- * (e.g. @mentions) are pinned to the very top.
+ * Sort rooms by latest activity (newest message first), then alphabetically.
+ * Rooms without a last-message timestamp fall to the tail. Unread state and
+ * @mention highlights do NOT influence the order — they are rendered as badges
+ * so clearing an unread room never makes it jump in the list.
  */
 export function sortRoomsByRecency(rooms: RoomInfo[]): RoomInfo[] {
   return [...rooms].sort((a, b) => {
-    const aUnread = (a.unreadCount ?? 0) > 0;
-    const bUnread = (b.unreadCount ?? 0) > 0;
-    if (aUnread !== bUnread) return aUnread ? -1 : 1;
-
-    const aHighlight = (a.unreadHighlightCount ?? 0) > 0;
-    const bHighlight = (b.unreadHighlightCount ?? 0) > 0;
-    if (aUnread && bUnread && aHighlight !== bHighlight) return aHighlight ? -1 : 1;
-
-    const ta = a.lastMessageTs ?? 0;
-    const tb = b.lastMessageTs ?? 0;
-    if (ta !== tb) return tb - ta;
+    const ta = a.lastMessageTs;
+    const tb = b.lastMessageTs;
+    if (ta !== undefined && tb !== undefined) {
+      if (ta !== tb) return tb - ta;
+    } else if (ta !== undefined) {
+      return -1; // a has a timestamp, b doesn't → a first
+    } else if (tb !== undefined) {
+      return 1; // b has a timestamp, a doesn't → b first
+    }
     return a.name.localeCompare(b.name);
   });
 }

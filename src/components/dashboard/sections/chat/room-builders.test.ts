@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { buildRooms, filterRooms, sortRoomsByRecency } from './room-builders';
 import type { RoomInfo } from './room-info';
@@ -146,26 +147,64 @@ describe('sortRoomsByRecency', () => {
     expect(sortRoomsByRecency([])).toEqual([]);
   });
 
-  it('unread rooms float above read rooms', () => {
+  it('unread state does not float rooms above read rooms (time wins)', () => {
     const read = make({ id: 'a', name: 'A', lastMessageTs: 5000 });
     const unread = make({ id: 'b', name: 'B', lastMessageTs: 100, unreadCount: 1 });
     const out = sortRoomsByRecency([read, unread]);
-    expect(out.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(out.map((r) => r.id)).toEqual(['a', 'b']);
   });
 
-  it('unread with highlight pinned above unread without', () => {
-    const plain = make({ id: 'p', name: 'P', unreadCount: 5 });
-    const highlight = make({ id: 'h', name: 'H', unreadCount: 1, unreadHighlightCount: 1 });
+  it('unread highlight does not pin rooms above rooms without highlights', () => {
+    const plain = make({ id: 'p', name: 'P', lastMessageTs: 5000, unreadCount: 5 });
+    const highlight = make({ id: 'h', name: 'H', lastMessageTs: 100, unreadCount: 1, unreadHighlightCount: 1 });
     const out = sortRoomsByRecency([plain, highlight]);
-    expect(out.map((r) => r.id)).toEqual(['h', 'p']);
+    expect(out.map((r) => r.id)).toEqual(['p', 'h']);
   });
 
-  it('among read rooms, sort by lastMessageTs desc', () => {
+  it('sort by lastMessageTs desc, regardless of unread state', () => {
     const older = make({ id: 'o', name: 'O', lastMessageTs: 100 });
-    const newer = make({ id: 'n', name: 'N', lastMessageTs: 200 });
+    const newer = make({ id: 'n', name: 'N', lastMessageTs: 200, unreadCount: 3 });
     const noTs = make({ id: 'x', name: 'X' });
     const out = sortRoomsByRecency([noTs, older, newer]);
     expect(out.map((r) => r.id)).toEqual(['n', 'o', 'x']);
+  });
+
+  it('clearing unread does not change a room position in the list', () => {
+    const unread = make({ id: 'u', name: 'U', lastMessageTs: 100, unreadCount: 2 });
+    const cleared = make({ id: 'u', name: 'U', lastMessageTs: 100 });
+    const other = make({ id: 'o', name: 'O', lastMessageTs: 50 });
+    expect(sortRoomsByRecency([unread, other]).map((r) => r.id)).toEqual(['u', 'o']);
+    expect(sortRoomsByRecency([cleared, other]).map((r) => r.id)).toEqual(['u', 'o']);
+  });
+
+  it('ties on lastMessageTs break alphabetically', () => {
+    const b = make({ id: 'b', name: 'Beta', lastMessageTs: 100 });
+    const a = make({ id: 'a', name: 'Alpha', lastMessageTs: 100 });
+    const out = sortRoomsByRecency([b, a]);
+    expect(out.map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('is idempotent under random room metadata (property test)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            id: fc.uuid(),
+            name: fc.string({ minLength: 1 }),
+            lastMessageTs: fc.option(fc.integer({ min: 0, max: 1e12 }), { nil: undefined }),
+            unreadCount: fc.option(fc.integer({ min: 0, max: 100 }), { nil: undefined }),
+            unreadHighlightCount: fc.option(fc.integer({ min: 0, max: 100 }), { nil: undefined }),
+          }),
+        ),
+        (rooms) => {
+          const source = rooms.map((r) => make({ ...r, type: 'team' as const }));
+          const once = sortRoomsByRecency(source);
+          const twice = sortRoomsByRecency(once);
+          expect(once.map((r) => r.id)).toEqual(twice.map((r) => r.id));
+          expect(source).not.toBe(once);
+        },
+      ),
+    );
   });
 
   it('does not mutate input array', () => {

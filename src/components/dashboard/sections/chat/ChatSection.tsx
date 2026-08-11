@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
@@ -40,6 +40,14 @@ export function ChatSection() {
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
 
+  // Publish the open room to the global sync loop (via the room-meta store)
+  // so it merges live timeline events into that room's message cache. Written
+  // on every selection change; cleared when the room list is empty.
+  const handleSelectRoom = useCallback((roomId: string) => {
+    useRoomMetaStore.getState().setActiveRoomId(roomId);
+    setSelectedRoomId(roomId);
+  }, []);
+
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
 
@@ -51,6 +59,11 @@ export function ChatSection() {
     () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId)),
     [workers, teams, managers, roomMeta],
   );
+  useEffect(() => {
+    if (selectedRoomId === null || !rooms.some((r) => r.id === selectedRoomId)) {
+      useRoomMetaStore.getState().setActiveRoomId(null);
+    }
+  }, [selectedRoomId, rooms]);
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) || null,
     [rooms, selectedRoomId],
@@ -142,7 +155,7 @@ export function ChatSection() {
             <ChatRoomSidebar
               rooms={rooms}
               selectedRoomId={selectedRoomId}
-              onSelectRoom={setSelectedRoomId}
+              onSelectRoom={handleSelectRoom}
               isLoggedIn={isLoggedIn}
               userId={userId}
               isLoading={isLoading}

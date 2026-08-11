@@ -7,6 +7,8 @@ import type { GroupedMessage } from '../grouper/MainGrouper';
 export interface ScrollPanelHandle {
   scrollToBottom: (_options?: { smooth?: boolean }) => void;
   scrollToIndex: (_index: number) => void;
+  /** Scrolls the first timeline item whose key matches (read-marker divider, message id/event id). */
+  scrollToItem: (_key: string) => void;
 }
 
 interface ScrollPanelProps {
@@ -61,18 +63,24 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     }
   }, [onAtBottomChange]);
 
-  // A freshly opened room should land on the latest message as soon as the
-  // first page arrives. Virtuoso preserves the visible anchor for prepended
-  // rows through stable item keys and its dynamic-height measurements.
+  // A freshly opened room should land on the unread divider when one exists
+  // (read position behind the latest message) and otherwise on the latest
+  // message. Landing on the divider must NOT push the read position forward,
+  // so the initial mount never reports "at bottom" while a divider is shown.
   useEffect(() => {
     if (items.length === 0 || !initialMountRef.current) return;
-    if (initialMountRef.current) {
-      initialMountRef.current = false;
+    initialMountRef.current = false;
+    const markerIndex = items.findIndex(
+      (item) => (item as unknown as { kind?: string }).kind === 'read-marker'
+    );
+    if (markerIndex >= 0) {
+      virtuosoRef.current?.scrollToIndex({ index: markerIndex, align: 'start' });
+      atBottomRef.current = false;
+    } else {
       virtuosoRef.current?.scrollToIndex({ index: items.length - 1, align: 'end' });
       atBottomRef.current = true;
-      onAtBottomChange?.(true);
     }
-  }, [items, onAtBottomChange]);
+  }, [items]);
 
   useEffect(() => {
     return () => {
@@ -102,7 +110,20 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
       virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
       highlightIndex(index);
     },
-  }), [highlightIndex, items.length, onAtBottomChange]);
+    scrollToItem: (key: string) => {
+      const index = items.findIndex((item) => {
+        const t = item as unknown as { key?: string; gm?: GroupedMessage };
+        return (
+          t.key === key ||
+          t.gm?.message.id === key ||
+          (item as { message?: { id: string } }).message?.id === key
+        );
+      });
+      if (index < 0) return;
+      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
+      highlightIndex(index);
+    },
+  }), [highlightIndex, items, onAtBottomChange]);
 
   if (loading && items.length === 0) {
     return (

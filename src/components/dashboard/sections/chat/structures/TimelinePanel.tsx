@@ -8,7 +8,7 @@ import type { GroupedMessage } from '../grouper/MainGrouper';
 
 export type TimelineItem =
   | { kind: 'message'; gm: GroupedMessage }
-  | { kind: 'read-marker'; key: string };
+  | { kind: 'read-marker'; key: string; unreadCount: number };
 
 export interface TimelinePanelProps {
   items: GroupedMessage[];
@@ -42,10 +42,14 @@ function buildTimelineItems(items: GroupedMessage[], readEventId: string | null 
     }
   }
 
-  if (readIndex >= 0) {
+  // Anchor at the latest message means there is nothing unread, so no divider
+  // is rendered and the room lands on the latest message.
+  if (readIndex >= 0 && readIndex < entries.length - 1) {
+    const unreadCount = entries.length - readIndex - 1;
     entries.splice(readIndex + 1, 0, {
       kind: 'read-marker',
       key: `read-marker-${readEventId}`,
+      unreadCount,
     });
   }
 
@@ -73,7 +77,7 @@ export const TimelinePanel = forwardRef<ScrollPanelHandle, TimelinePanelProps>(f
     (_index: number, _item: GroupedMessage) => {
       const item = _item as unknown as TimelineItem;
       if (item.kind === 'read-marker') {
-        return <ReadMarker key={item.key} />;
+        return <ReadMarker key={item.key} unreadCount={item.unreadCount} />;
       }
       return itemContent(_index, item.gm);
     },

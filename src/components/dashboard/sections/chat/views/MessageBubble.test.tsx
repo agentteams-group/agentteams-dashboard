@@ -3,13 +3,58 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 
+const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
 vi.mock('../markdown-message', () => ({
-  MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div>,
+  MarkdownMessage: (props: { content: string }) => markdownMock(props),
 }));
 
 afterEach(cleanup);
 
 describe('MessageBubble', () => {
+  it('passes isStreaming to the text block renderer while streaming', () => {
+    markdownMock.mockClear();
+    render(
+      <MessageBubble
+        message={{
+          id: '$streaming',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '正在生成答案',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          isStreaming: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const props = markdownMock.mock.calls[0][0] as { isStreaming?: boolean };
+    expect(props.isStreaming).toBe(true);
+  });
+
+  it('leaves isStreaming off the text block renderer for finished messages', () => {
+    markdownMock.mockClear();
+    render(
+      <MessageBubble
+        message={{
+          id: '$done',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '最终答案',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const props = markdownMock.mock.calls[0][0] as { isStreaming?: boolean };
+    expect(props.isStreaming).toBeFalsy();
+  });
   it('renders mixed text and tool blocks without repeating the raw card payload', () => {
     render(
       <MessageBubble
@@ -132,12 +177,14 @@ Type /approve to approve, or send any message to deny.`,
           timestamp: 0,
           type: 'm.text',
           isMe: false,
-          workflow: {
-            title: '发布流程',
-            status: 'in_progress',
-            runId: 'run-1',
-            subagents: [{ name: '部署智能体', status: 'running' }],
-            steps: [{ title: '规划', status: 'completed' }, { title: '发布', status: 'running' }],
+          rawContent: {
+            'agentteams.workflow': {
+              title: '发布流程',
+              status: 'in_progress',
+              runId: 'run-1',
+              subagents: [{ name: '部署智能体', status: 'running' }],
+              steps: [{ title: '规划', status: 'completed' }, { title: '发布', status: 'running' }],
+            },
           },
         }}
         showSender={false}
@@ -181,9 +228,11 @@ Type /approve to approve, or send any message to deny.`,
           timestamp: 0,
           type: 'm.text',
           isMe: false,
-          workflow: {
-            title: '宽工作流',
-            status: 'running',
+          rawContent: {
+            'agentteams.workflow': {
+              title: '宽工作流',
+              status: 'running',
+            },
           },
         }}
         showSender={false}
@@ -258,6 +307,56 @@ Type /approve to approve, or send any message to deny.`,
     assertRendered();
   });
 
+  it('renders an attachment block for long-message metadata', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$attachment',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '正文被截断…',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'com.agentteams.long_message': {
+              version: 1,
+              url: 'mxc://example.com/abc123',
+              filename: 'full-reply.txt',
+              mimetype: 'text/plain',
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+  });
+
+  it('renders a loading placeholder for an in-progress a2ui marker while streaming', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$a2ui-streaming',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s"}}',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          isStreaming: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getByText('正在生成交互内容...')).toBeInTheDocument();
+  });
+
   it('renders structured Agent run blocks as collapsible cards', () => {
     render(
       <MessageBubble
@@ -269,11 +368,15 @@ Type /approve to approve, or send any message to deny.`,
           timestamp: 0,
           type: 'm.text',
           isMe: false,
-          agentBlocks: [
-            { type: 'thinking', content: '正在分析请求' },
-            { type: 'tool_call', payload: { tool_name: 'read_file', status: 'running' } },
-            { type: 'text', text: '最终答案' },
-          ],
+          rawContent: {
+            'org.agentteams.run': {
+              blocks: [
+                { type: 'thinking', content: '正在分析请求' },
+                { type: 'tool_call', payload: { tool_name: 'read_file', status: 'running' } },
+                { type: 'text', text: '最终答案' },
+              ],
+            },
+          },
         }}
         showSender={false}
         isContinuation={false}
@@ -283,5 +386,78 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.getByText('最终答案')).toBeInTheDocument();
+  });
+
+  it('shows a single check for my message with no read receipts', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$mine',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: 'hello',
+          timestamp: 1000,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        readReceipts={{}}
+        currentUserId="@me:example.com"
+      />
+    );
+
+    expect(screen.getByLabelText('已发送')).toBeInTheDocument();
+    expect(screen.queryByLabelText('已读')).toBeNull();
+  });
+
+  it('shows a double check when another user has read my message', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$mine-read',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: 'hello',
+          timestamp: 1000,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        readReceipts={{
+          '@peer:example.com': { ts: 1500, eventId: '$mine-read' },
+        }}
+        currentUserId="@me:example.com"
+      />
+    );
+
+    expect(screen.getByLabelText('已读')).toBeInTheDocument();
+    expect(screen.queryByLabelText('已发送')).toBeNull();
+  });
+
+  it('does not count my own receipt as read by another user', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: '$mine-self',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: 'hello',
+          timestamp: 1000,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        readReceipts={{
+          '@me:example.com': { ts: 1500, eventId: '$mine-self' },
+        }}
+        currentUserId="@me:example.com"
+      />
+    );
+
+    expect(screen.getByLabelText('已发送')).toBeInTheDocument();
+    expect(screen.queryByLabelText('已读')).toBeNull();
   });
 });
