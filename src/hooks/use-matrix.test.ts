@@ -197,6 +197,32 @@ describe('formatMatrixEvents', () => {
     expect(messages[2]).toMatchObject({ id: 'other' });
   });
 
+  it('keeps agent thread replies to user messages inline (final answer should not go to sub-thread)', () => {
+    // When an agent replies to the user's question via m.thread, the answer
+    // should stay in the main timeline instead of being hidden in a thread
+    // panel. This matches Hermes's pattern where the agent delivers its
+    // final answer as a thread reply to the user's original message.
+    const events = [
+      message('user-q', '汇报下worker状态', 100),
+      message('agent-reply', 'tm3 状态：空闲，待命', 200, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'user-q' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(2);
+    // agent-reply should be inline, not counted as thread reply
+    expect(messages[0]).toMatchObject({ id: 'user-q' });
+    expect(messages[1]).toMatchObject({
+      id: 'agent-reply',
+      isThreadReply: true,
+      threadId: 'user-q',
+      content: 'tm3 状态：空闲，待命',
+    });
+    expect(messages[0].replyCount).toBeFalsy();
+  });
+
   it('exposes thread metadata before the reply enters the thread panel', () => {
     const reply = formatMatrixEvent(
       message('reply-1', '线程回复', 200, {

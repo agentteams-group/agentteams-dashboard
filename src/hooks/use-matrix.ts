@@ -769,13 +769,17 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     // Thread replies belong to the thread panel. Keep their count on the root
     // so the main timeline can expose an entry point for opening that panel.
     //
-    // Exception: when the reply sender matches the root's sender (agent
-    // continuing its own response — e.g. Hermes delivering the main answer
-    // as a thread reply to its own placeholder), keep it inline so the real
-    // content is visible in the main timeline.
+    // Exceptions:
+    // 1. When the reply sender matches the root's sender (agent continuing
+    //    its own response — e.g. Hermes delivering the main answer as a thread
+    //    reply to its own placeholder), keep it inline.
+    // 2. When the root is the current user's message and the reply is from an
+    //    agent — the agent's final answer should stay in the main timeline,
+    //    not be hidden in a sub-thread.
     if (formatted.isThreadReply && formatted.threadId) {
       const rootMessage = messages.get(formatted.threadId);
-      if (!rootMessage || rootMessage.sender !== formatted.sender) {
+      const isUserRoot = rootMessage?.sender === currentUserId;
+      if (!rootMessage || (rootMessage.sender !== formatted.sender && !isUserRoot)) {
         replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
         continue;
       }
