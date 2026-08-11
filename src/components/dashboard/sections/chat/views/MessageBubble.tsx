@@ -136,8 +136,9 @@ export function MessageBubble({
       formattedBody: message.formattedContent || undefined,
       content: message.rawContent ?? {},
       isStreaming: !!message.isStreaming,
+      isMine: message.isMe,
     });
-  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming]);
+  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;

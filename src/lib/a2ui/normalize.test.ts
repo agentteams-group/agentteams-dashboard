@@ -165,7 +165,108 @@ describe('normalizeToBlocks rule 7: com.agentteams.long_message', () => {
   });
 });
 
-describe('normalizeToBlocks rule 8: legacy card/details', () => {
+describe('normalizeToBlocks rule 8: Hermes 🔧 tool-call Markdown', () => {
+  it('parses a hermes tool call into a tool_call block', () => {
+    const input = makeInput({
+      body: '🔧 **teamharness__taskflow**\n```\n{"action":"check_task","payload":{"taskId":"task-1"}}\n```',
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('tool_call');
+    const payload = blocks[0].payload as { tool_name: string; arguments: Record<string, unknown> };
+    expect(payload.tool_name).toBe('teamharness__taskflow');
+    expect(payload.arguments).toEqual({ action: 'check_task', payload: { taskId: 'task-1' } });
+  });
+
+  it('keeps surrounding text as text blocks', () => {
+    const input = makeInput({
+      body: '先查一下任务状态。\n🔧 **recall_history**\n```\n{"op":"expand","lo":1,"hi":50}\n```\n调用完成。',
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_call', 'text']);
+  });
+
+  it('falls back to a raw value when the arguments are not JSON', () => {
+    const input = makeInput({
+      body: '🔧 **execute_shell_command**\n```\nls -la\n```',
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks).toHaveLength(1);
+    const payload = blocks[0].payload as { tool_name: string; arguments: Record<string, unknown> };
+    expect(payload.tool_name).toBe('execute_shell_command');
+    expect(payload.arguments).toEqual({ value: 'ls -la' });
+  });
+
+  it('treats an unclosed fence while streaming as plain text', () => {
+    const input = makeInput({
+      body: '🔧 **execute_shell_command**\n```\n{"command":"ls"',
+      isStreaming: true,
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks[0].type).toBe('text');
+  });
+});
+
+describe('normalizeToBlocks rule 9: agent m.notice process messages', () => {
+  it('renders an agent notice as a collapsed thinking block', () => {
+    const input = makeInput({
+      body: 'The user is asking for the latest progress. Let me check.',
+      content: { msgtype: 'm.notice' },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'thinking',
+      content: 'The user is asking for the latest progress. Let me check.',
+      isStreaming: false,
+    });
+  });
+
+  it('keeps the run placeholder body as text', () => {
+    const input = makeInput({ body: '处理中...', content: { msgtype: 'm.notice' } });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks[0].type).toBe('text');
+  });
+
+  it('keeps the user own notice as text', () => {
+    const input = makeInput({
+      body: '我自己发的提示',
+      content: { msgtype: 'm.notice' },
+      isMine: true,
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks[0].type).toBe('text');
+  });
+
+  it('keeps ordinary m.text messages as text', () => {
+    const input = makeInput({
+      body: '我目前有 6 个技能',
+      content: { msgtype: 'm.text' },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks[0].type).toBe('text');
+  });
+
+  it('prefers a hermes tool call even when sent as a notice', () => {
+    const input = makeInput({
+      body: '🔧 **search**\n```\n{"query":"状态"}\n```',
+      content: { msgtype: 'm.notice' },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks[0].type).toBe('tool_call');
+  });
+});
+
+describe('normalizeToBlocks rule 10: legacy card/details', () => {
   it('parses a fenced card into a card block', () => {
     const input = makeInput({
       body: '前缀\n```card\n{"title":"部署状态","content":"服务正常"}\n```\n后缀',
@@ -187,7 +288,7 @@ describe('normalizeToBlocks rule 8: legacy card/details', () => {
   });
 });
 
-describe('normalizeToBlocks rule 9: text fallback', () => {
+describe('normalizeToBlocks rule 11: text fallback', () => {
   it('renders plain body as a single text block', () => {
     const input = makeInput({ body: '**加粗** 普通消息' });
 

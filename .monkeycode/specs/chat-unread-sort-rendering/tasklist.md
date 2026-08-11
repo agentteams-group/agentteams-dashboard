@@ -49,3 +49,10 @@
 - E7 通过（数据层+worker 消费）：向 @manager 房间注入 repr 事件（body 内嵌 `object='message' ... metadata={}` 的 agentscope repr 文本），worker 正确解析出 text+reasoning 多部分结构并回应；前端 normalize repr 解析路径由单测覆盖
 - E8 通过（数据层）：补充 send 路由 `com.agentteams.long_message` 透传（commit `decea6c`）后，注入带该字段的事件，字段经 homeserver 存储且 sync 增量循环完整可达（url/filename/mimetype/version）；AttachmentCard 渲染（文件名/类型/下载/文本预览展开）由 6 例单测覆盖，注入的 mxc 附件为集群真实媒体可解析
 - E9 通过（数据层）：tm-leader 房间含 14 条 `m.replace` 编辑链（08-10），流式编辑数据可被 sync/ingest 消费；当日会话无新编辑链，流式光标由单测覆盖
+
+### M5.3 渲染层修正（08-11，用户反馈最终回复错位/卡片样式）
+
+- [x] 5.3a Agent 编辑回复（m.replace）按编辑时间排序，使最终回复落到思考/工具过程消息之后；用户自编辑保持原位
+- [x] 5.3b 识别 Hermes `🔧 **tool** ```json``` ` Markdown 约定 → tool_call 折叠卡片（含溢出与换行处理）
+- [x] 5.3c 识别 agent `m.notice` 过程消息 → thinking 折叠卡片（占位 `处理中...` 与用户自己 notice 除外）
+- 验证：全量测试 615/615 通过（新增 12 例），typecheck 通过，改动文件 lint 干净（仓库遗留 16 个 lint 错误来自无关历史提交 `bc66294`，非本次引入）

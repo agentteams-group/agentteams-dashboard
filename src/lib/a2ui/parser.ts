@@ -404,6 +404,56 @@ export function parseLegacyContent(
 }
 
 /**
+ * Hermes tool-call Markdown convention:
+ *
+ *   🔧 **tool_name**
+ *   ```
+ *   {"argument": "value"}
+ *   ```
+ *
+ * The agent runtime posts tool invocations as plain Markdown; without this
+ * recognition the timeline renders a raw bold line and a wide code fence.
+ */
+export function parseHermesToolCalls(body: string): ParsedA2uiBlock[] | null {
+  const pattern = /🔧\s*\*\*([^*\n]+)\*\*\s*\n```[^\n]*\n([\s\S]*?)\n```/g;
+  const blocks: ParsedA2uiBlock[] = [];
+  let lastEnd = 0;
+  let matched = false;
+
+  for (const match of body.matchAll(pattern)) {
+    matched = true;
+    const start = match.index ?? 0;
+    const before = body.slice(lastEnd, start).trim();
+    if (before) blocks.push({ type: 'text', text: before });
+
+    const toolName = match[1].trim();
+    const rawArguments = (match[2] ?? '').trim();
+    let argumentsPayload: Record<string, unknown> | string;
+    try {
+      const parsed = JSON.parse(rawArguments) as unknown;
+      argumentsPayload =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : { value: parsed };
+    } catch {
+      argumentsPayload = rawArguments ? { value: rawArguments } : {};
+    }
+
+    blocks.push({
+      type: 'tool_call',
+      payload: { tool_name: toolName, arguments: argumentsPayload },
+    });
+    lastEnd = start + match[0].length;
+  }
+
+  if (!matched) return null;
+
+  const after = body.slice(lastEnd).trim();
+  if (after) blocks.push({ type: 'text', text: after });
+  return blocks;
+}
+
+/**
  * Parse non-A2UI blocks (thinking, tool_call, text) from a text segment
  */
 function parseNonA2uiBlocks(text: string, isHtml: boolean): ParsedA2uiBlock[] {

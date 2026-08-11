@@ -12,8 +12,10 @@
  *   5. agentscope repr dump               → text/thinking/tool_call (copaw)
  *   6. "Thinking:" prefix                 → thinking block (qwenpaw)
  *   7. com.agentteams.long_message        → attachment block (long-message fallback)
- *   8. legacy ```card / <details>         → card/tool_call/thinking (existing)
- *   9. text fallback (Markdown)           → text block
+ *   8. 🔧 **tool** Markdown convention    → tool_call block (Hermes tool calls)
+ *   9. agent m.notice process message     → thinking block (Hermes process notices)
+ *  10. legacy ```card / <details>         → card/tool_call/thinking (existing)
+ *  11. text fallback (Markdown)           → text block
  */
 
 import type { ParsedA2uiBlock } from './parser';
@@ -21,6 +23,7 @@ import {
   parseA2uiMarkers,
   parseAgentRunBlocks,
   parseEmbeddedAgentReprBlocks,
+  parseHermesToolCalls,
   parseLegacyContent,
   parseLongMessage,
   parseToolGuardConfirmation,
@@ -33,17 +36,22 @@ export interface NormalizeInput {
   /** Original event.content (may carry agentteams.workflow, org.agentteams.run...). */
   content: Record<string, unknown>;
   isStreaming: boolean;
+  /** Whether the message was sent by the current user (guards notice heuristics). */
+  isMine?: boolean;
 }
 
 /** qwenpaw on_streaming_end product: "Thinking:\n\n" + thinking text. */
 const THINKING_PREFIX = /^Thinking:\s*\n+/;
+
+/** Agent placeholder bodies ("处理中...") stay text until the first revision lands. */
+const NOTICE_PLACEHOLDER = /^处理中[.。…]*$/;
 
 function stripThinkingPrefix(body: string): string {
   return body.replace(THINKING_PREFIX, '').trim();
 }
 
 export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
-  const { body, formattedBody, content, isStreaming } = input;
+  const { body, formattedBody, content, isStreaming, isMine } = input;
 
   // 1. agentteams.workflow → workflow block (highest priority).
   if (isWorkflowPayload(content['agentteams.workflow'])) {
@@ -80,7 +88,23 @@ export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
     return [{ type: 'attachment', payload: longMessage as unknown as Record<string, unknown> }];
   }
 
-  // 8. legacy ```card / <details class="thinking"> blocks, or
-  // 9. plain text fallback (Markdown rendering).
+  // 8. Hermes tool-call Markdown convention → tool_call block(s) so the
+  // timeline renders a collapsible card instead of a raw code fence.
+  const hermesBlocks = parseHermesToolCalls(body);
+  if (hermesBlocks) return hermesBlocks;
+
+  // 9. Agent runtime process notices → thinking card. Hermes emits
+  // intermediate reasoning steps as m.notice; collapsing them keeps the
+  // timeline focused on the final answer. The user's own notices (and run
+  // placeholders) stay plain text.
+  if (content.msgtype === 'm.notice' && !isMine) {
+    const text = body.trim();
+    if (text && !NOTICE_PLACEHOLDER.test(text)) {
+      return [{ type: 'thinking', content: text, isStreaming }];
+    }
+  }
+
+  // 10. legacy ```card / <details> blocks, or
+  // 11. plain text fallback (Markdown rendering).
   return parseLegacyContent(body, formattedBody).blocks;
 }

@@ -707,8 +707,9 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
 }
 
 /**
- * Collapses Matrix message revisions into their root event so a streaming
- * response stays in one position while the homeserver publishes edits.
+ * Collapses Matrix message revisions into their root event. Agent revisions
+ * are sorted by the edit time so the final answer lands after the run's
+ * process messages; human edits keep the original position.
  *
  * Thread replies (m.thread relations) are counted on the root and fetched
  * on demand by the thread panel. Keeping them out of the main timeline
@@ -746,11 +747,17 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       if (root) {
         // Re-render the root in place, but keep the original event id so read
         // markers and edits still resolve to the root event.
+        //
+        // Timestamp policy: agent answers are delivered by editing an early
+        // placeholder ("处理中..."), while the run's process messages
+        // (thinking / tool calls) arrive in between. Sorting the revised root
+        // by the edit time places the final answer after those messages.
+        // Human edits (typo fixes) keep the original position.
         messages.set(rootId, {
           ...formatted,
           id: rootId,
           eventId: rootId,
-          timestamp: root.timestamp,
+          timestamp: root.isMe ? root.timestamp : Math.max(root.timestamp, formatted.timestamp),
           isEdited: true,
         });
       } else {
@@ -777,7 +784,16 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     const revision = pendingRevisions.get(event.event_id);
     messages.set(
       event.event_id,
-      revision ? { ...revision, id: event.event_id, eventId: event.event_id, timestamp: formatted.timestamp } : formatted
+      revision
+        ? {
+            ...revision,
+            id: event.event_id,
+            eventId: event.event_id,
+            // Same policy as the in-place merge above: agent answers sort at
+            // the edit time, human edits stay at the original position.
+            timestamp: formatted.isMe ? formatted.timestamp : Math.max(formatted.timestamp, revision.timestamp),
+          }
+        : formatted
     );
     pendingRevisions.delete(event.event_id);
   }

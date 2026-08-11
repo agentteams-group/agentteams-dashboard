@@ -18,7 +18,7 @@ function message(
 }
 
 describe('formatMatrixEvents', () => {
-  it('replaces a root message with its latest revision in the original position', () => {
+  it('sorts an agent revision at the edit time so the final answer follows later messages', () => {
     const events = [
       message('root', '处理中...', 100),
       message('other', '另一条消息', 200),
@@ -35,8 +35,54 @@ describe('formatMatrixEvents', () => {
     const messages = formatMatrixEvents(events, '@human:example.test');
 
     expect(messages).toHaveLength(2);
-    expect(messages[0]).toMatchObject({ id: 'root', content: '最终回复', timestamp: 100, isStreaming: false });
-    expect(messages[1]).toMatchObject({ id: 'other', content: '另一条消息' });
+    expect(messages[0]).toMatchObject({ id: 'other', content: '另一条消息' });
+    expect(messages[1]).toMatchObject({ id: 'root', content: '最终回复', timestamp: 400, isStreaming: false });
+  });
+
+  it('keeps a human-edited message in its original position', () => {
+    const events = [
+      { ...message('mine', '原内容', 100), sender: '@human:example.test' },
+      message('other', '另一条消息', 200),
+      {
+        ...message('revision', '* 修正错别字', 400, {
+          'm.relates_to': { rel_type: 'm.replace', event_id: 'mine' },
+          'm.new_content': { msgtype: 'm.text', body: '修正错别字' },
+        }),
+        sender: '@human:example.test',
+      },
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: 'mine', content: '修正错别字', timestamp: 100, isEdited: true });
+    expect(messages[1]).toMatchObject({ id: 'other' });
+  });
+
+  it('orders thinking and tool process messages before the final edited answer', () => {
+    // Hermes run: placeholder → m.thread thinking → m.thread tool call →
+    // m.replace final answer. The final answer must land at the bottom.
+    const events = [
+      message('root', '处理中...', 100, { msgtype: 'm.notice' }),
+      message('thinking', 'Let me check the current status.', 200, {
+        msgtype: 'm.notice',
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+      message('tool', '🔧 **teamharness__taskflow**\n```\n{"action":"check_task"}\n```', 300, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'root' },
+      }),
+      message('final', '* 最终汇报', 400, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '最终汇报' },
+      }),
+      { ...message('user', '@leader 最新进展', 50), sender: '@human:example.test' },
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['user', 'thinking', 'tool', 'root']);
+    expect(messages[3]).toMatchObject({ id: 'root', content: '最终汇报', isEdited: true });
+    expect(messages[1]).toMatchObject({ threadId: 'root', isThreadReply: true });
   });
 
   it('retains an orphaned revision as an independent message under the root id', () => {
