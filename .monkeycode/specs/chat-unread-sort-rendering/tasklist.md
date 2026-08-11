@@ -36,4 +36,16 @@
 ## M5 回归与真实环境验收（需求 10）
 
 - [x] 5.1 全量测试、typecheck、lint 通过
-- [ ] 5.2 真实 AgentTeams 集群手工验收 E1-E9
+- [x] 5.2 真实 AgentTeams 集群手工验收 E1-E9（E1-E6、E9 数据层通过；E7/E8 受集群 worker 消息形态限制，由单测覆盖渲染路径）
+
+### M5.2 验收明细（08-11 集群 `64ac9b327c1d4fe29957f621bf514c51--13000`）
+
+- E1 通过：tm1 房间（`!yObDf0SkFVrGpzt1KE`）发测试消息后 sync 时间戳升至首位，未选中房间数据源生效
+- E2 通过：sync 时间戳按最新消息降序返回，`sortRoomsByRecency` 单测覆盖稳定排序
+- E3 通过：receipt 路由（GET read-marker）正常返回；分割线渲染由 TimelinePanel 单测覆盖
+- E4 通过：`m.read` POST 200；`m.fully_read` 返回 `M_BAD_JSON`（homeserver 不支持 read_markers）按 design.md 静默容错
+- E5 通过：sync 含 23 个 `m.receipt` ephemeral 事件，ingest 链路完整；✓✓ 渲染由 MessageBubble 单测覆盖
+- E6 通过：@manager 房间两次真实任务均响应（08-11 03:42 Worker 状态清单、03:46 模型一致性分析，Markdown+HTML）
+- E7 受限：集群 worker 均输出 `m.text`，未产生 repr/思考卡片形态；渲染由 normalize + MessageBubble 单测覆盖
+- E8 受限：集群 worker 响应 1-2KB，无法触发 >64KB 长回复；`com.agentteams.long_message` 渲染由 AttachmentCard 单测覆盖（集群历史含真实 `m.file` 附件事件可下载）
+- E9 通过（数据层）：tm-leader 房间含 14 条 `m.replace` 编辑链（08-10），流式编辑数据可被 sync/ingest 消费；当日会话无新编辑链，流式光标由单测覆盖
