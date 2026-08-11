@@ -103,7 +103,7 @@ export function ChatSection() {
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-sm">
-              <MessageSquare className="w-3.5 h-3.5 text-white" />
+              <MessageSquare className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
             <div className="leading-tight">
               <h2 className="text-sm font-semibold">Agent Chat</h2>

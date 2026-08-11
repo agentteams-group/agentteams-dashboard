@@ -515,7 +515,7 @@ export function ChatRoom({
         </Avatar>
       ) : (
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm">
-           <span className="text-xs font-semibold text-white">{roomName.charAt(0).toUpperCase()}</span>
+           <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
       <div className="flex-1 min-w-0">
