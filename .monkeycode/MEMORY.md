@@ -184,3 +184,49 @@ This file records user instructions, preferences, and teachings for reference in
 - Instructions:
   - Full test suite is `npm test -- --reporter=dot` via vitest; current baseline is 445/445 passing across 58 test files (~88s runtime). `npm run typecheck` reports 0 errors (the historical `workers/[name]/files/route.test.ts` failures are fixed).
   - `v1.2.2` tag was force-moved from 9097262 to the current main HEAD (4b5f0f3) after the debug-log + worker-files merge; the Dashboard installers default to `v1.2.2` (install/agentteams-install.sh, install/agentteams-dashboard.sh, install/agentteams-dashboard.ps1).
+
+[Project Knowledge Summary]
+- Date: 2026-08-11
+- Context: 完成 chat-unread-sort-rendering 功能 M1（全局单例同步 + 稳定排序）后更新
+- Category: Testing Methods
+- Instructions:
+  - 全量测试基线为 548/548（66 个测试文件，vitest），`npm run typecheck` 0 错误，`npm run lint` 中 workers-section、use-task-board、nacos-sync-engine、skill-package、task-store 存在既有 lint 错误（非聊天模块引入）。
+  - Matrix `/sync` 循环现在只有一处：`useGlobalMatrixSync`（src/hooks/use-global-matrix-sync.ts），挂载于 dashboard 级，登录期间常驻；syncToken 跨房间切换保留。新增 Matrix 实时能力时应扩展该 hook 的分发，而不是新建第二个 /sync 循环。
+  - 聊天会话列表排序以时间为主（`sortRoomsByRecency`），未读/@提醒状态只作角标样式，不参与排序键；清除未读不会改变房间在列表中的位置。
+  - `useRoomMetaStore.activeRoomId` 记录当前打开的房间，全局同步循环仅对该房间执行 `mergeTimelineEvents` 写消息缓存。
+  - `matrixApi.sync` 已支持第 5 个参数 `filter`（sync filter JSON 字符串），透传至 `/api/matrix/sync?filter=`。
+
+[Project Knowledge Summary]
+- Date: 2026-08-11
+- Context: 完成 chat-unread-sort-rendering 功能 M2（已读双写与阅读位置恢复）后更新
+- Category: Build Methods
+- Instructions:
+  - 全量测试基线更新为 565/565（69 个测试文件，vitest），`npm run typecheck` 0 错误；lint 中 tasks-section、agent-teams-dashboard、mobile-sidebar、use-task-board 等存在既有错误（非 M2 文件引入）。
+  - `m.read` 回执通过新代理路由 `POST /api/matrix/rooms/{roomId}/receipt`（body `{eventId}`）转发到 `/_matrix/client/v3/rooms/{roomId}/receipt/m.read/{eventId}`，该接口要求空 body、事件 id 放在 URL 路径里。
+  - `markAllRead` 双写顺序：先 `m.read`（`matrixApi.sendReadReceipt`，best-effort，失败仅 console.warn）再 `m.fully_read`（read-marker 路由）；`markAllRead(targetOverride?)` 支持指定事件 id，发送成功时推进到已发送事件。
+  - read 位置推进收敛为三个触发点：`handleAtBottomChange(true)`（滚到底）、发送成功、`handleJumpToNew`；新消息 watcher 不再冗余调用 `markAllRead`，进入房间不推进阅读位置。
+  - ScrollPanel 初始 mount 存在 `kind==='read-marker'` 项时 `scrollToIndex({ index: markerIndex, align: 'start' })` 并置 `atBottomRef.current=false`（避免触发 `onAtBottomChange(true)`）；`scrollToItem(key)` 按 divider key/message id/eventId 定位并 `highlightIndex`。
+  - ChatRoom 组件测试 mock 要点：`react-virtuoso` 用 forwardRef mock 捕获 props 并暴露 `scrollToIndex`；`@/hooks/use-matrix` 用 `importOriginal` 部分覆盖（保留 `useMatrixStore` 需从 `@/lib/matrix-store` 单独导入）；`ReadReceiptEntry` 类型为 `{ eventId, ts }`，不含 roomId。
+
+[Project Knowledge Summary]
+- Date: 2026-08-11
+- Context: 完成 chat-unread-sort-rendering 功能 M3（归一化渲染管线与流式中间态）后更新
+- Category: Build Methods
+- Instructions:
+  - 全量测试基线更新为 585/585（70 个测试文件，vitest），`npm run typecheck` 0 错误；lint 中 tasks-section、agent-teams-dashboard、mobile-sidebar、use-task-board 等存在既有错误（非 M3 文件引入）。
+  - 消息归一化唯一入口为 `normalizeToBlocks`（src/lib/a2ui/normalize.ts），9 条优先级命中即返回：agentteams.workflow → org.agentteams.run → A2UI 标记 → Tool Guard 确认文本 → agentscope repr → `Thinking:` 前缀 → com.agentteams.long_message(M4) → legacy card/details → text 兜底。新增代码走该入口，不要直接调 parser 子步骤。
+  - `DisplayMessage` 新增 `rawContent`（合并 m.replace 后的原始 event.content），MessageBubble 靠它喂给 normalize；`workflow`/`agentBlocks` 字段仍保留供其它消费者。
+  - `parseA2uiMarkers` 已从 `parseA2uiContent` 提取为独立导出子步骤（返回 blocks 或 null）；`parseEmbeddedAgentReprBlocks` 已导出；死代码 `legacyToA2uiMessages`/`thinkingToA2uiMessages` 已从 parser.ts 与 index.ts 删除。
+  - `MarkdownMessage` 增加 `isStreaming` prop：流式且正文无块级特征（代码 fence/标题/引用/列表/表格/`$$`）时走 `<pre class="whitespace-pre-wrap">` + 流式光标，否则完整 ReactMarkdown。`parseCustomBlocks` 已删，card/thinking 由归一化层在块级别剥离。
+  - jsdom 下 rehype-highlight 会把代码行渲染成 `[object Object]`，代码块测试断言用 `container.querySelector('pre code')` 存在性，不要断言文本内容。
+
+[Project Knowledge Summary]
+- Date: 2026-08-11
+- Context: 完成 chat-unread-sort-rendering 功能 M4（A2UI 流式容错与长消息附件）后更新
+- Category: Build Methods
+- Instructions:
+  - 全量测试基线更新为 603/603（72 个测试文件，vitest），`npm run typecheck` 0 错误；lint 中 tasks-section、agent-teams-dashboard、mobile-sidebar、use-task-board 等存在既有错误（非 M4 文件引入）。
+  - 依赖升级：`@a2ui/web_core` 0.10.3→0.10.6、`@a2ui/react` 0.10.1→0.10.2。`@a2ui/web_core@0.10.6` 的 MessageProcessor 会对 catalog schema 校验组件 props 并抛异常，A2uiMessage 必须在 useMemo 内 try/catch 任意异常类型（该新校验读 zod v3 的 `error.errors`，但本项目 catalog 桥接 zod v4 只有 `error.issues`，schema 不匹配时异常类型不定，`catch` 里不能依赖具体字段），失败渲染「交互消息解析失败」+ 原始 JSON。兜底不能用 useEffect/state 注册，否则 throw 发生在渲染前无法触发 state。
+  - 流式容错：`parseA2uiMarkers(body, formattedBody, isStreaming)` 检测未闭合标记（``` ```a2ui ``` fence 后无闭合 ``` 、`<!--a2ui:` 后无 `-->`），isStreaming 时返回 `[{ type:'a2ui', isStreaming:true }]`，MessageBubble 渲染 Loader2 加载占位卡，避免半成品 JSON 在流式帧间闪烁；完整标记 JSON 解析失败仍降级文本。
+  - 长消息附件：`com.agentteams.long_message`（version/url/filename/mimetype）→ `AttachmentCard`（attachment-card.tsx），AttachmentPayload 为 `{ url: string; filename: string; mimetype: string }`，`ParsedA2uiBlock['type']` 扩展 `'attachment'` 并加入 `AGENT_RUN_BLOCK_TYPES`。mxc:// 换算提取为 `lib/matrix-media.ts` 的 `mxcToDownloadUrl`（MarkdownMessage 与 AttachmentCard 共用），homeserver 从 `useMatrixStore` 取，预览上限 256KB。
+  - vitest 中 mock ES class：`vi.fn().mockImplementation(() => ({...}))` 作构造器时 `new` 返回的是 `this` 而非返回对象，mock 类必须用真实 `class` 定义（A2uiMessage.test 踩过）。测试用 `@testing-library` 若未配置 auto cleanup，需在每个 describe 里 `afterEach(cleanup)` 防 DOM 累积。

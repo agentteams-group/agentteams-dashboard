@@ -13,6 +13,7 @@ import {
   useMatrixSendMessage,
   useMatrixReadMarker,
   useMatrixSetReadMarker,
+  useMatrixSendReadReceipt,
   useMatrixEditMessage,
   useMatrixRedactMessage,
   formatMatrixEvents,
@@ -28,7 +29,7 @@ import { Users, PanelRightClose, ArrowDown, FolderTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
-import { useMatrixTypingUsers, useTypingNotification, useTypingSync, useMatrixUploadMedia } from '@/hooks/use-matrix';
+import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
 import { WorkerFilesPanel } from './views/worker-files-panel';
 
 interface ChatRoomProps {
@@ -77,11 +78,12 @@ export function ChatRoom({
   const editMutation = useMatrixEditMessage();
   const redactMutation = useMatrixRedactMessage();
   const setReadMarkerMutation = useMatrixSetReadMarker();
+  const sendReceiptMutation = useMatrixSendReadReceipt();
   const readMarkerQuery = useMatrixReadMarker(roomId);
   const { notifyTyping, stopTyping } = useTypingNotification(roomId);
   const typingUsers = useMatrixTypingUsers(roomId);
-  // Long-poll /sync so typing notifications from other members show up live.
-  useTypingSync(roomId);
+  // Live typing indicators, read receipts and room meta are fed by the global
+  // useGlobalMatrixSync loop mounted at dashboard level — no per-room loop here.
   const scrollRef = useRef<ScrollPanelHandle>(null);
   const prevMsgCountRef = useRef(0);
   const prevMsgLastIdRef = useRef<string | null>(null);
@@ -162,16 +164,21 @@ export function ChatRoom({
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
 
-  // Persist the read marker to the last visible message whenever the user is
+  // Persist the read marker and send an m.read receipt whenever the user is
   // pinned to the bottom (on arrival of new messages or on scroll-back-down).
-  const markAllRead = useCallback(() => {
+  // Dual-write: m.read makes the homeserver clear the unread counter and tells
+  // other members where we read up to; m.fully_read records our private read
+  // position. Both are best-effort — the sidebar badge is cleared optimistically
+  // and UNREAD_GRACE_MS suppresses stale counters until the server confirms.
+  const markAllRead = useCallback((targetOverride?: string) => {
     const last = formattedMessages[formattedMessages.length - 1];
-    if (!last) return;
-    const target = last.eventId || last.id;
+    const fallback = last ? (last.eventId || last.id) : null;
+    const target = targetOverride || fallback;
     if (!target || target === readEventId || setReadMarkerMutation.isPending) return;
     // Optimistically clear the sidebar badge so the UI feels snappy;
     // the next /sync cycle will confirm the server-side reset.
     useRoomMetaStore.getState().clearUnread(roomId);
+    sendReceiptMutation.mutate({ roomId, eventId: target });
     setReadMarkerMutation.mutate({ roomId, eventId: target }, {
       onError: (err) => {
         // m.fully_read may not be supported by all homeservers; silently ignore
@@ -179,7 +186,7 @@ export function ChatRoom({
         if (code !== 'M_BAD_JSON') console.warn('Failed to set read marker:', err);
       },
     });
-  }, [formattedMessages, readEventId, setReadMarkerMutation, roomId]);
+  }, [formattedMessages, readEventId, setReadMarkerMutation, sendReceiptMutation, roomId]);
 
   // Single watcher for newly appended messages: scroll down when pinned to
   // the bottom, otherwise accumulate a "new messages" counter for the badge.
@@ -192,8 +199,8 @@ export function ChatRoom({
       const added = Math.max(0, formattedMessages.length - prevMsgCountRef.current);
       if (autoScroll && atBottomRef.current) {
         // followOutput already pins the list; this nudge covers media/resize.
+        // scrollToBottom reports "at bottom", which is the read-advance trigger.
         scrollRef.current?.scrollToBottom({ smooth: false });
-        markAllRead();
       } else if (added > 0) {
         setNewMessagesCount(c => c + added);
       }
@@ -203,20 +210,27 @@ export function ChatRoom({
 
     prevMsgCountRef.current = formattedMessages.length;
     prevMsgLastIdRef.current = lastId;
-  }, [formattedMessages, autoScroll, markAllRead]);
+  }, [formattedMessages, autoScroll]);
 
-  // Landing position for a freshly opened room: Virtuoso's
-  // initialTopMostItemIndex only applies at mount time, when the list is still
-  // empty, so the first load after data arrives must scroll to the latest
-  // message explicitly. Without this the room opens at the top and the user
-  // has to pull down manually.
+  // Landing position for a freshly opened room: if the read marker is behind
+  // the latest message, land on the unread divider without advancing the read
+  // position; otherwise land on the latest message. ScrollPanel's own initial
+  // mount effect already does this, this effect is a fallback for when the
+  // read marker query resolves after the message list.
   useEffect(() => {
     if (!messagesQuery.isSuccess || formattedMessages.length === 0) return;
+    if (!readMarkerQuery.isSuccess && !readMarkerQuery.isError) return;
     if (didInitialScrollRef.current) return;
     didInitialScrollRef.current = true;
-    scrollRef.current?.scrollToBottom({ smooth: false });
-    markAllRead();
-  }, [messagesQuery.isSuccess, formattedMessages, markAllRead]);
+    const last = formattedMessages[formattedMessages.length - 1];
+    const lastId = last ? (last.eventId || last.id) : null;
+    const hasUnreadDivider = Boolean(readEventId && lastId && readEventId !== lastId);
+    if (hasUnreadDivider) {
+      scrollRef.current?.scrollToItem(`read-marker-${readEventId}`);
+    } else {
+      scrollRef.current?.scrollToBottom({ smooth: false });
+    }
+  }, [messagesQuery.isSuccess, formattedMessages, readEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError]);
 
   const removeLocal = useCallback((clientId: string) => {
     setLocalMessages(prev => prev.filter(m => m.clientId !== clientId));
@@ -299,14 +313,18 @@ export function ChatRoom({
         relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
       },
       {
-        onSuccess: () => removeLocal(cid),
+        onSuccess: (data) => {
+          removeLocal(cid);
+          // Sending a message advances the read position to the sent event.
+          markAllRead(data?.event_id);
+        },
         onError: (err) => {
           patchLocal(cid, { status: 'error', error: err.message });
           pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo }, ++noticeCounterRef.current));
         },
       }
     );
-  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal, pushSystemNotice]);
+  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal, pushSystemNotice, markAllRead]);
 
   const removeSystemNotice = useCallback((notice: ChatSystemNotice) => {
     setSystemNotices(prev => prev.filter(n => n.id !== notice.id));

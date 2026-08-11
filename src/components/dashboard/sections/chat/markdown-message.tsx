@@ -10,9 +10,8 @@ import rehypeKatex from 'rehype-katex';
 import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { StreamingCard } from './streaming-card';
-import { ThinkingCard } from './thinking-card';
 import { MermaidRenderer } from './mermaid-renderer';
+import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import {
   renderFormattedContent,
   resolveMentionsInHtml,
@@ -27,6 +26,8 @@ interface MarkdownMessageProps {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   homeserver?: string;
   memberMap?: Record<string, string>;
+  /** Streaming placeholder path: lightweight text render + trailing cursor. */
+  isStreaming?: boolean;
 }
 
 function CodeBlock({ language, children }: { language?: string; children: string }) {
@@ -58,63 +59,29 @@ function CodeBlock({ language, children }: { language?: string; children: string
   );
 }
 
-type ContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'card'; payload: Record<string, unknown> }
-  | { type: 'tool_call'; payload: Record<string, unknown> }
-  | { type: 'thinking'; content: string };
-
-function parseCustomBlocks(content: string): ContentPart[] {
-  const parts: ContentPart[] = [];
-  // Match both escaped (&lt;details) and raw (<details) forms for thinking blocks
-  const regex = /(```card\n([\s\S]*?)\n```|(?:&lt;|<)details\s+class="thinking"(?:&gt;|>)([\s\S]*?)(?:&lt;|<)\/details(?:&gt;|>))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', text: content.slice(lastIndex, match.index) });
-    }
-    const full = match[0];
-    if (full.startsWith('```card')) {
-      try {
-        const parsed = JSON.parse(match[2]);
-        if (parsed.type === 'tool_call' || parsed.tool_name) {
-          parts.push({ type: 'tool_call', payload: parsed });
-        } else {
-          parts.push({ type: 'card', payload: parsed });
-        }
-      } catch {
-        parts.push({ type: 'text', text: full });
-      }
-    } else {
-      parts.push({ type: 'thinking', content: match[3] });
-    }
-    lastIndex = match.index + full.length;
-  }
-  if (lastIndex < content.length) {
-    parts.push({ type: 'text', text: content.slice(lastIndex) });
-  }
-  return parts;
+/** Block-level Markdown features that must keep the full renderer while streaming. */
+function hasBlockFeatures(text: string): boolean {
+  return (
+    /(?:^|\n)\s*```/.test(text) ||
+    /(?:^|\n)\s*#{1,6}\s/.test(text) ||
+    /(?:^|\n)\s*>\s/.test(text) ||
+    /(?:^|\n)\s*(?:[-*+]|\d+[.)])\s+/.test(text) ||
+    /\|.*\|/.test(text) ||
+    /\$\$/.test(text)
+  );
 }
 
-export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap }: MarkdownMessageProps) {
+/** Trailing streaming cursor for the lightweight path. */
+function StreamingCursor() {
+  return (
+    <span className="inline-block w-[0.4em] h-[1em] ml-0.5 align-text-bottom rounded-sm bg-current animate-pulse" />
+  );
+}
+
+export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
   // Resolve mxc:// URL to HTTP URL via Matrix media API
   const resolvedMediaUrl = useMemo(() => {
-    if (!mediaUrl) return undefined;
-    if (mediaUrl.startsWith('http')) return mediaUrl;
-    // mxc:// URLs: convert to /_matrix/media/v3/download/serverName/mediaId
-    if (mediaUrl.startsWith('mxc://')) {
-      const parts = mediaUrl.replace('mxc://', '').split('/');
-      if (parts.length >= 2) {
-        const serverName = parts[0];
-        const mediaId = parts.slice(1).join('/');
-        // Use the homeserver as the base for media downloads
-        const base = homeserver || '';
-        return `${base}/_matrix/media/v3/download/${serverName}/${mediaId}`;
-      }
-    }
-    return undefined;
+    return mxcToDownloadUrl(mediaUrl ?? '', homeserver);
   }, [mediaUrl, homeserver]);
 
   const html = useMemo(() => {
@@ -171,43 +138,36 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  // For HTML formatted_body, render with custom block parsing
+  // For HTML formatted_body, render directly (card/thinking already split off
+  // at the normalization layer, so a text block is plain HTML content).
   if (html) {
-    // Check for mermaid blocks in HTML content
-    const mermaidEl = MermaidRenderer({ content: html });
     const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
     const hasMermaid = !!mermaidChart;
 
-    const parts = parseCustomBlocks(html);
+    if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
+      return (
+        <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
+          {content}
+          <StreamingCursor />
+        </div>
+      );
+    }
+
     return (
       <div className="matrix-message-content text-sm space-y-1">
-        {hasMermaid && mermaidEl}
-        {parts.map((part, idx) => {
-          if (part.type === 'text') {
-            return (
-              <div
-                key={idx}
-                dangerouslySetInnerHTML={{ __html: part.text }}
-                className="[&>p]:mb-1 [&>br]:block
-                  [&_a]:text-emerald-600 [&_a]:hover:underline
-                  [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
-                  [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
-                  [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
-                  [&_table]:border-collapse [&_table]:border [&_table]:border-border
-                  [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
-                  [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
-                  [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
-              />
-            );
-          }
-          if (part.type === 'card') {
-            return <StreamingCard key={idx} payload={part.payload} />;
-          }
-          if (part.type === 'tool_call') {
-            return <StreamingCard key={idx} payload={part.payload} />;
-          }
-          return <ThinkingCard key={idx} content={part.content} />;
-        })}
+        {hasMermaid && <MermaidRenderer content={html} />}
+        <div
+          dangerouslySetInnerHTML={{ __html: html }}
+          className="[&>p]:mb-1 [&>br]:block
+            [&_a]:text-emerald-600 [&_a]:hover:underline
+            [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
+            [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
+            [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+            [&_table]:border-collapse [&_table]:border [&_table]:border-border
+            [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
+            [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
+            [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
+        />
       </div>
     );
   }
@@ -215,6 +175,18 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
   const hasMermaid = !!mermaidChart;
   const plainContent = hasMermaid ? resolvedContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : resolvedContent;
+
+  // Streaming lightweight path: no block-level features → plain pre + cursor.
+  if (isStreaming && !hasBlockFeatures(plainContent) && !hasMermaid) {
+    return (
+      <div className="matrix-message-content text-sm">
+        <pre className="whitespace-pre-wrap break-words m-0 font-inherit text-inherit">
+          {plainContent}
+          <StreamingCursor />
+        </pre>
+      </div>
+    );
+  }
 
   return (
     <div className="matrix-message-content text-sm space-y-1">
