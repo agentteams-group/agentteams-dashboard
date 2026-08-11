@@ -52,18 +52,19 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail 
   const hasDetail = detail !== undefined;
 
   return (
-    <section className={`my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`}>
+    <section className={`my-2 w-full overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm`}>
+      <div className={`h-0.5 w-full ${accent.replace('border-l-', 'bg-')}`} />
       <Button
         variant="ghost"
         size="sm"
-        className="h-auto w-full justify-between px-3 py-2 hover:bg-muted/50"
+        className="h-auto w-full justify-between px-3 py-2 hover:bg-accent/50 transition-colors"
         onClick={() => setUserOpen((previous) => !(previous ?? open))}
         aria-expanded={open}
       >
         <span className="flex min-w-0 items-center gap-2 text-xs font-medium">
           <Icon className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{title}</span>
-          <Badge variant="secondary">{statusLabel(payload.status)}</Badge>
+          <Badge variant="secondary" className="text-[10px]">{statusLabel(payload.status)}</Badge>
         </span>
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </Button>
@@ -84,7 +85,7 @@ function ToolValue({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-1 text-[10px] font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-xs">{displayValue(value)}</pre>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 border border-border/40 p-2 font-mono text-xs">{displayValue(value)}</pre>
     </div>
   );
 }

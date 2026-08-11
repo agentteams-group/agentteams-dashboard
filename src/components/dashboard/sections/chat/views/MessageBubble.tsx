@@ -52,11 +52,11 @@ function MessageTime({ timestamp }: { timestamp: number }) {
 
 function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: boolean }) {
   return (
-    <Avatar className="w-7 h-7 shrink-0">
-      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-medium ${
+    <Avatar className="w-8 h-8 shrink-0">
+      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
         isMe
-          ? 'bg-primary/20 text-primary'
-          : 'bg-muted text-muted-foreground'
+          ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+          : 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/30'
       }`}>
         {senderShort.slice(0, 2).toUpperCase()}
       </div>
@@ -200,10 +200,10 @@ export function MessageBubble({
   }, [editValue, message, onEdit]);
 
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3 py-1.5 rounded-2xl text-sm break-words',
+    'w-fit max-w-[min(92%,72ch)] px-3 py-2 rounded-2xl text-sm break-words leading-relaxed',
     message.isMe
-      ? 'bg-primary text-primary-foreground rounded-tr-sm'
-      : 'bg-muted text-foreground rounded-tl-sm',
+      ? 'bg-emerald-600 text-white rounded-tr-sm shadow-md shadow-emerald-500/10'
+      : 'bg-card border border-border/60 text-foreground rounded-tl-sm shadow-sm',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -228,7 +228,7 @@ export function MessageBubble({
       <div className={`flex-1 min-w-0 flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
           <div className={`flex items-center gap-1.5 mb-0.5 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-xs font-medium ${message.isMe ? 'text-primary' : 'text-foreground'}`}>
+            <span className={`text-xs font-semibold ${message.isMe ? 'text-emerald-300' : 'text-foreground'}`}>
               {message.senderShort}
             </span>
             {message.isStreaming && (
