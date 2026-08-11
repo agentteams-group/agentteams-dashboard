@@ -55,8 +55,8 @@ function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: 
     <Avatar className="w-8 h-8 shrink-0">
       <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
         isMe
-          ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
-          : 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/30'
+          ? 'bg-emerald-500/20 text-emerald-400'
+          : 'bg-violet-500/20 text-violet-300'
       }`}>
         {senderShort.slice(0, 2).toUpperCase()}
       </div>
@@ -203,7 +203,7 @@ export function MessageBubble({
     'w-fit max-w-[min(92%,72ch)] px-3 py-2 rounded-2xl text-sm break-words leading-relaxed',
     message.isMe
       ? 'bg-emerald-600 text-white rounded-tr-sm shadow-md shadow-emerald-500/10'
-      : 'bg-card border border-border/60 text-foreground rounded-tl-sm shadow-sm',
+      : 'bg-card text-foreground rounded-tl-sm',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');

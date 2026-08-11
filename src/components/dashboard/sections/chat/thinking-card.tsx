@@ -15,7 +15,7 @@ export function ThinkingCard({ title = '思考过程', content, isStreaming }: T
   const open = userOpen ?? Boolean(isStreaming);
 
   return (
-    <div className="my-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
+    <div className="my-2 rounded-xl border border-border/40 bg-card overflow-hidden">
       <Button
         variant="ghost"
         size="sm"
