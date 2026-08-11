@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent, 'com.agentteams.long_message': longMessage } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
@@ -48,6 +48,11 @@ export async function PUT(
     }
     if (newContent) {
       messageContent['m.new_content'] = newContent;
+    }
+    // Long-message fallback metadata (upstream F7): full text uploaded as an
+    // attachment when a reply exceeds the 64KB threshold.
+    if (longMessage) {
+      messageContent['com.agentteams.long_message'] = longMessage;
     }
 
     const controller = new AbortController();
