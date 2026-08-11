@@ -52,11 +52,11 @@ function MessageTime({ timestamp }: { timestamp: number }) {
 
 function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: boolean }) {
   return (
-    <Avatar className="w-8 h-8 shrink-0">
-      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
+    <Avatar className="w-7 h-7 shrink-0">
+      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-medium ${
         isMe
-          ? 'bg-emerald-500/30 text-emerald-300'
-          : 'bg-sky-500/30 text-sky-300'
+          ? 'bg-primary/20 text-primary'
+          : 'bg-muted text-muted-foreground'
       }`}>
         {senderShort.slice(0, 2).toUpperCase()}
       </div>
@@ -200,10 +200,10 @@ export function MessageBubble({
   }, [editValue, message, onEdit]);
 
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3 py-2 rounded-2xl text-sm break-words leading-relaxed',
+    'w-fit max-w-[min(92%,72ch)] px-3 py-1.5 rounded-2xl text-sm break-words',
     message.isMe
-      ? 'bg-emerald-600 text-white rounded-tr-sm shadow-md shadow-emerald-500/10'
-      : 'bg-card text-foreground rounded-tl-sm',
+      ? 'bg-primary text-primary-foreground rounded-tr-sm'
+      : 'bg-muted text-foreground rounded-tl-sm',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -228,7 +228,7 @@ export function MessageBubble({
       <div className={`flex-1 min-w-0 flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
           <div className={`flex items-center gap-1.5 mb-0.5 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-xs font-semibold ${message.isMe ? 'text-emerald-300' : 'text-foreground'}`}>
+            <span className={`text-xs font-medium ${message.isMe ? 'text-primary' : 'text-foreground'}`}>
               {message.senderShort}
             </span>
             {message.isStreaming && (
