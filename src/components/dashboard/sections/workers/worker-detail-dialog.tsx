@@ -57,7 +57,7 @@ export function WorkerDetailDialog({
 
   const handleUpload = useCallback(async () => {
     if (!worker?.name || !file) return;
-    await uploadMutation.mutateAsync({ workerName: worker.name, file, runtime: worker.runtime });
+    await uploadMutation.mutateAsync({ workerName: worker.name, file });
     setFile(null);
     setUploadOpen(false);
   }, [worker, file, uploadMutation]);

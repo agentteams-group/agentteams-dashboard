@@ -30,16 +30,21 @@ export function useWorkerSkills(workerName: string | null) {
 
 export function useUploadWorkerSkill() {
   const queryClient = useQueryClient();
+  const { data: workers = [] } = useWorkers();
+  const runtimeByName = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    for (const w of workers) map[w.name] = w.runtime;
+    return map;
+  }, [workers]);
+
   return useMutation({
     mutationFn: ({
       workerName,
       file,
-      runtime,
     }: {
       workerName: string;
       file: File;
-      runtime?: string | null;
-    }) => agentteamsApi.uploadWorkerSkill(workerName, file, runtime),
+    }) => agentteamsApi.uploadWorkerSkill(workerName, file, runtimeByName[workerName] ?? null),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ['agentteams-worker-skills', variables.workerName],
