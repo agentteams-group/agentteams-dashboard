@@ -146,6 +146,15 @@ const SHARED_PROJECTS_PREFIX = 'shared/projects/';
 const AGENTS_PREFIX = 'agents/';
 const WORKER_HISTORY_FILENAME = 'task-history.json';
 
+// Team-scoped storage layout (see AgentTeams project-management skill):
+//   teams/{team}/shared/projects/{project-id}/meta.json
+//   teams/{team}/shared/tasks/{task-id}/meta.json
+// The dashboard board reads the root shared/ prefixes below; the team-scoped
+// prefixes are scanned in addition so project/task collaboration files
+// created under a team (the primary layout for TeamHarness MCP) are visible.
+const TEAMS_PREFIX = 'teams/';
+const TEAM_SHARED_SUFFIX = 'shared/';
+
 const SPEC_MAX_BYTES = 4 * 1024;
 
 interface RawMeta {
@@ -438,6 +447,26 @@ async function listAtPrefix(
   });
 }
 
+type ListAtFn = typeof listAtPrefix;
+
+/**
+ * Enumerate team directories under `teams/` (e.g. `teams/sysdev/`).
+ * Returns an empty array when the prefix is missing or listing fails so
+ * callers degrade gracefully to the root shared/ layout.
+ */
+async function listTeamScopes(
+  client: Client,
+  bucket: string,
+  listAt: ListAtFn = listAtPrefix,
+): Promise<string[]> {
+  try {
+    const list = await listAt(client, bucket, TEAMS_PREFIX);
+    return list.prefixes;
+  } catch {
+    return [];
+  }
+}
+
 async function getObjectText(
   client: Client,
   bucket: string,
@@ -475,44 +504,54 @@ async function collectSharedTasks(
   client: Client,
   bucket: string,
   now: number,
+  listAt: ListAtFn = listAtPrefix,
 ): Promise<{ tasks: TaskBoardTask[]; scannedKeys: string[] }> {
   const out = { tasks: [] as TaskBoardTask[], scannedKeys: [] as string[] };
-  let list: ListResult;
-  try {
-    list = await listAtPrefix(client, bucket, SHARED_TASKS_PREFIX);
-  } catch {
-    return out;
-  }
-  for (const taskPrefix of list.prefixes) {
-    const metaKey = `${taskPrefix}meta.json`;
-    const metaText = await getObjectText(client, bucket, metaKey);
-    if (!metaText) continue;
-    out.scannedKeys.push(metaKey);
-    let meta: RawMeta;
+  // Dual-track scan: root shared/tasks/ (manager/legacy writes) plus
+  // teams/{team}/shared/tasks/ (TeamHarness MCP, the primary layout).
+  const teamScopes = await listTeamScopes(client, bucket, listAt);
+  const prefixes = [
+    SHARED_TASKS_PREFIX,
+    ...teamScopes.map((scope) => `${scope}${TEAM_SHARED_SUFFIX}tasks/`),
+  ];
+  for (const prefix of prefixes) {
+    let list: ListResult;
     try {
-      meta = JSON.parse(metaText);
+      list = await listAt(client, bucket, prefix);
     } catch {
       continue;
     }
-    const source = taskPrefix.replace(/\/$/, '');
-    // result.md drives the outcome field.
-    const resultText = await getObjectText(
-      client,
-      bucket,
-      `${taskPrefix}result.md`,
-    );
-    if (resultText) out.scannedKeys.push(`${taskPrefix}result.md`);
-    const outcome = parseOutcomeFromResult(resultText);
-    // spec.md is optional and bounded.
-    const specText = await getObjectText(
-      client,
-      bucket,
-      `${taskPrefix}spec.md`,
-      SPEC_MAX_BYTES,
-    );
-    if (specText) out.scannedKeys.push(`${taskPrefix}spec.md`);
-    const task = normalizeTask(meta, source, now, outcome, specText ?? undefined);
-    if (task) out.tasks.push(task);
+    for (const taskPrefix of list.prefixes) {
+      const metaKey = `${taskPrefix}meta.json`;
+      const metaText = await getObjectText(client, bucket, metaKey);
+      if (!metaText) continue;
+      out.scannedKeys.push(metaKey);
+      let meta: RawMeta;
+      try {
+        meta = JSON.parse(metaText);
+      } catch {
+        continue;
+      }
+      const source = taskPrefix.replace(/\/$/, '');
+      // result.md drives the outcome field.
+      const resultText = await getObjectText(
+        client,
+        bucket,
+        `${taskPrefix}result.md`,
+      );
+      if (resultText) out.scannedKeys.push(`${taskPrefix}result.md`);
+      const outcome = parseOutcomeFromResult(resultText);
+      // spec.md is optional and bounded.
+      const specText = await getObjectText(
+        client,
+        bucket,
+        `${taskPrefix}spec.md`,
+        SPEC_MAX_BYTES,
+      );
+      if (specText) out.scannedKeys.push(`${taskPrefix}spec.md`);
+      const task = normalizeTask(meta, source, now, outcome, specText ?? undefined);
+      if (task) out.tasks.push(task);
+    }
   }
   return out;
 }
@@ -521,35 +560,45 @@ async function collectSharedProjects(
   client: Client,
   bucket: string,
   now: number,
+  listAt: ListAtFn = listAtPrefix,
 ): Promise<{ projects: TaskBoardProject[]; scannedKeys: string[] }> {
   const out = { projects: [] as TaskBoardProject[], scannedKeys: [] as string[] };
-  let list: ListResult;
-  try {
-    list = await listAtPrefix(client, bucket, SHARED_PROJECTS_PREFIX);
-  } catch {
-    return out;
-  }
-  for (const projectPrefix of list.prefixes) {
-    const metaKey = `${projectPrefix}meta.json`;
-    const metaText = await getObjectText(client, bucket, metaKey);
-    if (!metaText) continue;
-    out.scannedKeys.push(metaKey);
-    let meta: RawProjectMeta;
+  // Dual-track scan: root shared/projects/ (legacy) plus
+  // teams/{team}/shared/projects/ (TeamHarness MCP, the primary layout).
+  const teamScopes = await listTeamScopes(client, bucket, listAt);
+  const prefixes = [
+    SHARED_PROJECTS_PREFIX,
+    ...teamScopes.map((scope) => `${scope}${TEAM_SHARED_SUFFIX}projects/`),
+  ];
+  for (const prefix of prefixes) {
+    let list: ListResult;
     try {
-      meta = JSON.parse(metaText);
+      list = await listAt(client, bucket, prefix);
     } catch {
       continue;
     }
-    const source = projectPrefix.replace(/\/$/, '');
-    const planText = await getObjectText(
-      client,
-      bucket,
-      `${projectPrefix}plan.md`,
-    );
-    if (planText) out.scannedKeys.push(`${projectPrefix}plan.md`);
-    const phases = parsePlan(planText);
-    const project = normalizeProject(meta, source, now, phases);
-    if (project) out.projects.push(project);
+    for (const projectPrefix of list.prefixes) {
+      const metaKey = `${projectPrefix}meta.json`;
+      const metaText = await getObjectText(client, bucket, metaKey);
+      if (!metaText) continue;
+      out.scannedKeys.push(metaKey);
+      let meta: RawProjectMeta;
+      try {
+        meta = JSON.parse(metaText);
+      } catch {
+        continue;
+      }
+      const source = projectPrefix.replace(/\/$/, '');
+      const planText = await getObjectText(
+        client,
+        bucket,
+        `${projectPrefix}plan.md`,
+      );
+      if (planText) out.scannedKeys.push(`${projectPrefix}plan.md`);
+      const phases = parsePlan(planText);
+      const project = normalizeProject(meta, source, now, phases);
+      if (project) out.projects.push(project);
+    }
   }
   return out;
 }
@@ -587,6 +636,25 @@ async function collectWorkerHistories(
     }),
   );
   return out;
+}
+
+/**
+ * Merge tasks by runId with canonical (shared/tasks/) entries winning over
+ * worker-history fallbacks. `sharedTasks` includes both root and
+ * team-scoped entries (team-scoped already win within the collector); this
+ * keeps the canonical meta.json state (projectId / outcome / completedAt)
+ * rather than the flat history record.
+ */
+function mergeTasks(
+  sharedTasks: TaskBoardTask[],
+  historyTasks: TaskBoardTask[],
+): TaskBoardTask[] {
+  const byId = new Map<string, TaskBoardTask>();
+  // history first, shared second so shared (canonical) wins on conflict.
+  for (const t of [...historyTasks, ...sharedTasks]) {
+    byId.set(t.runId, t);
+  }
+  return Array.from(byId.values());
 }
 
 export async function GET() {
@@ -631,10 +699,10 @@ export async function GET() {
     collectWorkerHistories(client, bucket, now),
   ]);
 
-  // Merge by runId. shared/tasks/ entries win over worker history so the
-  // canonical state takes precedence.
+  // Merge by runId. shared/tasks/ entries (root + team-scoped) win over
+  // worker history so the canonical state takes precedence.
   const taskById = new Map<string, TaskBoardTask>();
-  for (const t of [...tasksSrc.tasks, ...historySrc.tasks]) {
+  for (const t of mergeTasks(tasksSrc.tasks, historySrc.tasks)) {
     taskById.set(t.runId, t);
   }
 
@@ -655,7 +723,11 @@ export async function GET() {
   }
 
   const matchedPrefixes: string[] = [];
+  const hasTeamTasks = tasksSrc.scannedKeys.some((k) => k.startsWith(TEAMS_PREFIX));
+  if (hasTeamTasks) matchedPrefixes.push(`teams/*/${TEAM_SHARED_SUFFIX}tasks/ (team-scoped)`);
   if (tasksSrc.scannedKeys.length > 0) matchedPrefixes.push(SHARED_TASKS_PREFIX);
+  const hasTeamProjects = projectsSrc.scannedKeys.some((k) => k.startsWith(TEAMS_PREFIX));
+  if (hasTeamProjects) matchedPrefixes.push(`teams/*/${TEAM_SHARED_SUFFIX}projects/ (team-scoped)`);
   if (projectsSrc.scannedKeys.length > 0) matchedPrefixes.push(SHARED_PROJECTS_PREFIX);
   if (historySrc.scannedKeys.length > 0) matchedPrefixes.push(`${AGENTS_PREFIX} (worker-history)`);
 
@@ -683,4 +755,11 @@ export const __test__ = {
   pickProjectId,
   normalizeStatus,
   normalizeProjectStatus,
+  collectSharedTasks,
+  collectSharedProjects,
+  listTeamScopes,
+  mergeTasks,
+  SHARED_TASKS_PREFIX,
+  SHARED_PROJECTS_PREFIX,
+  TEAMS_PREFIX,
 };

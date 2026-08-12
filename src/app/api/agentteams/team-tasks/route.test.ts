@@ -1,5 +1,7 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { __test__ } from './route';
+import { Readable } from 'node:stream';
+import { __test__, type TaskBoardTask } from './route';
 
 const {
   normalizeTask,
@@ -10,6 +12,10 @@ const {
   pickProjectId,
   normalizeStatus,
   normalizeProjectStatus,
+  collectSharedTasks,
+  collectSharedProjects,
+  listTeamScopes,
+  mergeTasks,
 } = __test__;
 
 const NOW = 1700000000000;
@@ -325,5 +331,210 @@ describe('parseOutcomeFromResult', () => {
     ['## outcome: success', 'SUCCESS'], // case-insensitive on the word
   ])('parses %s -> %s', (input, expected) => {
     expect(parseOutcomeFromResult(input)).toBe(expected);
+  });
+});
+
+// ----- mergeTasks -----
+
+function task(id: string, overrides: Partial<TaskBoardTask> = {}): TaskBoardTask {
+  return {
+    runId: id,
+    title: id,
+    status: 'in_progress',
+    assignedTo: 'alice',
+    roomId: '!room',
+    dependsOn: [],
+    createdAt: NOW,
+    outcome: null,
+    source: 'shared/tasks/x',
+    ...overrides,
+  };
+}
+
+describe('mergeTasks', () => {
+  it('keeps shared (canonical) task over worker history on runId conflict', () => {
+    const shared = task('t1', { projectId: 'proj-1', outcome: 'SUCCESS' });
+    const history = task('t1', { title: 'stale history', projectId: undefined });
+    const merged = mergeTasks([shared], [history]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(shared);
+  });
+
+  it('dedupes and combines disjoint tasks', () => {
+    const shared = [task('t1'), task('t2')];
+    const history = [task('t3')];
+    const merged = mergeTasks(shared, history);
+    expect(merged.map((t) => t.runId).sort()).toEqual(['t1', 't2', 't3']);
+  });
+
+  it('returns empty when both inputs are empty', () => {
+    expect(mergeTasks([], [])).toEqual([]);
+  });
+});
+
+// ----- Dual-track scanning helpers -----
+
+/** Minimal fake MinIO client backed by a key -> content map. */
+function makeClient(metaByKey: Record<string, unknown>): never {
+  return {
+    statObject: async () => ({ size: 4096 }),
+    getObject: async (_bucket: string, key: string) => {
+      const text = metaByKey[key];
+      const stream = new Readable();
+      if (text !== undefined) {
+        stream.push(typeof text === 'string' ? text : JSON.stringify(text));
+      }
+      stream.push(null);
+      return stream;
+    },
+  } as never;
+}
+
+/** listAt stub driven by a prefix -> ListResult map. */
+function makeListAt(
+  prefixMap: Record<string, { prefixes?: string[]; files?: string[] }>,
+) {
+  return async (_client: unknown, _bucket: string, prefix: string) => {
+    const entry = prefixMap[prefix] ?? { prefixes: [], files: [] };
+    return { prefixes: entry.prefixes ?? [], files: entry.files ?? [] };
+  };
+}
+
+// ----- listTeamScopes -----
+
+describe('listTeamScopes', () => {
+  it('enumerates team directories under teams/', async () => {
+    const listAt = makeListAt({
+      'teams/': { prefixes: ['teams/sysdev/', 'teams/biz/'] },
+    });
+    const scopes = await listTeamScopes({} as never, 'bucket', listAt);
+    expect(scopes).toEqual(['teams/sysdev/', 'teams/biz/']);
+  });
+
+  it('returns [] when the teams/ listing fails', async () => {
+    const listAt = async () => {
+      throw new Error('no such prefix');
+    };
+    const scopes = await listTeamScopes({} as never, 'bucket', listAt);
+    expect(scopes).toEqual([]);
+  });
+
+  it('returns [] when teams/ has no entries', async () => {
+    const listAt = makeListAt({ 'teams/': { prefixes: [] } });
+    const scopes = await listTeamScopes({} as never, 'bucket', listAt);
+    expect(scopes).toEqual([]);
+  });
+});
+
+// ----- collectSharedTasks (dual-track) -----
+
+describe('collectSharedTasks (dual-track)', () => {
+  it('collects root and team-scoped tasks together', async () => {
+    const metaByKey = {
+      'shared/tasks/root-task/meta.json': {
+        task_id: 'task-root',
+        task_title: 'Root task',
+        status: 'in_progress',
+      },
+      'teams/sysdev/shared/tasks/team-task/meta.json': {
+        task_id: 'task-team',
+        task_title: 'Team task',
+        status: 'assigned',
+      },
+    };
+    const client = makeClient(metaByKey);
+    const listAt = makeListAt({
+      'shared/tasks/': { prefixes: ['shared/tasks/root-task/'] },
+      'teams/': { prefixes: ['teams/sysdev/'] },
+      'teams/sysdev/shared/tasks/': {
+        prefixes: ['teams/sysdev/shared/tasks/team-task/'],
+      },
+    });
+    const out = await collectSharedTasks(client, 'bucket', NOW, listAt);
+    expect(out.tasks).toHaveLength(2);
+    const ids = out.tasks.map((t) => t.runId).sort();
+    expect(ids).toEqual(['task-root', 'task-team']);
+    const teamTask = out.tasks.find((t) => t.runId === 'task-team');
+    expect(teamTask?.source).toBe('teams/sysdev/shared/tasks/team-task');
+    expect(out.scannedKeys).toContain(
+      'teams/sysdev/shared/tasks/team-task/meta.json',
+    );
+    expect(out.scannedKeys).toContain('shared/tasks/root-task/meta.json');
+  });
+
+  it('degrades to root only when teams/ has no entries', async () => {
+    const metaByKey = {
+      'shared/tasks/root-task/meta.json': {
+        task_id: 'task-root',
+        task_title: 'Root task',
+      },
+    };
+    const client = makeClient(metaByKey);
+    const listAt = makeListAt({
+      'shared/tasks/': { prefixes: ['shared/tasks/root-task/'] },
+      'teams/': { prefixes: [] },
+    });
+    const out = await collectSharedTasks(client, 'bucket', NOW, listAt);
+    expect(out.tasks).toHaveLength(1);
+    expect(out.tasks[0].runId).toBe('task-root');
+  });
+
+  it('returns empty when no tasks exist in either track', async () => {
+    const client = makeClient({});
+    const listAt = makeListAt({
+      'shared/tasks/': { prefixes: [] },
+      'teams/': { prefixes: [] },
+    });
+    const out = await collectSharedTasks(client, 'bucket', NOW, listAt);
+    expect(out.tasks).toEqual([]);
+    expect(out.scannedKeys).toEqual([]);
+  });
+});
+
+// ----- collectSharedProjects (dual-track) -----
+
+describe('collectSharedProjects (dual-track)', () => {
+  it('collects root and team-scoped projects together', async () => {
+    const metaByKey = {
+      'shared/projects/root-proj/meta.json': {
+        project_id: 'proj-root',
+        project_name: 'Root Proj',
+      },
+      'teams/sysdev/shared/projects/team-proj/meta.json': {
+        project_id: 'proj-team',
+        project_name: 'Team Proj',
+      },
+    };
+    const client = makeClient(metaByKey);
+    const listAt = makeListAt({
+      'shared/projects/': { prefixes: ['shared/projects/root-proj/'] },
+      'teams/': { prefixes: ['teams/sysdev/'] },
+      'teams/sysdev/shared/projects/': {
+        prefixes: ['teams/sysdev/shared/projects/team-proj/'],
+      },
+    });
+    const out = await collectSharedProjects(client, 'bucket', NOW, listAt);
+    expect(out.projects).toHaveLength(2);
+    const ids = out.projects.map((p) => p.runId).sort();
+    expect(ids).toEqual(['proj-root', 'proj-team']);
+    const teamProj = out.projects.find((p) => p.runId === 'proj-team');
+    expect(teamProj?.source).toBe('teams/sysdev/shared/projects/team-proj');
+  });
+
+  it('degrades to root only when teams/ has no entries', async () => {
+    const metaByKey = {
+      'shared/projects/root-proj/meta.json': {
+        project_id: 'proj-root',
+        project_name: 'Root Proj',
+      },
+    };
+    const client = makeClient(metaByKey);
+    const listAt = makeListAt({
+      'shared/projects/': { prefixes: ['shared/projects/root-proj/'] },
+      'teams/': { prefixes: [] },
+    });
+    const out = await collectSharedProjects(client, 'bucket', NOW, listAt);
+    expect(out.projects).toHaveLength(1);
+    expect(out.projects[0].runId).toBe('proj-root');
   });
 });
