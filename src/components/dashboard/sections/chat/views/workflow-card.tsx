@@ -52,12 +52,12 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
       {(subagents.length > 0 || steps.length > 0) && (
         <CardContent className="space-y-4 px-4 pt-4">
           {subagents.length > 0 && (
-            <section aria-label="子智能体">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">子智能体</p>
+            <section aria-label="参与 Worker">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">参与 Worker</p>
               <div className="space-y-1.5">
                 {subagents.map((agent, index) => (
                   <div key={agent.id || agent.name || String(index)} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="min-w-0 truncate">{itemLabel(agent, `智能体 ${index + 1}`)}</span>
+                    <span className="min-w-0 truncate">{itemLabel(agent, `Worker ${index + 1}`)}</span>
                     <StatusBadge status={agent.status} />
                   </div>
                 ))}

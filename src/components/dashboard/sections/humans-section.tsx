@@ -34,7 +34,7 @@ import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { PhaseDistribution } from './humans/human-phase-distribution';
 
-function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' }) {
+function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

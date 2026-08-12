@@ -41,6 +41,12 @@ export interface WorkerResponse {
   agents?: string;
   mcpServers?: { name: string; url: string; transport: string }[];
   version?: string;
+  /** ISO8601 time when the worker entered the current phase (optional, backend vNext). */
+  stateStartedAt?: string;
+  /** ISO8601 time of the worker's most recent Matrix activity (optional, backend vNext). */
+  lastActivityAt?: string;
+  /** Short summary of the most recent task (optional, <= 32 chars, backend vNext). */
+  lastTaskSummary?: string;
 }
 
 export interface TeamResponse {

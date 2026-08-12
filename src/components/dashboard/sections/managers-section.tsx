@@ -44,7 +44,7 @@ import { ManagerCreateDialog } from './managers/manager-create-dialog';
 import { ManagerEditDialog, type ManagerEditForm } from './managers/manager-edit-dialog';
 import { ManagerDetailDialog } from './managers/manager-detail-dialog';
 
-function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' }) {
+function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

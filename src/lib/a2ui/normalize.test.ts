@@ -83,7 +83,7 @@ describe('normalizeToBlocks rule 4: Tool Guard confirmation', () => {
   });
 });
 
-describe('normalizeToBlocks rule 5: agentscope repr dump', () => {
+describe('normalizeToBlocks rule 6: agentscope repr dump', () => {
   const REASONING_REPR =
     "sequence_number=12 object='message' status='completed' error=None id='msg_aaa' " +
     "type='reasoning' role='assistant' " +
@@ -114,7 +114,7 @@ describe('normalizeToBlocks rule 5: agentscope repr dump', () => {
   });
 });
 
-describe('normalizeToBlocks rule 6: Thinking: prefix (qwenpaw)', () => {
+describe('normalizeToBlocks rule 7: Thinking: prefix (qwenpaw)', () => {
   it('strips the prefix and produces a thinking block', () => {
     const input = makeInput({ body: 'Thinking:\n\n我正在思考这个问题。' });
 
@@ -132,7 +132,7 @@ describe('normalizeToBlocks rule 6: Thinking: prefix (qwenpaw)', () => {
   });
 });
 
-describe('normalizeToBlocks rule 7: com.agentteams.long_message', () => {
+describe('normalizeToBlocks rule 8: com.agentteams.long_message', () => {
   it('maps long-message metadata to an attachment block', () => {
     const input = makeInput({
       body: '正文被截断…',
@@ -165,7 +165,7 @@ describe('normalizeToBlocks rule 7: com.agentteams.long_message', () => {
   });
 });
 
-describe('normalizeToBlocks rule 8: Hermes 🔧 tool-call Markdown', () => {
+describe('normalizeToBlocks rule 9: Hermes 🔧 tool-call Markdown', () => {
   it('parses a hermes tool call into a tool_call block', () => {
     const input = makeInput({
       body: '🔧 **teamharness__taskflow**\n```\n{"action":"check_task","payload":{"taskId":"task-1"}}\n```',
@@ -211,7 +211,7 @@ describe('normalizeToBlocks rule 8: Hermes 🔧 tool-call Markdown', () => {
   });
 });
 
-describe('normalizeToBlocks rule 9: agent m.notice process messages', () => {
+describe('normalizeToBlocks rule 11: agent m.notice process messages', () => {
   it('renders an agent notice as a collapsed thinking block', () => {
     const input = makeInput({
       body: 'The user is asking for the latest progress. Let me check.',
@@ -266,7 +266,7 @@ describe('normalizeToBlocks rule 9: agent m.notice process messages', () => {
   });
 });
 
-describe('normalizeToBlocks rule 10: legacy card/details', () => {
+describe('normalizeToBlocks rule 12: legacy card/details', () => {
   it('parses a fenced card into a card block', () => {
     const input = makeInput({
       body: '前缀\n```card\n{"title":"部署状态","content":"服务正常"}\n```\n后缀',
@@ -288,7 +288,7 @@ describe('normalizeToBlocks rule 10: legacy card/details', () => {
   });
 });
 
-describe('normalizeToBlocks rule 11: text fallback', () => {
+describe('normalizeToBlocks rule 13: text fallback', () => {
   it('renders plain body as a single text block', () => {
     const input = makeInput({ body: '**加粗** 普通消息' });
 

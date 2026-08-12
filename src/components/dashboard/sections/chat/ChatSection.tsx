@@ -26,6 +26,7 @@ import { HumanPanel } from './human-panel';
 import { RoomTopology } from './room-topology';
 import { MatrixStatusBanner } from './matrix-status-banner';
 import { ChatProvider } from './ChatStore';
+import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
 
 export function ChatSection() {
   const { data: workers, isLoading: workersLoading } = useWorkers();
@@ -50,6 +51,18 @@ export function ChatSection() {
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
+
+  // MXID → owning worker lookup. Every chat bubble from a worker gets its
+  // runtime stamped from this map (thinking/tool cards carry runtime badges).
+  const runtimeMap = useMemo<RuntimeMap>(() => {
+    const map: RuntimeMap = {};
+    for (const worker of workers ?? []) {
+      if (worker.matrixUserID) {
+        map[worker.matrixUserID] = { runtime: worker.runtime, workerName: worker.name };
+      }
+    }
+    return map;
+  }, [workers]);
 
   // Per-room meta (lastMessageTs + unread counts) feeds the sidebar sort and
   // badge. We don't re-sort on every keystroke — just pass the meta to
@@ -98,6 +111,7 @@ export function ChatSection() {
 
   return (
     <ChatProvider>
+      <RuntimeMapProvider map={runtimeMap}>
       <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 overflow-hidden">
         {/* Compact header bar */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
@@ -189,6 +203,7 @@ export function ChatSection() {
           )}
         </div>
       </div>
+      </RuntimeMapProvider>
     </ChatProvider>
   );
 }

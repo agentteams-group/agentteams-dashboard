@@ -31,6 +31,7 @@ import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
 import { WorkerFilesPanel } from './views/worker-files-panel';
+import { useRuntimeMap } from './runtime-map-context';
 
 interface ChatRoomProps {
   roomId: string;
@@ -117,6 +118,8 @@ export function ChatRoom({
   const currentUserId = userId;
   // Latest m.read receipts of every member, used for the ✓✓ read indicator.
   const readReceipts = useMatrixReadReceipts(roomId);
+  // MXID → owning worker runtime (empty outside ChatSection's provider).
+  const runtimeMap = useRuntimeMap();
 
   const allEvents = useMemo<MatrixEvent[]>(() => {
     if (!messagesQuery.isSuccess || !messagesQuery.data) return [];
@@ -128,8 +131,14 @@ export function ChatRoom({
   }, [messagesQuery.data, messagesQuery.isSuccess]);
 
   const formattedMessages = useMemo<DisplayMessage[]>(() => {
-    return formatMatrixEvents(allEvents, currentUserId);
-  }, [allEvents, currentUserId]);
+    const formatted = formatMatrixEvents(allEvents, currentUserId);
+    // Stamp each message with its sender's runtime / worker name (MXID →
+    // Worker lookup from ChatSection) so bubbles can badge the runtime.
+    return formatted.map((message) => {
+      const owner = runtimeMap[message.sender];
+      return owner ? { ...message, runtime: owner.runtime, workerName: owner.workerName } : message;
+    });
+  }, [allEvents, currentUserId, runtimeMap]);
 
   const loadMore = useCallback(async () => {
     if (!messagesQuery.hasNextPage || messagesQuery.isFetchingNextPage) return;

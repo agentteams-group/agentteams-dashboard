@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,13 @@ import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
+import { RunEndingNote, type RunEndingPayload } from '../run-ending-note';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
+import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 
 interface MessageBubbleProps {
@@ -137,8 +139,22 @@ export function MessageBubble({
       content: message.rawContent ?? {},
       isStreaming: !!message.isStreaming,
       isMine: message.isMe,
+      runtime: message.runtime ?? null,
     });
-  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe]);
+  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
+
+  // Feed the Worker card vitals strip: count this message's tool_call blocks
+  // once it is final (delta-guarded per event id, so revisions don't double
+  // count). Best-effort — never blocks rendering.
+  const toolCallBlockCount = useMemo(
+    () => parsedBlocks.filter((block) => block.type === 'tool_call').length,
+    [parsedBlocks],
+  );
+  useEffect(() => {
+    if (message.workerName && message.eventId && toolCallBlockCount > 0 && !message.isStreaming) {
+      recordToolCalls(message.workerName, message.eventId, toolCallBlockCount);
+    }
+  }, [message.workerName, message.eventId, toolCallBlockCount, message.isStreaming]);
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
@@ -297,13 +313,39 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'tool_call') {
-                  return <div key={idx} className="w-[min(100%,56rem)] max-w-full"><ToolCallView payload={block.payload as ToolCallPayload} /></div>;
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <ToolCallView
+                        payload={block.payload as ToolCallPayload}
+                        runtime={block.runtimeHint}
+                        eventId={message.eventId}
+                        revisionCount={message.revisionCount}
+                      />
+                    </div>
+                  );
                 }
                 if (block.type === 'workflow') {
                   return <WorkflowCard key={idx} payload={block.payload as import('@/lib/a2ui/workflow').WorkflowPayload} />;
                 }
                 if (block.type === 'thinking') {
-                  return <div key={idx} className="w-[min(100%,56rem)] max-w-full"><ThinkingCard content={block.content || ''} isStreaming={block.isStreaming ?? message.isStreaming} /></div>;
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <ThinkingCard
+                        content={block.content || ''}
+                        isStreaming={block.isStreaming ?? message.isStreaming}
+                        runtime={block.runtimeHint}
+                        eventId={message.eventId}
+                        revisionCount={message.revisionCount}
+                      />
+                    </div>
+                  );
+                }
+                if (block.type === 'error' && block.payload) {
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <RunEndingNote payload={block.payload as unknown as RunEndingPayload} />
+                    </div>
+                  );
                 }
                 if (block.type === 'card') {
                   return <div key={idx} className="w-[min(100%,56rem)] max-w-full"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;

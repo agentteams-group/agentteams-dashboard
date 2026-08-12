@@ -1,0 +1,807 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / error 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "kind": "failed",
+          "title": "任务异常",
+        },
+        "runtimeHint": "copaw",
+        "type": "error",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / final 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "copaw",
+        "text": "最终答案：已完成",
+        "type": "text",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / long_message 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "filename": "full-reply.txt",
+          "mimetype": "text/plain",
+          "url": "mxc://server/media-id",
+        },
+        "runtimeHint": "copaw",
+        "type": "attachment",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / placeholder 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "copaw",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / thinking 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "content": "先分析需求，再给出方案。",
+        "runtimeHint": "copaw",
+        "type": "thinking",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / tool_call 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "arguments": "{"path": "~/SOUL.md"}",
+          "isStreaming": false,
+          "status": "success",
+          "tool_name": "read_file",
+          "type": "tool_call",
+        },
+        "runtimeHint": "copaw",
+        "type": "tool_call",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > copaw / workflow 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "runId": "run-1",
+          "status": "running",
+          "steps": [
+            {
+              "status": "completed",
+              "title": "规划",
+            },
+          ],
+          "subagents": [
+            {
+              "name": "worker-a",
+              "status": "running",
+            },
+          ],
+          "title": "发布流程",
+          "type": "agentteams.workflow",
+        },
+        "runtimeHint": "copaw",
+        "type": "workflow",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-copaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / error 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "kind": "cancelled",
+          "title": "任务已取消",
+        },
+        "runtimeHint": "hermes",
+        "type": "error",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / final 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "hermes",
+        "text": "最终答案：已完成",
+        "type": "text",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / long_message 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "filename": "full-reply.txt",
+          "mimetype": "text/plain",
+          "url": "mxc://server/media-id",
+        },
+        "runtimeHint": "hermes",
+        "type": "attachment",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / placeholder 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "hermes",
+        "text": "正在生成",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / thinking 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "content": "正在整理思路，然后给出结论",
+        "isStreaming": false,
+        "runtimeHint": "hermes",
+        "type": "thinking",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / tool_call 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "arguments": {
+            "query": "发布状态",
+          },
+          "tool_name": "web_search",
+        },
+        "runtimeHint": "hermes",
+        "type": "tool_call",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > hermes / workflow 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "runId": "run-1",
+          "status": "running",
+          "steps": [
+            {
+              "status": "completed",
+              "title": "规划",
+            },
+          ],
+          "subagents": [
+            {
+              "name": "worker-a",
+              "status": "running",
+            },
+          ],
+          "title": "发布流程",
+          "type": "agentteams.workflow",
+        },
+        "runtimeHint": "hermes",
+        "type": "workflow",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-hermes:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / error 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "kind": "cancelled",
+          "title": "任务已取消",
+        },
+        "runtimeHint": "openclaw",
+        "type": "error",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / final 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "openclaw",
+        "text": "最终答案：已完成",
+        "type": "text",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / long_message 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "filename": "full-reply.txt",
+          "mimetype": "text/plain",
+          "url": "mxc://server/media-id",
+        },
+        "runtimeHint": "openclaw",
+        "type": "attachment",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / placeholder 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "openclaw",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / thinking 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "content": "先分析再回答",
+        "runtimeHint": "openclaw",
+        "type": "thinking",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / tool_call 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "status": "success",
+          "tool_name": "read_file",
+          "type": "tool_call",
+        },
+        "runtimeHint": "openclaw",
+        "type": "tool_call",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openclaw / workflow 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "runId": "run-1",
+          "status": "running",
+          "steps": [
+            {
+              "status": "completed",
+              "title": "规划",
+            },
+          ],
+          "subagents": [
+            {
+              "name": "worker-a",
+              "status": "running",
+            },
+          ],
+          "title": "发布流程",
+          "type": "agentteams.workflow",
+        },
+        "runtimeHint": "openclaw",
+        "type": "workflow",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openclaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / error 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "kind": "failed",
+          "title": "任务异常",
+        },
+        "runtimeHint": "openhuman",
+        "type": "error",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / final 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "openhuman",
+        "text": "最终答案：已完成",
+        "type": "text",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / long_message 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "filename": "full-reply.txt",
+          "mimetype": "text/plain",
+          "url": "mxc://server/media-id",
+        },
+        "runtimeHint": "openhuman",
+        "type": "attachment",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / placeholder 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "openhuman",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / thinking 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "content": "整理一下上下文",
+        "isStreaming": false,
+        "runtimeHint": "openhuman",
+        "type": "thinking",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / tool_call 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "arguments": {},
+          "confidence": "low",
+          "note": "calling list_directory",
+          "status": "running",
+          "tool_name": "list_directory",
+        },
+        "runtimeHint": "openhuman",
+        "type": "tool_call",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > openhuman / workflow 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "runId": "run-1",
+          "status": "running",
+          "steps": [
+            {
+              "status": "completed",
+              "title": "规划",
+            },
+          ],
+          "subagents": [
+            {
+              "name": "worker-a",
+              "status": "running",
+            },
+          ],
+          "title": "发布流程",
+          "type": "agentteams.workflow",
+        },
+        "runtimeHint": "openhuman",
+        "type": "workflow",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-openhuman:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / error 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "kind": "quiet",
+          "title": "已处理（无回复）",
+        },
+        "runtimeHint": "qwenpaw",
+        "type": "error",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / final 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "qwenpaw",
+        "text": "最终答案：已完成",
+        "type": "text",
+      },
+    ],
+    "isEdited": true,
+    "msgType": "m.text",
+    "revisionCount": 1,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / long_message 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "filename": "full-reply.txt",
+          "mimetype": "text/plain",
+          "url": "mxc://server/media-id",
+        },
+        "runtimeHint": "qwenpaw",
+        "type": "attachment",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.text",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / placeholder 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "qwenpaw",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / thinking 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "qwenpaw",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+  {
+    "blocks": [
+      {
+        "content": "先拆解需求",
+        "isStreaming": false,
+        "runtimeHint": "qwenpaw",
+        "type": "thinking",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / tool_call 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "runtimeHint": "qwenpaw",
+        "text": "处理中...",
+        "type": "text",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+  {
+    "blocks": [
+      {
+        "payload": {
+          "arguments": {},
+          "confidence": "low",
+          "note": "tool: web_search",
+          "status": "running",
+          "tool_name": "web_search",
+        },
+        "runtimeHint": "qwenpaw",
+        "type": "tool_call",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;
+
+exports[`runtime × sequence matrix (AC-C8) > qwenpaw / workflow 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "payload": {
+          "runId": "run-1",
+          "status": "running",
+          "steps": [
+            {
+              "status": "completed",
+              "title": "规划",
+            },
+          ],
+          "subagents": [
+            {
+              "name": "worker-a",
+              "status": "running",
+            },
+          ],
+          "title": "发布流程",
+          "type": "agentteams.workflow",
+        },
+        "runtimeHint": "qwenpaw",
+        "type": "workflow",
+      },
+    ],
+    "isEdited": false,
+    "msgType": "m.notice",
+    "revisionCount": 0,
+    "sender": "@w-qwenpaw:server",
+  },
+]
+`;

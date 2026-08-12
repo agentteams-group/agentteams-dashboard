@@ -197,6 +197,51 @@
 .status-dot-red {
   animation: pulse-red 2s infinite;
 }
+/* Sleeping: 4s gentle pulse */
+.status-dot-amber-slow {
+  animation: pulse-amber 4s infinite;
+}
+/* Pending / Updating: 1s fast pulse */
+.status-dot-amber-fast {
+  animation: pulse-amber 1s infinite;
+}
+/* Failed: 0.8s urgent pulse */
+.status-dot-red-fast {
+  animation: pulse-red 0.8s infinite;
+}
+
+/* Worker card being deleted: breathing fade (0.4 → 1.0 → 0.6) */
+@keyframes deleting-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+  75% { opacity: 0.6; }
+}
+.worker-card-deleting {
+  animation: deleting-breathe 2.4s ease-in-out infinite;
+}
+/* Indeterminate progress bar inside the deleting overlay */
+@keyframes deleting-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.deleting-progress-indicator {
+  animation: deleting-progress 1.2s ease-in-out infinite;
+}
+
+/* Reduced motion: kill every decorative animation, keep instant state swaps */
+@media (prefers-reduced-motion: reduce) {
+  .status-dot-green,
+  .status-dot-amber,
+  .status-dot-red,
+  .status-dot-amber-slow,
+  .status-dot-amber-fast,
+  .status-dot-red-fast,
+  .worker-card-deleting,
+  .deleting-progress-indicator,
+  .shimmer {
+    animation: none !important;
+  }
+}
 
 /* Shimmer Loading Effect */
 .shimmer {

@@ -207,15 +207,20 @@ docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2 .
 | `npm run build` | 构建 standalone 产物 |
 | `npm start` | 启动生产服务器 |
 | `npm run lint` | ESLint 检查 |
+| `npm run lint:tone` | AI 味文案扫描（可见文案硬词门禁） |
 | `npm run typecheck` | TypeScript 类型检查 |
 | `npm test` | 运行 vitest 测试套件 |
 
 ## 🧪 质量保障
 
-- **单元测试**：vitest + Testing Library（58 个测试文件共 445 个用例，`npm test`）
+- **单元测试**：vitest + Testing Library（80 个测试文件共 724 个用例，`npm test`）
 - **代码规范**：ESLint 零问题（`npm run lint`）
 - **类型安全**：strict TypeScript（`npm run typecheck`）
 - **可复现构建**：`npm ci` + lockfile，多架构 Docker 镜像（`make help`）
+
+## 🗺 路线图
+
+- [Worker 卡片生动化改造 + Chat 流式渲染适配（任务书 v0.2）](docs/plans/2026-08-11-worker-card-v2-chat-runtime-ux.md) —— Worker 卡片活物条 / 状态叙述 / 运行时特征区，Chat 五种运行时的流式渲染归属与错误收尾统一，文案去 AI 味。
 
 ## 🤝 相关仓库
 

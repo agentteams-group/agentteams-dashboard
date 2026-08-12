@@ -5,6 +5,7 @@ import { matrixApi, MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
+import type { WorkerRuntime } from '@/lib/agentteams-api';
 import { create } from 'zustand';
 
 // Helper to get Matrix connection params
@@ -601,6 +602,12 @@ export interface DisplayMessage {
   replyCount?: number;
   /** Whether this message has been edited */
   isEdited?: boolean;
+  /** Number of m.replace revisions merged into this message (edit-chain count). */
+  revisionCount?: number;
+  /** Runtime owning the sender (stamped by ChatRoom from the MXID → Worker map). */
+  runtime?: WorkerRuntime | null;
+  /** Worker name owning the sender MXID, when known (tool-call counting). */
+  workerName?: string;
   /** Original event ID for edit/delete (for m.room.redaction) */
   eventId?: string;
 }
@@ -717,7 +724,7 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
  */
 export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
   const messages = new Map<string, DisplayMessage>();
-  const pendingRevisions = new Map<string, DisplayMessage>();
+  const pendingRevisions = new Map<string, { message: DisplayMessage; count: number }>();
   const replyCounts = new Map<string, number>();
 
   // Collect target ids of redaction events so deleted messages are dropped.
@@ -759,9 +766,14 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
           eventId: rootId,
           timestamp: root.isMe ? root.timestamp : Math.max(root.timestamp, formatted.timestamp),
           isEdited: true,
+          revisionCount: (root.revisionCount ?? 0) + 1,
         });
       } else {
-        pendingRevisions.set(rootId, formatted);
+        const pending = pendingRevisions.get(rootId);
+        pendingRevisions.set(rootId, {
+          message: formatted,
+          count: (pending?.count ?? 0) + 1,
+        });
       }
       continue;
     }
@@ -790,12 +802,13 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       event.event_id,
       revision
         ? {
-            ...revision,
+            ...revision.message,
             id: event.event_id,
             eventId: event.event_id,
+            revisionCount: revision.count,
             // Same policy as the in-place merge above: agent answers sort at
             // the edit time, human edits stay at the original position.
-            timestamp: formatted.isMe ? formatted.timestamp : Math.max(formatted.timestamp, revision.timestamp),
+            timestamp: formatted.isMe ? formatted.timestamp : Math.max(formatted.timestamp, revision.message.timestamp),
           }
         : formatted
     );
@@ -803,7 +816,13 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
   }
 
   for (const [rootId, revision] of pendingRevisions) {
-    messages.set(rootId, { ...revision, id: rootId, eventId: rootId, isEdited: true });
+    messages.set(rootId, {
+      ...revision.message,
+      id: rootId,
+      eventId: rootId,
+      isEdited: true,
+      revisionCount: revision.count,
+    });
   }
 
   const result = [...messages.values()];

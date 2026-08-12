@@ -7,6 +7,7 @@ import {
   ReadFileToolCall,
   WebSearchToolCall,
   WriteFileToolCall,
+  type ToolRendererProps,
 } from './tool-call-card';
 
 export interface ToolCallPayload {
@@ -16,10 +17,14 @@ export interface ToolCallPayload {
   result?: unknown;
   status?: string;
   isStreaming?: boolean;
+  /** 'low' = heuristically recognized from a plain notice (no structured protocol). */
+  confidence?: string;
+  /** Original notice text for heuristic recognitions. */
+  note?: string;
   [key: string]: unknown;
 }
 
-export type ToolCallRenderer = ComponentType<{ payload: ToolCallPayload }>;
+export type ToolCallRenderer = ComponentType<ToolRendererProps>;
 
 const RENDERERS: Record<string, ToolCallRenderer> = {
   read_file: ReadFileToolCall,
@@ -44,13 +49,27 @@ export function resolveToolCallRenderer(payload: ToolCallPayload): ToolCallRende
   return RENDERERS[normalizeToolName(payload.tool_name) || ''] || FallbackToolCall;
 }
 
-export function ToolCallView({ payload }: { payload: ToolCallPayload }) {
+export function ToolCallView({
+  payload,
+  runtime,
+  eventId,
+  revisionCount,
+}: {
+  payload: ToolCallPayload;
+  /** Runtime that produced this tool call (drives the corner badge). */
+  runtime?: string | null;
+  /** Root Matrix event id, shown when the card is expanded. */
+  eventId?: string;
+  /** Number of m.replace revisions merged into the message. */
+  revisionCount?: number;
+}) {
   const renderer = resolveToolCallRenderer(payload);
-  if (renderer === ReadFileToolCall) return <ReadFileToolCall payload={payload} />;
-  if (renderer === WriteFileToolCall) return <WriteFileToolCall payload={payload} />;
-  if (renderer === ApplyPatchToolCall) return <ApplyPatchToolCall payload={payload} />;
-  if (renderer === WebSearchToolCall) return <WebSearchToolCall payload={payload} />;
-  if (renderer === ExecuteCommandToolCall) return <ExecuteCommandToolCall payload={payload} />;
-  if (renderer === ListDirectoryToolCall) return <ListDirectoryToolCall payload={payload} />;
-  return <FallbackToolCall payload={payload} />;
+  const props: ToolRendererProps = { payload, runtime, eventId, revisionCount };
+  if (renderer === ReadFileToolCall) return <ReadFileToolCall {...props} />;
+  if (renderer === WriteFileToolCall) return <WriteFileToolCall {...props} />;
+  if (renderer === ApplyPatchToolCall) return <ApplyPatchToolCall {...props} />;
+  if (renderer === WebSearchToolCall) return <WebSearchToolCall {...props} />;
+  if (renderer === ExecuteCommandToolCall) return <ExecuteCommandToolCall {...props} />;
+  if (renderer === ListDirectoryToolCall) return <ListDirectoryToolCall {...props} />;
+  return <FallbackToolCall {...props} />;
 }

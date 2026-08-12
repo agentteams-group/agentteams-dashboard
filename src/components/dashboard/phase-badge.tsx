@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   WORKER_PHASE_BADGE_CLASSES,
   WORKER_PHASE_LABELS,
@@ -12,6 +13,7 @@ import {
   HUMAN_PHASE_LABELS,
   RUNTIME_LABELS,
 } from '@/lib/phase-colors';
+import { getRuntimeMeta } from '@/lib/runtime-meta';
 
 type ResourceKind = 'worker' | 'team' | 'manager' | 'human';
 
@@ -45,10 +47,35 @@ export function PhaseBadge({ kind, phase, className }: PhaseBadgeProps) {
   );
 }
 
-export function RuntimeBadge({ runtime, className }: { runtime: string; className?: string }) {
-  return (
-    <Badge variant="outline" className={className || 'text-xs'}>
-      {RUNTIME_LABELS[runtime] || runtime}
+export interface RuntimeBadgeProps {
+  runtime: string;
+  className?: string;
+  /** 'sm' renders a compact corner badge (used on Chat thinking/tool cards). */
+  size?: 'default' | 'sm';
+  /** Show the runtime capability note on hover. */
+  withTooltip?: boolean;
+}
+
+export function RuntimeBadge({ runtime, className, size = 'default', withTooltip = false }: RuntimeBadgeProps) {
+  const meta = getRuntimeMeta(runtime);
+  const label = RUNTIME_LABELS[runtime] || runtime;
+  const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0 gap-0.5' : 'text-xs';
+  const Icon = meta?.icon;
+
+  const badge = (
+    <Badge variant="outline" className={`${meta?.badgeClass ?? ''} ${sizeClass} ${className ?? ''}`.trim()}>
+      {Icon && <Icon className={size === 'sm' ? 'w-2.5 h-2.5' : undefined} aria-hidden="true" />}
+      {label}
     </Badge>
+  );
+
+  if (!withTooltip || !meta) return badge;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent>
+        <p className="text-xs">{meta.description}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

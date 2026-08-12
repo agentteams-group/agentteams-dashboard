@@ -24,17 +24,19 @@ import type { WorkflowPayload } from './workflow';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment' | 'error';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
   content?: string;
-  /** Payload for card/tool_call blocks */
+  /** Payload for card/tool_call/error blocks */
   payload?: Record<string, unknown>;
   /** Plain text for text blocks */
   text?: string;
   /** Whether this block is still streaming (incomplete) */
   isStreaming?: boolean;
+  /** Runtime the block was attributed to (drives corner badges in Chat). */
+  runtimeHint?: string;
 }
 
 /** Payload of an attachment block (upstream F7 long-message fallback). */
@@ -52,7 +54,7 @@ export interface A2uiParseResult {
 }
 
 const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
-  'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text', 'attachment',
+  'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text', 'attachment', 'error',
 ]);
 
 /**
@@ -322,6 +324,53 @@ export function parseLongMessage(value: unknown): AttachmentPayload | null {
     return null;
   }
   return { url, filename, mimetype };
+}
+
+/**
+ * Runtime run-ending sentinels (copaw / qwenpaw finalize an m.replace edit
+ * with one of these exact bodies). Only whole-body exact matches qualify —
+ * the same words inside a longer sentence stay plain text (任务书 R10).
+ *
+ *   已取消   → cancelled (Task cancelled by the operator)
+ *   处理异常 → failed    (runtime crashed while handling)
+ *   已处理   → quiet     (NO_REPLY: work done, nothing to reply)
+ */
+export interface RunEndingPayload {
+  kind: 'cancelled' | 'failed' | 'quiet';
+  title: string;
+}
+
+export function parseRunEnding(body: string): RunEndingPayload | null {
+  const text = body.trim();
+  if (text === '已取消') return { kind: 'cancelled', title: '任务已取消' };
+  if (text === '处理异常') return { kind: 'failed', title: '任务异常' };
+  if (text === '已处理') return { kind: 'quiet', title: '已处理（无回复）' };
+  return null;
+}
+
+/**
+ * Hermes/openhuman heuristic: these runtimes emit no AgentTeams structured
+ * keys, so a process m.notice that mentions tool invocation ("tool: …",
+ * "calling …", "invoking …") is surfaced as a low-confidence tool_call card
+ * instead of being folded into a thinking card (任务书 §6.2.3 / R11).
+ */
+const TOOL_KEYWORD_RE = /\b(tool|calling|invoking)\b/i;
+const TOOL_NAME_RE = /(?:tool|calling|invoking)\s*[:：]?\s*`?([A-Za-z0-9_\-.]+)`?/i;
+
+export function parseToolKeywordNotice(body: string): ParsedA2uiBlock | null {
+  const text = body.trim();
+  if (!text || !TOOL_KEYWORD_RE.test(text)) return null;
+  const name = text.match(TOOL_NAME_RE)?.[1];
+  return {
+    type: 'tool_call',
+    payload: {
+      tool_name: name && name.toLowerCase() !== 'call' ? name : 'tool',
+      arguments: {},
+      status: 'running',
+      confidence: 'low',
+      note: text.length > 200 ? `${text.slice(0, 199)}…` : text,
+    },
+  };
 }
 
 /**

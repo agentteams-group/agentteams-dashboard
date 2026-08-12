@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Square, Upload, X, XCircle } from 'lucide-react';
+import { ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -76,7 +76,7 @@ function RuntimeDistribution({ dist }: { dist: Record<string, number> }) {
   );
 }
 
-function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' }) {
+function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -169,7 +169,7 @@ export function WorkersSection() {
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
 
-  const { viewMode, handleViewModeChange } = useViewMode('card');
+  const { viewMode, handleViewModeChange } = useViewMode('card', 'agentteams:workers-view-mode');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -675,6 +675,10 @@ export function WorkersSection() {
                   <List className="w-3.5 h-3.5" aria-hidden="true" />
                   表格
                 </TabsTrigger>
+                <TabsTrigger value="compact" className="px-2 py-1 text-xs gap-1">
+                  <Rows3 className="w-3.5 h-3.5" aria-hidden="true" />
+                  紧凑
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -743,6 +747,7 @@ export function WorkersSection() {
                 wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
               }
               deletingWorkerNames={deletingWorkerNames}
+              compact={viewMode === 'compact'}
             />
           )}
           <WorkerPagination

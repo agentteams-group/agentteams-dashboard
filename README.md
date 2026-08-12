@@ -207,15 +207,20 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 | `npm run build` | Build the standalone production bundle |
 | `npm start` | Start the production server |
 | `npm run lint` | ESLint checks |
+| `npm run lint:tone` | AI-tone copy scan (visible copy hard-word gate) |
 | `npm run typecheck` | TypeScript type checking |
 | `npm test` | Run the vitest test suite |
 
 ## 🧪 Quality
 
-- **Unit tests** with vitest + Testing Library (445 tests across 58 files, `npm test`)
+- **Unit tests** with vitest + Testing Library (724 tests across 80 files, `npm test`)
 - **Lint-clean** ESLint configuration (`npm run lint`)
 - **Type-safe** with strict TypeScript (`npm run typecheck`)
 - **Reproducible builds** via `npm ci` + lockfile and multi-arch Docker images (`make help`)
+
+## 🗺 Roadmap
+
+- [Worker 卡片生动化改造 + Chat 流式渲染适配（任务书 v0.2）](docs/plans/2026-08-11-worker-card-v2-chat-runtime-ux.md) — Worker 卡片活物条 / 状态叙述 / 运行时特征区，Chat 五种运行时的流式渲染归属与错误收尾统一，文案去 AI 味。
 
 ## 🤝 Related Projects
 

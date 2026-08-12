@@ -41,7 +41,7 @@ import { TeamTopologyDialog } from './teams/team-topology-dialog';
 import { TopologyOverview } from './teams/team-topology-overview';
 import { PaginationFooter } from './teams/team-pagination';
 
-function TeamsSkeleton({ viewMode }: { viewMode: 'card' | 'table' }) {
+function TeamsSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

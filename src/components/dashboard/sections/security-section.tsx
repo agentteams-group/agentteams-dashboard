@@ -370,7 +370,7 @@ export function SecuritySection() {
                   <Shield className="w-4 h-4 text-red-500" />
                   <Badge className="bg-red-500/10 text-red-600 dark:text-red-400" variant="secondary">Level 3 · 管理员</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground mb-2">可访问所有房间、所有智能体</p>
+                <p className="text-xs text-muted-foreground mb-2">可访问所有房间、所有 Worker</p>
                 <div className="space-y-1">
                   {humans.filter((h) => h.permissionLevel === 3).map((h) => (
                     <div key={h.name} className="flex items-center gap-1.5 text-xs">

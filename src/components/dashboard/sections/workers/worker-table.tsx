@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
+import { HealthRingCompact } from '@/components/dashboard/health-ring';
+import { useAgentHealth } from '@/hooks/use-agent-health';
 import {
   Table,
   TableBody,
@@ -15,6 +17,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { WorkerResponse } from '@/lib/agentteams-api';
+
+/** Health cell for compact mode (hooks must run inside a component per row). */
+function CompactHealthCell({ worker }: { worker: WorkerResponse }) {
+  const health = useAgentHealth(worker);
+  if (!health) return <span className="text-xs text-muted-foreground">-</span>;
+  return <HealthRingCompact score={health.overall} size={22} />;
+}
 
 export function WorkerTable({
   workers,
@@ -28,6 +37,7 @@ export function WorkerTable({
   onDelete,
   isActionPending,
   deletingWorkerNames,
+  compact = false,
 }: {
   workers: WorkerResponse[];
   selectedWorkers: Set<string>;
@@ -40,6 +50,8 @@ export function WorkerTable({
   onDelete: (_name: string) => void;
   isActionPending: boolean;
   deletingWorkerNames: Set<string>;
+  /** Compact mode keeps only select/name/phase/runtime/health/actions. */
+  compact?: boolean;
 }) {
   return (
     <Card className="glass-card overflow-hidden">
@@ -49,11 +61,12 @@ export function WorkerTable({
             <TableHead className="w-10"></TableHead>
             <TableHead>名称</TableHead>
             <TableHead>阶段</TableHead>
-            <TableHead>状态</TableHead>
-            <TableHead>任务</TableHead>
+            {!compact && <TableHead>状态</TableHead>}
+            {!compact && <TableHead>任务</TableHead>}
             <TableHead>运行时</TableHead>
-            <TableHead>模型</TableHead>
-            <TableHead>团队</TableHead>
+            {compact && <TableHead>健康</TableHead>}
+            {!compact && <TableHead>模型</TableHead>}
+            {!compact && <TableHead>团队</TableHead>}
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -93,34 +106,53 @@ export function WorkerTable({
               <TableCell>
                 <PhaseBadge kind="worker" phase={worker.phase} />
               </TableCell>
-              <TableCell>
-                <span className="text-xs text-muted-foreground">{worker.state}</span>
-              </TableCell>
-              <TableCell>
-                {isDeleting ? (
-                  <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                    删除中
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <RuntimeBadge runtime={worker.runtime} />
-              </TableCell>
-              <TableCell>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="font-mono text-xs truncate max-w-[150px] block cursor-help">
-                      {worker.model || '-'}
+              {!compact && (
+                <TableCell>
+                  <span className="text-xs text-muted-foreground">{worker.state}</span>
+                </TableCell>
+              )}
+              {!compact && (
+                <TableCell>
+                  {isDeleting ? (
+                    <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      删除中
                     </span>
-                  </TooltipTrigger>
-                  <TooltipContent>完整模型名: {worker.model || '未设置'}</TooltipContent>
-                </Tooltip>
-              </TableCell>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+              )}
               <TableCell>
-                <span className="text-xs truncate max-w-[100px] block">{worker.team || '-'}</span>
+                <RuntimeBadge runtime={worker.runtime} withTooltip />
               </TableCell>
+              {compact && (
+                <TableCell>
+                  {isDeleting ? (
+                    <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      删除中
+                    </span>
+                  ) : (
+                    <CompactHealthCell worker={worker} />
+                  )}
+                </TableCell>
+              )}
+              {!compact && (
+                <TableCell>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="font-mono text-xs truncate max-w-[150px] block cursor-help">
+                        {worker.model || '-'}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>完整模型名: {worker.model || '未设置'}</TooltipContent>
+                  </Tooltip>
+                </TableCell>
+              )}
+              {!compact && (
+                <TableCell>
+                  <span className="text-xs truncate max-w-[100px] block">{worker.team || '-'}</span>
+                </TableCell>
+              )}
               <TableCell>
                 <div className="flex items-center justify-end gap-1">
                   <Button
