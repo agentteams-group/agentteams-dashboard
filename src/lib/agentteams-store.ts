@@ -58,7 +58,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       lastConnectedAt: null,
       connectionLatency: null,
       connectionHistory: [],
-      taskBoardVisible: true,
+      taskBoardVisible: false,
 
       setControllerUrl: (url: string) => {
         set({ controllerUrl: url });

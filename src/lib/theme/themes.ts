@@ -34,7 +34,7 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = 'dark';
+export const DEFAULT_THEME_ID = 'light';
 
 export function findBuiltinTheme(id: string): ThemeDefinition | undefined {
   return BUILTIN_THEMES.find((t) => t.id === id);
