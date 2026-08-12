@@ -9,6 +9,7 @@ import {
   Brain,
   Sparkles,
   ListTodo,
+  GitBranch,
   type LucideIcon,
 } from 'lucide-react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -35,6 +36,7 @@ export const navItems: NavItem[] = [
   { id: 'chat', label: '聊天', icon: MessageSquare, group: 'core' },
   // 运行时分组
   { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime', hiddenByFlag: 'taskBoard' },
+  { id: 'projects', label: '项目', icon: GitBranch, group: 'runtime' },
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, group: 'runtime' },
   { id: 'teams', label: '团队', icon: Users, group: 'runtime' },
