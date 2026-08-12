@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
@@ -68,5 +69,59 @@ describe('proxyToAgentTeams DELETE', () => {
 
     server.removeAllListeners('request');
     server.on('request', originalHandler);
+  });
+});
+
+describe('proxyToAgentTeams passthroughHeaders', () => {
+  async function respondWithHeaders() {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': "attachment; filename*=UTF-8''%E6%96%B9%E6%A1%88.pdf",
+      });
+      res.end('PDF-BYTES');
+    });
+    const request = new NextRequest('http://localhost/api/agentteams/projects/p1/tasks/t1/artifact', {
+      method: 'GET',
+    });
+    const res = await proxyToAgentTeams(
+      request,
+      controllerUrl,
+      '/api/v1/projects/p1/tasks/t1/artifact',
+      { forwardBody: false },
+    );
+    return res;
+  }
+
+  it('does not forward content-disposition by default (existing behavior)', async () => {
+    const res = await respondWithHeaders();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/pdf');
+    expect(res.headers.get('content-disposition')).toBeNull();
+  });
+
+  it('forwards content-disposition when requested via passthroughHeaders', async () => {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': "attachment; filename*=UTF-8''%E6%96%B9%E6%A1%88.pdf",
+      });
+      res.end('PDF-BYTES');
+    });
+    const request = new NextRequest('http://localhost/api/agentteams/projects/p1/tasks/t1/artifact', {
+      method: 'GET',
+    });
+    const res = await proxyToAgentTeams(
+      request,
+      controllerUrl,
+      '/api/v1/projects/p1/tasks/t1/artifact',
+      { forwardBody: false, passthroughHeaders: ['content-disposition'] },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toBe(
+      "attachment; filename*=UTF-8''%E6%96%B9%E6%A1%88.pdf",
+    );
   });
 });
