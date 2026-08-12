@@ -37,6 +37,8 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 | **Skills** | Skill/MCP 资源管理 |
 | **Debug Log** | 一键收集调试日志：容器诊断、Agent 会话、Matrix 消息打包成 ZIP 下载，默认 PII 脱敏 |
 | **Architecture** | 架构图与组件关系说明 |
+| **主题** | 内置亮色 / 暗色 / 高对比度主题，自定义主题编辑器（10+ 参数）支持 JSON 导入/导出，企业 `theme.config.json` 注入 |
+| **插件** | 运行时插件系统：5 类扩展点、动态加载、插件级错误隔离、开发热更新、`create-dashboard-plugin` 脚手架 CLI |
 
 ## 🛠 技术栈
 
@@ -51,6 +53,22 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 聊天工作区提供 Matrix 房间的虚拟化历史消息、未读感知滚动、消息操作、已读回执与按需加载的线程面板。根消息保留在主时间线；`m.thread` 回复会计入根消息，并在对应线程面板中加载。
 
 运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。
+
+## 🎨 主题自定义
+
+Dashboard 内置三套主题（亮色、暗色、高对比度），支持跟随系统偏好，并在刷新后保留选择。「设置 → 外观」中的主题编辑器提供 30+ 项视觉参数（颜色、圆角、字号、间距、字体风格）实时预览，并支持 JSON 导入/导出。运维可通过 `theme.config.json` 或环境变量下发企业主题。详见 [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md)（中文）与 [docs/theme-customization.md](docs/theme-customization.md)（英文）。
+
+## 🧩 插件开发
+
+第三方可在不 fork 的前提下扩展 Dashboard。插件系统提供五类扩展点（侧边栏菜单、独立页面、仪表盘组件、详情面板区块、工具栏按钮）、运行时动态加载、插件级错误隔离、独立状态、事件总线与开发热更新。脚手架 CLI 可一键生成可运行的插件项目：
+
+```bash
+node tools/create-dashboard-plugin/bin/cli.js my-plugin
+cd my-plugin && npm install && npm run dev
+# 然后在「设置 → 插件」安装 http://localhost:5173/plugin.json
+```
+
+详见 [docs/plugin-development.zh-CN.md](docs/plugin-development.zh-CN.md)（中文）、[docs/plugin-development.md](docs/plugin-development.md)（英文）与设计文档 [docs/plugin-system-design.md](docs/plugin-system-design.md)。
 
 ## 📦 快速开始
 

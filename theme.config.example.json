@@ -1,0 +1,19 @@
+{
+  "$comment": "Example enterprise theme config. Copy to theme.config.json (repo root or public/) or set AGENTTEAMS_THEME_CONFIG to its path, then restart the Dashboard. See docs/theme-customization.md.",
+  "themes": [
+    {
+      "id": "brand",
+      "name": "Enterprise Brand",
+      "nameZh": "企业品牌",
+      "base": "light",
+      "variables": {
+        "--primary": "#1677ff",
+        "--primary-foreground": "#ffffff",
+        "--ring": "#1677ff"
+      },
+      "radius": 0.5
+    }
+  ],
+  "defaultTheme": "brand",
+  "locked": false
+}

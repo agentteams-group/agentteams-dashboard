@@ -54,12 +54,13 @@ export const navGroups: { id: NavGroup; label: string }[] = [
 
 export function isNavItemVisible(
   item: NavItem,
-  mode: DeploymentMode | null | undefined
+  mode: DeploymentMode | null | undefined,
+  taskBoardVisible?: boolean
 ): boolean {
   if (item.hiddenByFlag === 'taskBoard') {
-    // Read from the live zustand store so changes take effect immediately
-    // when the user toggles the setting in the settings dialog.
-    const visible = useAgentTeamsStore.getState().taskBoardVisible;
+    // Prefer the caller-provided value (reactive); fall back to the live
+    // zustand store for non-React call sites.
+    const visible = taskBoardVisible ?? useAgentTeamsStore.getState().taskBoardVisible;
     if (!visible) return false;
   }
   if (!item.modes) return true;
@@ -86,10 +87,11 @@ export const createActions: readonly CreateAction[] = [
 
 export function isCreateActionVisible(
   action: CreateAction,
-  mode: DeploymentMode | null | undefined
+  mode: DeploymentMode | null | undefined,
+  taskBoardVisible?: boolean
 ): boolean {
   if (action.hiddenByFlag === 'taskBoard') {
-    const visible = useAgentTeamsStore.getState().taskBoardVisible;
+    const visible = taskBoardVisible ?? useAgentTeamsStore.getState().taskBoardVisible;
     if (!visible) return false;
   }
   if (!action.modes) return true;

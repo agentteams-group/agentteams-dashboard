@@ -45,6 +45,7 @@ import { useNotificationStore } from '@/lib/notification-store';
 import { useCounter } from '@/hooks/use-counter';
 import { useDashboardRuntime } from '@/hooks/use-dashboard-runtime';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PluginWidgetsGrid } from '@/components/plugins/plugin-widgets';
 
 // ============ Auto-refresh countdown hook ============
 function useRefreshCountdown(intervalMs: number) {
@@ -447,6 +448,9 @@ export function OverviewSection() {
         isConnected={isConnected}
         mode={mode}
       />
+
+      {/* ===== Plugin Widgets (extension point: dashboard-widget) ===== */}
+      <PluginWidgetsGrid />
 
       {/* ===== Row 3: Charts (two-column) ===== */}
       {isConnected && workers && workers.length > 0 && (

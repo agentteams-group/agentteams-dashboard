@@ -34,10 +34,14 @@ import {
   LayoutGrid,
   Eye,
   EyeOff,
+  Palette,
+  Puzzle,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { TroubleshootTab } from './settings/troubleshoot-tab';
 import { DebugLogTab } from './settings/debug-log-tab';
+import { ThemeTab } from './settings/theme-tab';
+import { PluginsTab } from './settings/plugins-tab';
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -135,7 +139,7 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="connection">连接</TabsTrigger>
             <TabsTrigger value="troubleshoot">
               <Stethoscope className="w-3.5 h-3.5 mr-1" />
@@ -148,6 +152,14 @@ export function SettingsDialog() {
             <TabsTrigger value="display">
               <LayoutGrid className="w-3.5 h-3.5 mr-1" />
               显示
+            </TabsTrigger>
+            <TabsTrigger value="theme">
+              <Palette className="w-3.5 h-3.5 mr-1" />
+              外观
+            </TabsTrigger>
+            <TabsTrigger value="plugins">
+              <Puzzle className="w-3.5 h-3.5 mr-1" />
+              插件
             </TabsTrigger>
           </TabsList>
 
@@ -357,6 +369,14 @@ export function SettingsDialog() {
                 onCheckedChange={setTaskBoardVisible}
               />
             </div>
+          </TabsContent>
+
+          <TabsContent value="theme" className="py-4">
+            <ThemeTab />
+          </TabsContent>
+
+          <TabsContent value="plugins" className="py-4">
+            <PluginsTab />
           </TabsContent>
         </Tabs>
 

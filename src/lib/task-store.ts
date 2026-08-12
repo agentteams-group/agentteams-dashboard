@@ -18,8 +18,8 @@ export interface TaskEntry {
 interface TaskStore {
   tasks: Record<string, TaskEntry>;
   upsertTask: (
-    task: Omit<TaskEntry, 'updatedAt' | 'createdAt'> & { createdAt?: number },
-    timestamp?: number,
+    _task: Omit<TaskEntry, 'updatedAt' | 'createdAt'> & { createdAt?: number },
+    _timestamp?: number,
   ) => void;
   clearTasks: () => void;
 }

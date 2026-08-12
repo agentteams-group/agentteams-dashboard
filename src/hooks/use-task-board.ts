@@ -133,7 +133,7 @@ export function useLogTaskBoardScan(
       return;
     }
     if (matched.length > 0 || scanned.length > 0) {
-      console.debug('[useTaskBoard]', { bucket, matched, scannedCount: scanned.length });
+      console.warn('[useTaskBoard] debug', { bucket, matched, scannedCount: scanned.length });
     }
   }, [matched, scanned, bucket, error]);
 }
@@ -207,6 +207,6 @@ export function useMergedTaskBoard(options: {
         board.refetch();
       },
     }),
-    [merged, board.data, board.isLoading, board],
+    [merged, board],
   );
 }

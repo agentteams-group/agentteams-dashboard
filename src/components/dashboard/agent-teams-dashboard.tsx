@@ -38,6 +38,15 @@ import {
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
+import { usePluginSystem } from '@/hooks/use-plugin-system';
+import { PluginRouteView } from '@/components/plugins/plugin-route-view';
+import { usePluginRoutes } from '@/lib/plugins/extension-store';
+import { usePluginRegistry } from '@/lib/plugins/registry';
+import {
+  isPluginSectionId,
+  parsePluginSectionId,
+} from '@/lib/plugins/types';
+import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -91,14 +100,20 @@ export function AgentTeamsDashboard() {
   const { data: humans } = useHumans();
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
+  // Plugin system: discover + activate plugins once per session.
+  usePluginSystem();
+  const pluginRoutes = usePluginRoutes();
+  const pluginsReady = usePluginRegistry((s) => s.ready);
+  const isPluginSection = isPluginSectionId(activeSection);
+
   const visibleNavItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible)),
     [mode, taskBoardVisible]
   );
 
   const visibleCreateActions = useMemo(
-    () => createActions.filter((action) => isCreateActionVisible(action, mode)),
-    [mode]
+    () => createActions.filter((action) => isCreateActionVisible(action, mode, taskBoardVisible)),
+    [mode, taskBoardVisible]
   );
 
   const checkConnection = useAgentTeamsStore((s) => s.checkConnection);
@@ -115,12 +130,31 @@ export function AgentTeamsDashboard() {
     }
   }
 
-  // Guard active section: fall back to overview if the current section is hidden in this mode.
+  // Guard active section: fall back to overview if the current section is
+  // hidden in this mode or points at a plugin route that no longer exists.
   useEffect(() => {
-    if (!modeLoading && !visibleNavItems.some((n) => n.id === activeSection)) {
+    if (modeLoading) return;
+    if (isPluginSection) {
+      // Wait for plugin discovery to finish before judging the route missing.
+      if (!pluginsReady) return;
+      const parsed = parsePluginSectionId(activeSection);
+      const exists =
+        parsed !== null &&
+        pluginRoutes.some(
+          (r) => r.pluginId === parsed.pluginId && r.contribution.id === parsed.routeId
+        );
+      if (!exists) setActiveSection('overview');
+      return;
+    }
+    if (!visibleNavItems.some((n) => n.id === activeSection)) {
       setActiveSection('overview');
     }
-  }, [activeSection, visibleNavItems, setActiveSection, modeLoading]);
+  }, [activeSection, visibleNavItems, setActiveSection, modeLoading, isPluginSection, pluginsReady, pluginRoutes]);
+
+  // Notify plugins about section changes (host:section-changed).
+  useEffect(() => {
+    pluginEventBus.emit(HOST_EVENTS.sectionChanged, { sectionId: activeSection });
+  }, [activeSection]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -180,7 +214,18 @@ export function AgentTeamsDashboard() {
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
-  const activeLabel = activeItem?.label || '总览';
+  const activePluginRoute = useMemo(() => {
+    const parsed = parsePluginSectionId(activeSection);
+    if (!parsed) return null;
+    return (
+      pluginRoutes.find(
+        (r) => r.pluginId === parsed.pluginId && r.contribution.id === parsed.routeId
+      ) ?? null
+    );
+  }, [activeSection, pluginRoutes]);
+  const activeLabel = isPluginSection
+    ? activePluginRoute?.contribution.title ?? '插件页面'
+    : activeItem?.label || '总览';
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -321,7 +366,11 @@ export function AgentTeamsDashboard() {
                     >
                       <SectionErrorBoundary sectionName={activeLabel}>
                         <Suspense fallback={<SectionSkeleton />}>
-                          <ActiveSectionComponent />
+                          {isPluginSection ? (
+                            <PluginRouteView sectionId={activeSection} />
+                          ) : (
+                            <ActiveSectionComponent />
+                          )}
                         </Suspense>
                       </SectionErrorBoundary>
                     </motion.div>

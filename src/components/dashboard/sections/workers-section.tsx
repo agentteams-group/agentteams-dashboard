@@ -356,7 +356,7 @@ export function WorkersSection() {
     setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [] });
 
     const targetWorker = workers?.find((w) => w.name === workerName);
-    let uploadedSkillNames: string[] = [];
+    const uploadedSkillNames: string[] = [];
 
     // Phase 1: upload all skills without restarting
     for (const skillName of newSkills) {
@@ -404,7 +404,7 @@ export function WorkersSection() {
     setSyncingSkills((prev) => prev && { ...prev, restarted: true });
     toast.success(`已为 Worker "${workerName}" 安装 ${uploadedSkillNames.length} 个技能`);
     setTimeout(() => setSyncingSkills(null), 3000);
-  }, [sleepWorker, wakeWorker, workers]);
+  }, [workers]);
 
   const handleCreate = useCallback(() => {
     warnIfModelAliasUnbound(newWorker.model);

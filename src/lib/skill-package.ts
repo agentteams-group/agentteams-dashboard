@@ -1,5 +1,4 @@
 import { unzipSync } from 'fflate';
-import type { WorkerRuntime } from './agentteams-api';
 
 /**
  * Skill package parsing and validation for Dashboard-driven skill distribution.

@@ -16,5 +16,17 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['src/__tests__/integration/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: [
+        'src/lib/theme/**',
+        'src/lib/plugins/**',
+        'src/lib/section-store.ts',
+        'src/plugins/**',
+        'src/components/theme/**',
+        'src/components/plugins/**',
+      ],
+    },
   },
 });

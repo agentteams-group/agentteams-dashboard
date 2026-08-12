@@ -1,0 +1,20 @@
+{
+  "name": "create-dashboard-plugin",
+  "version": "0.1.0",
+  "description": "Scaffold for AgentTeams Dashboard plugins (agentteams-dashboard 插件脚手架)",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "create-dashboard-plugin": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "template"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node bin/cli.js --selftest"
+  }
+}

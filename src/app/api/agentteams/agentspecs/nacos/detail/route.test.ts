@@ -26,7 +26,7 @@ function makeRequest(name: string | null, version: string | null) {
   );
 }
 
-function mockAgentspecVersionResponse(specName: string, version: string) {
+function mockAgentspecVersionResponse(specName: string, _version: string) {
   return {
     code: 0,
     message: 'success',

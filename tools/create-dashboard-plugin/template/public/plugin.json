@@ -1,0 +1,19 @@
+{
+  "apiVersion": "dashboard.agentteams/v1",
+  "kind": "DashboardPlugin",
+  "id": "{{PLUGIN_ID}}",
+  "name": "{{PLUGIN_NAME}}",
+  "version": "0.1.0",
+  "description": "{{PLUGIN_DESCRIPTION}}",
+  "author": "",
+  "entry": {
+    "dashboard": "src/main.jsx"
+  },
+  "dashboardVersion": ">=0.2.0",
+  "extensionPoints": [
+    "sidebar-menu",
+    "route",
+    "dashboard-widget"
+  ],
+  "permissions": []
+}

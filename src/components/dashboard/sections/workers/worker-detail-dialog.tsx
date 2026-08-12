@@ -12,6 +12,7 @@ import { Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useWorkerSkills, useUploadWorkerSkill } from '@/hooks/use-agentteams-worker-skills';
+import { PluginDetailBlocks } from '@/components/plugins/plugin-detail-blocks';
 
 const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['名称', (w) => w.name],
@@ -135,6 +136,9 @@ export function WorkerDetailDialog({
                   </div>
                 </div>
               )}
+
+              {/* Plugin-contributed blocks (extension point: detail-panel) */}
+              <PluginDetailBlocks entity="worker" data={worker} />
             </div>
           )}
         </DialogContent>

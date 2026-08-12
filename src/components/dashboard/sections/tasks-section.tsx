@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,7 +10,6 @@ import {
   CircleX,
   Loader2,
   Clock,
-  ChevronDown,
   ChevronUp,
   MessageSquare,
   Crown,
@@ -29,19 +28,11 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useTeams } from '@/hooks/use-agentteams-teams';
 import {
   useMergedTaskBoard,
   useLogTaskBoardScan,
@@ -339,7 +330,7 @@ function ProjectCard({
 }: {
   project: BoardProject;
   taskCount: number;
-  onSelect: (id: string) => void;
+  onSelect: (_id: string) => void;
   selected: boolean;
 }) {
   const allItems = project.phases.flatMap((p) => p.items);
@@ -469,7 +460,6 @@ export function TasksSection() {
 
   const { data: managers } = useManagers();
   const { data: workers } = useWorkers();
-  const { data: teams } = useTeams();
 
   const [view, setView] = useState<ViewMode>('kanban');
   const [search, setSearch] = useState('');
@@ -482,14 +472,10 @@ export function TasksSection() {
     board.refetch();
   }, [clearTasks, board]);
 
-  // Auto-select the first project when projects are loaded and nothing
-  // is selected yet.
-  useEffect(() => {
-    if (selectedProjectId) return;
-    if (board.projects.length > 0) {
-      setSelectedProjectId(board.projects[0].runId);
-    }
-  }, [board.projects, selectedProjectId]);
+  // Auto-select the first project: derive the effective selection instead of
+  // syncing state in an effect, so the first project shows until the user
+  // picks one explicitly.
+  const effectiveProjectId = selectedProjectId ?? board.projects[0]?.runId ?? null;
 
   // ---- Filters ----
   const filteredTasks = useMemo(() => {
@@ -536,7 +522,7 @@ export function TasksSection() {
     return { running, completed, failed, blocked, total: board.tasks.length };
   }, [board.tasks]);
 
-  const selectedProject = board.projects.find((p) => p.runId === selectedProjectId);
+  const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
 
   return (
     <div className="space-y-6">
@@ -706,7 +692,7 @@ export function TasksSection() {
                               task={t}
                               managerName={mgr}
                               workerTeam={wk?.team}
-                              highlightProjectId={selectedProjectId ?? undefined}
+                              highlightProjectId={effectiveProjectId ?? undefined}
                             />
                           </motion.div>
                         );
@@ -742,7 +728,7 @@ export function TasksSection() {
                   project={p}
                   taskCount={tasksForProject(p.runId).length}
                   onSelect={setSelectedProjectId}
-                  selected={p.runId === selectedProjectId}
+                  selected={p.runId === effectiveProjectId}
                 />
               ))
             )}

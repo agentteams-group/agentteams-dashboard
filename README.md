@@ -37,6 +37,8 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 | **Skills** | Skill / MCP resource management |
 | **Debug Log** | One-click debug log collection: bundled ZIP with container diagnostics, agent sessions and Matrix messages, PII-redacted by default |
 | **Architecture** | Architecture diagram and component relationships |
+| **Theming** | Built-in light / dark / high-contrast themes, a custom theme editor (30+ parameters) with JSON import/export, and enterprise `theme.config.json` injection |
+| **Plugins** | Runtime plugin system: 5 extension points, dynamic loading, per-plugin error isolation, dev hot-reload, and a `create-dashboard-plugin` scaffold CLI |
 
 ## 🛠 Tech Stack
 
@@ -51,6 +53,22 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 The chat workspace renders Matrix rooms with virtualized history, unread-aware scrolling, message actions, read receipts and on-demand thread panels. Root messages remain in the main timeline; `m.thread` replies are counted on their root and loaded in the thread panel.
 
 Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates.
+
+## 🎨 Theming
+
+The Dashboard ships three built-in themes (light, dark, high-contrast), follows the system preference, and persists the choice across reloads. A theme editor in *Settings → Appearance* exposes 10+ visual parameters (colors, radius, font size) with live preview and JSON import/export. Operators can roll out an enterprise theme via `theme.config.json` or environment variables. See [docs/theme-customization.md](docs/theme-customization.md) (English) and [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md) (中文).
+
+## 🧩 Plugins
+
+Third parties can extend the Dashboard without forking it. The plugin system provides five extension points (sidebar menu, standalone page, dashboard widget, detail-panel block, toolbar button), runtime dynamic loading, per-plugin error isolation, isolated state, an event bus, and dev hot-reload. A scaffold CLI generates a ready-to-run plugin project:
+
+```bash
+node tools/create-dashboard-plugin/bin/cli.js my-plugin
+cd my-plugin && npm install && npm run dev
+# then install http://localhost:5173/plugin.json via Settings → Plugins
+```
+
+See [docs/plugin-development.md](docs/plugin-development.md) (English), [docs/plugin-development.zh-CN.md](docs/plugin-development.zh-CN.md) (中文) and the design doc [docs/plugin-system-design.md](docs/plugin-system-design.md).
 
 ## 📦 Quick Start
 

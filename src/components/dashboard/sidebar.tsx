@@ -25,6 +25,7 @@ import {
   type NavGroup,
 } from './nav-items';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
 
 // ──────────────────────────────────────────
 // Props
@@ -141,7 +142,7 @@ export function Sidebar({
 }: SidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible)),
     [mode, taskBoardVisible]
   );
 
@@ -231,6 +232,13 @@ export function Sidebar({
             ))}
           </div>
         ))}
+
+        {/* Plugin-contributed menu items (extension point: sidebar-menu) */}
+        <PluginNavItems
+          activeSection={activeSection}
+          collapsed={collapsed}
+          onNavClick={onNavClick}
+        />
       </nav>
 
       {/* Collapse toggle */}

@@ -14,7 +14,7 @@ export interface SyncEvent {
   skipped?: number;
 }
 
-type EventListener = (event: SyncEvent) => void;
+type EventListener = (_event: SyncEvent) => void;
 
 class NacosSyncEngine {
   private versionCache: Map<string, string> = new Map();
@@ -136,7 +136,11 @@ class NacosSyncEngine {
       );
       for (const r of results) {
         if (r.status === 'fulfilled') {
-          r.value ? downloaded++ : skipped++;
+          if (r.value) {
+            downloaded++;
+          } else {
+            skipped++;
+          }
         } else {
           failed++;
         }

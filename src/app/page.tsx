@@ -7,7 +7,8 @@ import { SetupWizard } from '@/components/setup/setup-wizard';
 import { QueryProvider } from '@/lib/query-provider';
 import { SearchProvider } from '@/lib/search-context';
 import { apiUrl } from '@/lib/api-base';
-import { ThemeProvider } from 'next-themes';
+import { ThemeProvider } from '@/components/theme/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
 
 type AuthState =
   | { status: 'loading' }
@@ -66,27 +67,30 @@ export default function Home() {
 
   if (auth.status === 'unauthenticated') {
     return (
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+      <ThemeProvider>
         <LoginPage onLoginSuccess={handleLoginSuccess} />
+        <Toaster position="top-right" richColors />
       </ThemeProvider>
     );
   }
 
   if (setup.status === 'required') {
     return (
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+      <ThemeProvider>
         <SetupWizard onComplete={() => window.location.reload()} />
+        <Toaster position="top-right" richColors />
       </ThemeProvider>
     );
   }
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+    <ThemeProvider>
       <QueryProvider>
         <SearchProvider>
           <AgentTeamsDashboard />
         </SearchProvider>
       </QueryProvider>
+      <Toaster position="top-right" richColors />
     </ThemeProvider>
   );
 }

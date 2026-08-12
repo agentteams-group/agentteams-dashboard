@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, useMemo } from 'react';
 import type { RefObject } from 'react';
-import { useTheme } from 'next-themes';
+import { useTheme } from '@/components/theme/theme-provider';
 import {
   Search,
   Bot,
@@ -14,6 +14,7 @@ import {
   WifiOff,
   Sun,
   Moon,
+  Contrast,
   Settings,
   Menu,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { NotificationPopover } from './notification-popover';
+import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
@@ -81,7 +83,7 @@ export function DashboardHeader({
   managers,
   humans,
 }: DashboardHeaderProps) {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme, locked: themeLocked } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
@@ -94,6 +96,19 @@ export function DashboardHeader({
     () => actions.filter((action) => isCreateActionVisible(action, mode)),
     [actions, mode]
   );
+
+  // Cycle through the built-in themes: light → dark → high-contrast → light.
+  const cycleTheme = () => {
+    const order = ['light', 'dark', 'high-contrast'];
+    const index = order.indexOf(resolvedTheme.id);
+    setTheme(order[(index + 1) % order.length]);
+  };
+  const themeLabel =
+    resolvedTheme.id === 'high-contrast'
+      ? '高对比度主题'
+      : resolvedTheme.base === 'dark'
+        ? '暗色主题'
+        : '亮色主题';
 
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -221,6 +236,9 @@ export function DashboardHeader({
           <TooltipContent>刷新所有数据</TooltipContent>
         </Tooltip>
 
+        {/* Plugin-contributed toolbar buttons (extension point: toolbar) */}
+        <PluginToolbarButtons />
+
         <Badge
           className={`gap-1 text-xs ${
             isConnected
@@ -245,15 +263,27 @@ export function DashboardHeader({
 
         <NotificationPopover />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="h-9 w-9"
-        >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={cycleTheme}
+              disabled={themeLocked}
+              className="h-9 w-9"
+              aria-label="切换主题"
+            >
+              {resolvedTheme.id === 'high-contrast' ? (
+                <Contrast className="h-4 w-4" />
+              ) : resolvedTheme.base === 'dark' ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Sun className="h-4 w-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>切换主题（当前：{themeLabel}）</TooltipContent>
+        </Tooltip>
 
         <Button variant="ghost" size="icon" onClick={onOpenSettings} className="h-9 w-9">
           <Settings className="w-4 h-4" />

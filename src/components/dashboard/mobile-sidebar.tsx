@@ -14,6 +14,7 @@ import {
   type NavGroup,
 } from './nav-items';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -45,7 +46,7 @@ export function MobileSidebar({
 }: MobileSidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode)),
+    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible)),
     [mode, taskBoardVisible]
   );
 
@@ -134,6 +135,13 @@ export function MobileSidebar({
                   })}
                 </div>
               ))}
+
+              {/* Plugin-contributed menu items (extension point: sidebar-menu) */}
+              <PluginNavItems
+                activeSection={activeSection}
+                collapsed={false}
+                onNavClick={onNavClick}
+              />
             </nav>
           </motion.aside>
         </>

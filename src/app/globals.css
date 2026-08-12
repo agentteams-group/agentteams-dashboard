@@ -148,6 +148,51 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/*
+ * High-contrast theme (built-in).
+ * Stacks on top of `.dark` — the ThemeProvider applies both classes.
+ * Pure black/white surfaces, opaque borders and a yellow accent maximize
+ * legibility for low-vision users.
+ */
+.high-contrast {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0a0a0a;
+  --card-foreground: #ffffff;
+  --popover: #0a0a0a;
+  --popover-foreground: #ffffff;
+  --primary: #ffd60a;
+  --primary-foreground: #000000;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ffffff;
+  --muted: #1f1f1f;
+  --muted-foreground: #d6d6d6;
+  --accent: #2a2a00;
+  --accent-foreground: #ffd60a;
+  --destructive: #ff6b6b;
+  --border: #ffffff;
+  --input: #ffffff;
+  --ring: #ffd60a;
+  --chart-1: #ffd60a;
+  --chart-2: #00e5ff;
+  --chart-3: #7cff6b;
+  --chart-4: #ff9f43;
+  --chart-5: #ff6bcb;
+  --sidebar: #000000;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffd60a;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #2a2a00;
+  --sidebar-accent-foreground: #ffd60a;
+  --sidebar-border: #ffffff;
+  --sidebar-ring: #ffd60a;
+}
+
+.high-contrast *:focus-visible {
+  outline: 3px solid #ffd60a;
+  outline-offset: 2px;
+}
+
 /* Glassmorphism */
 .glass-card {
   @apply bg-white/50 dark:bg-slate-800/50 backdrop-blur-xl border border-white/20 dark:border-slate-700/30 rounded-xl shadow-lg;
