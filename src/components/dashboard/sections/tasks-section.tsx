@@ -17,6 +17,7 @@ import {
   Users,
   Eye,
   FolderTree,
+  GitBranch,
   Layers,
   AlertTriangle,
   Sparkles,
@@ -43,6 +44,7 @@ import {
   type PlanItem,
 } from '@/hooks/use-task-board';
 import { useTaskStore } from '@/lib/task-store';
+import { buildProjectDag, layoutProjectDag } from '@/lib/project-dag';
 
 // ----- Status config -----
 
@@ -440,6 +442,127 @@ function ProjectPlanPreview({ project }: { project: BoardProject }) {
   );
 }
 
+// ----- Project DAG view -----
+
+const DAG_NODE_FILL: Record<TaskStatus, { fill: string; stroke: string; text: string }> = {
+  pending: { fill: 'rgba(148,163,184,0.12)', stroke: '#94a3b8', text: '#94a3b8' },
+  assigned: { fill: 'rgba(148,163,184,0.18)', stroke: '#94a3b8', text: '#cbd5e1' },
+  in_progress: { fill: 'rgba(139,92,246,0.16)', stroke: '#8b5cf6', text: '#a78bfa' },
+  completed: { fill: 'rgba(16,185,129,0.14)', stroke: '#10b981', text: '#34d399' },
+  failed: { fill: 'rgba(239,68,68,0.14)', stroke: '#ef4444', text: '#f87171' },
+  blocked: { fill: 'rgba(245,158,11,0.14)', stroke: '#f59e0b', text: '#fbbf24' },
+  unknown: { fill: 'rgba(148,163,184,0.08)', stroke: '#64748b', text: '#94a3b8' },
+};
+
+function ProjectDagView({ project, tasks }: { project: BoardProject; tasks: BoardTask[] }) {
+  const dag = useMemo(
+    () => buildProjectDag(tasks, project.runId),
+    [tasks, project.runId],
+  );
+  // Layout is computed unconditionally (before any early return) to satisfy
+  // the Rules of Hooks — layoutProjectDag is safe on an empty dag.
+  const W = 190;
+  const H = 40;
+  const GY = 64;
+  const layout = useMemo(
+    () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY }),
+    [dag],
+  );
+  const { width: svgW, height: svgH, positions: pos } = layout;
+
+  if (dag.nodes.length === 0) return null;
+  if (dag.edges.length === 0 && dag.nodes.length <= 1) {
+    return (
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+          <GitBranch className="h-3 w-3" />
+          依赖图
+        </p>
+        <p className="text-xs text-muted-foreground italic">
+          该项目任务之间暂无依赖关系
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+        <GitBranch className="h-3 w-3" />
+        依赖图
+        <span className="text-[10px] text-muted-foreground/70 font-normal">
+          {dag.nodes.length} 任务 · {dag.edges.length} 依赖
+          {dag.externalDeps.length > 0 && ` · ${dag.externalDeps.length} 外部依赖`}
+        </span>
+      </p>
+      <div className="rounded-lg border bg-background/40 overflow-x-auto p-2">
+        <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} role="img" aria-label={`${project.name} 任务依赖图`}>
+          {dag.edges.map((e, i) => {
+            const a = pos.get(e.source);
+            const b = pos.get(e.target);
+            if (!a || !b) return null;
+            const x1 = a.x + W / 2;
+            const y1 = a.y + H;
+            const x2 = b.x + W / 2;
+            const y2 = b.y;
+            const my = (y1 + y2) / 2;
+            return (
+              <path
+                key={`edge-${i}`}
+                d={`M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
+                fill="none"
+                stroke="rgba(148,163,184,0.55)"
+                strokeWidth={1.2}
+                markerEnd="url(#dag-arrow)"
+              />
+            );
+          })}
+          <defs>
+            <marker id="dag-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L7,3 L0,6 Z" fill="rgba(148,163,184,0.7)" />
+            </marker>
+          </defs>
+          {dag.nodes.map((n) => {
+            const p = pos.get(n.id);
+            if (!p) return null;
+            const colors = DAG_NODE_FILL[n.status] ?? DAG_NODE_FILL.unknown;
+            // ~14 CJK glyphs at 11px fit inside W=190.
+            const label = n.title.length > 14 ? `${n.title.slice(0, 14)}…` : n.title;
+            return (
+              <g key={n.id}>
+                <title>{n.title}</title>
+                <rect
+                  x={p.x}
+                  y={p.y}
+                  width={W}
+                  height={H}
+                  rx={7}
+                  fill={colors.fill}
+                  stroke={n.ready ? '#22d3ee' : colors.stroke}
+                  strokeWidth={n.ready ? 1.8 : 1}
+                  strokeDasharray={n.ready ? '5 3' : undefined}
+                />
+                {n.ready && (
+                  <circle cx={p.x + 10} cy={p.y + H / 2} r={3} fill="#22d3ee" />
+                )}
+                <text
+                  x={p.x + 18}
+                  y={p.y + H / 2 + 4}
+                  fontSize={11}
+                  fill={colors.text}
+                  fontFamily="inherit"
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 // ----- Main section -----
 
 type ViewMode = 'kanban' | 'projects';
@@ -756,6 +879,10 @@ export function TasksSection() {
                     <p className="text-xs font-semibold text-muted-foreground mb-2">执行计划</p>
                     <ProjectPlanPreview project={selectedProject} />
                   </div>
+                  <ProjectDagView
+                    project={selectedProject}
+                    tasks={tasksForProject(selectedProject.runId)}
+                  />
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground mb-2">
                       该项目的任务 ({tasksForProject(selectedProject.runId).length})
