@@ -9,6 +9,7 @@ import {
   Clock,
   Container,
   Copy,
+  Heart,
   Loader2,
   Package,
   RefreshCw,
@@ -16,7 +17,9 @@ import {
   Stethoscope,
   Users,
   UserCheck,
+  Wifi,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +30,7 @@ import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { apiUrl } from '@/lib/api-base';
 import { pluginSectionId, type DashboardPluginApi } from '@/lib/plugins/types';
+import type { WorkerResponse, TeamResponse, HumanResponse, InfrastructureInfo } from '@/lib/agentteams-api';
 
 /**
  * 问天 (WenTian) — bundled plugin: runtime diagnostic assistant.
@@ -68,12 +72,6 @@ interface HumanRow {
   phase?: string;
 }
 
-interface InfrastructureInfo {
-  minio?: { healthy: boolean; endpoint: string; buckets: string[] };
-  higress?: { healthy: boolean; gateway: { healthy: boolean }; console: { healthy: boolean } };
-  matrix?: { healthy: boolean; homeserver: string };
-}
-
 type Severity = 'ok' | 'warn' | 'error';
 
 interface CheckResult {
@@ -82,6 +80,8 @@ interface CheckResult {
   severity: Severity;
   detail: string;
 }
+
+export type { CheckResult };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -125,9 +125,9 @@ function analyzeVersion(
 export function buildChecks(args: {
   cluster: ClusterStatusSnapshot | null;
   version: VersionSnapshot | null;
-  workers: WorkerRow[];
-  teams: TeamRow[];
-  humans: HumanRow[];
+  workers: WorkerResponse[];
+  teams: TeamResponse[];
+  humans: HumanResponse[];
   infra: InfrastructureInfo | null;
 }): CheckResult[] {
   const { cluster, version, workers, teams, humans, infra } = args;
@@ -243,9 +243,9 @@ export function buildChecks(args: {
 export function buildReport(args: {
   cluster: ClusterStatusSnapshot | null;
   version: VersionSnapshot | null;
-  workers: WorkerRow[];
-  teams: TeamRow[];
-  humans: HumanRow[];
+  workers: WorkerResponse[];
+  teams: TeamResponse[];
+  humans: HumanResponse[];
   infra: InfrastructureInfo | null;
   checks: CheckResult[];
 }): string {
@@ -316,6 +316,7 @@ async function callTroubleshoot(body: {
 interface LogAnalysisState {
   running: boolean;
   progress: { phase: string; pct: number; message: string };
+  summary: Record<string, unknown> | null;
   error: string | null;
   answer: string;
 }
@@ -397,9 +398,9 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
   return function DiagnosticsPage() {
     const [cluster, setCluster] = useState<ClusterStatusSnapshot | null>(null);
     const [version, setVersion] = useState<VersionSnapshot | null>(null);
-    const [workers, setWorkers] = useState<WorkerRow[]>([]);
-    const [teams, setTeams] = useState<TeamRow[]>([]);
-    const [humans, setHumans] = useState<HumanRow[]>([]);
+    const [workers, setWorkers] = useState<WorkerResponse[]>([]);
+    const [teams, setTeams] = useState<TeamResponse[]>([]);
+    const [humans, setHumans] = useState<HumanResponse[]>([]);
     const [infra, setInfra] = useState<InfrastructureInfo | null>(null);
     const [loading, setLoading] = useState(false);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -435,9 +436,9 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
             dashboard: asString(rawVersion.dashboard),
           });
         }
-        setWorkers(Array.isArray(rawWorkers) ? (rawWorkers as WorkerRow[]) : []);
-        setTeams(Array.isArray(rawTeams) ? (rawTeams as TeamRow[]) : []);
-        setHumans(Array.isArray(rawHumans) ? (rawHumans as HumanRow[]) : []);
+        setWorkers(Array.isArray(rawWorkers) ? (rawWorkers as WorkerResponse[]) : []);
+        setTeams(Array.isArray(rawTeams) ? (rawTeams as TeamResponse[]) : []);
+        setHumans(Array.isArray(rawHumans) ? (rawHumans as HumanResponse[]) : []);
         setInfra(isObject(rawInfra) ? (rawInfra as InfrastructureInfo) : null);
       } catch (err) {
         setFetchError(err instanceof Error ? err.message : '加载失败');
@@ -450,10 +451,116 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
       void refresh();
     }, [refresh]);
 
-    const checks = useMemo(
-      () => buildChecks({ cluster, version, workers, teams, humans, infra }),
-      [cluster, version, workers, teams, humans, infra]
-    );
+    // ── Rich health checks ──────────────────────────────────────────────
+
+    const checks = useMemo(() => {
+      const result: CheckResult[] = [];
+
+      // 1. Deployment mode
+      result.push({
+        id: 'deployment-mode',
+        label: '部署模式',
+        severity: cluster ? 'ok' : 'warn',
+        detail: cluster
+          ? `${cluster.kubeMode ? 'Kubernetes (incluster)' : 'Embedded (standalone)'}`
+          : '尚未获取到集群状态',
+      });
+
+      // 2. Controller / Dashboard version
+      const ctrlVer = version?.controller ?? '未知';
+      const dashVer = version?.dashboard ?? '未知';
+      const verOk = version?.controller && version?.dashboard;
+      result.push({
+        id: 'version-consistency',
+        label: '版本信息',
+        severity: verOk ? 'ok' : 'warn',
+        detail: verOk
+          ? `Controller ${ctrlVer} · Dashboard ${dashVer}`
+          : `Controller ${ctrlVer} · Dashboard ${dashVer}（无法读取完整版本）`,
+      });
+
+      // 3. Workers — rich analysis
+      const totalW = workers.length;
+      const runningW = workers.filter((w) => w.phase === 'Running' || w.phase === 'Ready').length;
+      const failedW = workers.filter((w) => w.phase === 'Failed').length;
+      const pendingW = workers.filter((w) => w.phase === 'Pending').length;
+      const updatingW = workers.filter((w) => w.phase === 'Updating').length;
+      const sleepingW = workers.filter((w) => w.phase === 'Sleeping').length;
+      const workerMsgs = workers.filter((w) => w.message).slice(0, 3).map((w) => `${w.name}: ${w.message}`).join('；');
+      result.push({
+        id: 'workers',
+        label: 'Workers',
+        severity: failedW > 0 ? 'error' : pendingW > 0 && totalW > 0 ? 'warn' : 'ok',
+        detail: `${runningW}/${totalW} 运行中${failedW > 0 ? ` · ${failedW} Failed` : ''}${pendingW > 0 ? ` · ${pendingW} Pending` : ''}${updatingW > 0 ? ` · ${updatingW} Updating` : ''}${sleepingW > 0 ? ` · ${sleepingW} Sleeping` : ''}${workerMsgs ? ' · ' + workerMsgs : ''}`,
+      });
+
+      // 4. Teams — rich analysis
+      const totalT = teams.length;
+      const activeT = teams.filter((t) => t.phase === 'Active').length;
+      const degradedT = teams.filter((t) => t.phase === 'Degraded').length;
+      const failedT = teams.filter((t) => t.phase === 'Failed').length;
+      const workerMismatch = teams.filter((t) => t.totalWorkers > 0 && t.readyWorkers < t.totalWorkers).length;
+      result.push({
+        id: 'teams',
+        label: '团队',
+        severity: failedT > 0 ? 'error' : degradedT > 0 || workerMismatch > 0 ? 'warn' : 'ok',
+        detail: `${activeT}/${totalT} 活跃${degradedT > 0 ? ` · ${degradedT} Degraded` : ''}${failedT > 0 ? ` · ${failedT} Failed` : ''}${workerMismatch > 0 ? ` · ${workerMismatch}  Workers不足` : ''}`,
+      });
+
+      // 5. Humans
+      const totalH = humans.length;
+      const activeH = humans.filter((h) => h.phase === 'Active').length;
+      const failedH = humans.filter((h) => h.phase === 'Failed').length;
+      result.push({
+        id: 'humans',
+        label: 'Humans',
+        severity: failedH > 0 ? 'error' : totalH > 0 && activeH === 0 ? 'warn' : 'ok',
+        detail: `${activeH}/${totalH} 活跃${failedH > 0 ? ` · ${failedH} Failed` : ''}`,
+      });
+
+      // 6. Infrastructure — richer
+      const minioOk = !!infra?.minio?.healthy;
+      const matrixOk = !!infra?.matrix?.healthy;
+      const higressOk = !!infra?.higress?.healthy;
+      const k8sOk = !!infra?.kubernetes?.healthy;
+      const ctrlOk = !!infra?.controller?.healthy;
+      const infraSev: Severity = !infra
+        ? 'warn'
+        : minioOk && matrixOk && higressOk && k8sOk && ctrlOk
+          ? 'ok'
+          : minioOk || matrixOk || higressOk
+            ? 'warn'
+            : 'error';
+      result.push({
+        id: 'infra',
+        label: '基础设施',
+        severity: infraSev,
+        detail: [
+          `MinIO ${minioOk ? '✓' : '✗'}`,
+          `Matrix ${matrixOk ? '✓' : '✗'}`,
+          `Higress ${higressOk ? '✓' : '✗'}`,
+          k8sOk ? `K8s ✓` : null,
+          ctrlOk ? `Controller ✓` : null,
+        ].filter(Boolean).join(' · '),
+      });
+
+      // 7. Aggregate severity
+      const errorCount = result.filter((c) => c.severity === 'error').length;
+      const warnCount = result.filter((c) => c.severity === 'warn').length;
+      result.push({
+        id: 'severity-rollup',
+        label: '健康汇总',
+        severity: errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok',
+        detail:
+          errorCount > 0
+            ? `${errorCount} 项异常、${warnCount} 项警告，建议立即处理`
+            : warnCount > 0
+              ? `${warnCount} 项警告，建议排查`
+              : '全部正常，系统健康',
+      });
+
+      return result;
+    }, [cluster, version, workers, teams, humans, infra]);
 
     const rollup = useMemo(() => {
       const errorCount = checks.filter((c) => c.severity === 'error').length;
@@ -546,10 +653,11 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           </div>
         )}
 
+        {/* Cluster overview stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SummaryStat icon={<Bot className="w-4 h-4" />} label="Workers" value={cluster?.totalWorkers ?? workers.length} />
-          <SummaryStat icon={<Users className="w-4 h-4" />} label="团队" value={cluster?.totalTeams ?? teams.length} />
-          <SummaryStat icon={<UserCheck className="w-4 h-4" />} label="Humans" value={cluster?.totalHumans ?? humans.length} />
+          <SummaryStat icon={<Bot className="w-4 h-4" />} label="Workers" value={workers.length} sub={`${workers.filter((w) => w.phase === 'Running' || w.phase === 'Ready').length} 运行中`} />
+          <SummaryStat icon={<Users className="w-4 h-4" />} label="团队" value={teams.length} sub={`${teams.filter((t) => t.phase === 'Active').length} 活跃`} />
+          <SummaryStat icon={<UserCheck className="w-4 h-4" />} label="Humans" value={humans.length} sub={`${humans.filter((h) => h.phase === 'Active').length} 活跃`} />
           <SummaryStat
             icon={<Container className="w-4 h-4" />}
             label="部署模式"
@@ -558,11 +666,12 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           />
         </div>
 
+        {/* Health checks */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-1.5">
               <Activity className="w-4 h-4 text-primary" />
-              7 项健康检查
+              健康检查
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -576,7 +685,7 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
                 >
                   <div className="mt-0.5">{meta.icon}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium">{check.label}</span>
                       <Badge variant="outline" className={`text-[10px] h-4 px-1 ${meta.badgeClass}`}>
                         {meta.label}
@@ -590,6 +699,7 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           </CardContent>
         </Card>
 
+        {/* AI diagnose */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-1.5">
@@ -622,18 +732,71 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
 
         <LogAnalysisSection />
 
+        {/* Infrastructure detail */}
         {infra && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-1.5">
                 <Server className="w-4 h-4 text-primary" />
-                基础设施连通性
+                基础设施详情
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-              <InfraLine label="MinIO" ok={!!infra.minio?.healthy} detail={infra.minio?.endpoint} />
-              <InfraLine label="Matrix" ok={!!infra.matrix?.healthy} detail={infra.matrix?.homeserver} />
-              <InfraLine label="Higress" ok={!!infra.higress?.healthy} detail="AI Gateway" />
+            <CardContent className="space-y-3">
+              {/* MinIO */}
+              {infra.minio && (
+                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  {infra.minio.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">MinIO</span>
+                    <span className="text-xs text-muted-foreground ml-2 truncate">{infra.minio.endpoint}</span>
+                    {infra.minio.buckets && infra.minio.buckets.length > 0 && (
+                      <span className="text-xs text-muted-foreground ml-2">· {infra.minio.buckets.length} 个存储桶</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* Matrix */}
+              {infra.matrix && (
+                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  {infra.matrix.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">Matrix</span>
+                    <span className="text-xs text-muted-foreground ml-2 truncate">{infra.matrix.homeserver}</span>
+                  </div>
+                </div>
+              )}
+              {/* Higress */}
+              {infra.higress && (
+                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  {infra.higress.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">Higress AI Gateway</span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      模式: {infra.higress.mode} · Gateway {infra.higress.gateway.state} · Console {infra.higress.console.state}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Kubernetes */}
+              {infra.kubernetes && (
+                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  {infra.kubernetes.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">Kubernetes</span>
+                    <span className="text-xs text-muted-foreground ml-2">{infra.kubernetes.version ?? '版本未知'}</span>
+                  </div>
+                </div>
+              )}
+              {/* Controller */}
+              {infra.controller && (
+                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  {infra.controller.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">Controller</span>
+                    <span className="text-xs text-muted-foreground ml-2">{infra.controller.version ?? '版本未知'}</span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -646,11 +809,13 @@ function SummaryStat({
   icon,
   label,
   value,
+  sub,
   textMode,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
+  sub?: string;
   textMode?: boolean;
 }) {
   return (
@@ -660,6 +825,7 @@ function SummaryStat({
         <div>
           <div className={`${textMode ? 'text-base' : 'text-2xl'} font-bold leading-tight`}>{value}</div>
           <div className="text-xs text-muted-foreground">{label}</div>
+          {sub && <div className="text-[10px] text-muted-foreground/70">{sub}</div>}
         </div>
       </CardContent>
     </Card>
@@ -762,56 +928,91 @@ function createHealthWidget(api: DashboardPluginApi) {
 // ────────────────────────────────────────────
 
 function LogAnalysisSection() {
-  const [state, setState] = useState<LogAnalysisState>({ running: false, progress: { phase: '', pct: 0, message: '' }, error: null, answer: '' });
+  const [state, setState] = useState<LogAnalysisState>({ running: false, progress: { phase: '', pct: 0, message: '' }, summary: null, error: null, answer: '' });
 
   const handleAnalyze = useCallback(async () => {
-    setState({ running: true, progress: { phase: 'init', pct: 0, message: '' }, error: null, answer: '' });
+    setState({ running: true, progress: { phase: 'init', pct: 0, message: '准备中…' }, summary: null, error: null, answer: '' });
     try {
-      const answer = await collectAndAnalyzeLogs({ range: '1h', redact: true });
-      setState((s) => ({ ...s, running: false, answer }));
-      toast.success('日志分析完成');
+      for await (const { event, data } of collectSSE(apiUrl('/api/agentteams/wen-tian/logs?range=1h'), { range: '1h', redact: true })) {
+        if (event === 'progress' && isObject(data)) {
+          const d = data as Record<string, unknown>;
+          setState((s) => ({
+            ...s,
+            progress: {
+              phase: String(d['phase'] ?? ''),
+              pct: typeof d['pct'] === 'number' ? d['pct'] : s.progress.pct,
+              message: String(d['message'] ?? ''),
+            },
+          }));
+        } else if (event === 'summary' && isObject(data)) {
+          const d = data as Record<string, unknown>;
+          setState((s) => ({ ...s, summary: d as Record<string, unknown> }));
+        } else if (event === 'chunk' && isObject(data)) {
+          const d = data as Record<string, unknown>;
+          if (typeof d['content'] === 'string') {
+            setState((s) => ({ ...s, answer: s.answer + String(d['content']) }));
+          }
+        } else if (event === 'result' && isObject(data)) {
+          const d = data as Record<string, unknown>;
+          if (typeof d['answer'] === 'string') {
+            setState((s) => ({ ...s, running: false, answer: d['answer'] as string }));
+            toast.success('日志分析完成');
+          }
+        } else if (event === 'error' && isObject(data)) {
+          const d = data as Record<string, unknown>;
+          if (typeof d['error'] === 'string') {
+            setState((s) => ({ ...s, running: false, error: d['error'] as string }));
+            toast.error('日志分析失败');
+          }
+        }
+      }
     } catch (err) {
       setState((s) => ({ ...s, running: false, error: err instanceof Error ? err.message : '未知错误' }));
       toast.error('日志分析失败');
     }
   }, []);
 
-  if (state.running) {
-    return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-primary animate-spin" />
-            日志分析中…
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Progress value={state.progress.pct} />
-          <p className="text-xs text-muted-foreground">{state.progress.message || '正在收集日志并分析…'}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-1.5">
-          <Clock className="w-4 h-4 text-primary" />
+          <Clock className={`w-4 h-4 text-primary ${state.running ? 'animate-spin' : ''}`} />
           日志分析
+          {state.running && <Badge variant="outline" className="text-[10px] ml-auto animate-pulse">{state.progress.pct}%</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">分析过去 1 小时内的容器日志、Agent 会话和 Matrix 消息，由 AI 给出诊断结论与修复建议。</p>
-        <Button onClick={() => void handleAnalyze()} disabled={state.running} variant="outline" size="sm">
-          <Loader2 className={`w-4 h-4 mr-1 ${state.running ? 'animate-spin' : ''}`} />
-          开始日志分析
-        </Button>
+        {state.running ? (
+          <>
+            <Progress value={state.progress.pct} />
+            <p className="text-xs text-muted-foreground">{state.progress.message || '正在收集日志并分析…'}</p>
+            {state.summary && (
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                {String(state.summary['summary'] ?? '')
+                  .split('\n')
+                  .filter(Boolean)
+                  .map((line, i) => <p key={i}>{line}</p>)}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">分析过去 1 小时内的容器日志、Agent 会话和 Matrix 消息，由 AI 给出诊断结论与修复建议。</p>
+            <Button onClick={() => void handleAnalyze()} variant="outline" size="sm">
+              <Zap className="w-4 h-4 mr-1" />
+              开始日志分析
+            </Button>
+          </>
+        )}
         {state.error && <p className="text-xs text-destructive">{state.error}</p>}
         {state.answer && (
-          <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/40 p-3 max-h-80 overflow-auto">
-            {state.answer}
-          </pre>
+          <div className="rounded-md border bg-muted/40 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Heart className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-medium">AI 诊断结果</span>
+            </div>
+            <pre className="text-xs whitespace-pre-wrap max-h-80 overflow-auto">{state.answer}</pre>
+          </div>
         )}
       </CardContent>
     </Card>
