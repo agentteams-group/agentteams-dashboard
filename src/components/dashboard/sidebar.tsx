@@ -161,7 +161,7 @@ export function Sidebar({
       {/* Logo area */}
       <div className="flex items-center gap-2 px-4 h-14 border-b border-border">
         <Image
-          src="/logo.svg"
+          src="/agentteams-logo.svg"
           alt="AgentTeams"
           width={32}
           height={32}
