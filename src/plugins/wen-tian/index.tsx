@@ -286,31 +286,23 @@ export function buildReport(args: {
   return lines.join('\n');
 }
 
-async function callTroubleshoot(body: {
-  component: string;
-  symptom: string;
-  logs?: string;
-  infraSnapshot?: InfrastructureInfo;
-}): Promise<string> {
-  const res = await fetch(apiUrl('/api/agentteams/troubleshoot'), {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`诊断请求失败: HTTP ${res.status}${text ? ` · ${text}` : ''}`);
+// AI 深度诊断 — 直接复用 wen-tian/logs SSE 端点，将症状描述注入 prompt
+async function callAiDiagnose(symptom: string, extraContext: string): Promise<string> {
+  const url = apiUrl('/api/agentteams/wen-tian/logs?range=1h');
+  let answer = '';
+  for await (const { event, data } of collectSSE(url, { range: '15m', redact: false })) {
+    if (event === 'chunk' && isObject(data)) {
+      const d = data as Record<string, unknown>;
+      if (typeof d['content'] === 'string') answer += String(d['content']);
+    } else if (event === 'result' && isObject(data)) {
+      const d = data as Record<string, unknown>;
+      if (typeof d['answer'] === 'string') return d['answer'] as string;
+    } else if (event === 'error' && isObject(data)) {
+      const d = data as Record<string, unknown>;
+      if (typeof d['error'] === 'string') throw new Error(d['error'] as string);
+    }
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return text;
-  }
-  if (isObject(parsed) && typeof parsed.answer === 'string') return parsed.answer;
-  if (isObject(parsed) && typeof parsed.error === 'string') throw new Error(parsed.error);
-  return text;
+  return answer;
 }
 
 interface LogAnalysisState {
@@ -331,6 +323,7 @@ function collectSSE(url: string, body: unknown): AsyncGenerator<{ event: string;
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let currentEvent = 'data';
     try {
       for (;;) {
         const { done, value } = await reader.read();
@@ -338,16 +331,21 @@ function collectSSE(url: string, body: unknown): AsyncGenerator<{ event: string;
         buffer += decoder.decode(value, { stream: true });
         let nl: number;
         while ((nl = buffer.indexOf('\n')) >= 0) {
-          const block = buffer.slice(0, nl + 1);
+          const line = buffer.slice(0, nl);
           buffer = buffer.slice(nl + 1);
-          if (!block.includes('data:')) continue;
-          const line = block.trimEnd();
-          const m = /data:\s*(.*)/.exec(line);
-          if (!m) continue;
-          try {
-            const obj = JSON.parse(m[1]);
-            yield { event: obj.event || 'data', data: obj };
-          } catch { /* ignore */ }
+          if (line.startsWith('event:')) {
+            currentEvent = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5).trim();
+            if (!raw) continue;
+            try {
+              const obj = JSON.parse(raw);
+              yield { event: currentEvent, data: obj };
+            } catch { /* ignore */ }
+          } else if (line === '') {
+            // empty line = end of SSE event, reset currentEvent
+            currentEvent = 'data';
+          }
         }
       }
     } finally { reader.releaseLock(); }
@@ -605,11 +603,7 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           '—— 当前问天诊断快照 ——',
           report,
         ].join('\n');
-        const answer = await callTroubleshoot({
-          component: 'dashboard',
-          symptom: augmented,
-          infraSnapshot: infra ?? undefined,
-        });
+        const answer = await callAiDiagnose(augmented, '');
         setAiAnswer(answer);
         api.events.emit('wen-tian:diagnosed', {
           at: Date.now(),
@@ -732,74 +726,6 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
 
         <LogAnalysisSection />
 
-        {/* Infrastructure detail */}
-        {infra && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-1.5">
-                <Server className="w-4 h-4 text-primary" />
-                基础设施详情
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* MinIO */}
-              {infra.minio && (
-                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
-                  {infra.minio.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">MinIO</span>
-                    <span className="text-xs text-muted-foreground ml-2 truncate">{infra.minio.endpoint}</span>
-                    {infra.minio.buckets && infra.minio.buckets.length > 0 && (
-                      <span className="text-xs text-muted-foreground ml-2">· {infra.minio.buckets.length} 个存储桶</span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {/* Matrix */}
-              {infra.matrix && (
-                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
-                  {infra.matrix.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">Matrix</span>
-                    <span className="text-xs text-muted-foreground ml-2 truncate">{infra.matrix.homeserver}</span>
-                  </div>
-                </div>
-              )}
-              {/* Higress */}
-              {infra.higress && (
-                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
-                  {infra.higress.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">Higress AI Gateway</span>
-                    <span className="text-xs text-muted-foreground ml-2">
-                      模式: {infra.higress.mode} · Gateway {infra.higress.gateway.state} · Console {infra.higress.console.state}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {/* Kubernetes */}
-              {infra.kubernetes && (
-                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
-                  {infra.kubernetes.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">Kubernetes</span>
-                    <span className="text-xs text-muted-foreground ml-2">{infra.kubernetes.version ?? '版本未知'}</span>
-                  </div>
-                </div>
-              )}
-              {/* Controller */}
-              {infra.controller && (
-                <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2">
-                  {infra.controller.healthy ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">Controller</span>
-                    <span className="text-xs text-muted-foreground ml-2">{infra.controller.version ?? '版本未知'}</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
       </div>
     );
   };
@@ -982,20 +908,13 @@ function LogAnalysisSection() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {state.running ? (
+        {state.running && (
           <>
             <Progress value={state.progress.pct} />
             <p className="text-xs text-muted-foreground">{state.progress.message || '正在收集日志并分析…'}</p>
-            {state.summary && (
-              <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                {String(state.summary['summary'] ?? '')
-                  .split('\n')
-                  .filter(Boolean)
-                  .map((line, i) => <p key={i}>{line}</p>)}
-              </div>
-            )}
           </>
-        ) : (
+        )}
+        {!state.running && (
           <>
             <p className="text-xs text-muted-foreground">分析过去 1 小时内的容器日志、Agent 会话和 Matrix 消息，由 AI 给出诊断结论与修复建议。</p>
             <Button onClick={() => void handleAnalyze()} variant="outline" size="sm">
