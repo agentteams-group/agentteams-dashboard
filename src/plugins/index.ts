@@ -1,5 +1,6 @@
 import type { PluginManifest, PluginModule } from '@/lib/plugins/types';
 import { manifest as monitorPanelManifest } from './monitor-panel/manifest';
+import { manifest as wenTianManifest } from './wen-tian/manifest';
 
 /**
  * Bundled plugin registry.
@@ -18,5 +19,9 @@ export const BUNDLED_PLUGINS: BundledPluginSource[] = [
   {
     manifest: monitorPanelManifest,
     load: () => import('./monitor-panel') as Promise<PluginModule>,
+  },
+  {
+    manifest: wenTianManifest,
+    load: () => import('./wen-tian') as Promise<PluginModule>,
   },
 ];
