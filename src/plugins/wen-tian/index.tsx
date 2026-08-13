@@ -560,27 +560,23 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
       return result;
     }, [cluster, version, workers, teams, humans, infra]);
 
-    const rollup = useMemo(() => {
-      const errorCount = checks.filter((c) => c.severity === 'error').length;
-      const warnCount = checks.filter((c) => c.severity === 'warn').length;
-      if (errorCount > 0) return { severity: 'error' as Severity, label: `严重 (${errorCount})` };
-      if (warnCount > 0) return { severity: 'warn' as Severity, label: `需关注 (${warnCount})` };
-      return { severity: 'ok' as Severity, label: '全部正常' };
-    }, [checks]);
-
     const handleCopyReport = () => {
-      const report = buildReport({ cluster, version, workers, teams, humans, infra, checks });
-      navigator.clipboard.writeText(report).then(
+      navigator.clipboard.writeText(
+        [
+          '# 问天诊断报告',
+          `生成时间：${new Date().toISOString()}`,
+          '',
+          `Workers: ${workers.length} (运行中 ${workers.filter((w) => w.phase === 'Running' || w.phase === 'Ready').length})`,
+          `团队: ${teams.length} (活跃 ${teams.filter((t) => t.phase === 'Active').length})`,
+          `Humans: ${humans.length} (活跃 ${humans.filter((h) => h.phase === 'Active').length})`,
+          `部署模式: ${cluster?.kubeMode ? 'K8s' : 'Embedded'}`,
+          `Controller: ${version?.controller ?? '未知'}`,
+          `Dashboard: ${version?.dashboard ?? '未知'}`,
+        ].join('\n')
+      ).then(
         () => {
           setCopied(true);
           toast.success('诊断报告已复制到剪贴板');
-          api.events.emit('wen-tian:diagnosed', {
-            at: Date.now(),
-            severity: rollup.severity,
-            checks: checks.length,
-            errorCount: checks.filter((c) => c.severity === 'error').length,
-            warnCount: checks.filter((c) => c.severity === 'warn').length,
-          });
           setTimeout(() => setCopied(false), 2000);
         },
         () => toast.error('复制失败，请手动复制')
@@ -607,7 +603,6 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
         setAiAnswer(answer);
         api.events.emit('wen-tian:diagnosed', {
           at: Date.now(),
-          severity: rollup.severity,
           aiPowered: true,
         });
       } catch (err) {
@@ -624,17 +619,13 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
             <Stethoscope className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold">问天诊断</h2>
             <Badge variant="outline" className="text-xs">内置插件</Badge>
-            <Badge variant="secondary" className={SEVERITY_LABELS[rollup.severity].badgeClass}>
-              {SEVERITY_LABELS[rollup.severity].icon}
-              <span className="ml-1">{rollup.label}</span>
-            </Badge>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
               <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-            <Button size="sm" onClick={handleCopyReport} disabled={loading || checks.length === 0}>
+            <Button size="sm" onClick={handleCopyReport} disabled={loading}>
               {copied ? <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
               复制报告
             </Button>
@@ -659,39 +650,6 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
             textMode
           />
         </div>
-
-        {/* Health checks */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-1.5">
-              <Activity className="w-4 h-4 text-primary" />
-              健康检查
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {checks.map((check) => {
-              const meta = SEVERITY_LABELS[check.severity];
-              return (
-                <div
-                  key={check.id}
-                  className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2"
-                  data-severity={check.severity}
-                >
-                  <div className="mt-0.5">{meta.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium">{check.label}</span>
-                      <Badge variant="outline" className={`text-[10px] h-4 px-1 ${meta.badgeClass}`}>
-                        {meta.label}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground break-words mt-0.5">{check.detail}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
 
         {/* AI diagnose */}
         <Card>
