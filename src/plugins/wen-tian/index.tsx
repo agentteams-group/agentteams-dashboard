@@ -97,7 +97,7 @@ function asString(value: unknown): string | undefined {
 // Diagnostic helpers
 // ────────────────────────────────────────────
 
-function analyzeWorkers(workers: WorkerRow[]): { distribution: Record<string, number>; failures: string[] } {
+export function analyzeWorkers(workers: WorkerRow[]): { distribution: Record<string, number>; failures: string[] } {
   const distribution: Record<string, number> = {};
   const failures: string[] = [];
   for (const w of workers) {
@@ -120,7 +120,7 @@ function analyzeVersion(
   return parts.join(' · ');
 }
 
-function buildChecks(args: {
+export function buildChecks(args: {
   cluster: ClusterStatusSnapshot | null;
   version: VersionSnapshot | null;
   workers: WorkerRow[];
@@ -238,7 +238,7 @@ function buildChecks(args: {
   return checks;
 }
 
-function buildReport(args: {
+export function buildReport(args: {
   cluster: ClusterStatusSnapshot | null;
   version: VersionSnapshot | null;
   workers: WorkerRow[];
@@ -296,21 +296,21 @@ async function callTroubleshoot(body: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => '');
+  const text = await res.text();
+  if (!res.ok) {
     throw new Error(`诊断请求失败: HTTP ${res.status}${text ? ` · ${text}` : ''}`);
   }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  // The endpoint replies with NextResponse.json({ answer }) (non-streaming).
+  // Tolerate a plain-text passthrough too, in case a gateway streams back.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
   }
-  buffer += decoder.decode();
-  return buffer;
+  if (isObject(parsed) && typeof parsed.answer === 'string') return parsed.answer;
+  if (isObject(parsed) && typeof parsed.error === 'string') throw new Error(parsed.error);
+  return text;
 }
 
 const SEVERITY_LABELS: Record<Severity, { label: string; icon: React.ReactNode; badgeClass: string }> = {

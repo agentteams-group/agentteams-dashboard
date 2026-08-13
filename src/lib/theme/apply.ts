@@ -45,10 +45,16 @@ function clearInlineTheme(root: HTMLElement): void {
   root.removeAttribute('data-noise-opacity');
   root.removeAttribute('data-particle-density');
   root.removeAttribute('data-animation-speed');
+  root.style.removeProperty('--surface-transparency');
   // Clear body class
   const body = document.body;
   for (const cls of ['bg-gradient', 'bg-mesh', 'bg-noise', 'bg-particles', 'glass-surfaces']) {
     body.classList.remove(cls);
+  }
+  const prevBodyClass = root.getAttribute('data-body-class');
+  if (prevBodyClass) {
+    prevBodyClass.split(' ').forEach((cls) => body.classList.remove(cls));
+    root.removeAttribute('data-body-class');
   }
 }
 
@@ -139,6 +145,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   // Apply surface transparency
   const surfaceTransparency = typeof theme.surfaceTransparency === 'number' ? theme.surfaceTransparency : 1;
   root.setAttribute('data-surface-transparency', String(surfaceTransparency));
+  root.style.setProperty('--surface-transparency', String(surfaceTransparency));
   body.classList.toggle('glass-surfaces', surfaceTransparency < 0.95);
 
   // Apply backdrop blur
@@ -158,15 +165,16 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   const particleDensity = typeof theme.particleDensity === 'number' ? theme.particleDensity : 0;
   root.setAttribute('data-particle-density', String(particleDensity));
 
-  // Apply custom body class
+  // Apply custom body class (and clean up a previous theme's class first so
+  // switching to a theme without a bodyClass does not leave stale styles).
+  const prevBodyClass = root.getAttribute('data-body-class');
+  if (prevBodyClass) {
+    prevBodyClass.split(' ').forEach((cls) => body.classList.remove(cls));
+    root.removeAttribute('data-body-class');
+  }
   if (theme.bodyClass) {
-    // Clean up previous body class if different
-    const prevBodyClass = root.getAttribute('data-body-class');
-    if (prevBodyClass && prevBodyClass !== theme.bodyClass) {
-      prevBodyClass.split(' ').forEach((cls) => body.classList.remove(cls));
-    }
-    root.setAttribute('data-body-class', theme.bodyClass!);
-    theme.bodyClass!.split(' ').forEach((cls) => body.classList.add(cls));
+    root.setAttribute('data-body-class', theme.bodyClass);
+    theme.bodyClass.split(' ').forEach((cls) => body.classList.add(cls));
   }
 }
 

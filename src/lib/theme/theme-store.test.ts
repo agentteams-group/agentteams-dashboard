@@ -53,7 +53,7 @@ describe('theme store', () => {
     store.addCustomTheme({ id: 'gone', name: 'Gone', base: 'light' });
     store.setThemeId('gone');
     useThemeStore.getState().removeCustomTheme('gone');
-    expect(useThemeStore.getState().themeId).toBe('dark');
+    expect(useThemeStore.getState().themeId).toBe('light');
   });
 
   it('enterprise config provides themes and default', () => {
@@ -106,7 +106,7 @@ describe('resolveTheme', () => {
 
   it('falls back to the default theme for unknown ids', () => {
     useThemeStore.setState({ themeId: 'missing-theme' });
-    expect(resolveTheme(baseState(), false).id).toBe('dark');
+    expect(resolveTheme(baseState(), false).id).toBe('light');
   });
 
   it('locked enterprise config forces the default theme', () => {

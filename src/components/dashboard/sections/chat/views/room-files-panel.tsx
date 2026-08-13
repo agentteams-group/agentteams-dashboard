@@ -61,12 +61,15 @@ interface RoomFile {
   downloadUrl?: string;
 }
 
-function extractFilesFromMessages(messages: Array<{
-  event_id: string;
-  content: { msgtype?: string; body?: string; url?: string; info?: { mimetype?: string; size?: number } };
-  origin_server_ts: number;
-  type: string;
-}>): RoomFile[] {
+function extractFilesFromMessages(
+  homeserver: string,
+  messages: Array<{
+    event_id: string;
+    content: { msgtype?: string; body?: string; url?: string; info?: { mimetype?: string; size?: number } };
+    origin_server_ts: number;
+    type: string;
+  }>
+): RoomFile[] {
   return messages
     .filter((m) => {
       const msgtype = m.content?.msgtype;
@@ -79,7 +82,7 @@ function extractFilesFromMessages(messages: Array<{
       size: m.content?.info?.size || 0,
       timestamp: m.origin_server_ts,
       contentUri: m.content?.url || '',
-      downloadUrl: m.content?.url ? mxcToDownloadUrl(m.content.url) : undefined,
+      downloadUrl: m.content?.url ? mxcToDownloadUrl(m.content.url, homeserver) : undefined,
     }));
 }
 
@@ -104,7 +107,7 @@ async function fetchRoomFiles(homeserver: string, accessToken: string, roomId: s
   });
   if (!res.ok) throw new Error(`获取房间消息失败: ${res.status}`);
   const data = await res.json() as RoomFilesQueryResult;
-  const files = extractFilesFromMessages(data.chunk);
+  const files = extractFilesFromMessages(homeserver, data.chunk);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   return { files, totalSize };
 }
