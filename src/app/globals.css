@@ -324,11 +324,18 @@
   background-attachment: fixed;
   min-height: 100vh;
 }
-[data-bg-type="gradient"] .bg-gradient {
-  background: linear-gradient(var(--gradient-dir, to-br),
-    var(--bg-gradient-start, var(--primary)) 0%,
-    var(--bg-gradient-mid, var(--background)) 50%,
-    var(--bg-gradient-end, var(--primary)) 100%);
+
+/* When a custom background effect is active on the body, make the dashboard's
+ * solid bg-background wrapper transparent so the body-level gradient / mesh /
+ * noise / particles actually show through to the user. Without this, the
+ * `<div className="bg-background">` would cover the entire viewport with a solid
+ * color and the user would only see the effect inside dialogs (which sit in a
+ * separate portal that does not use a solid wrapper). */
+html[data-bg-type="gradient"] body .bg-background,
+html[data-bg-type="mesh"] body .bg-background,
+html[data-bg-type="noise"] body .bg-background,
+html[data-bg-type="particles"] body .bg-background {
+  background-color: transparent;
 }
 
 /* Mesh gradient background */
@@ -348,7 +355,7 @@
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 0;
   opacity: var(--bg-noise-opacity, 0.03);
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 128px 128px;

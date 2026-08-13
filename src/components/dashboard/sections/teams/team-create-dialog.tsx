@@ -6,18 +6,38 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { CreateTeamRequest, WorkerResponse } from '@/lib/agentteams-api';
+import type {
+  CreateTeamRequest,
+  WorkerResponse,
+  WorkerRuntime,
+} from '@/lib/agentteams-api';
 import { workerNameError } from '@/lib/resource-name';
+import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
 
 export function parseWorkerNames(value: string): string[] {
   return value.split(/[,，]/).map((name) => name.trim()).filter(Boolean);
 }
+
+const RUNTIME_OPTIONS: { value: WorkerRuntime; label: string }[] = [
+  { value: 'openclaw', label: 'OpenClaw（默认）' },
+  { value: 'copaw', label: 'CoPaw' },
+  { value: 'hermes', label: 'Hermes' },
+  { value: 'qwenpaw', label: 'QwenPaw' },
+];
 
 export function TeamCreateDialog({
   open,
@@ -27,6 +47,7 @@ export function TeamCreateDialog({
   onOpenChange,
   onSubmit,
   workers,
+  modelOptions,
 }: {
   open: boolean;
   value: CreateTeamRequest;
@@ -35,6 +56,7 @@ export function TeamCreateDialog({
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
   workers: WorkerResponse[];
+  modelOptions?: ModelSelectionOption[];
 }) {
   // Keep the raw worker list text locally so a trailing separator the user
   // types (e.g. "worker1,") is preserved on screen; value.workerNames always
@@ -58,7 +80,7 @@ export function TeamCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
+      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>创建团队</DialogTitle>
         </DialogHeader>
@@ -113,6 +135,46 @@ export function TeamCreateDialog({
             />
             {workerNamesError && <p className="text-xs text-red-600 dark:text-red-400">{workerNamesError}</p>}
           </div>
+
+          <div className="space-y-2">
+            <Label>新 Worker 默认运行时</Label>
+            <Select
+              value={value.defaultWorkerRuntime ?? 'openclaw'}
+              onValueChange={(next) =>
+                onChange({ ...value, defaultWorkerRuntime: next as WorkerRuntime })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RUNTIME_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              仅在创建团队时为不存在的 Worker 自动建站时生效；已存在的 Worker 保持原有运行时。
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>新 Worker 默认请求模型别名</Label>
+            <ModelSelector
+              value={value.defaultWorkerModel}
+              onChange={(model) =>
+                onChange({ ...value, defaultWorkerModel: model || undefined })
+              }
+              placeholder="例如 team-chat"
+              options={modelOptions ?? []}
+            />
+            <p className="text-xs text-muted-foreground">
+              仅在自动建站时使用。可在 Worker 列表中单独调整已存在 Worker 的模型。
+            </p>
+          </div>
+
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
             <p>团队模型由 Leader 运行时与成员 Worker 的“请求模型别名”分别管理。</p>
             {workersWithoutModel.length > 0 ? (

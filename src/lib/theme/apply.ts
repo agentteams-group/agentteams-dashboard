@@ -40,7 +40,6 @@ function clearInlineTheme(root: HTMLElement): void {
   root.style.removeProperty('font-family');
   // Clear background effect attributes
   root.removeAttribute('data-bg-type');
-  root.removeAttribute('data-gradient-dir');
   root.removeAttribute('data-surface-transparency');
   root.removeAttribute('data-backdrop-blur');
   root.removeAttribute('data-noise-opacity');
@@ -116,7 +115,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   if (bgType === 'gradient') {
     body.classList.add('bg-gradient');
     const dir = theme.gradientDirection ?? 'to-br';
-    root.setAttribute('data-gradient-dir', dir);
+    root.style.setProperty('--gradient-dir', dir);
     if (theme.gradientColors && theme.gradientColors.length >= 2) {
       root.style.setProperty('--bg-gradient-start', theme.gradientColors[0]);
       root.style.setProperty('--bg-gradient-mid', theme.gradientColors[1] ?? theme.gradientColors[0]);

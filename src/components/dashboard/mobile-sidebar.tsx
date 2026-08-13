@@ -78,7 +78,7 @@ export function MobileSidebar({
             <div className="flex items-center justify-between px-4 h-14 border-b border-border">
               <div className="flex items-center gap-2">
                 <Image
-                  src="/logo.jpg"
+                  src="/logo.svg"
                   alt="AgentTeams"
                   width={32}
                   height={32}

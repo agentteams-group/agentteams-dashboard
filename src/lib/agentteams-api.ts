@@ -136,6 +136,10 @@ export interface CreateTeamRequest {
   admin?: { name: string };
   workerNames?: string[];
   humanMembers?: string[];
+  /** Default model for newly provisioned worker members. */
+  defaultWorkerModel?: RequestModelAlias;
+  /** Default runtime for newly provisioned worker members. */
+  defaultWorkerRuntime?: WorkerRuntime;
 }
 
 export interface UpdateTeamRequest {
@@ -145,6 +149,8 @@ export interface UpdateTeamRequest {
   admin?: { name: string } | null;
   workerNames?: string[];
   humanMembers?: string[];
+  defaultWorkerModel?: RequestModelAlias;
+  defaultWorkerRuntime?: WorkerRuntime;
 }
 
 export type TeamWorkerMember = { name: string; role: 'team_leader' | 'worker' };
@@ -174,17 +180,27 @@ export function buildWorkerMembers(
  * Controller contract: every workerMembers reference (including the team_leader)
  * must map to an already-existing Worker resource — team creation does not
  * provision members. Ensure each member exists before creating the team, and
- * create the missing ones with the minimal Worker payload (name + runtime).
+ * create the missing ones with the minimal Worker payload (name + runtime,
+ * optionally a default model when the caller supplies one).
  */
-async function ensureWorkersExist(members: TeamWorkerMember[]): Promise<void> {
+export async function ensureWorkersExist(
+  members: TeamWorkerMember[],
+  options: { defaultModel?: RequestModelAlias; defaultRuntime?: WorkerRuntime } = {},
+): Promise<void> {
   const existing = await agentteamsApi.listWorkers();
   const existingNames = new Set(existing.map((worker) => worker.name));
   const missing = [...new Set(members.map((member) => member.name))]
     .filter((name) => name && !existingNames.has(name));
+  const runtime = options.defaultRuntime ?? ('openclaw' as WorkerRuntime);
   for (const name of missing) {
+    const payload: { name: string; runtime: WorkerRuntime; model?: RequestModelAlias } = {
+      name,
+      runtime,
+    };
+    if (options.defaultModel) payload.model = options.defaultModel;
     await proxyRequest<WorkerResponse>('/workers', {
       method: 'POST',
-      body: JSON.stringify({ name, runtime: 'openclaw' as WorkerRuntime }),
+      body: JSON.stringify(payload),
     });
   }
 }
@@ -476,30 +492,40 @@ export const agentteamsApi = {
 
   createTeam: async (data: CreateTeamRequest) => {
     // 兼容旧字段 admin：Controller 实际接收的是 leader.name（workerMembers 中的 team_leader）
-    const { workerNames, leader, ...rest } = data;
+    const { workerNames, leader, defaultWorkerModel, defaultWorkerRuntime, ...rest } = data;
     const payload: Record<string, unknown> = { ...rest };
     if (payload.admin && !leader) {
       payload.leader = payload.admin;
     }
     const workerMembers = buildWorkerMembers(leader, workerNames);
-    await ensureWorkersExist(workerMembers);
+    await ensureWorkersExist(workerMembers, {
+      defaultModel: defaultWorkerModel,
+      defaultRuntime: defaultWorkerRuntime,
+    });
     payload.workerMembers = workerMembers;
     delete payload.leader;
     delete payload.workerNames;
+    delete payload.defaultWorkerModel;
+    delete payload.defaultWorkerRuntime;
     return proxyRequest<TeamResponse>('/teams', { method: 'POST', body: JSON.stringify(payload) });
   },
 
   updateTeam: async (name: string, data: UpdateTeamRequest) => {
-    const { workerNames, leader, admin, ...rest } = data;
+    const { workerNames, leader, admin, defaultWorkerModel, defaultWorkerRuntime, ...rest } = data;
     const payload: Record<string, unknown> = { ...rest };
     if (admin !== undefined) payload.admin = admin;
     if (workerNames !== undefined) {
       const workerMembers = buildWorkerMembers(leader ?? undefined, workerNames);
-      await ensureWorkersExist(workerMembers);
+      await ensureWorkersExist(workerMembers, {
+        defaultModel: defaultWorkerModel,
+        defaultRuntime: defaultWorkerRuntime,
+      });
       payload.workerMembers = workerMembers;
     }
     delete payload.leader;
     delete payload.workerNames;
+    delete payload.defaultWorkerModel;
+    delete payload.defaultWorkerRuntime;
     return proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
 
