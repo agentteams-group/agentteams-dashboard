@@ -29,7 +29,6 @@ import {
   Clock,
   Server,
   History,
-  Stethoscope,
   FileDown,
   LayoutGrid,
   Eye,
@@ -38,7 +37,6 @@ import {
   Puzzle,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
-import { TroubleshootTab } from './settings/troubleshoot-tab';
 import { DebugLogTab } from './settings/debug-log-tab';
 import { ThemeTab } from './settings/theme-tab';
 import { PluginsTab } from './settings/plugins-tab';
@@ -139,12 +137,8 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="connection">连接</TabsTrigger>
-            <TabsTrigger value="troubleshoot">
-              <Stethoscope className="w-3.5 h-3.5 mr-1" />
-              AI 诊断
-            </TabsTrigger>
             <TabsTrigger value="debug-log">
               <FileDown className="w-3.5 h-3.5 mr-1" />
               日志收集
@@ -338,10 +332,6 @@ export function SettingsDialog() {
                 </div>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="troubleshoot" className="py-4">
-            <TroubleshootTab />
           </TabsContent>
 
           <TabsContent value="debug-log" className="py-4">
