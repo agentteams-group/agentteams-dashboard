@@ -362,15 +362,6 @@ export interface LogLine {
   message: string;
 }
 
-export interface TroubleshootRequest {
-  component: string;
-  symptom: string;
-  logs?: string;
-  infraSnapshot?: InfrastructureInfo;
-}
-
-export type TroubleshootResponse = ReadableStream<Uint8Array>;
-
 // ============ Proxy Request Helper ============
 
 async function proxyRequest<T>(
@@ -756,20 +747,6 @@ export const agentteamsApi = {
     if (options?.level) params.set('level', options.level);
     const query = params.toString() ? `?${params.toString()}` : '';
     return proxyRequest<LogLine[]>(`/logs/${encodeURIComponent(component)}${query}`, { method: 'GET' });
-  },
-
-  // AI Troubleshooting
-  troubleshoot: async (body: TroubleshootRequest): Promise<Response> => {
-    const res = await fetch(apiUrl('/api/agentteams/troubleshoot'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new ApiError(`Troubleshoot failed: ${text || res.statusText}`, res.status, '/troubleshoot');
-    }
-    return res;
   },
 
   // Setup

@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  Clock,
   Container,
   Copy,
   Loader2,
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { apiUrl } from '@/lib/api-base';
 import { pluginSectionId, type DashboardPluginApi } from '@/lib/plugins/types';
@@ -300,8 +302,6 @@ async function callTroubleshoot(body: {
   if (!res.ok) {
     throw new Error(`诊断请求失败: HTTP ${res.status}${text ? ` · ${text}` : ''}`);
   }
-  // The endpoint replies with NextResponse.json({ answer }) (non-streaming).
-  // Tolerate a plain-text passthrough too, in case a gateway streams back.
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -311,6 +311,64 @@ async function callTroubleshoot(body: {
   if (isObject(parsed) && typeof parsed.answer === 'string') return parsed.answer;
   if (isObject(parsed) && typeof parsed.error === 'string') throw new Error(parsed.error);
   return text;
+}
+
+interface LogAnalysisState {
+  running: boolean;
+  progress: { phase: string; pct: number; message: string };
+  error: string | null;
+  answer: string;
+}
+
+function collectSSE(url: string, body: unknown): AsyncGenerator<{ event: string; data: unknown }, void, void> {
+  return (async function* () {
+    const res = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const block = buffer.slice(0, nl + 1);
+          buffer = buffer.slice(nl + 1);
+          if (!block.includes('data:')) continue;
+          const line = block.trimEnd();
+          const m = /data:\s*(.*)/.exec(line);
+          if (!m) continue;
+          try {
+            const obj = JSON.parse(m[1]);
+            yield { event: obj.event || 'data', data: obj };
+          } catch { /* ignore */ }
+        }
+      }
+    } finally { reader.releaseLock(); }
+  })();
+}
+
+async function collectAndAnalyzeLogs(opts: { range: string; redact: boolean }): Promise<string> {
+  const params = new URLSearchParams({ range: opts.range });
+  const url = apiUrl(`/api/agentteams/wen-tian/logs?${params}`);
+  let answer = '';
+  for await (const { event, data } of collectSSE(url, { range: opts.range, redact: opts.redact })) {
+    if (event === 'chunk' && typeof (data as Record<string, unknown>)['content'] === 'string') {
+      answer += String((data as Record<string, unknown>)['content']);
+    } else if (event === 'result') {
+      const d = data as Record<string, unknown>;
+      if (typeof d['answer'] === 'string') return d['answer'] as string;
+    } else if (event === 'error') {
+      const d = data as Record<string, unknown>;
+      if (typeof d['error'] === 'string') throw new Error(d['error'] as string);
+    }
+  }
+  return answer;
 }
 
 const SEVERITY_LABELS: Record<Severity, { label: string; icon: React.ReactNode; badgeClass: string }> = {
@@ -562,6 +620,8 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           </CardContent>
         </Card>
 
+        <LogAnalysisSection />
+
         {infra && (
           <Card>
             <CardHeader className="pb-2">
@@ -695,6 +755,67 @@ function createHealthWidget(api: DashboardPluginApi) {
       </Card>
     );
   };
+}
+
+// ────────────────────────────────────────────
+// Log Analysis Section
+// ────────────────────────────────────────────
+
+function LogAnalysisSection() {
+  const [state, setState] = useState<LogAnalysisState>({ running: false, progress: { phase: '', pct: 0, message: '' }, error: null, answer: '' });
+
+  const handleAnalyze = useCallback(async () => {
+    setState({ running: true, progress: { phase: 'init', pct: 0, message: '' }, error: null, answer: '' });
+    try {
+      const answer = await collectAndAnalyzeLogs({ range: '1h', redact: true });
+      setState((s) => ({ ...s, running: false, answer }));
+      toast.success('日志分析完成');
+    } catch (err) {
+      setState((s) => ({ ...s, running: false, error: err instanceof Error ? err.message : '未知错误' }));
+      toast.error('日志分析失败');
+    }
+  }, []);
+
+  if (state.running) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-primary animate-spin" />
+            日志分析中…
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Progress value={state.progress.pct} />
+          <p className="text-xs text-muted-foreground">{state.progress.message || '正在收集日志并分析…'}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <Clock className="w-4 h-4 text-primary" />
+          日志分析
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">分析过去 1 小时内的容器日志、Agent 会话和 Matrix 消息，由 AI 给出诊断结论与修复建议。</p>
+        <Button onClick={() => void handleAnalyze()} disabled={state.running} variant="outline" size="sm">
+          <Loader2 className={`w-4 h-4 mr-1 ${state.running ? 'animate-spin' : ''}`} />
+          开始日志分析
+        </Button>
+        {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+        {state.answer && (
+          <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/40 p-3 max-h-80 overflow-auto">
+            {state.answer}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ────────────────────────────────────────────
