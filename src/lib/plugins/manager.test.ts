@@ -152,4 +152,32 @@ describe('plugin manager lifecycle', () => {
     await expect(pluginManager.activate('noact')).rejects.toThrow(/activate/);
     expect(statusOf('noact')).toBe('error');
   });
+
+  it('installFromManifestJson installs from a parsed manifest object', async () => {
+    // Pre-mark the plugin as disabled so the install path skips activation
+    // (the synthetic uploaded:// URL can't actually serve a real entry module).
+    const manifestJson: PluginManifest = {
+      id: 'uploaded',
+      name: 'uploaded',
+      version: '1.2.3',
+      entry: { dashboard: 'index.js' },
+      extensionPoints: ['sidebar-menu'],
+    };
+    // Pre-seed disabledIds so installFromManifestJson short-circuits activation.
+    usePluginRegistry.setState({ disabledIds: ['uploaded'] });
+
+    const record = await pluginManager.installFromManifestJson(manifestJson, {
+      manifestUrl: 'uploaded://plugin.json',
+    });
+
+    expect(record.manifest.id).toBe('uploaded');
+    expect(usePluginRegistry.getState().installedUrls).toContain('uploaded://plugin.json');
+    expect(usePluginRegistry.getState().records['uploaded'].source.kind).toBe('url');
+  });
+
+  it('installFromManifestJson rejects an invalid manifest', async () => {
+    await expect(
+      pluginManager.installFromManifestJson({ not: 'a manifest' })
+    ).rejects.toThrow();
+  });
 });

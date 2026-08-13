@@ -147,6 +147,49 @@ export class PluginManager {
     return usePluginRegistry.getState().records[manifest.id];
   }
 
+  /**
+   * Install a plugin from a parsed manifest object (e.g. from a file the user
+   * uploaded via the Settings → Plugins tab). The manifest URL is derived from
+   * a synthetic blob URL so the runtime can still resolve `entry.dashboard`
+   * relative to it. Installed via the `kind: 'url'` channel so reload /
+   * uninstall semantics stay identical to URL-installed plugins.
+   */
+  async installFromManifestJson(
+    manifestJson: unknown,
+    options: { manifestUrl?: string; persist?: boolean } = {}
+  ): Promise<PluginRecord> {
+    const { persist = true } = options;
+    const registry = usePluginRegistry.getState();
+
+    const manifest = validatePluginManifest(manifestJson, { dashboardVersion: DASHBOARD_VERSION });
+
+    // Synthetic blob URL keeps entries addressable even when the manifest was
+    // uploaded from disk. The user sees this in the UI as "本地文件 · ...".
+    const manifestUrl = options.manifestUrl ?? `blob:uploaded/${manifest.id}/plugin.json`;
+
+    const existing = registry.records[manifest.id];
+    if (existing && existing.source.kind === 'url' && existing.source.manifestUrl === manifestUrl) {
+      const refreshed: PluginRecord = { ...existing, manifest };
+      registry.upsertRecord(refreshed);
+      if (persist) registry.addInstalledUrl(manifestUrl);
+      return refreshed;
+    }
+    if (existing) {
+      throw new PluginManifestError(
+        `插件 id "${manifest.id}" 已被占用（来源不同）。请先卸载旧插件。`
+      );
+    }
+
+    const record = makePluginRecord(manifest, { kind: 'url', manifestUrl });
+    usePluginRegistry.getState().upsertRecord(record);
+    if (persist) usePluginRegistry.getState().addInstalledUrl(manifestUrl);
+
+    if (!usePluginRegistry.getState().disabledIds.includes(manifest.id)) {
+      await this.activate(manifest.id);
+    }
+    return usePluginRegistry.getState().records[manifest.id];
+  }
+
   /** Load + activate a registered plugin. */
   async activate(id: string): Promise<void> {
     const registry = usePluginRegistry.getState();

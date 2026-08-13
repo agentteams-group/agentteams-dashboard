@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Puzzle,
@@ -8,6 +8,8 @@ import {
   Trash2,
   RefreshCw,
   DownloadCloud,
+  Upload,
+  FileJson,
   AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,6 +45,7 @@ export function PluginsTab() {
   const [installUrl, setInstallUrl] = useState('');
   const [installing, setInstalling] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const plugins = selectPluginList({ records });
 
@@ -59,6 +62,39 @@ export function PluginsTab() {
     } finally {
       setInstalling(false);
     }
+  };
+
+  const handleUploadFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const record = await pluginManager.installFromManifestJson(parsed, {
+        manifestUrl: `uploaded://${file.name}`,
+      });
+      toast.success(`插件「${record.manifest.name}」上传并安装成功`);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        toast.error('plugin.json 不是合法的 JSON');
+      } else {
+        toast.error(err instanceof Error ? err.message : '插件上传失败');
+      }
+    }
+  };
+
+  const handleDownloadManifest = (record: PluginRecord) => {
+    const manifest = record.manifest;
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${manifest.id}-${manifest.version}.plugin.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`已下载「${manifest.name}」的清单`);
   };
 
   const handleToggle = async (record: PluginRecord, nextEnabled: boolean) => {
@@ -127,6 +163,38 @@ export function PluginsTab() {
         </p>
       </div>
 
+      {/* Upload plugin.json from local file */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          <Upload className="w-3.5 h-3.5" />
+          上传 plugin.json
+        </Label>
+        <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleUploadFile(file);
+              e.target.value = '';
+            }}
+          />
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FileJson className="w-3.5 h-3.5 mr-1" />
+            选择文件并安装
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          直接选择本地的 plugin.json；清单验证通过后即与 URL 安装走同一通道。
+        </p>
+      </div>
+
       {/* Plugin list */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
@@ -190,6 +258,15 @@ export function PluginsTab() {
                   </Badge>
                 ))}
                 <span className="ml-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleDownloadManifest(record)}
+                    title="下载 plugin.json"
+                  >
+                    <DownloadCloud className="w-3.5 h-3.5" />
+                  </Button>
                   {record.source.kind === 'url' && (
                     <Button
                       variant="ghost"

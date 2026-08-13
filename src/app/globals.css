@@ -374,19 +374,28 @@ html[data-bg-type="particles"] body .bg-background {
   opacity: 0.15;
 }
 
-/* Glassmorphic surfaces */
-.glass-surfaces .glass-card,
-.glass-surfaces .card,
-.glass-surfaces [class*="rounded-lg"]:not(.bg-):not(.text-):not(.border-):not([class*="bg-"]):not([class*="text-"]) {
+/* Glassmorphic surfaces — only when transparency is actually requested,
+ * otherwise the default card colors stay intact (no mysterious black bg).
+ * Using `currentColor` here was wrong: it mixed the *text* color into the
+ * card background, which produced a near-black surface on the light theme. */
+html[data-surface-transparency]:not([data-surface-transparency="1"]) .glass-card,
+html[data-surface-transparency]:not([data-surface-transparency="1"]) .card {
   backdrop-filter: blur(var(--glass-blur, 12px));
-  background: color-mix(in srgb, currentColor, transparent calc((1 - var(--surface-transparency, 1)) * 100%));
+  background-color: color-mix(
+    in srgb,
+    var(--card, #ffffff) var(--surface-transparency, 1),
+    transparent
+  );
 }
 
-/* Transparency overrides for common surface elements */
-[data-surface-transparency] .card,
-[data-surface-transparency] [role="listitem"],
-[data-surface-transparency] [class*="bg-card"] {
-  background-color: color-mix(in srgb, var(--card, #171717) var(--surface-transparency, 1), transparent);
+/* Same idea, gated on actual transparency, for surfaces that use bg-card
+ * directly (rounded tiles / list items). */
+html[data-surface-transparency]:not([data-surface-transparency="1"]) [class*="bg-card"] {
+  background-color: color-mix(
+    in srgb,
+    var(--card, #ffffff) var(--surface-transparency, 1),
+    transparent
+  );
 }
 
 /* Reduced motion: kill all decorative animations */

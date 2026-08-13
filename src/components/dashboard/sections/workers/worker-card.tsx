@@ -78,10 +78,11 @@ export function WorkerCard({
       animate={{ opacity: 1, y: 0 }}
       transition={reduceMotion ? { duration: 0 } : { delay: index * 0.03 }}
       layout
+      className="h-full"
     >
       <Card
         aria-busy={isDeleting || undefined}
-        className={`relative glass-card hover-lift ${isSelected ? 'ring-2 ring-emerald-500/50' : ''} ${
+        className={`relative h-full flex flex-col glass-card hover-lift ${isSelected ? 'ring-2 ring-emerald-500/50' : ''} ${
           isDeleting ? 'worker-card-deleting' : ''
         }`}
       >
@@ -186,7 +187,7 @@ export function WorkerCard({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
+          <div className="flex items-center gap-1.5 mt-auto pt-3 border-t border-border">
             <Button variant="ghost" size="sm" className="h-7 text-xs flex-1" onClick={onView}>
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
