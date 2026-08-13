@@ -13,6 +13,13 @@ import {
   Download,
   Upload,
   Lock,
+  Blend,
+  Droplets,
+  Sparkles,
+  Wind,
+  Feather,
+  Layers,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +45,9 @@ import {
   type ThemeFontFamily,
   type ThemeBase,
   type ThemeDefinition,
+  type ThemeAnimationSpeed,
+  type ThemeBackgroundType,
+  type ThemeGradientDirection,
 } from '@/lib/theme/types';
 import {
   exportTheme,
@@ -410,6 +420,14 @@ function ThemeEditor({
     toast.success('已应用配色方案');
   };
 
+  const updateNumber = (key: keyof ThemeDefinition, value: number) => {
+    onChange({ ...theme, [key]: value });
+  };
+
+  const updateString = (key: keyof ThemeDefinition, value: string) => {
+    onChange({ ...theme, [key]: value });
+  };
+
   return (
     <div className="space-y-4 rounded-lg border p-4" data-testid="theme-editor">
       <Label className="flex items-center gap-2">
@@ -417,6 +435,7 @@ function ThemeEditor({
         编辑「{theme.nameZh || theme.name}」（改动实时预览并自动保存）
       </Label>
 
+      {/* Name and base */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">主题名称</Label>
@@ -495,71 +514,292 @@ function ThemeEditor({
         </div>
       ))}
 
-      {/* Font family selector */}
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">字体风格</Label>
-        <Select
-          value={theme.fontFamily}
-          onValueChange={(value) => onChange({ ...theme, fontFamily: value as ThemeFontFamily })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="选择字体风格" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(FONT_FAMILY_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
+      {/* ── Visual Effects Section ──────────────────── */}
+      <div className="border-t pt-4 space-y-4">
+        <Label className="flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5" />
+          视觉效果
+        </Label>
+
+        {/* Animation Speed */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">动画速度</Label>
+          <Select
+            value={theme.animationSpeed ?? 'normal'}
+            onValueChange={(value) => onChange({ ...theme, animationSpeed: value as ThemeAnimationSpeed })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">无动画</SelectItem>
+              <SelectItem value="slow">缓慢</SelectItem>
+              <SelectItem value="normal">正常</SelectItem>
+              <SelectItem value="fast">快速</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Background Type */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">背景效果</Label>
+          <div className="grid grid-cols-5 gap-2">
+            {([
+              { value: 'solid', label: '纯色', icon: <Zap className="w-3.5 h-3.5" /> },
+              { value: 'gradient', label: '渐变', icon: <Blend className="w-3.5 h-3.5" /> },
+              { value: 'mesh', label: '网格', icon: <Layers className="w-3.5 h-3.5" /> },
+              { value: 'noise', label: '噪点', icon: <Feather className="w-3.5 h-3.5" /> },
+              { value: 'particles', label: '粒子', icon: <Sparkles className="w-3.5 h-3.5" /> },
+            ] as const).map(({ value, label, icon }) => (
+              <button
+                key={value}
+                onClick={() => onChange({ ...theme, backgroundType: value as ThemeBackgroundType })}
+                className={`flex flex-col items-center gap-1 p-2 rounded-md border text-xs transition-colors ${
+                  theme.backgroundType === value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border hover:border-primary/50'
+                }`}
+              >
+                {icon}
+                <span>{label}</span>
+              </button>
             ))}
-          </SelectContent>
-        </Select>
+          </div>
+        </div>
+
+        {/* Gradient Controls (shown when gradient/mesh selected) */}
+        {(theme.backgroundType === 'gradient' || theme.backgroundType === 'mesh') && (
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">渐变方向</Label>
+            <Select
+              value={theme.gradientDirection ?? 'to-br'}
+              onValueChange={(value) => onChange({ ...theme, gradientDirection: value as ThemeGradientDirection })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="to-t">至上</SelectItem>
+                <SelectItem value="to-tr">至右上</SelectItem>
+                <SelectItem value="to-r">至右</SelectItem>
+                <SelectItem value="to-br">至右下</SelectItem>
+                <SelectItem value="to-b">至下</SelectItem>
+                <SelectItem value="to-bl">至左下</SelectItem>
+                <SelectItem value="to-l">至左</SelectItem>
+                <SelectItem value="to-tl">至左上</SelectItem>
+                <SelectItem value="radial">径向</SelectItem>
+                <SelectItem value="conic">锥形</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Label className="text-xs text-muted-foreground">渐变颜色（至少 2 个）</Label>
+            <div className="flex flex-wrap gap-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <input
+                    type="color"
+                    aria-label={`渐变颜色 ${i + 1}`}
+                    value={theme.gradientColors?.[i] ?? (i === 0 ? '#10b981' : i === 1 ? '#3b82f6' : '#8b5cf6')}
+                    onChange={(e) => {
+                      const colors = [...(theme.gradientColors ?? [''])];
+                      colors[i] = e.target.value;
+                      onChange({ ...theme, gradientColors: colors });
+                    }}
+                    className="h-8 w-9 rounded border border-border bg-transparent p-0.5 cursor-pointer"
+                  />
+                  <Input
+                    value={theme.gradientColors?.[i] ?? ''}
+                    onChange={(e) => {
+                      const colors = [...(theme.gradientColors ?? [''])];
+                      colors[i] = e.target.value;
+                      onChange({ ...theme, gradientColors: colors });
+                    }}
+                    placeholder={`颜色 ${i + 1}`}
+                    className="h-8 text-xs font-mono w-28"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Noise opacity (shown when noise selected) */}
+        {theme.backgroundType === 'noise' && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              噪点透明度（{theme.noiseOpacity ?? 0.03}）
+            </Label>
+            <input
+              type="range"
+              aria-label="噪点透明度"
+              min={0}
+              max={0.15}
+              step={0.005}
+              value={theme.noiseOpacity ?? 0.03}
+              onChange={(e) => updateNumber('noiseOpacity', Number(e.target.value))}
+              className="w-full accent-[var(--primary)]"
+            />
+          </div>
+        )}
+
+        {/* Particle density (shown when particles selected) */}
+        {theme.backgroundType === 'particles' && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              粒子密度（{theme.particleDensity ?? 30}）
+            </Label>
+            <input
+              type="range"
+              aria-label="粒子密度"
+              min={0}
+              max={100}
+              step={5}
+              value={theme.particleDensity ?? 30}
+              onChange={(e) => updateNumber('particleDensity', Number(e.target.value))}
+              className="w-full accent-[var(--primary)]"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Numeric parameters */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* ── Surface Transparency Section ────────────── */}
+      <div className="border-t pt-4 space-y-4">
+        <Label className="flex items-center gap-2">
+          <Droplets className="w-3.5 h-3.5" />
+          表面透明度与毛玻璃
+        </Label>
+
+        {/* Surface transparency */}
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">
-            圆角大小（{theme.radius ?? 0.625} rem）
+            表面透明度（{typeof theme.surfaceTransparency === 'number' ? theme.surfaceTransparency.toFixed(2) : '1.00'}，1=不透明)
           </Label>
           <input
             type="range"
-            aria-label="圆角大小"
-            min={RADIUS_BOUNDS.min}
-            max={RADIUS_BOUNDS.max}
-            step={RADIUS_BOUNDS.step}
-            value={theme.radius ?? 0.625}
-            onChange={(e) => onChange({ ...theme, radius: Number(e.target.value) })}
+            aria-label="表面透明度"
+            min={0}
+            max={1}
+            step={0.01}
+            value={theme.surfaceTransparency ?? 1}
+            onChange={(e) => updateNumber('surfaceTransparency', Number(e.target.value))}
             className="w-full accent-[var(--primary)]"
           />
         </div>
+
+        {/* Backdrop blur */}
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">
-            字号（{theme.fontSize ?? 16} px，缩放整体界面）
+            毛玻璃模糊（{typeof theme.backdropBlur === 'number' ? theme.backdropBlur : 0}px）
           </Label>
           <input
             type="range"
-            aria-label="字号"
-            min={FONT_SIZE_BOUNDS.min}
-            max={FONT_SIZE_BOUNDS.max}
-            step={FONT_SIZE_BOUNDS.step}
-            value={theme.fontSize ?? 16}
-            onChange={(e) => onChange({ ...theme, fontSize: Number(e.target.value) })}
+            aria-label="毛玻璃模糊"
+            min={0}
+            max={40}
+            step={1}
+            value={theme.backdropBlur ?? 0}
+            onChange={(e) => updateNumber('backdropBlur', Number(e.target.value))}
             className="w-full accent-[var(--primary)]"
           />
         </div>
+      </div>
+
+      {/* ── Typography Section ──────────────────────── */}
+      <div className="border-t pt-4 space-y-4">
+        <Label className="flex items-center gap-2">
+          <Feather className="w-3.5 h-3.5" />
+          排版设置
+        </Label>
+
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">
-            间距基准（{theme.spacing ?? 0.25} rem）
-          </Label>
-          <input
-            type="range"
-            aria-label="间距基准"
-            min={SPACING_BOUNDS.min}
-            max={SPACING_BOUNDS.max}
-            step={SPACING_BOUNDS.step}
-            value={theme.spacing ?? 0.25}
-            onChange={(e) => onChange({ ...theme, spacing: Number(e.target.value) })}
-            className="w-full accent-[var(--primary)]"
+          <Label className="text-xs text-muted-foreground">字体风格</Label>
+          <Select
+            value={theme.fontFamily}
+            onValueChange={(value) => onChange({ ...theme, fontFamily: value as ThemeFontFamily })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="选择字体风格" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(FONT_FAMILY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* ── Layout Section ─────────────────────────── */}
+      <div className="border-t pt-4 space-y-4">
+        <Label className="flex items-center gap-2">
+          <Layers className="w-3.5 h-3.5" />
+          布局参数
+        </Label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              圆角大小（{theme.radius ?? 0.625} rem）
+            </Label>
+            <input
+              type="range"
+              aria-label="圆角大小"
+              min={RADIUS_BOUNDS.min}
+              max={RADIUS_BOUNDS.max}
+              step={RADIUS_BOUNDS.step}
+              value={theme.radius ?? 0.625}
+              onChange={(e) => onChange({ ...theme, radius: Number(e.target.value) })}
+              className="w-full accent-[var(--primary)]"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              字号（{theme.fontSize ?? 16} px，缩放整体界面）
+            </Label>
+            <input
+              type="range"
+              aria-label="字号"
+              min={FONT_SIZE_BOUNDS.min}
+              max={FONT_SIZE_BOUNDS.max}
+              step={FONT_SIZE_BOUNDS.step}
+              value={theme.fontSize ?? 16}
+              onChange={(e) => onChange({ ...theme, fontSize: Number(e.target.value) })}
+              className="w-full accent-[var(--primary)]"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              间距基准（{theme.spacing ?? 0.25} rem）
+            </Label>
+            <input
+              type="range"
+              aria-label="间距基准"
+              min={SPACING_BOUNDS.min}
+              max={SPACING_BOUNDS.max}
+              step={SPACING_BOUNDS.step}
+              value={theme.spacing ?? 0.25}
+              onChange={(e) => onChange({ ...theme, spacing: Number(e.target.value) })}
+              className="w-full accent-[var(--primary)]"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Advanced CSS ────────────────────────────── */}
+      <div className="border-t pt-4 space-y-4">
+        <Label className="flex items-center gap-2">
+          <Zap className="w-3.5 h-3.5" />
+          高级选项
+        </Label>
+
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">自定义 Body 类名</Label>
+          <Input
+            placeholder="可选，用于添加额外 CSS 类"
+            value={theme.bodyClass ?? ''}
+            onChange={(e) => onChange({ ...theme, bodyClass: e.target.value || undefined })}
           />
         </div>
       </div>

@@ -1,7 +1,14 @@
-import type { ExportedTheme, ThemeBase, ThemeDefinition, ThemeFontFamily } from './types';
+import type { ExportedTheme, ThemeBase, ThemeDefinition, ThemeFontFamily, ThemeAnimationSpeed, ThemeBackgroundType, ThemeGradientDirection } from './types';
 import { RADIUS_BOUNDS, FONT_SIZE_BOUNDS, SPACING_BOUNDS } from './types';
 
 const FONT_FAMILY_VALUES: ThemeFontFamily[] = ['geist', 'system', 'serif', 'mono'];
+const ANIMATION_SPEED_VALUES: ThemeAnimationSpeed[] = ['none', 'slow', 'normal', 'fast'];
+const BACKGROUND_TYPE_VALUES: ThemeBackgroundType[] = ['solid', 'gradient', 'mesh', 'noise', 'particles'];
+const GRADIENT_DIRECTION_VALUES: ThemeGradientDirection[] = [
+  'to-t', 'to-tr', 'to-r', 'to-br', 'to-b', 'to-bl', 'to-l', 'to-tl',
+  'from-t', 'from-tr', 'from-r', 'from-br', 'from-b', 'from-bl', 'from-l', 'from-tl',
+  'radial', 'conic',
+];
 
 /**
  * Validation / normalization shared by JSON import and enterprise
@@ -95,6 +102,83 @@ export function normalizeThemeDefinition(
     theme.fontFamily = family as ThemeFontFamily;
   }
 
+  if (input.animationSpeed !== undefined) {
+    const speed = input.animationSpeed;
+    if (typeof speed !== 'string' || !ANIMATION_SPEED_VALUES.includes(speed as ThemeAnimationSpeed)) {
+      throw new ThemeConfigError(`animationSpeed 必须是 ${ANIMATION_SPEED_VALUES.join(' / ')} 之一`);
+    }
+    theme.animationSpeed = speed as ThemeAnimationSpeed;
+  }
+
+  if (input.backgroundType !== undefined) {
+    const bgType = input.backgroundType;
+    if (typeof bgType !== 'string' || !BACKGROUND_TYPE_VALUES.includes(bgType as ThemeBackgroundType)) {
+      throw new ThemeConfigError(`backgroundType 必须是 ${BACKGROUND_TYPE_VALUES.join(' / ')} 之一`);
+    }
+    theme.backgroundType = bgType as ThemeBackgroundType;
+  }
+
+  if (input.gradientColors !== undefined) {
+    const colors = input.gradientColors;
+    if (!Array.isArray(colors) || colors.length < 2) {
+      throw new ThemeConfigError('gradientColors 必须包含至少 2 个颜色值');
+    }
+    for (const c of colors) {
+      if (typeof c !== 'string' || !/^[#a-fA-F0-9]{3,8}$/.test(c) && !c.startsWith('oklch')) {
+        throw new ThemeConfigError(`gradientColors 中的值必须是合法的 CSS 颜色: ${c}`);
+      }
+    }
+    theme.gradientColors = colors as string[];
+  }
+
+  if (input.gradientDirection !== undefined) {
+    const dir = input.gradientDirection;
+    if (typeof dir !== 'string' || !GRADIENT_DIRECTION_VALUES.includes(dir as ThemeGradientDirection)) {
+      throw new ThemeConfigError(`gradientDirection 必须是 ${GRADIENT_DIRECTION_VALUES.join(' / ')} 之一`);
+    }
+    theme.gradientDirection = dir as ThemeGradientDirection;
+  }
+
+  if (input.surfaceTransparency !== undefined) {
+    const t = Number(input.surfaceTransparency);
+    if (!Number.isFinite(t) || t < 0 || t > 1) {
+      throw new ThemeConfigError('surfaceTransparency 必须是 0 到 1 之间的数字');
+    }
+    theme.surfaceTransparency = t;
+  }
+
+  if (input.backdropBlur !== undefined) {
+    const b = Number(input.backdropBlur);
+    if (!Number.isFinite(b) || b < 0 || b > 40) {
+      throw new ThemeConfigError('backdropBlur 必须是 0 到 40 之间的数字 (px)');
+    }
+    theme.backdropBlur = b;
+  }
+
+  if (input.noiseOpacity !== undefined) {
+    const n = Number(input.noiseOpacity);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      throw new ThemeConfigError('noiseOpacity 必须是 0 到 1 之间的数字');
+    }
+    theme.noiseOpacity = n;
+  }
+
+  if (input.particleDensity !== undefined) {
+    const p = Number(input.particleDensity);
+    if (!Number.isFinite(p) || p < 0 || p > 100) {
+      throw new ThemeConfigError('particleDensity 必须是 0 到 100 之间的数字');
+    }
+    theme.particleDensity = p;
+  }
+
+  if (input.bodyClass !== undefined) {
+    const cls = input.bodyClass;
+    if (typeof cls !== 'string' || cls.length > 64 || !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(cls)) {
+      throw new ThemeConfigError('bodyClass 必须是合法 CSS 类名（字母开头，最多 64 字符）');
+    }
+    theme.bodyClass = cls;
+  }
+
   if (options.allowBuiltin && input.builtin === true) theme.builtin = true;
   if (options.allowEnterprise && input.enterprise === true) theme.enterprise = true;
 
@@ -133,6 +217,15 @@ export function exportTheme(theme: ThemeDefinition): string {
       ...(typeof theme.fontSize === 'number' ? { fontSize: theme.fontSize } : {}),
       ...(typeof theme.spacing === 'number' ? { spacing: theme.spacing } : {}),
       ...(theme.fontFamily ? { fontFamily: theme.fontFamily } : {}),
+      ...(theme.animationSpeed ? { animationSpeed: theme.animationSpeed } : {}),
+      ...(theme.backgroundType ? { backgroundType: theme.backgroundType } : {}),
+      ...(theme.gradientColors && theme.gradientColors.length >= 2 ? { gradientColors: theme.gradientColors } : {}),
+      ...(theme.gradientDirection ? { gradientDirection: theme.gradientDirection } : {}),
+      ...(typeof theme.surfaceTransparency === 'number' ? { surfaceTransparency: theme.surfaceTransparency } : {}),
+      ...(typeof theme.backdropBlur === 'number' ? { backdropBlur: theme.backdropBlur } : {}),
+      ...(typeof theme.noiseOpacity === 'number' ? { noiseOpacity: theme.noiseOpacity } : {}),
+      ...(typeof theme.particleDensity === 'number' ? { particleDensity: theme.particleDensity } : {}),
+      ...(theme.bodyClass ? { bodyClass: theme.bodyClass } : {}),
     },
   };
   return JSON.stringify(payload, null, 2);

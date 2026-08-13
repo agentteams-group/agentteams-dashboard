@@ -43,6 +43,7 @@ import { ManagerTable } from './managers/manager-table';
 import { ManagerCreateDialog } from './managers/manager-create-dialog';
 import { ManagerEditDialog, type ManagerEditForm } from './managers/manager-edit-dialog';
 import { ManagerDetailDialog } from './managers/manager-detail-dialog';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 
 function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
@@ -190,6 +191,9 @@ export function ManagersSection() {
       { name: editManager.name, data: data as UpdateManagerRequest },
       {
         onSuccess: () => {
+          // Clear local unread badge immediately so the next message
+          // doesn't land on a stale notification count.
+          useRoomMetaStore.getState().clearUnread(editManager.roomID ?? '');
           closeEdit();
           if (editForm.model?.trim() && editForm.model !== editManager.model) {
             toast.info('模型配置已保存。Controller 将在下一次 Manager 运行时调谐时加载新模型。');

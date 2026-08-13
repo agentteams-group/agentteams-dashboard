@@ -160,6 +160,10 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         if (s.controllerUrl === 'http://agentteams-controller.agentteams-system:8090') {
           s.controllerUrl = '';
         }
+        // Ensure taskBoardVisible defaults to false for new users / clean installs.
+        if (s.taskBoardVisible === undefined) {
+          s.taskBoardVisible = false;
+        }
         return s as AgentTeamsState;
       },
     }

@@ -72,6 +72,27 @@ describe('ThemeTab (settings → 外观)', () => {
     expect(colorInputs.length).toBeGreaterThan(0);
   });
 
+  it('shows new visual effect controls in the editor', async () => {
+    renderTab();
+    fireEvent.click(screen.getByText('新建'));
+    await waitFor(() => expect(screen.getByTestId('theme-editor')).toBeInTheDocument());
+    // New sections should be visible
+    expect(screen.getByText('视觉效果')).toBeInTheDocument();
+    expect(screen.getByText('表面透明度与毛玻璃')).toBeInTheDocument();
+    expect(screen.getByText('布局参数')).toBeInTheDocument();
+    // Animation speed selector
+    expect(screen.getByText('动画速度')).toBeInTheDocument();
+    // Background type buttons
+    expect(screen.getByText('纯色')).toBeInTheDocument();
+    expect(screen.getByText('渐变')).toBeInTheDocument();
+    expect(screen.getByText('网格')).toBeInTheDocument();
+    expect(screen.getByText('噪点')).toBeInTheDocument();
+    expect(screen.getByText('粒子')).toBeInTheDocument();
+    // Transparency controls
+    expect(screen.getByLabelText('表面透明度')).toBeInTheDocument();
+    expect(screen.getByLabelText('毛玻璃模糊')).toBeInTheDocument();
+  });
+
   it('switching theme updates the document', async () => {
     renderTab();
     fireEvent.click(screen.getByText('亮色'));

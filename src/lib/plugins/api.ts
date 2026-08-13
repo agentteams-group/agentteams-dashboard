@@ -117,6 +117,12 @@ export function createPluginApi(options: CreatePluginApiOptions): DashboardPlugi
     listTeams: () => agentteamsApi.listTeams(),
     listManagers: () => agentteamsApi.listManagers(),
     listHumans: () => agentteamsApi.listHumans(),
+    listBuckets: () => agentteamsApi.listBuckets(),
+    listObjects: (bucket: string, prefix?: string) => agentteamsApi.listObjects(bucket, prefix),
+    uploadObject: (bucket: string, key: string, file: File) => agentteamsApi.uploadObject(bucket, key, file),
+    getDownloadUrl: (bucket: string, key: string) => agentteamsApi.downloadObjectUrl(bucket, key),
+    presignDownloadUrl: (bucket: string, key: string) => agentteamsApi.presignDownload(bucket, key).then(r => r.url),
+    presignUploadUrl: (bucket: string, key: string, contentType?: string) => agentteamsApi.presignUpload(bucket, key, contentType),
   };
 
   const log = {

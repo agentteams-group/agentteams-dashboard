@@ -202,6 +202,18 @@ export interface PluginDashboardServices {
   listTeams: () => Promise<unknown>;
   listManagers: () => Promise<unknown>;
   listHumans: () => Promise<unknown>;
+  /** List all storage buckets. */
+  listBuckets: () => Promise<Array<{ name: string; creationDate?: string }>>;
+  /** List objects in a bucket with optional prefix (scan). */
+  listObjects: (bucket: string, prefix?: string) => Promise<Array<{ key: string; size: number; lastModified?: string; isPrefix?: boolean }>>;
+  /** Upload a file to a bucket. */
+  uploadObject: (bucket: string, key: string, file: File) => Promise<void>;
+  /** Get a download URL for an object. */
+  getDownloadUrl: (bucket: string, key: string) => string;
+  /** Get a presigned download URL (safe for direct browser access). */
+  presignDownloadUrl: (bucket: string, key: string) => Promise<string>;
+  /** Get a presigned upload URL for direct browser upload. */
+  presignUploadUrl: (bucket: string, key: string, contentType?: string) => Promise<{ url: string; fields?: Record<string, string> }>;
 }
 
 export interface PluginLogger {

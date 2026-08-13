@@ -299,6 +299,100 @@
   100% { background-position: -200% 0; }
 }
 
+/* ── Theme Background Effects ─────────────────────── */
+
+/* Animation speed modifiers */
+.animate-none * {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+}
+.animate-slow * {
+  transition-duration: 500ms !important;
+  animation-duration: 2s !important;
+}
+.animate-fast * {
+  transition-duration: 100ms !important;
+  animation-duration: 0.3s !important;
+}
+
+/* Gradient background */
+.bg-gradient {
+  background: linear-gradient(var(--gradient-dir, to-br),
+    var(--bg-gradient-start, oklch(0.145 0 0)) 0%,
+    var(--bg-gradient-mid, oklch(0.3 0 0)) 50%,
+    var(--bg-gradient-end, oklch(0.145 0 0)) 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+[data-bg-type="gradient"] .bg-gradient {
+  background: linear-gradient(var(--gradient-dir, to-br),
+    var(--bg-gradient-start, var(--primary)) 0%,
+    var(--bg-gradient-mid, var(--background)) 50%,
+    var(--bg-gradient-end, var(--primary)) 100%);
+}
+
+/* Mesh gradient background */
+.bg-mesh {
+  background:
+    radial-gradient(ellipse at 20% 20%, var(--bg-mesh-color-1, oklch(0.3 0.1 250)) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, var(--bg-mesh-color-2, oklch(0.4 0.1 180)) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, var(--bg-mesh-color-3, oklch(0.2 0.05 300)) 0%, transparent 60%),
+    var(--background, oklch(0.145 0 0));
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Noise texture overlay */
+.bg-noise::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: var(--bg-noise-opacity, 0.03);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+}
+
+/* Particle background placeholder */
+.bg-particles::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(circle, var(--primary, oklch(0.922 0 0)) 1px, transparent 1px);
+  background-size: calc(40px - var(--bg-particle-density, 30) * 0.3px) calc(40px - var(--bg-particle-density, 30) * 0.3px);
+  background-position: center;
+  opacity: 0.15;
+}
+
+/* Glassmorphic surfaces */
+.glass-surfaces .glass-card,
+.glass-surfaces .card,
+.glass-surfaces [class*="rounded-lg"]:not(.bg-):not(.text-):not(.border-):not([class*="bg-"]):not([class*="text-"]) {
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  background: color-mix(in srgb, currentColor, transparent calc((1 - var(--surface-transparency, 1)) * 100%));
+}
+
+/* Transparency overrides for common surface elements */
+[data-surface-transparency] .card,
+[data-surface-transparency] [role="listitem"],
+[data-surface-transparency] [class*="bg-card"] {
+  background-color: color-mix(in srgb, var(--card, #171717) var(--surface-transparency, 1), transparent);
+}
+
+/* Reduced motion: kill all decorative animations */
+@media (prefers-reduced-motion: reduce) {
+  .bg-gradient, .bg-mesh, .bg-noise::before, .bg-particles::before {
+    animation: none !important;
+    transition: none !important;
+  }
+  .bg-noise::before, .bg-particles::before {
+    display: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

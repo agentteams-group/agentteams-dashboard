@@ -7,6 +7,9 @@
  *   - base mode (light/dark) driving the `.dark` class + color-scheme
  *   - optional CSS custom-property overrides (any `--xxx` token)
  *   - optional radius / font-size / spacing scale overrides
+ *   - optional background effects (gradient, mesh, noise, particles)
+ *   - optional animation speed controls
+ *   - optional transparency / blur overrides for surfaces
  */
 
 /** Base color mode. Drives Tailwind's `dark:` variant and `color-scheme`. */
@@ -14,6 +17,18 @@ export type ThemeBase = 'light' | 'dark';
 
 /** Font family preset to apply to the root element. */
 export type ThemeFontFamily = 'geist' | 'system' | 'serif' | 'mono';
+
+/** Animation speed preset for UI transitions. */
+export type ThemeAnimationSpeed = 'none' | 'slow' | 'normal' | 'fast';
+
+/** Background effect type for the root element. */
+export type ThemeBackgroundType = 'solid' | 'gradient' | 'mesh' | 'noise' | 'particles';
+
+/** Gradient direction preset. */
+export type ThemeGradientDirection =
+  | 'to-t' | 'to-tr' | 'to-r' | 'to-br' | 'to-b' | 'to-bl' | 'to-l' | 'to-tl'
+  | 'from-t' | 'from-tr' | 'from-r' | 'from-br' | 'from-b' | 'from-bl' | 'from-l' | 'from-tl'
+  | 'radial' | 'conic';
 
 /** Font stack strings for each preset. */
 export const FONT_FAMILY_STACKS: Record<ThemeFontFamily, string> = {
@@ -62,6 +77,24 @@ export interface ThemeDefinition {
   enterprise?: boolean;
   /** Font family preset applied to the root element. */
   fontFamily?: ThemeFontFamily;
+  /** Animation speed for UI transitions and effects. */
+  animationSpeed?: ThemeAnimationSpeed;
+  /** Background effect type applied to the body/root element. */
+  backgroundType?: ThemeBackgroundType;
+  /** Gradient colors for background effects. [start, mid, end] or [color1, color2]. */
+  gradientColors?: string[];
+  /** Gradient direction for linear gradients. */
+  gradientDirection?: ThemeGradientDirection;
+  /** Transparency factor for card/surface backgrounds (0 = fully transparent, 1 = opaque). */
+  surfaceTransparency?: number;
+  /** Blur amount for glassmorphic surfaces (0 = none, up to 40px). */
+  backdropBlur?: number;
+  /** Noise texture opacity (0 = hidden, 1 = full opacity). */
+  noiseOpacity?: number;
+  /** Particle density for particle background (0 = hidden, up to 100). */
+  particleDensity?: number;
+  /** Custom CSS class to apply to the body element. */
+  bodyClass?: string;
 }
 
 /**
