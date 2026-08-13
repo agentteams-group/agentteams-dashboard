@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { selectPluginList, usePluginRegistry } from '@/lib/plugins/registry';
 import { pluginManager } from '@/lib/plugins/manager';
+import { apiUrl } from '@/lib/api-base';
 import {
   EXTENSION_POINT_LABELS,
   type ExtensionPointId,
@@ -64,20 +65,26 @@ export function PluginsTab() {
     }
   };
 
-  const handleUploadFile = async (file: File) => {
+  const handleUploadPackage = async (file: File) => {
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const record = await pluginManager.installFromManifestJson(parsed, {
-        manifestUrl: `uploaded://${file.name}`,
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(apiUrl('/api/dashboard/plugins'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form,
       });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `上传失败: HTTP ${res.status}`);
+      }
+      if (!data?.manifestUrl) {
+        throw new Error('服务端未返回 manifestUrl');
+      }
+      const record = await pluginManager.installFromUrl(data.manifestUrl, { persist: false });
       toast.success(`插件「${record.manifest.name}」上传并安装成功`);
     } catch (err) {
-      if (err instanceof SyntaxError) {
-        toast.error('plugin.json 不是合法的 JSON');
-      } else {
-        toast.error(err instanceof Error ? err.message : '插件上传失败');
-      }
+      toast.error(err instanceof Error ? err.message : '插件包上传失败');
     }
   };
 
@@ -163,21 +170,21 @@ export function PluginsTab() {
         </p>
       </div>
 
-      {/* Upload plugin.json from local file */}
+      {/* Upload plugin package (zip) */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
           <Upload className="w-3.5 h-3.5" />
-          上传 plugin.json
+          上传插件包
         </Label>
         <div className="flex gap-2">
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/json,.json"
+            accept=".zip,application/zip"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void handleUploadFile(file);
+              if (file) void handleUploadPackage(file);
               e.target.value = '';
             }}
           />
@@ -187,11 +194,12 @@ export function PluginsTab() {
             onClick={() => fileInputRef.current?.click()}
           >
             <FileJson className="w-3.5 h-3.5 mr-1" />
-            选择文件并安装
+            选择插件包（zip）并安装
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          直接选择本地的 plugin.json；清单验证通过后即与 URL 安装走同一通道。
+          选择包含 plugin.json 和构建产物的 zip 包（先执行 vite build 再打包 dist/ 与
+          plugin.json）。服务端解压到 public/plugins 后自动发现并激活，刷新后保留。
         </p>
       </div>
 

@@ -153,26 +153,41 @@ describe('plugin manager lifecycle', () => {
     expect(statusOf('noact')).toBe('error');
   });
 
-  it('installFromManifestJson installs from a parsed manifest object', async () => {
-    // Pre-mark the plugin as disabled so the install path skips activation
-    // (the synthetic uploaded:// URL can't actually serve a real entry module).
+  it('installFromManifestJson rejects a relative entry with a clear error', async () => {
+    const manifestJson: PluginManifest = {
+      id: 'uploaded-relative',
+      name: 'uploaded-relative',
+      version: '1.0.0',
+      entry: { dashboard: 'index.js' },
+      extensionPoints: ['sidebar-menu'],
+    };
+    await expect(pluginManager.installFromManifestJson(manifestJson)).rejects.toThrow(
+      /绝对 http\(s\) URL/
+    );
+    expect(usePluginRegistry.getState().records['uploaded-relative']).toBeUndefined();
+  });
+
+  it('installFromManifestJson installs an absolute-entry manifest without persisting', async () => {
     const manifestJson: PluginManifest = {
       id: 'uploaded',
       name: 'uploaded',
       version: '1.2.3',
-      entry: { dashboard: 'index.js' },
+      entry: { dashboard: 'https://example.com/plugin/index.js' },
       extensionPoints: ['sidebar-menu'],
     };
-    // Pre-seed disabledIds so installFromManifestJson short-circuits activation.
+    // Pre-mark disabled so the install path skips activation (the remote entry
+    // module is not actually reachable in the test environment).
     usePluginRegistry.setState({ disabledIds: ['uploaded'] });
 
-    const record = await pluginManager.installFromManifestJson(manifestJson, {
-      manifestUrl: 'uploaded://plugin.json',
-    });
+    const record = await pluginManager.installFromManifestJson(manifestJson);
 
     expect(record.manifest.id).toBe('uploaded');
-    expect(usePluginRegistry.getState().installedUrls).toContain('uploaded://plugin.json');
-    expect(usePluginRegistry.getState().records['uploaded'].source.kind).toBe('url');
+    expect(record.source.kind).toBe('url');
+    expect(record.source.manifestUrl).toBe('uploaded://uploaded/plugin.json');
+    // Uploaded manifests are not persisted: reloading cannot re-fetch the code.
+    expect(usePluginRegistry.getState().installedUrls).not.toContain(
+      'uploaded://uploaded/plugin.json'
+    );
   });
 
   it('installFromManifestJson rejects an invalid manifest', async () => {

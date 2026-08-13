@@ -8,7 +8,15 @@ const fsMock = vi.hoisted(() => ({
 
 vi.mock('node:fs/promises', () => fsMock);
 
-import { GET } from './route';
+const packageMock = vi.hoisted(() => ({
+  installPluginPackage: vi.fn(),
+  MAX_ZIP_BYTES: 5 * 1024 * 1024,
+}));
+
+vi.mock('@/lib/plugins/server-package', () => packageMock);
+
+import { GET, POST } from './route';
+import { PluginManifestError } from '@/lib/plugins/manifest';
 
 describe('GET /api/dashboard/plugins', () => {
   afterEach(() => {
@@ -39,5 +47,60 @@ describe('GET /api/dashboard/plugins', () => {
     expect(body.plugins).toHaveLength(1);
     expect(body.plugins[0].id).toBe('alpha');
     expect(body.plugins[0].manifestUrl).toContain('/plugins/alpha/plugin.json');
+  });
+});
+
+describe('POST /api/dashboard/plugins', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects non-multipart requests', async () => {
+    const res = await POST(new Request('http://x/api/dashboard/plugins', { method: 'POST' }));
+    expect(res.status).toBe(415);
+  });
+
+  it('installs a valid zip package and returns the manifest URL', async () => {
+    packageMock.installPluginPackage.mockResolvedValue({
+      id: 'alpha',
+      manifestUrl: '/plugins/alpha/plugin.json',
+    });
+    const form = new FormData();
+    form.append('file', new File(['zip-bytes'], 'alpha.zip', { type: 'application/zip' }));
+    const res = await POST(
+      new Request('http://x/api/dashboard/plugins', {
+        method: 'POST',
+        body: form,
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.manifestUrl).toBe('/plugins/alpha/plugin.json');
+  });
+
+  it('maps manifest validation errors to a 400 with a readable message', async () => {
+    packageMock.installPluginPackage.mockRejectedValue(new PluginManifestError('未找到 plugin.json'));
+    const form = new FormData();
+    form.append('file', new File(['zip-bytes'], 'bad.zip', { type: 'application/zip' }));
+    const res = await POST(
+      new Request('http://x/api/dashboard/plugins', {
+        method: 'POST',
+        body: form,
+      })
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('未找到 plugin.json');
+  });
+
+  it('rejects an empty file', async () => {
+    const form = new FormData();
+    form.append('file', new File([], 'empty.zip', { type: 'application/zip' }));
+    const res = await POST(
+      new Request('http://x/api/dashboard/plugins', {
+        method: 'POST',
+        body: form,
+      })
+    );
+    expect(res.status).toBe(400);
   });
 });

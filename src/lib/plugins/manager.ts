@@ -149,23 +149,33 @@ export class PluginManager {
 
   /**
    * Install a plugin from a parsed manifest object (e.g. from a file the user
-   * uploaded via the Settings → Plugins tab). The manifest URL is derived from
-   * a synthetic blob URL so the runtime can still resolve `entry.dashboard`
-   * relative to it. Installed via the `kind: 'url'` channel so reload /
-   * uninstall semantics stay identical to URL-installed plugins.
+   * uploaded via the Settings → Plugins tab).
+   *
+   * Uploaded manifests are not persisted across reloads: only a `plugin.json`
+   * is available locally, never the plugin's code, so the entry can only be
+   * loaded when it points at an absolute http(s) URL (a relative entry cannot
+   * be resolved from an `uploaded://` base). Relative entries are rejected
+   * with a clear error instead of failing silently at activation time.
    */
   async installFromManifestJson(
     manifestJson: unknown,
     options: { manifestUrl?: string; persist?: boolean } = {}
   ): Promise<PluginRecord> {
-    const { persist = true } = options;
+    const { persist = false } = options;
     const registry = usePluginRegistry.getState();
 
     const manifest = validatePluginManifest(manifestJson, { dashboardVersion: DASHBOARD_VERSION });
 
-    // Synthetic blob URL keeps entries addressable even when the manifest was
-    // uploaded from disk. The user sees this in the UI as "本地文件 · ...".
-    const manifestUrl = options.manifestUrl ?? `blob:uploaded/${manifest.id}/plugin.json`;
+    const entry = manifest.entry.dashboard;
+    if (entry && !/^[a-z][a-z0-9+.-]*:/i.test(entry)) {
+      throw new PluginManifestError(
+        `上传的插件入口必须是绝对 http(s) URL（当前 entry.dashboard = "${entry}"），否则无法加载插件代码。请改用「从 URL 安装」指向完整的插件地址。`
+      );
+    }
+
+    // Synthetic URL derived from the plugin id (not the user's file name, which
+    // may contain spaces and break URL resolution). Only used as an identifier.
+    const manifestUrl = options.manifestUrl ?? `uploaded://${manifest.id}/plugin.json`;
 
     const existing = registry.records[manifest.id];
     if (existing && existing.source.kind === 'url' && existing.source.manifestUrl === manifestUrl) {
@@ -293,8 +303,27 @@ export class PluginManager {
     const record = registry.records[id];
     if (!record) return;
     await this.deactivate(id);
-    if (record.source.manifestUrl) {
-      registry.removeInstalledUrl(record.source.manifestUrl);
+    // Server-served plugins (unpacked into public/plugins by the upload API)
+    // are removed via the dashboard API. URL plugins are dropped from the
+    // persisted manifest URL list.
+    const manifestUrl = record.source.manifestUrl;
+    const serverPlugin = record.source.kind === 'url' && manifestUrl
+      ? manifestUrl.match(/\/plugins\/([^/]+)\/plugin\.json$/)
+      : null;
+    if (serverPlugin) {
+      try {
+        const res = await fetch(
+          apiUrl(`/api/dashboard/plugins/${encodeURIComponent(serverPlugin[1])}`),
+          { method: 'DELETE', credentials: 'same-origin' }
+        );
+        if (!res.ok) {
+          console.warn(`[plugins] 删除插件包 ${serverPlugin[1]} 失败: HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.warn(`[plugins] 删除插件包 ${serverPlugin[1]} 失败:`, err);
+      }
+    } else if (manifestUrl) {
+      registry.removeInstalledUrl(manifestUrl);
     }
     registry.removeRecord(id);
     purgePluginState(id);
