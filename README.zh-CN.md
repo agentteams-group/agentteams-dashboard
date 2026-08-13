@@ -36,6 +36,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 | **Security** | 权限矩阵、访问控制、安全策略展示 |
 | **Skills** | Skill/MCP 资源管理 |
 | **Debug Log** | 一键收集调试日志：容器诊断、Agent 会话、Matrix 消息打包成 ZIP 下载，默认 PII 脱敏 |
+| **问天诊断** | 运行时诊断助手：集群健康概览、AI 深度诊断（结构化 Markdown 报告：根因分析/影响评估/修复建议）、日志分析（SSE 实时进度条），内置 AgentTeams SRE 专家 Prompt 模板 |
 | **Architecture** | 架构图与组件关系说明 |
 | **主题** | 内置亮色 / 暗色 / 高对比度主题，自定义主题编辑器（10+ 参数）支持 JSON 导入/导出，企业 `theme.config.json` 注入 |
 | **插件** | 运行时插件系统：5 类扩展点、动态加载、插件级错误隔离、开发热更新、`create-dashboard-plugin` 脚手架 CLI |
@@ -76,8 +77,8 @@ cd my-plugin && npm install && npm run dev
 
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
-- **当前 Dashboard 发布标签**：`v1.2.2`
-- **安装器默认版本**：`v1.2.2`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
+- **当前 Dashboard 发布标签**：`v1.2.3`
+- **安装器默认版本**：`v1.2.3`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
 - **集成 PR**：https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -104,7 +105,7 @@ bash install/agentteams-dashboard.sh uninstall
 |------|------|--------|
 | `AGENTTEAMS_DASHBOARD` | 是否安装 Dashboard（`1`=安装，`0`=跳过） | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Dashboard 主机端口 | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.2` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.3` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Dashboard 完整镜像名 | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL（共享登录，显式配置优先） | 自动探测 |
 
@@ -119,7 +120,7 @@ bash install/agentteams-dashboard.sh uninstall
 非交互安装示例：
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.2 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.3 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -151,10 +152,10 @@ docker run -d -p 13000:3000 \
   --name agentteams-dashboard \
   -e AGENTTEAMS_CONTROLLER_URL=http://host.docker.internal:8090 \
   -e NEXT_PUBLIC_MATRIX_API_URL=http://host.docker.internal:6167 \
-  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2
+  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.3
 
 # 或从源码构建
-docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2 .
+docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.3 .
 ```
 
 ## ⚙️ 环境变量

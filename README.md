@@ -36,6 +36,7 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 | **Security** | Permission matrix, access control and security policy views |
 | **Skills** | Skill / MCP resource management |
 | **Debug Log** | One-click debug log collection: bundled ZIP with container diagnostics, agent sessions and Matrix messages, PII-redacted by default |
+| **WenTian (问天)** | Runtime diagnostic assistant: cluster health overview, AI-powered diagnosis with structured Markdown report (root cause analysis, impact assessment, remediation steps), log analysis with real-time SSE progress bar, all driven by the AgentTeams SRE expert prompt template |
 | **Architecture** | Architecture diagram and component relationships |
 | **Theming** | Built-in light / dark / high-contrast themes, a custom theme editor (30+ parameters) with JSON import/export, and enterprise `theme.config.json` injection |
 | **Plugins** | Runtime plugin system: 5 extension points, dynamic loading, per-plugin error isolation, dev hot-reload, and a `create-dashboard-plugin` scaffold CLI |
@@ -76,8 +77,8 @@ See [docs/plugin-development.md](docs/plugin-development.md) (English), [docs/pl
 
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer via a patch file under `install/patches/`. When applied to the AgentTeams source tree, the Dashboard becomes an optional step in `agentteams-install.sh` — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager.
 
-- **Current Dashboard release**: `v1.2.2`
-- **Installer default**: `v1.2.2`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
+- **Current Dashboard release**: `v1.2.3`
+- **Installer default**: `v1.2.3`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -104,7 +105,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.2` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.3` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 
@@ -119,7 +120,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.2 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.3 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -151,10 +152,10 @@ docker run -d -p 13000:3000 \
   --name agentteams-dashboard \
   -e AGENTTEAMS_CONTROLLER_URL=http://host.docker.internal:8090 \
   -e NEXT_PUBLIC_MATRIX_API_URL=http://host.docker.internal:6167 \
-  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2
+  ghcr.io/agentteams-group/agentteams-dashboard:v1.2.3
 
 # Or build from source
-docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.2 .
+docker build -t ghcr.io/agentteams-group/agentteams-dashboard:v1.2.3 .
 ```
 
 ## ⚙️ Configuration

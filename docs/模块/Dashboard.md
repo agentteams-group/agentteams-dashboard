@@ -16,6 +16,8 @@
 
 设置对话框（`settings-dialog.tsx`）包含三个页签：连接（连接参数与 Controller/Matrix 状态）、AI 诊断（`troubleshoot-tab.tsx`，AI 生成诊断结论）、日志收集（`debug-log-tab.tsx`）。日志收集页签通过 `POST /api/agentteams/debug-log` 一键采集容器诊断/日志、Agent 会话与 Matrix 消息，PII 脱敏后打包 ZIP 下载（详见 `docs/debug-log-collection.md`）。
 
+问天诊断插件（`src/plugins/wen-tian/`）是内置的诊断助手，提供集群健康概览、AI 深度诊断与日志分析能力。AI 诊断结果使用 react-markdown（GFM、代码块语法高亮）呈现结构化报告，包含问题摘要、日志关键事件时间线表格、根因分析、临时/根本修复方案、预防措施及需补充信息；日志分析支持 SSE 实时进度条展示采集进度。
+
 ## 状态和数据流
 
 TanStack Query 保存服务端资源缓存。Worker、Team、Manager、Human 查询默认每 15 秒轮询，基础设施和模型查询默认每 30 秒轮询。`use-agentteams-mutations.ts` 负责缓存失效、部分 Worker 乐观更新、Toast、通知和审计事件分发。
