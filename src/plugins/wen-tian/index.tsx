@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Activity,
   AlertTriangle,
@@ -287,8 +289,8 @@ export function buildReport(args: {
 }
 
 // AI 深度诊断 — 直接复用 wen-tian/logs SSE 端点，将症状描述注入 prompt
-async function callAiDiagnose(symptom: string, extraContext: string): Promise<string> {
-  const url = apiUrl('/api/agentteams/wen-tian/logs?range=1h');
+async function callAiDiagnose(symptom: string, report: string): Promise<string> {
+  const url = apiUrl(`/api/agentteams/wen-tian/logs?range=1h&symptom=${encodeURIComponent(symptom)}`);
   let answer = '';
   for await (const { event, data } of collectSSE(url, { range: '15m', redact: false })) {
     if (event === 'chunk' && isObject(data)) {
@@ -593,13 +595,7 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
       setAiAnswer('');
       try {
         const report = buildReport({ cluster, version, workers, teams, humans, infra, checks });
-        const augmented = [
-          symptom.trim(),
-          '',
-          '—— 当前问天诊断快照 ——',
-          report,
-        ].join('\n');
-        const answer = await callAiDiagnose(augmented, '');
+        const answer = await callAiDiagnose(symptom.trim(), report);
         setAiAnswer(answer);
         api.events.emit('wen-tian:diagnosed', {
           at: Date.now(),
@@ -675,9 +671,9 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
             </Button>
             {aiError && <p className="text-xs text-destructive">{aiError}</p>}
             {aiAnswer && (
-              <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/40 p-3 max-h-80 overflow-auto">
-                {aiAnswer}
-              </pre>
+              <div className="rounded-md border bg-muted/40 p-3 max-h-96 overflow-auto text-xs prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiAnswer}</ReactMarkdown>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -888,7 +884,9 @@ function LogAnalysisSection() {
               <Heart className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium">AI 诊断结果</span>
             </div>
-            <pre className="text-xs whitespace-pre-wrap max-h-80 overflow-auto">{state.answer}</pre>
+            <div className="rounded-md border bg-muted/40 p-3 max-h-96 overflow-auto text-xs prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{state.answer}</ReactMarkdown>
+              </div>
           </div>
         )}
       </CardContent>

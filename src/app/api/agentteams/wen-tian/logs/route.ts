@@ -103,8 +103,9 @@ export async function POST(request: NextRequest) {
   const roomFilter = String(body['room'] ?? '').trim();
   const sinceEpochSec = Date.now() / 1000 - rangeSeconds;
   const matrixToken = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
-  const homeserver = String(body['homeserver'] ?? request.nextUrl.searchParams.get('homeserver') ?? '');
-  const controllerUrl = getControllerUrl(request);
+   const homeserver = String(body['homeserver'] ?? request.nextUrl.searchParams.get('homeserver') ?? '');
+   const symptom = String(request.nextUrl.searchParams.get('symptom') ?? '').trim();
+   const controllerUrl = getControllerUrl(request);
   const token = await getAuthToken();
   const ctx: DockerContext = { controllerUrl, token };
   const budget = createBudget();
@@ -206,11 +207,18 @@ export async function POST(request: NextRequest) {
         const prompt = [
           'You are an expert SRE helping diagnose issues in an AgentTeams cluster.',
           '',
-          'Below is a debug log bundle collected from the cluster. Analyze it and provide:',
-          '1. Root cause analysis',
-          '2. Impact assessment',
-          '3. Remediation steps (concrete actionable fixes, ordered by priority)',
-          'Keep the answer concise and actionable. Use Chinese in your response.',
+          'Below is a debug log bundle collected from the cluster.',
+          '',
+          symptom ? `## 用户报告的症状` : '',
+          symptom ? symptom : '',
+          symptom ? '' : '',
+          'Please analyze and provide a comprehensive diagnosis with the following sections:',
+          '1. 问题概述：总结当前系统状态和发现的问题',
+          '2. 根因分析：逐一分析可能的根本原因，结合日志证据',
+          '3. 影响评估：说明该问题对业务的影响范围和严重程度',
+          '4. 修复方案：按优先级列出具体可执行的修复步骤，包含命令示例',
+          '5. 预防措施：给出避免同类问题再次发生的建议',
+          'Use Chinese in your response. Use markdown formatting for clarity.',
           '',
           '--- DEBUG LOG BUNDLE ---',
           summary,
