@@ -66,8 +66,17 @@ function DegradedBanner({
 
 // ----- Workflow detail panel -----
 
-function WorkflowDetail({ projectId }: { projectId: string }) {
-  const { data: wf, isLoading, isError, refetch, isRefetching } = useProjectWorkflow(projectId);
+function WorkflowDetail({
+  projectId,
+  teamId,
+}: {
+  projectId: string;
+  teamId?: string;
+}) {
+  const { data: wf, isLoading, isError, refetch, isRefetching } = useProjectWorkflow(
+    projectId,
+    teamId,
+  );
 
   if (isLoading) {
     return (
@@ -205,10 +214,17 @@ function WorkflowDetail({ projectId }: { projectId: string }) {
 
 export function ProjectsSection() {
   const { data, isLoading, isError, refetch, isRefetching } = useProjects();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // (team, project_id) composite selection — the same project id can exist
+  // under two teams (#1169 identity scoping).
+  const [selectedKey, setSelectedKey] = useState<{ id: string; team?: string } | null>(null);
 
   const projects = data?.projects ?? [];
-  const selected = projects.find((p) => p.project_id === selectedId) ?? null;
+  const selected =
+    projects.find(
+      (p) =>
+        p.project_id === selectedKey?.id &&
+        (p.team_id ?? '') === (selectedKey?.team ?? ''),
+    ) ?? null;
 
   return (
     <div className="space-y-4">
@@ -255,10 +271,11 @@ export function ProjectsSection() {
               </p>
               {projects.map((p) => (
                 <button
-                  key={p.project_id}
-                  onClick={() => setSelectedId(p.project_id)}
+                  key={`${p.team_id ?? ''}:${p.project_id}`}
+                  onClick={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
                   className={`w-full text-left rounded-lg border p-2.5 text-xs transition-colors ${
-                    selected?.project_id === p.project_id
+                    selected?.project_id === p.project_id &&
+                    (selected?.team_id ?? '') === (p.team_id ?? '')
                       ? 'border-primary/50 bg-primary/5'
                       : 'border-transparent hover:bg-muted/50'
                   }`}
@@ -283,7 +300,7 @@ export function ProjectsSection() {
           <Card className="glass-card lg:col-span-2">
             <CardContent className="p-4">
               {selected ? (
-                <WorkflowDetail projectId={selected.project_id} />
+                <WorkflowDetail projectId={selected.project_id} teamId={selected.team_id} />
               ) : (
                 <p className="text-center py-10 text-muted-foreground text-sm">
                   选择左侧项目查看工作流

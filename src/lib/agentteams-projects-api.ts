@@ -187,9 +187,15 @@ export async function listProjects(): Promise<ProjectListResponse> {
  * Pass `{ includeTasks: true }` to attach per-task TaskMeta as tasks_detail. */
 export async function getProjectWorkflow(
   projectId: string,
-  options: { includeTasks?: boolean } = {},
+  options: { includeTasks?: boolean; teamId?: string } = {},
 ): Promise<WorkflowResponse> {
-  const qs = options.includeTasks ? '?includeTasks=true' : '';
+  // #1169 (team, project_id) identity: the same id may exist under two
+  // teams. Pass ?team= to disambiguate; without it the controller returns
+  // 409 Conflict. includeTasks and teamId are independent query params.
+  const qsParts: string[] = [];
+  if (options.includeTasks) qsParts.push('includeTasks=true');
+  if (options.teamId) qsParts.push(`team=${encodeURIComponent(options.teamId)}`);
+  const qs = qsParts.length ? `?${qsParts.join('&')}` : '';
   return requestJson<WorkflowResponse>(
     `${PROJECTS_URL}/${encodeURIComponent(projectId)}/workflow${qs}`,
   );

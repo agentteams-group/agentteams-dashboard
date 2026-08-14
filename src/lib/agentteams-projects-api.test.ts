@@ -194,11 +194,42 @@ describe('getProjectWorkflow', () => {
     expect(wf.pause_reason).toBe('waiting on review');
   });
 
+  it('passes ?team= when teamId is provided (409 disambiguation, #1169)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ nodes: [], edges: [], values: {} }), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as never;
+    await getProjectWorkflow('p1', { teamId: 'sysdev-team' });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('team=sysdev-team');
+    expect(url).toContain('/p1/workflow');
+  });
+
+  it('combines includeTasks and team query params', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ nodes: [], edges: [], values: {} }), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as never;
+    await getProjectWorkflow('p1', { includeTasks: true, teamId: 'sysdev-team' });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('includeTasks=true');
+    expect(url).toContain('team=sysdev-team');
+  });
+
   it('throws ApiError on 404', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: 'Not Found' }), { status: 404 }),
     ) as never;
     await expect(getProjectWorkflow('missing')).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('throws ApiError on 409 (ambiguous id across teams)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'ambiguous project id, pass ?team=' }), { status: 409 }),
+    ) as never;
+    const err = await getProjectWorkflow('shared-id').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(409);
   });
 
   it('throws NetworkError when fetch rejects', async () => {

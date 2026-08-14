@@ -22,10 +22,14 @@ export function useProjects() {
  * dashboard proxy (`GET /api/agentteams/projects/{id}/workflow?includeTasks=true`).
  * Disabled until a project id is selected.
  */
-export function useProjectWorkflow(projectId: string | null) {
+export function useProjectWorkflow(projectId: string | null, teamId?: string) {
   return useQuery({
-    queryKey: ['agentteams-project-workflow', projectId ?? 'none'],
-    queryFn: () => getProjectWorkflow(projectId as string, { includeTasks: true }),
+    queryKey: ['agentteams-project-workflow', teamId ?? 'any', projectId ?? 'none'],
+    queryFn: () =>
+      getProjectWorkflow(projectId as string, {
+        includeTasks: true,
+        teamId,
+      }),
     enabled: !!projectId,
     retry: 1,
   });
