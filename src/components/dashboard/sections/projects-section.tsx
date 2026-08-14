@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { useProjects, useProjectWorkflow } from '@/hooks/use-projects';
+import { ApiError } from '@/lib/api-error';
 import type { ProjectStatus, WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 
 // ----- Status config (mirrors tasks-section colors) -----
@@ -73,7 +74,7 @@ function WorkflowDetail({
   projectId: string;
   teamId?: string;
 }) {
-  const { data: wf, isLoading, isError, refetch, isRefetching } = useProjectWorkflow(
+  const { data: wf, isLoading, isError, error, refetch, isRefetching } = useProjectWorkflow(
     projectId,
     teamId,
   );
@@ -87,9 +88,23 @@ function WorkflowDetail({
   }
 
   if (isError || !wf) {
+    // 409 = 同一 project_id 在多个团队存在（#1169 (team, project_id) 身份），
+    // 单独提示而非笼统的"不可用"。
+    const ambiguous =
+      error instanceof ApiError && error.status === 409;
     return (
-      <div className="text-center py-10 text-muted-foreground text-sm">
-        无法加载项目工作流（项目不存在或 API 不可用）
+      <div className="text-center py-10 text-muted-foreground text-sm space-y-1">
+        {ambiguous ? (
+          <>
+            <p>该项目 id 在多个团队下存在（Controller 返回 409）。</p>
+            <p className="text-xs">
+              请从左侧选择带正确团队标签的条目重试；若列表只显示一条，请在
+              Controller 侧核对 project meta 的 team 归属。
+            </p>
+          </>
+        ) : (
+          <p>无法加载项目工作流（项目不存在或 API 不可用）</p>
+        )}
       </div>
     );
   }
