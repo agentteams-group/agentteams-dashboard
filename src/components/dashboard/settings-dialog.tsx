@@ -29,7 +29,6 @@ import {
   Clock,
   Server,
   History,
-  FileDown,
   LayoutGrid,
   Eye,
   EyeOff,
@@ -37,7 +36,6 @@ import {
   Puzzle,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
-import { DebugLogTab } from './settings/debug-log-tab';
 import { ThemeTab } from './settings/theme-tab';
 import { PluginsTab } from './settings/plugins-tab';
 
@@ -137,12 +135,8 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="connection">连接</TabsTrigger>
-            <TabsTrigger value="debug-log">
-              <FileDown className="w-3.5 h-3.5 mr-1" />
-              日志收集
-            </TabsTrigger>
             <TabsTrigger value="display">
               <LayoutGrid className="w-3.5 h-3.5 mr-1" />
               显示
@@ -332,10 +326,6 @@ export function SettingsDialog() {
                 </div>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="debug-log" className="py-4">
-            <DebugLogTab />
           </TabsContent>
 
           <TabsContent value="display" className="space-y-4 py-4">

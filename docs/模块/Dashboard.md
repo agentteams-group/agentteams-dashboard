@@ -12,11 +12,11 @@
 
 区块位于 `src/components/dashboard/sections/`：概览汇总资源和基础设施；Workers、Teams、Managers、Humans 提供资源操作；Chat 组合 Matrix 房间；Topology 绘制资源关系；Gateway 管理 Consumer 和 Higress Route；Policies、Sandbox、Compliance 提供治理能力。
 
-聊天区块位于 `src/components/dashboard/sections/chat/`。`ChatRoom` 组合房间侧栏、成员面板、`MessageList`、`ThreadPanel` 与输入框；`MessageBubble` 通过 `parseA2uiContent` 分发 A2UI、AgentScope runtime repr、`agentteams.workflow`、确认、思考、工具调用和 Markdown 块。`src/lib/a2ui/agent-repr.ts` 将 runtime `Message` repr 中的 reasoning、function call 和 function call output 映射为可折叠思考与工具调用卡片。`formatMatrixEvents` 合并 `m.replace` 修订，并将 `m.thread` 回复从主时间线收纳到由 `ThreadPanel` 按 relations API 加载的线程中。`org.agentteams.run` 仅作为 runtime adapter 的可选兼容载荷处理。AI 诊断结果（`src/components/dashboard/settings/troubleshoot-tab.tsx`）使用 react-markdown（GFM、语法高亮与可复制代码块）呈现。
+聊天区块位于 `src/components/dashboard/sections/chat/`。`ChatRoom` 组合房间侧栏、成员面板、`MessageList`、`ThreadPanel` 与输入框；`MessageBubble` 通过 `parseA2uiContent` 分发 A2UI、AgentScope runtime repr、`agentteams.workflow`、确认、思考、工具调用和 Markdown 块。`src/lib/a2ui/agent-repr.ts` 将 runtime `Message` repr 中的 reasoning、function call 和 function call output 映射为可折叠思考与工具调用卡片。`formatMatrixEvents` 合并 `m.replace` 修订，并将 `m.thread` 回复从主时间线收纳到由 `ThreadPanel` 按 relations API 加载的线程中。`org.agentteams.run` 仅作为 runtime adapter 的可选兼容载荷处理。
 
-设置对话框（`settings-dialog.tsx`）包含三个页签：连接（连接参数与 Controller/Matrix 状态）、AI 诊断（`troubleshoot-tab.tsx`，AI 生成诊断结论）、日志收集（`debug-log-tab.tsx`）。日志收集页签通过 `POST /api/agentteams/debug-log` 一键采集容器诊断/日志、Agent 会话与 Matrix 消息，PII 脱敏后打包 ZIP 下载（详见 `docs/debug-log-collection.md`）。
+设置对话框（`settings-dialog.tsx`）包含四个页签：连接（连接参数与 Controller/Matrix 状态）、显示、外观、插件。原「日志收集」页签已迁移至问天诊断插件（见下），离线 ZIP 导出入口移至问天诊断页。
 
-问天诊断插件（`src/plugins/wen-tian/`）是内置的诊断助手，提供集群健康概览、AI 深度诊断与日志分析能力。AI 诊断结果使用 react-markdown（GFM、代码块语法高亮）呈现结构化报告，包含问题摘要、日志关键事件时间线表格、根因分析、临时/根本修复方案、预防措施及需补充信息；日志分析支持 SSE 实时进度条展示采集进度。
+问天诊断插件（`src/plugins/wen-tian/`）是内置的诊断助手：页面顶部为集群健康概览（Workers/团队/Humans/部署模式），核心是合并后的「AI 日志分析诊断」卡片——填写症状描述、配置日志收集参数（时间范围/容器过滤/房间过滤/PII 脱敏，自设置对话框迁入）、选择诊断模型（服务器默认或「模型管理」中已配置的服务商模型别名），点击后经 `POST /api/agentteams/wen-tian/logs`（SSE）实时采集容器日志、Agent 会话与 Matrix 消息，把日志摘录、容器状态 facts、症状与环境快照一起交给 LLM，流式输出结构化诊断报告（诊断结论与严重程度、概要表、事件时间线、按置信度排序的根因分析、可执行修复命令、预防措施）。报告使用 react-markdown（GFM、代码块复制按钮）渲染，支持一键复制全文；「仅收集日志 ZIP」按钮复用 `POST /api/agentteams/debug-log` 做离线打包下载（详见 `docs/debug-log-collection.md`）。
 
 ## 状态和数据流
 

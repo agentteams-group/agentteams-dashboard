@@ -27,7 +27,7 @@ AgentTeams 主仓库提供了独立 Python 脚本 `scripts/export-debug-log.py`�
 **目标**：在 Dashboard 内实现同等能力的「一键收集日志」功能 —— 浏览器点一下按钮，后端完成采集、脱敏、打包，直接下载 ZIP。
 
 ```
-浏览器设置对话框 → [一键收集并下载] → agentteams-debug-log-<时间戳>.zip
+浏览器问天诊断页（日志收集配置区）→ [仅收集日志 ZIP] → agentteams-debug-log-<时间戳>.zip
 ├── summary.txt
 ├── matrix-messages/<RoomName>_<roomid>.jsonl   （已登录 Matrix 时）
 ├── agent-sessions/<container>/<session>.jsonl
@@ -65,8 +65,8 @@ Dashboard 的 Chat 模块要求用户登录 Matrix，`matrix-store`（zustand pe
 ```
 ┌─────────────────┐   POST /api/agentteams/debug-log/   ┌──────────────────────────────┐
 │  浏览器          │ ───────────────────────────────────▶│  Next.js Route Handler        │
-│  设置·日志收集    │   body: {range, redact, filters}    │  app/api/agentteams/debug-log/ │
-│  页签            │   header: Authorization (Matrix)    │                              │
+│  问天诊断页       │   body: {range, redact, filters}    │  app/api/agentteams/debug-log/ │
+│  日志收集配置区   │   header: Authorization (Matrix)    │                              │
 └─────────────────┘                                     └───────┬──────────────┬─────────┘
          │                                                      │              │
          │  agentteams-debug-log-<ts>.zip (fflate zipSync)      │              │
@@ -112,13 +112,13 @@ src/app/api/agentteams/debug-log/
 └── route.test.ts     # 路由单测 6 例
 
 src/components/dashboard/settings/
-└── debug-log-tab.tsx # 「日志收集」页签 UI
+└── debug-log-tab.tsx # 「日志收集」页签 UI（2026-08-14 迁移至 src/plugins/wen-tian/index.tsx 的日志收集配置区，原文件删除）
 ```
 
 ### 修改文件
 
 ```
-src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个页签（连接 / AI 诊断 / 日志收集）
+src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个页签（连接 / AI 诊断 / 日志收集）；2026-08-14 移除该页签，入口迁至问天诊断页
 ```
 
 ### 4.1 `redact.ts` — PII 脱敏
@@ -158,10 +158,10 @@ src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个�
 - 编排顺序：容器列表（两个收集器共用）→ 容器诊断（inspect + logs）→ Agent 会话 → Matrix 消息；每个收集器独立容错，异常全部收敛为 summary 里的 Notes；
 - 产物：`summary.txt`（时间范围/脱敏状态/三路计数/Notes）+ 全部文件 `zipSync(level:6)`，响应头 `Content-Disposition: attachment; filename="agentteams-debug-log-<ts>.zip"`，`Cache-Control: no-store`。
 
-### 4.5 前端 `debug-log-tab.tsx` + `settings-dialog.tsx`
+### 4.5 前端入口（现位于问天诊断插件）
 
-- 设置对话框新增第三个页签「日志收集」（FileDown 图标），TabsList `grid-cols-2 → grid-cols-3`；
-- 页签控件：时间范围 Select（10m/30m/1h/6h/1d）、容器过滤、房间过滤、PII 脱敏 Switch（默认开，带 ShieldCheck 说明）、Matrix 状态提示条（已登录 → 含房间消息；未登录 → 提示将跳过）；
+- 最初落地为设置对话框「日志收集」页签；2026-08-14 迁移至问天诊断页「AI 日志分析诊断」卡片的「日志收集配置」功能区，采集参数同时供 AI 日志分析诊断复用；
+- 控件：时间范围 Select（10m/30m/1h/6h/1d）、容器过滤、房间过滤、PII 脱敏 Switch（默认开，带 ShieldCheck 说明）、Matrix 状态提示条（已登录 → 含房间消息；未登录 → 提示将跳过）；
 - 点击「一键收集并下载」：`fetch(apiUrl('/api/agentteams/debug-log'))`（apiUrl 自动补 basePath + 尾斜杠，规避 trailingSlash 308 重定向丢 POST body 的问题）；已登录 Matrix 时自动带上 `Authorization` 头和 homeserver；
 - 响应处理：非 2xx 解析 JSON error 弹 toast；成功则读 `content-disposition` 文件名，`URL.createObjectURL` + 隐形 `<a download>` 触发浏览器下载，toast 提示文件名；全程 loading 态（收集耗时可能数十秒）。
 
@@ -242,8 +242,8 @@ container-logs/<container>.state.json
 
 ## 附：使用方式
 
-1. 打开 Dashboard → 右上角设置 → 「日志收集」页签；
-2. 选择时间范围（默认最近 1 小时），按需填容器/房间过滤；
+1. 打开 Dashboard → 侧边栏「问天诊断」→「AI 日志分析诊断」卡片；
+2. 在「日志收集配置」区选择时间范围（默认最近 1 小时），按需填容器/房间过滤；
 3. 保持 PII 脱敏开启（默认）；
 4. 需要房间消息时先登录 Matrix（Chat 模块）；
-5. 点击「一键收集并下载」，得到 `agentteams-debug-log-<时间戳>.zip`，附在 issue 中即可。
+5. 点击「仅收集日志 ZIP」，得到 `agentteams-debug-log-<时间戳>.zip`，附在 issue 中即可。

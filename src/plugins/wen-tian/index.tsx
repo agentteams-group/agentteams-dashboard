@@ -4,34 +4,47 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Activity,
-  AlertTriangle,
   Bot,
+  Check,
   CheckCircle2,
-  Clock,
   Container,
   Copy,
+  FileDown,
+  FolderSearch,
   Heart,
   Loader2,
-  Package,
+  MessageSquareText,
   RefreshCw,
-  Server,
+  ShieldCheck,
+  Sparkles,
   Stethoscope,
-  Users,
   UserCheck,
-  Wifi,
-  XCircle,
-  Zap,
+  Users,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { apiUrl } from '@/lib/api-base';
 import { pluginSectionId, type DashboardPluginApi } from '@/lib/plugins/types';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { useAiRoutes, useModels } from '@/hooks/use-agentteams-models';
+import { buildModelSelectionOptions } from '@/lib/model-catalog';
 import type { WorkerResponse, TeamResponse, HumanResponse, InfrastructureInfo } from '@/lib/agentteams-api';
 
 /**
@@ -39,12 +52,17 @@ import type { WorkerResponse, TeamResponse, HumanResponse, InfrastructureInfo } 
  *
  * Three extension points:
  *   - sidebar-menu : "问天诊断" entry (Stethoscope icon)
- *   - route        : standalone diagnostic page (7 health checks, AI deep-dive)
+ *   - route        : standalone diagnostic page (health snapshot + merged AI
+ *                    log-analysis diagnosis)
  *   - dashboard-widget : compact health-overview card on the overview page
  *
- * The AI-powered "deep diagnosis" piggybacks on the existing Controller
- * troubleshoot endpoint so the request flows through the default AI Gateway
- * model — plugins do not (and should not) hold their own LLM credentials.
+ * The merged "AI 日志分析诊断" flow POSTs to the wen-tian/logs SSE endpoint:
+ * the server collects container logs / agent sessions / matrix messages using
+ * the on-card collection settings, combines them with the user's symptom
+ * description and a dashboard snapshot, and streams a structured markdown
+ * report back. The LLM call runs server-side through the AI gateway so
+ * plugins never hold credentials; the model alias is selectable (default =
+ * server-side AGENTTEAMS_DEFAULT_MODEL, or any configured provider model).
  */
 
 interface ClusterStatusSnapshot {
@@ -60,16 +78,6 @@ interface VersionSnapshot {
 }
 
 interface WorkerRow {
-  name: string;
-  phase?: string;
-}
-
-interface TeamRow {
-  name: string;
-  phase?: string;
-}
-
-interface HumanRow {
   name: string;
   phase?: string;
 }
@@ -288,36 +296,22 @@ export function buildReport(args: {
   return lines.join('\n');
 }
 
-// AI 深度诊断 — 直接复用 wen-tian/logs SSE 端点，将症状描述注入 prompt
-async function callAiDiagnose(symptom: string, report: string): Promise<string> {
-  const url = apiUrl(`/api/agentteams/wen-tian/logs?range=1h&symptom=${encodeURIComponent(symptom)}`);
-  let answer = '';
-  for await (const { event, data } of collectSSE(url, { range: '15m', redact: false })) {
-    if (event === 'chunk' && isObject(data)) {
-      const d = data as Record<string, unknown>;
-      if (typeof d['content'] === 'string') answer += String(d['content']);
-    } else if (event === 'result' && isObject(data)) {
-      const d = data as Record<string, unknown>;
-      if (typeof d['answer'] === 'string') return d['answer'] as string;
-    } else if (event === 'error' && isObject(data)) {
-      const d = data as Record<string, unknown>;
-      if (typeof d['error'] === 'string') throw new Error(d['error'] as string);
-    }
-  }
-  return answer;
-}
+// ────────────────────────────────────────────
+// SSE client
+// ────────────────────────────────────────────
 
-interface LogAnalysisState {
-  running: boolean;
-  progress: { phase: string; pct: number; message: string };
-  summary: Record<string, unknown> | null;
-  error: string | null;
-  answer: string;
-}
-
-function collectSSE(url: string, body: unknown): AsyncGenerator<{ event: string; data: unknown }, void, void> {
+function collectSSE(
+  url: string,
+  body: unknown,
+  extraHeaders?: Record<string, string>
+): AsyncGenerator<{ event: string; data: unknown }, void, void> {
   return (async function* () {
-    const res = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
@@ -354,41 +348,284 @@ function collectSSE(url: string, body: unknown): AsyncGenerator<{ event: string;
   })();
 }
 
-async function collectAndAnalyzeLogs(opts: { range: string; redact: boolean }): Promise<string> {
-  const params = new URLSearchParams({ range: opts.range });
-  const url = apiUrl(`/api/agentteams/wen-tian/logs?${params}`);
-  let answer = '';
-  for await (const { event, data } of collectSSE(url, { range: opts.range, redact: opts.redact })) {
-    if (event === 'chunk' && typeof (data as Record<string, unknown>)['content'] === 'string') {
-      answer += String((data as Record<string, unknown>)['content']);
-    } else if (event === 'result') {
-      const d = data as Record<string, unknown>;
-      if (typeof d['answer'] === 'string') return d['answer'] as string;
-    } else if (event === 'error') {
-      const d = data as Record<string, unknown>;
-      if (typeof d['error'] === 'string') throw new Error(d['error'] as string);
-    }
-  }
-  return answer;
+// ────────────────────────────────────────────
+// Log collection settings (migrated from the Settings dialog)
+// ────────────────────────────────────────────
+
+const RANGE_OPTIONS = [
+  { value: '10m', label: '最近 10 分钟' },
+  { value: '30m', label: '最近 30 分钟' },
+  { value: '1h', label: '最近 1 小时' },
+  { value: '6h', label: '最近 6 小时' },
+  { value: '1d', label: '最近 1 天' },
+];
+
+function filenameFromDisposition(disposition: string | null): string | null {
+  if (!disposition) return null;
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return match?.[1] ?? null;
 }
 
-const SEVERITY_LABELS: Record<Severity, { label: string; icon: React.ReactNode; badgeClass: string }> = {
-  ok: {
-    label: '通过',
-    icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-    badgeClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  },
-  warn: {
-    label: '警告',
-    icon: <AlertTriangle className="w-4 h-4 text-amber-500" />,
-    badgeClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
-  },
-  error: {
-    label: '异常',
-    icon: <XCircle className="w-4 h-4 text-red-500" />,
-    badgeClass: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30',
-  },
-};
+// ────────────────────────────────────────────
+// Diagnosis model selector
+// ────────────────────────────────────────────
+
+const DEFAULT_MODEL_VALUE = '__server_default__';
+const CUSTOM_MODEL_VALUE = '__custom__';
+
+function DiagnosisModelSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (_value: string) => void;
+  disabled?: boolean;
+}) {
+  const { data: providers } = useModels();
+  const { data: aiRoutes } = useAiRoutes();
+  const options = useMemo(
+    () => buildModelSelectionOptions(aiRoutes ?? [], providers ?? []),
+    [aiRoutes, providers]
+  );
+  const configured = options.filter((o) => o.kind === 'configured');
+  const builtin = options.filter((o) => o.kind === 'builtin');
+  const [customMode, setCustomMode] = useState(false);
+
+  // Leave custom mode once the external value resolves to a selectable alias
+  // (adjust state during render, per React guidance).
+  if (customMode && value && options.some((o) => o.alias === value)) {
+    setCustomMode(false);
+  }
+
+  const known = options.some((o) => o.alias === value);
+  const customActive = customMode || (value !== '' && !known);
+  const selectedOption = options.find((o) => o.alias === value);
+
+  if (customActive) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex gap-2">
+          <Input
+            className="flex-1"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="自定义模型别名，经 AI 网关路由"
+            disabled={disabled}
+            aria-label="诊断模型别名"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={disabled}
+            onClick={() => {
+              setCustomMode(false);
+              onChange('');
+            }}
+          >
+            从列表选择
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Select
+        value={value === '' ? DEFAULT_MODEL_VALUE : value}
+        onValueChange={(next) => {
+          if (next === CUSTOM_MODEL_VALUE) {
+            setCustomMode(true);
+            onChange('');
+          } else if (next === DEFAULT_MODEL_VALUE) {
+            onChange('');
+          } else {
+            onChange(next);
+          }
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger className="w-full" aria-label="诊断模型">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-w-[min(100vw-2rem,28rem)]">
+          <SelectItem value={DEFAULT_MODEL_VALUE}>
+            <span className="flex flex-col">
+              <span className="font-medium">默认模型</span>
+              <span className="text-xs text-muted-foreground">
+                服务器配置（AGENTTEAMS_DEFAULT_MODEL），经 AI 网关调用
+              </span>
+            </span>
+          </SelectItem>
+          {configured.length > 0 && (
+            <SelectGroup>
+              <SelectLabel>已配置的服务商模型</SelectLabel>
+              {configured.map((option) => (
+                <SelectItem key={option.alias} value={option.alias}>
+                  <span className="flex flex-col">
+                    <span className="font-mono">{option.alias}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {option.binding
+                        ? `${option.binding.routeName} → ${option.binding.providerName} / ${option.binding.targetModel}`
+                        : ''}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+          {builtin.length > 0 && (
+            <SelectGroup>
+              <SelectLabel>内置别名（需配置路由）</SelectLabel>
+              {builtin.map((option) => (
+                <SelectItem key={option.alias} value={option.alias}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-mono">{option.alias}</span>
+                    <Badge variant="secondary" className="text-[9px]">内置</Badge>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+          <SelectSeparator />
+          <SelectItem value={CUSTOM_MODEL_VALUE}>
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              自定义别名…
+            </span>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      {value === '' ? (
+        <p className="text-xs text-muted-foreground">
+          使用服务器端默认模型执行诊断；可在「模型管理」添加服务商模型后在此选择。
+        </p>
+      ) : selectedOption?.kind === 'configured' && selectedOption.binding ? (
+        <p className="text-xs text-muted-foreground">
+          经路由 {selectedOption.binding.routeName} 转发至{' '}
+          {selectedOption.binding.providerName} / {selectedOption.binding.targetModel}
+        </p>
+      ) : selectedOption?.kind === 'builtin' ? (
+        <p className="text-xs text-amber-600/80">
+          内置模型别名，需先在「模型管理」为其配置路由映射，否则调用可能失败。
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────
+// Report rendering
+// ────────────────────────────────────────────
+
+function ReportCodeBlock({ language, children }: { language?: string; children: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <div className="relative group my-2 rounded-lg overflow-hidden border bg-muted/50">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-muted text-xs text-muted-foreground">
+        <span>{language || 'code'}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 opacity-60 group-hover:opacity-100 transition-opacity"
+          onClick={handleCopy}
+          title="复制代码"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        </Button>
+      </div>
+      <pre className="p-3 overflow-x-auto m-0 text-xs">
+        <code>{children}</code>
+      </pre>
+    </div>
+  );
+}
+
+/** Rich markdown renderer tuned for the AI diagnosis report. */
+function DiagnosisReport({ content, streaming }: { content: string; streaming?: boolean }) {
+  return (
+    <div className="text-sm">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1({ children }) {
+            return <h1 className="text-lg font-bold mt-3 mb-2 pb-1.5 border-b">{children}</h1>;
+          },
+          h2({ children }) {
+            return <h2 className="text-base font-semibold mt-4 mb-2 pb-1.5 border-b flex items-center gap-1.5">{children}</h2>;
+          },
+          h3({ children }) {
+            return <h3 className="text-sm font-semibold mt-3 mb-1.5">{children}</h3>;
+          },
+          p({ children }) {
+            return <p className="leading-relaxed mb-2 last:mb-0">{children}</p>;
+          },
+          ul({ children }) {
+            return <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>;
+          },
+          ol({ children }) {
+            return <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>;
+          },
+          li({ children }) {
+            return <li className="leading-relaxed">{children}</li>;
+          },
+          a({ href, children }) {
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                {children}
+              </a>
+            );
+          },
+          blockquote({ children }) {
+            return <blockquote className="border-l-4 border-primary/40 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>;
+          },
+          hr() {
+            return <hr className="my-3 border-border" />;
+          },
+          table({ children }) {
+            return (
+              <div className="overflow-x-auto my-2 rounded-md border">
+                <table className="w-full text-xs border-collapse">{children}</table>
+              </div>
+            );
+          },
+          thead({ children }) {
+            return <thead className="bg-muted/60">{children}</thead>;
+          },
+          th({ children }) {
+            return <th className="border-b px-2.5 py-1.5 text-left font-semibold whitespace-nowrap">{children}</th>;
+          },
+          td({ children }) {
+            return <td className="border-b border-border/60 px-2.5 py-1.5 align-top">{children}</td>;
+          },
+          code({ className, children, ...props }) {
+            const code = String(children).replace(/\n$/, '');
+            if (className?.includes('language-')) {
+              return <ReportCodeBlock language={className.replace('language-', '')}>{code}</ReportCodeBlock>;
+            }
+            return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props} />;
+          },
+          pre({ children }) {
+            return <div className="my-1">{children}</div>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+      {streaming && (
+        <span className="inline-block w-2 h-4 ml-0.5 align-text-bottom rounded-sm bg-primary animate-pulse" />
+      )}
+    </div>
+  );
+}
 
 // ────────────────────────────────────────────
 // Standalone page (extension point: route)
@@ -404,11 +641,24 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
     const [infra, setInfra] = useState<InfrastructureInfo | null>(null);
     const [loading, setLoading] = useState(false);
     const [fetchError, setFetchError] = useState<string | null>(null);
-    const [symptom, setSymptom] = useState('');
-    const [aiRunning, setAiRunning] = useState(false);
-    const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-    const [aiError, setAiError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+
+    // ── AI 日志分析诊断（merged: symptom + collection settings + model） ──
+    const [symptom, setSymptom] = useState('');
+    const [range, setRange] = useState('1h');
+    const [redact, setRedact] = useState(true);
+    const [container, setContainer] = useState('');
+    const [room, setRoom] = useState('');
+    const [model, setModel] = useState('');
+    const [diagRunning, setDiagRunning] = useState(false);
+    const [diagProgress, setDiagProgress] = useState<{ phase: string; pct: number; message: string }>({ phase: '', pct: 0, message: '' });
+    const [diagAnswer, setDiagAnswer] = useState('');
+    const [diagError, setDiagError] = useState<string | null>(null);
+    const [diagMeta, setDiagMeta] = useState<{ model: string; finishedAt: number } | null>(null);
+    const [zipping, setZipping] = useState(false);
+
+    const { isLoggedIn, accessToken, homeserver } = useMatrixStore();
+    const matrixReady = isLoggedIn && !!accessToken && !!homeserver;
 
     const refresh = useCallback(async () => {
       setLoading(true);
@@ -451,7 +701,7 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
       void refresh();
     }, [refresh]);
 
-    // ── Rich health checks ──────────────────────────────────────────────
+    // ── Rich health checks (feed the snapshot injected into the AI prompt) ──
 
     const checks = useMemo(() => {
       const result: CheckResult[] = [];
@@ -585,27 +835,119 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
       );
     };
 
-    const handleAiDiagnose = async () => {
+    const handleDiagnose = async () => {
       if (!symptom.trim()) {
         toast.warning('请填写症状描述');
         return;
       }
-      setAiRunning(true);
-      setAiError(null);
-      setAiAnswer('');
+      setDiagRunning(true);
+      setDiagError(null);
+      setDiagAnswer('');
+      setDiagMeta(null);
+      setDiagProgress({ phase: 'init', pct: 0, message: '准备中…' });
       try {
-        const report = buildReport({ cluster, version, workers, teams, humans, infra, checks });
-        const answer = await callAiDiagnose(symptom.trim(), report);
-        setAiAnswer(answer);
-        api.events.emit('wen-tian:diagnosed', {
-          at: Date.now(),
-          aiPowered: true,
-        });
+        const headers: Record<string, string> = {};
+        if (matrixReady) headers['Authorization'] = `Bearer ${accessToken}`;
+        const snapshot = buildReport({ cluster, version, workers, teams, humans, infra, checks });
+        const body = {
+          range,
+          redact,
+          container: container.trim() || undefined,
+          room: room.trim() || undefined,
+          homeserver: matrixReady ? homeserver : undefined,
+          symptom: symptom.trim(),
+          model: model.trim() || undefined,
+          snapshot,
+        };
+        const modelLabel = model.trim() || '默认模型';
+        for await (const { event, data } of collectSSE(apiUrl('/api/agentteams/wen-tian/logs'), body, headers)) {
+          if (event === 'progress' && isObject(data)) {
+            const d = data as Record<string, unknown>;
+            setDiagProgress({
+              phase: String(d['phase'] ?? ''),
+              pct: typeof d['pct'] === 'number' ? (d['pct'] as number) : 0,
+              message: String(d['message'] ?? ''),
+            });
+          } else if (event === 'chunk' && isObject(data)) {
+            const d = data as Record<string, unknown>;
+            if (typeof d['content'] === 'string') {
+              setDiagAnswer((prev) => prev + (d['content'] as string));
+            }
+          } else if (event === 'result' && isObject(data)) {
+            const d = data as Record<string, unknown>;
+            if (typeof d['answer'] === 'string') {
+              setDiagAnswer(d['answer'] as string);
+              setDiagMeta({ model: modelLabel, finishedAt: Date.now() });
+              toast.success('AI 日志分析诊断完成');
+            }
+          } else if (event === 'error' && isObject(data)) {
+            const d = data as Record<string, unknown>;
+            if (typeof d['error'] === 'string') {
+              throw new Error(d['error'] as string);
+            }
+          }
+        }
       } catch (err) {
-        setAiError(err instanceof Error ? err.message : 'AI 诊断失败');
+        setDiagError(err instanceof Error ? err.message : 'AI 日志分析诊断失败');
+        toast.error('AI 日志分析诊断失败');
       } finally {
-        setAiRunning(false);
+        setDiagRunning(false);
       }
+    };
+
+    // Offline ZIP export — the log-collection capability migrated from Settings.
+    const handleDownloadZip = async () => {
+      setZipping(true);
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (matrixReady) headers['Authorization'] = `Bearer ${accessToken}`;
+        const res = await fetch(apiUrl('/api/agentteams/debug-log'), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            range,
+            redact,
+            container: container.trim() || undefined,
+            room: room.trim() || undefined,
+            homeserver: matrixReady ? homeserver : undefined,
+          }),
+        });
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const data = await res.json();
+            if (data?.error) message = data.error;
+          } catch {
+            // Non-JSON error body — keep the HTTP status message.
+          }
+          throw new Error(message);
+        }
+        const blob = await res.blob();
+        const filename =
+          filenameFromDisposition(res.headers.get('content-disposition')) ??
+          `agentteams-debug-log-${Date.now()}.zip`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast.success(`日志包已下载：${filename}`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '收集日志失败');
+      } finally {
+        setZipping(false);
+      }
+    };
+
+    const handleCopyDiagAnswer = () => {
+      if (!diagAnswer) return;
+      navigator.clipboard.writeText(diagAnswer).then(
+        () => toast.success('诊断报告已复制到剪贴板'),
+        () => toast.error('复制失败，请手动复制')
+      );
     };
 
     return (
@@ -647,39 +989,161 @@ function createDiagnosticsPage(api: DashboardPluginApi) {
           />
         </div>
 
-        {/* AI diagnose */}
+        {/* AI 日志分析诊断 — merged: symptom + log collection settings + model */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-1.5">
-              <Stethoscope className="w-4 h-4 text-primary" />
-              AI 深度诊断（走默认模型）
+              <Sparkles className="w-4 h-4 text-primary" />
+              AI 日志分析诊断
+              {diagRunning && (
+                <Badge variant="outline" className="text-[10px] ml-auto animate-pulse">{diagProgress.pct}%</Badge>
+              )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
+            {/* 1. Symptom */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">症状描述</Label>
+              <Label className="text-xs text-muted-foreground">
+                症状描述 <span className="text-destructive">*</span>
+              </Label>
               <Textarea
                 value={symptom}
                 onChange={(e) => setSymptom(e.target.value)}
-                placeholder="例如：Worker 一直 Pending · 团队创建失败 · Matrix 房间没生成..."
+                placeholder="例如：Worker 一直 Pending · 团队创建失败 · Matrix 房间没生成 · 模型调用报 429…"
                 rows={3}
+                disabled={diagRunning}
               />
             </div>
-            <Button onClick={() => void handleAiDiagnose()} disabled={aiRunning || !symptom.trim()}>
-              {aiRunning ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Stethoscope className="w-4 h-4 mr-1" />}
-              {aiRunning ? '诊断中...' : 'AI 诊断'}
-            </Button>
-            {aiError && <p className="text-xs text-destructive">{aiError}</p>}
-            {aiAnswer && (
-              <div className="rounded-md border bg-muted/40 p-3 max-h-96 overflow-auto text-xs prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiAnswer}</ReactMarkdown>
+
+            {/* 2. Log collection settings (migrated from the Settings dialog) */}
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <FolderSearch className="w-3.5 h-3.5" />
+                日志收集配置
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">时间范围</Label>
+                  <Select value={range} onValueChange={setRange} disabled={diagRunning}>
+                    <SelectTrigger className="w-full" aria-label="日志时间范围">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RANGE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">容器过滤（可选）</Label>
+                  <Input
+                    value={container}
+                    onChange={(e) => setContainer(e.target.value)}
+                    placeholder="例如 agentteams-worker"
+                    disabled={diagRunning}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">房间过滤（可选）</Label>
+                  <Input
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    placeholder="例如 Worker"
+                    disabled={diagRunning}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label className="flex items-center gap-1.5 text-xs">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    PII 脱敏
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    自动屏蔽手机号、邮箱、API Key、Token 等敏感信息（建议保持开启）
+                  </p>
+                </div>
+                <Switch checked={redact} onCheckedChange={setRedact} disabled={diagRunning} />
+              </div>
+              <div className="flex items-center gap-2 text-[11px] rounded-md border bg-muted/50 px-2 py-1.5">
+                <MessageSquareText className="w-3.5 h-3.5 shrink-0" />
+                {matrixReady ? (
+                  <span>已登录 Matrix，诊断与日志包将包含房间消息。</span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    未登录 Matrix，将跳过房间消息（仅收集容器日志与 Agent 会话）。
+                  </span>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleDownloadZip()}
+                  disabled={zipping || diagRunning}
+                >
+                  {zipping ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+                  {zipping ? '正在收集，请稍候…' : '仅收集日志 ZIP'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 3. Model */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">诊断模型</Label>
+              <DiagnosisModelSelect value={model} onChange={setModel} disabled={diagRunning} />
+            </div>
+
+            {/* 4. Action */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button onClick={() => void handleDiagnose()} disabled={diagRunning || !symptom.trim()}>
+                {diagRunning
+                  ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  : <Sparkles className="w-4 h-4 mr-1" />}
+                {diagRunning ? '诊断中…' : 'AI 日志分析诊断'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                按上方配置实时采集容器日志 / Agent 会话 / Matrix 消息，结合症状与环境快照生成结构化诊断报告
+              </span>
+            </div>
+
+            {/* 5. Progress */}
+            {diagRunning && (
+              <div className="space-y-1.5">
+                <Progress value={diagProgress.pct} />
+                <p className="text-xs text-muted-foreground">{diagProgress.message || '正在收集日志并分析…'}</p>
+              </div>
+            )}
+
+            {/* 6. Error */}
+            {diagError && <p className="text-xs text-destructive">{diagError}</p>}
+
+            {/* 7. Report */}
+            {diagAnswer && (
+              <div className="rounded-lg border overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/40">
+                  <div className="flex items-center gap-2 text-xs min-w-0">
+                    <Heart className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="font-medium shrink-0">AI 诊断报告</span>
+                    {diagMeta && (
+                      <span className="text-muted-foreground truncate">
+                        · {diagMeta.model} · {new Date(diagMeta.finishedAt).toLocaleString('zh-CN')}
+                      </span>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 shrink-0" onClick={handleCopyDiagAnswer} disabled={!diagAnswer}>
+                    <Copy className="w-3 h-3 mr-1" />
+                    复制报告
+                  </Button>
+                </div>
+                <div className="p-4 max-h-[32rem] overflow-auto bg-background">
+                  <DiagnosisReport content={diagAnswer} streaming={diagRunning} />
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
-
-        <LogAnalysisSection />
-
       </div>
     );
   };
@@ -709,16 +1173,6 @@ function SummaryStat({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function InfraLine({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
-      {ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
-      <span className="font-medium">{label}</span>
-      {detail && <span className="text-muted-foreground truncate">{detail}</span>}
-    </div>
   );
 }
 
@@ -801,97 +1255,6 @@ function createHealthWidget(api: DashboardPluginApi) {
       </Card>
     );
   };
-}
-
-// ────────────────────────────────────────────
-// Log Analysis Section
-// ────────────────────────────────────────────
-
-function LogAnalysisSection() {
-  const [state, setState] = useState<LogAnalysisState>({ running: false, progress: { phase: '', pct: 0, message: '' }, summary: null, error: null, answer: '' });
-
-  const handleAnalyze = useCallback(async () => {
-    setState({ running: true, progress: { phase: 'init', pct: 0, message: '准备中…' }, summary: null, error: null, answer: '' });
-    try {
-      for await (const { event, data } of collectSSE(apiUrl('/api/agentteams/wen-tian/logs?range=1h'), { range: '1h', redact: true })) {
-        if (event === 'progress' && isObject(data)) {
-          const d = data as Record<string, unknown>;
-          setState((s) => ({
-            ...s,
-            progress: {
-              phase: String(d['phase'] ?? ''),
-              pct: typeof d['pct'] === 'number' ? d['pct'] : s.progress.pct,
-              message: String(d['message'] ?? ''),
-            },
-          }));
-        } else if (event === 'summary' && isObject(data)) {
-          const d = data as Record<string, unknown>;
-          setState((s) => ({ ...s, summary: d as Record<string, unknown> }));
-        } else if (event === 'chunk' && isObject(data)) {
-          const d = data as Record<string, unknown>;
-          if (typeof d['content'] === 'string') {
-            setState((s) => ({ ...s, answer: s.answer + String(d['content']) }));
-          }
-        } else if (event === 'result' && isObject(data)) {
-          const d = data as Record<string, unknown>;
-          if (typeof d['answer'] === 'string') {
-            setState((s) => ({ ...s, running: false, answer: d['answer'] as string }));
-            toast.success('日志分析完成');
-          }
-        } else if (event === 'error' && isObject(data)) {
-          const d = data as Record<string, unknown>;
-          if (typeof d['error'] === 'string') {
-            setState((s) => ({ ...s, running: false, error: d['error'] as string }));
-            toast.error('日志分析失败');
-          }
-        }
-      }
-    } catch (err) {
-      setState((s) => ({ ...s, running: false, error: err instanceof Error ? err.message : '未知错误' }));
-      toast.error('日志分析失败');
-    }
-  }, []);
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-1.5">
-          <Clock className={`w-4 h-4 text-primary ${state.running ? 'animate-spin' : ''}`} />
-          日志分析
-          {state.running && <Badge variant="outline" className="text-[10px] ml-auto animate-pulse">{state.progress.pct}%</Badge>}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {state.running && (
-          <>
-            <Progress value={state.progress.pct} />
-            <p className="text-xs text-muted-foreground">{state.progress.message || '正在收集日志并分析…'}</p>
-          </>
-        )}
-        {!state.running && (
-          <>
-            <p className="text-xs text-muted-foreground">分析过去 1 小时内的容器日志、Agent 会话和 Matrix 消息，由 AI 给出诊断结论与修复建议。</p>
-            <Button onClick={() => void handleAnalyze()} variant="outline" size="sm">
-              <Zap className="w-4 h-4 mr-1" />
-              开始日志分析
-            </Button>
-          </>
-        )}
-        {state.error && <p className="text-xs text-destructive">{state.error}</p>}
-        {state.answer && (
-          <div className="rounded-md border bg-muted/40 p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Heart className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-medium">AI 诊断结果</span>
-            </div>
-            <div className="rounded-md border bg-muted/40 p-3 max-h-96 overflow-auto text-xs prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{state.answer}</ReactMarkdown>
-              </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
 }
 
 // ────────────────────────────────────────────

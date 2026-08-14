@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.4 (2026-08-14)
+
+### New Features
+
+- **问天插件：AI 深度诊断与日志分析合并为「AI 日志分析诊断」**：
+  - 填写症状描述 → 点击「AI 日志分析诊断」，一次完成日志实时采集（容器日志 / Agent 会话 / Matrix 消息）与 AI 分析，SSE 进度条 + 流式报告输出；移除原独立的「AI 诊断」按钮与「开始日志分析」入口
+  - 诊断 Prompt 重写并贴合 AgentTeams：角色为平台资深 SRE，内置 Controller/Worker（OpenClaw/Hermes/CoPaw）/团队/Human/Matrix/MinIO/Higress AI 网关模块知识与常见故障域清单；输出结构带严重程度徽章、诊断概要表、事件时间线表、按置信度排序的根因分析、可执行修复命令（bash/yaml 代码块）
+  - **日志真实进入 Prompt**：容器日志尾部（单容器 16KB / 总量 96KB 上限）、docker inspect facts（state/exitCode/OOMKilled/重启次数）、Agent 会话摘录（12 个文件 / 32KB 上限）随症状描述与 Dashboard 环境快照一起交给 LLM；此前日志只做统计未进入分析
+  - 诊断模型可选：默认模型（服务器 `AGENTTEAMS_DEFAULT_MODEL`）、「模型管理」已配置的服务商模型（经 Higress AI 路由解析）、内置别名与自定义别名；API Key 仍仅保存在服务端
+  - 报告渲染美化：react-markdown 自定义渲染器（章节分隔线、表格样式、代码块复制按钮、流式光标），报告头部显示所用模型与时间，支持一键复制全文
+
+### Improvements
+
+- **日志收集迁入问天诊断页**：原设置对话框「日志收集」页签整体迁移为「AI 日志分析诊断」卡片的「日志收集配置」功能区（时间范围 / 容器过滤 / 房间过滤 / PII 脱敏 / Matrix 状态提示），参数直接供 AI 诊断复用；设置对话框由 5 个页签精简为 4 个
+- 修复服务端解析 LLM SSE 流未缓冲导致的 token 丢失风险（`data:` JSON 跨网络分块时可能被丢弃）
+- 清理问天插件死代码（`collectAndAnalyzeLogs`、`InfraLine`、`SEVERITY_LABELS` 等）
+
 ## v1.2.3 (2026-08-13)
 
 ### New Features
