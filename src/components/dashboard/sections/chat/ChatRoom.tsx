@@ -25,13 +25,12 @@ import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose, ArrowDown, FolderTree, FileText, UserCheck } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
 import { FilesBrowserPanel } from './views/worker-files-panel';
-import { RoomFilesPanel } from './views/room-files-panel';
 import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
@@ -81,7 +80,6 @@ export function ChatRoom({
   const [selectedWorker, setSelectedWorker] = useState<string | null>(defaultWorkerName ?? null);
   const [workerPaneWidth, setWorkerPaneWidth] = useState(320);
   const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
   const noticeCounterRef = useRef(0);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
 
@@ -584,7 +582,6 @@ export function ChatRoom({
     if (!workerName) return;
     setSelectedWorker(workerName);
     setShowMembers(false);
-    setShowFiles(false);
     setShowWorkers(true);
   }, [runtimeMap]);
 
@@ -662,25 +659,8 @@ export function ChatRoom({
       >
         <FolderTree className="w-4 h-4" />
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 shrink-0"
-        onClick={() => {
-          if (showFiles) {
-            setShowFiles(false);
-          } else {
-            setShowFiles(true);
-            setShowMembers(false);
-            setShowWorkers(false);
-          }
-        }}
-        title={showFiles ? '隐藏房间文件' : '显示房间文件'}
-      >
-        <FileText className="w-4 h-4" />
-      </Button>
     </div>
-  ), [roomName, team, topic, avatar, roomMembers.length, showMembers, showWorkers, showFiles]);
+  ), [roomName, team, topic, avatar, roomMembers.length, showMembers, showWorkers]);
 
   return (
     <div ref={chatLayoutRef} className={`flex h-full ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}>
@@ -884,20 +864,6 @@ export function ChatRoom({
             )}
           </div>
         </>
-      )}
-      {/* Room files sidebar */}
-      {showFiles && (
-        <div className="w-64 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
-          <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-            <h4 className="font-semibold text-xs">房间文件</h4>
-            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setShowFiles(false)}>
-              <PanelRightClose className="w-3 h-3" />
-            </Button>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <RoomFilesPanel roomId={roomId} />
-          </div>
-        </div>
       )}
       {/* Thread sidebar */}
       {activeThread && (
