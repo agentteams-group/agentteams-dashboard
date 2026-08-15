@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import remarkRehype from 'remark-rehype';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
@@ -196,7 +197,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     <div className="matrix-message-content text-sm space-y-1">
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkRehype]}
         rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
         components={{
           code({ className, children, ...props }) {
