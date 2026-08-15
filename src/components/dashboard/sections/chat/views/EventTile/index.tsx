@@ -16,6 +16,7 @@ interface EventTileProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string) => void;
+  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   readReceipts?: Record<string, ReadReceiptEntry>;
   currentUserId?: string | null;
@@ -33,6 +34,7 @@ export function EventTile({
   onResend,
   onCancel,
   onSendConfirmation,
+  onOpenWorkerFiles,
   memberMap,
   readReceipts,
   currentUserId,
@@ -50,6 +52,7 @@ export function EventTile({
       onResend={onResend}
       onCancel={onCancel}
       onSendConfirmation={onSendConfirmation}
+      onOpenWorkerFiles={onOpenWorkerFiles}
       memberMap={memberMap}
       readReceipts={readReceipts}
       currentUserId={currentUserId}

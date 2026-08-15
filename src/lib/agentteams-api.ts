@@ -620,6 +620,33 @@ export const agentteamsApi = {
     return Array.isArray(result) ? result : result.objects ?? [];
   },
 
+  // Team shared workspace: the AgentTeams team-scoped layout under
+  // `teams/{team}/shared/` (tasks/projects produced by TeamHarness MCP).
+  listTeamFiles: async (teamName: string, prefix?: string): Promise<StorageObject[]> => {
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    const result = await proxyRequest<StorageObject[] | { objects: StorageObject[] }>(
+      `/teams/${encodeURIComponent(teamName)}/files${query}`,
+      { method: 'GET' }
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.objects ?? [];
+  },
+
+  uploadTeamFile: async (teamName: string, file: File, prefix?: string): Promise<{ key: string; size: number }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    const res = await fetch(
+      apiUrl(`/api/agentteams/teams/${encodeURIComponent(teamName)}/files/upload${query}`),
+      { method: 'POST', body: form },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(`文件上传失败: ${res.status} ${text}`, res.status, `/teams/${teamName}/files/upload`);
+    }
+    return res.json();
+  },
+
   uploadWorkerFile: async (workerName: string, file: File, prefix?: string): Promise<{ key: string; size: number }> => {
     const form = new FormData();
     form.append('file', file);
@@ -681,6 +708,10 @@ export const agentteamsApi = {
 
   downloadWorkerFileUrl: (workerName: string, key: string): string => {
     return apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/files/download?key=${encodeURIComponent(key)}`);
+  },
+
+  downloadTeamFileUrl: (teamName: string, key: string): string => {
+    return apiUrl(`/api/agentteams/teams/${encodeURIComponent(teamName)}/files/download?key=${encodeURIComponent(key)}`);
   },
 
   uploadObject: async (bucket: string, key: string, file: File): Promise<void> => {

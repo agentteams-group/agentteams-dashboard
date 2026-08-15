@@ -1,3 +1,5 @@
+import type { TeamResponse } from '@/lib/agentteams-api';
+
 export interface RoomInfo {
   id: string;
   name: string;
@@ -6,6 +8,10 @@ export interface RoomInfo {
   parentTeam?: string;
   matrixUserId?: string;
   phase?: string;
+  /** AgentTeams worker resource name owning this room (worker rooms). */
+  workerName?: string;
+  /** Full AgentTeams team resource behind a team room (drives the header detail). */
+  team?: TeamResponse;
   /** Latest message timestamp in this room (epoch ms). Drives sidebar sort. */
   lastMessageTs?: number;
   /** Unread message count (from /sync unread_notifications). */

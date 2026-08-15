@@ -19,6 +19,7 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
+import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -32,7 +33,8 @@ interface MessageBubbleProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string) => void;
-  onOpenWorkerFiles?: () => void;
+  /** Opens the owning worker's files panel (team rooms: multi-worker source). */
+  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   senderShort?: string;
   memberMap?: Record<string, string>;
   /** Latest m.read receipts of every user in the room (for ✓✓ read indicator). */
@@ -52,15 +54,42 @@ function MessageTime({ timestamp }: { timestamp: number }) {
   );
 }
 
-function AvatarWithInitials({ senderShort, isMe }: { senderShort: string; isMe: boolean }) {
+// Stable per-sender palette so different workers in a team room are visually
+// distinguishable at a glance (avatar + sender name share the same tone).
+const SENDER_PALETTE = [
+  { avatar: 'bg-sky-500/15 text-sky-700 dark:text-sky-300', name: 'text-sky-600 dark:text-sky-400' },
+  { avatar: 'bg-violet-500/15 text-violet-700 dark:text-violet-300', name: 'text-violet-600 dark:text-violet-400' },
+  { avatar: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', name: 'text-amber-600 dark:text-amber-400' },
+  { avatar: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', name: 'text-rose-600 dark:text-rose-400' },
+  { avatar: 'bg-teal-500/15 text-teal-700 dark:text-teal-300', name: 'text-teal-600 dark:text-teal-400' },
+  { avatar: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300', name: 'text-indigo-600 dark:text-indigo-400' },
+  { avatar: 'bg-orange-500/15 text-orange-700 dark:text-orange-300', name: 'text-orange-600 dark:text-orange-400' },
+  { avatar: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300', name: 'text-cyan-600 dark:text-cyan-400' },
+];
+
+function senderPaletteIndex(sender: string): number {
+  let hash = 0;
+  for (let i = 0; i < sender.length; i++) {
+    hash = (hash * 31 + sender.charCodeAt(i)) >>> 0;
+  }
+  return hash % SENDER_PALETTE.length;
+}
+
+function senderPalette(sender: string) {
+  return SENDER_PALETTE[senderPaletteIndex(sender)];
+}
+
+function AvatarWithInitials({ sender, label, isMe }: { sender: string; label: string; isMe: boolean }) {
+  const palette = senderPalette(sender);
   return (
     <Avatar className="w-7 h-7 shrink-0">
-      <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-medium ${
-        isMe
-          ? 'bg-primary/20 text-primary'
-          : 'bg-muted text-muted-foreground'
-      }`}>
-        {senderShort.slice(0, 2).toUpperCase()}
+      <div
+        className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
+          isMe ? 'bg-primary/20 text-primary' : palette.avatar
+        }`}
+        title={label}
+      >
+        {label.slice(0, 2).toUpperCase()}
       </div>
     </Avatar>
   );
@@ -131,6 +160,16 @@ export function MessageBubble({
   const [editError, setEditError] = useState<string | null>(null);
 
   const showAvatar = !isContinuation && showSender;
+
+  // Sender identity, resolved with priority: owning worker name → room member
+  // display name → MXID localpart. In team rooms several workers talk in the
+  // same conversation, so surfacing the worker identity (name + runtime badge
+  // + stable color) is what makes messages distinguishable.
+  const senderLabel = message.workerName
+    || memberMap?.[message.sender]
+    || senderShort
+    || message.senderShort;
+  const senderColor = senderPalette(message.sender).name;
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
     return normalizeToBlocks({
@@ -216,10 +255,11 @@ export function MessageBubble({
   }, [editValue, message, onEdit]);
 
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3 py-1.5 rounded-2xl text-sm break-words',
+    'w-fit max-w-[min(92%,72ch)] px-3.5 py-2 rounded-2xl text-sm break-words leading-relaxed',
+    'shadow-sm transition-shadow',
     message.isMe
       ? 'bg-primary text-primary-foreground rounded-tr-sm'
-      : 'bg-muted text-foreground rounded-tl-sm',
+      : 'bg-muted/80 text-foreground rounded-tl-sm border border-border/50',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -237,16 +277,19 @@ export function MessageBubble({
       {/* Avatar column: mirrors the bubble side (own messages on the right). */}
       <div className="w-7 shrink-0">
         {showAvatar && (
-          <AvatarWithInitials senderShort={message.senderShort} isMe={message.isMe} />
+          <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
         )}
       </div>
 
       <div className={`flex-1 min-w-0 flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
-          <div className={`flex items-center gap-1.5 mb-0.5 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-xs font-medium ${message.isMe ? 'text-primary' : 'text-foreground'}`}>
-              {message.senderShort}
+          <div className={`flex items-center gap-1.5 mb-0.5 flex-wrap ${message.isMe ? 'flex-row-reverse' : ''}`}>
+            <span className={`text-xs font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
+              {senderLabel}
             </span>
+            {message.workerName && message.runtime && (
+              <RuntimeBadge runtime={message.runtime} size="sm" />
+            )}
             {message.isStreaming && (
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                 <span className="animate-pulse">streaming</span>
@@ -454,8 +497,8 @@ export function MessageBubble({
             {onCopy && (
               <ActionButton title="复制" icon={ICON_PATHS.copy} onClick={() => onCopy(message)} />
             )}
-            {onOpenWorkerFiles && !message.isMe && senderShort && (
-              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={onOpenWorkerFiles} />
+            {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
+              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
             )}
           </div>
         )}

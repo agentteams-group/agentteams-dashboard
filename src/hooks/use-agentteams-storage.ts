@@ -34,6 +34,30 @@ export function useWorkerFiles(workerName: string, prefix?: string) {
   });
 }
 
+export function useTeamFiles(teamName: string, prefix?: string) {
+  return useQuery<StorageObject[]>({
+    queryKey: ['agentteams-team-files', teamName, prefix ?? ''],
+    queryFn: () => agentteamsApi.listTeamFiles(teamName, prefix || undefined),
+    enabled: !!teamName,
+    retry: 1,
+    placeholderData: (previousData) => previousData,
+    throwOnError: false,
+  });
+}
+
+export function useUploadTeamFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ teamName, file, prefix }: { teamName: string; file: File; prefix?: string }) =>
+      agentteamsApi.uploadTeamFile(teamName, file, prefix),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['agentteams-team-files', variables.teamName],
+      });
+    },
+  });
+}
+
 export function useUploadWorkerFile() {
   const queryClient = useQueryClient();
   return useMutation({

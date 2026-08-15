@@ -163,6 +163,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
             [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
             [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+            [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1
+            [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
+            [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
+            [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
             [&_table]:border-collapse [&_table]:border [&_table]:border-border
             [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
             [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
@@ -209,7 +213,19 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             return <div className="my-1">{children}</div>;
           },
           p({ children }) {
-            return <p className="mb-1 last:mb-0">{children}</p>;
+            return <p className="mb-1 last:mb-0 leading-relaxed">{children}</p>;
+          },
+          h1({ children }) {
+            return <h1 className="text-base font-semibold mt-2 mb-1 first:mt-0">{children}</h1>;
+          },
+          h2({ children }) {
+            return <h2 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h2>;
+          },
+          h3({ children }) {
+            return <h3 className="text-sm font-semibold mt-1.5 mb-0.5 first:mt-0">{children}</h3>;
+          },
+          h4({ children }) {
+            return <h4 className="text-sm font-medium mt-1 mb-0.5 first:mt-0">{children}</h4>;
           },
           ul({ children }) {
             return <ul className="list-disc pl-4 mb-1">{children}</ul>;

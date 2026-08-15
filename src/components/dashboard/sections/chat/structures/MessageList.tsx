@@ -144,6 +144,8 @@ interface MessageListProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string) => void;
+  /** Opens the worker files panel for the message's owning worker. */
+  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   /** Called whenever the scroller enters or leaves the bottom position. */
   onAtBottomChange?: (_atBottom: boolean) => void;
@@ -174,6 +176,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     onResend,
     onCancel,
     onSendConfirmation,
+    onOpenWorkerFiles,
     memberMap,
     onAtBottomChange,
     notices = [],
@@ -202,12 +205,13 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
         onResend={onResend}
         onCancel={onCancel}
         onSendConfirmation={onSendConfirmation}
+        onOpenWorkerFiles={onOpenWorkerFiles}
         memberMap={memberMap}
         readReceipts={readReceipts}
         currentUserId={currentUserId}
       />
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, memberMap, readReceipts, currentUserId]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenWorkerFiles, memberMap, readReceipts, currentUserId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would

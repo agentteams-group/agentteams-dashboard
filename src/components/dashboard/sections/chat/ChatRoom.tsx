@@ -25,18 +25,24 @@ import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose, ArrowDown, FolderTree, FileText } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown, FolderTree, FileText, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { TypingIndicator } from './typing-indicator';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
-import { WorkerFilesPanel } from './views/worker-files-panel';
+import { FilesBrowserPanel } from './views/worker-files-panel';
 import { RoomFilesPanel } from './views/room-files-panel';
 import { useRuntimeMap } from './runtime-map-context';
+import type { TeamResponse } from '@/lib/agentteams-api';
+import { RUNTIME_LABELS } from '@/lib/phase-colors';
 
 interface ChatRoomProps {
   roomId: string;
   roomName: string;
+  /** Full AgentTeams team resource for team rooms (drives the header detail). */
+  team?: TeamResponse;
+  /** Worker resource name owning this room; auto-selected in the files panel. */
+  defaultWorkerName?: string;
   topic?: string;
   avatar?: string;
   members?: RoomMember[];
@@ -48,6 +54,8 @@ interface ChatRoomProps {
 export function ChatRoom({
   roomId,
   roomName,
+  team,
+  defaultWorkerName,
   topic,
   avatar,
   members: initialMembers = [],
@@ -68,7 +76,9 @@ export function ChatRoom({
   const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [showWorkers, setShowWorkers] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
+  // Worker rooms default to the owning worker so the files panel opens on
+  // "the current worker's" directory instead of an empty picker.
+  const [selectedWorker, setSelectedWorker] = useState<string | null>(defaultWorkerName ?? null);
   const [workerPaneWidth, setWorkerPaneWidth] = useState(320);
   const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
@@ -512,6 +522,72 @@ export function ChatRoom({
     [roomMembers]
   );
 
+  // Worker options for the files panel. Team rooms lead with the team shared
+  // workspace (agentteams layout: teams/{team}/shared/ — tasks/projects
+  // produced by TeamHarness MCP) followed by the authoritative
+  // `team.workerNames` roster (Matrix member lists may miss workers that
+  // never spoke in the room due to lazy-loaded membership); other rooms fall
+  // back to runtimeMap-resolved room members.
+  const TEAM_SHARED_VALUE = '__team_shared__';
+  const workerOptions = useMemo(() => {
+    const byWorkerName = new Map(
+      Object.values(runtimeMap).map((entry) => [entry.workerName, entry]),
+    );
+    const toOption = (workerName: string, userId?: string) => {
+      const entry = byWorkerName.get(workerName) ?? (userId ? runtimeMap[userId] : undefined);
+      if (!entry) return null;
+      const runtimeLabel = RUNTIME_LABELS[entry.runtime] || entry.runtime;
+      return {
+        userId: userId ?? `worker:${workerName}`,
+        workerName,
+        label: `${workerName} · ${runtimeLabel}`,
+      };
+    };
+    const teamOption = team
+      ? { userId: TEAM_SHARED_VALUE, workerName: TEAM_SHARED_VALUE, label: `团队共享空间 · teams/${team.name}/shared` }
+      : null;
+    const workerEntries: { userId: string; workerName: string; label: string }[] = [];
+    if (team?.workerNames?.length) {
+      const mxidByWorkerName = new Map(
+        roomMembers
+          .map((m) => (runtimeMap[m.userId] ? ([runtimeMap[m.userId].workerName, m.userId] as const) : null))
+          .filter((x): x is readonly [string, string] => x !== null),
+      );
+      for (const name of team.workerNames) {
+        const opt = toOption(name, mxidByWorkerName.get(name));
+        if (opt) workerEntries.push(opt);
+      }
+    } else {
+      for (const m of roomMembers) {
+        if (!runtimeMap[m.userId]) continue;
+        const opt = toOption(runtimeMap[m.userId].workerName, m.userId);
+        if (opt) workerEntries.push(opt);
+      }
+    }
+    return teamOption ? [teamOption, ...workerEntries] : workerEntries;
+  }, [team, roomMembers, runtimeMap]);
+
+  // Team rooms open on the shared workspace (the team's own space); worker
+  // rooms keep their owning worker; other rooms fall back to the first option.
+  const effectiveSelectedWorker =
+    selectedWorker
+    ?? (team ? TEAM_SHARED_VALUE : undefined)
+    ?? defaultWorkerName
+    ?? workerOptions[0]?.workerName
+    ?? null;
+  const selectedIsTeamShared = effectiveSelectedWorker === TEAM_SHARED_VALUE;
+
+  // "查看工作目录" on an agent bubble: open the worker files panel with that
+  // message's sender pre-selected (resolved via the runtime map).
+  const handleOpenWorkerFiles = useCallback((message: DisplayMessage) => {
+    const workerName = message.workerName || runtimeMap[message.sender]?.workerName;
+    if (!workerName) return;
+    setSelectedWorker(workerName);
+    setShowMembers(false);
+    setShowFiles(false);
+    setShowWorkers(true);
+  }, [runtimeMap]);
+
   const handleOpenThread = useCallback((message: DisplayMessage) => {
     // A thread panel replaces the member list, element-web style.
     setShowMembers(false);
@@ -534,8 +610,27 @@ export function ChatRoom({
           <h3 className="font-semibold text-sm truncate">{roomName}</h3>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
         </div>
-        {topic && (
-          <p className="text-xs text-muted-foreground truncate">{topic}</p>
+        {team ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <Users className="w-3 h-3" />
+              {team.teamName || team.name}
+            </span>
+            {team.description && (
+              <span className="truncate" title={team.description}>{team.description}</span>
+            )}
+            <span className="shrink-0 inline-flex items-center gap-1" title="就绪 Worker / 总 Worker">
+              <UserCheck className="w-3 h-3 text-emerald-500" />
+              {team.readyWorkers}/{team.totalWorkers}
+            </span>
+            {team.leaderName && (
+              <span className="shrink-0">Leader: {team.leaderName}</span>
+            )}
+          </div>
+        ) : (
+          topic && (
+            <p className="text-xs text-muted-foreground truncate">{topic}</p>
+          )
         )}
       </div>
       <Button
@@ -585,7 +680,7 @@ export function ChatRoom({
         <FileText className="w-4 h-4" />
       </Button>
     </div>
-  ), [roomName, topic, avatar, roomMembers.length, showMembers, showWorkers, showFiles]);
+  ), [roomName, team, topic, avatar, roomMembers.length, showMembers, showWorkers, showFiles]);
 
   return (
     <div ref={chatLayoutRef} className={`flex h-full ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}>
@@ -639,6 +734,7 @@ export function ChatRoom({
             onResend={handleResendLocal}
             onCancel={handleCancelLocal}
             onSendConfirmation={handleSendConfirmation}
+            onOpenWorkerFiles={handleOpenWorkerFiles}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
             notices={systemNotices}
@@ -747,27 +843,43 @@ export function ChatRoom({
                 <PanelRightClose className="w-3 h-3" />
               </Button>
             </div>
+            {team && (
+              <div className="px-3 pt-2 pb-1 border-b border-border shrink-0">
+                <p className="text-[10px] leading-none text-muted-foreground">
+                  当前任务文件存放在「{team.teamName} 的团队共享空间」(teams/{team.name}/shared/)
+                </p>
+              </div>
+            )}
             <div className="p-2 border-b border-border">
               <select
-                value={selectedWorker || ''}
+                value={effectiveSelectedWorker || ''}
                 onChange={(e) => setSelectedWorker(e.target.value || null)}
                 className="w-full text-xs rounded-md border border-input bg-background px-2 py-1.5"
               >
-                <option value="">选择 Worker...</option>
-                {roomMembers
-                  .filter(m => !m.userId.includes('human'))
-                  .map(m => (
-                    <option key={m.userId} value={m.displayName}>{m.displayName}</option>
-                  ))}
+                {workerOptions.length === 0 && <option value="">暂无可用的 Worker</option>}
+                {workerOptions.map((w) => (
+                  <option key={w.userId} value={w.workerName}>{w.label}</option>
+                ))}
               </select>
             </div>
-            {selectedWorker ? (
+            {effectiveSelectedWorker ? (
               <div className="flex-1 overflow-hidden">
-                <WorkerFilesPanel workerName={selectedWorker} />
+                {/* key resets prefix/selection when the target changes */}
+                <FilesBrowserPanel
+                  key={effectiveSelectedWorker}
+                  kind={selectedIsTeamShared ? 'team' : 'worker'}
+                  ownerName={selectedIsTeamShared ? (team?.name ?? '') : effectiveSelectedWorker}
+                />
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center p-4">
-                <p className="text-xs text-muted-foreground text-center">选择一个 Worker 查看其工作目录</p>
+                <p className="text-xs text-muted-foreground text-center">
+                  {workerOptions.length === 0
+                    ? team
+                      ? '团队暂无已注册的 Worker'
+                      : '当前房间没有 AgentTeams Worker 成员'
+                    : '选择一个目标查看文件'}
+                </p>
               </div>
             )}
           </div>

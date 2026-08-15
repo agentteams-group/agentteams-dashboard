@@ -44,6 +44,7 @@ export function buildRooms(
         members: team.workerNames || [],
         parentTeam: team.name,
         phase: team.phase,
+        team,
         ...enrich(team.teamRoomID),
       });
     }
@@ -57,6 +58,7 @@ export function buildRooms(
         members: [worker.matrixUserID].filter(Boolean),
         parentTeam: worker.team,
         matrixUserId: worker.matrixUserID,
+        workerName: worker.name,
         phase: worker.phase,
         ...enrich(worker.roomID),
       });
