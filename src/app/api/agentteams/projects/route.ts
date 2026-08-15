@@ -38,8 +38,12 @@ export async function GET(request: NextRequest) {
   let error = `HTTP ${status}`;
   try {
     const body = await res.json();
-    if (body && typeof body === 'object' && 'error' in body) {
-      error = String((body as { error: unknown }).error);
+    // Controller errors use `{ message }` (httputil.ErrorResponse); accept
+    // `{ error }` too for middleware-shaped bodies.
+    if (body && typeof body === 'object') {
+      const b = body as { error?: unknown; message?: unknown };
+      if (typeof b.message === 'string' && b.message) error = b.message;
+      else if (typeof b.error === 'string' && b.error) error = b.error;
     }
   } catch {
     // non-JSON error body; keep the generic message

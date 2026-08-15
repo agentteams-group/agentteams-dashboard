@@ -161,6 +161,25 @@ export interface ProjectListResponse {
 
 const PROJECTS_URL = '/api/agentteams/projects';
 
+/** Extract a human-readable detail from an error response body.
+ * The controller's standard error shape is `{ "message": "..." }`
+ * (httputil.ErrorResponse); the dashboard middleware returns
+ * `{ "error": "..." }`. Accept both so callers surface the real reason. */
+async function extractErrorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const payload = (await res.json()) as { error?: unknown; message?: unknown };
+    const fromError =
+      payload && typeof payload.error === 'string' && payload.error ? payload.error : '';
+    const fromMessage =
+      payload && typeof payload.message === 'string' && payload.message ? payload.message : '';
+    if (fromMessage) return fromMessage;
+    if (fromError) return fromError;
+  } catch {
+    // non-JSON error body; keep the fallback
+  }
+  return fallback;
+}
+
 async function requestJson<T>(url: string): Promise<T> {
   let res: Response;
   try {
@@ -169,7 +188,8 @@ async function requestJson<T>(url: string): Promise<T> {
     throw new NetworkError(url);
   }
   if (!res.ok) {
-    throw new ApiError(`HTTP ${res.status} from ${url}`, res.status, url);
+    const detail = await extractErrorDetail(res, `HTTP ${res.status}`);
+    throw new ApiError(`${detail} from ${url}`, res.status, url);
   }
   return (await res.json()) as T;
 }
@@ -215,4 +235,92 @@ export function getTaskArtifactUrl(
 ): string {
   const base = `${PROJECTS_URL}/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/artifact`;
   return path ? `${base}?path=${encodeURIComponent(path)}` : base;
+}
+
+// ----- W-PR-2 human intervention write operations (#1172) -----
+//
+// Each POST returns the controller's refreshed workflow JSON (200). The
+// controller's 409 conflict reasons (already paused / not paused / replan
+// preconditions) are surfaced as ApiError with the upstream status so the
+// UI can show the exact reason.
+
+async function requestPost<T>(url: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new NetworkError(url);
+  }
+  if (!res.ok) {
+    const detail = await extractErrorDetail(res, `HTTP ${res.status}`);
+    throw new ApiError(`${detail} from ${url}`, res.status, url);
+  }
+  return (await res.json()) as T;
+}
+
+/** Post a project mutation through the dashboard proxy.
+ * `teamId` disambiguates (team, project_id) identity (#1169). */
+function mutationUrl(projectId: string, action: string, teamId?: string): string {
+  const base = `${PROJECTS_URL}/${encodeURIComponent(projectId)}/${action}`;
+  return teamId ? `${base}?team=${encodeURIComponent(teamId)}` : base;
+}
+
+/** Pause an active project (POST .../pause, body { reason }). */
+export function pauseProject(
+  projectId: string,
+  options: { reason?: string; teamId?: string } = {},
+): Promise<WorkflowResponse> {
+  return requestPost<WorkflowResponse>(
+    mutationUrl(projectId, 'pause', options.teamId),
+    { reason: options.reason ?? '' },
+  );
+}
+
+/** Resume a paused project (POST .../resume, empty body). */
+export function resumeProject(
+  projectId: string,
+  options: { teamId?: string } = {},
+): Promise<WorkflowResponse> {
+  return requestPost<WorkflowResponse>(
+    mutationUrl(projectId, 'resume', options.teamId),
+    {},
+  );
+}
+
+/** Replace a DAG project's plan (POST .../replan, body { tasks }).
+ * The controller validates the new graph (duplicates / unknown deps /
+ * cycles) and normalizes fields; 409 on preconditions (non-dag plan type,
+ * not active, tasks executing). */
+export function replanProject(
+  projectId: string,
+  tasks: unknown[],
+  options: { teamId?: string } = {},
+): Promise<WorkflowResponse> {
+  return requestPost<WorkflowResponse>(
+    mutationUrl(projectId, 'replan', options.teamId),
+    { tasks },
+  );
+}
+
+/** Cancel a single task in a project (POST .../tasks/{taskId}/cancel).
+ * `reason` is required by the controller (400 without it); 409 for terminal
+ * tasks, 404 when the task is not part of the project's graph. */
+export function cancelProjectTask(
+  projectId: string,
+  taskId: string,
+  options: { reason: string; replacementTaskId?: string; teamId?: string },
+): Promise<WorkflowResponse> {
+  const base = `${PROJECTS_URL}/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/cancel`;
+  const url = options.teamId
+    ? `${base}?team=${encodeURIComponent(options.teamId)}`
+    : base;
+  return requestPost<WorkflowResponse>(url, {
+    reason: options.reason,
+    ...(options.replacementTaskId ? { replacementTaskId: options.replacementTaskId } : {}),
+  });
 }

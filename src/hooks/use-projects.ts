@@ -1,5 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { listProjects, getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  listProjects,
+  getProjectWorkflow,
+  pauseProject,
+  resumeProject,
+  replanProject,
+  cancelProjectTask,
+} from '@/lib/agentteams-projects-api';
 
 /**
  * Fetch the AgentTeams project list through the dashboard proxy
@@ -31,6 +38,99 @@ export function useProjectWorkflow(projectId: string | null, teamId?: string) {
         teamId,
       }),
     enabled: !!projectId,
+    // Keep the detail fresh while a project is selected — mutations elsewhere
+    // (e.g. an agent completing tasks) would otherwise never show up without
+    // a manual refresh.
+    refetchInterval: 15000,
     retry: 1,
+  });
+}
+
+/** Shared cache invalidation for project write mutations (#1172): after a
+ * pause/resume/replan the controller returns the refreshed workflow, but we
+ * invalidate the queries anyway so list + detail re-sync with the new
+ * status (the mutation's onSuccess also updates the detail cache directly). */
+function invalidateProjectQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  teamId?: string,
+) {
+  const detailKey = ['agentteams-project-workflow', teamId ?? 'any', projectId];
+  queryClient.invalidateQueries({ queryKey: detailKey });
+  queryClient.invalidateQueries({ queryKey: ['agentteams-projects'] });
+}
+
+/** Pause the currently selected project, then refresh list + detail. */
+export function usePauseProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; teamId?: string; reason?: string }) =>
+      pauseProject(args.projectId, { reason: args.reason, teamId: args.teamId }),
+    onSuccess: (workflow) => {
+      queryClient.setQueryData(
+        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        workflow,
+      );
+      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+    },
+  });
+}
+
+/** Resume a paused project, then refresh list + detail. */
+export function useResumeProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; teamId?: string }) =>
+      resumeProject(args.projectId, { teamId: args.teamId }),
+    onSuccess: (workflow) => {
+      queryClient.setQueryData(
+        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        workflow,
+      );
+      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+    },
+  });
+}
+
+/** Replace a DAG project's plan (JSON tasks payload from the replan dialog),
+ * then refresh list + detail. */
+export function useReplanProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; teamId?: string; tasks: unknown[] }) =>
+      replanProject(args.projectId, args.tasks, { teamId: args.teamId }),
+    onSuccess: (workflow) => {
+      queryClient.setQueryData(
+        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        workflow,
+      );
+      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+    },
+  });
+}
+
+/** Cancel a single task in a project, then refresh list + detail. */
+export function useCancelProjectTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      projectId: string;
+      taskId: string;
+      teamId?: string;
+      reason: string;
+      replacementTaskId?: string;
+    }) =>
+      cancelProjectTask(args.projectId, args.taskId, {
+        reason: args.reason,
+        replacementTaskId: args.replacementTaskId,
+        teamId: args.teamId,
+      }),
+    onSuccess: (workflow) => {
+      queryClient.setQueryData(
+        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        workflow,
+      );
+      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+    },
   });
 }

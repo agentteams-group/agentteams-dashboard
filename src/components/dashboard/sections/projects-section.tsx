@@ -1,12 +1,29 @@
 'use client';
 
 import { useState } from 'react';
-import { GitBranch, FolderKanban, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
+import { GitBranch, FolderKanban, CircleAlert, Loader2, RefreshCw, Pause, Play, Map as MapIcon, Ban } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { useProjects, useProjectWorkflow } from '@/hooks/use-projects';
+import {
+  useProjects,
+  useProjectWorkflow,
+  usePauseProject,
+  useResumeProject,
+  useReplanProject,
+  useCancelProjectTask,
+} from '@/hooks/use-projects';
 import { ApiError } from '@/lib/api-error';
 import {
   getTaskArtifactUrl,
@@ -15,44 +32,177 @@ import {
   type WorkflowTaskDetail,
 } from '@/lib/agentteams-projects-api';
 
-// ----- Status config (mirrors tasks-section colors) -----
+// ----- Status config (mirrors tasks-section colors/labels so the two
+// project views on the dashboard look consistent) -----
 
 const PROJECT_STATUS_COLOR: Record<ProjectStatus, string> = {
-  planning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
-  active: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  paused: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30',
-  completed: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30',
-  unknown: 'bg-muted text-muted-foreground border',
+  planning: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
+  active: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  paused: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  completed: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  unknown: 'bg-muted text-muted-foreground border-border',
+};
+
+// Same Chinese labels as tasks-section's PROJECT_STATUS_LABEL.
+const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
+  planning: '规划中',
+  active: '进行中',
+  paused: '已暂停',
+  completed: '已完成',
+  unknown: '未知',
 };
 
 const NODE_STATUS_COLOR: Record<WorkflowNodeStatus, string> = {
-  pending: 'bg-muted text-muted-foreground border',
-  delegated: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
-  'in-progress': 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30',
-  completed: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  revision: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
-  blocked: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30',
+  pending: 'text-slate-500 bg-slate-500/10 border-slate-500/30',
+  delegated: 'text-blue-500 bg-blue-500/10 border-blue-500/30',
+  'in-progress': 'text-violet-500 bg-violet-500/10 border-violet-500/30',
+  completed: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30',
+  revision: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+  blocked: 'text-red-500 bg-red-500/10 border-red-500/30',
 };
+
+// Mirrors tasks-section column labels (待办/已派发/执行中/已完成/阻塞).
+const NODE_STATUS_LABEL: Record<WorkflowNodeStatus, string> = {
+  pending: '待办',
+  delegated: '已派发',
+  'in-progress': '执行中',
+  completed: '已完成',
+  revision: '需修订',
+  blocked: '阻塞',
+};
+
+/** Normalize a raw TaskMeta status to the frontend enum, mirroring the
+ * controller's normalizeTaskStatus (project_handler.go): planned→pending,
+ * assigned→delegated, in_progress/submitted→in-progress, cancelled→blocked.
+ * tasks_detail and loop tasks carry the RAW status, while workflow nodes are
+ * already normalized. */
+function normalizeNodeStatus(raw?: string): WorkflowNodeStatus {
+  switch (raw) {
+    case 'planned':
+    case '':
+      return 'pending';
+    case 'assigned':
+      return 'delegated';
+    case 'in_progress':
+    case 'submitted':
+      return 'in-progress';
+    case 'completed':
+      return 'completed';
+    case 'revision':
+      return 'revision';
+    case 'blocked':
+    case 'cancelled':
+      return 'blocked';
+    default:
+      return 'pending';
+  }
+}
+
+/** Controller terminal statuses (isTerminalTaskStatus): these tasks cannot
+ * be cancelled (409). cancelled itself stays cancellable but is already
+ * terminal in practice, so hide the button there too. */
+const UNCANCELLABLE_STATUSES = new Set(['completed', 'revision', 'blocked', 'cancelled']);
+
+/** Cancel button for one task row (W-PR-2 POST .../tasks/{taskId}/cancel).
+ * Renders only for non-terminal tasks; opens a reason dialog. */
+function CancelTaskButton({
+  projectId,
+  taskId,
+  teamId,
+}: {
+  projectId: string;
+  taskId: string;
+  teamId?: string;
+}) {
+  const cancelMutation = useCancelProjectTask();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const handleCancel = () => {
+    cancelMutation.mutate(
+      // Button is disabled while reason is blank; the controller also
+      // 400s on an empty reason as a second line of defense.
+      { projectId, taskId, teamId, reason: reason.trim() },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setReason('');
+          toast.success('任务已取消', { description: '团队已收到取消通知' });
+        },
+        onError: (err) => toastMutationError('取消任务', err),
+      },
+    );
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={cancelMutation.isPending}
+        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-50"
+        title="取消任务"
+      >
+        <Ban className="h-3 w-3" />
+        取消
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>取消任务</DialogTitle>
+            <DialogDescription>
+              任务将标记为 cancelled，团队会收到取消通知。原因必填。
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="取消原因（必填）"
+            rows={3}
+            className="text-sm"
+          />
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending || !reason.trim()}
+            >
+              {cancelMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              确认取消
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 /** One task's TaskMeta row: status/assignee/result + artifact download
  *  links (result_path + each deliverable, via O19 proxy). */
 function TaskDetailRow({
   task,
   projectId,
+  teamId,
 }: {
   task: WorkflowTaskDetail;
   projectId: string;
+  teamId?: string;
 }) {
   const deliverables = Array.isArray(task.deliverables)
     ? task.deliverables.filter((d): d is string => typeof d === 'string')
     : [];
+  const cancellable =
+    !!task.status && !UNCANCELLABLE_STATUSES.has(task.status);
   return (
     <div className="rounded-lg border bg-background/40 p-2 text-xs">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-mono text-[10px] text-muted-foreground">{task.task_id}</span>
         {task.status && (
-          <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[task.status as WorkflowNodeStatus] ?? ''}`}>
-            {task.status}
+          <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[normalizeNodeStatus(task.status)]}`}>
+            {NODE_STATUS_LABEL[normalizeNodeStatus(task.status)]}
           </Badge>
         )}
         {task.assigned_to && (
@@ -65,6 +215,9 @@ function TaskDetailRow({
           <span className="text-muted-foreground truncate max-w-[300px]" title={task.summary}>
             {task.summary}
           </span>
+        )}
+        {cancellable && (
+          <CancelTaskButton projectId={projectId} taskId={task.task_id} teamId={teamId} />
         )}
       </div>
       {(task.result_path || deliverables.length > 0) && (
@@ -105,9 +258,22 @@ function ArtifactLink({ href, label }: { href: string; label: string }) {
 function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
     <Badge className={`text-[10px] gap-1 border ${PROJECT_STATUS_COLOR[status] ?? PROJECT_STATUS_COLOR.unknown}`}>
-      {status}
+      {PROJECT_STATUS_LABEL[status] ?? status}
     </Badge>
   );
+}
+
+/** Surface a project mutation failure with the controller's exact reason
+ * (ApiError carries the upstream status + error string, e.g. 409 "project
+ * is already paused"). */
+function toastMutationError(action: string, error: unknown) {
+  if (error instanceof ApiError) {
+    toast.error(`项目${action}失败（HTTP ${error.status}）`, { description: error.message });
+  } else {
+    toast.error(`项目${action}失败`, {
+      description: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 // ----- Degraded banner (consumes degradedReason from the proxy) -----
@@ -125,7 +291,7 @@ function DegradedBanner({
   const message =
     degradedReason === 'controller-error'
       ? 'Controller 端点存在但调用失败（可能 MinIO 不可达）'
-      : 'Controller 项目 API 未部署（等待 AgentTeams #1169 合并）';
+      : 'Controller 项目 API 不可用（Controller 未升级到含项目 API 的版本）';
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400 flex items-start gap-2">
       <CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
@@ -151,6 +317,102 @@ function WorkflowDetail({
     projectId,
     teamId,
   );
+  const pauseMutation = usePauseProject();
+  const resumeMutation = useResumeProject();
+  const replanMutation = useReplanProject();
+
+  // Pause dialog (reason) + replan dialog (JSON tasks) local state.
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [replanOpen, setReplanOpen] = useState(false);
+  const [replanText, setReplanText] = useState('');
+
+  const mutationTeamId = teamId ?? wf?.team_id;
+
+  const handlePause = () => {
+    pauseMutation.mutate(
+      { projectId, teamId: mutationTeamId, reason: pauseReason.trim() || undefined },
+      {
+        onSuccess: () => {
+          setPauseOpen(false);
+          setPauseReason('');
+          toast.success('项目已暂停', { description: '团队已收到暂停通知' });
+        },
+        onError: (err) => toastMutationError('暂停', err),
+      },
+    );
+  };
+
+  const handleResume = () => {
+    resumeMutation.mutate(
+      { projectId, teamId: mutationTeamId },
+      {
+        onSuccess: () => toast.success('项目已恢复', { description: '任务继续执行' }),
+        onError: (err) => toastMutationError('恢复', err),
+      },
+    );
+  };
+
+  const handleReplan = () => {
+    let tasks: unknown[];
+    try {
+      const parsed = JSON.parse(replanText.trim());
+      if (!Array.isArray(parsed)) {
+        throw new Error('必须是 tasks 数组（JSON）');
+      }
+      tasks = parsed;
+    } catch (parseErr) {
+      toast.error('JSON 解析失败', {
+        description: parseErr instanceof Error ? parseErr.message : String(parseErr),
+      });
+      return;
+    }
+    replanMutation.mutate(
+      { projectId, teamId: mutationTeamId, tasks },
+      {
+        onSuccess: () => {
+          setReplanOpen(false);
+          setReplanText('');
+          toast.success('项目已重规划', { description: '新 DAG 已生效' });
+        },
+        onError: (err) => toastMutationError('重规划', err),
+      },
+    );
+  };
+
+  const openReplanDialog = () => {
+    // Seed the editor with the current graph so adjustments are easy.
+    // tasks_detail has no depends_on field — rebuild dependencies from the
+    // workflow edges (edge source -> target means target depends on source)
+    // so submitting the seed verbatim preserves the original DAG.
+    const dependsOf = new Map<string, string[]>();
+    for (const edge of wf?.edges ?? []) {
+      const list = dependsOf.get(edge.target) ?? [];
+      list.push(edge.source);
+      dependsOf.set(edge.target, list);
+    }
+    const current = (wf?.tasks_detail ?? []).map((t) => ({
+      taskId: t.task_id,
+      title: t.summary ?? t.task_id,
+      ...(t.assigned_to ? { assignedTo: t.assigned_to } : {}),
+      // status deliberately omitted: the controller preserves the previous
+      // status when a task id already exists (and defaults to planned) —
+      // an explicit status here would override in-flight/completed states
+      // and pollute the new plan.
+      ...((dependsOf.get(t.task_id)?.length ?? 0) > 0
+        ? { dependsOn: dependsOf.get(t.task_id) }
+        : {}),
+    }));
+    setReplanText(JSON.stringify(current, null, 2));
+    setReplanOpen(true);
+  };
+
+  const resumeInterrupt = wf?.interrupts.find(
+    (it) => it.action_request?.action === 'resume' && it.config?.allow_accept,
+  );
+
+  const canPause = wf && (wf.status === 'active' || wf.status === 'planning');
+  const canReplan = wf && wf.status === 'active' && (wf.plan_type ?? 'dag') === 'dag';
 
   if (isLoading) {
     return (
@@ -193,10 +455,101 @@ function WorkflowDetail({
           {wf.title}
           <ProjectStatusBadge status={wf.status} />
         </h3>
-        <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
-          <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? 'animate-spin' : ''}`} />
-        </Button>
+        <div className="flex items-center gap-1">
+          {canPause && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPauseOpen(true)}
+              disabled={pauseMutation.isPending}
+              className="text-xs"
+            >
+              <Pause className="h-3.5 w-3.5 mr-1" />
+              暂停
+            </Button>
+          )}
+          {canReplan && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openReplanDialog}
+              disabled={replanMutation.isPending}
+              className="text-xs"
+            >
+              <MapIcon className="h-3.5 w-3.5 mr-1" />
+              重规划
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
+
+      {/* Pause dialog: optional reason (W-PR-2 POST .../pause) */}
+      <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>暂停项目</DialogTitle>
+            <DialogDescription>
+              暂停后任务停止派发，团队会收到暂停通知。可在中断卡处随时恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={pauseReason}
+            onChange={(e) => setPauseReason(e.target.value)}
+            placeholder="暂停原因（可选，将通知团队）"
+            rows={3}
+            className="text-sm"
+          />
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setPauseOpen(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handlePause}
+              disabled={pauseMutation.isPending}
+            >
+              {pauseMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              确认暂停
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Replan dialog: JSON tasks payload (W-PR-2 POST .../replan) */}
+      <Dialog open={replanOpen} onOpenChange={setReplanOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>重规划 DAG</DialogTitle>
+            <DialogDescription>
+              粘贴新任务图（tasks 数组：taskId/title/assignedTo/dependsOn/status）。
+              Controller 校验重复任务、未知依赖与环。有任务执行中时会被 409 拒绝。
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={replanText}
+            onChange={(e) => setReplanText(e.target.value)}
+            placeholder='[{"taskId":"t1","title":"任务一","dependsOn":[]}]'
+            rows={10}
+            className="font-mono text-xs"
+          />
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setReplanOpen(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleReplan}
+              disabled={replanMutation.isPending}
+            >
+              {replanMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              提交重规划
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {wf.team_id && (
         <p className="text-xs text-muted-foreground">
@@ -210,6 +563,11 @@ function WorkflowDetail({
       {wf.interrupts.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-muted-foreground">中断</p>
+          {wf.pause_reason && (
+            <p className="text-xs text-orange-700 dark:text-orange-400">
+              暂停原因：{wf.pause_reason}
+            </p>
+          )}
           {wf.interrupts.map((it) => (
             <div
               key={it.id}
@@ -225,6 +583,21 @@ function WorkflowDetail({
                   action: {it.action_request.action}
                   {it.config?.allow_accept ? ' · 可接受(恢复)' : ''}
                 </p>
+              )}
+              {it === resumeInterrupt && (
+                <Button
+                  size="sm"
+                  className="mt-1.5 text-xs"
+                  onClick={handleResume}
+                  disabled={resumeMutation.isPending}
+                >
+                  {resumeMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  恢复执行
+                </Button>
               )}
             </div>
           ))}
@@ -262,7 +635,11 @@ function WorkflowDetail({
                   <span className="font-mono text-[10px] text-muted-foreground">{t.task_id}</span>
                   <span className="truncate">{t.title}</span>
                   {t.assigned_to && <span className="text-[10px] text-muted-foreground">{t.assigned_to}</span>}
-                  {t.status && <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[t.status as WorkflowNodeStatus] ?? ''}`}>{t.status}</Badge>}
+                  {t.status && (
+                    <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[normalizeNodeStatus(t.status)]}`}>
+                      {NODE_STATUS_LABEL[normalizeNodeStatus(t.status)]}
+                    </Badge>
+                  )}
                 </div>
               ))}
             </div>
@@ -299,7 +676,7 @@ function WorkflowDetail({
           <div className="flex flex-wrap gap-1.5">
             {statuses.map(([status, count]) => (
               <Badge key={status} className={`text-[10px] border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
-                {status}: {count}
+                {NODE_STATUS_LABEL[status as WorkflowNodeStatus] ?? status}: {count}
               </Badge>
             ))}
           </div>
@@ -318,6 +695,7 @@ function WorkflowDetail({
                 key={t.task_id}
                 task={t}
                 projectId={wf.project_id}
+                teamId={mutationTeamId}
               />
             ))}
           </div>
@@ -339,7 +717,7 @@ function WorkflowDetail({
               <div className="flex items-center gap-1.5 shrink-0">
                 {n.assignee && <span className="text-[10px] text-muted-foreground">{n.assignee}</span>}
                 <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[n.status] ?? ''}`}>
-                  {n.status}
+                  {NODE_STATUS_LABEL[n.status] ?? n.status}
                 </Badge>
               </div>
             </div>

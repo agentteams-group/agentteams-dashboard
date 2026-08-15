@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listProjects, getProjectWorkflow, getTaskArtifactUrl } from './agentteams-projects-api';
+import { listProjects, getProjectWorkflow, getTaskArtifactUrl, pauseProject, cancelProjectTask } from './agentteams-projects-api';
 import { ApiError, NetworkError } from './api-error';
 
 const originalFetch = globalThis.fetch;
@@ -230,6 +230,50 @@ describe('getProjectWorkflow', () => {
     const err = await getProjectWorkflow('shared-id').catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(409);
+  });
+
+  it('surfaces the controller message field on errors (httputil.ErrorResponse)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'project not found' }), { status: 404 }),
+    ) as never;
+    const err = await getProjectWorkflow('missing').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toContain('project not found');
+  });
+
+  it('surfaces the controller message on write conflicts (pause 409)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'project is already paused' }), { status: 409 }),
+    ) as never;
+    const err = await pauseProject('p1').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(409);
+    expect((err as ApiError).message).toContain('already paused');
+  });
+
+  it('posts a task cancel with reason + team and returns the workflow', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ project_id: 'p1', status: 'active' }), { status: 200 }),
+    ) as never;
+    const wf = await cancelProjectTask('p1', 't1', { reason: 'blocked', teamId: 'team-a' });
+    expect(wf.project_id).toBe('p1');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/agentteams/projects/p1/tasks/t1/cancel?team=team-a',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ reason: 'blocked' }),
+      }),
+    );
+  });
+
+  it('surfaces the controller message on cancel 400 (missing reason)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'reason is required' }), { status: 400 }),
+    ) as never;
+    const err = await cancelProjectTask('p1', 't1', { reason: '' }).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(400);
+    expect((err as ApiError).message).toContain('reason is required');
   });
 
   it('throws NetworkError when fetch rejects', async () => {
