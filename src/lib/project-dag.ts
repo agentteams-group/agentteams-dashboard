@@ -214,10 +214,11 @@ export function buildWorkflowDag(
 
   const dagNodes: DagNode[] = nodes.map((n) => {
     const deps = edges.filter((e) => e.target === n.id).map((e) => e.source);
-    // Local readiness derivation when `next` is absent: all deps completed
-    // and this task not completed.
+    // Readiness trusts the controller's `next` array whenever it is provided
+    // (even empty — a paused/completed project has no runnable tasks). The
+    // local derivation only kicks in when `next` is entirely absent.
     const allDepsDone = deps.every((d) => completedSet.has(d));
-    const ready = readySet.size > 0 ? readySet.has(n.id) : allDepsDone && n.status !== 'completed';
+    const ready = next ? readySet.has(n.id) : allDepsDone && n.status !== 'completed';
     return {
       id: n.id,
       title: n.name || n.id,

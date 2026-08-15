@@ -236,6 +236,19 @@ describe('buildWorkflowDag', () => {
     expect(readyOf.get('t2')).toBe(true); // deps done, not completed
   });
 
+  it('trusts an EMPTY next array (paused project: nothing is ready)', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: 'A', status: 'completed' },
+        { id: 't2', name: 'B', status: 'pending' },
+      ],
+      [{ source: 't1', target: 't2' }],
+      [], // provided but empty — must NOT fall back to local derivation
+    );
+    const readyOf = new Map(dag.nodes.map((n) => [n.id, n.ready]));
+    expect(readyOf.get('t2')).toBe(false);
+  });
+
   it('tracks external dependencies (edge source not in nodes)', () => {
     const dag = buildWorkflowDag(
       [{ id: 't2', name: 'B', status: 'pending' }],
