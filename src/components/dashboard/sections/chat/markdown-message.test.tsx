@@ -71,4 +71,34 @@ describe('MarkdownMessage', () => {
     expect(htmlContent).toContain('A');
     expect(htmlContent).toContain('B');
   });
+
+  it('renders markdown pipes inside formatted_body as a GFM table when no real table element exists', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={'| 名称 | 值 |\n| --- | --- |\n| CPU | 90% |'}
+        formattedContent={'<p>| 名称 | 值 |<br />| --- | --- |<br />| CPU | 90% |</p>'}
+      />
+    );
+
+    const table = container.querySelector('.matrix-message-content table');
+    expect(table).toBeInTheDocument();
+    const headers = table?.querySelectorAll('th') ?? [];
+    expect(headers[0]?.textContent).toBe('名称');
+    expect(headers[1]?.textContent).toBe('值');
+    expect(table?.textContent).toContain('CPU');
+    expect(table?.textContent).toContain('90%');
+  });
+
+  it('keeps the raw HTML path when formatted_body has no markdown table', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="hello **world**"
+        formattedContent="<p>hello <strong>world</strong></p>"
+      />
+    );
+
+    expect(container.querySelector('.matrix-message-content table')).not.toBeInTheDocument();
+    const strong = container.querySelector('.matrix-message-content strong');
+    expect(strong?.textContent).toBe('world');
+  });
 });

@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import remarkRehype from 'remark-rehype';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
@@ -70,6 +69,27 @@ function hasBlockFeatures(text: string): boolean {
     /\|.*\|/.test(text) ||
     /\$\$/.test(text)
   );
+}
+
+/** GFM table separator row, e.g. "| --- | --- |" or "|:--|--:|". */
+const GFM_SEPARATOR_ROW = /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/m;
+
+/** Whether the text carries a Markdown GFM table (pipe header + separator row). */
+function hasMarkdownTable(text: string): boolean {
+  return text.includes('|') && GFM_SEPARATOR_ROW.test(text);
+}
+
+/** Strips HTML markup so a formatted_body can be inspected as plain text. */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|tr|h[1-6]|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 /** Trailing streaming cursor for the lightweight path. */
@@ -141,49 +161,62 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
 
   // For HTML formatted_body, render directly (card/thinking already split off
   // at the normalization layer, so a text block is plain HTML content).
+  // Exception: some runtimes (e.g. openclaw) ship a formatted_body whose GFM
+  // tables were never converted to <table> markup — the pipes are plain text
+  // inside <p>/<br>. Rendering that as raw HTML shows literal pipes, so detect
+  // the case (no real table element while the text has a Markdown table) and
+  // fall through to the Markdown renderer below, where remark-gfm builds the
+  // table.
   if (html) {
-    const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
-    const hasMermaid = !!mermaidChart;
+    const hasRealHtmlTable = /<table[\s>]/i.test(html);
+    const mdTableOnly = !hasRealHtmlTable && hasMarkdownTable(htmlToPlainText(html));
 
-    if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
+    if (!mdTableOnly) {
+      const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
+      const hasMermaid = !!mermaidChart;
+
+      if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
+        return (
+          <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
+            {content}
+            <StreamingCursor />
+          </div>
+        );
+      }
+
+      // Ensure HTML tables carry the shared table styling (runtimes may send
+      // bare <table> markup without any classes).
+      const enhancedHtml = html.replace(
+        /<table/g,
+        '<table class="text-xs border-collapse border border-border"'
+      ).replace(
+        /<th/g,
+        '<th class="border border-border px-2 py-1 bg-muted"'
+      ).replace(
+        /<td/g,
+        '<td class="border border-border px-2 py-1"'
+      );
+
       return (
-        <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
-          {content}
-          <StreamingCursor />
+        <div className="matrix-message-content text-sm space-y-1">
+          {hasMermaid && <MermaidRenderer content={html} />}
+          <div
+            dangerouslySetInnerHTML={{ __html: enhancedHtml }}
+            className="[&>p]:mb-1 [&>br]:block
+              [&_a]:text-emerald-600 [&_a]:hover:underline
+              [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
+              [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
+              [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+              [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1
+              [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
+              [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
+              [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
+              [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
+          />
         </div>
       );
     }
-
-    // Enhance table styling in HTML content for runtimes that send pre-formatted HTML
-    const enhancedHtml = html.replace(
-      /<table/g,
-      '<table class="text-xs border-collapse border border-border"'
-    ).replace(
-      /<th/g,
-      '<th class="border border-border px-2 py-1 bg-muted"'
-    ).replace(
-      /<td/g,
-      '<td class="border border-border px-2 py-1"'
-    );
-
-    return (
-      <div className="matrix-message-content text-sm space-y-1">
-        {hasMermaid && <MermaidRenderer content={html} />}
-        <div
-          dangerouslySetInnerHTML={{ __html: enhancedHtml }}
-          className="[&>p]:mb-1 [&>br]:block
-            [&_a]:text-emerald-600 [&_a]:hover:underline
-            [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
-            [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
-            [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
-            [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1
-            [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
-            [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
-            [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
-            [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
-        />
-      </div>
-    );
+    // mdTableOnly → the Markdown renderer below owns this message.
   }
 
   const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
@@ -206,7 +239,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     <div className="matrix-message-content text-sm space-y-1">
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkRehype]}
+        remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
         components={{
           code({ className, children, ...props }) {
