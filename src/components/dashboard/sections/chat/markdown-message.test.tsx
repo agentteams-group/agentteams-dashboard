@@ -36,4 +36,32 @@ describe('MarkdownMessage', () => {
     expect(container.querySelector('pre.whitespace-pre-wrap')).not.toBeInTheDocument();
     expect(container.querySelector('pre code')).not.toBeNull();
   });
+
+  it('renders a GFM table', () => {
+    const { container } = render(
+      <MarkdownMessage content={"| 列1 | 列2 |\n| --- | --- |\n| A | B |"} />
+    );
+
+    const table = container.querySelector('table');
+    expect(table).toBeInTheDocument();
+    expect(screen.getByText('列1')).toBeInTheDocument();
+    expect(screen.getByText('列2')).toBeInTheDocument();
+    expect(screen.getByText('A')).toBeInTheDocument();
+    expect(screen.getByText('B')).toBeInTheDocument();
+  });
+
+  it('adds table styling to HTML formatted content', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="| 列1 | 列2 |\n| --- | --- |\n| A | B |"
+        formattedContent="<table><thead><tr><th>列1</th><th>列2</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>"
+      />
+    );
+
+    const table = container.querySelector('table');
+    expect(table).toBeInTheDocument();
+    expect(table?.className).toContain('border-collapse');
+    expect(table?.className).toContain('border');
+    expect(screen.getByText('列1')).toBeInTheDocument();
+  });
 });

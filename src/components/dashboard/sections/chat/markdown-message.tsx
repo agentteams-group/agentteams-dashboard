@@ -154,11 +154,23 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       );
     }
 
+    // Enhance table styling in HTML content for runtimes that send pre-formatted HTML
+    const enhancedHtml = html.replace(
+      /<table/g,
+      '<table class="text-xs border-collapse border border-border"'
+    ).replace(
+      /<th/g,
+      '<th class="border border-border px-2 py-1 bg-muted"'
+    ).replace(
+      /<td/g,
+      '<td class="border border-border px-2 py-1"'
+    );
+
     return (
       <div className="matrix-message-content text-sm space-y-1">
         {hasMermaid && <MermaidRenderer content={html} />}
         <div
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: enhancedHtml }}
           className="[&>p]:mb-1 [&>br]:block
             [&_a]:text-emerald-600 [&_a]:hover:underline
             [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
@@ -168,9 +180,6 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
             [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
             [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
-            [&_table]:border-collapse [&_table]:border [&_table]:border-border
-            [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted
-            [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1
             [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
         />
       </div>
