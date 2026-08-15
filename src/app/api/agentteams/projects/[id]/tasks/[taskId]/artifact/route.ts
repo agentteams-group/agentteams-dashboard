@@ -36,6 +36,7 @@ export async function GET(
     path,
     {
       forwardBody: false,
+      stream: true,
       passthroughHeaders: ['content-disposition'],
     },
   );

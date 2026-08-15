@@ -270,6 +270,28 @@ function WorkflowDetail({
         </div>
       )}
 
+      {/* Next runnable tasks (W-PR-1 next: 依赖全完成、当前可执行) */}
+      {wf.next.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-1.5">
+            下一步（{wf.next.length}）
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {wf.next.map((taskId) => {
+              const node = wf.nodes.find((n) => n.id === taskId);
+              return (
+                <Badge
+                  key={taskId}
+                  className="text-[10px] border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                >
+                  {node?.name ?? taskId}
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Task count distribution */}
       {statuses.length > 0 && (
         <div>

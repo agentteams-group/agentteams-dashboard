@@ -82,6 +82,9 @@ export async function proxyToAgentTeams(
     method?: string;
     forwardBody?: boolean;
     contentType?: string;
+    /** Stream the upstream body instead of buffering into memory
+     * (large binary downloads, e.g. artifact files). */
+    stream?: boolean;
     /** Extra response headers to pass through to the client (e.g.
      * 'content-disposition' for binary download routes). Only these are
      * forwarded; everything else is filtered. */
@@ -135,6 +138,22 @@ export async function proxyToAgentTeams(
     // For 204 No Content
     if (res.status === 204) {
       return new NextResponse(null, { status: 204 });
+    }
+
+    if (options.stream && res.body) {
+      // Stream the binary body through without buffering (D15).
+      const responseHeaders = new Headers();
+      const resCT = res.headers.get('content-type');
+      if (resCT) responseHeaders.set('content-type', resCT);
+      for (const name of options.passthroughHeaders ?? []) {
+        const value = res.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+      responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      return new NextResponse(res.body, {
+        status: res.status,
+        headers: responseHeaders,
+      });
     }
 
     const data = await res.arrayBuffer();
