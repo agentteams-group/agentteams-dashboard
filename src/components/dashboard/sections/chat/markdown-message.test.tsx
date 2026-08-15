@@ -58,10 +58,19 @@ describe('MarkdownMessage', () => {
       />
     );
 
-    const table = container.querySelector('table');
+    const table = container.querySelector('.matrix-message-content table');
     expect(table).toBeInTheDocument();
     expect(table?.className).toContain('border-collapse');
     expect(table?.className).toContain('border');
-    expect(screen.getByText('列1')).toBeInTheDocument();
+    
+    const thElements = container.querySelectorAll('th');
+    expect(thElements.length).toBe(2);
+    expect(thElements[0].textContent).toBe('列1');
+    expect(thElements[1].textContent).toBe('列2');
+    
+    const tdElements = container.querySelectorAll('td');
+    expect(tdElements.length).toBe(2);
+    expect(tdElements[0].textContent).toBe('A');
+    expect(tdElements[1].textContent).toBe('B');
   });
 });
