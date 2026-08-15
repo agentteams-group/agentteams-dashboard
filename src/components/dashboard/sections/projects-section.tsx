@@ -8,7 +8,12 @@ import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { useProjects, useProjectWorkflow } from '@/hooks/use-projects';
 import { ApiError } from '@/lib/api-error';
-import type { ProjectStatus, WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
+import {
+  getTaskArtifactUrl,
+  type ProjectStatus,
+  type WorkflowNodeStatus,
+  type WorkflowTaskDetail,
+} from '@/lib/agentteams-projects-api';
 
 // ----- Status config (mirrors tasks-section colors) -----
 
@@ -28,6 +33,74 @@ const NODE_STATUS_COLOR: Record<WorkflowNodeStatus, string> = {
   revision: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
   blocked: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30',
 };
+
+/** One task's TaskMeta row: status/assignee/result + artifact download
+ *  links (result_path + each deliverable, via O19 proxy). */
+function TaskDetailRow({
+  task,
+  projectId,
+}: {
+  task: WorkflowTaskDetail;
+  projectId: string;
+}) {
+  const deliverables = Array.isArray(task.deliverables)
+    ? task.deliverables.filter((d): d is string => typeof d === 'string')
+    : [];
+  return (
+    <div className="rounded-lg border bg-background/40 p-2 text-xs">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-mono text-[10px] text-muted-foreground">{task.task_id}</span>
+        {task.status && (
+          <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[task.status as WorkflowNodeStatus] ?? ''}`}>
+            {task.status}
+          </Badge>
+        )}
+        {task.assigned_to && (
+          <span className="text-[10px] text-muted-foreground">{task.assigned_to}</span>
+        )}
+        {task.result_status && (
+          <span className="text-[10px] text-muted-foreground">验收：{task.result_status}</span>
+        )}
+        {task.summary && (
+          <span className="text-muted-foreground truncate max-w-[300px]" title={task.summary}>
+            {task.summary}
+          </span>
+        )}
+      </div>
+      {(task.result_path || deliverables.length > 0) && (
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <span className="text-[10px] text-muted-foreground shrink-0">产物：</span>
+          {task.result_path ? (
+            <ArtifactLink
+              href={getTaskArtifactUrl(projectId, task.task_id)}
+              label="结果文件"
+            />
+          ) : null}
+          {deliverables.map((d) => (
+            <ArtifactLink
+              key={d}
+              href={getTaskArtifactUrl(projectId, task.task_id, d)}
+              label={d.split('/').pop() || d}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ArtifactLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15 transition-colors"
+      title={href}
+    >
+      <FolderKanban className="h-3 w-3" />
+      {label}
+    </a>
+  );
+}
 
 function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
@@ -182,6 +255,18 @@ function WorkflowDetail({
               </div>
             )}
           {wf.loop.goal && <p className="text-muted-foreground pt-1">{wf.loop.goal}</p>}
+          {wf.loop.tasks && wf.loop.tasks.length > 0 && (
+            <div className="pt-2 space-y-1">
+              {wf.loop.tasks.map((t) => (
+                <div key={t.task_id} className="flex items-center gap-2 text-xs">
+                  <span className="font-mono text-[10px] text-muted-foreground">{t.task_id}</span>
+                  <span className="truncate">{t.title}</span>
+                  {t.assigned_to && <span className="text-[10px] text-muted-foreground">{t.assigned_to}</span>}
+                  {t.status && <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[t.status as WorkflowNodeStatus] ?? ''}`}>{t.status}</Badge>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -194,6 +279,24 @@ function WorkflowDetail({
               <Badge key={status} className={`text-[10px] border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
                 {status}: {count}
               </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Task details (#1169 includeTasks → tasks_detail + O19 artifact download) */}
+      {wf.tasks_detail && wf.tasks_detail.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-1.5">
+            任务详情（{wf.tasks_detail.length}）
+          </p>
+          <div className="space-y-1.5">
+            {wf.tasks_detail.map((t) => (
+              <TaskDetailRow
+                key={t.task_id}
+                task={t}
+                projectId={wf.project_id}
+              />
             ))}
           </div>
         </div>
