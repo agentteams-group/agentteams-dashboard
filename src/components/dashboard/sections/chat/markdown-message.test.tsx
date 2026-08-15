@@ -101,4 +101,38 @@ describe('MarkdownMessage', () => {
     const strong = container.querySelector('.matrix-message-content strong');
     expect(strong?.textContent).toBe('world');
   });
+
+  it('renders manager-style fenced tables from formatted_body as real tables', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={'```\n| 维度 | 状态 |\n| ----- | --- |\n| 进行中任务 | 0 |\n```'}
+        formattedContent={
+          '<p>🎯 任务与项目</p>\n<pre><code>| 维度    | 状态 |\n| ----- | --- |\n| 进行中任务 | 0  |\n</code></pre>'
+        }
+      />
+    );
+
+    const table = container.querySelector('.matrix-message-content table');
+    expect(table).toBeInTheDocument();
+    expect(table?.className).toContain('border-collapse');
+    const ths = table?.querySelectorAll('th') ?? [];
+    expect(ths[0]?.textContent).toBe('维度');
+    expect(ths[1]?.textContent).toBe('状态');
+    expect(table?.textContent).toContain('进行中任务');
+  });
+
+  it('renders fenced tables from a plain body as GFM tables', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={'汇报\n\n```\n| Team | 状态 |\n| --- | --- |\n| ceshi | Active |\n```'}
+      />
+    );
+
+    const table = container.querySelector('.matrix-message-content table');
+    expect(table).toBeInTheDocument();
+    const ths = table?.querySelectorAll('th') ?? [];
+    expect(ths[0]?.textContent).toBe('Team');
+    expect(table?.textContent).toContain('ceshi');
+    expect(table?.textContent).toContain('Active');
+  });
 });

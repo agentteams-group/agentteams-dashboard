@@ -17,6 +17,7 @@ import {
   resolveMentionsInHtml,
   resolveMentionsToDisplayNames,
 } from './format';
+import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
 
 interface MarkdownMessageProps {
   content: string;
@@ -108,17 +109,20 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   const html = useMemo(() => {
     if (formattedContent) {
       const formatted = renderFormattedContent(formattedContent, content).html;
-      return resolveMentionsInHtml(
+      const mentionResolved = resolveMentionsInHtml(
         formatted,
         memberMap,
         (name) => `<span class="matrix-mention text-emerald-600 font-medium">${name}</span>`
       );
+      // Runtimes that wrap GFM tables in <pre><code> blocks render as literal
+      // pipes; convert them to real tables before the HTML path renders.
+      return convertFencedTablesInHtml(mentionResolved);
     }
     return undefined;
   }, [formattedContent, content, memberMap]);
 
   const resolvedContent = useMemo(
-    () => resolveMentionsToDisplayNames(content, memberMap),
+    () => unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
     [content, memberMap]
   );
 
@@ -185,17 +189,21 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       }
 
       // Ensure HTML tables carry the shared table styling (runtimes may send
-      // bare <table> markup without any classes).
-      const enhancedHtml = html.replace(
-        /<table/g,
-        '<table class="text-xs border-collapse border border-border"'
-      ).replace(
-        /<th/g,
-        '<th class="border border-border px-2 py-1 bg-muted"'
-      ).replace(
-        /<td/g,
-        '<td class="border border-border px-2 py-1"'
-      );
+      // bare <table> markup without any classes). The lookahead keeps <thead>
+      // from being mangled into <th ... ead>.
+      const enhancedHtml = html
+        .replace(
+          /<table(?=[\s>])/g,
+          '<table class="text-xs border-collapse border border-border"'
+        )
+        .replace(
+          /<th(?=[\s>])/g,
+          '<th class="border border-border px-2 py-1 bg-muted"'
+        )
+        .replace(
+          /<td(?=[\s>])/g,
+          '<td class="border border-border px-2 py-1"'
+        );
 
       return (
         <div className="matrix-message-content text-sm space-y-1">
