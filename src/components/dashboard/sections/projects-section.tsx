@@ -243,15 +243,53 @@ function TaskDetailRow({
 }
 
 function ArtifactLink({ href, label }: { href: string; label: string }) {
+  const [downloading, setDownloading] = useState(false);
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(href, { cache: 'no-store' });
+      if (!res.ok) {
+        // The proxy passes through the controller's JSON error body — surface
+        // the real reason instead of letting the browser render it as content.
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string; message?: string };
+          if (typeof body?.message === 'string' && body.message) detail = body.message;
+          else if (typeof body?.error === 'string' && body.error) detail = body.error;
+        } catch {
+          // non-JSON error body; keep the status
+        }
+        toast.error('产物下载失败', { description: detail });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = label;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('产物下载失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
   return (
-    <a
-      href={href}
-      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15 transition-colors"
+    <button
+      type="button"
+      onClick={() => void handleDownload()}
+      disabled={downloading}
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15 transition-colors disabled:opacity-50"
       title={href}
     >
       <FolderKanban className="h-3 w-3" />
       {label}
-    </a>
+    </button>
   );
 }
 

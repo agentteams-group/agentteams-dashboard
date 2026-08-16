@@ -66,12 +66,16 @@ export function usePauseProject() {
   return useMutation({
     mutationFn: (args: { projectId: string; teamId?: string; reason?: string }) =>
       pauseProject(args.projectId, { reason: args.reason, teamId: args.teamId }),
-    onSuccess: (workflow) => {
+    // Cache keys must match the subscription keys, which are built from the
+    // REQUEST-time teamId (`teamId ?? 'any'`). Using the response's team_id
+    // here writes a key nobody subscribes to when the request had no teamId
+    // but the controller returns one (panel would lag up to refetchInterval).
+    onSuccess: (workflow, args) => {
       queryClient.setQueryData(
-        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        ['agentteams-project-workflow', args.teamId ?? 'any', args.projectId],
         workflow,
       );
-      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+      invalidateProjectQueries(queryClient, args.projectId, args.teamId);
     },
   });
 }
@@ -82,12 +86,12 @@ export function useResumeProject() {
   return useMutation({
     mutationFn: (args: { projectId: string; teamId?: string }) =>
       resumeProject(args.projectId, { teamId: args.teamId }),
-    onSuccess: (workflow) => {
+    onSuccess: (workflow, args) => {
       queryClient.setQueryData(
-        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        ['agentteams-project-workflow', args.teamId ?? 'any', args.projectId],
         workflow,
       );
-      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+      invalidateProjectQueries(queryClient, args.projectId, args.teamId);
     },
   });
 }
@@ -99,12 +103,12 @@ export function useReplanProject() {
   return useMutation({
     mutationFn: (args: { projectId: string; teamId?: string; tasks: unknown[] }) =>
       replanProject(args.projectId, args.tasks, { teamId: args.teamId }),
-    onSuccess: (workflow) => {
+    onSuccess: (workflow, args) => {
       queryClient.setQueryData(
-        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        ['agentteams-project-workflow', args.teamId ?? 'any', args.projectId],
         workflow,
       );
-      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+      invalidateProjectQueries(queryClient, args.projectId, args.teamId);
     },
   });
 }
@@ -125,12 +129,12 @@ export function useCancelProjectTask() {
         replacementTaskId: args.replacementTaskId,
         teamId: args.teamId,
       }),
-    onSuccess: (workflow) => {
+    onSuccess: (workflow, args) => {
       queryClient.setQueryData(
-        ['agentteams-project-workflow', workflow.team_id ?? 'any', workflow.project_id],
+        ['agentteams-project-workflow', args.teamId ?? 'any', args.projectId],
         workflow,
       );
-      invalidateProjectQueries(queryClient, workflow.project_id, workflow.team_id);
+      invalidateProjectQueries(queryClient, args.projectId, args.teamId);
     },
   });
 }
