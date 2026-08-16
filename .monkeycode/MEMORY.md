@@ -40,12 +40,11 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 保持 main 分支干净，每次变更前需验证 typecheck/lint/test
 
 [Project Knowledge Summary]
-- Date: 2026-08-11
-- Context: 执行项目文档整理时发现
+- Date: 2026-08-16
+- Context: 整体 review 后执行死代码清理
 - Category: Workflow & Collaboration
 - Instructions:
   - .monkeycode/docs/ 目录是 Agent 内部知识源，docs/ 目录是用户可见文档
   - 已完成的任务书应归档到 .monkeycode/specs/{feature-name}/task-book.md
-  - skills-section.tsx 组件已无引用（navigation.tsx 使用 ResourceCenterSection），可安全删除
-  - public/logo.jpg 与 logo.svg 功能重叠，保留 SVG 即可
-  - install/patches/ 中的空补丁文件可删除
+  - 2026-08-11 计划清理的 skills-section.tsx 已删除；2026-08-16 又删除了 policy-engine/policy-store/remediation-engine（313 行孤立引用环）、a2ui/index.ts barrel、src/app/api/route.ts 残留、team-create-dialog.test.ts 重复测试
+  - 仍存在 ensure-ai 三重死链（middleware PUBLIC_PATHS 条目 + agentteams-api.ts 的 ensureAiGateway + integration 测试引用），路由本身不存在，待后续清理
