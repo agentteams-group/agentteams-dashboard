@@ -1,21 +1,27 @@
 /**
  * Matrix media URL helpers shared by the chat renderers.
  *
- * `mxc://` content URIs are converted to homeserver download URLs. Shared
- * between MarkdownMessage (inline media) and AttachmentCard (long-message
- * attachments) so the mapping stays in one place.
+ * `mxc://` content URIs are resolved through the Next.js media proxy
+ * (`/api/matrix/media/...`) instead of pointing the browser straight at the
+ * homeserver: the homeserver is frequently unreachable from the browser
+ * (internal DNS / self-signed TLS), while every other Matrix call already
+ * flows through the Next.js API proxy. Shared between MarkdownMessage
+ * (inline media) and AttachmentCard (long-message attachments) so the
+ * mapping stays in one place.
  */
+
+import { apiUrl } from '@/lib/api-base';
 
 export interface MxcUrlOptions {
   /**
-   * Append `?download=true` so the homeserver responds with
+   * Append `download=true` so the homeserver responds with
    * Content-Disposition: attachment (forces a real file download instead of
    * the browser trying to preview PDFs/text inline).
    */
   download?: boolean;
 }
 
-/** Convert a Matrix `mxc://` content URI to an HTTP download URL. */
+/** Convert a Matrix `mxc://` content URI to a proxied HTTP download URL. */
 export function mxcToDownloadUrl(mxc: string, homeserver?: string, options: MxcUrlOptions = {}): string | undefined {
   if (!mxc) return undefined;
   if (mxc.startsWith('http')) {
@@ -33,7 +39,9 @@ export function mxcToDownloadUrl(mxc: string, homeserver?: string, options: MxcU
   if (parts.length < 2) return undefined;
   const serverName = parts[0];
   const mediaId = parts.slice(1).join('/');
-  const base = homeserver || '';
-  const url = `${base}/_matrix/media/v3/download/${serverName}/${mediaId}`;
-  return options.download ? `${url}?download=true` : url;
+  const params = new URLSearchParams();
+  if (homeserver) params.set('homeserver', homeserver);
+  if (options.download) params.set('download', 'true');
+  const qs = params.toString();
+  return apiUrl(`/api/matrix/media/v3/download/${serverName}/${mediaId}${qs ? `?${qs}` : ''}`);
 }

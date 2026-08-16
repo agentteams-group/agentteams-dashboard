@@ -151,7 +151,7 @@ describe('MarkdownMessage', () => {
     const img = container.querySelector('img');
     expect(img).toBeInTheDocument();
     expect(img?.getAttribute('src')).toBe(
-      'https://hs.example.org/_matrix/media/v3/download/example.org/abc123'
+      '/api/matrix/media/v3/download/example.org/abc123/?homeserver=https%3A%2F%2Fhs.example.org'
     );
     // The thumbnail is wrapped in a zoom-in trigger button.
     const trigger = img?.closest('button');
@@ -159,7 +159,7 @@ describe('MarkdownMessage', () => {
     expect(trigger?.className).toContain('cursor-zoom-in');
     // A forced-download link is offered next to the caption.
     const links = Array.from(container.querySelectorAll('a'));
-    expect(links.some((a) => a.href.endsWith('?download=true'))).toBe(true);
+    expect(links.some((a) => a.getAttribute('href')?.endsWith('download=true'))).toBe(true);
   });
 
   it('opens the full-screen viewer when the thumbnail is clicked', async () => {
@@ -195,7 +195,7 @@ describe('MarkdownMessage', () => {
     expect(video).toBeInTheDocument();
     expect(video?.getAttribute('controls')).not.toBeNull();
     expect(video?.getAttribute('src')).toBe(
-      'https://hs.example.org/_matrix/media/v3/download/example.org/vid1'
+      '/api/matrix/media/v3/download/example.org/vid1/?homeserver=https%3A%2F%2Fhs.example.org'
     );
   });
 
@@ -227,8 +227,8 @@ describe('MarkdownMessage', () => {
 
     const link = container.querySelector('a');
     expect(link).toBeInTheDocument();
-    expect(link?.href).toBe(
-      'https://hs.example.org/_matrix/media/v3/download/example.org/doc1?download=true'
+    expect(link?.getAttribute('href')).toBe(
+      '/api/matrix/media/v3/download/example.org/doc1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
     );
     expect(screen.getByText('(2.0 KB)')).toBeInTheDocument();
   });
@@ -240,7 +240,7 @@ describe('MarkdownMessage', () => {
 
     const link = screen.getByRole('link', { name: /mxc:\/\/example\.org\/xyz789/ });
     expect(link.getAttribute('href')).toBe(
-      'https://hs.example.org/_matrix/media/v3/download/example.org/xyz789?download=true'
+      '/api/matrix/media/v3/download/example.org/xyz789/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
     );
   });
 });

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { MermaidRenderer } from './mermaid-renderer';
 import { MediaViewer } from './media-viewer';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
+import { useMatrixStore } from '@/lib/matrix-store';
 import {
   renderFormattedContent,
   resolveMentionsInHtml,
@@ -116,10 +117,14 @@ function formatFileSize(size?: number): string {
 }
 
 export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
+  // Prop takes precedence; fall back to the logged-in homeserver from the
+  // store so media URLs resolve even when the caller omits the prop.
+  const { homeserver: storeHomeserver } = useMatrixStore();
+  const resolvedHomeserver = homeserver || storeHomeserver;
   // Resolve mxc:// URL to HTTP URL via Matrix media API
   const resolvedMediaUrl = useMemo(() => {
-    return mxcToDownloadUrl(mediaUrl ?? '', homeserver);
-  }, [mediaUrl, homeserver]);
+    return mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver);
+  }, [mediaUrl, resolvedHomeserver]);
 
   const html = useMemo(() => {
     if (formattedContent) {
@@ -139,9 +144,9 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   const resolvedContent = useMemo(
     () => linkifyMxcUris(
       unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
-      homeserver,
+      resolvedHomeserver,
     ),
-    [content, memberMap, homeserver]
+    [content, memberMap, resolvedHomeserver]
   );
 
   // Full-screen image preview (element-web lightbox)
@@ -167,7 +172,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
         <div className="flex items-center gap-2 mt-1">
           {content && <p className="text-xs text-muted-foreground truncate">{content}</p>}
           <a
-            href={mxcToDownloadUrl(mediaUrl ?? '', homeserver, { download: true })}
+            href={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline shrink-0"
@@ -221,7 +226,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     return (
       <div className="matrix-message-content">
         <a
-          href={mxcToDownloadUrl(mediaUrl ?? '', homeserver, { download: true })}
+          href={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-sm text-emerald-600 hover:underline"

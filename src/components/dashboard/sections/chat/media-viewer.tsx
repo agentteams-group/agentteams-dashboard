@@ -36,13 +36,10 @@ export function MediaViewer({ src, filename, onClose }: MediaViewerProps) {
   }, [onClose]);
 
   const downloadHref = (() => {
-    try {
-      const u = new URL(src);
-      u.searchParams.set('download', 'true');
-      return u.toString();
-    } catch {
-      return src;
-    }
+    // src may be relative (Next.js media proxy) — plain string concat handles
+    // both relative and absolute URLs without URL() parsing.
+    if (src.includes('download=true')) return src;
+    return src.includes('?') ? `${src}&download=true` : `${src}?download=true`;
   })();
 
   return (
