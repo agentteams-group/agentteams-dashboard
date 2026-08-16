@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { GitBranch, FolderKanban, CircleAlert, Loader2, RefreshCw, Pause, Play, Map as MapIcon, Ban } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { GitBranch, FolderKanban, CircleAlert, Loader2, RefreshCw, Pause, Play, Map as MapIcon, Ban, List, LayoutGrid } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ProjectDagSvg, type DagNodeColor } from '@/components/dashboard/project-dag-svg';
+import { buildWorkflowDag } from '@/lib/project-dag';
 import {
   useProjects,
   useProjectWorkflow,
@@ -28,6 +30,7 @@ import { ApiError } from '@/lib/api-error';
 import {
   getTaskArtifactUrl,
   type ProjectStatus,
+  type ProjectSummary,
   type WorkflowNodeStatus,
   type WorkflowTaskDetail,
 } from '@/lib/agentteams-projects-api';
@@ -94,9 +97,23 @@ function normalizeNodeStatus(raw?: string): WorkflowNodeStatus {
     case 'cancelled':
       return 'blocked';
     default:
-      return 'pending';
+      // Unknown/future controller statuses render as blocked rather than
+      // "待办" — a task we don't understand should not look actionable.
+      return 'blocked';
   }
 }
+
+/** SVG node colors for the workflow DAG view — same palette family as
+ * NODE_STATUS_COLOR (badges) mapped to the shared ProjectDagSvg renderer. */
+const WORKFLOW_NODE_FILL: Record<string, DagNodeColor> = {
+  pending: { fill: 'rgba(148,163,184,0.12)', stroke: '#94a3b8', text: '#94a3b8' },
+  assigned: { fill: 'rgba(59,130,246,0.14)', stroke: '#3b82f6', text: '#93c5fd' },
+  in_progress: { fill: 'rgba(139,92,246,0.16)', stroke: '#8b5cf6', text: '#a78bfa' },
+  completed: { fill: 'rgba(16,185,129,0.14)', stroke: '#10b981', text: '#34d399' },
+  failed: { fill: 'rgba(239,68,68,0.14)', stroke: '#ef4444', text: '#f87171' },
+  blocked: { fill: 'rgba(245,158,11,0.14)', stroke: '#f59e0b', text: '#fbbf24' },
+  unknown: { fill: 'rgba(148,163,184,0.08)', stroke: '#64748b', text: '#94a3b8' },
+};
 
 /** Controller terminal statuses (isTerminalTaskStatus): these tasks cannot
  * be cancelled (409). cancelled itself stays cancellable but is already
@@ -766,6 +783,128 @@ function WorkflowDetail({
   );
 }
 
+// ----- Workflow DAG view (topo) -----
+
+function WorkflowDagView({
+  projectId,
+  teamId,
+}: {
+  projectId: string;
+  teamId?: string;
+}) {
+  const { data: wf, isLoading, isError } = useProjectWorkflow(projectId, teamId);
+  const dag = useMemo(
+    () =>
+      wf
+        ? buildWorkflowDag(
+            wf.nodes.map((n) => ({ id: n.id, name: n.name, status: n.status })),
+            wf.edges.map((e) => ({ source: e.source, target: e.target })),
+            wf.next,
+          )
+        : { nodes: [], edges: [], externalDeps: [] as string[] },
+    [wf],
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-10 text-muted-foreground text-sm gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> 加载工作流…
+      </div>
+    );
+  }
+  if (isError || !wf) {
+    return (
+      <p className="text-center py-10 text-muted-foreground text-sm">
+        无法加载工作流（项目不存在或 API 不可用）
+      </p>
+    );
+  }
+  if (dag.nodes.length === 0) {
+    return (
+      <p className="text-center py-10 text-muted-foreground text-sm">
+        该项目暂无任务节点
+      </p>
+    );
+  }
+  if (dag.edges.length === 0 && dag.nodes.length <= 1) {
+    return (
+      <p className="text-center py-10 text-muted-foreground text-sm italic">
+        该项目任务之间暂无依赖关系
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+        <GitBranch className="h-3 w-3" />
+        依赖图
+        <span className="text-[10px] text-muted-foreground/70 font-normal">
+          {dag.nodes.length} 任务 · {dag.edges.length} 依赖
+          {dag.externalDeps.length > 0 && ` · ${dag.externalDeps.length} 外部依赖`}
+        </span>
+      </p>
+      <div className="rounded-lg border bg-background/40 overflow-x-auto p-2">
+        <ProjectDagSvg
+          dag={dag}
+          nodeColors={WORKFLOW_NODE_FILL}
+          title={`${wf.title} 任务依赖图`}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** (team, project_id) composite identity comparison (#1169). Accepts both
+ * the selection shape ({ id, team }) and the API summary shape
+ * ({ project_id, team_id }). */
+function isSameProject(
+  a: { project_id?: string; id?: string; team_id?: string; team?: string } | null,
+  b: { project_id?: string; id?: string; team_id?: string; team?: string } | null,
+): boolean {
+  if (!a || !b) return false;
+  return (
+    (a.project_id ?? a.id ?? '') === (b.project_id ?? b.id ?? '') &&
+    (a.team_id ?? a.team ?? '') === (b.team_id ?? b.team ?? '')
+  );
+}
+
+// ----- Project card (card view) -----
+
+function ProjectCard({
+  project,
+  selected,
+  onSelect,
+}: {
+  project: ProjectSummary;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left rounded-lg border p-3 text-xs transition-colors ${
+        selected
+          ? 'border-primary/50 bg-primary/5'
+          : 'border-muted hover:bg-muted/50'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold truncate">{project.title}</span>
+        <ProjectStatusBadge status={project.status} />
+      </div>
+      <p className="text-[10px] text-muted-foreground font-mono mt-1 truncate">
+        {project.project_id}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-1">
+        {project.team_id ? `团队 ${project.team_id} · ` : ''}
+        {project.plan_type ?? 'dag'} · {project.mode ?? 'project'}
+      </p>
+    </button>
+  );
+}
+
 // ----- Main section -----
 
 export function ProjectsSection() {
@@ -773,14 +912,13 @@ export function ProjectsSection() {
   // (team, project_id) composite selection — the same project id can exist
   // under two teams (#1169 identity scoping).
   const [selectedKey, setSelectedKey] = useState<{ id: string; team?: string } | null>(null);
+  // Three views, aligned with the workbench plugin's WorkflowBoard:
+  // 列表 (list + detail) / 卡片 (card grid) / 拓扑 (DAG).
+  const [view, setView] = useState<'list' | 'card' | 'topo'>('list');
 
   const projects = data?.projects ?? [];
   const selected =
-    projects.find(
-      (p) =>
-        p.project_id === selectedKey?.id &&
-        (p.team_id ?? '') === (selectedKey?.team ?? ''),
-    ) ?? null;
+    projects.find((p) => isSameProject(p, selectedKey)) ?? null;
 
   return (
     <div className="space-y-4">
@@ -790,6 +928,27 @@ export function ProjectsSection() {
         isLive
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
+        actions={
+          <div className="flex items-center gap-1">
+            {(
+              [
+                { key: 'list', label: '列表', icon: List },
+                { key: 'card', label: '卡片', icon: LayoutGrid },
+                { key: 'topo', label: '拓扑', icon: GitBranch },
+              ] as const
+            ).map((v) => (
+              <Button
+                key={v.key}
+                variant={view === v.key ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setView(v.key)}
+              >
+                <v.icon className="h-3.5 w-3.5 mr-1" />
+                {v.label}
+              </Button>
+            ))}
+          </div>
+        }
       />
 
       <DegradedBanner
@@ -816,7 +975,7 @@ export function ProjectsSection() {
         </div>
       )}
 
-      {projects.length > 0 && (
+      {projects.length > 0 && view === 'list' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Project list */}
           <Card className="glass-card lg:col-span-1">
@@ -830,8 +989,7 @@ export function ProjectsSection() {
                   key={`${p.team_id ?? ''}:${p.project_id}`}
                   onClick={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
                   className={`w-full text-left rounded-lg border p-2.5 text-xs transition-colors ${
-                    selected?.project_id === p.project_id &&
-                    (selected?.team_id ?? '') === (p.team_id ?? '')
+                    isSameProject(selected, p)
                       ? 'border-primary/50 bg-primary/5'
                       : 'border-transparent hover:bg-muted/50'
                   }`}
@@ -860,6 +1018,71 @@ export function ProjectsSection() {
               ) : (
                 <p className="text-center py-10 text-muted-foreground text-sm">
                   选择左侧项目查看工作流
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {projects.length > 0 && view === 'card' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {projects.map((p) => (
+              <ProjectCard
+                key={`${p.team_id ?? ''}:${p.project_id}`}
+                project={p}
+                selected={isSameProject(selected, p)}
+                onSelect={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
+              />
+            ))}
+          </div>
+          {selected && (
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <WorkflowDetail projectId={selected.project_id} teamId={selected.team_id} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {projects.length > 0 && view === 'topo' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="glass-card lg:col-span-1">
+            <CardContent className="p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                选择项目（{projects.length}）
+              </p>
+              {projects.map((p) => (
+                <button
+                  key={`${p.team_id ?? ''}:${p.project_id}`}
+                  onClick={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
+                  className={`w-full text-left rounded-lg border p-2.5 text-xs transition-colors ${
+                    isSameProject(selected, p)
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'border-transparent hover:bg-muted/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate">{p.title}</span>
+                    <ProjectStatusBadge status={p.status} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">
+                    {p.project_id}
+                  </p>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+          <Card className="glass-card lg:col-span-2">
+            <CardContent className="p-4">
+              {selected ? (
+                <WorkflowDagView projectId={selected.project_id} teamId={selected.team_id} />
+              ) : (
+                <p className="text-center py-10 text-muted-foreground text-sm">
+                  选择左侧项目查看依赖图
                 </p>
               )}
             </CardContent>

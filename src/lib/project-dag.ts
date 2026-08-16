@@ -176,3 +176,105 @@ export function buildProjectDag(
 
   return { nodes, edges, externalDeps: Array.from(externalDeps) };
 }
+
+/** Map a normalized workflow node status (controller normalizeTaskStatus:
+ * pending | delegated | in-progress | completed | revision | blocked) to the
+ * task-board status space for the shared DAG color table. revision (needs
+ * rework) renders as blocked-amber; blocked stays blocked. */
+const WORKFLOW_STATUS_MAP: Record<string, TaskStatus> = {
+  pending: 'pending',
+  delegated: 'assigned',
+  'in-progress': 'in_progress',
+  completed: 'completed',
+  revision: 'blocked',
+  blocked: 'blocked',
+  failed: 'failed',
+  unknown: 'unknown',
+};
+
+/**
+ * Build a ProjectDag from a workflow API response (nodes/edges/next) instead
+ * of the MinIO board tasks. The controller's workflow endpoints expose
+ * normalized statuses and explicit edges, so this only needs a status
+ * remap — no dependsOn filtering.
+ *
+ * `ready` mirrors the W-PR-1 `next` array (tasks whose dependencies are all
+ * completed), falling back to local derivation when `next` is not provided.
+ */
+export function buildWorkflowDag(
+  nodes: Array<{ id: string; name?: string; status?: string }>,
+  edges: Array<{ source: string; target: string }>,
+  next?: string[],
+): ProjectDag {
+  const readySet = new Set(next ?? []);
+  const completedSet = new Set(
+    nodes.filter((n) => n.status === 'completed').map((n) => n.id),
+  );
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  const dagNodes: DagNode[] = nodes.map((n) => {
+    const deps = edges.filter((e) => e.target === n.id).map((e) => e.source);
+    // Readiness trusts the controller's `next` array whenever it is provided
+    // (even empty — a paused/completed project has no runnable tasks). The
+    // local derivation only kicks in when `next` is entirely absent.
+    const allDepsDone = deps.every((d) => completedSet.has(d));
+    const ready = next ? readySet.has(n.id) : allDepsDone && n.status !== 'completed';
+    return {
+      id: n.id,
+      title: n.name || n.id,
+      status: WORKFLOW_STATUS_MAP[n.status ?? ''] ?? 'unknown',
+      ready,
+      layer: 0,
+    };
+  });
+
+  const dagEdges: DagEdge[] = edges
+    .filter((e) => byId.has(e.source) && byId.has(e.target))
+    .map((e) => ({ source: e.source, target: e.target }));
+  const externalDeps = Array.from(
+    new Set(
+      edges
+        .filter((e) => !byId.has(e.source) && byId.has(e.target))
+        .map((e) => e.source),
+    ),
+  );
+
+  // Iterative layering (same as buildProjectDag): layer = max(dep layer) + 1.
+  const layerOf = new Map<string, number>();
+  const maxPasses = dagNodes.length + 1;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let changed = false;
+    for (const node of dagNodes) {
+      const deps = dagEdges.filter((e) => e.target === node.id).map((e) => e.source);
+      if (deps.length === 0) {
+        if (layerOf.get(node.id) !== 0) {
+          layerOf.set(node.id, 0);
+          changed = true;
+        }
+        continue;
+      }
+      let maxDep = -1;
+      for (const d of deps) {
+        const l = layerOf.get(d);
+        if (l === undefined) {
+          maxDep = -1;
+          break;
+        }
+        if (l > maxDep) maxDep = l;
+      }
+      if (maxDep >= 0) {
+        const nextLayer = maxDep + 1;
+        if (layerOf.get(node.id) !== nextLayer) {
+          layerOf.set(node.id, nextLayer);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  for (const node of dagNodes) {
+    node.layer = layerOf.get(node.id) ?? 0;
+  }
+
+  return { nodes: dagNodes, edges: dagEdges, externalDeps };
+}

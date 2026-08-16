@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { buildProjectDag, layoutProjectDag, type ProjectDag } from './project-dag';
+import { buildProjectDag, buildWorkflowDag, layoutProjectDag, type ProjectDag } from './project-dag';
 import type { BoardTask } from '@/hooks/use-task-board';
 
 function task(
@@ -165,5 +165,96 @@ describe('layoutProjectDag', () => {
     expect(layout.positions.size).toBe(0);
     expect(layout.width).toBe(0);
     expect(layout.height).toBe(40); // default nodeHeight fallback
+  });
+});
+
+describe('buildWorkflowDag', () => {
+  it('maps workflow nodes/edges to a ProjectDag (chain + status remap)', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: '采集', status: 'completed' },
+        { id: 't2', name: '整理', status: 'in-progress' },
+        { id: 't3', name: '报告', status: 'pending' },
+      ],
+      [
+        { source: 't1', target: 't2' },
+        { source: 't2', target: 't3' },
+      ],
+    );
+    expect(dag.nodes).toHaveLength(3);
+    expect(dag.edges).toHaveLength(2);
+    const byId = new Map(dag.nodes.map((n) => [n.id, n]));
+    expect(byId.get('t1')!.status).toBe('completed');
+    expect(byId.get('t2')!.status).toBe('in_progress'); // in-progress → in_progress
+    expect(byId.get('t3')!.status).toBe('pending');
+    // layers: t1=0, t2=1, t3=2
+    expect(byId.get('t1')!.layer).toBe(0);
+    expect(byId.get('t2')!.layer).toBe(1);
+    expect(byId.get('t3')!.layer).toBe(2);
+  });
+
+  it('remaps delegated/revision/blocked statuses', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 'a', name: 'A', status: 'delegated' },
+        { id: 'b', name: 'B', status: 'revision' },
+        { id: 'c', name: 'C', status: 'blocked' },
+      ],
+      [],
+    );
+    const statusOf = new Map(dag.nodes.map((n) => [n.id, n.status]));
+    expect(statusOf.get('a')).toBe('assigned'); // delegated → assigned
+    expect(statusOf.get('b')).toBe('blocked'); // revision → blocked (amber)
+    expect(statusOf.get('c')).toBe('blocked');
+  });
+
+  it('marks ready from the provided next array', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: 'A', status: 'completed' },
+        { id: 't2', name: 'B', status: 'pending' },
+        { id: 't3', name: 'C', status: 'pending' },
+      ],
+      [{ source: 't1', target: 't2' }, { source: 't1', target: 't3' }],
+      ['t2'], // t2 ready, t3 blocked on something
+    );
+    const readyOf = new Map(dag.nodes.map((n) => [n.id, n.ready]));
+    expect(readyOf.get('t2')).toBe(true);
+    expect(readyOf.get('t3')).toBe(false);
+  });
+
+  it('derives ready locally when next is absent', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: 'A', status: 'completed' },
+        { id: 't2', name: 'B', status: 'pending' },
+      ],
+      [{ source: 't1', target: 't2' }],
+    );
+    const readyOf = new Map(dag.nodes.map((n) => [n.id, n.ready]));
+    expect(readyOf.get('t1')).toBe(false); // completed tasks are not ready
+    expect(readyOf.get('t2')).toBe(true); // deps done, not completed
+  });
+
+  it('trusts an EMPTY next array (paused project: nothing is ready)', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: 'A', status: 'completed' },
+        { id: 't2', name: 'B', status: 'pending' },
+      ],
+      [{ source: 't1', target: 't2' }],
+      [], // provided but empty — must NOT fall back to local derivation
+    );
+    const readyOf = new Map(dag.nodes.map((n) => [n.id, n.ready]));
+    expect(readyOf.get('t2')).toBe(false);
+  });
+
+  it('tracks external dependencies (edge source not in nodes)', () => {
+    const dag = buildWorkflowDag(
+      [{ id: 't2', name: 'B', status: 'pending' }],
+      [{ source: 'ghost', target: 't2' }],
+    );
+    expect(dag.edges).toHaveLength(0); // ghost edge dropped from the graph
+    expect(dag.externalDeps).toContain('ghost');
   });
 });
