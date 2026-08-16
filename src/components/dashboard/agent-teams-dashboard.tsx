@@ -280,8 +280,18 @@ export function AgentTeamsDashboard() {
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
     try {
-      await queryClient.invalidateQueries({ queryKey: ['agentteams'] });
-      await queryClient.invalidateQueries({ queryKey: ['matrix'] });
+      // Query keys are flat strings ('agentteams-workers', 'matrix-messages', ...),
+      // so a key-prefix invalidate never matches. Use a predicate to invalidate
+      // every agentteams/matrix query, including parameterized keys.
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const first = query.queryKey[0];
+          return (
+            typeof first === 'string' &&
+            (first.startsWith('agentteams-') || first.startsWith('matrix-'))
+          );
+        },
+      });
       setLastRefreshTime(new Date());
     } finally {
       setIsRefreshingAll(false);
