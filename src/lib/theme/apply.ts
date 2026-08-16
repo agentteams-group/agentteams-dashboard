@@ -1,4 +1,4 @@
-import type { ThemeDefinition, ThemeBackgroundType, ThemeGradientDirection } from './types';
+import type { ThemeDefinition } from './types';
 import { FONT_FAMILY_STACKS } from './types';
 
 /**

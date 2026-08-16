@@ -205,15 +205,15 @@ export interface PluginDashboardServices {
   /** List all storage buckets. */
   listBuckets: () => Promise<Array<{ name: string; creationDate?: string }>>;
   /** List objects in a bucket with optional prefix (scan). */
-  listObjects: (bucket: string, prefix?: string) => Promise<Array<{ key: string; size: number; lastModified?: string; isPrefix?: boolean }>>;
+  listObjects: (_bucket: string, _prefix?: string) => Promise<Array<{ key: string; size: number; lastModified?: string; isPrefix?: boolean }>>;
   /** Upload a file to a bucket. */
-  uploadObject: (bucket: string, key: string, file: File) => Promise<void>;
+  uploadObject: (_bucket: string, _key: string, _file: File) => Promise<void>;
   /** Get a download URL for an object. */
-  getDownloadUrl: (bucket: string, key: string) => string;
+  getDownloadUrl: (_bucket: string, _key: string) => string;
   /** Get a presigned download URL (safe for direct browser access). */
-  presignDownloadUrl: (bucket: string, key: string) => Promise<string>;
+  presignDownloadUrl: (_bucket: string, _key: string) => Promise<string>;
   /** Get a presigned upload URL for direct browser upload. */
-  presignUploadUrl: (bucket: string, key: string, contentType?: string) => Promise<{ url: string; fields?: Record<string, string> }>;
+  presignUploadUrl: (_bucket: string, _key: string, _contentType?: string) => Promise<{ url: string; fields?: Record<string, string> }>;
 }
 
 export interface PluginLogger {

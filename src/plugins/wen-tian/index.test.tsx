@@ -86,8 +86,6 @@ describe('wen-tian diagnostic plugin', () => {
       ({ name, phase, state: phase === 'Failed' ? 'Stopped' : 'Running', containerManaged: false, model: 'gpt-4', runtime: 'openclaw', image: '', containerState: '', matrixUserID: '', roomID: '', message: '', team: '', role: '' }) as WorkerResponse;
     const makeTeam = (name: string, phase: TeamResponse['phase']): TeamResponse =>
       ({ name, teamName: name, phase, description: '', admin: null, humanMembers: [], leaderName: '', leaderHeartbeat: null, workerIdleTimeout: '', teamRoomID: '', leaderDMRoomID: '', leaderReady: true, readyWorkers: 0, totalWorkers: 0, message: '', workerNames: [], workerExposedPorts: {} }) as TeamResponse;
-    const makeHuman = (name: string, phase: HumanResponse['phase']): HumanResponse =>
-      ({ name, phase, displayName: name, matrixUserID: '', initialPassword: '', rooms: [], message: '' }) as HumanResponse;
 
     const baseArgs = {
       cluster: { totalWorkers: 2, totalTeams: 1, totalHumans: 0, kubeMode: true },

@@ -16,7 +16,6 @@ import {
   Blend,
   Droplets,
   Sparkles,
-  Wind,
   Feather,
   Layers,
   Zap,
@@ -421,10 +420,6 @@ function ThemeEditor({
   };
 
   const updateNumber = (key: keyof ThemeDefinition, value: number) => {
-    onChange({ ...theme, [key]: value });
-  };
-
-  const updateString = (key: keyof ThemeDefinition, value: string) => {
     onChange({ ...theme, [key]: value });
   };
 
