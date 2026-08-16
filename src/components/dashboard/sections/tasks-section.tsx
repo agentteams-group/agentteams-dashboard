@@ -43,6 +43,7 @@ import {
   type ProjectStatus,
   type PlanItem,
 } from '@/hooks/use-task-board';
+import { useApiTaskBoard } from '@/hooks/use-projects';
 import { useTaskStore } from '@/lib/task-store';
 import { buildProjectDag } from '@/lib/project-dag';
 import { ProjectDagSvg, type DagNodeColor } from '@/components/dashboard/project-dag-svg';
@@ -503,13 +504,55 @@ export function TasksSection() {
   const clearTasks = useTaskStore((s) => s.clearTasks);
   const liveCount = useTaskStore(useShallow((s) => Object.keys(s.tasks).length));
 
-  const board = useMergedTaskBoard({ refetchInterval: 8000 });
+  // D5 双轨：主源 = Controller projects/workflow API（standardized），
+  // 降级 = MinIO 直读看板（API 未部署/Controller 故障时 fallback）。
+  // Matrix 实时事件（useTaskStore）作为叠加层两轨共享。
+  const apiBoard = useApiTaskBoard();
+  const minioBoard = useMergedTaskBoard({
+    refetchInterval: 8000,
+    enabled: apiBoard.degraded,
+  });
+  const primary = apiBoard.degraded ? minioBoard : apiBoard;
   useLogTaskBoardScan(
-    board.matchedPrefixes,
-    board.scannedKeys,
-    board.bucket,
-    board.error,
+    minioBoard.matchedPrefixes,
+    minioBoard.scannedKeys,
+    minioBoard.bucket,
+    minioBoard.error,
   );
+
+  // Live Matrix workflow events fill in runIds the board doesn't know about
+  // and refresh statuses. Subscribed reactively (not getState snapshot) so
+  // live updates re-merge into the board.
+  const live = useTaskStore(useShallow((s) => s.tasks));
+  const board = useMemo(() => {
+    const byId = new Map<string, (typeof primary.tasks)[number]>();
+    for (const t of primary.tasks) byId.set(t.runId, t);
+    for (const [, e] of Object.entries(live)) {
+      const existing = byId.get(e.runId);
+      const liveTask = {
+        runId: e.runId,
+        title: e.title,
+        status: e.status as TaskStatus,
+        assignedTo: e.senderMatrixUserId,
+        roomId: e.roomId,
+        projectId: existing?.projectId,
+        dependsOn: existing?.dependsOn ?? [],
+        createdAt: e.createdAt,
+        completedAt: existing?.completedAt,
+        outcome: existing?.outcome ?? null,
+        spec: existing?.spec,
+        source: 'matrix-live',
+      };
+      byId.set(
+        e.runId,
+        existing ? { ...existing, status: liveTask.status } : liveTask,
+      );
+    }
+    return {
+      ...primary,
+      tasks: Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt),
+    };
+  }, [primary, live]);
 
   const { data: managers } = useManagers();
   const { data: workers } = useWorkers();
@@ -583,7 +626,9 @@ export function TasksSection() {
         title="任务看板"
         description={
           matrixLoggedIn
-            ? 'Manager 拆分 / Worker 执行的实时进度,以 MinIO 持久化 + Matrix 实时为双数据源'
+            ? apiBoard.degraded
+              ? 'Controller 项目 API 降级 — 回退 MinIO 持久化 + Matrix 实时双数据源'
+              : 'Controller 项目 API 主源（#1169）— 项目/任务实时进度，Matrix 事件叠加'
             : '需要先登录 Matrix 才能拉取实时数据'
         }
         actions={
@@ -621,7 +666,11 @@ export function TasksSection() {
               size="sm"
               onClick={handleReload}
               disabled={board.isLoading}
-              title="清空 Matrix 缓存并重新拉取 MinIO 任务"
+              title={
+              apiBoard.degraded
+                ? '清空 Matrix 缓存并重新拉取 MinIO 任务'
+                : '清空 Matrix 实时叠加并重新拉取 Controller 项目 API'
+            }
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${board.isLoading ? 'animate-spin' : ''}`} />
               刷新
@@ -667,22 +716,23 @@ export function TasksSection() {
         ))}
       </div>
 
-      {/* Diagnostic banner */}
-      {board.bucket && board.scannedKeys.length === 0 && !board.isLoading && (
+      {/* Diagnostic banner (MinIO fallback only — the API primary source
+          reports its own degraded state via the projects section). */}
+      {apiBoard.degraded && minioBoard.bucket && minioBoard.scannedKeys.length === 0 && !minioBoard.isLoading && (
         <Card className="glass-card border-amber-500/30 bg-amber-500/5">
           <CardContent className="p-3 flex items-start gap-2 text-xs">
             <Database className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
             <div className="space-y-1">
               <p className="font-medium text-amber-700 dark:text-amber-400">
-                MinIO 暂未发现任务数据
+                MinIO 暂未发现任务数据（Controller API 已降级）
               </p>
               <p className="text-muted-foreground">
-                Bucket <code className="font-mono">{board.bucket}</code> · 扫描路径{' '}
+                Bucket <code className="font-mono">{minioBoard.bucket}</code> · 扫描路径{' '}
                 <code className="font-mono">shared/tasks/, shared/projects/, agents/*/task-history.json</code>
-                {board.matchedPrefixes.length > 0 && (
+                {minioBoard.matchedPrefixes.length > 0 && (
                   <>
                     {' '}· 匹配:{' '}
-                    <code className="font-mono">{board.matchedPrefixes.join(', ')}</code>
+                    <code className="font-mono">{minioBoard.matchedPrefixes.join(', ')}</code>
                   </>
                 )}
               </p>
