@@ -97,7 +97,9 @@ function normalizeNodeStatus(raw?: string): WorkflowNodeStatus {
     case 'cancelled':
       return 'blocked';
     default:
-      return 'pending';
+      // Unknown/future controller statuses render as blocked rather than
+      // "待办" — a task we don't understand should not look actionable.
+      return 'blocked';
   }
 }
 
@@ -853,6 +855,20 @@ function WorkflowDagView({
   );
 }
 
+/** (team, project_id) composite identity comparison (#1169). Accepts both
+ * the selection shape ({ id, team }) and the API summary shape
+ * ({ project_id, team_id }). */
+function isSameProject(
+  a: { project_id?: string; id?: string; team_id?: string; team?: string } | null,
+  b: { project_id?: string; id?: string; team_id?: string; team?: string } | null,
+): boolean {
+  if (!a || !b) return false;
+  return (
+    (a.project_id ?? a.id ?? '') === (b.project_id ?? b.id ?? '') &&
+    (a.team_id ?? a.team ?? '') === (b.team_id ?? b.team ?? '')
+  );
+}
+
 // ----- Project card (card view) -----
 
 function ProjectCard({
@@ -902,11 +918,7 @@ export function ProjectsSection() {
 
   const projects = data?.projects ?? [];
   const selected =
-    projects.find(
-      (p) =>
-        p.project_id === selectedKey?.id &&
-        (p.team_id ?? '') === (selectedKey?.team ?? ''),
-    ) ?? null;
+    projects.find((p) => isSameProject(p, selectedKey)) ?? null;
 
   return (
     <div className="space-y-4">
@@ -977,8 +989,7 @@ export function ProjectsSection() {
                   key={`${p.team_id ?? ''}:${p.project_id}`}
                   onClick={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
                   className={`w-full text-left rounded-lg border p-2.5 text-xs transition-colors ${
-                    selected?.project_id === p.project_id &&
-                    (selected?.team_id ?? '') === (p.team_id ?? '')
+                    isSameProject(selected, p)
                       ? 'border-primary/50 bg-primary/5'
                       : 'border-transparent hover:bg-muted/50'
                   }`}
@@ -1021,10 +1032,7 @@ export function ProjectsSection() {
               <ProjectCard
                 key={`${p.team_id ?? ''}:${p.project_id}`}
                 project={p}
-                selected={
-                  selected?.project_id === p.project_id &&
-                  (selected?.team_id ?? '') === (p.team_id ?? '')
-                }
+                selected={isSameProject(selected, p)}
                 onSelect={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
               />
             ))}
@@ -1052,8 +1060,7 @@ export function ProjectsSection() {
                   key={`${p.team_id ?? ''}:${p.project_id}`}
                   onClick={() => setSelectedKey({ id: p.project_id, team: p.team_id })}
                   className={`w-full text-left rounded-lg border p-2.5 text-xs transition-colors ${
-                    selected?.project_id === p.project_id &&
-                    (selected?.team_id ?? '') === (p.team_id ?? '')
+                    isSameProject(selected, p)
                       ? 'border-primary/50 bg-primary/5'
                       : 'border-transparent hover:bg-muted/50'
                   }`}

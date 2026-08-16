@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { layoutProjectDag, type ProjectDag } from '@/lib/project-dag';
 
 /** SVG node colors, keyed by status. Callers pass their own table
@@ -39,6 +39,10 @@ export function ProjectDagSvg({
   const H = nodeHeight;
   const GY = gapY;
 
+  // Per-instance marker id — the task board and the projects topo view can
+  // render on the same page; a shared document id would make url(#...) always
+  // resolve to the first instance.
+  const markerId = useId();
   const layout = useMemo(
     () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY }),
     [dag, W, H, GY],
@@ -71,12 +75,12 @@ export function ProjectDagSvg({
             fill="none"
             stroke="rgba(148,163,184,0.55)"
             strokeWidth={1.2}
-            markerEnd="url(#dag-arrow)"
+            markerEnd={`url(#${markerId})`}
           />
         );
       })}
       <defs>
-        <marker id="dag-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+        <marker id={markerId} markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
           <path d="M0,0 L7,3 L0,6 Z" fill="rgba(148,163,184,0.7)" />
         </marker>
       </defs>
