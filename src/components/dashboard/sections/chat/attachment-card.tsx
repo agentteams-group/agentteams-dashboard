@@ -29,6 +29,11 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
   const { homeserver: storeHomeserver } = useMatrixStore();
   const base = homeserver || storeHomeserver;
   const downloadUrl = mxcToDownloadUrl(payload.url, base);
+  // ?download=true makes the homeserver send Content-Disposition: attachment
+  // so browsers download instead of previewing the file inline.
+  const forcedDownloadUrl = downloadUrl
+    ? `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}download=true`
+    : undefined;
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -76,9 +81,9 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
               {open ? '收起' : '预览'}
             </Button>
           )}
-          {downloadUrl && (
+          {forcedDownloadUrl && (
             <a
-              href={downloadUrl}
+              href={forcedDownloadUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline px-2 h-7"

@@ -1,16 +1,16 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Download, FileText, Play, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
 import { MermaidRenderer } from './mermaid-renderer';
+import { MediaViewer } from './media-viewer';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import {
   renderFormattedContent,
@@ -100,6 +100,21 @@ function StreamingCursor() {
   );
 }
 
+/** Bare mxc:// URIs in plain-text bodies → clickable markdown download links. */
+function linkifyMxcUris(text: string, homeserver?: string): string {
+  if (!text.includes('mxc://')) return text;
+  return text.replace(/mxc:\/\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)/g, (match) => {
+    const url = mxcToDownloadUrl(match, homeserver, { download: true });
+    return url ? `[${match}](${url})` : match;
+  });
+}
+
+function formatFileSize(size?: number): string {
+  if (!size) return '';
+  if (size > 1024 * 1024) return `(${(size / (1024 * 1024)).toFixed(1)} MB)`;
+  return `(${(size / 1024).toFixed(1)} KB)`;
+}
+
 export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
   // Resolve mxc:// URL to HTTP URL via Matrix media API
   const resolvedMediaUrl = useMemo(() => {
@@ -122,42 +137,101 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   }, [formattedContent, content, memberMap]);
 
   const resolvedContent = useMemo(
-    () => unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
-    [content, memberMap]
+    () => linkifyMxcUris(
+      unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
+      homeserver,
+    ),
+    [content, memberMap, homeserver]
   );
 
-  // Render media messages (m.image, m.file)
+  // Full-screen image preview (element-web lightbox)
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  // Render media messages (m.image, m.video, m.audio, m.file)
   if (msgType === 'm.image' && resolvedMediaUrl) {
     return (
       <div className="matrix-message-content">
-        <img
+        <button
+          type="button"
+          className="block max-w-full rounded-lg cursor-zoom-in focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+          onClick={() => setViewerOpen(true)}
+          title="点击查看大图"
+        >
+          <img
+            src={resolvedMediaUrl}
+            alt={content}
+            className="max-w-full max-h-64 rounded-lg object-contain"
+            loading="lazy"
+          />
+        </button>
+        <div className="flex items-center gap-2 mt-1">
+          {content && <p className="text-xs text-muted-foreground truncate">{content}</p>}
+          <a
+            href={mxcToDownloadUrl(mediaUrl ?? '', homeserver, { download: true })}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline shrink-0"
+          >
+            <Download className="w-3 h-3" />
+            下载
+          </a>
+        </div>
+        {viewerOpen && (
+          <MediaViewer
+            src={resolvedMediaUrl}
+            filename={content || '图片'}
+            onClose={() => setViewerOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (msgType === 'm.video' && resolvedMediaUrl) {
+    return (
+      <div className="matrix-message-content">
+        <video
           src={resolvedMediaUrl}
-          alt={content}
-          className="max-w-full max-h-64 rounded-lg object-contain"
-          loading="lazy"
+          controls
+          preload="metadata"
+          className="max-w-full max-h-72 rounded-lg"
         />
-        {content && <p className="text-xs text-muted-foreground mt-1">{content}</p>}
+        <div className="flex items-center gap-2 mt-1">
+          <Play className="w-3 h-3 text-muted-foreground shrink-0" />
+          {content && <p className="text-xs text-muted-foreground truncate">{content}</p>}
+          <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(mediaInfo?.size)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (msgType === 'm.audio' && resolvedMediaUrl) {
+    return (
+      <div className="matrix-message-content">
+        <audio src={resolvedMediaUrl} controls preload="metadata" className="max-w-full h-8" />
+        <div className="flex items-center gap-2 mt-1">
+          <Volume2 className="w-3 h-3 text-muted-foreground shrink-0" />
+          {content && <p className="text-xs text-muted-foreground truncate">{content}</p>}
+        </div>
       </div>
     );
   }
 
   if (msgType === 'm.file' && resolvedMediaUrl) {
-    const sizeText = mediaInfo?.size
-      ? mediaInfo.size > 1024 * 1024
-        ? `(${(mediaInfo.size / (1024 * 1024)).toFixed(1)} MB)`
-        : `(${(mediaInfo.size / 1024).toFixed(1)} KB)`
-      : '';
     return (
       <div className="matrix-message-content">
         <a
-          href={resolvedMediaUrl}
+          href={mxcToDownloadUrl(mediaUrl ?? '', homeserver, { download: true })}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-sm text-emerald-600 hover:underline"
+          title="下载文件"
         >
-          <span>📎</span>
-          <span>{content}</span>
-          {sizeText && <span className="text-xs text-muted-foreground">{sizeText}</span>}
+          <FileText className="w-4 h-4 shrink-0" />
+          <span className="truncate">{content}</span>
+          {mediaInfo?.size && (
+            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(mediaInfo.size)}</span>
+          )}
         </a>
       </div>
     );

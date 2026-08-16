@@ -25,9 +25,10 @@ describe('AttachmentCard', () => {
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByText('文本 · 全文附件')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /下载/ });
+    // ?download=true forces Content-Disposition: attachment.
     expect(link).toHaveAttribute(
       'href',
-      'https://hs.test/_matrix/media/v3/download/example.com/abc123'
+      'https://hs.test/_matrix/media/v3/download/example.com/abc123?download=true'
     );
   });
 
@@ -35,7 +36,7 @@ describe('AttachmentCard', () => {
     render(<AttachmentCard payload={makePayload({ url: 'https://cdn.test/full.txt' })} />);
 
     const link = screen.getByRole('link', { name: /下载/ });
-    expect(link).toHaveAttribute('href', 'https://cdn.test/full.txt');
+    expect(link).toHaveAttribute('href', 'https://cdn.test/full.txt?download=true');
   });
 
   it('shows no download link for an unusable url', () => {

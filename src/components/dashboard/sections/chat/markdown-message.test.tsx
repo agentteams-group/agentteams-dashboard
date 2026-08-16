@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownMessage } from './markdown-message';
 
 vi.mock('./mermaid-renderer', () => ({
   MermaidRenderer: () => null,
 }));
+
+afterEach(cleanup);
 
 describe('MarkdownMessage', () => {
   it('renders plain text through markdown', () => {
@@ -134,5 +136,111 @@ describe('MarkdownMessage', () => {
     expect(ths[0]?.textContent).toBe('Team');
     expect(table?.textContent).toContain('ceshi');
     expect(table?.textContent).toContain('Active');
+  });
+
+  it('renders an image message as a clickable thumbnail', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="截图.png"
+        msgType="m.image"
+        mediaUrl="mxc://example.org/abc123"
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const img = container.querySelector('img');
+    expect(img).toBeInTheDocument();
+    expect(img?.getAttribute('src')).toBe(
+      'https://hs.example.org/_matrix/media/v3/download/example.org/abc123'
+    );
+    // The thumbnail is wrapped in a zoom-in trigger button.
+    const trigger = img?.closest('button');
+    expect(trigger).toBeInTheDocument();
+    expect(trigger?.className).toContain('cursor-zoom-in');
+    // A forced-download link is offered next to the caption.
+    const links = Array.from(container.querySelectorAll('a'));
+    expect(links.some((a) => a.href.endsWith('?download=true'))).toBe(true);
+  });
+
+  it('opens the full-screen viewer when the thumbnail is clicked', async () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="架构图.png"
+        msgType="m.image"
+        mediaUrl="mxc://example.org/abc123"
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const trigger = container.querySelector('img')?.closest('button');
+    trigger?.click();
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    // The viewer header shows the filename (the only copy once opened).
+    expect(screen.getAllByText('架构图.png').length).toBeGreaterThan(0);
+  });
+
+  it('renders a video message with a native video element', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="demo.mp4"
+        msgType="m.video"
+        mediaUrl="mxc://example.org/vid1"
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const video = container.querySelector('video');
+    expect(video).toBeInTheDocument();
+    expect(video?.getAttribute('controls')).not.toBeNull();
+    expect(video?.getAttribute('src')).toBe(
+      'https://hs.example.org/_matrix/media/v3/download/example.org/vid1'
+    );
+  });
+
+  it('renders an audio message with a native audio element', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="voice.ogg"
+        msgType="m.audio"
+        mediaUrl="mxc://example.org/aud1"
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const audio = container.querySelector('audio');
+    expect(audio).toBeInTheDocument();
+    expect(audio?.getAttribute('controls')).not.toBeNull();
+  });
+
+  it('renders a file message with a forced download link and size', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content="report.pdf"
+        msgType="m.file"
+        mediaUrl="mxc://example.org/doc1"
+        mediaInfo={{ mimetype: 'application/pdf', size: 2048 }}
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const link = container.querySelector('a');
+    expect(link).toBeInTheDocument();
+    expect(link?.href).toBe(
+      'https://hs.example.org/_matrix/media/v3/download/example.org/doc1?download=true'
+    );
+    expect(screen.getByText('(2.0 KB)')).toBeInTheDocument();
+  });
+
+  it('linkifies bare mxc:// URIs in plain text bodies', () => {
+    render(
+      <MarkdownMessage content="产物已上传: mxc://example.org/xyz789 可下载" homeserver="https://hs.example.org" />
+    );
+
+    const link = screen.getByRole('link', { name: /mxc:\/\/example\.org\/xyz789/ });
+    expect(link.getAttribute('href')).toBe(
+      'https://hs.example.org/_matrix/media/v3/download/example.org/xyz789?download=true'
+    );
   });
 });
