@@ -27,6 +27,7 @@ import {
   useCancelProjectTask,
 } from '@/hooks/use-projects';
 import { ApiError } from '@/lib/api-error';
+import { ProjectTimelinePanel } from './project-timeline-panel';
 import {
   getTaskArtifactUrl,
   type ProjectStatus,
@@ -120,7 +121,7 @@ const WORKFLOW_NODE_FILL: Record<string, DagNodeColor> = {
  * terminal in practice, so hide the button there too. */
 const UNCANCELLABLE_STATUSES = new Set(['completed', 'revision', 'blocked', 'cancelled']);
 
-/** Cancel button for one task row (W-PR-2 POST .../tasks/{taskId}/cancel).
+/** Cancel button for one task row (POST .../tasks/{taskId}/cancel).
  * Renders only for non-terminal tasks; opens a reason dialog. */
 function CancelTaskButton({
   projectId,
@@ -198,7 +199,7 @@ function CancelTaskButton({
 }
 
 /** One task's TaskMeta row: status/assignee/result + artifact download
- *  links (result_path + each deliverable, via O19 proxy). */
+ *  links (result_path + each deliverable, via the artifact proxy). */
 function TaskDetailRow({
   task,
   projectId,
@@ -478,7 +479,7 @@ function WorkflowDetail({
   }
 
   if (isError || !wf) {
-    // 409 = 同一 project_id 在多个团队存在（#1169 (team, project_id) 身份），
+    // 409 = 同一 project_id 在多个团队存在（(team, project_id) 复合身份），
     // 单独提示而非笼统的"不可用"。
     const ambiguous =
       error instanceof ApiError && error.status === 409;
@@ -541,7 +542,7 @@ function WorkflowDetail({
         </div>
       </div>
 
-      {/* Pause dialog: optional reason (W-PR-2 POST .../pause) */}
+      {/* Pause dialog: optional reason (POST .../pause) */}
       <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -573,7 +574,7 @@ function WorkflowDetail({
         </DialogContent>
       </Dialog>
 
-      {/* Replan dialog: JSON tasks payload (W-PR-2 POST .../replan) */}
+      {/* Replan dialog: JSON tasks payload (POST .../replan) */}
       <Dialog open={replanOpen} onOpenChange={setReplanOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
@@ -702,7 +703,7 @@ function WorkflowDetail({
         </div>
       )}
 
-      {/* Next runnable tasks (W-PR-1 next: 依赖全完成、当前可执行) */}
+      {/* Next runnable tasks (next: 依赖全完成、当前可执行) */}
       {wf.next.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-1.5">
@@ -738,7 +739,7 @@ function WorkflowDetail({
         </div>
       )}
 
-      {/* Task details (#1169 includeTasks → tasks_detail + O19 artifact download) */}
+      {/* Task details (includeTasks → tasks_detail + artifact download) */}
       {wf.tasks_detail && wf.tasks_detail.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-1.5">
@@ -756,6 +757,9 @@ function WorkflowDetail({
           </div>
         </div>
       )}
+
+      {/* Intervention timeline (controller history endpoint) */}
+      <ProjectTimelinePanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Nodes */}
       <div>
@@ -855,7 +859,7 @@ function WorkflowDagView({
   );
 }
 
-/** (team, project_id) composite identity comparison (#1169). Accepts both
+/** (team, project_id) composite identity comparison. Accepts both
  * the selection shape ({ id, team }) and the API summary shape
  * ({ project_id, team_id }). */
 function isSameProject(
@@ -910,7 +914,7 @@ function ProjectCard({
 export function ProjectsSection() {
   const { data, isLoading, isError, refetch, isRefetching } = useProjects();
   // (team, project_id) composite selection — the same project id can exist
-  // under two teams (#1169 identity scoping).
+  // under two teams (identity scoping).
   const [selectedKey, setSelectedKey] = useState<{ id: string; team?: string } | null>(null);
   // Three views, aligned with the workbench plugin's WorkflowBoard:
   // 列表 (list + detail) / 卡片 (card grid) / 拓扑 (DAG).
@@ -924,7 +928,7 @@ export function ProjectsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="项目"
-        description="AgentTeams 项目 API（#1169）— 标准项目视图"
+        description="AgentTeams 项目 API — 标准项目视图"
         isLive
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}

@@ -52,6 +52,28 @@ export function formatErrorMessage(err: unknown, fallback = '操作失败'): str
 }
 
 /**
+ * Short display message for consumer panels: strips the " from <url>" suffix
+ * that requestJson appends to ApiError messages, so the UI shows the real
+ * reason without the endpoint path.
+ */
+export function shortErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  return raw.replace(/ from .*$/, '');
+}
+
+/**
+ * Unified load-failure message for read-only consumer panels (project
+ * timeline / worker checkpoints). A 404 means the Controller does not expose
+ * the endpoint yet (pre-upgrade) — show the actionable "active after
+ * Controller upgrade" placeholder instead of a raw error. Both panels MUST
+ * use this helper so the 404 fallback wording stays identical.
+ */
+export function loadErrorMessage(e: unknown, noun: string): string {
+  if (e instanceof ApiError && e.status === 404) return 'Controller 升级后自动生效';
+  return `${noun}：${shortErrorMessage(e)}`;
+}
+
+/**
  * Human-readable message for a failed worker delete. A 409 from the controller
  * usually means the worker is still attached to a team; turn the raw JSON error
  * into an actionable hint (which team to detach it from) instead of dumping the
