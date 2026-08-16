@@ -82,6 +82,13 @@ export async function proxyToAgentTeams(
     method?: string;
     forwardBody?: boolean;
     contentType?: string;
+    /** Stream the upstream body instead of buffering into memory
+     * (large binary downloads, e.g. artifact files). */
+    stream?: boolean;
+    /** Extra response headers to pass through to the client (e.g.
+     * 'content-disposition' for binary download routes). Only these are
+     * forwarded; everything else is filtered. */
+    passthroughHeaders?: string[];
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
@@ -133,10 +140,32 @@ export async function proxyToAgentTeams(
       return new NextResponse(null, { status: 204 });
     }
 
+    if (options.stream && res.body) {
+      // Stream the binary body through without buffering (D15).
+      const responseHeaders = new Headers();
+      const resCT = res.headers.get('content-type');
+      if (resCT) responseHeaders.set('content-type', resCT);
+      for (const name of options.passthroughHeaders ?? []) {
+        const value = res.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+      responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      return new NextResponse(res.body, {
+        status: res.status,
+        headers: responseHeaders,
+      });
+    }
+
     const data = await res.arrayBuffer();
     const responseHeaders = new Headers();
     const resCT = res.headers.get('content-type');
     if (resCT) responseHeaders.set('content-type', resCT);
+    // Pass through any explicitly requested headers (e.g. content-disposition
+    // for artifact downloads so RFC 5987 filenames survive the proxy).
+    for (const name of options.passthroughHeaders ?? []) {
+      const value = res.headers.get(name);
+      if (value) responseHeaders.set(name, value);
+    }
     // API responses should never be cached by the browser; stale cached JSON
     // causes the dashboard to show outdated or empty data after restarts.
     responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

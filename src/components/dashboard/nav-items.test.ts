@@ -9,6 +9,7 @@ describe('Navigation with groups', () => {
       'overview',
       'chat',
       'tasks',
+      'projects',
       'workers',
       'managers',
       'teams',
