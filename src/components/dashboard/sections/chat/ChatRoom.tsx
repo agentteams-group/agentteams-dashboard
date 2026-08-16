@@ -25,15 +25,19 @@ import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
+import { parseOutboundCommand } from './composer-commands';
 import { TypingIndicator } from './typing-indicator';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
 import { FilesBrowserPanel } from './views/worker-files-panel';
 import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+
+/** Window within which ArrowUp recovers the latest own message for editing. */
+const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
 interface ChatRoomProps {
   roomId: string;
@@ -70,10 +74,14 @@ export function ChatRoom({
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   const [inputValue, setInputValue] = useState('');
+  // Composer edit session (ArrowUp on empty input → edit my latest message)
+  const [editSession, setEditSession] = useState<{ eventId: string; initialText: string } | null>(null);
   const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  // Drag-and-drop file upload overlay
+  const [dragActive, setDragActive] = useState(false);
   const [showWorkers, setShowWorkers] = useState(false);
   // Worker rooms default to the owning worker so the files panel opens on
   // "the current worker's" directory instead of an empty picker.
@@ -82,6 +90,32 @@ export function ChatRoom({
   const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
   const noticeCounterRef = useRef(0);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
+  const dragCounterRef = useRef(0);
+
+  // ---- Per-room draft persistence (element-web behavior) ----
+  // The composer state survives room switches (ChatRoom is not remounted), so
+  // without drafts a half-typed message would follow the user into the next
+  // room and could be sent to the wrong place. Save on input, restore on switch.
+  const draftKey = `agentteams-chat-draft:${roomId}`;
+  // Restore the draft during render when the room changes (same adjust-state-
+  // during-render pattern as the dashboard's poll handlers).
+  const [prevRoomId, setPrevRoomId] = useState(roomId);
+  if (prevRoomId !== roomId) {
+    setPrevRoomId(roomId);
+    let draft = '';
+    try {
+      draft = localStorage.getItem(`agentteams-chat-draft:${roomId}`) ?? '';
+    } catch { /* storage unavailable */ }
+    setInputValue(draft);
+    setEditSession(null);
+  }
+
+  const persistDraft = useCallback((text: string) => {
+    try {
+      if (text.trim()) localStorage.setItem(draftKey, text);
+      else localStorage.removeItem(draftKey);
+    } catch { /* storage unavailable */ }
+  }, [draftKey]);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
@@ -281,9 +315,10 @@ export function ChatRoom({
     mentions?: MentionEntry[];
     replyTo?: DisplayMessage | null;
     clientId?: string;
+    msgtype?: string;
   }) => {
     if (!roomId || !isLoggedIn || !userId) return;
-    const { content, options, mentions, replyTo, clientId } = params;
+    const { content, options, mentions, replyTo, clientId, msgtype } = params;
 
     // Only mentions that still appear in the final text are sent (the user may
     // have typed more after inserting them, or deleted the placeholder again).
@@ -328,7 +363,7 @@ export function ChatRoom({
         roomId,
         body: content,
         formattedBody,
-        extra: mentionData,
+        extra: { ...mentionData, ...(msgtype ? { msgtype } : {}) },
         relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
       },
       {
@@ -404,31 +439,108 @@ export function ChatRoom({
   }, [roomId, isLoggedIn, userId, uploadMutation, sendMutation, removeLocal, patchLocal, pushSystemNotice]);
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
-    const trimmed = content.trim();
+    let trimmed = content.trim();
     if (!trimmed) return;
+    // element-style outbound commands: /me (m.emote) and /shrug
+    const parsed = parseOutboundCommand(trimmed);
+    if (parsed) trimmed = parsed.body;
+    const msgtype = parsed?.msgtype;
+
     if (onSendMessage) {
       onSendMessage(trimmed, _options, mentions);
+      persistDraft('');
       return;
     }
     if (!roomId || !isLoggedIn) return;
 
-    sendOutbound({ content: trimmed, options: _options, mentions, replyTo });
+    sendOutbound({ content: trimmed, options: _options, mentions, replyTo, msgtype });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
     setInputValue('');
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo]);
+    persistDraft('');
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, persistDraft]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);
+    persistDraft(content);
     if (content.trim()) {
       notifyTyping();
     } else {
       stopTyping();
     }
-  }, [notifyTyping, stopTyping]);
+  }, [notifyTyping, stopTyping, persistDraft]);
+
+  // ---- Composer edit session (ArrowUp flow) ----
+  const handleRequestEditLast = useCallback(() => {
+    for (let i = formattedMessages.length - 1; i >= 0; i--) {
+      const m = formattedMessages[i];
+      if (
+        m.isMe &&
+        !m.status &&
+        m.eventId &&
+        m.content?.trim() &&
+        Date.now() - m.timestamp < EDIT_WINDOW_MS
+      ) {
+        setEditSession({ eventId: m.eventId, initialText: m.content });
+        setInputValue(m.content);
+        return;
+      }
+    }
+  }, [formattedMessages]);
+
+  const handleComposerEditSubmit = useCallback(async (text: string) => {
+    if (!editSession) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setActionError(null);
+    try {
+      await editMutation.mutateAsync({
+        roomId,
+        eventId: editSession.eventId,
+        body: trimmed,
+      });
+      setEditSession(null);
+      setInputValue('');
+      persistDraft('');
+    } catch (err) {
+      // Keep the edit session open so the user can retry.
+      setActionError(err instanceof Error ? err.message : '编辑消息失败');
+    }
+  }, [editSession, editMutation, roomId, persistDraft]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditSession(null);
+    setInputValue('');
+  }, []);
+
+  // ---- Drag-and-drop file upload (overlay on the whole room area) ----
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setDragActive(true);
+  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+  }, []);
+  const handleDragLeave = useCallback(() => {
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setDragActive(false);
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      for (const file of files) handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
 
   const handleAutoScrollChange = useCallback((auto: boolean) => {
     setAutoScrollLocal(auto);
@@ -663,7 +775,24 @@ export function ChatRoom({
   ), [roomName, team, topic, avatar, roomMembers.length, showMembers, showWorkers]);
 
   return (
-    <div ref={chatLayoutRef} className={`flex h-full ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}>
+    <div
+      ref={chatLayoutRef}
+      className={`flex h-full relative ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag-and-drop upload overlay */}
+      {dragActive && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-[2px] pointer-events-none">
+          <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-emerald-500/60 bg-emerald-500/5 px-10 py-8">
+            <Upload className="w-8 h-8 text-emerald-500" />
+            <p className="text-sm font-medium">松开以上传文件</p>
+            <p className="text-xs text-muted-foreground">支持多文件，发送到 {roomName}</p>
+          </div>
+        </div>
+      )}
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {header}
@@ -752,6 +881,10 @@ export function ChatRoom({
               if (cmd === 'members') setShowMembers(v => !v);
             }}
             onMentionsChange={setMentions}
+            editSession={editSession}
+            onSubmitEdit={handleComposerEditSubmit}
+            onCancelEdit={handleCancelEdit}
+            onRequestEditLast={handleRequestEditLast}
           />
           </div>
         </div>

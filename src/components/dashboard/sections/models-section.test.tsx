@@ -88,7 +88,10 @@ vi.mock('@/components/ui/alert-dialog', () => ({
   AlertDialogCancel: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
 }));
 
-describe('ModelsSection', () => {
+// This file renders the full ModelsSection (providers + routes + consumers)
+// with many async waitFors; under parallel full-suite load on slower hosts the
+// default 5s per-test budget is not enough, so relax it for the whole block.
+describe('ModelsSection', { timeout: 20_000 }, () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
