@@ -25,6 +25,14 @@ LOCAL_IMAGE = agentteams-dashboard:$(VERSION)
 MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64
 BUILDX_BUILDER      ?= agentteams-multiarch
 
+# BuildKit image for the docker-container builder. Builders pin the image they
+# were created with, so an old builder keeps an old buildkitd. Old buildkitd
+# versions crash solves on hosts whose /proc/loadavg reports a negative
+# last-pid (lxcfs-virtualized /proc or pid wraparound):
+#   failed to solve: Internal: Error Parsing File: couldn't parse "-..." (processes)
+# Recreate the builder with a current image via `make buildx-upgrade`.
+BUILDKIT_IMAGE ?= moby/buildkit:latest
+
 # Pre-release detection: -rc/-beta/-alpha should NOT push :latest
 IS_PRERELEASE := $(shell echo "$(VERSION)" | grep -qiE -- '-(rc|beta|alpha|pre|preview|dev|snapshot)(\.[0-9]+)?$$' && echo 1 || echo 0)
 PUSH_LATEST   := $(if $(filter latest,$(VERSION)),,$(if $(filter 1,$(IS_PRERELEASE)),,yes))
@@ -40,7 +48,7 @@ endif
 
 # ---------- Phony targets ----------
 
-.PHONY: all build tag push push-native buildx-setup clean help
+.PHONY: all build tag push push-native buildx-setup buildx-upgrade clean help
 
 # ---------- Default ----------
 
@@ -75,10 +83,25 @@ ifeq ($(IS_PODMAN),1)
 else
 	@if ! docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1; then \
 		echo "==> Creating buildx builder: $(BUILDX_BUILDER)"; \
-		docker buildx create --name $(BUILDX_BUILDER) --driver docker-container --bootstrap; \
+		docker buildx create --name $(BUILDX_BUILDER) \
+			--driver docker-container \
+			--driver-opt image=$(BUILDKIT_IMAGE) \
+			--bootstrap; \
 	else \
 		echo "==> Buildx builder $(BUILDX_BUILDER) already exists"; \
 	fi
+endif
+
+buildx-upgrade: ## Recreate the buildx builder with the current BuildKit image
+ifeq ($(IS_PODMAN),1)
+	@echo "==> Podman detected — no buildx builder to upgrade"
+else
+	@echo "==> Recreating buildx builder: $(BUILDX_BUILDER) (image $(BUILDKIT_IMAGE))"
+	docker buildx rm --keep-state $(BUILDX_BUILDER) 2>/dev/null || true
+	docker buildx create --name $(BUILDX_BUILDER) \
+		--driver docker-container \
+		--driver-opt image=$(BUILDKIT_IMAGE) \
+		--bootstrap
 endif
 
 # ---------- Push (multi-arch, default) ----------
