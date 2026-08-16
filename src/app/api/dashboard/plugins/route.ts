@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { readdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { installPluginPackage, MAX_ZIP_BYTES } from '@/lib/plugins/server-package';
 import { PluginManifestError } from '@/lib/plugins/manifest';
+import { validateHigressSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,14 @@ export async function GET() {
   return NextResponse.json({ plugins: await listPlugins() });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Plugin packages become executable frontend code for every dashboard user.
+  // Require the same Higress Console session gate as /api/agentteams/* writes.
+  const authorized = await validateHigressSession(request);
+  if (!authorized) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {
     return NextResponse.json({ error: '请使用 multipart/form-data 上传插件包' }, { status: 415 });

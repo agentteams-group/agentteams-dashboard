@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { removePluginPackage } from '@/lib/plugins/server-package';
 import { PluginManifestError } from '@/lib/plugins/manifest';
+import { validateHigressSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,12 @@ export const dynamic = 'force-dynamic';
  * Removes an installed server plugin package from `public/plugins/<id>/`.
  * The dashboard plugin registry entry is dropped client-side on uninstall.
  */
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const authorized = await validateHigressSession(request);
+  if (!authorized) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { id } = await params;
   try {
     await removePluginPackage(id);

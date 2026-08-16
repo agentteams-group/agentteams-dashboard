@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateModelProbeBaseUrl, ModelProbeUrlError } from '@/lib/model-probe-url';
 
 const PROVIDER_BASES: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -83,6 +84,19 @@ export async function POST(request: NextRequest) {
 
   if (!token?.trim()) {
     return NextResponse.json({ success: false, message: '请先输入 API Key' }, { status: 400 });
+  }
+
+  // User-supplied base URLs become server-side fetch targets — guard against
+  // SSRF (loopback/private/cluster-internal probing) before building the request.
+  if (baseUrl?.trim()) {
+    try {
+      validateModelProbeBaseUrl(baseUrl.trim());
+    } catch (err) {
+      if (err instanceof ModelProbeUrlError) {
+        return NextResponse.json({ success: false, message: err.message }, { status: 400 });
+      }
+      throw err;
+    }
   }
 
   let target: ProbeTarget;

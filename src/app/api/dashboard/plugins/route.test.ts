@@ -15,8 +15,17 @@ const packageMock = vi.hoisted(() => ({
 
 vi.mock('@/lib/plugins/server-package', () => packageMock);
 
+const authMock = vi.hoisted(() => ({ validateHigressSession: vi.fn() }));
+
+vi.mock('@/lib/api-auth', () => authMock);
+
+import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { PluginManifestError } from '@/lib/plugins/manifest';
+
+function postRequest(init?: ConstructorParameters<typeof NextRequest>[1]) {
+  return new NextRequest('http://x/api/dashboard/plugins', { method: 'POST', ...init });
+}
 
 describe('GET /api/dashboard/plugins', () => {
   afterEach(() => {
@@ -55,52 +64,48 @@ describe('POST /api/dashboard/plugins', () => {
     vi.clearAllMocks();
   });
 
+  it('rejects unauthenticated uploads with 401', async () => {
+    authMock.validateHigressSession.mockResolvedValue(false);
+    const res = await POST(postRequest());
+    expect(res.status).toBe(401);
+    expect(packageMock.installPluginPackage).not.toHaveBeenCalled();
+  });
+
   it('rejects non-multipart requests', async () => {
-    const res = await POST(new Request('http://x/api/dashboard/plugins', { method: 'POST' }));
+    authMock.validateHigressSession.mockResolvedValue(true);
+    const res = await POST(postRequest());
     expect(res.status).toBe(415);
   });
 
   it('installs a valid zip package and returns the manifest URL', async () => {
+    authMock.validateHigressSession.mockResolvedValue(true);
     packageMock.installPluginPackage.mockResolvedValue({
       id: 'alpha',
       manifestUrl: '/plugins/alpha/plugin.json',
     });
     const form = new FormData();
     form.append('file', new File(['zip-bytes'], 'alpha.zip', { type: 'application/zip' }));
-    const res = await POST(
-      new Request('http://x/api/dashboard/plugins', {
-        method: 'POST',
-        body: form,
-      })
-    );
+    const res = await POST(postRequest({ body: form }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.manifestUrl).toBe('/plugins/alpha/plugin.json');
   });
 
   it('maps manifest validation errors to a 400 with a readable message', async () => {
+    authMock.validateHigressSession.mockResolvedValue(true);
     packageMock.installPluginPackage.mockRejectedValue(new PluginManifestError('未找到 plugin.json'));
     const form = new FormData();
     form.append('file', new File(['zip-bytes'], 'bad.zip', { type: 'application/zip' }));
-    const res = await POST(
-      new Request('http://x/api/dashboard/plugins', {
-        method: 'POST',
-        body: form,
-      })
-    );
+    const res = await POST(postRequest({ body: form }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('未找到 plugin.json');
   });
 
   it('rejects an empty file', async () => {
+    authMock.validateHigressSession.mockResolvedValue(true);
     const form = new FormData();
     form.append('file', new File([], 'empty.zip', { type: 'application/zip' }));
-    const res = await POST(
-      new Request('http://x/api/dashboard/plugins', {
-        method: 'POST',
-        body: form,
-      })
-    );
+    const res = await POST(postRequest({ body: form }));
     expect(res.status).toBe(400);
   });
 });
