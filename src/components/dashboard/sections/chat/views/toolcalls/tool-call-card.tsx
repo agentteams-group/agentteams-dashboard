@@ -65,7 +65,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
   const lowConfidence = payload.confidence === 'low';
 
   return (
-    <section className={`my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`}>
+    <section className={`my-2 w-full overflow-hidden rounded-xl border border-l-4 ${accent} shadow-sm hover:shadow-md transition-shadow duration-200`}>
       <Button
         variant="ghost"
         size="sm"
@@ -117,9 +117,11 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
 
 function ToolValue({ label, value }: { label: string; value: unknown }) {
   return (
-    <div>
-      <p className="mb-1 text-[10px] font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-xs">{displayValue(value)}</pre>
+    <div className="rounded-lg bg-muted/40 border border-border/30">
+      <div className="px-3 py-1.5 border-b border-border/20">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+      </div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-foreground">{displayValue(value)}</pre>
     </div>
   );
 }

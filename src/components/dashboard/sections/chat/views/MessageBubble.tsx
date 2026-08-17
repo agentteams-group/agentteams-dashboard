@@ -256,7 +256,7 @@ export function MessageBubble({
 
   const bubbleClasses = [
     'w-fit max-w-[min(92%,72ch)] px-3.5 py-2 rounded-2xl text-sm break-words leading-relaxed',
-    'shadow-sm transition-shadow',
+    'shadow-sm hover:shadow-md transition-all duration-200',
     message.isMe
       ? 'bg-primary text-primary-foreground rounded-tr-sm'
       : 'bg-muted/80 text-foreground rounded-tl-sm border border-border/50',

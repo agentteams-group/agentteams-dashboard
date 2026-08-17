@@ -35,7 +35,7 @@ export function ThinkingCard({
   const resolvedTitle = title ?? (runtime && RUNTIME_LABELS[runtime] ? `${RUNTIME_LABELS[runtime]} · 思考过程` : '思考过程');
 
   return (
-    <div className="my-2 rounded-lg border bg-muted/30 overflow-hidden">
+    <div className="my-2 rounded-xl border bg-muted/30 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
       <Button
         variant="ghost"
         size="sm"

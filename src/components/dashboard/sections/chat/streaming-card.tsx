@@ -27,7 +27,7 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
   };
 
   return (
-    <div className="my-2 rounded-lg border border-l-4 border-l-blue-500 bg-blue-500/5 overflow-hidden">
+    <div className="my-2 rounded-xl border border-l-4 border-l-blue-500 bg-blue-500/5 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
       <Button
         variant="ghost"
         size="sm"

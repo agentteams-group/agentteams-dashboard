@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -98,6 +98,33 @@ function htmlToPlainText(html: string): string {
 function StreamingCursor() {
   return (
     <span className="inline-block w-[0.4em] h-[1em] ml-0.5 align-text-bottom rounded-sm bg-current animate-pulse" />
+  );
+}
+
+/** Typing effect: reveals text character by character during streaming. */
+function TypingEffect({ text, speed }: { text: string; speed?: number }) {
+  const [displayed, setDisplayed] = useState('');
+  const idx = useRef(0);
+
+  useEffect(() => {
+    setDisplayed('');
+    idx.current = 0;
+  }, [text]);
+
+  useEffect(() => {
+    if (idx.current >= text.length) return;
+    const timer = setTimeout(() => {
+      idx.current += 1;
+      setDisplayed(text.slice(0, idx.current));
+    }, speed ?? 12);
+    return () => clearTimeout(timer);
+  }, [text, speed, displayed.length]);
+
+  return (
+    <span>
+      {displayed}
+      <span className="inline-block w-[0.4em] h-[1em] ml-0.5 align-text-bottom rounded-sm bg-current animate-pulse" />
+    </span>
   );
 }
 
@@ -261,8 +288,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
         return (
           <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
-            {content}
-            <StreamingCursor />
+            <TypingEffect text={content} speed={10} />
           </div>
         );
       }
@@ -315,8 +341,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     return (
       <div className="matrix-message-content text-sm">
         <pre className="whitespace-pre-wrap break-words m-0 font-inherit text-inherit">
-          {plainContent}
-          <StreamingCursor />
+          <TypingEffect text={plainContent} speed={10} />
         </pre>
       </div>
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, LogIn, MessageSquare } from 'lucide-react';
+import { ArrowRight, LogIn, MessageSquare, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function ChatEmptyState({
@@ -13,9 +13,17 @@ export function ChatEmptyState({
   return (
     <div className="flex items-center justify-center h-full text-center p-8">
       <div className="max-w-md">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center mx-auto mb-5">
-          <MessageSquare className="w-7 h-7 text-primary" aria-hidden="true" />
+        {/* Illustration */}
+        <div className="relative w-24 h-24 mx-auto mb-6">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 to-primary/20 rounded-3xl rotate-6" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/15 to-emerald-500/15 rounded-2xl flex items-center justify-center">
+            <Bot className="w-10 h-10 text-primary" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
+            <MessageSquare className="w-4 h-4 text-emerald-50" />
+          </div>
         </div>
+
         <p className="text-[11px] uppercase tracking-[0.2em] text-primary/80 mb-2">Agent Workspace</p>
         <h3 className="font-semibold text-xl mb-2">选择一个会话开始协作</h3>
         <p className="text-sm text-muted-foreground">
