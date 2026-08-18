@@ -29,6 +29,30 @@ function StatusBadge({ status }: { status?: string }) {
   return <Badge className={className}>{statusLabel(status)}</Badge>;
 }
 
+/** Pending step glyph: static dashed ring (in_progress is the only spinning state). */
+function PendingGlyph() {
+  return (
+    <span
+      className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-dashed border-muted-foreground/50"
+      aria-hidden="true"
+    />
+  );
+}
+
+/** Step status glyph: completed = solid check, failed = cross, in_progress = spinner, pending = dashed ring. */
+function StepGlyph({ status }: { status?: string }) {
+  if (COMPLETE_STATUSES.has(status || '')) {
+    return <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden="true" />;
+  }
+  if (ERROR_STATUSES.has(status || '')) {
+    return <CircleX className="h-3.5 w-3.5 shrink-0 text-red-500" aria-hidden="true" />;
+  }
+  if (status === 'in_progress' || status === 'running') {
+    return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-500" aria-hidden="true" />;
+  }
+  return <PendingGlyph />;
+}
+
 export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
   const title = payload.title || payload.name || '工作流';
   const runId = payload.runId || payload.run_id;
@@ -72,17 +96,13 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
               </div>
               <Progress value={progress} aria-label={`执行进度 ${completedSteps}/${steps.length}`} />
               <div className="mt-2 space-y-1.5">
-                {steps.map((step, index) => {
-                  const complete = COMPLETE_STATUSES.has(step.status || '');
-                  const failed = ERROR_STATUSES.has(step.status || '');
-                  return (
-                    <div key={step.id || step.name || String(index)} className="flex items-center gap-2 text-xs">
-                      {complete ? <CircleCheck className="h-3.5 w-3.5 text-emerald-500" /> : failed ? <CircleX className="h-3.5 w-3.5 text-red-500" /> : <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />}
-                      <span className="min-w-0 flex-1 truncate">{itemLabel(step, `步骤 ${index + 1}`)}</span>
-                      <span className="text-muted-foreground">{statusLabel(step.status)}</span>
-                    </div>
-                  );
-                })}
+                {steps.map((step, index) => (
+                  <div key={step.id || step.name || String(index)} className="flex items-center gap-2 text-xs">
+                    <StepGlyph status={step.status} />
+                    <span className="min-w-0 flex-1 truncate">{itemLabel(step, `步骤 ${index + 1}`)}</span>
+                    <span className="text-muted-foreground">{statusLabel(step.status)}</span>
+                  </div>
+                ))}
               </div>
             </section>
           )}

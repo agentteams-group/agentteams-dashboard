@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -94,35 +94,29 @@ function htmlToPlainText(html: string): string {
     .replace(/&amp;/g, '&');
 }
 
-/** Trailing streaming cursor for the lightweight path. */
-function StreamingCursor() {
-  return (
-    <span className="inline-block w-[0.4em] h-[1em] ml-0.5 align-text-bottom rounded-sm bg-current animate-pulse" />
-  );
-}
-
 /** Typing effect: reveals text character by character during streaming. */
 function TypingEffect({ text, speed }: { text: string; speed?: number }) {
-  const [displayed, setDisplayed] = useState('');
-  const idx = useRef(0);
+  const [count, setCount] = useState(0);
+  const [seenText, setSeenText] = useState(text);
+
+  // Reset the typing head when the message text is replaced; streaming appends
+  // extend the same text (the new text starts with what we already saw), so
+  // they must keep the head where it is. Adjusting state during render is the
+  // documented pattern for deriving state from a changing prop.
+  if (seenText !== text && !text.startsWith(seenText)) {
+    setSeenText(text);
+    setCount(0);
+  }
 
   useEffect(() => {
-    setDisplayed('');
-    idx.current = 0;
-  }, [text]);
-
-  useEffect(() => {
-    if (idx.current >= text.length) return;
-    const timer = setTimeout(() => {
-      idx.current += 1;
-      setDisplayed(text.slice(0, idx.current));
-    }, speed ?? 12);
+    if (count >= text.length) return;
+    const timer = setTimeout(() => setCount((c) => c + 1), speed ?? 12);
     return () => clearTimeout(timer);
-  }, [text, speed, displayed.length]);
+  }, [count, text.length, speed]);
 
   return (
     <span>
-      {displayed}
+      {text.slice(0, count)}
       <span className="inline-block w-[0.4em] h-[1em] ml-0.5 align-text-bottom rounded-sm bg-current animate-pulse" />
     </span>
   );

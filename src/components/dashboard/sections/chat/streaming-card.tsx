@@ -16,6 +16,11 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
   const result = payload.result;
   const status = typeof payload.status === 'string' ? payload.status : undefined;
   const open = userOpen ?? (status === 'running');
+  const isError = status === 'error' || status === 'failed';
+  const isRunning = status === 'running' || status === 'in_progress';
+  const errorSummary = isError && typeof result === 'string'
+    ? result.split('\n').map((line) => line.trim()).find(Boolean)
+    : null;
 
   const formatJson = (data: unknown): string => {
     if (typeof data === 'string') return data;
@@ -35,12 +40,17 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
         onClick={() => setUserOpen((previous) => !(previous ?? (status === 'running')))}
       >
         <span className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400">
-          <Wrench className="w-3.5 h-3.5" />
+          <span className="relative shrink-0">
+            <Wrench className={`w-3.5 h-3.5 ${isRunning ? 'animate-pulse' : ''}`} />
+            {isError && (
+              <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden="true" />
+            )}
+          </span>
           {toolName}
           {status && (
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
               status === 'success' ? 'bg-green-500/20 text-green-600' :
-              status === 'error' ? 'bg-red-500/20 text-red-600' :
+              isError ? 'bg-red-500/20 text-red-600' :
               'bg-blue-500/20 text-blue-600'
             }`}>
               {status}
@@ -53,11 +63,19 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
         )}
       </Button>
+      {isError && errorSummary && !open && (
+        <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 px-3 py-1.5 text-[11px] text-red-600">
+          {errorSummary}
+        </p>
+      )}
       {open && (
         <div className="px-3 pb-3 space-y-2">
           {args !== undefined && (
             <div>
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">参数</p>
+              <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground mb-1">
+                <span className="rounded px-1.5 text-[9px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">IN</span>
+                参数
+              </p>
               <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 overflow-x-auto">
                 {formatJson(args)}
               </pre>
@@ -65,8 +83,11 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
           )}
           {result !== undefined && (
             <div>
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">结果</p>
-              <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 overflow-x-auto">
+              <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground mb-1">
+                <span className={`rounded px-1.5 text-[9px] font-semibold border ${isError ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-sky-500/10 text-sky-600 border-sky-500/20'}`}>OUT</span>
+                结果
+              </p>
+              <pre className={`text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 overflow-x-auto ${isError ? 'text-red-600' : ''}`}>
                 {formatJson(result)}
               </pre>
             </div>

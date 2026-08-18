@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownMessage } from './markdown-message';
 
@@ -7,7 +7,10 @@ vi.mock('./mermaid-renderer', () => ({
   MermaidRenderer: () => null,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('MarkdownMessage', () => {
   it('renders plain text through markdown', () => {
@@ -23,11 +26,37 @@ describe('MarkdownMessage', () => {
   });
 
   it('streaming + plain text uses the lightweight pre path with a cursor', () => {
+    vi.useFakeTimers();
     const { container } = render(<MarkdownMessage content="正在生成答案" isStreaming />);
+
+    // Advance the typing effect to its full text (chained per-character timeouts;
+    // each advance must flush inside its own act so the re-scheduled timer is seen).
+    for (let i = 0; i < 10; i++) {
+      act(() => { vi.advanceTimersByTime(12); });
+    }
 
     expect(container.querySelector('pre.whitespace-pre-wrap')).toBeInTheDocument();
     expect(screen.getByText('正在生成答案')).toBeInTheDocument();
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+  });
+
+  it('streaming appends keep the typing head instead of resetting', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<MarkdownMessage content="正在生成" isStreaming />);
+
+    // Let the head finish the first word (4 chars), then stream an appended tail.
+    for (let i = 0; i < 10; i++) {
+      act(() => { vi.advanceTimersByTime(12); });
+    }
+    expect(screen.getByText('正在生成')).toBeInTheDocument();
+
+    rerender(<MarkdownMessage content="正在生成答案" isStreaming />);
+    // An append must not reset the head to zero: two more ticks (2 chars) are
+    // enough to land the full 6-char text only if the head kept its position.
+    for (let i = 0; i < 2; i++) {
+      act(() => { vi.advanceTimersByTime(12); });
+    }
+    expect(screen.getByText('正在生成答案')).toBeInTheDocument();
   });
 
   it('streaming + block-level features keeps the full markdown renderer', () => {
