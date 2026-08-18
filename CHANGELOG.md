@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.2.3.1 (2026-08-18)
+
+### New Features
+
+- **任务看板主数据源切换为 Controller API（D5/D8）**：看板数据优先从 Controller API 拉取，MinIO 作为回退源，提升数据一致性与可用性
+- **Chat 空状态插图**：Bot 渐变插图 + 消息角标，替代原单一图标
+- **流式打字机效果**：流式输出逐字符展示 + 光标动画；纯文本走轻量渲染路径，块级内容走完整 Markdown 渲染
+- **工具卡片结构化升级**：
+  - 状态点 + 状态徽标变色（成功绿 / 失败红 / 进行中紫），折叠态直接展示错误首行摘要
+  - IN/OUT 输入输出区块徽标
+  - streaming / thinking 卡片统一圆角与悬停阴影
+  - workflow 步骤字形三态：完成勾 / 失败叉 / 进行中转圈 / 待执行虚线环
+
+### Bug Fixes
+
+- 修复流式追加时打字机头部重置（每追加一个字符就从头部重新打字）
+- 修复 workflow 待执行步骤误显示转圈动画
+- 修复 CI 失败：清理未使用的 `StreamingCursor`，并将 TypingEffect 改为 render-phase 状态调整，规避 eslint `react-hooks/set-state-in-effect` 报错
+
+### Contributors
+
+- @nillikechatchat（yuanhenglizhen2050@163.com）
+- @LUOSENGWA（101017075+LUOSENGWA）
+- @monkeycode-ai（平台 AI 协作者）
+
+### Version Updates
+
+- Dashboard 发布标签从 `v1.2.3` 更新至 `v1.2.3.1`
+
 ## v1.2.4 (2026-08-14)
 
 ### New Features
