@@ -194,7 +194,7 @@ describe('getProjectWorkflow', () => {
     expect(wf.pause_reason).toBe('waiting on review');
   });
 
-  it('passes ?team= when teamId is provided (409 disambiguation, #1169)', async () => {
+  it('passes ?team= when teamId is provided (409 disambiguation)', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ nodes: [], edges: [], values: {} }), { status: 200 }),
     );
@@ -297,5 +297,46 @@ describe('getTaskArtifactUrl', () => {
     expect(getTaskArtifactUrl('a/b', 't t')).toBe(
       '/api/agentteams/projects/a%2Fb/tasks/t%20t/artifact',
     );
+  });
+});
+
+describe('getProjectHistory', () => {
+  it('returns snapshots newest-first as strings', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          project_id: 'p1',
+          snapshots: [
+            { timestamp: '1723785123456789020' },
+            { timestamp: '1723785123456789010' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    ) as never;
+
+    const { getProjectHistory } = await import('./agentteams-projects-api');
+    const data = await getProjectHistory('p1');
+    expect(data.project_id).toBe('p1');
+    expect(data.snapshots).toHaveLength(2);
+    expect(data.snapshots[0].timestamp).toBe('1723785123456789020');
+  });
+
+  it('passes teamId as a query parameter', async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ project_id: 'p1', snapshots: [] }), {
+        status: 200,
+      }),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    const { getProjectHistory } = await import('./agentteams-projects-api');
+    await getProjectHistory('p1', 'biz-team');
+    // Structural assertion (not a substring), pinning the real request
+    // shape: projects-api builds URLs by direct concatenation (no
+    // apiUrl trailing slash — unlike the worker-checkpoints client).
+    const url = new URL(String(spy.mock.calls[0][0]), 'http://localhost');
+    expect(url.pathname).toBe('/api/agentteams/projects/p1/history');
+    expect(url.searchParams.get('team')).toBe('biz-team');
   });
 });
