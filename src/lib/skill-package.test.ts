@@ -150,21 +150,18 @@ describe('skillObjectKey', () => {
     expect(() => skillObjectKey('w', 'skill', '/etc/passwd')).toThrow();
   });
 
-  it('routes per-runtime subpaths so QwenPaw / Copaw find their files', () => {
-    // The default (no runtime) keeps the legacy `skills/` location for
-    // backwards compatibility with any already-deployed workers.
+  it('always writes to the canonical skills/ prefix regardless of runtime', () => {
+    // The Dashboard is the source of truth for the canonical
+    // `agents/{worker}/skills/{skill}/` prefix. The Worker reconciler is
+    // responsible for mirroring the package to runtime-specific paths
+    // (e.g. .qwenpaw/workspaces/default/skills/), so per-runtime
+    // subpaths have been removed from the Dashboard.
     expect(skillObjectKey('w', 'skill', 'SKILL.md')).toBe('agents/w/skills/skill/SKILL.md');
     expect(skillObjectKey('w', 'skill', 'SKILL.md', 'openclaw')).toBe('agents/w/skills/skill/SKILL.md');
     expect(skillObjectKey('w', 'skill', 'SKILL.md', 'hermes')).toBe('agents/w/skills/skill/SKILL.md');
     expect(skillObjectKey('w', 'skill', 'SKILL.md', 'openhuman')).toBe('agents/w/skills/skill/SKILL.md');
-    // QwenPaw reads from .qwenpaw/workspaces/default/skills/
-    expect(skillObjectKey('w', 'skill', 'SKILL.md', 'qwenpaw')).toBe(
-      'agents/w/.qwenpaw/workspaces/default/skills/skill/SKILL.md',
-    );
-    // Copaw reads from .copaw/workspaces/default/skills/
-    expect(skillObjectKey('w', 'skill', 'SKILL.md', 'copaw')).toBe(
-      'agents/w/.copaw/workspaces/default/skills/skill/SKILL.md',
-    );
+    expect(skillObjectKey('w', 'skill', 'SKILL.md', 'qwenpaw')).toBe('agents/w/skills/skill/SKILL.md');
+    expect(skillObjectKey('w', 'skill', 'SKILL.md', 'copaw')).toBe('agents/w/skills/skill/SKILL.md');
   });
 });
 
@@ -173,13 +170,9 @@ describe('workerSkillsPrefix', () => {
     expect(workerSkillsPrefix('worker-1')).toBe('agents/worker-1/skills/');
   });
 
-  it('scopes the prefix by runtime', () => {
-    expect(workerSkillsPrefix('worker-1', 'qwenpaw')).toBe(
-      'agents/worker-1/.qwenpaw/workspaces/default/skills/',
-    );
-    expect(workerSkillsPrefix('worker-1', 'copaw')).toBe(
-      'agents/worker-1/.copaw/workspaces/default/skills/',
-    );
+  it('returns the canonical skills/ prefix for every runtime', () => {
+    expect(workerSkillsPrefix('worker-1', 'qwenpaw')).toBe('agents/worker-1/skills/');
+    expect(workerSkillsPrefix('worker-1', 'copaw')).toBe('agents/worker-1/skills/');
     expect(workerSkillsPrefix('worker-1', 'openclaw')).toBe('agents/worker-1/skills/');
   });
 

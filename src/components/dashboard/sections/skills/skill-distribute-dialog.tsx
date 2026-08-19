@@ -131,14 +131,43 @@ export function SkillDistributeDialog({
           )}
 
           {uploadMutation.isSuccess && uploadMutation.data && (
-            <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
-              <Check className="h-4 w-4 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">{uploadMutation.data.skillName}</p>
-                <p className="text-xs opacity-80">{uploadMutation.data.description}</p>
-                <p className="text-xs opacity-75 mt-1">{uploadMutation.data.note}</p>
+            uploadMutation.data.specUpdated && !uploadMutation.data.reloadError ? (
+              <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">{uploadMutation.data.skillName}</p>
+                  <p className="text-xs opacity-80">{uploadMutation.data.description}</p>
+                  <p className="text-xs opacity-75 mt-1">{uploadMutation.data.note}</p>
+                </div>
               </div>
-            </div>
+            ) : uploadMutation.data.specUpdated ? (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">技能已就位，但 Worker 重启未确认</p>
+                  <p className="text-xs opacity-80">
+                    {uploadMutation.data.skillName} · 文件与 spec.skills 已写入
+                  </p>
+                  <p className="text-xs opacity-75 mt-1">
+                    {uploadMutation.data.reloadError ?? '稍后会自动 reload，或手动触发 ensure-ready。'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">技能文件已上传，但声明式分配更新失败</p>
+                  <p className="text-xs opacity-80">
+                    {uploadMutation.data.skillName} ·{' '}
+                    {uploadMutation.data.filesCount} 个文件
+                  </p>
+                  <p className="text-xs opacity-75 mt-1">
+                    {uploadMutation.data.specError ?? '请稍后重试，或手动刷新 Worker 详情。'}
+                  </p>
+                </div>
+              </div>
+            )
           )}
 
           {selectedWorker && currentSkills !== undefined && currentSkills.length > 0 && (

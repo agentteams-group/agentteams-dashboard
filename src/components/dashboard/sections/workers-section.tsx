@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -143,6 +143,19 @@ function mcpServersEqual(
   return a.every((s, i) => s.name === b[i].name && s.url === b[i].url && s.transport === b[i].transport);
 }
 
+function skillChipClass(done: boolean, failed: boolean, specFailed: boolean): string {
+  if (done && !specFailed) {
+    return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+  }
+  if (failed) {
+    return 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300';
+  }
+  if (specFailed) {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300';
+  }
+  return 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300';
+}
+
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
   const { isConnected } = useAgentTeamsStore();
@@ -165,7 +178,7 @@ export function WorkersSection() {
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ skillName: string; description: string; filesCount: number; note?: string } | null>(null);
-    const [syncingSkills, setSyncingSkills] = useState<{ workerName: string; skills: string[]; done: string[]; failed: string[]; restarting?: boolean; restarted?: boolean } | null>(null);
+    const [syncingSkills, setSyncingSkills] = useState<{ workerName: string; skills: string[]; done: string[]; failed: string[]; specFailed?: string[]; specError?: string; restarting?: boolean; restarted?: boolean } | null>(null);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
 
@@ -353,12 +366,13 @@ export function WorkersSection() {
     const newSkills = skillNames.filter((s) => !existing.includes(s));
     if (!newSkills.length) return;
 
-    setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [] });
+    setSyncingSkills({ workerName, skills: newSkills, done: [], failed: [], specFailed: [] });
 
     const targetWorker = workers?.find((w) => w.name === workerName);
     const uploadedSkillNames: string[] = [];
 
-    // Phase 1: upload all skills without restarting
+    // Phase 1: upload all skills without restarting. A failed upload must
+    // not leak into spec.skills.
     for (const skillName of newSkills) {
       try {
         let file: File;
@@ -385,13 +399,34 @@ export function WorkersSection() {
       return;
     }
 
-    // Phase 2: update spec.skills
+    // Phase 2: update spec.skills, idempotently and against the freshest
+    // controller snapshot. Failures here are surfaced as a partial failure
+    // banner instead of being silently swallowed.
+    let specUpdated = false;
+    let specError: string | undefined;
     try {
-      const existingSpecSkills = targetWorker?.skills ?? [];
-      const merged = [...new Set([...existingSpecSkills, ...uploadedSkillNames])];
-      await agentteamsApi.updateWorker(workerName, { skills: merged });
-    } catch {
-      // spec.skills update is best-effort; files are already in place.
+      const latest = await agentteamsApi.getWorker(workerName);
+      const existingSpecSkills = Array.isArray(latest.skills) ? latest.skills : [];
+      const onlyMissing = uploadedSkillNames.filter((s) => !existingSpecSkills.includes(s));
+      if (onlyMissing.length > 0) {
+        const merged = [...existingSpecSkills, ...onlyMissing];
+        await agentteamsApi.updateWorker(workerName, { skills: merged });
+      }
+      specUpdated = true;
+    } catch (err) {
+      specError = err instanceof Error ? err.message : 'spec.skills 更新失败';
+    }
+
+    if (!specUpdated) {
+      setSyncingSkills((prev) =>
+        prev
+          ? { ...prev, specFailed: [...(prev.specFailed ?? []), ...uploadedSkillNames], specError }
+          : prev,
+      );
+      toast.warning(
+        `技能文件已写入，但 spec.skills 更新失败: ${specError ?? 'unknown'}`,
+      );
+      return;
     }
 
     // Phase 3: single restart
@@ -562,28 +597,43 @@ export function WorkersSection() {
   return (
     <div className="space-y-6">
       {syncingSkills && (
-        <div className={`rounded-md border p-3 text-sm ${syncingSkills.restarted ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>
-          <div className="flex items-center gap-2">
-            {syncingSkills.restarted ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
-            <span>
-              {syncingSkills.restarted
-                ? `Worker "${syncingSkills.workerName}" 技能安装完成`
-                : `正在为 Worker "${syncingSkills.workerName}" 安装技能...`}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {syncingSkills.skills.map((s) => {
-              const done = syncingSkills.done.includes(s);
-              const failed = syncingSkills.failed.includes(s);
-              return (
-                <span key={s} className={`flex items-center gap-1 px-2 py-0.5 rounded ${done ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : failed ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300'}`}>
-                  {done ? <CheckCircle className="h-3 w-3" /> : failed ? <XCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}
-                  {s}
-                </span>
-              );
-            })}
-          </div>
-        </div>
+        (() => {
+          const isPartial = !!syncingSkills.specFailed?.length;
+          const tone = syncingSkills.restarted
+            ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200'
+            : isPartial
+              ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'
+              : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200';
+          const title = syncingSkills.restarted
+            ? `Worker "${syncingSkills.workerName}" 技能安装完成`
+            : isPartial
+              ? `Worker "${syncingSkills.workerName}" 技能文件已上传，但 spec.skills 更新失败`
+              : `正在为 Worker "${syncingSkills.workerName}" 安装技能...`;
+          return (
+            <div className={`rounded-md border p-3 text-sm ${tone}`}>
+              <div className="flex items-center gap-2">
+                {syncingSkills.restarted ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
+                <span>{title}</span>
+              </div>
+              {isPartial && (
+                <p className="mt-1 text-xs opacity-80">{syncingSkills.specError ?? '请稍后重试'}</p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                {syncingSkills.skills.map((s) => {
+                  const done = syncingSkills.done.includes(s);
+                  const failed = syncingSkills.failed.includes(s);
+                  const specFailed = syncingSkills.specFailed?.includes(s);
+                  return (
+                    <span key={s} className={`flex items-center gap-1 px-2 py-0.5 rounded ${skillChipClass(done, failed, !!specFailed)}`}>
+                      {done && !specFailed ? <CheckCircle className="h-3 w-3" /> : failed ? <XCircle className="h-3 w-3" /> : specFailed ? <AlertCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}
+                      {s}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()
       )}
 
       <SectionHeader

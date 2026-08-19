@@ -30,21 +30,38 @@ async function getSkillMetadata(client: any, skillName: string): Promise<SkillEn
 
 async function listSkillFiles(client: any, skillName: string): Promise<string[]> {
   const prefix = `${skillName}/`;
-  const files: string[] = [];
-  const stream = client.listObjects(SKILLS_BUCKET, prefix, false);
+  // Recursive listing is required: skills ship nested resources like
+  // `scripts/**` and `references/**` that must be preserved when the package
+  // is re-zipped for Worker distribution. The previous non-recursive mode
+  // silently dropped everything under sub-directories.
+  const stream = client.listObjects(SKILLS_BUCKET, prefix, true);
 
+  const files: string[] = [];
   for await (const obj of stream) {
-    if (!obj.name) continue;
-    files.push(obj.name.replace(prefix, ''));
+    if (typeof obj.name !== 'string') continue;
+    if (!obj.name.startsWith(prefix)) continue;
+    const relative = obj.name.slice(prefix.length);
+    if (!relative) continue;
+    // Skip directory placeholder objects some backends emit.
+    if (relative.endsWith('/')) continue;
+    files.push(relative);
   }
 
   return files.sort();
 }
 
-/** Returns true when cached files appear to be from a monorepo (multiple SKILL.md). */
+/**
+ * Returns true when cached files appear to be from a monorepo (multiple
+ * SKILL.md at the archive root, e.g. `<dir>/SKILL.md`). Nested SKILL.md
+ * files (e.g. `references/inner/SKILL.md`) are NOT counted: those are
+ * legitimate single-skill packages that ship documentation or examples.
+ */
 function isMonorepoCache(fileNames: string[]): boolean {
-  const skillMds = fileNames.filter((f) => f.endsWith('SKILL.md'));
-  return skillMds.length > 1;
+  // Archive root SKILL.md or top-level `<dir>/SKILL.md` patterns.
+  const rootSkillMds = fileNames.filter(
+    (f) => f === 'SKILL.md' || /^[^\/]+\/SKILL\.md$/.test(f),
+  );
+  return rootSkillMds.length > 1;
 }
 
 async function readObject(client: any, skillName: string, relativePath: string): Promise<Buffer> {

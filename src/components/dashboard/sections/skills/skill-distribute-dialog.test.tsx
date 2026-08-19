@@ -19,11 +19,14 @@ vi.mock('@/hooks/use-agentteams-worker-skills', () => ({
       description: 'A test skill.',
       filesCount: 1,
       note: 'Worker 最长约 60 秒内自动加载',
+      specUpdated: true,
     }),
     isPending: false,
     isError: false,
     isSuccess: false,
     error: null,
+    data: undefined,
+    reset: vi.fn(),
   }),
 }));
 

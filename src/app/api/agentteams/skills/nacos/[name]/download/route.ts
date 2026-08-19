@@ -58,22 +58,24 @@ export async function GET(
       return NextResponse.json({ error: '此接口仅用于下载 Nacos 来源的技能' }, { status: 400 });
     }
 
-    // Check if content is already cached in MinIO
+    // Check if content is already cached in MinIO. Use a recursive listing
+    // so sub-directories (scripts/, references/, …) are picked up when we
+    // rebuild the ZIP — a non-recursive listing used to silently drop every
+    // nested file and leave the consumer with only SKILL.md.
+    const prefix = `${name}/`;
     const existingFiles: string[] = [];
-    const existingStream = client.listObjects(SKILLS_BUCKET, `${name}/`, false);
+    const existingStream = client.listObjects(SKILLS_BUCKET, prefix, true);
     for await (const obj of existingStream) {
-      if (obj.name) existingFiles.push(obj.name);
+      if (typeof obj.name !== 'string') continue;
+      if (!obj.name.startsWith(prefix)) continue;
+      const relative = obj.name.slice(prefix.length);
+      if (!relative || relative.endsWith('/')) continue;
+      existingFiles.push(relative);
     }
 
     if (existingFiles.length > 0) {
       // Reuse existing cached content
-      const fileNames: string[] = [];
-      const readStream = client.listObjects(SKILLS_BUCKET, `${name}/`, false);
-      for await (const obj of readStream) {
-        if (obj.name && obj.name !== `${name}/`) {
-          fileNames.push(obj.name.replace(`${name}/`, ''));
-        }
-      }
+      const fileNames = existingFiles.slice().sort();
       if (fileNames.length === 0) {
         return NextResponse.json({ error: '技能文件不存在' }, { status: 404 });
       }

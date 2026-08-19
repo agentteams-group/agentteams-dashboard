@@ -33,22 +33,27 @@ export async function GET(
   }
 
   try {
-    // The frontend passes the worker's runtime via ?runtime= so we list
-    // skills from the correct workspace path. Falls back to the canonical
-    // skills/ directory when omitted.
+    // Every runtime shares the canonical `agents/{workerName}/skills/`
+    // directory — the `runtime` query parameter is preserved only so
+    // existing Dashboard callers don't have to change, but it no longer
+    // changes the prefix we read from.
     const runtime = request.nextUrl.searchParams.get('runtime') || null;
     const prefix = workerSkillsPrefix(name, runtime);
     const skills = new Set<string>();
 
-    const stream = client.listObjects(bucket, prefix, false);
+    // Recursive listing so sub-directories (e.g. `skills/<name>/scripts/`)
+    // are enumerated by their first segment just like the top-level skills.
+    const stream = client.listObjects(bucket, prefix, true);
 
     await new Promise<void>((resolve, reject) => {
       stream.on('data', (obj: Record<string, unknown>) => {
-        if (typeof obj.prefix === 'string' && obj.prefix.startsWith(prefix)) {
-          const remainder = obj.prefix.slice(prefix.length);
-          const firstSeg = remainder.replace(/\/+$/, '').split('/')[0];
-          if (firstSeg) skills.add(firstSeg);
-        }
+        if (typeof obj.name !== 'string' || !obj.name.startsWith(prefix)) return;
+        const remainder = obj.name.slice(prefix.length);
+        if (!remainder) return;
+        // Skip directory placeholder entries.
+        if (remainder.endsWith('/')) return;
+        const firstSeg = remainder.split('/')[0];
+        if (firstSeg) skills.add(firstSeg);
       });
       stream.on('error', reject);
       stream.on('end', resolve);
@@ -105,9 +110,11 @@ export async function POST(
     }
 
     // The frontend includes the worker's runtime in the multipart body when
-    // known. Different runtimes read skills from different on-disk paths
-    // (e.g. QwenPaw from `.qwenpaw/workspaces/default/skills/`) which we
-    // mirror in MinIO so the worker side finds the files where it expects.
+    // known. Runtime is currently unused for path selection — the canonical
+    // `agents/{workerName}/skills/{skillName}/` prefix is shared by every
+    // runtime and the Worker reconciler is responsible for materialising any
+    // runtime-specific mirror. We still echo it back so clients that log the
+    // response can tell which runtime received the upload.
     const runtime = (form.get('runtime') as string | null) || null;
 
     for (const f of parsed.files) {
@@ -115,6 +122,57 @@ export async function POST(
       await client.putObject(bucket, key, Buffer.from(f.data), f.data.byteLength, {
         'Content-Type': 'application/octet-stream',
       });
+    }
+
+    // Verify the canonical write actually landed. The Worker reconciler and
+    // any downstream `spec.skills` update rely on at least the SKILL.md
+    // being present, AND every file we attempted to write making it to
+    // storage — a partial upload (e.g. mid-stream abort) used to be
+    // reported as success and silently broke Worker reconcile.
+    const canonicalPrefix = workerSkillsPrefix(name);
+    const skillRootPrefix = `${canonicalPrefix}${parsed.skillName}/`;
+    const skillMdKey = `${skillRootPrefix}SKILL.md`;
+
+    let skillMdOk = false;
+    try {
+      await client.statObject(bucket, skillMdKey);
+      skillMdOk = true;
+    } catch {
+      skillMdOk = false;
+    }
+    if (!skillMdOk) {
+      return NextResponse.json(
+        {
+          error: '技能包已上传但 SKILL.md 验证失败，请重试或检查对象存储',
+        },
+        { status: 502 },
+      );
+    }
+
+    // Cross-check the recursive object count against the parsed file count.
+    // The expected count includes SKILL.md plus every other file. Directories
+    // in the listing are ignored.
+    const expectedCount = parsed.files.length;
+    let observedCount = 0;
+    const listStream = client.listObjects(bucket, skillRootPrefix, true);
+    await new Promise<void>((resolve, reject) => {
+      listStream.on('data', (obj: Record<string, unknown>) => {
+        if (typeof obj.name !== 'string' || !obj.name.startsWith(skillRootPrefix)) return;
+        const relative = obj.name.slice(skillRootPrefix.length);
+        if (!relative || relative.endsWith('/')) return;
+        observedCount += 1;
+      });
+      listStream.on('error', reject);
+      listStream.on('end', resolve);
+    });
+
+    if (observedCount !== expectedCount) {
+      return NextResponse.json(
+        {
+          error: `技能包落盘不完整：预期 ${expectedCount} 个文件，实际发现 ${observedCount} 个，请重试。`,
+        },
+        { status: 502 },
+      );
     }
 
     // When ?restart=false the caller will batch multiple skill uploads

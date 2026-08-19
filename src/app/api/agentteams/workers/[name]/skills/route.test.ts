@@ -24,14 +24,39 @@ vi.mock('@/lib/worker-restart', () => ({
 
 // Mock minio-client.
 vi.mock('@/lib/minio-client', () => {
-  const mockClient = {
-    listObjects: () => ({
-      on: (event: string, _cb: (..._args: unknown[]) => void) => {
-        if (event === 'end') setTimeout(_cb, 0);
-        return mockClient;
+  const putObject = vi.fn().mockResolvedValue(undefined);
+  const statObject = vi.fn().mockResolvedValue({});
+  // listObjects returns a stream whose `data` events echo back whatever
+  // keys putObject has been called with since the previous listObjects
+  // call. The route POST handler relies on the recursive listing to
+  // cross-check the upload count, while the GET handler reuses the
+  // same stream to enumerate skills. We snapshot (and clear) the
+  // pending keys at the start of each listing so cross-test leakage
+  // doesn't pollute the count.
+  let pendingKeys: string[] = [];
+  putObject.mockImplementation((_bucket: string, key: string) => {
+    pendingKeys.push(key);
+    return Promise.resolve(undefined);
+  });
+  function makeStream() {
+    const snapshot = pendingKeys;
+    pendingKeys = [];
+    return {
+      on: (event: string, cb: (..._args: unknown[]) => void) => {
+        if (event === 'data') {
+          for (const key of snapshot) {
+            setTimeout(() => cb({ name: key }), 0);
+          }
+        }
+        if (event === 'end') setTimeout(cb, 0);
+        return makeStream();
       },
-    }),
-    putObject: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+  const mockClient = {
+    listObjects: () => makeStream(),
+    putObject,
+    statObject,
   };
   return {
     createMinioClient: () => mockClient,
@@ -106,6 +131,29 @@ describe('POST /workers/[name]/skills', () => {
     expect(json).toHaveProperty('success', true);
     expect(json).toHaveProperty('skillName', 'test-skill');
     expect(json).toHaveProperty('description', 'A test skill.');
+  });
+
+  it('writes the package to the canonical skills/ prefix (no runtime subpath)', async () => {
+    // Regression: per-runtime subpaths were removed so the AT reconciler
+    // can rely on a single canonical location per worker.
+    const { createMinioClient } = await import('@/lib/minio-client');
+    const client = createMinioClient() as unknown as { putObject: ReturnType<typeof vi.fn> };
+    const req = buildMultipartRequest('worker-1', validZip);
+    const res = await POST(req, { params: Promise.resolve({ name: 'worker-1' }) });
+    expect(res.status).toBe(200);
+    const key = client.putObject.mock.calls[0]?.[1] as string;
+    expect(key).toBe('agents/worker-1/skills/test-skill/SKILL.md');
+  });
+
+  it('returns 502 when the SKILL.md verification fails after upload', async () => {
+    const { createMinioClient } = await import('@/lib/minio-client');
+    const client = createMinioClient() as unknown as { statObject: ReturnType<typeof vi.fn> };
+    client.statObject.mockRejectedValueOnce(new Error('not found'));
+    const req = buildMultipartRequest('worker-1', validZip);
+    const res = await POST(req, { params: Promise.resolve({ name: 'worker-1' }) });
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toContain('SKILL.md');
   });
 
   it('rejects a ZIP missing SKILL.md', async () => {

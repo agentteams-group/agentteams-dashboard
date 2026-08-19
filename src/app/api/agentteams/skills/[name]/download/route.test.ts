@@ -198,4 +198,51 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
       new TextDecoder().decode(scriptContent),
     );
   });
+
+  it('recursively lists nested files (scripts/, references/ nested subdirs)', async () => {
+    // Regression: previously listObjects was called with `recursive=false`,
+    // which silently dropped everything under sub-directories. After
+    // switching to recursive mode the rebuilt ZIP must contain every
+    // nested file with the correct relative path.
+    const metadata = {
+      name: 'sample-skill',
+      description: 'Sample',
+      source: 'custom',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      fileCount: 3,
+    };
+    const marker = new TextEncoder().encode('marker-payload');
+    const probe = new TextEncoder().encode('echo nested');
+    // `readObject` walks the list after sorting, so the bytes must be
+    // mocked in the same order: SKILL.md → references/nested/marker.txt →
+    // scripts/probe.sh.
+    mockGet
+      .mockResolvedValueOnce(makeStream(new TextEncoder().encode(JSON.stringify(metadata))))
+      .mockResolvedValueOnce(makeStream(validSkillMd))
+      .mockResolvedValueOnce(makeStream(marker))
+      .mockResolvedValueOnce(makeStream(probe));
+    mockList.mockReturnValue(
+      makeListIterator([
+        { name: 'sample-skill/SKILL.md' },
+        { name: 'sample-skill/scripts/probe.sh' },
+        { name: 'sample-skill/references/nested/marker.txt' },
+      ]),
+    );
+
+    const res = await GET(buildRequest('sample-skill'), { params: Promise.resolve({ name: 'sample-skill' }) });
+    expect(res.status).toBe(200);
+    // The recursive flag must be set so sub-directories are enumerated.
+    expect(mockList).toHaveBeenCalledWith(expect.anything(), 'sample-skill/', true);
+
+    const buffer = await res.arrayBuffer();
+    const { unzipSync } = await import('fflate') as any;
+    const entries = unzipSync(new Uint8Array(buffer));
+    const names = Object.keys(entries).sort();
+    expect(names).toEqual(
+      ['SKILL.md', 'references/nested/marker.txt', 'scripts/probe.sh'].sort(),
+    );
+    expect(new TextDecoder().decode(entries['scripts/probe.sh'])).toBe('echo nested');
+    expect(new TextDecoder().decode(entries['references/nested/marker.txt'])).toBe('marker-payload');
+  });
 });

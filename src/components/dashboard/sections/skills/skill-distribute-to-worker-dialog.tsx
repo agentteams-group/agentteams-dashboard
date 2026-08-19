@@ -13,7 +13,14 @@ import {
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { agentteamsApi } from '@/lib/agentteams-api';
 
-type WorkerStatus = 'pending' | 'uploading' | 'restarting' | 'done' | 'failed';
+type WorkerStatus =
+  | 'pending'
+  | 'uploading'
+  | 'uploading-done'
+  | 'spec-failed'
+  | 'restarting'
+  | 'done'
+  | 'failed';
 
 interface WorkerDistributeState {
   name: string;
@@ -53,12 +60,25 @@ export function SkillDistributeToWorkerDialog({
     );
   }, []);
 
+  /**
+   * Read the worker's current `spec.skills` straight from the controller so
+   * we never lose a concurrent insert made by another Dashboard session. The
+   * page-level `useWorkers()` snapshot can be minutes stale and using it
+   * here would clobber skills added by another tab.
+   */
+  const fetchLatestSpecSkills = useCallback(
+    async (workerName: string): Promise<string[]> => {
+      const latest = await agentteamsApi.getWorker(workerName);
+      return Array.isArray(latest.skills) ? latest.skills : [];
+    },
+    [],
+  );
+
   const handleDistribute = useCallback(async () => {
     if (!selectedWorkers.length) return;
 
     setError(null);
 
-    // Step 1: Download skill once
     setStep('downloading');
     let file: File;
     try {
@@ -73,7 +93,6 @@ export function SkillDistributeToWorkerDialog({
       return;
     }
 
-    // Step 2: Upload to all workers without restarting
     setStep('uploading');
     const initialStates: WorkerDistributeState[] = selectedWorkers.map((name) => ({
       name,
@@ -81,15 +100,31 @@ export function SkillDistributeToWorkerDialog({
     }));
     setWorkerStates([...initialStates]);
 
-    const uploadedOk: string[] = [];
+    type PerWorkerResult = {
+      uploaded: boolean;
+      uploadedSkillName: string | null;
+      fileNote: string;
+      specUpdated: boolean;
+      specError?: string;
+    };
 
+    const perWorker: Record<string, PerWorkerResult> = {};
     for (const workerName of selectedWorkers) {
       const targetWorker = workers.find((w) => w.name === workerName);
+      perWorker[workerName] = {
+        uploaded: false,
+        uploadedSkillName: null,
+        fileNote: '',
+        specUpdated: false,
+      };
 
       setWorkerStates((prev) =>
-        prev.map((s) => (s.name === workerName ? { ...s, status: 'uploading' as WorkerStatus } : s))
+        prev.map((s) => (s.name === workerName ? { ...s, status: 'uploading' as WorkerStatus } : s)),
       );
 
+      let uploadError: string | null = null;
+      let resolvedName: string | null = null;
+      let fileNote = '';
       try {
         const res = await agentteamsApi.uploadWorkerSkill(
           workerName,
@@ -97,52 +132,91 @@ export function SkillDistributeToWorkerDialog({
           targetWorker?.runtime,
           { restart: false },
         );
-
-        // Update spec.skills
-        try {
-          const existingSkills = targetWorker?.skills ?? [];
-          const resolvedName = res.skillName;
-          if (!existingSkills.includes(resolvedName)) {
-            await agentteamsApi.updateWorker(workerName, {
-              skills: [...existingSkills, resolvedName],
-            });
-          }
-        } catch {
-          // best-effort
-        }
-
-        uploadedOk.push(workerName);
-        setWorkerStates((prev) =>
-          prev.map((s) =>
-            s.name === workerName
-              ? { ...s, status: 'done' as WorkerStatus, note: res.note ?? '上传成功' }
-              : s
-          )
-        );
+        resolvedName = res.skillName;
+        fileNote = res.note ?? '上传成功';
+        perWorker[workerName].uploaded = true;
+        perWorker[workerName].uploadedSkillName = resolvedName;
+        perWorker[workerName].fileNote = fileNote;
       } catch (err) {
+        uploadError = err instanceof Error ? err.message : '上传失败';
+      }
+
+      // Files are on disk; now extend `spec.skills` idempotently. We must
+      // not report "all good" if the controller declined the spec update —
+      // the Worker reconciler and AT controller rely on spec.skills matching
+      // the on-disk prefix. Re-read the worker's spec before merging so a
+      // concurrent dashboard session cannot have its new skills clobbered.
+      if (perWorker[workerName].uploaded && resolvedName) {
+        try {
+          const currentSkills = await fetchLatestSpecSkills(workerName);
+          if (currentSkills.includes(resolvedName)) {
+            perWorker[workerName].specUpdated = true;
+            setWorkerStates((prev) =>
+              prev.map((s) =>
+                s.name === workerName
+                  ? { ...s, status: 'uploading-done' as WorkerStatus, note: fileNote }
+                  : s,
+              ),
+            );
+          } else {
+            const merged = [...currentSkills, resolvedName];
+            await agentteamsApi.updateWorker(workerName, { skills: merged });
+            perWorker[workerName].specUpdated = true;
+            setWorkerStates((prev) =>
+              prev.map((s) =>
+                s.name === workerName
+                  ? { ...s, status: 'uploading-done' as WorkerStatus, note: fileNote }
+                  : s,
+              ),
+            );
+          }
+        } catch (specErr) {
+          perWorker[workerName].specError =
+            specErr instanceof Error ? specErr.message : 'spec.skills 更新失败';
+          setWorkerStates((prev) =>
+            prev.map((s) =>
+              s.name === workerName
+                ? {
+                    ...s,
+                    status: 'spec-failed' as WorkerStatus,
+                    note: `文件已上传，但 spec.skills 更新失败: ${perWorker[workerName].specError}`,
+                  }
+                : s,
+            ),
+          );
+          // Continue to the next worker — this one is in a partial state but
+          // we must not let it block other workers.
+          continue;
+        }
+      } else if (uploadError) {
         setWorkerStates((prev) =>
           prev.map((s) =>
             s.name === workerName
-              ? {
-                  ...s,
-                  status: 'failed' as WorkerStatus,
-                  note: err instanceof Error ? err.message : '上传失败',
-                }
-              : s
-          )
+              ? { ...s, status: 'failed' as WorkerStatus, note: uploadError ?? '上传失败' }
+              : s,
+          ),
         );
+        continue;
       }
     }
 
-    // Step 3: Restart workers that uploaded successfully (use local success list, not stale state)
+    // Restart only workers whose files AND spec.skills are in place. Workers
+    // in spec-failed state still have their files on disk, but skipping the
+    // restart avoids the controller bouncing them into a state where the
+    // on-disk prefix and the spec diverge further.
     setStep('restarting');
-    for (const workerName of uploadedOk) {
+    const restartable: string[] = [];
+    for (const workerName of selectedWorkers) {
+      const r = perWorker[workerName];
+      if (r.uploaded && r.specUpdated) restartable.push(workerName);
+    }
+    for (const workerName of restartable) {
       setWorkerStates((prev) =>
         prev.map((s) =>
           s.name === workerName
             ? { ...s, status: 'restarting' as WorkerStatus, note: '重启中...' }
-            : s
-        )
+            : s,
+        ),
       );
       try {
         const restartRes = await agentteamsApi.restartWorker(workerName);
@@ -154,27 +228,26 @@ export function SkillDistributeToWorkerDialog({
                   status: 'done' as WorkerStatus,
                   note: restartRes.note || '已重启',
                 }
-              : s
-          )
+              : s,
+          ),
         );
       } catch (err) {
-        // Files are in place; surface restart failure so user can ensure-ready manually.
         setWorkerStates((prev) =>
           prev.map((s) =>
             s.name === workerName
               ? {
                   ...s,
                   status: 'failed' as WorkerStatus,
-                  note: `上传成功但重启失败: ${err instanceof Error ? err.message : 'unknown'}`,
+                  note: `文件与 spec.skills 已就绪，但重启失败: ${err instanceof Error ? err.message : 'unknown'}`,
                 }
-              : s
-          )
+              : s,
+          ),
         );
       }
     }
 
     setStep('done');
-  }, [selectedWorkers, skillName, workers]);
+  }, [selectedWorkers, skillName, workers, fetchLatestSpecSkills]);
 
 
   const isRunning = step !== 'idle' && step !== 'done';
@@ -200,31 +273,15 @@ export function SkillDistributeToWorkerDialog({
             <label className="text-sm font-medium">
               目标 Worker * ({selectedWorkers.length} 个已选)
             </label>
-            {isRunning ? (
+                {isRunning ? (
               <div className="space-y-1 max-h-48 overflow-y-auto">
                 {workerStates.map((ws) => (
                   <div key={ws.name} className="flex items-center justify-between px-3 py-1.5 rounded border text-sm">
                     <span className="font-mono">{ws.name}</span>
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        ws.status === 'uploading' || ws.status === 'restarting'
-                          ? 'bg-muted text-muted-foreground'
-                          : ws.status === 'done'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                            : ws.status === 'failed'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
-                              : 'bg-muted text-muted-foreground'
-                      }`}
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${workerStateClass(ws.status)}`}
                     >
-                      {ws.status === 'uploading'
-                        ? '上传中'
-                        : ws.status === 'restarting'
-                          ? '重启中'
-                          : ws.status === 'done'
-                            ? '完成'
-                            : ws.status === 'failed'
-                              ? '失败'
-                              : '等待'}
+                      {workerStateLabel(ws.status)}
                     </span>
                   </div>
                 ))}
@@ -293,12 +350,21 @@ export function SkillDistributeToWorkerDialog({
                   技能 "{skillName}" 已分发到 {workerStates.filter((s) => s.status === 'done').length} 个 Worker
                   {workerStates.filter((s) => s.status === 'failed').length > 0 &&
                     `，${workerStates.filter((s) => s.status === 'failed').length} 个失败`}
+                  {workerStates.filter((s) => s.status === 'spec-failed').length > 0 &&
+                    `，${workerStates.filter((s) => s.status === 'spec-failed').length} 个部分失败`}
                 </p>
               </div>
-              {workerStates.some((s) => s.status === 'failed') && (
+              {(workerStates.some((s) => s.status === 'failed') || workerStates.some((s) => s.status === 'spec-failed')) && (
                 <div className="space-y-1">
-                  {workerStates.filter((s) => s.status === 'failed').map((s) => (
-                    <div key={s.name} className="flex items-center gap-2 px-3 py-1 rounded border border-red-200 text-sm text-red-600">
+                  {[...workerStates.filter((s) => s.status === 'spec-failed'), ...workerStates.filter((s) => s.status === 'failed')].map((s) => (
+                    <div
+                      key={s.name}
+                      className={`flex items-center gap-2 px-3 py-1 rounded border text-sm ${
+                        s.status === 'spec-failed'
+                          ? 'border-amber-200 text-amber-700 bg-amber-50 dark:bg-amber-950'
+                          : 'border-red-200 text-red-600'
+                      }`}
+                    >
                       <X className="h-3 w-3" />
                       <span className="font-mono">{s.name}</span>
                       <span className="text-xs opacity-75">{s.note}</span>
@@ -338,6 +404,43 @@ export function SkillDistributeToWorkerDialog({
 }
 
 type DistributeStep = 'idle' | 'downloading' | 'uploading' | 'restarting' | 'done';
+
+function workerStateLabel(status: WorkerStatus): string {
+  switch (status) {
+    case 'uploading':
+      return '上传中';
+    case 'uploading-done':
+      return '已上传';
+    case 'restarting':
+      return '重启中';
+    case 'done':
+      return '完成';
+    case 'spec-failed':
+      return '部分失败';
+    case 'failed':
+      return '失败';
+    case 'pending':
+    default:
+      return '等待';
+  }
+}
+
+function workerStateClass(status: WorkerStatus): string {
+  switch (status) {
+    case 'done':
+    case 'uploading-done':
+      return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+    case 'spec-failed':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300';
+    case 'failed':
+      return 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300';
+    case 'uploading':
+    case 'restarting':
+    case 'pending':
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
+}
 
 function StepItem({
   label,
