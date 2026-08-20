@@ -137,7 +137,7 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="connection">连接</TabsTrigger>
             <TabsTrigger value="theme">
               <Palette className="w-3.5 h-3.5 mr-1" />
