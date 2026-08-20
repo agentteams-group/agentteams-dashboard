@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **项目时间线面板（Project Timeline Panel）**：在项目详情面板底部新增「干预记录」折叠区，调用 Controller `GET /api/v1/projects/{id}/history` 与 `…/history/{ts}` 端点，按时间倒序列出每次人工干预（暂停 / 恢复 / 重规划等）前的 workflow 快照元数据；点击单条记录可查看状态、标题、操作人、操作时间、暂停原因等审计字段
+  - 404 走与 worker checkpoint 一致的「Controller 升级后可见」降级文案，不阻塞项目主流程
+  - 用 AbortController 取消未完成的请求，避免面板关闭/组件卸载后状态错位
+- **Worker 检查点面板（Worker Checkpoint Panel）**：在 Worker 详情 Dialog 新增「检查点」折叠区，调用 Controller `GET /api/v1/workers/{name}/checkpoints/{graph|status}` 端点，展示自动打点状态、统计汇总（自动/快照/安全）以及最近 5 条打点
+  - Controller 返回 `502 requires QwenPaw 2.1` 时降级为「该 Worker 需 QwenPaw 2.1 才支持检查点」占位文案，并在 session 内缓存该判定，避免低版本 Worker 反复触发请求
+  - status 200 / graph 5xx 的半降级场景下保留自动打点徽标，只隐藏打点列表，遵循 `allSettled` 容错策略
+- **项目 API 降级横幅（DegradedBanner）**：在项目页头部展示 Controller 端点 404（API 未部署）/ 500（Controller 故障）的差异化提示，并附带 Controller 返回的原始错误信息，便于运维快速定位
+
+### Contributors
+
+- @monkeycode-ai（平台 AI 协作者）
+
 ## v1.2.3.1 (2026-08-18)
 
 ### New Features

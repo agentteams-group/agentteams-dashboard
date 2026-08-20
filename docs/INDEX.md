@@ -19,6 +19,8 @@
 - [debug-log-collection.md](debug-log-collection.md) - 一键调试日志收集功能
 - [plugin-system-guide.md](plugin-system-guide.md) - 插件系统开发指南
 - [openclaw-bridge.md](openclaw-bridge.md) - OpenClaw Bridge 实现
+- [项目.md](项目.md) - 项目（Projects）功能使用指南（用户视角）
+- [项目开发.md](项目开发.md) - 项目（Projects）开发指南（组件结构、API 客户端、缓存策略）
 
 ## 概念文档
 
