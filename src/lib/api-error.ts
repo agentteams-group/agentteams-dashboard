@@ -63,7 +63,7 @@ export function shortErrorMessage(e: unknown): string {
 
 /**
  * Unified load-failure message for read-only consumer panels (project
- * timeline / worker checkpoints). A 404 means the Controller does not expose
+ * timeline / project history). A 404 means the Controller does not expose
  * the endpoint yet (pre-upgrade) — show the actionable "active after
  * Controller upgrade" placeholder instead of a raw error. Both panels MUST
  * use this helper so the 404 fallback wording stays identical.

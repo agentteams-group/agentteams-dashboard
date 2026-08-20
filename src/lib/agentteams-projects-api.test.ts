@@ -334,7 +334,7 @@ describe('getProjectHistory', () => {
     await getProjectHistory('p1', 'biz-team');
     // Structural assertion (not a substring), pinning the real request
     // shape: projects-api builds URLs by direct concatenation (no
-    // apiUrl trailing slash — unlike the worker-checkpoints client).
+    // apiUrl trailing slash).
     const url = new URL(String(spy.mock.calls[0][0]), 'http://localhost');
     expect(url.pathname).toBe('/api/agentteams/projects/p1/history');
     expect(url.searchParams.get('team')).toBe('biz-team');

@@ -164,7 +164,7 @@ export interface ProjectListResponse {
 const PROJECTS_URL = '/api/agentteams/projects';
 
 // requestJson / extractErrorDetail now live in ./api-base (shared by all
-// agentteams clients — projects, workers, checkpoints — since PR #86 review).
+// agentteams clients — projects, workers — since PR #86 review).
 
 /** List projects via the dashboard proxy route.
  *

@@ -38,7 +38,7 @@ export async function extractErrorDetail(res: Response, fallback: string): Promi
 
 /** GET a JSON API route via the dashboard proxy.
  *
- * Shared by all agentteams clients (projects / workers / checkpoints) so the
+ * Shared by all agentteams clients (projects / workers) so the
  * fetch mode (`cache: 'no-store'`) and error shape (`ApiError` with the
  * upstream status) stay consistent across the repo. Callers may pass an
  * AbortSignal to cancel the request (e.g. on component unmount); omitted =
@@ -57,5 +57,27 @@ export async function requestJson<T>(url: string, signal?: AbortSignal): Promise
     const detail = await extractErrorDetail(res, `HTTP ${res.status}`);
     throw new ApiError(`${detail} from ${url}`, res.status, url);
   }
-  return (await res.json()) as T;
+  // Defensive: some proxy backends return HTML error pages with status 200
+  // (e.g. middleware rewrites). Detect non-JSON content-type early so callers
+  // surface a proper ApiError instead of an unhandled SyntaxError.
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType && !contentType.includes('application/json')) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(
+      `API returned non-JSON response (${contentType}): ${text.slice(0, 200)}`,
+      res.status,
+      url,
+    );
+  }
+  try {
+    return (await res.json()) as T;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown';
+    throw new ApiError(
+      `Failed to parse API JSON response: ${message}`,
+      res.status,
+      url,
+      err,
+    );
+  }
 }
