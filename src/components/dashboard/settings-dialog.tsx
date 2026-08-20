@@ -29,7 +29,6 @@ import {
   Clock,
   Server,
   History,
-  LayoutGrid,
   Eye,
   EyeOff,
   Palette,
@@ -138,12 +137,8 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="connection">连接</TabsTrigger>
-            <TabsTrigger value="display">
-              <LayoutGrid className="w-3.5 h-3.5 mr-1" />
-              显示
-            </TabsTrigger>
             <TabsTrigger value="theme">
               <Palette className="w-3.5 h-3.5 mr-1" />
               外观
@@ -335,7 +330,7 @@ export function SettingsDialog() {
             )}
           </TabsContent>
 
-          <TabsContent value="display" className="space-y-4 py-4">
+          <TabsContent value="beta" className="space-y-4 py-4">
             {/* Task board visibility */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
@@ -356,9 +351,7 @@ export function SettingsDialog() {
                 onCheckedChange={setTaskBoardVisible}
               />
             </div>
-          </TabsContent>
 
-          <TabsContent value="beta" className="space-y-4 py-4">
             {/* Projects visibility */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
