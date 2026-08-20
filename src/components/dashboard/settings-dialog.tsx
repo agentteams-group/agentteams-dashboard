@@ -34,6 +34,7 @@ import {
   EyeOff,
   Palette,
   Puzzle,
+  Sparkles,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { ThemeTab } from './settings/theme-tab';
@@ -63,6 +64,8 @@ export function SettingsDialog() {
     connectionHistory,
     taskBoardVisible,
     setTaskBoardVisible,
+    projectsVisible,
+    setProjectsVisible,
   } = useAgentTeamsStore();
 
   const { data: infrastructure } = useInfrastructure();
@@ -144,6 +147,10 @@ export function SettingsDialog() {
             <TabsTrigger value="theme">
               <Palette className="w-3.5 h-3.5 mr-1" />
               外观
+            </TabsTrigger>
+            <TabsTrigger value="beta">
+              <Sparkles className="w-3.5 h-3.5 mr-1" />
+              Beta功能
             </TabsTrigger>
             <TabsTrigger value="plugins">
               <Puzzle className="w-3.5 h-3.5 mr-1" />
@@ -347,6 +354,29 @@ export function SettingsDialog() {
               <Switch
                 checked={taskBoardVisible}
                 onCheckedChange={setTaskBoardVisible}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="beta" className="space-y-4 py-4">
+            {/* Projects visibility */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="flex items-center gap-2">
+                  {projectsVisible ? (
+                    <Eye className="w-3.5 h-3.5" />
+                  ) : (
+                    <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  项目
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Beta 功能：关闭后侧边栏的「项目」导航项会隐藏，直接访问 URL 仍然可以打开该 section
+                </p>
+              </div>
+              <Switch
+                checked={projectsVisible}
+                onCheckedChange={setProjectsVisible}
               />
             </div>
           </TabsContent>

@@ -30,6 +30,14 @@ interface AgentTeamsState {
    */
   taskBoardVisible: boolean;
 
+  /**
+   * Whether the 项目 nav item is visible (beta feature). Defaults to false
+   * so new users must opt-in; existing installs keep their current setting
+   * via persisted localStorage. Hidden = the nav item is removed, the
+   * section route still works if navigated to directly.
+   */
+  projectsVisible: boolean;
+
   setControllerUrl: (_url: string) => void;
   checkConnection: () => Promise<boolean>;
   openSettings: () => void;
@@ -37,6 +45,7 @@ interface AgentTeamsState {
   setAutoReconnect: (_val: boolean) => void;
   setReconnectInterval: (_ms: number) => void;
   setTaskBoardVisible: (_val: boolean) => void;
+  setProjectsVisible: (_val: boolean) => void;
   addConnectionAttempt: (_attempt: ConnectionAttempt) => void;
 }
 
@@ -59,6 +68,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       connectionLatency: null,
       connectionHistory: [],
       taskBoardVisible: false,
+      projectsVisible: false,
 
       setControllerUrl: (url: string) => {
         set({ controllerUrl: url });
@@ -137,6 +147,10 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         set({ taskBoardVisible: val });
       },
 
+      setProjectsVisible: (val: boolean) => {
+        set({ projectsVisible: val });
+      },
+
       addConnectionAttempt: (attempt: ConnectionAttempt) => {
         const history = [attempt, ...get().connectionHistory].slice(0, MAX_HISTORY);
         set({ connectionHistory: history });
@@ -151,6 +165,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         reconnectInterval: state.reconnectInterval,
         lastConnectedAt: state.lastConnectedAt,
         taskBoardVisible: state.taskBoardVisible,
+        projectsVisible: state.projectsVisible,
       }),
       migrate: (persistedState) => {
         // Clear the legacy hard-coded default so the dashboard falls back to
@@ -163,6 +178,10 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         // Ensure taskBoardVisible defaults to false for new users / clean installs.
         if (s.taskBoardVisible === undefined) {
           s.taskBoardVisible = false;
+        }
+        // Ensure projectsVisible defaults to false for new users / clean installs.
+        if (s.projectsVisible === undefined) {
+          s.projectsVisible = false;
         }
         return s as AgentTeamsState;
       },

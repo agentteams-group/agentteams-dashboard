@@ -141,9 +141,10 @@ export function Sidebar({
   mode,
 }: SidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
+  const projectsVisible = useAgentTeamsStore((s) => s.projectsVisible);
   const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible)),
-    [mode, taskBoardVisible]
+    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible, projectsVisible)),
+    [mode, taskBoardVisible, projectsVisible]
   );
 
   // Group items by their group field

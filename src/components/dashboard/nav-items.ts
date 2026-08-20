@@ -28,7 +28,7 @@ export interface NavItem {
   /** Visible in these modes only. Omit = visible everywhere. */
   modes?: DeploymentMode[];
   /** When true, the item is hidden if the matching feature flag is off. */
-  hiddenByFlag?: 'taskBoard';
+  hiddenByFlag?: 'taskBoard' | 'projects';
 }
 
 export const navItems: NavItem[] = [
@@ -36,7 +36,7 @@ export const navItems: NavItem[] = [
   { id: 'chat', label: '聊天', icon: MessageSquare, group: 'core' },
   // 运行时分组
   { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime', hiddenByFlag: 'taskBoard' },
-  { id: 'projects', label: '项目', icon: GitBranch, group: 'runtime' },
+  { id: 'projects', label: '项目', icon: GitBranch, group: 'runtime', hiddenByFlag: 'projects' },
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, group: 'runtime' },
   { id: 'teams', label: '团队', icon: Users, group: 'runtime' },
@@ -57,12 +57,17 @@ export const navGroups: { id: NavGroup; label: string }[] = [
 export function isNavItemVisible(
   item: NavItem,
   mode: DeploymentMode | null | undefined,
-  taskBoardVisible?: boolean
+  taskBoardVisible?: boolean,
+  projectsVisible?: boolean
 ): boolean {
   if (item.hiddenByFlag === 'taskBoard') {
     // Prefer the caller-provided value (reactive); fall back to the live
     // zustand store for non-React call sites.
     const visible = taskBoardVisible ?? useAgentTeamsStore.getState().taskBoardVisible;
+    if (!visible) return false;
+  }
+  if (item.hiddenByFlag === 'projects') {
+    const visible = projectsVisible ?? useAgentTeamsStore.getState().projectsVisible;
     if (!visible) return false;
   }
   if (!item.modes) return true;
@@ -77,7 +82,7 @@ export interface CreateAction {
   section: string;
   group?: NavGroup;
   modes?: DeploymentMode[];
-  hiddenByFlag?: 'taskBoard';
+  hiddenByFlag?: 'taskBoard' | 'projects';
 }
 
 export const createActions: readonly CreateAction[] = [
@@ -90,10 +95,15 @@ export const createActions: readonly CreateAction[] = [
 export function isCreateActionVisible(
   action: CreateAction,
   mode: DeploymentMode | null | undefined,
-  taskBoardVisible?: boolean
+  taskBoardVisible?: boolean,
+  projectsVisible?: boolean
 ): boolean {
   if (action.hiddenByFlag === 'taskBoard') {
     const visible = taskBoardVisible ?? useAgentTeamsStore.getState().taskBoardVisible;
+    if (!visible) return false;
+  }
+  if (action.hiddenByFlag === 'projects') {
+    const visible = projectsVisible ?? useAgentTeamsStore.getState().projectsVisible;
     if (!visible) return false;
   }
   if (!action.modes) return true;
