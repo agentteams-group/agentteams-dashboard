@@ -60,8 +60,10 @@ export async function requestJson<T>(url: string, signal?: AbortSignal): Promise
   // Defensive: some proxy backends return HTML error pages with status 200
   // (e.g. middleware rewrites). Detect non-JSON content-type early so callers
   // surface a proper ApiError instead of an unhandled SyntaxError.
+  // Note: browsers/Node default to 'text/plain' for Response bodies, so we
+  // only reject when the type is explicitly HTML (text/html).
   const contentType = res.headers.get('content-type') || '';
-  if (contentType && !contentType.includes('application/json')) {
+  if (contentType && contentType.includes('text/html')) {
     const text = await res.text().catch(() => '');
     throw new ApiError(
       `API returned non-JSON response (${contentType}): ${text.slice(0, 200)}`,
