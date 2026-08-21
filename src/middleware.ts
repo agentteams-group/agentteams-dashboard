@@ -41,6 +41,17 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Escape hatch for environments without a Higress Console in front of
+    // the dashboard (local dev, hosted previews): there is no browser
+    // session to validate, so the gate would 401 every request including
+    // data reads. Production deployments leave this unset to keep the gate.
+    // Read per-request (not module-level) so env changes apply on reload.
+    if (process.env.AGENTTEAMS_AUTH_DISABLED === 'true') {
+      const res = NextResponse.next();
+      res.headers.set('x-agentteams-auth-mode', 'disabled');
+      return res;
+    }
+
     const valid = await validateHigressSession(request);
     if (!valid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

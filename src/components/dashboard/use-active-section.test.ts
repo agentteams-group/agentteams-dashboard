@@ -58,6 +58,16 @@ describe('useActiveSection', () => {
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('overview');
     });
+
+    it('does not clobber the URL hash with the stale pre-resolution default', () => {
+      // Regression: the hash-sync effect used to write the closure-captured
+      // initial value ('overview') during the mount effect flush, racing the
+      // resolved section and bouncing the user back to overview.
+      setHash('#tasks');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('tasks');
+      expect(window.location.hash).toBe('#tasks');
+    });
   });
 
   describe('setActiveSection', () => {

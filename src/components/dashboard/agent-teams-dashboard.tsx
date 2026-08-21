@@ -149,9 +149,17 @@ export function AgentTeamsDashboard() {
       return;
     }
     if (!visibleNavItems.some((n) => n.id === activeSection)) {
-      setActiveSection('overview');
+      // Flag-hidden sections (taskBoard/projects beta toggles) keep their
+      // route reachable per the agentteams-store contract: "hidden = the
+      // nav item is removed, the section route still works if navigated
+      // to directly". Only mode-hidden or unknown sections fall back.
+      const known = navItems.find((n) => n.id === activeSection);
+      const modeHidden = !known || (!!known.modes && !!mode && !known.modes.includes(mode));
+      if (modeHidden) {
+        setActiveSection('overview');
+      }
     }
-  }, [activeSection, visibleNavItems, setActiveSection, modeLoading, isPluginSection, pluginsReady, pluginRoutes]);
+  }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes]);
 
   // Notify plugins about section changes (host:section-changed).
   useEffect(() => {

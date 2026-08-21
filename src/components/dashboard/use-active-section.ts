@@ -52,13 +52,26 @@ export function useActiveSection() {
 
   // --- Sync URL hash ---
   useEffect(() => {
-    window.location.hash = activeSection;
+    // Read the live store value instead of the captured `activeSection`:
+    // on mount the initial-resolution effect above has already written the
+    // resolved section into the store, while this effect's closure still
+    // holds the pre-resolution default ('overview'). Writing that stale
+    // value would momentarily clobber the URL hash, and the resulting
+    // hashchange event races the re-render — when the event wins, the
+    // handler reads the stale hash and bounces the user back to overview.
+    const section = useSectionStore.getState().activeSection;
+    if (window.location.hash.slice(1) !== section) {
+      window.location.hash = section;
+    }
   }, [activeSection]);
 
   // --- Listen for external hash changes (browser back/forward) ---
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
+
+      // Pure echo of our own programmatic write — nothing to sync.
+      if (hash === useSectionStore.getState().activeSection) return;
 
       if (hash && !hash.includes('/') && isKnownSection(hash)) {
         useSectionStore.getState().setActiveSection(hash);

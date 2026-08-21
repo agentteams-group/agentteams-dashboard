@@ -49,20 +49,33 @@ describe('AgentTeams API 端点认证门控', () => {
     '/api/agentteams/workers/test-worker/skills',
   ];
 
+  // The dev server may run with AGENTTEAMS_AUTH_DISABLED=true (envs without
+  // a Higress Console, e.g. hosted previews). The middleware marks bypassed
+  // responses with x-agentteams-auth-mode: disabled — skip gate assertions
+  // there instead of failing.
+  const isAuthDisabled = async (res: Response): Promise<boolean> =>
+    res.headers.get('x-agentteams-auth-mode') === 'disabled';
+
   for (const path of endpoints) {
-    it(`GET ${path} — 无会话时返回 401`, async () => {
+    it(`GET ${path} — 无会话时返回 401`, async ({ skip }) => {
       const res = await fetch(`${BASE_URL}${path}`, { redirect: 'follow' });
+      if (await isAuthDisabled(res)) {
+        return skip('AGENTTEAMS_AUTH_DISABLED=true on this dev server');
+      }
       expect(res.status).toBe(401);
       const body = await res.json();
       expect(body.error).toBe('Unauthorized');
     });
   }
 
-  it('POST /api/agentteams/skills/nacos/sync — 无会话时返回 401', async () => {
+  it('POST /api/agentteams/skills/nacos/sync — 无会话时返回 401', async ({ skip }) => {
     const res = await fetch(`${BASE_URL}/api/agentteams/skills/nacos/sync`, {
       method: 'POST',
       redirect: 'follow',
     });
+    if (await isAuthDisabled(res)) {
+      return skip('AGENTTEAMS_AUTH_DISABLED=true on this dev server');
+    }
     expect(res.status).toBe(401);
   });
 });
