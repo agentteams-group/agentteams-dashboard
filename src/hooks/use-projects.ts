@@ -145,7 +145,9 @@ export function useCancelProjectTask() {
 
 // ----- Task board primary source (D5): Controller API over MinIO -----
 
-/** Workflow node status → board TaskStatus (same remap as buildWorkflowDag). */
+/** Workflow node status → board TaskStatus. Mirrors the controller's
+ * normalizeTaskStatus: revision keeps its own board column (需修订) so the
+ * board and the projects section render the same task identically. */
 function workflowStatusToTaskStatus(status?: string): TaskStatus {
   switch (status) {
     case 'pending':
@@ -159,6 +161,8 @@ function workflowStatusToTaskStatus(status?: string): TaskStatus {
     case 'in_progress':
     case 'submitted':
       return 'in_progress';
+    case 'revision':
+      return 'revision';
     case 'completed':
       return 'completed';
     case 'failed':
@@ -166,7 +170,6 @@ function workflowStatusToTaskStatus(status?: string): TaskStatus {
       return 'failed';
     case 'blocked':
     case 'cancelled':
-    case 'revision':
       return 'blocked';
     default:
       return 'unknown';
@@ -239,7 +242,9 @@ export function workflowToBoard(
         roomId: wf.source_room_id ?? '',
         dependsOn: dependsOf.get(node.id) ?? [],
         createdAt: 0,
-        completedAt: detail?.status === 'completed' ? undefined : undefined,
+        // The workflow API does not expose per-task timestamps; completedAt
+        // stays unset until the controller schema adds one.
+        completedAt: undefined,
         outcome: resultStatusToOutcome(detail?.result_status),
         spec: detail?.summary || undefined,
         source: 'api',

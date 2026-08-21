@@ -53,6 +53,7 @@ export type TaskStatus =
   | 'pending'
   | 'assigned'
   | 'in_progress'
+  | 'revision'
   | 'completed'
   | 'failed'
   | 'blocked'
@@ -222,24 +223,37 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/**
+ * Align raw meta.json statuses with the AgentTeams controller's
+ * normalizeTaskStatus (project_handler.go): planned→pending,
+ * assigned/delegated→assigned (delegated), in_progress/submitted→in_progress,
+ * revision keeps its own state (需修订), cancelled→blocked. Legacy worker
+ * spellings (queued/todo/open/running/…) stay supported.
+ */
 function normalizeStatus(raw?: string): TaskStatus {
   if (!raw) return 'unknown';
   const lower = raw.toLowerCase();
-  if (lower === 'pending' || lower === 'queued' || lower === 'planning') return 'pending';
-  if (lower === 'assigned' || lower === 'todo' || lower === 'open') return 'assigned';
+  if (lower === 'pending' || lower === 'queued' || lower === 'planning' || lower === 'planned')
+    return 'pending';
+  if (lower === 'assigned' || lower === 'delegated' || lower === 'todo' || lower === 'open')
+    return 'assigned';
   if (
     lower === 'in_progress' ||
     lower === 'in-progress' ||
     lower === 'inprogress' ||
+    lower === 'submitted' ||
     lower === 'running' ||
     lower === 'active' ||
     lower === 'working'
   )
     return 'in_progress';
+  if (lower === 'revision' || lower === 'needs_revision' || lower === 'rework')
+    return 'revision';
   if (lower === 'completed' || lower === 'success' || lower === 'done' || lower === 'finished')
     return 'completed';
   if (lower === 'failed' || lower === 'error') return 'failed';
-  if (lower === 'blocked' || lower === 'paused' || lower === 'waiting') return 'blocked';
+  if (lower === 'blocked' || lower === 'cancelled' || lower === 'canceled' || lower === 'paused' || lower === 'waiting')
+    return 'blocked';
   return 'unknown';
 }
 

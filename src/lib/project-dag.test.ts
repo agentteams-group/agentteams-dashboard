@@ -204,7 +204,7 @@ describe('buildWorkflowDag', () => {
     );
     const statusOf = new Map(dag.nodes.map((n) => [n.id, n.status]));
     expect(statusOf.get('a')).toBe('assigned'); // delegated → assigned
-    expect(statusOf.get('b')).toBe('blocked'); // revision → blocked (amber)
+    expect(statusOf.get('b')).toBe('revision'); // revision keeps its own status (需修订)
     expect(statusOf.get('c')).toBe('blocked');
   });
 

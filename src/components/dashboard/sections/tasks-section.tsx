@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Sparkles,
   RefreshCw,
+  RotateCcw,
   Database,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -77,6 +78,13 @@ const TASK_STATUS_COLUMNS: Array<{
     description: 'Worker 正在执行',
     color: 'text-violet-500 bg-violet-500/10 border-violet-500/30',
     icon: Loader2,
+  },
+  {
+    key: 'revision',
+    label: '需修订',
+    description: 'Manager 验收未通过,打回重做',
+    color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+    icon: RotateCcw,
   },
   {
     key: 'completed',
@@ -450,9 +458,10 @@ const DAG_NODE_FILL: Record<string, DagNodeColor> = {
   pending: { fill: 'rgba(148,163,184,0.12)', stroke: '#94a3b8', text: '#94a3b8' },
   assigned: { fill: 'rgba(148,163,184,0.18)', stroke: '#94a3b8', text: '#cbd5e1' },
   in_progress: { fill: 'rgba(139,92,246,0.16)', stroke: '#8b5cf6', text: '#a78bfa' },
+  revision: { fill: 'rgba(245,158,11,0.14)', stroke: '#f59e0b', text: '#fbbf24' },
   completed: { fill: 'rgba(16,185,129,0.14)', stroke: '#10b981', text: '#34d399' },
   failed: { fill: 'rgba(239,68,68,0.14)', stroke: '#ef4444', text: '#f87171' },
-  blocked: { fill: 'rgba(245,158,11,0.14)', stroke: '#f59e0b', text: '#fbbf24' },
+  blocked: { fill: 'rgba(249,115,22,0.14)', stroke: '#f97316', text: '#fdba74' },
   unknown: { fill: 'rgba(148,163,184,0.08)', stroke: '#64748b', text: '#94a3b8' },
 };
 
@@ -609,13 +618,15 @@ export function TasksSection() {
     let completed = 0;
     let failed = 0;
     let blocked = 0;
+    let revision = 0;
     for (const t of board.tasks) {
       if (t.status === 'in_progress' || t.status === 'assigned') running++;
       else if (t.status === 'completed') completed++;
+      else if (t.status === 'revision') revision++;
       else if (t.status === 'failed') failed++;
       else if (t.status === 'blocked') blocked++;
     }
-    return { running, completed, failed, blocked, total: board.tasks.length };
+    return { running, completed, failed, blocked, revision, total: board.tasks.length };
   }, [board.tasks]);
 
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
@@ -680,7 +691,7 @@ export function TasksSection() {
       />
 
       {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           {
             label: '进行中',
@@ -695,10 +706,16 @@ export function TasksSection() {
             bg: 'bg-emerald-500/10 border-emerald-500/20',
           },
           {
-            label: '阻塞',
-            count: counts.blocked,
+            label: '需修订',
+            count: counts.revision,
             color: 'text-amber-500',
             bg: 'bg-amber-500/10 border-amber-500/20',
+          },
+          {
+            label: '阻塞',
+            count: counts.blocked,
+            color: 'text-orange-500',
+            bg: 'bg-orange-500/10 border-orange-500/20',
           },
           {
             label: '失败',
@@ -757,9 +774,10 @@ export function TasksSection() {
         />
       </div>
 
-      {/* View: Kanban (status columns) */}
+      {/* View: Kanban (status columns) — 8 statuses flow into a 4x2 grid
+          on wide screens; one per row on mobile. */}
       {view === 'kanban' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {TASK_STATUS_COLUMNS.map((col) => {
             const list = tasksByStatus.get(col.key) ?? [];
             const Icon = col.icon;

@@ -25,6 +25,7 @@ export type TaskStatus =
   | 'pending'
   | 'assigned'
   | 'in_progress'
+  | 'revision'
   | 'completed'
   | 'failed'
   | 'blocked'

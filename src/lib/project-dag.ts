@@ -179,14 +179,14 @@ export function buildProjectDag(
 
 /** Map a normalized workflow node status (controller normalizeTaskStatus:
  * pending | delegated | in-progress | completed | revision | blocked) to the
- * task-board status space for the shared DAG color table. revision (needs
- * rework) renders as blocked-amber; blocked stays blocked. */
+ * task-board status space for the shared DAG color table. revision keeps its
+ * own status (需修订 column); cancelled folds into blocked. */
 const WORKFLOW_STATUS_MAP: Record<string, TaskStatus> = {
   pending: 'pending',
   delegated: 'assigned',
   'in-progress': 'in_progress',
+  revision: 'revision',
   completed: 'completed',
-  revision: 'blocked',
   blocked: 'blocked',
   failed: 'failed',
   unknown: 'unknown',
