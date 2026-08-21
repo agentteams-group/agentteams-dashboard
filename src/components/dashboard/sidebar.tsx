@@ -26,6 +26,7 @@ import {
 } from './nav-items';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
+import { NavBetaBadge, NavBetaDot } from './nav-beta-badge';
 
 // ──────────────────────────────────────────
 // Props
@@ -75,7 +76,11 @@ function NavButton({
       title={collapsed ? item.label : undefined}
     >
       <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-emerald-500' : ''}`} />
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && (
+        <span className="truncate">{item.label}</span>
+      )}
+      {!collapsed && item.isBeta && <NavBetaBadge />}
+      {collapsed && item.isBeta && <NavBetaDot />}
       {!collapsed && count > 0 && (
         <Badge
           variant="secondary"
@@ -105,6 +110,7 @@ function NavButton({
         <TooltipTrigger asChild>{button}</TooltipTrigger>
         <TooltipContent side="right">
           {item.label}
+          {item.isBeta && <span className="ml-1 text-[10px] font-semibold uppercase text-violet-500">Beta</span>}
           {count > 0 && ` (${count})`}
         </TooltipContent>
       </Tooltip>

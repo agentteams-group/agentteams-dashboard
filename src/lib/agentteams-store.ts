@@ -23,18 +23,18 @@ interface AgentTeamsState {
   connectionHistory: ConnectionAttempt[];
 
   /**
-   * Whether the 任务看板 nav item is visible. Defaults to true so new
-   * users see the board; existing installs keep their current setting
-   * via persisted localStorage. Hidden = the nav item is removed, the
-   * section route still works if navigated to directly.
+   * Whether the 任务看板 nav item is visible (beta feature). Defaults to
+   * true so the board is on out of the box; users can opt out in Settings.
+   * Hidden = the nav item is removed, the section route still works if
+   * navigated to directly.
    */
   taskBoardVisible: boolean;
 
   /**
-   * Whether the 项目 nav item is visible (beta feature). Defaults to false
-   * so new users must opt-in; existing installs keep their current setting
-   * via persisted localStorage. Hidden = the nav item is removed, the
-   * section route still works if navigated to directly.
+   * Whether the 项目 nav item is visible (beta feature). Defaults to true
+   * so the section is on out of the box; users can opt out in Settings.
+   * Hidden = the nav item is removed, the section route still works if
+   * navigated to directly.
    */
   projectsVisible: boolean;
 
@@ -67,8 +67,8 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       lastConnectedAt: null,
       connectionLatency: null,
       connectionHistory: [],
-      taskBoardVisible: false,
-      projectsVisible: false,
+      taskBoardVisible: true,
+      projectsVisible: true,
 
       setControllerUrl: (url: string) => {
         set({ controllerUrl: url });
@@ -158,7 +158,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
     }),
     {
       name: 'agentteams-store',
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         controllerUrl: state.controllerUrl,
         autoReconnect: state.autoReconnect,
@@ -175,13 +175,15 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         if (s.controllerUrl === 'http://agentteams-controller.agentteams-system:8090') {
           s.controllerUrl = '';
         }
-        // Ensure taskBoardVisible defaults to false for new users / clean installs.
-        if (s.taskBoardVisible === undefined) {
-          s.taskBoardVisible = false;
+        // v1 -> v2: both beta features (任务看板/项目) now default to enabled.
+        // v1 states were persisted with the old default (false) regardless of
+        // whether the user ever touched the switch, so force-enable once and
+        // let users opt back out from Settings if they prefer.
+        if (s.taskBoardVisible === undefined || s.taskBoardVisible === false) {
+          s.taskBoardVisible = true;
         }
-        // Ensure projectsVisible defaults to false for new users / clean installs.
-        if (s.projectsVisible === undefined) {
-          s.projectsVisible = false;
+        if (s.projectsVisible === undefined || s.projectsVisible === false) {
+          s.projectsVisible = true;
         }
         return s as AgentTeamsState;
       },

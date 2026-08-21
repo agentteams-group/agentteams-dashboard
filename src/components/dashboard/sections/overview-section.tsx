@@ -24,6 +24,7 @@ import {
   UserPlus,
   MessageCircle,
   ExternalLink,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,9 @@ import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
+import { useLatestVersions } from '@/hooks/use-latest-versions';
+import { compareSemVer } from '@/lib/plugins/semver';
+import { DASHBOARD_REPOSITORY } from '@/lib/dashboard-runtime';
 import { computeInsights, type Insight } from '@/lib/insights-engine';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -206,36 +210,117 @@ function formatUptime(seconds: number | undefined): string {
   return days > 0 ? `${days} 天 ${hours} 小时` : hours > 0 ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟`;
 }
 
-function RuntimeInfoCard({ agentteamsVersion }: { agentteamsVersion?: string }) {
-  const { data: dashboardRuntime, isFetching, refetch } = useDashboardRuntime();
-  const agentteamsRepository = 'https://github.com/agentscope-ai/AgentTeams';
+/** "v1.2.3" style label; blank/unversioned renders as a muted 未知. */
+function displayVersion(v: string | null | undefined): string {
+  const trimmed = (v ?? '').trim();
+  return trimmed === '' ? '未知' : `v${trimmed.replace(/^v/i, '')}`;
+}
+
+// ----- Runtime info card (AgentTeams + Dashboard) -----
+
+function ProjectRepoLink({ name, href }: { name: string; href: string }) {
+  return (
+    <a
+      className="inline-flex items-center gap-1 font-medium text-primary hover:underline underline-offset-2"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={href}
+    >
+      {name}
+      <ExternalLink className="size-3 opacity-70" />
+    </a>
+  );
+}
+
+function LatestVersionBadge({
+  current,
+  latest,
+  latestUrl,
+  releaseHomeUrl,
+}: {
+  current: string | null | undefined;
+  latest: string | null | undefined;
+  latestUrl?: string;
+  releaseHomeUrl: string;
+}) {
+  if (!latest) {
+    return <span className="text-xs text-muted-foreground">最新版本：获取失败</span>;
+  }
+  const outdated =
+    !!current &&
+    current.trim() !== '' &&
+    compareSemVer(current.trim().replace(/^v/i, ''), latest) < 0;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">最新版本：</span>
+      <a
+        className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline underline-offset-2"
+        href={latestUrl ?? releaseHomeUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {displayVersion(latest)}
+        <ExternalLink className="size-2.5 opacity-70" />
+      </a>
+      {outdated && (
+        <Badge
+          variant="outline"
+          className="h-4 px-1.5 text-[10px] gap-0.5 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+        >
+          <ArrowUpCircle className="size-2.5" />
+          有新版本
+        </Badge>
+      )}
+    </span>
+  );
+}
+
+function RuntimeInfoCard({
+  agentteamsVersion,
+  agentteamsRepository,
+}: {
+  agentteamsVersion?: string;
+  agentteamsRepository: string;
+}) {
+  const { data: dashboardRuntime, isFetching: runtimeFetching, refetch: refetchRuntime } = useDashboardRuntime();
+  const { data: latestVersions } = useLatestVersions();
+
+  const agentteamsRepo = latestVersions?.repositories.agentteams ?? agentteamsRepository;
+  const dashboardRepo = latestVersions?.repositories.dashboard ?? DASHBOARD_REPOSITORY;
 
   return (
     <Card className="glass-card">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">运行信息</CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isFetching ? 'animate-spin' : ''}`} />
+          <Button variant="ghost" size="sm" onClick={() => refetchRuntime()} disabled={runtimeFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${runtimeFetching ? 'animate-spin' : ''}`} />
             刷新
           </Button>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 text-sm md:grid-cols-2">
         <div className="space-y-1.5">
-          <p className="font-medium">AgentTeams</p>
-          <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={agentteamsRepository} target="_blank" rel="noreferrer">
-            仓库 <ExternalLink className="size-3" />
-          </a>
-          <p className="text-xs text-muted-foreground">版本：{agentteamsVersion ?? '未知'}</p>
+          <ProjectRepoLink name="AgentTeams" href={agentteamsRepo} />
+          <p className="text-xs text-muted-foreground">当前版本：{displayVersion(agentteamsVersion)}</p>
+          <LatestVersionBadge
+            current={agentteamsVersion}
+            latest={latestVersions?.agentteams?.version}
+            latestUrl={latestVersions?.agentteams?.url}
+            releaseHomeUrl={`${agentteamsRepo}/releases`}
+          />
           <p className="text-xs text-muted-foreground">运行时长：接口未提供</p>
         </div>
         <div className="space-y-1.5">
-          <p className="font-medium">AgentTeams Dashboard</p>
-          <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={dashboardRuntime?.repository} target="_blank" rel="noreferrer">
-            仓库 <ExternalLink className="size-3" />
-          </a>
-          <p className="text-xs text-muted-foreground">版本：{dashboardRuntime?.version ?? '未知'}</p>
+          <ProjectRepoLink name="AgentTeams Dashboard" href={dashboardRepo} />
+          <p className="text-xs text-muted-foreground">当前版本：{displayVersion(dashboardRuntime?.version)}</p>
+          <LatestVersionBadge
+            current={dashboardRuntime?.version}
+            latest={latestVersions?.dashboard?.version}
+            latestUrl={latestVersions?.dashboard?.url}
+            releaseHomeUrl={`${dashboardRepo}/releases`}
+          />
           <p className="text-xs text-muted-foreground">运行时长：{formatUptime(dashboardRuntime?.uptimeSeconds)}</p>
         </div>
       </CardContent>
@@ -369,7 +454,10 @@ export function OverviewSection() {
         </div>
       </motion.div>
 
-      <RuntimeInfoCard agentteamsVersion={versionData?.controller} />
+      <RuntimeInfoCard
+        agentteamsVersion={versionData?.controller}
+        agentteamsRepository="https://github.com/agentscope-ai/AgentTeams"
+      />
 
       {/* ===== Row 2: Key Metrics (4 cards) ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

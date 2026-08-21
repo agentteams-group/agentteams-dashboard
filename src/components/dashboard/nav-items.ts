@@ -29,14 +29,16 @@ export interface NavItem {
   modes?: DeploymentMode[];
   /** When true, the item is hidden if the matching feature flag is off. */
   hiddenByFlag?: 'taskBoard' | 'projects';
+  /** Experimental feature — sidebar shows a small "Beta" pill on the label. */
+  isBeta?: boolean;
 }
 
 export const navItems: NavItem[] = [
   { id: 'overview', label: '总览', icon: LayoutDashboard, group: 'core' },
   { id: 'chat', label: '聊天', icon: MessageSquare, group: 'core' },
   // 运行时分组
-  { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime', hiddenByFlag: 'taskBoard' },
-  { id: 'projects', label: '项目', icon: GitBranch, group: 'runtime', hiddenByFlag: 'projects' },
+  { id: 'tasks', label: '任务看板', icon: ListTodo, group: 'runtime', hiddenByFlag: 'taskBoard', isBeta: true },
+  { id: 'projects', label: '项目', icon: GitBranch, group: 'runtime', hiddenByFlag: 'projects', isBeta: true },
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, group: 'runtime' },
   { id: 'teams', label: '团队', icon: Users, group: 'runtime' },

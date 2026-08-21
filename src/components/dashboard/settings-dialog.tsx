@@ -364,7 +364,7 @@ export function SettingsDialog() {
                   项目
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Beta 功能：关闭后侧边栏的「项目」导航项会隐藏，直接访问 URL 仍然可以打开该 section
+                  关闭后侧边栏的「项目」导航项会隐藏，直接访问 URL 仍然可以打开该 section
                 </p>
               </div>
               <Switch

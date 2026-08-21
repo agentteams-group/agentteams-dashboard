@@ -15,6 +15,7 @@ import {
 } from './nav-items';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
+import { NavBetaBadge } from './nav-beta-badge';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -119,7 +120,8 @@ export function MobileSidebar({
                             isActive ? 'text-emerald-500' : ''
                           }`}
                         />
-                        <span>{item.label}</span>
+                        <span className="truncate">{item.label}</span>
+                        {item.isBeta && <NavBetaBadge />}
                         {count > 0 && (
                           <Badge
                             variant="secondary"
