@@ -9,9 +9,15 @@
 - **项目 API 降级横幅（DegradedBanner）**：在项目页头部展示 Controller 端点 404（API 未部署）/ 500（Controller 故障）的差异化提示，并附带 Controller 返回的原始错误信息，便于运维快速定位
 - **运行时块协议 v1 契约（`org.agentteams.run`）**：新增 `src/lib/a2ui/protocol.ts` 定义带版本号的 discriminated union（text/thinking/tool_call/confirmation/error），并把 `parseAgentRunBlocks` 拆为 v1 规范化路径与 v0 透传路径。v1 路径为 tool_call 块补齐 `tool_call_id` / `status` / `started_at` / `finished_at` 等字段，confirmation 块要求 `confirmation_id`。未知版本一律降级到现有文本启发式而不丢弃消息
 - **结构化 tool_call 去重**：`recordToolCalls` 新增可选 `structuredKeys` 参数，当 runtime 上传带 `tool_call_id` 的结构化块时以 id 为权威去重键；同一事件多次修订或跨设备复用同一 id 都不会重复计入 Worker 卡片活物条。v0/纯事件块路径行为不变
+- **服务端 RBAC + JSONL 审计**：
+  - `src/lib/audit-log.ts` 新增 append-only JSONL 审计日志（10 MB 自动 rotate，保留 30 份归档，路径可通过 `AGENTTEAMS_AUDIT_LOG_PATH` 覆盖）
+  - `validateHigressSession` 现返回 `{ valid, user }`，middleware 在通过验证时把 `x-agentteams-user` / `x-agentteams-user-level` 注入下游，proxy-helper 透传给 Controller
+  - `src/lib/server-auth.ts` 提供 `enforceServerSideRbac`，workers/teams/managers/humans 的写操作路由（POST/PUT/DELETE/wake/sleep/ensure-ready）调用 rbac-engine 做服务端细粒度校验；403 时自动写一条 warning 审计
+  - `src/app/api/agentteams/audit/route.ts` 新增：POST 写入（服务端镜像客户端审计事件），GET 列表（admin-only，按时间/entity 过滤）
+  - `auditMutation` 客户端 helper 自动向服务端镜像审计事件，失败仅 warn 不阻塞 mutation
 
 ### Improvements
-- 新增测试：parser v1 路径 11 例（每种块类型 + 字段缺失 + 未知版本 + 未知块类型）；tool-call-counter 结构化 id 去重 7 例。全量 1167 个用例通过
+- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 例、audit API route 5 例、worker route RBAC 3 例；access.test.ts 与 plugins/route.test.ts mock 适配新 SessionValidation 形状。全量 1188 个用例通过
 
 ### Contributors
 - @monkeycode-ai（平台 AI 协作者）

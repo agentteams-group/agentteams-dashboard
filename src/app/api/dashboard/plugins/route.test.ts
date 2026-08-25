@@ -65,20 +65,20 @@ describe('POST /api/dashboard/plugins', () => {
   });
 
   it('rejects unauthenticated uploads with 401', async () => {
-    authMock.validateHigressSession.mockResolvedValue(false);
+    authMock.validateHigressSession.mockResolvedValue({ valid: false, user: null });
     const res = await POST(postRequest());
     expect(res.status).toBe(401);
     expect(packageMock.installPluginPackage).not.toHaveBeenCalled();
   });
 
   it('rejects non-multipart requests', async () => {
-    authMock.validateHigressSession.mockResolvedValue(true);
+    authMock.validateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
     const res = await POST(postRequest());
     expect(res.status).toBe(415);
   });
 
   it('installs a valid zip package and returns the manifest URL', async () => {
-    authMock.validateHigressSession.mockResolvedValue(true);
+    authMock.validateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
     packageMock.installPluginPackage.mockResolvedValue({
       id: 'alpha',
       manifestUrl: '/plugins/alpha/plugin.json',
@@ -92,7 +92,7 @@ describe('POST /api/dashboard/plugins', () => {
   });
 
   it('maps manifest validation errors to a 400 with a readable message', async () => {
-    authMock.validateHigressSession.mockResolvedValue(true);
+    authMock.validateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
     packageMock.installPluginPackage.mockRejectedValue(new PluginManifestError('未找到 plugin.json'));
     const form = new FormData();
     form.append('file', new File(['zip-bytes'], 'bad.zip', { type: 'application/zip' }));
@@ -102,7 +102,7 @@ describe('POST /api/dashboard/plugins', () => {
   });
 
   it('rejects an empty file', async () => {
-    authMock.validateHigressSession.mockResolvedValue(true);
+    authMock.validateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
     const form = new FormData();
     form.append('file', new File([], 'empty.zip', { type: 'application/zip' }));
     const res = await POST(postRequest({ body: form }));

@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic';
  * The dashboard plugin registry entry is dropped client-side on uninstall.
  */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const authorized = await validateHigressSession(request);
-  if (!authorized) {
+  const { valid } = await validateHigressSession(request);
+  if (!valid) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

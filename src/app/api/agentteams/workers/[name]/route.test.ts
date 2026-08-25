@@ -120,3 +120,51 @@ describe('DELETE /api/agentteams/workers/{name} (smoke)', () => {
     expect(received[0].url).toBe('/api/v1/workers/worker-1');
   });
 });
+
+describe('RBAC enforcement on worker write routes', () => {
+  function makeRequestWithLevel(name: string, level: number) {
+    const url = new URL(`http://localhost/api/agentteams/workers/worker-1`);
+    url.searchParams.set('controllerUrl', controllerUrl);
+    const headers: Record<string, string> = {
+      'x-agentteams-user': name,
+      'x-agentteams-user-level': String(level),
+    };
+    return new NextRequest(url, { method: 'DELETE', headers });
+  }
+
+  it('denies observer DELETE on a worker (403)', async () => {
+    received.length = 0;
+    const res = await DELETE(makeRequestWithLevel('observer', 1), {
+      params: Promise.resolve({ name: 'worker-1' }),
+    });
+    expect(res.status).toBe(403);
+    expect(received).toHaveLength(0);
+  });
+
+  it('denies observer PUT on a worker (403)', async () => {
+    received.length = 0;
+    const url = new URL(`http://localhost/api/agentteams/workers/worker-1`);
+    url.searchParams.set('controllerUrl', controllerUrl);
+    const req = new NextRequest(url, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        'x-agentteams-user': 'observer',
+        'x-agentteams-user-level': '1',
+      },
+      body: JSON.stringify({ spec: { skills: [] } }),
+    });
+    const res = await PUT(req, { params: Promise.resolve({ name: 'worker-1' }) });
+    expect(res.status).toBe(403);
+    expect(received).toHaveLength(0);
+  });
+
+  it('allows admin DELETE on a worker', async () => {
+    received.length = 0;
+    const res = await DELETE(makeRequestWithLevel('admin', 3), {
+      params: Promise.resolve({ name: 'worker-1' }),
+    });
+    expect(res.status).toBe(200);
+    expect(received[0].method).toBe('DELETE');
+  });
+});

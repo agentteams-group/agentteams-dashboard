@@ -116,6 +116,14 @@ export async function proxyToAgentTeams(
       (fetchOptions.headers as Record<string, string>)['authorization'] = `Bearer ${authToken}`;
     }
 
+    // Forward the server-resolved identity (set by middleware from the Higress
+    // session) so the controller can attribute write actions to the right user
+    // without trusting browser-supplied headers.
+    for (const name of ['x-agentteams-user', 'x-agentteams-user-level']) {
+      const value = request.headers.get(name);
+      if (value) (fetchOptions.headers as Record<string, string>)[name] = value;
+    }
+
     if (forwardBody && ['POST', 'PUT', 'PATCH'].includes(method)) {
       if (contentType === 'multipart/form-data') {
         // Forward multipart as-is (don't set Content-Type, let fetch handle boundary)

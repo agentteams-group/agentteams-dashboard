@@ -50,6 +50,9 @@ test
 prompt
 
 server.log
+# Audit log (default location is ${cwd}/logs/audit.log.jsonl; overridable via
+# AGENTTEAMS_AUDIT_LOG_PATH)
+/logs/
 # Skills directory
 /skills/
 # Agent configurations
