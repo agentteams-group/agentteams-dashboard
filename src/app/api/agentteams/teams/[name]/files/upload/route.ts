@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
+import { enforceServerSideRbac } from '@/lib/server-auth';
 
 export async function POST(
   request: NextRequest,
@@ -12,6 +13,9 @@ export async function POST(
   if (!isValidNameSegment(name)) {
     return NextResponse.json({ error: '非法 Team 名' }, { status: 400 });
   }
+
+  const denied = await enforceServerSideRbac(request, 'update', 'team', name);
+  if (denied) return denied;
 
   const bucket = getMinioBucket();
   if (!bucket) {

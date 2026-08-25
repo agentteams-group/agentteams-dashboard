@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -81,6 +82,9 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: '请求体格式错误' }, { status: 400 });
   }
+
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'mcp', body.name ?? 'new-mcp');
+  if (denied) return denied;
 
   const { name, url, transport, type, timeout, headers, description } = body;
 

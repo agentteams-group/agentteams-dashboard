@@ -8,6 +8,7 @@ import {
   isValidNameSegment,
 } from '@/lib/skill-package';
 import { restartWorkerForSkillReload } from '@/lib/worker-restart';
+import { enforceServerSideRbac } from '@/lib/server-auth';
 
 const SYNC_FAILED_NOTE = '技能已上传，Worker 最长约 5 分钟内自动发现';
 
@@ -74,6 +75,9 @@ export async function POST(
   if (!isValidNameSegment(name)) {
     return NextResponse.json({ error: '非法 Worker 名' }, { status: 400 });
   }
+
+  const denied = await enforceServerSideRbac(request, 'update', 'worker', name);
+  if (denied) return denied;
 
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {

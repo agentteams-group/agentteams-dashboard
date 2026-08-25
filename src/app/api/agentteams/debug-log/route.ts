@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { zipSync, strToU8 } from 'fflate';
 import { getAuthToken, getControllerUrl } from '../proxy-helper';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 import { redactPii, redactJsonStrings } from './redact';
 import {
   DockerContext,
@@ -131,6 +132,8 @@ function parseBody(value: unknown): { body: DebugLogRequest; error?: string } {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'view', 'debug-log', 'collect');
+  if (denied) return denied;
   let rawBody: unknown;
   try {
     rawBody = await request.json();

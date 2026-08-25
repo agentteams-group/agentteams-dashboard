@@ -1,6 +1,7 @@
 // POST /api/agentteams/storage/buckets/[bucket]/bulk-delete — Bulk delete objects
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function POST(
   request: NextRequest,
@@ -8,6 +9,8 @@ export async function POST(
 ) {
   const { bucket } = await params;
   const bucketName = decodeURIComponent(bucket);
+  const denied = await enforceLevelOnlyRbac(request, 'delete', 'storage.bucket', bucketName);
+  if (denied) return denied;
 
   try {
     const body = await request.json();

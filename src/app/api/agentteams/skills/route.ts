@@ -15,6 +15,7 @@ import {
   SkillEntry,
   SKILLS_BUCKET,
 } from '@/lib/skill-center-types';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function GET(request: NextRequest) {
   const bucket = getMinioBucket();
@@ -78,6 +79,9 @@ export async function POST(request: NextRequest) {
   if (!bucket) {
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
+
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'skill', 'upload');
+  if (denied) return denied;
 
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {

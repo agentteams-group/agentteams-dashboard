@@ -20,9 +20,11 @@
   - `useFileUpload(input)` — file → Matrix mxc + m.image/m.file 发送状态机
   - `useFileDropZone({ onFiles })` + `<DragDropOverlay>` — drag-and-drop 文件上传层
   - ChatRoom.tsx 由 1040 行降至 966 行；行为不变
+- **RBAC 扩展到所有写路由**：新增 `enforceLevelOnlyRbac`（基于权限等级，无资源范围检查）处理 storage / skills / projects / gateway / debug-log / wen-tian / mcps / worker 文件操作 等全局资源；worker/team 资源继续走 `enforceServerSideRbac`。403 时按 entity_type 写 audit 记录
+- **rbac-engine 扩展**：`checkPermissionByLevel(level, action)` —— 用于全局资源路由的纯等级决策
 
 ### Improvements
-- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 例、audit API route 5 例、worker route RBAC 3 例、usePersistedDraft 7 例、useFileUpload 5 例、useFileDropZone 4 例、DragDropOverlay 3 例；access.test.ts 与 plugins/route.test.ts mock 适配新 SessionValidation 形状。全量 1207 个用例通过
+- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 + 5 例（enforceLevelOnlyRbac）、audit API route 5 例、worker route RBAC 3 例、usePersistedDraft 7 例、useFileUpload 5 例、useFileDropZone 4 例、DragDropOverlay 3 例。全量 1212 个用例通过
 
 ### Contributors
 - @monkeycode-ai（平台 AI 协作者）

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function GET() {
   try {
@@ -23,9 +24,16 @@ export async function GET() {
 
 // POST — Create a new bucket
 export async function POST(request: NextRequest) {
+  let body: { name?: string; bucket?: string } = {};
   try {
-    const body = await request.json();
-    const bucketName = body.name || body.bucket;
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+  const bucketName = body.name || body.bucket;
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'storage.bucket', bucketName || 'new-bucket');
+  if (denied) return denied;
+  try {
     if (!bucketName || typeof bucketName !== 'string') {
       return NextResponse.json({ error: 'Bucket name is required' }, { status: 400 });
     }

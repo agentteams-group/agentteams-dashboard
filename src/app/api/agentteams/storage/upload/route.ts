@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Readable } from 'stream';
 import { createMinioClient } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function POST(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'storage', 'upload');
+  if (denied) return denied;
   const bucket = request.nextUrl.searchParams.get('bucket') || '';
   const key = request.nextUrl.searchParams.get('key') || '';
   const contentType = request.nextUrl.searchParams.get('contentType') || 'application/octet-stream';

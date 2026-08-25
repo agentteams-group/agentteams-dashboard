@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 const PRESIGN_EXPIRY_SECONDS = 15 * 60;
 
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'view', 'storage', 'presign');
+  if (denied) return denied;
   let body: { bucket?: string; key?: string; contentType?: string } = {};
   try {
     body = await request.json();

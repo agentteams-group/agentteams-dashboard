@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
+import { enforceServerSideRbac } from '@/lib/server-auth';
 
 async function hasPrefix(client: ReturnType<typeof createMinioClient>, bucket: string, prefix: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -17,6 +18,9 @@ export async function POST(
 ) {
   const { name } = await params;
   const subdir = request.nextUrl.searchParams.get('prefix') ?? '';
+
+  const denied = await enforceServerSideRbac(request, 'update', 'worker', name);
+  if (denied) return denied;
 
   if (!isValidNameSegment(name)) {
     return NextResponse.json({ error: '非法 Worker 名' }, { status: 400 });

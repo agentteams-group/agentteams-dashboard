@@ -10,7 +10,7 @@
  * (those would be forgeable).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { checkPermission, type Permission } from '@/lib/rbac-engine';
+import { checkPermission, checkPermissionByLevel, type Permission } from '@/lib/rbac-engine';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { appendAuditEvent } from '@/lib/audit-log';
 
@@ -107,6 +107,44 @@ export async function enforceServerSideRbac(
   if (result.allowed) return null;
   return NextResponse.json(
     { success: false, error: result.reason, action, resourceType, resourceName },
+    { status: 403 },
+  );
+}
+
+/**
+ * Level-only RBAC check for global resources (storage, skill catalog,
+ * gateway routes, etc.) that are not partitioned per-team / per-worker.
+ * Bypasses the resource-scoping logic in `rbac-engine` and answers only
+ * whether the permission level grants the requested action. Mirrors
+ * `enforceServerSideRbac` semantics for the no-identity path.
+ */
+export async function enforceLevelOnlyRbac(
+  request: NextRequest,
+  action: Permission,
+  resourceType: string,
+  resourceName: string,
+): Promise<NextResponse | null> {
+  const identity = readServerIdentity(request);
+  if (!identity) return null;
+  if (checkPermissionByLevel(identity.level, action)) return null;
+  await appendAuditEvent({
+    actor: identity.name,
+    actor_level: identity.level,
+    entity_type: 'system',
+    entity_name: resourceName,
+    action: `rbac.deny.${action}`,
+    details: `权限等级 ${identity.level} 不允许 "${action}" ${resourceType} 操作`,
+    severity: 'warning',
+    source_ip: identity.sourceIp,
+  });
+  return NextResponse.json(
+    {
+      success: false,
+      error: `权限等级 ${identity.level} 不允许 "${action}" ${resourceType} 操作`,
+      action,
+      resourceType,
+      resourceName,
+    },
     { status: 403 },
   );
 }
