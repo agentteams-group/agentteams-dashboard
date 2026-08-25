@@ -15,9 +15,14 @@
   - `src/lib/server-auth.ts` 提供 `enforceServerSideRbac`，workers/teams/managers/humans 的写操作路由（POST/PUT/DELETE/wake/sleep/ensure-ready）调用 rbac-engine 做服务端细粒度校验；403 时自动写一条 warning 审计
   - `src/app/api/agentteams/audit/route.ts` 新增：POST 写入（服务端镜像客户端审计事件），GET 列表（admin-only，按时间/entity 过滤）
   - `auditMutation` 客户端 helper 自动向服务端镜像审计事件，失败仅 warn 不阻塞 mutation
+- **ChatRoom 拆分（Phase 1）**：抽出三个独立模块
+  - `usePersistedDraft(roomId)` — 每房间的输入草稿持久化 hook（含 setValueLocal 不写 storage 的 setInput-only 接口，保留 edit session 回填行为）
+  - `useFileUpload(input)` — file → Matrix mxc + m.image/m.file 发送状态机
+  - `useFileDropZone({ onFiles })` + `<DragDropOverlay>` — drag-and-drop 文件上传层
+  - ChatRoom.tsx 由 1040 行降至 966 行；行为不变
 
 ### Improvements
-- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 例、audit API route 5 例、worker route RBAC 3 例；access.test.ts 与 plugins/route.test.ts mock 适配新 SessionValidation 形状。全量 1188 个用例通过
+- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 例、audit API route 5 例、worker route RBAC 3 例、usePersistedDraft 7 例、useFileUpload 5 例、useFileDropZone 4 例、DragDropOverlay 3 例；access.test.ts 与 plugins/route.test.ts mock 适配新 SessionValidation 形状。全量 1207 个用例通过
 
 ### Contributors
 - @monkeycode-ai（平台 AI 协作者）
