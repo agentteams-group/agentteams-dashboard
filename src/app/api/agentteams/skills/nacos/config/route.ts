@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getNacosConfig, setNacosConfig } from '@/lib/skill-center-config';
 import type { NacosConfig } from '@/lib/skill-center-config';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 function isValidNacosUrl(url: string): boolean {
   return /^nacos:\/\/[a-zA-Z0-9._-]+(:[0-9]+)?\/[a-zA-Z0-9._-]+$/.test(url);
@@ -17,6 +18,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'update', 'skill.nacos.config', 'config');
+  if (denied) return denied;
   let body: { registryUrl?: string; namespace?: string; alias?: string; protocol?: 'http' | 'https'; apiPrefix?: string; mode?: 'services' | 'skills'; username?: string; password?: string };
   try {
     body = await request.json();

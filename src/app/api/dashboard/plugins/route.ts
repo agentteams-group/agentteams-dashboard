@@ -54,8 +54,8 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   // Plugin packages become executable frontend code for every dashboard user.
   // Require the same Higress Console session gate as /api/agentteams/* writes.
-  const authorized = await validateHigressSession(request);
-  if (!authorized) {
+  const { valid } = await validateHigressSession(request);
+  if (!valid) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

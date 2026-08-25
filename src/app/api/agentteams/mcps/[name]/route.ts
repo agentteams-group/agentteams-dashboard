@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -69,6 +70,9 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid MCP server name' }, { status: 400 });
   }
 
+  const denied = await enforceLevelOnlyRbac(request, 'update', 'mcp', name);
+  if (denied) return denied;
+
   let body: { url?: string; transport?: string; type?: string; timeout?: number; headers?: Record<string, string>; description?: string };
   try {
     body = await request.json();
@@ -132,7 +136,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   const bucket = getMinioBucket();
@@ -144,6 +148,9 @@ export async function DELETE(
   if (!isValidMcpName(name)) {
     return NextResponse.json({ error: 'Invalid MCP server name' }, { status: 400 });
   }
+
+  const denied = await enforceLevelOnlyRbac(request, 'delete', 'mcp', name);
+  if (denied) return denied;
 
   const key = `${MCP_SERVERS_PREFIX}${name}.json`;
 

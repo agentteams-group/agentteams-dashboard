@@ -29,6 +29,16 @@ function getLevelPermissions(level: number | undefined): Permission[] {
 }
 
 /**
+ * Check whether a permission level grants the action. Pure level-based
+ * decision (no resource scoping) — applies to global resources such as
+ * storage buckets, skill catalogs, project boards, and gateway routes
+ * that are not partitioned per-team/per-worker.
+ */
+export function checkPermissionByLevel(level: number | undefined, action: Permission): boolean {
+  return getLevelPermissions(level).includes(action);
+}
+
+/**
  * Check if a human has a specific permission on a resource.
  * Rules:
  * 1. Check explicit RBAC rules first (deny overrides allow)

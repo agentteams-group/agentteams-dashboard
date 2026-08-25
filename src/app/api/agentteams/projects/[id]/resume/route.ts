@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getControllerUrl, proxyToAgentTeams } from '../../../proxy-helper';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  const denied = await enforceLevelOnlyRbac(request, 'update', 'project', id);
+  if (denied) return denied;
 
   const search = request.nextUrl.searchParams;
   const forwarded = new URLSearchParams();

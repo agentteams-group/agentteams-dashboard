@@ -10,7 +10,8 @@ export async function requireHigressConsoleAccess(request: NextRequest): Promise
     return NextResponse.json({ error: message }, { status: 503 });
   }
 
-  if (!(await validateHigressSession(request))) {
+  const { valid } = await validateHigressSession(request);
+  if (!valid) {
     return NextResponse.json({ error: 'A valid Higress Console session is required' }, { status: 401 });
   }
   return null;

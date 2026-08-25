@@ -5,6 +5,10 @@ import { useChatStore } from './ChatStore';
 import { MessageList, type LocalOutboundMessage, type ChatSystemNotice } from './structures/MessageList';
 import { ThreadPanel } from './structures/ThreadPanel';
 import type { ScrollPanelHandle } from './structures/ScrollPanel';
+import { usePersistedDraft } from './hooks/usePersistedDraft';
+import { useFileUpload } from './hooks/useFileUpload';
+import { useFileDropZone } from './hooks/useFileDropZone';
+import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
   useMatrixRoomMessages,
@@ -25,7 +29,7 @@ import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck, Upload } from 'lucide-react';
+import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { parseOutboundCommand } from './composer-commands';
@@ -73,15 +77,12 @@ export function ChatRoom({
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  const { value: inputValue, setValue: setInputValue, setValueLocal: setInputValueLocal, clear: clearDraft } = usePersistedDraft(roomId);
   // Composer edit session (ArrowUp on empty input → edit my latest message)
   const [editSession, setEditSession] = useState<{ eventId: string; initialText: string } | null>(null);
   const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  // Drag-and-drop file upload overlay
-  const [dragActive, setDragActive] = useState(false);
   const [showWorkers, setShowWorkers] = useState(false);
   // Worker rooms default to the owning worker so the files panel opens on
   // "the current worker's" directory instead of an empty picker.
@@ -90,32 +91,6 @@ export function ChatRoom({
   const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
   const noticeCounterRef = useRef(0);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
-  const dragCounterRef = useRef(0);
-
-  // ---- Per-room draft persistence (element-web behavior) ----
-  // The composer state survives room switches (ChatRoom is not remounted), so
-  // without drafts a half-typed message would follow the user into the next
-  // room and could be sent to the wrong place. Save on input, restore on switch.
-  const draftKey = `agentteams-chat-draft:${roomId}`;
-  // Restore the draft during render when the room changes (same adjust-state-
-  // during-render pattern as the dashboard's poll handlers).
-  const [prevRoomId, setPrevRoomId] = useState(roomId);
-  if (prevRoomId !== roomId) {
-    setPrevRoomId(roomId);
-    let draft = '';
-    try {
-      draft = localStorage.getItem(`agentteams-chat-draft:${roomId}`) ?? '';
-    } catch { /* storage unavailable */ }
-    setInputValue(draft);
-    setEditSession(null);
-  }
-
-  const persistDraft = useCallback((text: string) => {
-    try {
-      if (text.trim()) localStorage.setItem(draftKey, text);
-      else localStorage.removeItem(draftKey);
-    } catch { /* storage unavailable */ }
-  }, [draftKey]);
 
   const { userId, isLoggedIn } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
@@ -289,6 +264,10 @@ export function ChatRoom({
     setLocalMessages(prev => prev.filter(m => m.clientId !== clientId));
   }, []);
 
+  const pushLocal = useCallback((message: LocalOutboundMessage) => {
+    setLocalMessages(prev => [...prev, message]);
+  }, []);
+
   const patchLocal = useCallback((clientId: string, patch: Partial<LocalOutboundMessage>) => {
     setLocalMessages(prev => prev.map(m => m.clientId === clientId ? { ...m, ...patch } : m));
   }, []);
@@ -394,49 +373,18 @@ export function ChatRoom({
 
   // Upload a file to the Matrix homeserver, then send it as an m.image /
   // m.file message so it appears in the room timeline like any other message.
-  const handleFileUpload = useCallback(async (file: File) => {
-    if (!roomId || !isLoggedIn || !userId) return;
-    setIsUploading(true);
-    const cid = `local-${Date.now()}-${++localCounterRef.current}`;
-    const isImage = file.type.startsWith('image/');
-    setLocalMessages(prev => [...prev, {
-      clientId: cid,
-      sender: userId,
-      senderShort: userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId,
-      content: file.name,
-      timestamp: Date.now(),
-      status: 'sending' as const,
-    }]);
-    try {
-      const { content_uri } = await uploadMutation.mutateAsync({ roomId, file });
-      const extra: Record<string, unknown> = {
-        msgtype: isImage ? 'm.image' : 'm.file',
-        url: content_uri,
-        info: {
-          mimetype: file.type || 'application/octet-stream',
-          size: file.size,
-        },
-      };
-      sendMutation.mutate(
-        { roomId, body: file.name, extra },
-        {
-          onSuccess: () => removeLocal(cid),
-          onError: (err) => {
-            patchLocal(cid, { status: 'error', error: err.message });
-            pushSystemNotice(buildSystemNoticeFromError(err, { content: file.name }, ++noticeCounterRef.current));
-          },
-        }
-      );
-    } catch (err) {
-      patchLocal(cid, {
-        status: 'error',
-        error: err instanceof Error ? err.message : '上传失败',
-      });
-      pushSystemNotice(buildSystemNoticeFromError(err, { content: file.name }, ++noticeCounterRef.current));
-    } finally {
-      setIsUploading(false);
-    }
-  }, [roomId, isLoggedIn, userId, uploadMutation, sendMutation, removeLocal, patchLocal, pushSystemNotice]);
+  const { isUploading, upload: handleFileUpload } = useFileUpload({
+    roomId,
+    isLoggedIn,
+    userId,
+    upload: (input) => uploadMutation.mutateAsync(input),
+    send: (args, callbacks) => sendMutation.mutate(args, callbacks),
+    pushLocal,
+    patchLocal,
+    removeLocal,
+    pushSystemNotice,
+    buildSystemNotice: buildSystemNoticeFromError,
+  });
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
     let trimmed = content.trim();
@@ -448,7 +396,7 @@ export function ChatRoom({
 
     if (onSendMessage) {
       onSendMessage(trimmed, _options, mentions);
-      persistDraft('');
+      clearDraft();
       return;
     }
     if (!roomId || !isLoggedIn) return;
@@ -457,21 +405,19 @@ export function ChatRoom({
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
-    setInputValue('');
+    clearDraft();
     setMentions([]);
     setReplyTo(null);
-    persistDraft('');
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, persistDraft]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);
-    persistDraft(content);
     if (content.trim()) {
       notifyTyping();
     } else {
       stopTyping();
     }
-  }, [notifyTyping, stopTyping, persistDraft]);
+  }, [notifyTyping, stopTyping, setInputValue]);
 
   // ---- Composer edit session (ArrowUp flow) ----
   const handleRequestEditLast = useCallback(() => {
@@ -485,10 +431,12 @@ export function ChatRoom({
         Date.now() - m.timestamp < EDIT_WINDOW_MS
       ) {
         setEditSession({ eventId: m.eventId, initialText: m.content });
-        setInputValue(m.content);
+        setInputValueLocal(m.content);
         return;
       }
     }
+    // setInputValueLocal is a stable setter returned by the hook.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formattedMessages]);
 
   const handleComposerEditSubmit = useCallback(async (text: string) => {
@@ -503,44 +451,26 @@ export function ChatRoom({
         body: trimmed,
       });
       setEditSession(null);
-      setInputValue('');
-      persistDraft('');
+      clearDraft();
     } catch (err) {
       // Keep the edit session open so the user can retry.
       setActionError(err instanceof Error ? err.message : '编辑消息失败');
     }
-  }, [editSession, editMutation, roomId, persistDraft]);
+  }, [editSession, editMutation, roomId, clearDraft]);
 
   const handleCancelEdit = useCallback(() => {
     setEditSession(null);
-    setInputValue('');
+    setInputValueLocal('');
+    // setInputValueLocal is stable (from the hook).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---- Drag-and-drop file upload (overlay on the whole room area) ----
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
-    e.preventDefault();
-    dragCounterRef.current += 1;
-    setDragActive(true);
-  }, []);
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
-    e.preventDefault();
-  }, []);
-  const handleDragLeave = useCallback(() => {
-    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-    if (dragCounterRef.current === 0) setDragActive(false);
-  }, []);
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
-    e.preventDefault();
-    dragCounterRef.current = 0;
-    setDragActive(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
+  const { dragActive, dropZoneProps } = useFileDropZone({
+    onFiles: (files) => {
       for (const file of files) handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
+    },
+  });
 
   const handleAutoScrollChange = useCallback((auto: boolean) => {
     setAutoScrollLocal(auto);
@@ -778,21 +708,17 @@ export function ChatRoom({
     <div
       ref={chatLayoutRef}
       className={`flex h-full relative ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragEnter={dropZoneProps.onDragEnter}
+      onDragOver={dropZoneProps.onDragOver}
+      onDragLeave={dropZoneProps.onDragLeave}
+      onDrop={dropZoneProps.onDrop}
     >
       {/* Drag-and-drop upload overlay */}
-      {dragActive && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-[2px] pointer-events-none">
-          <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-emerald-500/60 bg-emerald-500/5 px-10 py-8">
-            <Upload className="w-8 h-8 text-emerald-500" />
-            <p className="text-sm font-medium">松开以上传文件</p>
-            <p className="text-xs text-muted-foreground">支持多文件，发送到 {roomName}</p>
-          </div>
-        </div>
-      )}
+      <DragDropOverlay
+        active={dragActive}
+        label="松开以上传文件"
+        description={`支持多文件，发送到 ${roomName}`}
+      />
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {header}

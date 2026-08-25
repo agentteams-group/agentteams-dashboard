@@ -40,10 +40,13 @@
 `.monkeycode/specs/` 目录包含已完成的功能规范文档：
 
 - [chat-unread-sort-rendering/](../.monkeycode/specs/chat-unread-sort-rendering/) - 聊天未读排序渲染
+- [chatroom-split/](../.monkeycode/specs/chatroom-split/) - ChatRoom 拆分（Phase 1：draft / upload / drag-drop）
 - [dashboard-navigation-cleanup/](../.monkeycode/specs/dashboard-navigation-cleanup/) - 导航清理
 - [debug-log-collection/](../.monkeycode/specs/debug-log-collection/) - 调试日志收集
 - [openclaw-bridge/](../.monkeycode/specs/openclaw-bridge/) - OpenClaw Bridge
 - [plugin-system/](../.monkeycode/specs/plugin-system/) - 插件系统
+- [runtime-block-protocol/](../.monkeycode/specs/runtime-block-protocol/) - `org.agentteams.run` v1 协议契约
+- [server-side-rbac-audit/](../.monkeycode/specs/server-side-rbac-audit/) - 服务端 RBAC + JSONL 审计
 - [theme-system/](../.monkeycode/specs/theme-system/) - 主题系统
 - [theme-system-ux-redesign/](../.monkeycode/specs/theme-system-ux-redesign/) - 主题 UX 重设计
 - [theme-system-ux-redesign-v2/](../.monkeycode/specs/theme-system-ux-redesign-v2/) - 主题 UX 重设计 v2

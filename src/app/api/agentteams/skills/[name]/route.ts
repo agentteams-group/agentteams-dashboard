@@ -6,6 +6,7 @@ import {
   SKILLS_BUCKET,
   SKILLS_METADATA_PREFIX,
 } from '@/lib/skill-center-types';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
@@ -80,6 +81,9 @@ export async function PUT(
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
 
+  const denied = await enforceLevelOnlyRbac(request, 'update', 'skill', name);
+  if (denied) return denied;
+
   let body: { description?: string; version?: string };
   try {
     body = await request.json();
@@ -125,7 +129,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   const { name } = await params;
@@ -137,6 +141,9 @@ export async function DELETE(
   if (!bucket) {
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
+
+  const denied = await enforceLevelOnlyRbac(request, 'delete', 'skill', name);
+  if (denied) return denied;
 
   try {
     const client = createMinioClient();

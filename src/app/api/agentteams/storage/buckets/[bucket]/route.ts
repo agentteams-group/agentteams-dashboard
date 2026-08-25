@@ -1,15 +1,18 @@
 // DELETE /api/agentteams/storage/buckets/[bucket] — Delete a bucket
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient } from '@/lib/minio-client';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ bucket: string }> }
 ) {
   const { bucket } = await params;
+  const bucketName = decodeURIComponent(bucket);
+  const denied = await enforceLevelOnlyRbac(request, 'delete', 'storage.bucket', bucketName);
+  if (denied) return denied;
   try {
     const client = createMinioClient();
-    const bucketName = decodeURIComponent(bucket);
 
     const exists = await client.bucketExists(bucketName);
     if (!exists) {

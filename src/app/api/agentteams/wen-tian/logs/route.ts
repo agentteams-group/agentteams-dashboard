@@ -20,6 +20,7 @@
 //   error     { error }
 
 import { NextRequest } from 'next/server';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 import { redactPii } from '../../debug-log/redact';
 import {
   DockerContext,
@@ -230,6 +231,8 @@ function buildPrompt(args: {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'view', 'wen-tian', 'logs');
+  if (denied) return denied;
   let rawBody: unknown;
   try { rawBody = await request.json(); } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });

@@ -10,6 +10,7 @@ import {
   Sparkles,
   ListTodo,
   GitBranch,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -46,6 +47,7 @@ export const navItems: NavItem[] = [
   // 资源中心分组
   { id: 'skills', label: '市场', icon: Sparkles, group: 'resource' },
   { id: 'models', label: '模型', icon: Brain, group: 'resource' },
+  { id: 'audit', label: '审计', icon: ScrollText, group: 'resource' },
   { id: 'docs', label: '文档', icon: BookOpen, group: 'footer' },
 ];
 

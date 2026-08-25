@@ -7,9 +7,28 @@
 - **项目时间线面板（Project Timeline Panel）**：在项目详情面板底部新增「干预记录」折叠区，调用 Controller `GET /api/v1/projects/{id}/history` 与 `…/history/{ts}` 端点，按时间倒序列出每次人工干预（暂停 / 恢复 / 重规划等）前的 workflow 快照元数据；点击单条记录可查看状态、标题、操作人、操作时间、暂停原因等审计字段
   - 用 AbortController 取消未完成的请求，避免面板关闭/组件卸载后状态错位
 - **项目 API 降级横幅（DegradedBanner）**：在项目页头部展示 Controller 端点 404（API 未部署）/ 500（Controller 故障）的差异化提示，并附带 Controller 返回的原始错误信息，便于运维快速定位
+- **运行时块协议 v1 契约（`org.agentteams.run`）**：新增 `src/lib/a2ui/protocol.ts` 定义带版本号的 discriminated union（text/thinking/tool_call/confirmation/error），并把 `parseAgentRunBlocks` 拆为 v1 规范化路径与 v0 透传路径。v1 路径为 tool_call 块补齐 `tool_call_id` / `status` / `started_at` / `finished_at` 等字段，confirmation 块要求 `confirmation_id`。未知版本一律降级到现有文本启发式而不丢弃消息
+- **结构化 tool_call 去重**：`recordToolCalls` 新增可选 `structuredKeys` 参数，当 runtime 上传带 `tool_call_id` 的结构化块时以 id 为权威去重键；同一事件多次修订或跨设备复用同一 id 都不会重复计入 Worker 卡片活物条。v0/纯事件块路径行为不变
+- **服务端 RBAC + JSONL 审计**：
+  - `src/lib/audit-log.ts` 新增 append-only JSONL 审计日志（10 MB 自动 rotate，保留 30 份归档，路径可通过 `AGENTTEAMS_AUDIT_LOG_PATH` 覆盖）
+  - `validateHigressSession` 现返回 `{ valid, user }`，middleware 在通过验证时把 `x-agentteams-user` / `x-agentteams-user-level` 注入下游，proxy-helper 透传给 Controller
+  - `src/lib/server-auth.ts` 提供 `enforceServerSideRbac`，workers/teams/managers/humans 的写操作路由（POST/PUT/DELETE/wake/sleep/ensure-ready）调用 rbac-engine 做服务端细粒度校验；403 时自动写一条 warning 审计
+  - `src/app/api/agentteams/audit/route.ts` 新增：POST 写入（服务端镜像客户端审计事件），GET 列表（admin-only，按时间/entity 过滤）
+  - `auditMutation` 客户端 helper 自动向服务端镜像审计事件，失败仅 warn 不阻塞 mutation
+- **ChatRoom 拆分（Phase 1）**：抽出三个独立模块
+  - `usePersistedDraft(roomId)` — 每房间的输入草稿持久化 hook（含 setValueLocal 不写 storage 的 setInput-only 接口，保留 edit session 回填行为）
+  - `useFileUpload(input)` — file → Matrix mxc + m.image/m.file 发送状态机
+  - `useFileDropZone({ onFiles })` + `<DragDropOverlay>` — drag-and-drop 文件上传层
+  - ChatRoom.tsx 由 1040 行降至 966 行；行为不变
+- **RBAC 扩展到所有写路由**：新增 `enforceLevelOnlyRbac`（基于权限等级，无资源范围检查）处理 storage / skills / projects / gateway / debug-log / wen-tian / mcps / worker 文件操作 等全局资源；worker/team 资源继续走 `enforceServerSideRbac`。403 时按 entity_type 写 audit 记录
+- **rbac-engine 扩展**：`checkPermissionByLevel(level, action)` —— 用于全局资源路由的纯等级决策
+- **审计 viewer**：新增"审计"侧边栏 section（admin-only），通过 `GET /api/agentteams/audit` 渲染服务端 JSONL 事件表格，支持 entity_type 过滤与 15s 轮询；非 admin 看到友好提示而非 403 报错
+- **新 hook `useAuditEvents`**：TanStack Query 包装 `/api/agentteams/audit`，封装 403 错误体不抛出
+
+### Improvements
+- 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 + 5 例（enforceLevelOnlyRbac）、audit API route 5 例、worker route RBAC 3 例、usePersistedDraft 7 例、useFileUpload 5 例、useFileDropZone 4 例、DragDropOverlay 3 例。全量 1212 个用例通过
 
 ### Contributors
-
 - @monkeycode-ai（平台 AI 协作者）
 
 ## v1.2.3.1 (2026-08-18)

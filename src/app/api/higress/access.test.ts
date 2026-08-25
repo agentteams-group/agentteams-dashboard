@@ -34,7 +34,7 @@ describe('Higress Console write access', () => {
 
   it('rejects writes without a valid Console session', async () => {
     mockGetHigressConsoleURL.mockReturnValue('https://console.example.test');
-    mockValidateHigressSession.mockResolvedValue(false);
+    mockValidateHigressSession.mockResolvedValue({ valid: false, user: null });
 
     const result = await requireHigressConsoleWriteAccess(
       new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST' })
@@ -45,7 +45,7 @@ describe('Higress Console write access', () => {
 
   it('allows writes with valid deployment configuration and session', async () => {
     mockGetHigressConsoleURL.mockReturnValue('https://console.example.test');
-    mockValidateHigressSession.mockResolvedValue(true);
+    mockValidateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
 
     const result = await requireHigressConsoleWriteAccess(
       new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST' })

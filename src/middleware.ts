@@ -13,6 +13,21 @@ const PUBLIC_PATHS = [
   '/api/agentteams/setup/status',
 ];
 
+const USER_NAME_HEADER = 'x-agentteams-user';
+const USER_LEVEL_HEADER = 'x-agentteams-user-level';
+
+function withUserHeaders(request: NextRequest, user: { name: string; level: number } | null): Headers {
+  const headers = new Headers(request.headers);
+  if (user) {
+    headers.set(USER_NAME_HEADER, user.name);
+    headers.set(USER_LEVEL_HEADER, String(user.level));
+  } else {
+    headers.delete(USER_NAME_HEADER);
+    headers.delete(USER_LEVEL_HEADER);
+  }
+  return headers;
+}
+
 // Backward compatibility for embedded mode: old /dashboard/ URLs redirect to root
 // because the dashboard is now served at "/" when NEXT_PUBLIC_BASE_PATH is empty.
 export async function middleware(request: NextRequest) {
@@ -52,10 +67,14 @@ export async function middleware(request: NextRequest) {
       return res;
     }
 
-    const valid = await validateHigressSession(request);
+    const { valid, user } = await validateHigressSession(request);
     if (!valid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Forward the resolved identity downstream so route handlers (and the
+    // Controller proxy) can apply server-side RBAC + audit attribution.
+    return NextResponse.next({ request: { headers: withUserHeaders(request, user) } });
   }
 
   return NextResponse.next();

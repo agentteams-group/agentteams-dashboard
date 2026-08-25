@@ -16,6 +16,7 @@ describe('Navigation with groups', () => {
       'humans',
       'skills',
       'models',
+      'audit',
       'docs',
     ]);
     expect(navItems.every((item) => 'group' in item)).toBe(true);
@@ -37,6 +38,7 @@ describe('Navigation with groups', () => {
     expect(groupMap.get('humans')).toBe('runtime');
     expect(groupMap.get('skills')).toBe('resource');
     expect(groupMap.get('models')).toBe('resource');
+    expect(groupMap.get('audit')).toBe('resource');
     expect(groupMap.get('docs')).toBe('footer');
   });
 

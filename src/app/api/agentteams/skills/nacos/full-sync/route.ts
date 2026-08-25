@@ -1,10 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { nacosSyncEngine } from '@/lib/nacos-sync-engine';
 import { getNacosConfig } from '@/lib/skill-center-config';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const denied = await enforceLevelOnlyRbac(request, 'update', 'skill.nacos', 'full-sync');
+  if (denied) return denied;
   try {
     const config = await getNacosConfig();
     if (!config) {
