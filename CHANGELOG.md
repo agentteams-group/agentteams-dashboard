@@ -22,6 +22,8 @@
   - ChatRoom.tsx 由 1040 行降至 966 行；行为不变
 - **RBAC 扩展到所有写路由**：新增 `enforceLevelOnlyRbac`（基于权限等级，无资源范围检查）处理 storage / skills / projects / gateway / debug-log / wen-tian / mcps / worker 文件操作 等全局资源；worker/team 资源继续走 `enforceServerSideRbac`。403 时按 entity_type 写 audit 记录
 - **rbac-engine 扩展**：`checkPermissionByLevel(level, action)` —— 用于全局资源路由的纯等级决策
+- **审计 viewer**：新增"审计"侧边栏 section（admin-only），通过 `GET /api/agentteams/audit` 渲染服务端 JSONL 事件表格，支持 entity_type 过滤与 15s 轮询；非 admin 看到友好提示而非 403 报错
+- **新 hook `useAuditEvents`**：TanStack Query 包装 `/api/agentteams/audit`，封装 403 错误体不抛出
 
 ### Improvements
 - 新增测试：parser v1 路径 11 例、tool-call-counter 结构化 id 去重 7 例、audit-log 6 例、server-auth 5 + 5 例（enforceLevelOnlyRbac）、audit API route 5 例、worker route RBAC 3 例、usePersistedDraft 7 例、useFileUpload 5 例、useFileDropZone 4 例、DragDropOverlay 3 例。全量 1212 个用例通过
