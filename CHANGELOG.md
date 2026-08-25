@@ -7,9 +7,13 @@
 - **项目时间线面板（Project Timeline Panel）**：在项目详情面板底部新增「干预记录」折叠区，调用 Controller `GET /api/v1/projects/{id}/history` 与 `…/history/{ts}` 端点，按时间倒序列出每次人工干预（暂停 / 恢复 / 重规划等）前的 workflow 快照元数据；点击单条记录可查看状态、标题、操作人、操作时间、暂停原因等审计字段
   - 用 AbortController 取消未完成的请求，避免面板关闭/组件卸载后状态错位
 - **项目 API 降级横幅（DegradedBanner）**：在项目页头部展示 Controller 端点 404（API 未部署）/ 500（Controller 故障）的差异化提示，并附带 Controller 返回的原始错误信息，便于运维快速定位
+- **运行时块协议 v1 契约（`org.agentteams.run`）**：新增 `src/lib/a2ui/protocol.ts` 定义带版本号的 discriminated union（text/thinking/tool_call/confirmation/error），并把 `parseAgentRunBlocks` 拆为 v1 规范化路径与 v0 透传路径。v1 路径为 tool_call 块补齐 `tool_call_id` / `status` / `started_at` / `finished_at` 等字段，confirmation 块要求 `confirmation_id`。未知版本一律降级到现有文本启发式而不丢弃消息
+- **结构化 tool_call 去重**：`recordToolCalls` 新增可选 `structuredKeys` 参数，当 runtime 上传带 `tool_call_id` 的结构化块时以 id 为权威去重键；同一事件多次修订或跨设备复用同一 id 都不会重复计入 Worker 卡片活物条。v0/纯事件块路径行为不变
+
+### Improvements
+- 新增测试：parser v1 路径 11 例（每种块类型 + 字段缺失 + 未知版本 + 未知块类型）；tool-call-counter 结构化 id 去重 7 例。全量 1167 个用例通过
 
 ### Contributors
-
 - @monkeycode-ai（平台 AI 协作者）
 
 ## v1.2.3.1 (2026-08-18)

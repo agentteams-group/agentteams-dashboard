@@ -19,6 +19,13 @@
 
 import type { A2uiMessage } from '@a2ui/web_core/v0_9';
 import { tryParseAgentReprBlocks } from './agent-repr';
+import {
+  normalizeConfirmationPayload,
+  normalizeErrorPayload,
+  normalizeToolCallPayload,
+  resolveProtocolVersion,
+  RUNTIME_BLOCK_PROTOCOL_VERSION,
+} from './protocol';
 import type { WorkflowPayload } from './workflow';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -59,28 +66,106 @@ const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
 
 /**
  * Reads an optional structured run payload attached by an AgentTeams runtime
- * adapter. AgentTeams itself does not define this Matrix event schema, so it
- * remains an opt-in compatibility path alongside the runtime repr parser.
+ * adapter. The `version` field on the envelope selects the parsing strategy:
+ *
+ * - "1" (or future versions): field-normalised shapes produced by
+ *   `normalizeToolCallPayload` / `normalizeConfirmationPayload` /
+ *   `normalizeErrorPayload`. Invalid blocks are dropped (not silently coerced
+ *   into text) so consumers can see the gap.
+ * - "0" / undefined: pass-through parser that maps every recognised block
+ *   type with its declared fields. Kept so existing opt-in producers do not
+ *   break.
+ * - unknown version: returns undefined so the caller falls back to the legacy
+ *   text heuristics — never silently drops a message.
  */
 export function parseAgentRunBlocks(value: unknown, isStreaming = false): ParsedA2uiBlock[] | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const blocks = (value as Record<string, unknown>).blocks;
+  const source = value as Record<string, unknown>;
+  const version = resolveProtocolVersion(source.version);
+  if (version === undefined) return undefined;
+
+  if (version === RUNTIME_BLOCK_PROTOCOL_VERSION) {
+    return parseV1RunBlocks(source, isStreaming);
+  }
+  return parseLegacyRunBlocks(source, isStreaming);
+}
+
+function parseV1RunBlocks(source: Record<string, unknown>, isStreaming: boolean): ParsedA2uiBlock[] | undefined {
+  const rawBlocks = source.blocks;
+  if (!Array.isArray(rawBlocks)) return undefined;
+
+  const blocks: ParsedA2uiBlock[] = [];
+  for (const raw of rawBlocks) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const candidate = raw as Record<string, unknown>;
+    const type = candidate.type;
+
+    switch (type) {
+      case 'text': {
+        if (typeof candidate.text !== 'string') continue;
+        blocks.push({
+          type: 'text',
+          text: candidate.text,
+          isStreaming: candidate.isStreaming === true || (isStreaming && !('isStreaming' in candidate)),
+        });
+        break;
+      }
+      case 'thinking': {
+        if (typeof candidate.content !== 'string') continue;
+        blocks.push({
+          type: 'thinking',
+          content: candidate.content,
+          isStreaming: candidate.isStreaming === true || (isStreaming && !('isStreaming' in candidate)),
+        });
+        break;
+      }
+      case 'tool_call': {
+        const normalised = normalizeToolCallPayload(candidate);
+        if (!normalised) continue;
+        blocks.push({
+          type: 'tool_call',
+          payload: normalised.payload as unknown as Record<string, unknown>,
+          isStreaming: isStreaming && normalised.payload.status === 'running' ? true : undefined,
+        });
+        break;
+      }
+      case 'confirmation': {
+        const normalised = normalizeConfirmationPayload(candidate);
+        if (!normalised) continue;
+        blocks.push({ type: 'confirmation', payload: normalised.payload as unknown as Record<string, unknown> });
+        break;
+      }
+      case 'error': {
+        const normalised = normalizeErrorPayload(candidate);
+        if (!normalised) continue;
+        blocks.push({ type: 'error', payload: normalised.payload as unknown as Record<string, unknown> });
+        break;
+      }
+      default:
+        continue;
+    }
+  }
+  return blocks.length > 0 ? blocks : undefined;
+}
+
+function parseLegacyRunBlocks(source: Record<string, unknown>, isStreaming: boolean): ParsedA2uiBlock[] | undefined {
+  const blocks = source.blocks;
   if (!Array.isArray(blocks)) return undefined;
 
   return blocks.flatMap((block): ParsedA2uiBlock[] => {
     if (!block || typeof block !== 'object' || Array.isArray(block)) return [];
-    const source = block as Record<string, unknown>;
-    const type = source.type;
+    const candidate = block as Record<string, unknown>;
+    const type = candidate.type;
     if (typeof type !== 'string' || !AGENT_RUN_BLOCK_TYPES.has(type as ParsedA2uiBlock['type'])) return [];
 
     const parsed: ParsedA2uiBlock = { type: type as ParsedA2uiBlock['type'] };
-    if (typeof source.content === 'string') parsed.content = source.content;
-    if (typeof source.text === 'string') parsed.text = source.text;
-    if (source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)) {
-      parsed.payload = source.payload as Record<string, unknown>;
+    if (typeof candidate.content === 'string') parsed.content = candidate.content;
+    if (typeof candidate.text === 'string') parsed.text = candidate.text;
+    if (candidate.payload && typeof candidate.payload === 'object' && !Array.isArray(candidate.payload)) {
+      parsed.payload = candidate.payload as Record<string, unknown>;
     }
-    if (Array.isArray(source.messages)) parsed.messages = source.messages as A2uiMessage[];
-    if (source.isStreaming === true || (isStreaming && type !== 'text')) parsed.isStreaming = true;
+    if (Array.isArray(candidate.messages)) parsed.messages = candidate.messages as A2uiMessage[];
+    if (candidate.isStreaming === true || (isStreaming && type !== 'text')) parsed.isStreaming = true;
     return [parsed];
   });
 }
