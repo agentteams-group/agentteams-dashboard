@@ -113,7 +113,24 @@ flowchart LR
   API --> Console["Higress Console"]
   API --> Storage["MinIO"]
   API --> Nacos["Nacos 注册中心"]
+  API --> AuditLog["审计日志 (JSONL)"]
 ```
+
+## 服务端治理（v1.2.4 起）
+
+`src/middleware.ts` 在 Higress session 通过验证后，注入 `x-agentteams-user` / `x-agentteams-user-level` 两个请求头；`src/app/api/agentteams/proxy-helper.ts` 透传给 Controller 便于审计关联。`src/lib/server-auth.ts` 的 `enforceServerSideRbac` 调用既有 `src/lib/rbac-engine.ts`（3 级权限 + 显式规则 deny 优先），对 workers / teams / managers / humans 的写操作路由做服务端细粒度校验；403 时自动写一条 warning 审计。
+
+审计事件落 `src/lib/audit-log.ts` 维护的 append-only JSONL（10 MB rotate，保留 30 份归档，路径由 `AGENTTEAMS_AUDIT_LOG_PATH` 覆盖，默认 `${cwd}/logs/audit.log.jsonl`）。客户端 `auditMutation`（`src/lib/audit-store.ts`）每次写入同时镜像到服务端 `/api/agentteams/audit` POST，失败仅 warn 不阻塞 mutation。审计列表查询走 `GET /api/agentteams/audit`，admin-only。
+
+## 运行时消息协议（`org.agentteams.run`）
+
+Dashboard 解析 Matrix 消息时优先识别 `content['org.agentteams.run']` 结构化载荷（`src/lib/a2ui/protocol.ts` 定义 discriminated union：text / thinking / tool_call / confirmation / error），按 `version` 字段分流：
+
+- `version: "1"` 走 `parseAgentRunBlocks` 的规范化路径，补齐 `tool_call_id` / `status` / `started_at` / `finished_at` 等字段，confirmation 块强制 `confirmation_id`
+- `version: "0"` / 缺省走原有透传语义
+- 未知版本一律降级到 13 级文本启发式规则而不丢消息
+
+上游 runtime 接入此协议后即可替代现有文本启发式路径。`recordToolCalls` 接受可选 `structuredKeys`，v1 块含 `tool_call_id` 时按 id 为权威去重键，跨设备/跨修订一致。
 
 ## Higress 外部适配
 
