@@ -50,6 +50,7 @@ import { useCounter } from '@/hooks/use-counter';
 import { useDashboardRuntime } from '@/hooks/use-dashboard-runtime';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { PluginWidgetsGrid } from '@/components/plugins/plugin-widgets';
+import { HitlInboxCard } from '@/components/dashboard/sections/hitl-inbox-card';
 
 // ============ Auto-refresh countdown hook ============
 function useRefreshCountdown(intervalMs: number) {
@@ -536,6 +537,8 @@ export function OverviewSection() {
         isConnected={isConnected}
         mode={mode}
       />
+
+      <HitlInboxCard />
 
       {/* ===== Plugin Widgets (extension point: dashboard-widget) ===== */}
       <PluginWidgetsGrid />

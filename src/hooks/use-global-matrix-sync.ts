@@ -4,8 +4,10 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useTaskStore, markEventSeen } from '@/lib/task-store';
+import { ingestHitlTimelineEvents, useHitlInboxStore } from '@/lib/hitl-inbox';
 import { isWorkflowPayload } from '@/lib/a2ui/workflow';
 import { matrixApi } from '@/lib/matrix-api';
+import type { MatrixEvent } from '@/lib/matrix-api';
 import {
   mergeTimelineEvents,
   useReceiptStore,
@@ -114,6 +116,7 @@ export function useGlobalMatrixSync(): void {
               const msgs = await matrixApi.getRoomMessages(homeserver, accessToken, rid, { dir: 'b', limit: 30 });
               if (cancelled) return;
               ingestWorkflowEvents(rid, msgs.chunk as Parameters<typeof ingestWorkflowEvents>[1]);
+              ingestHitlTimelineEvents(rid, msgs.chunk as MatrixEvent[], userId ?? '');
             } catch {
               /* room might be read-restricted or have no messages — skip */
             }
@@ -205,6 +208,11 @@ export function useGlobalMatrixSync(): void {
           for (const [rid, roomData] of Object.entries(joinedRooms)) {
             ingestEphemeral(rid, (roomData.ephemeral?.events || []) as Parameters<typeof ingestEphemeral>[1]);
             ingestWorkflowEvents(rid, (roomData.timeline?.events || []) as Parameters<typeof ingestWorkflowEvents>[1]);
+            ingestHitlTimelineEvents(
+              rid,
+              (roomData.timeline?.events || []) as MatrixEvent[],
+              userId ?? '',
+            );
             ingestRoomMeta(rid, roomData);
 
             // Only merge timeline events into the message cache for the room
@@ -244,6 +252,7 @@ export function useGlobalMatrixSync(): void {
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
+      useHitlInboxStore.getState().clearConfirmations();
     };
   }, [homeserver, accessToken, isLoggedIn, userId, queryClient]);
 }

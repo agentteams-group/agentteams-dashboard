@@ -6,6 +6,7 @@ import { matrixApi, type MatrixEvent, type MatrixJoinedRoom, type MatrixSyncResp
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useReceiptStore, useRoomMetaStore, useTypingStore } from './use-matrix';
 import { useTaskStore } from '@/lib/task-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import type { ReactNode } from 'react';
 
 vi.mock('@/lib/matrix-api', async () => {
@@ -60,6 +61,7 @@ function resetStores() {
   useReceiptStore.setState({ receipts: {} });
   useTypingStore.setState({ typingUsers: {}, expiryMap: {} });
   useTaskStore.setState({ tasks: {} });
+  useHitlInboxStore.setState({ confirmations: {}, pendingChatRoomId: null, pendingProjectKey: null });
 }
 
 const msgEvent = (eventId: string, ts: number, extra: Record<string, unknown> = {}): MatrixEvent => ({
@@ -315,6 +317,90 @@ describe('useGlobalMatrixSync', () => {
     expect(calls.length).toBeGreaterThanOrEqual(2);
     const [, , since] = calls[calls.length - 1] as [string, string, string | undefined];
     expect(since).toBe('batch-1');
+
+    unmount();
+  });
+
+  it('ingests Tool Guard confirmation events into the HITL inbox', async () => {
+    const body = `⏳ Waiting for approval / 等待审批
+
+Tool / 工具: execute_shell_command
+Triggered by / 触发来源: Tool Guard / 工具护栏
+Parameters / 参数:
+{ "command": "ls" }
+
+💡 Triggered by tool guardrails
+Type /approve to approve, or send any message to deny.`;
+
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
+      syncWith({
+        '!r1:test': joinedRoom({
+          timeline: {
+            events: [msgEvent('$hitl1', 1000, { body })],
+            limited: false,
+            prev_batch: 'p',
+          },
+        }),
+      }),
+    );
+
+    const queryClient = getQueryClientMock();
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(queryClient),
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    const items = Object.values(useHitlInboxStore.getState().confirmations);
+    expect(items).toHaveLength(1);
+    expect(items[0].toolName).toBe('execute_shell_command');
+    expect(items[0].roomId).toBe('!r1:test');
+
+    unmount();
+  });
+
+  it('ingests HITL confirmations from historical message load (loadHistorical)', async () => {
+    const body = `⏳ Waiting for approval / 等待审批
+Tool / 工具: execute_shell_command
+Triggered by / 触发来源: Tool Guard / 工具护栏
+Parameters / 参数:
+{ "command": "ls" }
+
+💡 Triggered by tool guardrails
+Type /approve to approve, or send any message to deny.`;
+
+    // loadHistorical calls getJoinedRooms then getRoomMessages per room.
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({
+      joined_rooms: ['!hist:test'],
+    });
+    (matrixApi.getRoomMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      chunk: [msgEvent('$hist-hitl', 5000, { body })],
+      start: 's',
+      end: 'e',
+    });
+    // sync mock must still resolve so the component mounts without error.
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
+      syncWith({
+        '!hist:test': joinedRoom(),
+      }),
+    );
+
+    const queryClient = getQueryClientMock();
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(queryClient),
+    });
+
+    // loadHistorical runs immediately on mount and returns a promise.
+    await act(async () => {
+      // allow the fire-and-forget loadHistorical to settle
+      await vi.waitUntil(() => Object.values(useHitlInboxStore.getState().confirmations).length > 0, { timeout: 1000 });
+    });
+    const items = Object.values(useHitlInboxStore.getState().confirmations);
+    expect(items).toHaveLength(1);
+    expect(items[0].toolName).toBe('execute_shell_command');
+    expect(items[0].roomId).toBe('!hist:test');
 
     unmount();
   });

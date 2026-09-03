@@ -27,6 +27,7 @@ import {
   useCancelProjectTask,
 } from '@/hooks/use-projects';
 import { ApiError } from '@/lib/api-error';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ProjectTimelinePanel } from './project-timeline-panel';
 import {
   getTaskArtifactUrl,
@@ -919,6 +920,12 @@ export function ProjectsSection() {
   // Three views, aligned with the workbench plugin's WorkflowBoard:
   // 列表 (list + detail) / 卡片 (card grid) / 拓扑 (DAG).
   const [view, setView] = useState<'list' | 'card' | 'topo'>('list');
+
+  // Atomically consume the pending project deep-link during render.
+  const pendingProjectKey = useHitlInboxStore.getState().takePendingProjectKey();
+  if (pendingProjectKey && pendingProjectKey.id) {
+    setSelectedKey(pendingProjectKey);
+  }
 
   const projects = data?.projects ?? [];
   const selected =

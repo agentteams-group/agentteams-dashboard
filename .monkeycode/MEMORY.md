@@ -71,4 +71,18 @@ Entries discovered by the Agent while performing [specific task description] sho
   - feature-implementer skill 要求每个 task 完成后停下来等用户确认，不要自动推进下一 task。本次按此规范逐项推进 P0-1 / P0-2 / P1-4 Phase1 / RBAC 扩展 / 审计 viewer，每项独立 commit + 验证
   - PR 风格沿用项目约定：标题 `type(scope): summary`，正文包含验证证据（vitest 数字）、兼容性声明、风险与关注点
   - `GET /api/agentteams/audit` 是 admin-only 入口；前端 `useAuditEvents` hook 把 403 当 data 返回而非抛错，UI 走 inline notice 分支渲染"需要管理员权限"
-  - 仍未接 RBAC 的写路由：`/api/agentteams/setup/*`（装机入口必须在 RBAC 前可达）、`/api/agentteams/packages/*`（由 Controller 侧 gate）、`/api/agentteams/models/probe`（只读）；所有 GET 路由保持开放
+   - 仍未接 RBAC 的写路由：`/api/agentteams/setup/*`（装机入口必须在 RBAC 前可达）、`/api/agentteams/packages/*`（由 Controller 侧 gate）、`/api/agentteams/models/probe`（只读）；所有 GET 路由保持开放
+
+[Project Knowledge Summary]
+- Date: 2026-09-03
+- Context: 实现总览 HITL 收件箱功能（对照 2026 竞品趋势）
+- Category: Build Methods | Testing Methods | Workflow & Collaboration
+- Instructions:
+  - HITL 收件箱核心模块：`src/lib/hitl-inbox.ts`（zustand store + Matrix 事件提取），支持 Tool Guard 文本协议 + v1 `org.agentteams.run` 确认协议
+  - `extractConfirmationFromEvent` 从 Matrix 事件提取确认请求；`ingestHitlTimelineEvents` 按时间排序摄入，处理 m.replace 修订（保留确认则 upsert，移除确认则 dropByEventId）
+  - 全局 sync 集成：`use-global-matrix-sync.ts` 的 `ingestWorkflowEvents` 旁增加 `ingestHitlTimelineEvents` 调用，历史加载（最近 10 房间 × 30 条）和实时 sync 都摄入
+  - 深链模式：store 暴露 `takePendingChatRoomId` / `takePendingProjectKey` 原子消费方法，组件在渲染期调用避免 effect 里 setState 触发 lint 错误
+  - 总览 UI：`src/components/dashboard/sections/hitl-inbox-card.tsx` 显示待审批工具 + 暂停项目，点击跳转对应 section
+  - 单测覆盖：`hitl-inbox.test.ts`（9 个测试）+ `use-global-matrix-sync.test.tsx` 新增确认采集测试（共 17 个测试通过）
+  - eslint 规则 `react-hooks/set-state-in-effect` 禁止在 effect 里同步 setState，采用渲染期原子消费模式绕过
+  - typecheck 用 `./node_modules/.bin/tsc --noEmit`，vitest 用 `./node_modules/.bin/vitest run`，eslint 仅跑改动文件

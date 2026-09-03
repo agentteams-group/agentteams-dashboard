@@ -25,6 +25,7 @@ import { ChatPanel } from './ChatPanel';
 import { HumanPanel } from './human-panel';
 import { RoomTopology } from './room-topology';
 import { MatrixStatusBanner } from './matrix-status-banner';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ChatProvider } from './ChatStore';
 import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
 
@@ -72,6 +73,16 @@ export function ChatSection() {
     () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId)),
     [workers, teams, managers, roomMeta],
   );
+
+  // Atomically consume the pending chat room deep-link during render.
+  // This avoids the react-hooks/set-state-in-effect lint error by reading
+  // and clearing the store value in one step, then deriving the selection.
+  const pendingChatRoomId = useHitlInboxStore.getState().takePendingChatRoomId();
+  if (pendingChatRoomId && !isLoading && rooms.some((r) => r.id === pendingChatRoomId)) {
+    setSelectedRoomId(pendingChatRoomId);
+    useRoomMetaStore.getState().setActiveRoomId(pendingChatRoomId);
+  }
+
   useEffect(() => {
     if (selectedRoomId === null || !rooms.some((r) => r.id === selectedRoomId)) {
       useRoomMetaStore.getState().setActiveRoomId(null);
