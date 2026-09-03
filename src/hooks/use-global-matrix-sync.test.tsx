@@ -353,7 +353,7 @@ Type /approve to approve, or send any message to deny.`;
       await vi.advanceTimersByTimeAsync(600);
     });
 
-    const items = Object.values(useHitlInboxStore.getState().confirmations);
+    const items: import('@/lib/hitl-inbox').HitlConfirmation[] = Object.values(useHitlInboxStore.getState().confirmations);
     expect(items).toHaveLength(1);
     expect(items[0].toolName).toBe('execute_shell_command');
     expect(items[0].roomId).toBe('!r1:test');
@@ -397,7 +397,7 @@ Type /approve to approve, or send any message to deny.`;
       // allow the fire-and-forget loadHistorical to settle
       await vi.waitUntil(() => Object.values(useHitlInboxStore.getState().confirmations).length > 0, { timeout: 1000 });
     });
-    const items = Object.values(useHitlInboxStore.getState().confirmations);
+    const items: import('@/lib/hitl-inbox').HitlConfirmation[] = Object.values(useHitlInboxStore.getState().confirmations);
     expect(items).toHaveLength(1);
     expect(items[0].toolName).toBe('execute_shell_command');
     expect(items[0].roomId).toBe('!hist:test');
