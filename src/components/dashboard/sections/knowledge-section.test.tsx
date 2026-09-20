@@ -1,5 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+// 3D 引擎走 next/dynamic 按需分包：全量套件并行下拉取 + 初始化 three chunk
+// 实测 >3s（单跑 ~1s），默认 1s 的 findBy 等待不够 → 本文件放宽到 5s
+// （vitest 按文件隔离 module registry，只影响本文件）。
+configure({ asyncUtilTimeout: 5000 });
+
+// 预热 3D chunk：把 dynamic() 的目标模块提前拉进模块缓存，消除并行负载下
+// 首次渲染拉 chunk 的延迟方差（根治 ②/③ 的偶发超时）。
+beforeAll(async () => {
+  await import('@/components/dashboard/knowledge-graph3d');
+});
 import '@testing-library/jest-dom/vitest';
 
 // 可变 holder：⑥ 号用例模拟轮询重取后列表顺序漂移（Controller 顺序不稳定）
