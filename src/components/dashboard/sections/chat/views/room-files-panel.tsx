@@ -24,13 +24,8 @@ import {
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
 
-const SENSITIVE_PATTERNS = [
-  /^\.hermes\/config\.yaml$/,
-  /^\.ssh\//,
-  /^credentials\//,
-  /^openclaw\.json$/,
-  /\.lock$/,
-];
+// 敏感过滤共享定义（知识库 v2 server 侧同款，见 lib/sensitive-files）
+import { SENSITIVE_PATTERNS } from '@/lib/sensitive-files';
 
 function isSafe(key: string): boolean {
   return !SENSITIVE_PATTERNS.some((p) => p.test(key));

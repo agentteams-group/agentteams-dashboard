@@ -12,6 +12,34 @@ import {
 } from '@/lib/agentteams-projects-api';
 import type { BoardProject, BoardTask, TaskStatus } from '@/hooks/use-task-board';
 
+/** Sortable timestamp for an API project. The current controller
+ * `ListProjects` (projectSummary) returns NO timestamps (source-verified:
+ * the struct carries project_id/title/status/plan_type/team_id/mode only);
+ * `created_at`/`updated_at` are declared optional on ProjectSummary and light
+ * up automatically once the controller adds them (its lifecycle write API
+ * already persists `updated_at` into meta.json). Fallback chain — same
+ * semantics as the plugin's projectActivityTs:
+ *   updated_at ?? created_at ?? date embedded in project_id (YYYYMMDD) ?? 0.
+ * Callers park 0-timestamp entries at the bottom (name-order fallback), so
+ * "时间 新→旧" degrades honestly instead of silently sorting by name while
+ * claiming to sort by time. */
+function projectActivityTs(p: ProjectSummary): number {
+  const raw = p.updated_at ?? p.created_at;
+  let best = 0;
+  if (typeof raw === 'string') best = Date.parse(raw) || 0;
+  else if (typeof raw === 'number') best = raw;
+  const m = String(p.project_id || '').match(/(20\d{6})/);
+  if (m) {
+    const approx = new Date(
+      Number(m[1].slice(0, 4)),
+      Number(m[1].slice(4, 6)) - 1,
+      Number(m[1].slice(6, 8)),
+    ).getTime();
+    if (approx > best) best = approx;
+  }
+  return best;
+}
+
 /**
  * Fetch the AgentTeams project list through the dashboard proxy
  * (`GET /api/agentteams/projects`). The full ProjectListResponse is
@@ -215,7 +243,11 @@ export function workflowToBoard(
       leader: wf?.requester || undefined,
       workers: [],
       phases: [], // plan.md phases are MinIO-only; the API board renders tasks directly
-      createdAt: 0,
+      // 9/17 round-7 fix: the board's time sort read this and always got 0 →
+      // "时间 新→旧" silently degenerated to name order. Derive a real
+      // activity timestamp (controller fields when present, else project_id
+      // date) so the sort is truthful.
+      createdAt: projectActivityTs(proj),
       completedAt: undefined,
       source: 'api',
     });

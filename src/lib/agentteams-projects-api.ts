@@ -38,8 +38,10 @@ export interface ProjectSummary {
   plan_type?: 'dag' | 'loop';
   team_id?: string;
   mode?: 'project' | 'quick';
-  /** 排序用时间戳（controller projectSummary 已返回；旧版本可能缺省 →
-   *  产物 section 的时间排序对缺省条目垫底，自动退化为名称序）。 */
+  /** 排序用时间戳。注意：当前 controller 的 ListProjects projectSummary
+   *  并不返回这两个字段（源码实锤：struct 仅 6 字段）——controller 侧
+   *  projectMeta 已有 updated_at（lifecycle 写 API 落盘），补进
+   *  projectSummary 后即自动生效。缺省条目由各排序处垫底退化为名称序。 */
   created_at?: string | number;
   updated_at?: string | number;
 }
