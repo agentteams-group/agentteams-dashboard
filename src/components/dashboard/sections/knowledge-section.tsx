@@ -1,6 +1,6 @@
 'use client';
 
-// 知识库 v3（9/17 装验定案「照插件做」三件：预览与图谱分离 /
+// 知识库 v3（9/17 装验定案「照插件做」三件：3D / 预览与图谱分离 /
 // 团队聚合图谱 + v4 2D 簇块布局——workbench 插件 KnowledgeBase.tsx 同款结构）。
 //   · 数据面（v2 不变）：/api/agentteams/workers/[name]/workspace-files/{tree|file-metadata|file-content}
 //     后端=Controller Docker 代理 tarball 只读（route.ts 内注释）——
@@ -8,16 +8,20 @@
 //   · 布局（插件同构）：左=KB 文件树（四分类）；右=**图谱卡常驻** +
 //     **预览卡独立下置**——点节点/文件只更新预览卡，图谱永不消失
 //     （修「点开预览再点回退退到空白」：单格视图互斥 → 双视图并存）。
-//   · 图谱：2D 簇块布局（v4；3D 引擎按评审拆为 follow-up，不进本批次）。
+//   · 图谱：2D 簇块布局（v4）+ 3D 双引擎（3D=knowledge-graph3d.tsx 插件
+//     Graph3D 移植，3d-force-graph+three；**默认 3D**、偏好持久化；引擎经
+//     next/dynamic ssr:false 按需分包——主 bundle 零 three 字节，切 3D 才拉
+//     chunk；WebGL 不可用/初始化失败→降级提示 + 一键回 2D，图谱不炸 tab）。
 //   · 团队聚合图谱（插件 fetchKbGraphMerged 的客户端等价物——dashboard
 //     无插件同款服务端合并端点，改客户端按团队拉各 Worker md 合并建图）：
 //     节点按 Worker 着色（AGENT_PALETTE 插件同值）、id=`worker::path`、
 //     边保留各 Worker 内部；点聚合节点开**目标 Worker** 文件，不切换
 //     当前 Worker（插件 agentOverride 同语义）。
-//   · 选择记忆（插件 kbState 同款）：worker / graphMode / team
+//   · 选择记忆（插件 kbState 同款）：worker / graphMode / team / 3D-2D
 //     localStorage 持久化，失效值回退默认。
 //   · 预览：file-content 分块读（offset/eof 循环；v2 后端单块 ≤1MB 即 eof）
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -35,6 +39,21 @@ import { SectionHeader } from '@/components/dashboard/section-header';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import type { WorkerResponse } from '@/lib/agentteams-api';
+import type { G3DNodeInput } from '@/components/dashboard/knowledge-graph3d';
+
+// 3D 引擎按需分包（评审体积顾虑的解法）：type-only import 编译期擦除零运行时；
+// ssr:false 保证 three 只在客户端 chunk 里，主 bundle 体积不变。
+const KnowledgeGraph3D = dynamic(
+  () => import('@/components/dashboard/knowledge-graph3d'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[480px] items-center justify-center text-xs text-muted-foreground">
+        3D 图谱引擎加载中…
+      </div>
+    ),
+  },
+);
 
 // ── 类型（#1208 D2 / QwenPaw workspace_files.py 实锤形状）──────────────────
 interface TreeEntry {
@@ -1142,13 +1161,18 @@ export function KnowledgeSection() {
   }, [worker, sortedWorkers]);
   useEffect(() => { writeMem('worker', worker); }, [worker]);
 
-  // 图谱模式 / 聚合团队偏好（持久化）
+  // 图谱模式 / 聚合团队 / 3D-2D 偏好（持久化）
   const [graphMode, setGraphMode] = useState<'worker' | 'merged'>(
     () => (readMem('graph-mode') === 'merged' ? 'merged' : 'worker'),
   );
   const [kbTeam, setKbTeam] = useState(() => readMem('team')); // ''=全部团队（记忆恢复：团队选择也持久化）
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>(
+    () => (readMem('view-mode') === '2d' ? '2d' : '3d'),
+  );
   const [graphVisible, setGraphVisible] = useState(true);
+  const [selectedId3d, setSelectedId3d] = useState('');
   useEffect(() => { writeMem('graph-mode', graphMode === 'worker' ? '' : 'merged'); }, [graphMode]);
+  useEffect(() => { writeMem('view-mode', viewMode === '3d' ? '' : '2d'); }, [viewMode]);
 
   const [topEntries, setTopEntries] = useState<TreeEntry[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -1392,12 +1416,72 @@ export function KnowledgeSection() {
     return order.map((name, i) => ({ name, color: AGENT_PALETTE[i % AGENT_PALETTE.length] }));
   }, [graphMode, currentGraph]);
 
+  // 3D 输入（插件 G3DNodeInput 同构：id/name/path/agent）
+  const g3dNodes = useMemo<G3DNodeInput[]>(() => {
+    if (!currentGraph) return [];
+    return currentGraph.nodes.map((n) => ({
+      id: n.id,
+      name: n.label,
+      path: n.path,
+      agent: n.agent,
+      virtual: n.virtual,
+      resolved: n.resolved,
+    }));
+  }, [currentGraph]);
+  const g3dLinks = useMemo(() => {
+    if (!currentGraph) return [];
+    return currentGraph.edges.map((e) => ({
+      source: currentGraph.nodes[e.s].id,
+      target: currentGraph.nodes[e.t].id,
+    }));
+  }, [currentGraph]);
+  const colorFor3d = useCallback(
+    (n: G3DNodeInput): string => {
+      // 插件 nodeColor 同序：聚合 Worker 色优先 → 分类根 → 未解析灰点
+      // → MEMORY.md 琥珀 → 普通文件靛蓝。
+      if (agentLegend && n.agent) {
+        return agentLegend.find((l) => l.name === n.agent)?.color ?? '#8c8c8c';
+      }
+      if (n.virtual) return '#ff7f16'; // 分类根（QwenPaw --graph-3d-root 同值）
+      if (n.resolved === false) return '#9ca3af'; // 未解析引用灰点（不可点开）
+      return n.path === 'MEMORY.md' ? '#f59e0b' : '#6366f1';
+    },
+    [agentLegend],
+  );
+
+  // 3D 选中条（节点名 + 出/入链计数——插件 {panel} 的轻量版）
+  const sel3d = useMemo(() => {
+    if (!selectedId3d || !currentGraph) return null;
+    const i = currentGraph.nodes.findIndex((n) => n.id === selectedId3d);
+    if (i < 0) return null;
+    let out = 0;
+    let inn = 0;
+    for (const e of currentGraph.edges) {
+      if (e.s === i) out += 1;
+      if (e.t === i) inn += 1;
+    }
+    return { node: currentGraph.nodes[i], out, inn };
+  }, [selectedId3d, currentGraph]);
+
+  // 3D 节点点击 → 开预览（聚合：`worker::path` 解析；单 Agent：path）
+  const onOpenNode3d = useCallback(
+    (n: G3DNodeInput) => {
+      if (n.resolved === false) return; // 未解析灰点不可点开（插件同款）
+      const sep = n.id.indexOf('::');
+      if (graphMode === 'merged' && sep > 0) {
+        void openPreview(n.id.slice(sep + 2), n.id.slice(0, sep));
+        return;
+      }
+      if (n.path) void openPreview(n.path);
+    },
+    [graphMode, openPreview],
+  );
 
   return (
     <div className="space-y-4 p-4">
       <SectionHeader
         title="知识库"
-        description="集群 Worker 记忆只读视图（workbench 插件同款数据面：Controller Docker 代理）：档案 / 文件 / 日记 memory/** / 知识库 digest/** + wikilink 2D 图谱（团队聚合）"
+        description="集群 Worker 记忆只读视图（workbench 插件同款数据面：Controller Docker 代理）：档案 / 文件 / 日记 memory/** / 知识库 digest/** + wikilink 图谱（2D/3D · 团队聚合）"
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -1450,7 +1534,7 @@ export function KnowledgeSection() {
                 variant={graphMode === 'worker' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => setGraphMode('worker')}
+                onClick={() => { setSelectedId3d(''); setGraphMode('worker'); }}
               >
                 当前 Worker 图谱
               </Button>
@@ -1458,7 +1542,7 @@ export function KnowledgeSection() {
                 variant={graphMode === 'merged' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => setGraphMode('merged')}
+                onClick={() => { setSelectedId3d(''); setGraphMode('merged'); }}
               >
                 <Users className="mr-1 h-3 w-3" aria-hidden="true" />
                 团队聚合图谱
@@ -1579,6 +1663,24 @@ export function KnowledgeSection() {
                     <span className="text-[10px] text-muted-foreground">→ 引用方向</span>
                   )}
                   <div className="ml-auto flex items-center gap-1">
+                    <div className="flex gap-0.5 rounded-md border border-border/60 p-0.5">
+                      <Button
+                        variant={viewMode === '3d' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setViewMode('3d')}
+                      >
+                        3D
+                      </Button>
+                      <Button
+                        variant={viewMode === '2d' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setViewMode('2d')}
+                      >
+                        2D
+                      </Button>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1602,6 +1704,30 @@ export function KnowledgeSection() {
                       <div className="flex h-[280px] items-center justify-center text-xs text-muted-foreground">
                         {graphMode === 'merged' ? '团队内暂无知识库文件' : '点「刷新」加载图谱'}
                       </div>
+                    ) : viewMode === '3d' ? (
+                      <>
+                        <KnowledgeGraph3D
+                          nodes={g3dNodes}
+                          links={g3dLinks}
+                          colorFor={colorFor3d}
+                          isRoot={(n) => n.virtual === true}
+                          isDirect={() => false}
+                          onOpenNode={onOpenNode3d}
+                          onSelect={setSelectedId3d}
+                          onExit3D={() => setViewMode('2d')}
+                          height={480}
+                        />
+                        {sel3d && (
+                          <div className="mt-1 px-1 text-[11px] text-muted-foreground">
+                            选中：<span className="font-medium text-foreground">{sel3d.node.label}</span>
+                            {sel3d.node.agent && (
+                              <span className="ml-1 font-mono text-[10px]">{sel3d.node.agent}</span>
+                            )}
+                            <span className="ml-2">出链 {sel3d.out} · 入链 {sel3d.inn}</span>
+                            <span className="ml-2">点节点打开预览 · 点空白取消选中</span>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="h-[420px]">
                         <KnowledgeGraph
@@ -1614,7 +1740,7 @@ export function KnowledgeSection() {
                           sectorOf={currentGraph.sectorOf}
                           hubs={currentGraph.hubs}
                           onSelect={(p, agent) => {
-                            // 分类根/未解析灰点不可点开。
+                            // 分类根/未解析灰点不可点开（与 3D 守卫同款）。
                             if (p.startsWith('virtual:')) return;
                             const nd = currentGraph.nodes.find((x) => x.path === p);
                             if (nd?.resolved === false) return;
