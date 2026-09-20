@@ -1,71 +1,102 @@
 # 更新日志
 
 本文件记录 AgentTeams Dashboard 的版本发布历史。
-
 ## v1.2.4.9 (2026-09-20)
+
+自 v1.2.4 以来合入 39 个 PR 与若干直接提交，覆盖聊天、知识库、项目看板、Worker 详情、模型网关、审计、登录与部署模式等方向。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证。
 
 ### New Features
 
-- **知识库面板**：新增集群 Worker 记忆只读视图，浏览 MEMORY.md 与 memory、digest 目录，支持分页加载、wikilink 关系图谱；数据面来自 QwenPaw 运行时 workspace-files 端点（`/api/agentteams/workers/{name}/workspace-files/{tree|file-metadata|file-content}`），Worker 下拉仅列 QwenPaw 实例，无可用实例时显示说明性空态
-- **任务看板（项目页）**：接入 Controller projects API，支持 DAG/loop 计划的列表、详情、节点任务查看，以及暂停/恢复/重规划/取消节点等干预操作
-  - 项目时间线面板：详情面板底部「干预记录」折叠区，调用 `GET /api/v1/projects/{id}/history` 与 `…/history/{ts}`，按时间倒序列出每次干预前的 workflow 快照元数据（状态、标题、操作人、时间、暂停原因等审计字段）
-  - 项目 API 降级横幅：Controller 端点 404（API 未部署）/ 500（Controller 故障）差异化提示，附原始错误信息
-- **技能中心**：重构技能管理为集中化技能仓库，支持自定义技能上传、版本管理与 Nacos 注册中心同步分发，技能选择下沉到 Worker 创建流程
-- **Higress AI 网关配置**：模型厂商、模型名称适配与 AI 路由策略的统一配置界面，多服务商路由与模型别名绑定，凭据仅提交 Higress 的服务端代理链路
-- **聊天体验升级**：虚拟化消息时间线、线程面板、消息编辑与已读回执；会话列表按最新消息排序并区分未读状态；流式输出经 `m.replace` 中间态渲染（逐字符打字机 + 光标动画）
-  - 运行时块协议 v1（`org.agentteams.run`）：带版本号的 discriminated union（text/thinking/tool_call/confirmation/error），结构化 tool_call 以 `tool_call_id` 为权威去重键，未知版本降级到文本启发式
-  - ChatRoom 拆分 Phase 1：抽出 `usePersistedDraft`（每房间草稿持久化）、`useFileUpload`（file → mxc + m.image/m.file 状态机）、`useFileDropZone` + `DragDropOverlay`（拖拽上传层）
-  - 思考、工具调用、工作流、A2UI 与人机确认（HITL）卡片渲染，确认关键词中英双语识别
-- **Worker 卡片 v2 与文件面板**：聊天内 Worker 卡片改版，文件面板明确反映对象存储同步状态，聊天区域与工作目录区域宽度可调
-- **导航分组化**：13 项扁平导航重构为分组折叠结构，可见入口压缩至 5 个，保持全部功能可达
-- **资源删除锁**：Worker 与团队删除执行期间在对应资源上呈现锁定状态，避免并发修改
-- **审计中心**：admin-only「审计」侧边栏区块，渲染服务端 JSONL 审计事件表格，支持 entity_type 过滤与 15s 轮询；新增 `useAuditEvents` hook
+#### 聊天
+
+- org.agentteams.run v1 运行时块协议：带版本号的 discriminated union（text / thinking / tool_call / confirmation / error），结构化 tool_call 以 `tool_call_id` 为权威去重键，未知版本降级文本启发式 (#89) @nillikechatchat
+- ChatRoom 拆分 Phase 1：`usePersistedDraft` 房间草稿持久化、`useFileUpload` 上传状态机、拖拽上传层；HITL 人机确认卡片 + 中英双语关键词识别 (#89) @nillikechatchat
+- 侧栏插件式分类（全部 / 群组 / 私聊）+ 成员数采集链、按时间排序模式（Element / 插件同款）、排序持久化改 `useSyncExternalStore`、`/sync` 未归类房间补齐 (#116) @LUOSENGWA
+- 房间列表可拖宽且宽度持久化 + 运行时徽标独立成行 (#122) @LUOSENGWA
+- Element 式实时同步：错误透出与同步健康 chip (#123) @LUOSENGWA
+- 聊天工作流卡片 live 刷新：15s 轮询 controller 正源 overlay (#120) @LUOSENGWA
+- Worker 会话状态点（心跳权威）：worker 列表 / 侧栏 / 聊天头 / 成员列表头像 (#121, #127) @LUOSENGWA
+- 点击头像进入 Worker 会话（消费上游 #1295） (#128) @LUOSENGWA
+- 侧栏房间分组与消息预览、composer 活动轨道、audit L2 自审入口（直接提交）@nillikechatchat
+
+#### 知识库
+
+- 新增知识库 tab：KB 文件树（四分类）浏览 + wikilink 图谱，workspace-files 数据面（QwenPaw 端点消费） (#105) @LUOSENGWA
+- 图谱 v4：2D 簇块布局 + Controller Docker 代理 tarball 只读数据面；任务看板时间排序与 kanban 体验修复 (#125) @LUOSENGWA
+- 3D 图谱引擎按需分包回归：three / 3d-force-graph / three-spritetext 经 `next/dynamic` ssr:false 独立 chunk（主 bundle 零 three 字节，2D 偏好用户永不下载）；WebGL 不可用降级横幅 + 一键回 2D (#130) @nillikechatchat
+
+#### 项目 / 任务看板
+
+- 任务交付物点击打开预览对话框（md / 图片 / 文本，1MB 上限），下载收敛进工件 chip (#107) @LUOSENGWA
+- 任务流转事件流面板（对齐上游 #1233 读侧） (#119) @LUOSENGWA
+- 任务行内任务级检查详情 (#124) @LUOSENGWA
+- 项目视图模式与选中项目 localStorage 持久化 (#100) @LUOSENGWA
+- 拓扑视图分栏独立滚动 + 时间排序、工件全项目工作流预取计数（直接提交）@LUOSENGWA
+
+#### Worker 详情
+
+- 技能指派清单（全量替换保存）+ 基线重置与保存后显式重启 (#99, #102) @LUOSENGWA
+- 运行时配置面板：max_iters / max_input_tokens / loop_config（消费上游 #1231） (#103) @LUOSENGWA
+- 频道矩阵面板：状态 / 配置 / QR 配对 / 重启（消费上游 #1219 九端点） (#104) @LUOSENGWA
+- 工具执行审批控制：REST 优先双数据面，Docker 兜底由 `AGENTTEAMS_APPROVAL_DOCKER_PLANE` 门控（默认关）；REST 404 区分「跨团队不可见」与「端点未上线」 (#106) @LUOSENGWA（评审修复 @nillikechatchat）
+- 内置工具面板（消费上游 #1255） (#129) @LUOSENGWA
+
+#### 模型网关 / Console
+
+- 模型选择器提供 SGLang 服务模型 (#108) @LUOSENGWA
+- 模型别名分组 + EQUAL 谓词接受 + 别名组缺失原因说明 (#92) @LUOSENGWA
+- Console 会话不可用时网关路由目录只读回退 (#110) @LUOSENGWA
+- Higress Console 服务端绑定会话：L1 登录 + 管理员验证后可管模型网关；代理 cookie 回退修「Login required」 (#115) @LUOSENGWA
+- 自定义 Console host 白名单缺口：安装器自动合并 + 登录 fail-fast (#118) @LUOSENGWA
+- DeepSeek Harness (dsh) 运行时类型 + 连字符运行时值对齐 controller (#97) @LUOSENGWA
+
+#### 审计 / MCP
+
+- Controller 优先审计数据面（本地 JSONL 回退）；L2 自审（服务端强制 scope=self）/ L3 全审 (#113) @LUOSENGWA、@nillikechatchat
+- MCP 页新增 wired-workers 列（来自 Controller 部署目录） (#111) @LUOSENGWA
+
+#### 团队 / Human
+
+- Human 权限级别编辑器 + 成员存在性守卫 (#94) @LUOSENGWA
+- 建队内联新建 Worker（Leader / Worker 角色选择）+ 模型写前校验 + SOUL 上传（直接提交）@LUOSENGWA
+
+#### 登录与部署模式
+
+- 多用户双轨登录：服务端会话存储、管理员密码验证、L1-via-Matrix 数据面 token、账号 chip + 登出 (#90) @nillikechatchat
+- 首次启动后端配置向导：双地址 failover、L1 后端页 + sglang 健康块、请求层 failover + 后台自动重排、SA-less L2 贴 token 登录、预登录重配置逃生口、共享多用户模式加固、安装器 token 门禁可选退出 (#91) @LUOSENGWA
+- 无状态部署模式：浏览器持有凭据、零服务端用户态；`MATRIX_HOMESERVER_ALLOWLIST` 强制（未设置返回 403 且零上游调用），`requireAllowlist` 排他校验 (#109) @LUOSENGWA（评审修复与部署文档 @nillikechatchat）
+- `AGENTTEAMS_AUTH_DISABLED` 本地模式注入合成本地身份（直接提交）@u012823422
 
 ### Security
 
-- 服务端 RBAC 落地：middleware 作为权威权限门，服务端 API 增加第二道级别校门——worker/team 资源走 `enforceServerSideRbac`（细粒度），storage/skills/projects/gateway/debug-log/wen-tian/mcps 等全局资源走 `enforceLevelOnlyRbac`（`checkPermissionByLevel` 纯等级决策）
-- append-only JSONL 审计日志（10 MB 自动 rotate，保留 30 份归档，路径可经 `AGENTTEAMS_AUDIT_LOG_PATH` 覆盖）；403 拒绝自动写 warning 审计；客户端 `auditMutation` 镜像审计事件
-- `AGENTTEAMS_AUTH_DISABLED` 本地模式注入合成本地身份（默认 `local-admin`/L3，可经 `AGENTTEAMS_LOCAL_USER*` 覆盖），并覆盖客户端伪造的同名身份头
-- Nacos 凭据等敏感信息在 API 响应中掩码
-- 存储视图与 teams files 接口增加访问门控与敏感对象过滤
-- `setup`、`status` 端点移出免认证公共路径
-- Debug 日志组件白名单收敛至固定容器名，需 manage 权限
-- 插件系统会话化隔离；`sourceIp` 仅在显式信任头存在时采信
-- 聊天 Markdown 渲染接入 rehype-sanitize 白名单管线（`src/components/dashboard/sections/chat/sanitize-schema.ts`），过滤 AI 输出中的原始 HTML
+- files 端点 worker-scoped RBAC + 敏感文件过滤（credentials.yaml 规则 + 递归对象键掩码） (#117) @LUOSENGWA
+- workspace-files 代理补服务端 RBAC view 门（直接提交）@nillikechatchat
+- setup token 启动展示 + 失效 token 闭包修复 + probe SSRF 过滤加固 (#91) @LUOSENGWA
+- 退役上游补丁流程（install/patches），变更一律 PR 化（直接提交）@u012823422
 
 ### Bug Fixes
 
-- HITL 确认关键词大小写不敏感精确匹配，避免误触发
-- Nacos SSE 断线改为指数退避重连（5s 起步、60s 封顶），清理竞态句柄
-- 全局会话心跳合并为模块级单一 interval（`useSessionTick`），随订阅数自动启停
-- Worker 自动重连、深链接先读缓存后拉取、SSE 中止传播、同步忙碌态竞态、`setRoomMeta` 增量补丁
-- 知识库 502/404 透传 Controller 错误详情而非笼统报错
-- 服务端解析 LLM SSE 流增加缓冲，消除跨网络分块 token 丢失风险
+- 网关 HTML 兜底响应改写为可读 502；知识库 HTML 响应 / 401 会话过期可读报错与 `jsonBody` 容错（直接提交）@nillikechatchat
+- Controller 项目列表重复 project_id 去重；KB 树 / 内容透出 controller 错误详情（直接提交）@nillikechatchat
+- 后合并 review 第二轮修复 (#93)、deepseek-harness 连字符运行时值 (#97)、#99 / #100 评审跟进 (#102) @LUOSENGWA
+- 通知面板焦点环条纹与未读行样式；模型选择 fallback 数组稳定化（直接提交）@nillikechatchat
+- 项目视图网格行轨道 `minmax(0,1fr)` 修复右栏独立滚动 (#126) @LUOSENGWA
 
-### Improvements
+### Improvements / Maintenance
 
-- 亮色/暗色/高对比三主题全部正文组合对比度 ≥ 4.5:1（`src/lib/theme/contrast.test.ts` 自动化守护）
-- 状态徽章收敛为共享双模式配色模块（`src/lib/status-colors.ts`）；拓扑画布连线跟随主题 token 并补齐 svg role/aria
-- 全局字号收敛对齐设计 token；区块加载态统一 Skeleton
-- 图标按钮补齐 aria-label，分隔条支持方向键步进，窄屏聊天自动折叠房间列表，工件树小屏纵排；axe 自动扫描接入（`a11y-axe.test.tsx`）
-
-### Maintenance
-
-- 废弃上游补丁流程：删除 `install/patches/` 与 `install/submit-pr.sh`，Dashboard 安装器集成已经上游 PR #1075 合入（后续 #1081/#1118/#1162/#1195），Install Test 工作流移除补丁校验步骤；后续上游变更一律通过 PR 提交
-
-### Documentation
-
-- 项目 Wiki 全量同步：服务端 API（RBAC 第二道门）、Dashboard 模块（sanitize 管线、知识库口径）
-- 代码审查报告收档：33 项问题全部修复或记录取舍（`docs/code-review-issues.md`）
+- vitest 显式 pin `NODE_ENV=test`：容器 ambient production 使 React 走生产构建（无 `act`）导致 322 例批量失败的根治（直接提交）@nillikechatchat
+- 中性化内部身份测试夹具 (#114) @LUOSENGWA
+- fork-PR 合并工作流沉淀（credential fill、merge-lock 重试、force-with-lease 冲突解法）与 CHANGELOG / Wiki 同步（直接提交）@nillikechatchat
 
 ### Quality
 
-- 测试规模：193 个测试文件 / 1812 个用例全绿（较上一节点 1256 例增长 44%）；lint 0 问题；`npm run build` 通过
-- 新增主题对比度性质测试、axe 扫描、一致性回归测试与知识库/聊天/RBAC/审计多组组件测试
+- 测试规模：210 个测试文件 / 1978 个用例全绿；`tsc --noEmit` 0 错误；`eslint` 0 问题；全部合入经 CI（Lint, Typecheck & Test）验证
 
 ### Contributors
 
+- @LUOSENGWA（37 个 PR）
 - @nillikechatchat
+- @u012823422
 - @monkeycode-ai（平台 AI 协作者）
 
 ## v1.2.3.1 (2026-08-18)
