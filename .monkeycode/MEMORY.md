@@ -116,6 +116,16 @@ Entries discovered by the Agent while performing [specific task description] sho
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
+- Context: 合并 3 个 CHANGES_REQUESTED PR（#106/#109/#125），用户授权「直接合并并修复」——替作者落实评审意见后合入
+- Category: Workflow & Collaboration
+- Instructions:
+  - 评审修复合入流程：`gh api repos/{org}/{repo}/pulls/{n}/reviews` 读评审正文、`.../comments` 读行内意见；逐条落实修复 → 本地 merge 最新 main 出合并提交 → force-with-lease 推 fork 分支 → CI 绿 → REST PUT squash 合入；同时 `gh pr edit` 修正 PR 正文失实描述
+  - 文本级 auto-merge 成功 ≠ 语义合并成功：双方都改过的热点文件必须逐个 diff 两侧行为；add/add 重复实现冲突取 main 超集版本；大文件冲突取 PR 版本为基底再手工补回 main 侧硬化（如 401 文案、HTML 容错）
+  - 评审要求「拆 follow-up」的部件（如 #125 的 3D 图谱）：从 PR 剥离后原代码仍保留在本地 pr-xx 分支 git 对象中，后续重建 follow-up PR 时从该分支取件 rebase
+  - 功能开关 env（如 AGENTTEAMS_APPROVAL_DOCKER_PLANE）默认关，测试 beforeEach stub 空串、Docker 场景单测内显式开
+
+[Project Knowledge Summary]
+- Date: 2026-09-20
 - Context: 知识库 workspace-files 502/HTML 报错联合排查，用户在 Controller 侧实测后修正 Agent 最初的网关路由假设
 - Category: Troubleshooting & Debugging | Operations & Deployment
 - Instructions:

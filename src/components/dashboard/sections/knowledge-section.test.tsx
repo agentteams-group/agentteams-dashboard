@@ -1,5 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+// 3D 引擎走 next/dynamic 按需分包：全量套件并行下拉取 + 初始化 three chunk
+// 实测 >3s（单跑 ~1s），默认 1s 的 findBy 等待不够 → 本文件放宽到 5s
+// （vitest 按文件隔离 module registry，只影响本文件）。
+configure({ asyncUtilTimeout: 5000 });
+
+// 预热 3D chunk：把 dynamic() 的目标模块提前拉进模块缓存，消除并行负载下
+// 首次渲染拉 chunk 的延迟方差（根治 ②/③ 的偶发超时）。
+beforeAll(async () => {
+  await import('@/components/dashboard/knowledge-graph3d');
+});
 import '@testing-library/jest-dom/vitest';
 
 // 可变 holder：⑥ 号用例模拟轮询重取后列表顺序漂移（Controller 顺序不稳定）
@@ -95,8 +106,9 @@ function mockFetch(statuses?: { top?: number; memory?: number; digest?: number; 
   );
 }
 
-/** 2D 图谱 SVG（2D 为唯一视图；3D 引擎按评审拆为 follow-up） */
-async function graphSvg() {
+/** 切 2D（jsdom 无 WebGL：默认 3D 视图先落降级横幅，点「回到 2D」） */
+async function switchTo2D() {
+  fireEvent.click(await screen.findByRole('button', { name: '回到 2D' }));
   return (await screen.findByRole('img', { name: /wikilink 图谱/ })) as unknown as { querySelectorAll: (_s: string) => NodeListOf<SVGElement> };
 }
 
@@ -165,7 +177,7 @@ describe('assembleGraph（v4 图谱模型——对齐插件 kb_graph / QwenPaw R
   });
 });
 
-describe('KnowledgeSection（v3：2D 图谱 / 预览与图谱分离 / 团队聚合 / 选择记忆）', () => {
+describe('KnowledgeSection（v3：3D/2D 图谱 / 预览与图谱分离 / 团队聚合 / 选择记忆）', () => {
   beforeEach(() => {
     vi.useRealTimers();
     workersHolder.list = [
@@ -185,10 +197,25 @@ describe('KnowledgeSection（v3：2D 图谱 / 预览与图谱分离 / 团队聚�
     expect(await screen.findByText(/容器 agentteams-worker-w1 不存在/)).toBeInTheDocument();
   });
 
+  it('② 默认 3D：jsdom 无 WebGL → 降级横幅 + 一键回 2D（图谱不炸 tab）', async () => {
+    mockFetch();
+    render(<KnowledgeSection />);
+    expect(await screen.findByText(/3D 图谱不可用/)).toBeInTheDocument();
+    expect(screen.getByText('已自动保留 2D 图谱视图')).toBeInTheDocument();
+    const svg = await switchTo2D();
+    const texts = Array.from(svg.querySelectorAll('text')).map((t) => t.textContent ?? '');
+    expect(texts).toContain('MEMORY'); // MEMORY.md 干
+    expect(texts).toContain('a');
+    expect(texts).toContain('b');
+    // v4：a.md 的 [[b]]/[[MEMORY]] 2 条 wikilink 边 + MEMORY.md 兜底 hub
+    // →memory/a、memory/b 2 条结构边 = 4 条（无 digest 分桶触发兜底）
+    expect(svg.querySelectorAll('line').length).toBe(4);
+  });
+
   it('③ 点图谱节点 → 打开预览 且 图谱仍驻留（预览与图谱分离，回退不空白）', async () => {
     mockFetch();
     render(<KnowledgeSection />);
-    const svg = await graphSvg();
+    const svg = await switchTo2D();
     // v3 语义验证：该测试图无 virtual 根 → 度数 top 文件（a.md 等）=伪根 hub，
     // 伪根仍走预览（单击=文件预览语义保留；virtual 根才单击聚焦）。
     const nodeA = Array.from(svg.querySelectorAll('text')).find((t) => t.textContent === 'a')!;
@@ -318,7 +345,7 @@ describe('KnowledgeSection（v3：2D 图谱 / 预览与图谱分离 / 团队聚�
     // 切 2D 断言合并图：w1+w2 各 3 文件 → 6 节点；
     // v4 每 Worker 4 边（MEMORY.md 兜底 hub→memory/a、memory/b 两条结构边
     // + a.md 的 [[b]]/[[MEMORY]] 两条 wikilink 边）→ 共 8 边
-    const svg = await graphSvg();
+    const svg = await switchTo2D();
     // v4：节点=chip（rect，无虚线框属性）；块框 rect 带 stroke-dasharray
     const chips = Array.from(svg.querySelectorAll('rect')).filter((r) => !r.getAttribute('stroke-dasharray'));
     expect(chips.length).toBe(6);
