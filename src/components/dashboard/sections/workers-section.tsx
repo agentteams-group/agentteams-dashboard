@@ -530,6 +530,7 @@ export function WorkersSection() {
     setEditWorker(worker);
     setEditForm({
       name: worker.name,
+      env: worker.envEditable ? (worker.env || {}) : undefined,
       model: worker.model || '',
       runtime: worker.runtime,
       image: worker.image || '',
@@ -547,7 +548,9 @@ export function WorkersSection() {
   const handleUpdate = useCallback(() => {
     if (!editWorker) return;
 
+    const envChanged = JSON.stringify(editForm.env) !== JSON.stringify(editWorker.envEditable ? (editWorker.env || {}) : undefined);
     const hasChanges =
+      envChanged ||
       editForm.model !== (editWorker.model || '') ||
       editForm.runtime !== editWorker.runtime ||
       editForm.image !== (editWorker.image || '') ||
@@ -566,12 +569,14 @@ export function WorkersSection() {
       toast.error('CoPaw 已停止新建。请将运行时改为 QwenPaw 后再保存。');
       return;
     }
+    if (!envChanged) delete data.env;
     warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
       {
         onSuccess: () => {
           closeEdit();
+          if (envChanged) toast.info("环境变量已保存；托管容器将重建，非托管 Worker 需手动更新进程环境。");
           if (editForm.model?.trim() && editForm.model !== editWorker.model) {
             toast.info(runtimeModelUpdateMessage(editForm.runtime ?? editWorker.runtime));
           }
@@ -877,6 +882,8 @@ export function WorkersSection() {
       />
 
       <WorkerEditDialog
+        key={editWorker?.name ?? "closed"}
+        envEditable={editWorker?.envEditable === true}
         open={!!editWorker}
         workerName={editWorker?.name ?? null}
         value={editForm}

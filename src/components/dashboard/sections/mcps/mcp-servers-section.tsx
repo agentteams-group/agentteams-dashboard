@@ -80,6 +80,7 @@ export function McpServersSection() {
 
   return (
     <div className="space-y-4">
+      <p className="rounded border p-3 text-sm text-muted-foreground">这里登记已有 MCP 地址，不会在网关创建服务。请先通过 Manager 或 Higress 接入服务并授权 Worker，再登记网关地址。“已配置 Worker”只表示配置关系；实际可用性请在 Worker 编辑页验证。修改或删除登记不会同步修改已有 Worker 或撤销网关授权。</p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefetching}>
@@ -89,7 +90,7 @@ export function McpServersSection() {
         </div>
         <Button onClick={() => { setEditingServer(undefined); setDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-1" />
-          添加 MCP 服务器
+          登记 MCP 地址
         </Button>
       </div>
 
@@ -109,7 +110,7 @@ export function McpServersSection() {
             <Wifi className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">
               {servers.length === 0
-                ? '暂无 MCP 服务器配置。点击"添加 MCP 服务器"创建新的 MCP 服务器。'
+                ? '暂无 MCP 服务器配置。点击"登记 MCP 地址"创建新的 MCP 服务器。'
                 : '没有匹配的 MCP 服务器'}
             </p>
           </CardContent>
@@ -142,7 +143,7 @@ export function McpServersSection() {
                       )}
                       {!catalog.off && (catalog.workersByServer.get(server.name) ?? []).length > 0 && (
                         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-muted-foreground shrink-0">接入 Worker：</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">已配置 Worker（未验证）：</span>
                           {(catalog.workersByServer.get(server.name) ?? []).map((w, wi) => (
                             <Badge key={`${server.name}-w-${w.name}-${w.team ?? ''}-${wi}`} variant="secondary" className="text-[10px]">
                               {w.name}{w.team ? ` · ${w.team}` : ''}
@@ -235,7 +236,7 @@ export function McpServersSection() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription>仅删除目录登记，不撤销网关授权，也不修改 Worker 配置。受影响 Worker：{deleteTarget ? (catalog.workersByServer.get(deleteTarget) ?? []).map((worker) => worker.name).join("、") || "未查询到，请核对 Worker 配置" : ""}。
               确定要删除 MCP 服务器"{deleteTarget}"吗？此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
