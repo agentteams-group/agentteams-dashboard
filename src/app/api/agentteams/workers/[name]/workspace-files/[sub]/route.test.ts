@@ -56,6 +56,7 @@ const WS_COPAW = '/root/agentteams-fs/agents/w1/.copaw/workspaces/default';
 
 interface Fixtures {
   inspectStatus?: number;
+  containerName?: string;
   /** 候选路径 HEAD 结果（默认第一个命中） */
   headStatuses?: number[];
   /** archive GET：相对 target 的 tar 条目（目录）或单文件（文件请求） */
@@ -78,7 +79,7 @@ function installFetch() {
       const tar = (status: number, b: Buffer) =>
         ({ ok: status < 400, status, arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }) as unknown as Response;
 
-      if (u.endsWith('/containers/agentteams-worker-w1/json')) {
+      if (u.endsWith(`/containers/${fx.containerName ?? 'agentteams-worker-w1'}/json`)) {
         return json(fx.inspectStatus ?? 200);
       }
       if (u.includes('/archive?path=')) {
@@ -144,7 +145,17 @@ describe('/workers/[name]/workspace-files/[sub]（v2：Controller Docker 代理�
     __resetKbCacheForTests();
     installFetch();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it('uses the configured resource prefix for inspect and archive requests', async () => {
+    vi.stubEnv('AGENTTEAMS_RESOURCE_PREFIX', 'agt124fresh-');
+    fx.containerName = 'agt124fresh-worker-w1';
+    const res = await call('tree');
+    expect(res.status).toBe(200);
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.length).toBeGreaterThan(1);
+    expect(urls.every((url) => url.includes('/containers/agt124fresh-worker-w1/'))).toBe(true);
+  });
 
   it('tree 顶层：四分类条目 + 敏感过滤 + 目录优先排序', async () => {
     const res = await call('tree');
