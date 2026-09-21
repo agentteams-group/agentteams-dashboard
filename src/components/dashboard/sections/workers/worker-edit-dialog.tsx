@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { WorkerEnvEditor } from './worker-env-editor';
+import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -37,6 +40,7 @@ export function WorkerEditDialog({
   onSubmit,
   modelOptions,
   sessionIssue,
+  envEditable = false,
 
 }: {
   open: boolean;
@@ -48,11 +52,13 @@ export function WorkerEditDialog({
   onSubmit: () => void;
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
+  envEditable?: boolean;
 
 }) {
+  const [envValid, setEnvValid] = useState(true);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
+      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑 Worker - {workerName}</DialogTitle>
         </DialogHeader>
@@ -113,9 +119,14 @@ export function WorkerEditDialog({
             <Label>MCP Servers</Label>
             <McpSelector
               value={value.mcpServers || []}
-              onChange={(mcpServers) => onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })}
+              onChange={(mcpServers) => onChange({ ...value, mcpServers })}
             />
           </div>
+          <div className="space-y-2">
+            <Label>环境变量</Label>
+            {envEditable ? <WorkerEnvEditor key={workerName} value={value.env || {}} onChange={(env) => onChange({ ...value, env })} onValidityChange={setEnvValid} /> : <p className="text-xs text-muted-foreground">需要管理员权限及支持环境变量编辑的 Controller。</p>}
+          </div>
+          {workerName && <WorkerGatewayProbe key={workerName} workerName={workerName} />}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -123,7 +134,7 @@ export function WorkerEditDialog({
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={isPending}
+            disabled={isPending || !envValid}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '保存中...' : '保存'}

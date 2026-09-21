@@ -70,6 +70,7 @@ export function ModelSelector({
   if (customActive) {
     return (
       <div className="space-y-1.5 min-w-0 w-full">
+      <p className="text-xs text-muted-foreground">已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。</p>
         <div className="flex gap-2 min-w-0">
           <Input
             className="min-w-0 flex-1"
@@ -105,6 +106,7 @@ export function ModelSelector({
 
   return (
     <div className="space-y-1.5 min-w-0 w-full">
+      <p className="text-xs text-muted-foreground">已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。</p>
       <Select
         value={value ?? ''}
         onValueChange={(next) => {
