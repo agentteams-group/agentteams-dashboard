@@ -133,7 +133,7 @@ async function resolveWorkspace(
   const hit = wsCache.get(name);
   if (hit && now - hit.ts < WS_CACHE_TTL_MS) return hit.ws;
 
-  const container = `agentteams-worker-${name}`;
+  const container = `${process.env.AGENTTEAMS_RESOURCE_PREFIX || 'agentteams-'}worker-${name}`;
   const stInspect = await dockerProxy(controllerUrl, token, `/containers/${container}/json`, false, 15_000);
   if (stInspect.status === 404) {
     throw Object.assign(new Error(`容器 ${container} 不存在`), { status: 404 });
@@ -257,7 +257,7 @@ export async function GET(
   if (denied) return denied;
   const controllerUrl = getControllerUrl(request);
   const token = await getAuthToken();
-  const container = `agentteams-worker-${name}`;
+  const container = `${process.env.AGENTTEAMS_RESOURCE_PREFIX || 'agentteams-'}worker-${name}`;
   const qs = request.nextUrl.searchParams;
 
   try {
