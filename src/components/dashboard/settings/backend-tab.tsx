@@ -49,7 +49,6 @@ import {
   BACKEND_NAMES,
   EMBEDDED_DEFAULTS,
   REQUIRED_BACKENDS,
-  type BackendName,
 } from '@/lib/backend-names';
 
 interface BackendAddrs {

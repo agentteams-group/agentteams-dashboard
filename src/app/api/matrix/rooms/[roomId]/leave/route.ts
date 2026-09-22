@@ -49,14 +49,14 @@ export async function POST(
 
   if (session) {
     void appendAuditEvent({
-      actor: session.userId,
+      actor: session.user,
       actor_level: session.level,
       entity_type: 'system',
       entity_name: roomId,
       action: 'matrix.invite.reject',
       details: `POST ${path} → upstream ${response.status}`,
       severity: response.status < 400 ? 'info' : 'warning',
-      source_ip: session.sourceIp,
+      source_ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined,
     });
   }
   return response;
