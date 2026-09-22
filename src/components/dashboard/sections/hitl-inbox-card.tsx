@@ -53,7 +53,12 @@ export function HitlInboxCard() {
   // F-5 / 需求 3.6: the inbox card stays mounted even when confirmations
   // and paused projects are empty, as long as there are pending Matrix
   // invites — the operator still needs to act on them.
-  const pendingInvites = useInviteStore((s) => Object.values(s.invites));
+  // Subscribe to the raw invites map (stable reference) and Object.values
+  // in a memo; Object.values alone returns a new array on every selector
+  // run, forcing the inbox card (and the overview above it) to
+  // re-render on every Matrix sync tick.
+  const invitesMap = useInviteStore((s) => s.invites);
+  const pendingInvites = useMemo(() => Object.values(invitesMap), [invitesMap]);
 
   const roomLabels = useMemo(() => {
     const labels: Record<string, string> = {};

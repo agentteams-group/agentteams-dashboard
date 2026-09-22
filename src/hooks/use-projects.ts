@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import {
   listProjects,
@@ -348,19 +348,34 @@ export function useApiTaskBoard() {
   });
   const board = workflowToBoard(projects, workflows);
 
-  return {
-    ...board,
-    degraded,
-    degradedReason: listQuery.data?.degradedReason,
-    isLoading: listQuery.isLoading,
-    isRefetching: listQuery.isRefetching,
-    // Refresh must re-pull the per-project workflows too — the list query
-    // alone would leave stale workflow data behind (staleTime 15s).
-    refetch: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ['agentteams-project-workflow'],
-      });
-      void listQuery.refetch();
-    },
-  };
+  // Refresh must re-pull the per-project workflows too — the list query
+  // alone would leave stale workflow data behind (staleTime 15s).
+  // Stable identity: re-creating the refetch arrow on every render made
+  // the consumer's useMemo chain re-evaluate every parent re-render,
+  // which combined with the render-time setState in the dashboard shell
+  // pushed React 19 past its max-update-depth.
+  const refetch = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ['agentteams-project-workflow'],
+    });
+    void listQuery.refetch();
+  }, [queryClient, listQuery]);
+
+  // Memoize the consumer-facing object so a parent re-render with the
+  // same source data returns the same reference (OverviewSection
+  // consumes this and passes pieces into useMemos downstream).
+  return useMemo(
+    () => ({
+      ...board,
+      degraded,
+      degradedReason: listQuery.data?.degradedReason,
+      isLoading: listQuery.isLoading,
+      isRefetching: listQuery.isRefetching,
+      refetch,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `board` is a
+    // pure projection of `projects` and `workflowQueries`; depending on
+    // them keeps the memo stable across renders where neither changed.
+    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, refetch]
+  );
 }

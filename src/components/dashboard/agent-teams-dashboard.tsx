@@ -137,14 +137,23 @@ export function AgentTeamsDashboard() {
     checkConnection();
   }, [checkConnection]);
 
-  // Track the last time entity data changed (adjust state during render)
-  const [prevData, setPrevData] = useState({ workers, teams, managers });
-  if (prevData.workers !== workers || prevData.teams !== teams || prevData.managers !== managers) {
-    setPrevData({ workers, teams, managers });
-    if (workers !== undefined || teams !== undefined || managers !== undefined) {
-      setLastRefreshTime(new Date());
+  // Track the last time entity data changed. React 19 is much stricter
+  // about "adjust state during render" patterns than React 18 — every
+  // setState in the render body that fires on every render trips the
+  // max-update-depth budget on first paint when the source data identity
+  // shifts between renders (the previous version compared ref objects
+  // whose identity drifted whenever a hook returned a fresh wrapper).
+  // Derive lastRefreshTime in an effect instead.
+  const lastDataRef = useRef<{ workers: typeof workers; teams: typeof teams; managers: typeof managers } | null>(null);
+  useEffect(() => {
+    const last = lastDataRef.current;
+    if (!last || last.workers !== workers || last.teams !== teams || last.managers !== managers) {
+      lastDataRef.current = { workers, teams, managers };
+      if (workers !== undefined || teams !== undefined || managers !== undefined) {
+        setLastRefreshTime(new Date());
+      }
     }
-  }
+  }, [workers, teams, managers]);
 
   // Guard active section: fall back to overview if the current section is
   // hidden in this mode or points at a plugin route that no longer exists.
