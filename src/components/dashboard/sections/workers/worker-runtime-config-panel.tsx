@@ -86,6 +86,16 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
     return () => clearTimeout(t);
   }, [load]);
 
+  // config 重新加载后清空编辑态——避免「刷新后输入框仍显示旧 typed 值」造成
+  // 与 server 新值的视觉错位（用户报"刷新叠加输入框"的根因：用户输入 '200'、
+  // 手动点刷新，server 已回 '100'，但 maxIters 仍是 '200'，输入框显示 200 ≠ config 100）
+  useEffect(() => {
+    setMaxIters(null);
+    setMaxInputTokens(null);
+    setCompaction(null);
+    setLoopText(null);
+  }, [config]);
+
   // ── 字段级 diff（spec 核心语义：未动字段不发）────────────────────
   const buildDiff = (): { diff: Record<string, unknown>; invalid: string } => {
     const diff: Record<string, unknown> = {};
