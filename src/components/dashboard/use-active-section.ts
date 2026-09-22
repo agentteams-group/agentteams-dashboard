@@ -38,7 +38,7 @@ function resolveSection(hash: string): string | null {
 }
 
 function resolveInitialSection(): string {
-  if (typeof window === 'undefined') return 'chat';
+  if (typeof window === 'undefined') return 'overview';
 
   const hash = window.location.hash.slice(1);
   const known = hash ? resolveSection(hash) : null;
@@ -52,9 +52,13 @@ function resolveInitialSection(): string {
     /* localStorage unavailable */
   }
 
-  // F-5 / 需求 3.1-3.2: the conversation-first shell opens on chat unless
-  // the operator already pinned a section via deep link / localStorage.
-  return 'chat';
+  // Default landing section. Operators who want the conversation-first shell
+  // can pin `chat` via deep link (#chat) or localStorage; everyone else opens
+  // on overview — the commit that flipped this default to 'chat' made the
+  // overview page effectively unreachable, which in turn masked the heading-
+  // downgrade React error #185 (minified) that triggered when users did
+  // navigate to overview.
+  return 'overview';
 }
 
 export function useActiveSection() {
