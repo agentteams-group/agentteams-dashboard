@@ -1,5 +1,6 @@
 export type WorkerSessionState = 'running' | 'done' | 'idle';
 
+
 /** Minimal room shape the derivation needs (test objects may be lean). */
 export interface SessionRoomLike {
   /** MXIDs currently typing in the room (m.typing, ≤2min). */

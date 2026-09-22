@@ -226,6 +226,7 @@ export function ChatRoom({
         isTyping: typingSet.has(mxId),
         lastMessageTs: lastTsBySender[mxId],
         now: sessionTick,
+        phase: info.phase,
       });
     }
     return map;

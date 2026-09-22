@@ -557,20 +557,20 @@ function ReportCodeBlock({ language, children }: { language?: string; children: 
 }
 
 /** Rich markdown renderer tuned for the AI diagnosis report. */
-function DiagnosisReport({ content, streaming }: { content: string; streaming?: boolean }) {
+export function DiagnosisReport({ content, streaming }: { content: string; streaming?: boolean }) {
   return (
     <div className="text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1({ children }) {
-            return <h1 className="text-lg font-bold mt-3 mb-2 pb-1.5 border-b">{children}</h1>;
+            return <h3 className="text-lg font-bold mt-3 mb-2 pb-1.5 border-b">{children}</h3>;
           },
           h2({ children }) {
-            return <h2 className="text-base font-semibold mt-4 mb-2 pb-1.5 border-b flex items-center gap-1.5">{children}</h2>;
+            return <h4 className="text-base font-semibold mt-4 mb-2 pb-1.5 border-b flex items-center gap-1.5">{children}</h4>;
           },
           h3({ children }) {
-            return <h3 className="text-sm font-semibold mt-3 mb-1.5">{children}</h3>;
+            return <h5 className="text-sm font-semibold mt-3 mb-1.5">{children}</h5>;
           },
           p({ children }) {
             return <p className="leading-relaxed mb-2 last:mb-0">{children}</p>;

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DONE_WINDOW_MS,
+  INACTIVE_PHASES,
   roomHasRunningWorker,
   roomWorkerState,
   workerSessionState,
+  deriveWorkerSessionState,
 } from './worker-session-state';
 import type { SessionRoomLike } from './worker-session-state';
 
@@ -114,6 +116,79 @@ describe('roomWorkerState (1:1 room header)', () => {
     expect(
       roomWorkerState({ typing: [], lastMessageTs: now - DONE_WINDOW_MS - 1 }, new Set([W1]), now),
     ).toBe('idle');
+  });
+});
+
+describe('workerSessionState — phase gate (container stopped → idle)', () => {
+  const now = 1_758_000_000_000;
+  const freshRooms: SessionRoomLike[] = [
+    { typing: [W1], lastMessageTs: now, memberIds: [W1] },
+  ];
+
+  it.each(['Stopped', 'Failed', 'Sleeping', 'Pending'])(
+    'phase=%s forces idle even while typing',
+    (phase) => {
+      expect(workerSessionState(W1, freshRooms, now, phase)).toBe('idle');
+    },
+  );
+
+  it('INACTIVE_PHASES set contains the four inactive phases', () => {
+    expect(INACTIVE_PHASES.has('Stopped')).toBe(true);
+    expect(INACTIVE_PHASES.has('Failed')).toBe(true);
+    expect(INACTIVE_PHASES.has('Sleeping')).toBe(true);
+    expect(INACTIVE_PHASES.has('Pending')).toBe(true);
+    expect(INACTIVE_PHASES.has('Running')).toBe(false);
+    expect(INACTIVE_PHASES.has('Ready')).toBe(false);
+  });
+
+  it('phase=Running (active) does not gate — typing still wins', () => {
+    expect(workerSessionState(W1, freshRooms, now, 'Running')).toBe('running');
+  });
+
+  it('phase=Ready (active) does not gate', () => {
+    const doneRooms: SessionRoomLike[] = [
+      { typing: [], lastMessageTs: now - 60_000, memberIds: [W1] },
+    ];
+    expect(workerSessionState(W1, doneRooms, now, 'Ready')).toBe('done');
+  });
+});
+
+describe('deriveWorkerSessionState — phase gate', () => {
+  const now = 1_758_000_000_000;
+
+  it('Stopped + stale lastFinishAt inside the 10-min window → idle', () => {
+    expect(
+      deriveWorkerSessionState({
+        agentStatus: { lastFinishAt: new Date(now - 5 * 60 * 1000).toISOString() },
+        isTyping: false,
+        lastMessageTs: now - 60_000,
+        now,
+        phase: 'Stopped',
+      }),
+    ).toBe('idle');
+  });
+
+  it('Stopped + worker still typing → idle (typing keep-alive has no ceiling)', () => {
+    expect(
+      deriveWorkerSessionState({
+        agentStatus: { agentStatus: 'running', runningTaskCount: 1 },
+        isTyping: true,
+        lastMessageTs: now,
+        now,
+        phase: 'Stopped',
+      }),
+    ).toBe('idle');
+  });
+
+  it('Running phase + running heartbeat → running (no gate)', () => {
+    expect(
+      deriveWorkerSessionState({
+        agentStatus: { agentStatus: 'running', runningTaskCount: 1 },
+        isTyping: false,
+        now,
+        phase: 'Running',
+      }),
+    ).toBe('running');
   });
 });
 

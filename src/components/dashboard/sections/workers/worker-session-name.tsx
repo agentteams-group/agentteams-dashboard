@@ -14,7 +14,7 @@ export function WorkerSessionName({
   worker,
   className = '',
 }: {
-  worker: { name: string; matrixUserID?: string; roomID?: string };
+  worker: { name: string; matrixUserID?: string; roomID?: string; phase?: string };
   className?: string;
 }) {
   const state = useWorkerSessionState(worker);
