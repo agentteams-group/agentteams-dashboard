@@ -304,7 +304,14 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
                     .map((b, j) => (
                       <p
                         key={j}
-                        className="whitespace-pre-wrap break-words text-xs"
+                        // `break-all` (vs `break-words`) keeps whitespace in
+                        // the original text but lets long uuids / tool names
+                        // wrap anywhere, so the narrow dialog column doesn't
+                        // force mid-word mid-character wraps that hurt
+                        // readability. Tailwind's `break-words` is the same
+                        // as `overflow-wrap: anywhere` and only breaks
+                        // inside the last possible word on the line.
+                        className="whitespace-pre-wrap break-all text-xs font-mono"
                       >
                         {b}
                       </p>
