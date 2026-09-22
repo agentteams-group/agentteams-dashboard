@@ -93,8 +93,13 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch(base, { cache: 'no-store' });
-      if (res.status === 404) {
-        // 未知 worker / L2 边界外 / 旧 Controller（无 #1295 端点）——不可区分，统一占位
+      // 404: unknown worker / L2 boundary / older Controller without #1295.
+      // 403: known worker but the caller lacks read access (Controller
+      //      RBAC returns 403 for workers outside the L2 user's scope).
+      // Both are unprobeable from the client — render the same hidden
+      // placeholder rather than a red error banner that tells the user
+      // "you don't have permission" (information disclosure + noise).
+      if (res.status === 404 || res.status === 403) {
         setState('hidden');
         return;
       }
@@ -168,6 +173,17 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
             detail = body?.detail || body?.message || body?.error || detail;
           } catch {
             // non-JSON
+          }
+          // 403 = same RBAC boundary as the list endpoint — surface a soft
+          // empty state (no red error), since the chat is in the sidebar
+          // because the user CAN read the list, but the underlying chat
+          // either moved rooms or is gated differently. Collapse to the
+          // hidden placeholder so the dialog isn't trapped on an error
+          // banner that re-opens every time the user clicks the avatar.
+          if (res.status === 403 || res.status === 404) {
+            setDetailState('hidden');
+            setDetail(null);
+            return;
           }
           setDetailState('error');
           setDetailError(detail);
@@ -261,8 +277,14 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
           </div>
         )}
 
+        {detailState === 'hidden' && (
+          <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+            该会话不可见（不在你的访问范围内，或 Controller 不再持有它）。
+          </div>
+        )}
+
         {detailState === 'ready' && (
-          <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+          <div className="max-h-[60vh] space-y-1.5 overflow-y-auto pr-1">
             {msgs.length === 0 && (
               <p className="px-2 py-1 text-[11px] text-muted-foreground">该会话暂无消息。</p>
             )}

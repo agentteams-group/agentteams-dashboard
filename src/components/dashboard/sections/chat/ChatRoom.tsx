@@ -911,7 +911,7 @@ export function ChatRoom({
               if (!o) setChatsWorkerName(null);
             }}
           >
-            <DialogContent className="max-w-3xl w-[min(92vw,760px)]">
+            <DialogContent className="max-w-4xl w-[min(92vw,896px)]">
               <DialogHeader>
                 <DialogTitle>Worker 会话 — {chatsWorkerName}</DialogTitle>
                 <DialogDescription>

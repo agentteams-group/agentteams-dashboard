@@ -84,7 +84,7 @@ export function WorkerDetailDialog({
   return (
     <>
       <Dialog open={!!worker} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-w-[95vw] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Worker 详情 - {worker?.name}</span>
@@ -115,7 +115,7 @@ export function WorkerDetailDialog({
                   className="flex justify-between py-1 border-b border-border/50"
                 >
                   <span className="text-muted-foreground">{label}</span>
-                  <span className="font-mono text-xs max-w-[60%] text-right break-all">
+                  <span className="font-mono text-xs max-w-[75%] text-right break-all">
                     {read(worker)}
                   </span>
                 </div>

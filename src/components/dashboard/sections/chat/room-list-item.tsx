@@ -84,12 +84,11 @@ export function RoomListItem({
   return (
     <motion.button
       onClick={handleClick}
-      className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+      className={`w-full text-left p-3 rounded-lg transition-colors ${
         isSelected
           ? 'bg-emerald-500/10 border border-emerald-500/30'
           : 'hover:bg-accent border border-transparent'
       }`}
-      whileHover={{ x: 2 }}
       whileTap={{ scale: 0.99 }}
     >
       <div className="flex items-center gap-2.5">
