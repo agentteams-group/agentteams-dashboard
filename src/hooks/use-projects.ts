@@ -53,6 +53,10 @@ export function useProjects() {
     refetchInterval: 15000,
     retry: 1,
     placeholderData: (previousData) => previousData,
+    // Don't take the whole overview / task board down with the section
+    // error boundary when a controller hiccup 500s the list endpoint; let
+    // useApiTaskBoard's `degraded` fallback (D5) take over instead.
+    throwOnError: false,
   });
 }
 
@@ -75,6 +79,12 @@ export function useProjectWorkflow(projectId: string | null, teamId?: string) {
     // a manual refresh.
     refetchInterval: 15000,
     retry: 1,
+    // Same defensive contract as useProjects: a single detail-fetch failure
+    // (404 on a deleted project, 500 on a controller hiccup) used to trip
+    // the section error boundary and wipe the project view entirely. Drop
+    // the failure to the query state so callers can show a "数据加载失败"
+    // badge instead of the "模块遇到了问题" card.
+    throwOnError: false,
   });
 }
 
@@ -316,6 +326,15 @@ export function useApiTaskBoard() {
       enabled: !degraded,
       retry: 1,
       staleTime: 15000,
+      // Per-project workflow fetches failing (one stale runId, one
+      // proxy hiccup, …) used to bubble up through useQueries and trip
+      // the section error boundary — the whole overview / task board
+      // would render the "module error" card and the operator would lose
+      // every other section too. Drop the failure on the floor here; the
+      // workflowToBoard mapper already skips projects with no workflow
+      // payload, so the board just shows one fewer project instead of
+      // crashing.
+      throwOnError: false,
     })),
   });
 
