@@ -24,11 +24,15 @@ function isRoomId(value: string): boolean {
   // homeserver resolves it to the underlying room id.
   //
   // Character class matches the Matrix spec's restricted grammar for the
-  // opaque id part of both forms; ports / IP-literal homeservers are not
-  // permitted here, those go through the homeserver allowlist instead.
+  // opaque id part of both forms. The right-hand server part may carry a
+  // `:port` suffix when the homeserver was started on a non-default port and
+  // published that port inside its `server_name` (e.g. embedded Tuwunel at
+  // `matrix-local.agentteams.io:18080`). Without the optional port suffix
+  // the proxy rejects perfectly legal IDs from such homeservers and the
+  // invite accept flow shows a misleading "M_INVALID_ROOM_ID" to the user.
   return (
-    /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value) ||
-    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+$/.test(value)
+    /^![A-Za-z0-9._=\/+-]+:[A-Za-z0-9.-]+(?::\d+)?$/.test(value) ||
+    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+(?::\d+)?$/.test(value)
   );
 }
 

@@ -64,6 +64,32 @@ describe('Matrix join route', () => {
     expect(url).toBe('http://127.0.0.1:6167/_matrix/client/v3/join/%23alias%3Ahs');
   });
 
+  it('accepts a room id with a non-default :port suffix on server_name', async () => {
+    // Embedded Tuwunel / single-port homeserver setups publish the listen
+    // port inside server_name (e.g. matrix-local.agentteams.io:18080), so
+    // the proxy must accept those ids verbatim instead of 400-ing the
+    // invite accept flow.
+    const matrixFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ room_id: '!room:hs:18080' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const roomId = '!72LCaMxEJotzI9n9sk:matrix-local.agentteams.io:18080';
+    const response = await joinRoom(makeRequest(roomId), {
+      params: Promise.resolve({ roomId }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(matrixFetch).toHaveBeenCalledOnce();
+    const [url] = matrixFetch.mock.calls[0];
+    expect(url).toBe(
+      'http://127.0.0.1:6167/_matrix/client/v3/join/' +
+        '!72LCaMxEJotzI9n9sk%3Amatrix-local.agentteams.io%3A18080'
+    );
+  });
+
   it('rejects an obviously malformed room id without calling the homeserver', async () => {
     const matrixFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('{}', { status: 200 })

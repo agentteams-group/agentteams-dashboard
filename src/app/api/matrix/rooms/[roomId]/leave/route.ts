@@ -19,10 +19,12 @@ function isRoomId(value: string): boolean {
   //   #roomalias:server       — room alias; POST /join accepts both
   // See the matching note in the /join route — we accept the same shapes
   // here so the invite-ingest path (which may snapshot an alias) round-
-  // trips through the proxy without a 400.
+  // trips through the proxy without a 400. The optional `:port` suffix on
+  // the server part covers homeservers that publish their listen port as
+  // part of `server_name` (embedded Tuwunel, single-port test setups).
   return (
-    /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value) ||
-    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+$/.test(value)
+    /^![A-Za-z0-9._=\/+-]+:[A-Za-z0-9.-]+(?::\d+)?$/.test(value) ||
+    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+(?::\d+)?$/.test(value)
   );
 }
 

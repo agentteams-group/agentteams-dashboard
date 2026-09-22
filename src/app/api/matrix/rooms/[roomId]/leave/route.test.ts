@@ -52,6 +52,29 @@ describe('Matrix leave route', () => {
     expect(url).toBe('http://127.0.0.1:6167/_matrix/client/v3/rooms/%23alias%3Ahs/leave');
   });
 
+  it('accepts a room id with a non-default :port suffix on server_name', async () => {
+    // Embedded Tuwunel / single-port homeserver setups publish the listen
+    // port inside server_name (e.g. matrix-local.agentteams.io:18080), so
+    // the proxy must accept those ids verbatim instead of 400-ing the
+    // invite reject / leave path.
+    const matrixFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { status: 200 })
+    );
+
+    const roomId = '!72LCaMxEJotzI9n9sk:matrix-local.agentteams.io:18080';
+    const response = await leaveRoom(makeRequest(roomId), {
+      params: Promise.resolve({ roomId }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(matrixFetch).toHaveBeenCalledOnce();
+    const [url] = matrixFetch.mock.calls[0];
+    expect(url).toBe(
+      'http://127.0.0.1:6167/_matrix/client/v3/rooms/' +
+        '!72LCaMxEJotzI9n9sk%3Amatrix-local.agentteams.io%3A18080/leave'
+    );
+  });
+
   it('rejects an obviously malformed room id', async () => {
     const matrixFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('{}', { status: 200 })
