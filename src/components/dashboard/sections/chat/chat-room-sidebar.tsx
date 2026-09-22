@@ -1,7 +1,7 @@
 'use client';
 
-import { useSyncExternalStore, useState } from 'react';
-import { MessageSquare, PanelLeftClose, Search } from 'lucide-react';
+import { useSyncExternalStore, useState, useCallback } from 'react';
+import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
 const SIDEBAR_DEFAULT_W = 224;
@@ -56,6 +56,10 @@ function persistSidebarWidth(w: number): void {
 }
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { matrixApi } from '@/lib/matrix-api';
+import { useInviteStore, type Invite } from '@/lib/matrix-invite-store';
 import { RoomListItem } from './room-list-item';
 import { filterRooms, groupRoomsByType, sortRoomsByRecency } from './room-builders';
 import type { RoomInfo } from './room-info';
@@ -92,6 +96,134 @@ function publishSort(m: SortMode) {
 function shortUserId(userId: string | null | undefined): string | null {
   if (!userId) return null;
   return userId.split(':')[0].slice(1);
+}
+
+/** F-4 / 需求 4.4: pending Matrix invites, rendered above the joined room
+ *  list. Each row exposes accept/reject buttons that hit the dashboard's
+ *  server-side join/leave proxy (matrixApi.joinRoom / leaveRoom). On a 4xx
+ *  response we surface `errcode`/`error` inline; on success the sync loop
+ *  drops the entry automatically. */
+function InviteInbox() {
+  const invites = useInviteStore((s) => s.invites);
+  const homeserver = useMatrixStore((s) => s.homeserver);
+  const accessToken = useMatrixStore((s) => s.accessToken);
+  const list = Object.values(invites).sort((a, b) => (b.originTs ?? 0) - (a.originTs ?? 0));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pending, setPending] = useState<Record<string, 'join' | 'leave' | undefined>>({});
+  const takeJump = useInviteStore((s) => s.takePendingInbox);
+
+  const callJoin = useCallback(
+    async (inv: Invite) => {
+      if (!homeserver || !accessToken) return;
+      setPending((p) => ({ ...p, [inv.roomId]: 'join' }));
+      setErrors((e) => {
+        const n = { ...e };
+        delete n[inv.roomId];
+        return n;
+      });
+      try {
+        await matrixApi.joinRoom(homeserver, accessToken, inv.roomId);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        setErrors((e) => ({ ...e, [inv.roomId]: detail }));
+      } finally {
+        setPending((p) => {
+          const n = { ...p };
+          delete n[inv.roomId];
+          return n;
+        });
+      }
+    },
+    [accessToken, homeserver],
+  );
+
+  const callLeave = useCallback(
+    async (inv: Invite) => {
+      if (!homeserver || !accessToken) return;
+      setPending((p) => ({ ...p, [inv.roomId]: 'leave' }));
+      setErrors((e) => {
+        const n = { ...e };
+        delete n[inv.roomId];
+        return n;
+      });
+      try {
+        await matrixApi.leaveRoom(homeserver, accessToken, inv.roomId);
+        // 成功拒绝：从本地缓存移除（sync loop 也会清，但等不到下一次 sync）
+        useInviteStore.getState().dropByRoomId(inv.roomId);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        setErrors((e) => ({ ...e, [inv.roomId]: detail }));
+      } finally {
+        setPending((p) => {
+          const n = { ...p };
+          delete n[inv.roomId];
+          return n;
+        });
+      }
+    },
+    [accessToken, homeserver],
+  );
+
+  // HITL card may request a jump to the inbox — render the inbox row visible
+  // regardless of sortMode. (Atomic consumer pattern.)
+  const jumped = takeJump();
+
+  if (list.length === 0 && !jumped) return null;
+
+  return (
+    <div className="mx-1.5 mb-1.5 rounded-md border border-sky-500/30 bg-sky-500/5 p-1.5">
+      <p className="flex items-center gap-1 px-1 py-1 text-[10px] font-semibold tracking-wide text-sky-600 dark:text-sky-400">
+        <InboxIcon className="w-3 h-3" />
+        待接受的邀请 {list.length}
+      </p>
+      {list.length === 0 ? (
+        <p className="px-2 py-1 text-[10px] text-muted-foreground">没有待处理的邀请</p>
+      ) : (
+        list.map((inv) => {
+          const err = errors[inv.roomId];
+          const busy = pending[inv.roomId];
+          return (
+            <div key={inv.roomId} className="px-1.5 py-1 rounded hover:bg-sky-500/10">
+              <div className="text-xs font-medium truncate" title={inv.roomId}>
+                {inv.roomName || inv.roomId}
+              </div>
+              <div className="text-[10px] text-muted-foreground truncate">
+                来自 {shortUserId(inv.sender) || inv.sender}
+              </div>
+              {err && (
+                <div className="mt-1 flex items-start gap-1 text-[10px] text-destructive">
+                  <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span className="break-all">{err}</span>
+                </div>
+              )}
+              <div className="mt-1 flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-1.5 text-[10px]"
+                  disabled={!!busy}
+                  onClick={() => void callJoin(inv)}
+                >
+                  <Check className="w-3 h-3" />
+                  接受
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[10px]"
+                  disabled={!!busy}
+                  onClick={() => void callLeave(inv)}
+                >
+                  <X className="w-3 h-3" />
+                  拒绝
+                </Button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
 }
 
 export function ChatRoomSidebar({
@@ -248,6 +380,7 @@ export function ChatRoomSidebar({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 custom-scrollbar">
+        <InviteInbox />
         {isLoading ? (
           Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />

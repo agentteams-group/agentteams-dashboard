@@ -16,6 +16,7 @@ import {
   type HitlConfirmation,
   type PendingProjectKey,
 } from '@/lib/hitl-inbox';
+import { useInviteStore } from '@/lib/matrix-invite-store';
 import type { ProjectSummary } from '@/lib/agentteams-projects-api';
 
 function formatRelativeTime(timestamp: number): string {
@@ -49,6 +50,11 @@ export function HitlInboxCard() {
     [projectList],
   );
 
+  // F-5 / 需求 3.6: the inbox card stays mounted even when confirmations
+  // and paused projects are empty, as long as there are pending Matrix
+  // invites — the operator still needs to act on them.
+  const pendingInvites = useInviteStore((s) => Object.values(s.invites));
+
   const roomLabels = useMemo(() => {
     const labels: Record<string, string> = {};
     for (const worker of workers ?? []) {
@@ -63,7 +69,7 @@ export function HitlInboxCard() {
     return labels;
   }, [workers, teams, managers]);
 
-  if (confirmations.length === 0 && pausedProjects.length === 0) return null;
+  if (confirmations.length === 0 && pausedProjects.length === 0 && pendingInvites.length === 0) return null;
 
   return (
     <Card className="glass-card border-amber-500/20">
@@ -74,9 +80,34 @@ export function HitlInboxCard() {
           <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400">
             {confirmations.length + pausedProjects.length}
           </Badge>
+          {pendingInvites.length > 0 && (
+            <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-sky-500/30 text-sky-600 dark:text-sky-400">
+              待接受的 Matrix 邀请 {pendingInvites.length}
+            </Badge>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-1.5">
+        {pendingInvites.length > 0 && (
+          <button
+            type="button"
+            // F-5 / 需求 3.6: jump to the chat section with the invite inbox
+            // pre-opened. The chat-room sidebar pulls takePendingInbox() during
+            // render (atomic store consumer) so the click does not need an
+            // effect setState.
+            onClick={() => {
+              useSectionStore.getState().setActiveSection('chat');
+            }}
+            className="w-full text-left rounded-lg border border-sky-500/20 bg-sky-500/5 hover:bg-sky-500/10 px-3 py-2 transition-colors"
+          >
+            <div className="text-sm font-medium">
+              {pendingInvites.length} 个房间邀请未处理
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              打开聊天面板查看
+            </div>
+          </button>
+        )}
         {confirmations.map((item) => (
           <ConfirmationRow
             key={item.id}

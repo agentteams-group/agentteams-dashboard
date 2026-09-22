@@ -140,8 +140,18 @@ export async function GET(request: NextRequest) {
   // / embedded defaults (hardcoded in the source, not deployment data).
   const session = getSessionFromRequest(request);
   const queryToken = request.nextUrl.searchParams.get('token');
+  // F-7 / 需求 2.7-2.8: prefer the Authorization Bearer header so the token
+  // never lands in access logs, browser history, or referer headers. The
+  // query-string form (?token=) is kept as a one-cycle compatibility alias
+  // for old bookmarks / documentation links — both paths call the same
+  // timing-safe verifySetupToken check.
+  const headerToken = request.headers
+    .get('authorization')
+    ?.replace(/^Bearer\s+/i, '')
+    .trim();
+  const candidateToken = headerToken || queryToken;
   const prefillAuthorized =
-    !session && queryToken ? await verifySetupToken(queryToken) : !!session;
+    !session && candidateToken ? await verifySetupToken(candidateToken) : !!session;
   if (!prefillAuthorized) {
     return NextResponse.json({
       configured,

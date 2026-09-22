@@ -44,7 +44,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { apiUrl } from '@/lib/api-base';
-import { BACKEND_LABELS, BACKEND_NAMES, REQUIRED_BACKENDS } from '@/lib/backend-names';
+import {
+  BACKEND_LABELS,
+  BACKEND_NAMES,
+  EMBEDDED_DEFAULTS,
+  REQUIRED_BACKENDS,
+  type BackendName,
+} from '@/lib/backend-names';
 
 interface BackendAddrs {
   internal?: string;
@@ -56,6 +62,10 @@ interface BackendsState {
   backends: Record<string, { configured: boolean; candidates: string[] }>;
   config?: Record<string, BackendAddrs>;
   effective?: Record<string, string>;
+  embedded?: {
+    defaults: Record<string, string | undefined>;
+    healthy: Record<string, boolean> | null;
+  };
 }
 
 interface TestRow {
@@ -66,12 +76,26 @@ interface TestRow {
   detail: string;
 }
 
-function initialFields(config: Record<string, BackendAddrs> | undefined) {
+function initialFields(
+  config: Record<string, BackendAddrs> | undefined,
+  embedded: BackendsState['embedded'],
+) {
   const out: Record<string, { internal: string; external: string }> = {};
   for (const name of BACKEND_NAMES) {
+    const cfg = config?.[name];
+    // F-3 / 需求 2.4: an empty `internal` slot paired with a healthy embedded
+    // probe gets prefilled with EMBEDDED_DEFAULTS — editable (the operator can
+    // overwrite before saving). Required backends always get the default so
+    // the slot never stays blank in the standard embedded install. `external`
+    // stays empty (no auto-fallback for the operator's wide-area address).
+    const internal =
+      cfg?.internal?.trim() ||
+      (embedded?.healthy?.[name] === true && EMBEDDED_DEFAULTS[name]
+        ? EMBEDDED_DEFAULTS[name] ?? ''
+        : '');
     out[name] = {
-      internal: config?.[name]?.internal ?? '',
-      external: config?.[name]?.external ?? '',
+      internal,
+      external: cfg?.external ?? '',
     };
   }
   return out;
@@ -101,7 +125,7 @@ export function BackendTab() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as BackendsState;
       setState(data);
-      setFields((prev) => (Object.keys(prev).length > 0 ? prev : initialFields(data.config)));
+      setFields((prev) => (Object.keys(prev).length > 0 ? prev : initialFields(data.config, data.embedded)));
     } finally {
       setLoading(false);
     }
@@ -292,20 +316,32 @@ export function BackendTab() {
                 {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '测试'}
               </Button>
             </div>
-            {(['internal', 'external'] as const).map((slot) => (
-              <div key={slot} className="flex items-center gap-2 pl-5">
-                <span className="w-14 text-xs text-muted-foreground shrink-0">
-                  {slot === 'internal' ? '内网' : '外网'}
-                </span>
-                <Input
-                  value={fields[name]?.[slot] ?? ''}
-                  onChange={(e) => setField(name, slot, e.target.value)}
-                  placeholder="http://host:port（可选，留空=用 env/内置）"
-                  className="h-8 text-xs flex-1"
-                  spellCheck={false}
-                />
-              </div>
-            ))}
+            {(['internal', 'external'] as const).map((slot) => {
+              const prefilled =
+                slot === 'internal' &&
+                !fields[name]?.internal?.trim() &&
+                state.embedded?.healthy?.[name] === true &&
+                !!EMBEDDED_DEFAULTS[name];
+              return (
+                <div key={slot} className="flex items-center gap-2 pl-5">
+                  <span className="w-14 text-xs text-muted-foreground shrink-0">
+                    {slot === 'internal' ? '内网' : '外网'}
+                  </span>
+                  <Input
+                    value={fields[name]?.[slot] ?? ''}
+                    onChange={(e) => setField(name, slot, e.target.value)}
+                    placeholder="http://host:port（可选，留空=用 env/内置）"
+                    className="h-8 text-xs flex-1"
+                    spellCheck={false}
+                  />
+                  {prefilled && (
+                    <Badge variant="secondary" className="shrink-0 text-[10px] h-4 px-1.5">
+                      嵌入式探测
+                    </Badge>
+                  )}
+                </div>
+              );
+            })}
             {rows[name]?.map((row) => (
               <div key={row.url} className="flex items-center gap-1.5 pl-5 text-[11px]">
                 <RowIcon row={row} />
