@@ -53,33 +53,32 @@ import { PluginWidgetsGrid } from '@/components/plugins/plugin-widgets';
 import { HitlInboxCard } from '@/components/dashboard/sections/hitl-inbox-card';
 
 // ============ Auto-refresh countdown hook ============
+// F-RefreshLoop: the previous implementation called `setCountdown` once per
+// second, and the parent OverviewSection re-rendered. Combined with the
+// section subscribing to the AgentTeams store without a selector (every
+// store update — including the per-poll connectionLatency — forced a
+// re-render), this pushed React 19 over its max-update-depth and tripped
+// minified error #185 on first paint. Use a ref for the start time and
+// a stable intervalMs; never setState from the render body.
 function useRefreshCountdown(intervalMs: number) {
-  const [countdown, setCountdown] = useState(() => intervalMs / 1000);
-  const startTimeRef = useRef(Date.now());
-
-  // Restart the cycle when the interval changes (adjust state during render)
-  const [prevIntervalMs, setPrevIntervalMs] = useState(intervalMs);
-  if (prevIntervalMs !== intervalMs) {
-    setPrevIntervalMs(intervalMs);
-    setCountdown(intervalMs / 1000);
-  }
+  const [countdown, setCountdown] = useState(() => Math.ceil(intervalMs / 1000));
+  const intervalRef = useRef(intervalMs);
+  intervalRef.current = intervalMs;
 
   useEffect(() => {
-    startTimeRef.current = Date.now();
-
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const remaining = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
+    let startTime = Date.now();
+    setCountdown(Math.ceil(intervalMs / 1000));
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, Math.ceil((intervalRef.current - elapsed) / 1000));
       setCountdown(remaining);
-
-      // Reset cycle when countdown reaches zero
       if (remaining <= 0) {
-        startTimeRef.current = Date.now();
-        setCountdown(intervalMs / 1000);
+        startTime = Date.now();
+        setCountdown(Math.ceil(intervalRef.current / 1000));
       }
-    }, 1000);
-
-    return () => clearInterval(interval);
+    };
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, [intervalMs]);
 
   return countdown;
@@ -331,7 +330,11 @@ function ActiveWorkPanel({ projects, tasks, isLoading }: {
 
 // ============ Main OverviewSection ============
 export function OverviewSection() {
-  const { isConnected } = useAgentTeamsStore();
+  // Select isConnected via a per-field selector: the store polls
+  // connectionLatency every tick, and a selector-less subscription would
+  // re-render the entire overview (and every animated stat counter below)
+  // on every poll — past max-update-depth on first paint under React 19.
+  const isConnected = useAgentTeamsStore((s) => s.isConnected);
   const { data: clusterStatus } = useClusterStatus();
   const { data: versionData } = useVersion();
   const { data: workers } = useWorkers();
