@@ -14,7 +14,16 @@ import {
 } from '../../../proxy-helper';
 
 function isRoomId(value: string): boolean {
-  return /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value);
+  // Matrix room identifiers come in two legal forms:
+  //   !opaque:server          — full room id (always non-empty)
+  //   #roomalias:server       — room alias; POST /join accepts both
+  // See the matching note in the /join route — we accept the same shapes
+  // here so the invite-ingest path (which may snapshot an alias) round-
+  // trips through the proxy without a 400.
+  return (
+    /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value) ||
+    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+$/.test(value)
+  );
 }
 
 export async function POST(

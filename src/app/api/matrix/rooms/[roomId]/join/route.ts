@@ -15,10 +15,21 @@ import {
 } from '../../../proxy-helper';
 
 function isRoomId(value: string): boolean {
-  // Matrix room IDs are `!opaque:server` for normal rooms; we also allow
-  // the older legacy `[irc]` form to fail closed rather than forward to
-  // a homeserver that will reject it anyway.
-  return /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value);
+  // Matrix room identifiers come in two legal forms:
+  //   !opaque:server          — full room id (always non-empty)
+  //   #roomalias:server       — room alias; POST /join accepts both
+  // Spec ref: https://spec.matrix.org/v1.10/client-server-api/#roomidoreventid
+  // and POST /_matrix/client/v3/join/{roomIdOrAlias}. `rooms.invite` in
+  // /sync responses may be keyed by either — alias is legal and the
+  // homeserver resolves it to the underlying room id.
+  //
+  // Character class matches the Matrix spec's restricted grammar for the
+  // opaque id part of both forms; ports / IP-literal homeservers are not
+  // permitted here, those go through the homeserver allowlist instead.
+  return (
+    /^![A-Za-z0-9._=/+-]+:[A-Za-z0-9.-]+$/.test(value) ||
+    /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+$/.test(value)
+  );
 }
 
 export async function POST(
