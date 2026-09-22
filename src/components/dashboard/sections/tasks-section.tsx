@@ -623,11 +623,25 @@ export function TasksSection() {
   // Atomically consume the pending project deep-link (HITL inbox card). The
   // task board now owns the project view, so a deep link targets a project in
   // this section rather than the removed standalone projects section.
-  const pendingProjectKey = useHitlInboxStore.getState().takePendingProjectKey();
-  if (pendingProjectKey?.id) {
-    setView('projects');
-    setSelectedProjectId(pendingProjectKey.id);
-  }
+  //
+  // Implemented as a mount-only effect (not "consumed during render") so the
+  // side-effecting setView / setSelectedProjectId calls happen OUTSIDE of
+  // React's render phase. Doing this in the render body of an AnimatePresence
+  // child was fine in isolation but reacted to "Cannot update a component
+  // while rendering a different component" when the dashboard shell (the
+  // section guard effect at agent-teams-dashboard line 151-178) re-rendered
+  // concurrently, and tripped the task section into an empty render that
+  // looked like "first click on 任务看板 doesn't switch". The mount-only
+  // effect solves both: store mutation happens post-commit, and any pending
+  // key only fires on the first mount of TasksSection (mount-only deps).
+  useEffect(() => {
+    const pendingProjectKey = useHitlInboxStore.getState().takePendingProjectKey();
+    if (pendingProjectKey?.id) {
+      setView('projects');
+      setSelectedProjectId(pendingProjectKey.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleReload = useCallback(() => {
     clearTasks();

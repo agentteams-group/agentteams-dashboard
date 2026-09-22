@@ -371,16 +371,22 @@ export function AgentTeamsDashboard() {
 
             <ConnectionBanner />
 
-            {activeSection === 'chat' ? (
-              /* Chat mode: bypass <main> scroll container, fill all available space */
-              <div className="flex-1 flex flex-col min-h-0">
-                <Suspense fallback={<SectionSkeleton />}>
-                  <ChatSection />
-                </Suspense>
-              </div>
-            ) : (
-              /* Normal mode: breadcrumb + scrollable content + footer */
-              <>
+            {/*
+              Single tree for every section. The chat layout only differs in
+              that it bypasses the breadcrumb + scrollable <main> wrapper and
+              fills the whole column — toggling visibility is cheaper than
+              branching the JSX, and avoids the AnimatePresence branch-swap
+              trap where switching between chat (no AnimatePresence children)
+              and any other section (one AnimatePresence child) used to skip
+              the entrance animation and sometimes left the new section
+              invisible (operator saw "click 任务看板 first time does
+              nothing"). The footer is hidden in chat mode to give chat the
+              full height.
+            */}
+            <div
+              className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'border-b border-border/50 bg-background/50'}`}
+            >
+              {activeSection !== 'chat' && (
                 <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
                   <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Home className="w-3.5 h-3.5" />
@@ -390,7 +396,17 @@ export function AgentTeamsDashboard() {
                     <span>{activeLabel}</span>
                   </nav>
                 </div>
+              )}
 
+              {activeSection === 'chat' ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <SectionErrorBoundary sectionName={activeLabel}>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <ChatSection />
+                    </Suspense>
+                  </SectionErrorBoundary>
+                </div>
+              ) : (
                 <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
                   <AnimatePresence mode="wait">
                     <motion.div
@@ -412,19 +428,21 @@ export function AgentTeamsDashboard() {
                     </motion.div>
                   </AnimatePresence>
                 </main>
+              )}
+            </div>
 
-                <DashboardFooter
-                  isConnected={isConnected}
-                  connectionLatency={connectionLatency}
-                  controllerUrl={controllerUrl}
-                  reconnectInterval={reconnectInterval}
-                  lastRefreshText={lastRefreshText}
-                  latencyColor={latencyColor}
-                  latencyText={latencyText}
-                  matrixLoggedIn={matrixLoggedIn}
-                  matrixSyncing={matrixSyncing}
-                />
-              </>
+            {activeSection !== 'chat' && (
+              <DashboardFooter
+                isConnected={isConnected}
+                connectionLatency={connectionLatency}
+                controllerUrl={controllerUrl}
+                reconnectInterval={reconnectInterval}
+                lastRefreshText={lastRefreshText}
+                latencyColor={latencyColor}
+                latencyText={latencyText}
+                matrixLoggedIn={matrixLoggedIn}
+                matrixSyncing={matrixSyncing}
+              />
             )}
           </div>
         </div>
