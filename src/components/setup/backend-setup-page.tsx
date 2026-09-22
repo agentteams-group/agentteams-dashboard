@@ -116,10 +116,13 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
     if (!trimmed) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      fetch(
-        apiUrl(`/api/agentteams/setup/backends?token=${encodeURIComponent(trimmed)}`),
-        { credentials: 'same-origin' },
-      )
+      // F-7: prefer Authorization Bearer so the token doesn't leak into
+      // server access logs / browser history. The server also accepts ?token=
+      // (one-cycle compatibility) but new code paths use the header.
+      fetch(apiUrl('/api/agentteams/setup/backends'), {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${trimmed}` },
+      })
         .then((res) => res.json().catch(() => null))
         .then((data: SetupStatusResponse | null) => {
           if (cancelled || !data?.backends) return;
@@ -148,6 +151,30 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
       clearTimeout(timer);
     };
   }, [token, reconfigure, tokenRequired]);
+
+  // F-3 / 需求 2.1-2.3: when embedded probes say every REQUIRED_BACKEND is
+  // healthy, auto-fill the form on first render. Skipped in reconfigure mode
+  // (the operator has already saved; the token-driven refetch above owns the
+  // prefill) and skipped if the operator already typed anything (we never
+  // overwrite a non-empty field with a default).
+  const [autoFilled, setAutoFilled] = useState(false);
+  useEffect(() => {
+    if (autoFilled || reconfigure) return;
+    if (!embeddedHealthy) return;
+    setAddrs((prev) => {
+      const anyFilled = BACKEND_NAMES.some(
+        (name) => prev[name].internal.trim() !== '' || prev[name].external.trim() !== '',
+      );
+      if (anyFilled) return prev;
+      return Object.fromEntries(
+        BACKEND_NAMES.map((name) => [
+          name,
+          { internal: EMBEDDED_DEFAULTS[name] ?? '', external: '' },
+        ]),
+      ) as Record<BackendName, { internal: string; external: string }>;
+    });
+    setAutoFilled(true);
+  }, [autoFilled, embeddedHealthy, reconfigure]);
 
   const setSlot = (name: BackendName, slot: 'internal' | 'external', value: string) => {
     setAddrs((prev) => ({ ...prev, [name]: { ...prev[name], [slot]: value } }));

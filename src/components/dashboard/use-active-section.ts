@@ -38,7 +38,7 @@ function resolveSection(hash: string): string | null {
 }
 
 function resolveInitialSection(): string {
-  if (typeof window === 'undefined') return 'overview';
+  if (typeof window === 'undefined') return 'chat';
 
   const hash = window.location.hash.slice(1);
   const known = hash ? resolveSection(hash) : null;
@@ -52,7 +52,9 @@ function resolveInitialSection(): string {
     /* localStorage unavailable */
   }
 
-  return 'overview';
+  // F-5 / 需求 3.1-3.2: the conversation-first shell opens on chat unless
+  // the operator already pinned a section via deep link / localStorage.
+  return 'chat';
 }
 
 export function useActiveSection() {

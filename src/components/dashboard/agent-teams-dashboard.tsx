@@ -38,6 +38,8 @@ import {
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { useInviteStore } from '@/lib/matrix-invite-store';
 import { usePluginSystem } from '@/hooks/use-plugin-system';
 import { PluginRouteView } from '@/components/plugins/plugin-route-view';
 import { usePluginRoutes } from '@/lib/plugins/extension-store';
@@ -246,12 +248,20 @@ export function AgentTeamsDashboard() {
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
   const managerCount = managers?.length ?? 0;
+  const roomMeta = useRoomMetaStore((s) => s.meta);
+  const unreadRoomCount = useMemo(
+    () => Object.values(roomMeta).filter((m) => (m.unreadCount ?? 0) > 0).length,
+    [roomMeta],
+  );
+  const invitePending = useInviteStore((s) => s.invites);
+  const chatCount = unreadRoomCount + Object.keys(invitePending).length;
 
   const countMap: Record<string, number> = useMemo(() => ({
     workers: workerCount,
     teams: teamCount,
     managers: managerCount,
-  }), [workerCount, teamCount, managerCount]);
+    chat: chatCount,
+  }), [workerCount, teamCount, managerCount, chatCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();
