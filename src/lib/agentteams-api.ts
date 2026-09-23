@@ -23,6 +23,8 @@ export interface ExposedPort {
 }
 
 export interface WorkerResponse {
+  env?: Record<string, string>;
+  envEditable?: boolean;
   name: string;
   phase: WorkerPhase;
   state: WorkerState;
@@ -124,6 +126,7 @@ export interface CreateWorkerRequest {
 }
 
 export interface UpdateWorkerRequest {
+  env?: Record<string, string>;
   model?: RequestModelAlias;
   runtime?: WorkerRuntime;
   image?: string;

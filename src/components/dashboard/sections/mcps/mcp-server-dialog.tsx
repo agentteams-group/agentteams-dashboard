@@ -129,6 +129,7 @@ export function McpServerDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? '编辑 MCP 服务器' : '添加 MCP 服务器'}</DialogTitle>
         </DialogHeader>
+        <p className="text-xs text-muted-foreground">仅保存目录配置。地址更新后，已有 Worker 保持原地址，请逐个重新分配；Headers 仅保存在登记中，不会自动注入 Worker。</p>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {isEdit ? (
             <div className="space-y-2">
