@@ -93,6 +93,13 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
     vi.clearAllMocks();
   });
 
+  it('does not offer CoPaw when creating a worker', () => {
+    renderDialog();
+    expect(screen.queryByRole('option', { name: 'CoPaw' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'QwenPaw' })).toBeInTheDocument();
+    expect(screen.getByText(/CoPaw 已停止新建/)).toBeInTheDocument();
+  });
+
   it('留空 = 跟随集群默认（✓，不拦提交）', () => {
     renderDialog({ name: 'worker-1', runtime: 'openclaw' });
     expect(screen.getByText(/跟随集群默认/)).toBeInTheDocument();

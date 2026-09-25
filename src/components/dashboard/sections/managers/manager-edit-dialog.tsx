@@ -4,6 +4,13 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -13,6 +20,7 @@ import {
 import type { UpdateManagerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { CREATABLE_MANAGER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
 
 export type ManagerEditForm = UpdateManagerRequest & { name?: string };
 
@@ -58,11 +66,31 @@ export function ManagerEditDialog({
           </div>
           <div className="space-y-2">
             <Label>运行时</Label>
-            <Input
+            <Select
               value={value.runtime || ''}
-              onChange={(e) => onChange({ ...value, runtime: e.target.value })}
-              placeholder="运行时名称"
-            />
+              onValueChange={(runtime) => onChange({ ...value, runtime })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择运行时" />
+              </SelectTrigger>
+              <SelectContent>
+                {isLegacyCopaw(value.runtime) && (
+                  <SelectItem value="copaw" disabled>
+                    CoPaw（存量，请升级到 QwenPaw）
+                  </SelectItem>
+                )}
+                {CREATABLE_MANAGER_RUNTIMES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isLegacyCopaw(value.runtime) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                CoPaw 已停止新建。将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据。
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>镜像</Label>

@@ -135,7 +135,32 @@ describe('WorkerCard v2', () => {
     renderCard(makeWorker({ runtime: 'copaw' }));
     const strip = screen.getByTestId('runtime-feature');
     expect(strip).toHaveTextContent('CoPaw');
-    expect(strip).toHaveTextContent('AgentScope 体系，思考与工具以子消息呈现');
+    expect(strip).toHaveTextContent('已停止新建，请升级到 QwenPaw');
+  });
+
+  it('offers an upgrade action for leftover CoPaw workers', () => {
+    const onUpgradeToQwenPaw = vi.fn();
+    render(
+      <TooltipProvider>
+        <WorkerCard
+          worker={makeWorker({ runtime: 'copaw' })}
+          index={0}
+          isSelected={false}
+          onToggleSelect={() => {}}
+          onView={() => {}}
+          onEdit={() => {}}
+          onWake={() => {}}
+          onSleep={() => {}}
+          onEnsureReady={() => {}}
+          onUpgradeToQwenPaw={onUpgradeToQwenPaw}
+          onDelete={() => {}}
+          isActionPending={false}
+          isDeleting={false}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '升级到 QwenPaw' }));
+    expect(onUpgradeToQwenPaw).toHaveBeenCalledTimes(1);
   });
 
   it('renders the deleting overlay with progress and blocks interaction (AC-W6)', () => {

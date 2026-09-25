@@ -18,6 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { WorkerResponse } from '@/lib/agentteams-api';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 
 /** Health cell for compact mode (hooks must run inside a component per row). */
 function CompactHealthCell({ worker }: { worker: WorkerResponse }) {
@@ -36,6 +37,7 @@ export function WorkerTable({
   onWake,
   onSleep,
   onEnsureReady,
+  onUpgradeToQwenPaw,
   onDelete,
   isActionPending,
   deletingWorkerNames,
@@ -50,6 +52,7 @@ export function WorkerTable({
   onWake: (_name: string) => void;
   onSleep: (_name: string) => void;
   onEnsureReady: (_name: string) => void;
+  onUpgradeToQwenPaw?: (_worker: WorkerResponse) => void;
   onDelete: (_name: string) => void;
   isActionPending: boolean;
   deletingWorkerNames: Set<string>;
@@ -227,6 +230,19 @@ export function WorkerTable({
                       disabled={isActionPending || isDeleting}
                     >
                       <Rocket className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
+                  )}
+                  {isLegacyCopaw(worker.runtime) && onUpgradeToQwenPaw && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => onUpgradeToQwenPaw(worker)}
+                      title="升级到 QwenPaw"
+                      aria-label={`升级 ${worker.name} 到 QwenPaw`}
+                      disabled={isActionPending || isDeleting}
+                    >
+                      升级
                     </Button>
                   )}
                   <Button

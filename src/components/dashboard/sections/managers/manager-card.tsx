@@ -14,18 +14,21 @@ import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { TruncatedId } from '@/components/dashboard/truncated-id';
 import type { ManagerResponse } from '@/lib/agentteams-api';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 
 export function ManagerCard({
   manager,
   index,
   onView,
   onEdit,
+  onUpgradeToQwenPaw,
   onDelete,
 }: {
   manager: ManagerResponse;
   index: number;
   onView: (_manager: ManagerResponse) => void;
   onEdit: (_manager: ManagerResponse) => void;
+  onUpgradeToQwenPaw?: (_manager: ManagerResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   return (
@@ -100,6 +103,18 @@ export function ManagerCard({
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
+            {isLegacyCopaw(manager.runtime) && onUpgradeToQwenPaw && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => onUpgradeToQwenPaw(manager)}
+                aria-label={`升级 ${manager.name} 到 QwenPaw`}
+                title="升级到 QwenPaw"
+              >
+                升级
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

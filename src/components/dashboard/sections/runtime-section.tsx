@@ -25,13 +25,13 @@ const runtimeInfo = [
   {
     name: 'CoPaw',
     key: 'copaw',
-    desc: '协作优先运行时，针对团队协作场景优化。内置协调协议和消息路由。',
-    features: ['协作协议', '消息路由', '任务分解', '结果合并', '冲突解决'],
-    language: 'Rust',
-    models: ['GPT-4', 'Claude-3', 'Gemini'],
-    useCases: ['多 Agent 协作', '代码审查', '文档编写', '项目管理'],
-    color: 'text-emerald-500',
-    bgColor: 'bg-emerald-500/10 border-emerald-500/20',
+    desc: '已停止新建。存量实例可继续运行、编辑和删除，请升级到 QwenPaw。',
+    features: ['存量兼容', '请升级到 QwenPaw'],
+    language: 'Python',
+    models: ['Qwen', 'GPT-4', 'Claude-3'],
+    useCases: ['存量 Worker', '升级到 QwenPaw'],
+    color: 'text-muted-foreground',
+    bgColor: 'bg-muted/40 border-border',
   },
   {
     name: 'Hermes',
@@ -47,8 +47,8 @@ const runtimeInfo = [
   {
     name: 'OpenHuman',
     key: 'openhuman',
-    desc: '人类交互运行时，为 Human-in-the-Loop 场景设计。支持审批、确认和人工介入。',
-    features: ['人工审批', '确认流程', '权限控制', '通知推送', '审计日志'],
+    desc: '已停止新建。存量实例可继续运行；新的人工介入场景请使用现有 Human 工作流。',
+    features: ['存量兼容', '人工审批', '确认流程'],
     language: 'TypeScript',
     models: ['GPT-4', 'Claude-3'],
     useCases: ['审批流程', '人工介入', '安全审核', '质量保证'],
@@ -58,11 +58,11 @@ const runtimeInfo = [
   {
     name: 'QwenPaw',
     key: 'qwenpaw',
-    desc: '千问专用运行时，基于 Qwen 大模型的优化 Agent 框架。适合 Qwen 生态的 Agent 场景。',
-    features: ['千问优化', '工具调用', '流式推理', '多轮对话'],
+    desc: 'CoPaw 后继运行时。完整流式协议，适合协作编排与千问生态。',
+    features: ['千问优化', '工具调用', '流式推理', '多轮对话', '协作编排'],
     language: 'Python',
     models: ['Qwen', 'Qwen-Max', 'Qwen-Plus'],
-    useCases: ['千问 Agent', '工具集成', '推理加速'],
+    useCases: ['千问 Agent', '多 Agent 协作', '工具集成'],
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/10 border-amber-500/20',
   },
@@ -145,6 +145,9 @@ export function RuntimeSection() {
                       <div className="flex items-center gap-2">
                         <Cpu className={`w-4 h-4 ${rt.color}`} />
                         <span className="font-medium">{rt.name}</span>
+                        {(rt.key === 'copaw' || rt.key === 'openhuman') && (
+                          <Badge variant="outline" className="text-[10px]">存量</Badge>
+                        )}
                       </div>
                     </td>
                     <td className="p-3">
@@ -199,9 +202,14 @@ export function RuntimeSection() {
                   </div>
                   <div>
                     <h3 className="font-semibold">{rt.name}</h3>
-                    <Badge variant="outline" className="text-xs">
-                      {runtimeCounts[rt.key] || 0} 实例
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className="text-xs">
+                        {runtimeCounts[rt.key] || 0} 实例
+                      </Badge>
+                      {(rt.key === 'copaw' || rt.key === 'openhuman') && (
+                        <Badge variant="outline" className="text-[10px]">存量</Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground mb-3">{rt.desc}</p>
@@ -246,7 +254,7 @@ export function RuntimeSection() {
               <Layers className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">多 Agent 协作</p>
-                <p className="text-xs text-muted-foreground">选择 CoPaw — 内置协作协议，简化多 Agent 编排</p>
+                <p className="text-xs text-muted-foreground">选择 QwenPaw — CoPaw 后继运行时，适合协作编排与千问生态</p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
             </div>
@@ -262,7 +270,7 @@ export function RuntimeSection() {
               <Cpu className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">需要人工介入</p>
-                <p className="text-xs text-muted-foreground">选择 OpenHuman — Human-in-the-Loop 设计，审批流程完善</p>
+                <p className="text-xs text-muted-foreground">使用 Human 工作流与审批卡片；OpenHuman 运行时已停止新建</p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-violet-500 shrink-0" />
             </div>

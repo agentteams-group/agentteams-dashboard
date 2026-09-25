@@ -22,6 +22,7 @@ import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
+import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -77,14 +78,23 @@ export function WorkerEditDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="openclaw">OpenClaw</SelectItem>
-                {/* legacy：存量 copaw Worker 编辑时保留可见（值能正常显示），但不可再选。 */}
-                <SelectItem value="copaw" disabled>CoPaw（legacy，不可选）</SelectItem>
-                <SelectItem value="hermes">Hermes</SelectItem>
-                <SelectItem value="qwenpaw">QwenPaw</SelectItem>
-                <SelectItem value="deepseek-harness">DeepSeek Harness（实验）</SelectItem>
+                {isLegacyCopaw(value.runtime) && (
+                  <SelectItem value="copaw" disabled>
+                    CoPaw（存量，请升级到 QwenPaw）
+                  </SelectItem>
+                )}
+                {CREATABLE_WORKER_RUNTIMES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {isLegacyCopaw(value.runtime) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                CoPaw 已停止新建。将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据，并避免在任务执行中切换。
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>镜像</Label>

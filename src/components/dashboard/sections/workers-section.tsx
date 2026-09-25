@@ -30,10 +30,21 @@ import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bind
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { describeWorkerDeleteError } from '@/lib/api-error';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
+import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
 import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-types';
 import {
   computeRuntimeDist,
@@ -191,6 +202,7 @@ export function WorkersSection() {
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
+  const [upgradeTarget, setUpgradeTarget] = useState<WorkerResponse | null>(null);
   const [agentSpecs, setAgentSpecs] = useState<Array<{ name: string; description: string; version: string }>>([]);
   // modelOptions 来自 useModelSelection（上方）——同源单一实现。
 
@@ -438,6 +450,11 @@ export function WorkersSection() {
   }, [workers]);
 
   const handleCreate = useCallback(() => {
+    const blocked = rejectCopawCreate(newWorker.runtime);
+    if (blocked) {
+      toast.error(blocked);
+      return;
+    }
     warnIfModelAliasUnbound(newWorker.model);
     createWorker.mutate(newWorker, {
       onSuccess: (worker) => {
@@ -545,6 +562,10 @@ export function WorkersSection() {
 
     const { name: _ignored, ...data } = editForm;
     void _ignored;
+    if (isLegacyCopaw(data.runtime) && data.runtime !== editWorker.runtime) {
+      toast.error('CoPaw 已停止新建。请将运行时改为 QwenPaw 后再保存。');
+      return;
+    }
     warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
@@ -563,13 +584,32 @@ export function WorkersSection() {
     );
   }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound, syncWorkerSkills]);
 
+  const handleUpgradeToQwenPaw = useCallback(() => {
+    if (!upgradeTarget) return;
+    updateWorker.mutate(
+      { name: upgradeTarget.name, data: { runtime: 'qwenpaw' } },
+      {
+        onSuccess: () => {
+          setUpgradeTarget(null);
+          toast.success(`已将 Worker "${upgradeTarget.name}" 的运行时改为 QwenPaw，Controller 将协调升级。`);
+        },
+      },
+    );
+  }, [upgradeTarget, updateWorker]);
+
   const handleConfigApply = useCallback(() => {
     setConfigError(null);
     try {
       const parsed = JSON.parse(configText);
+      const runtime = parsed.runtime || 'openclaw';
+      const blocked = rejectCopawCreate(runtime);
+      if (blocked) {
+        setConfigError(blocked);
+        return;
+      }
       const createReq: CreateWorkerRequest = {
         name: parsed.name || '',
-        runtime: parsed.runtime || 'openclaw',
+        runtime,
         model: parsed.model || undefined,
         image: parsed.image || undefined,
         soul: parsed.soul || undefined,
@@ -788,6 +828,7 @@ export function WorkersSection() {
                   onWake={() => wakeWorker.mutate(worker.name)}
                   onSleep={() => sleepWorker.mutate(worker.name)}
                   onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
+                  onUpgradeToQwenPaw={() => setUpgradeTarget(worker)}
                   onDelete={() => setDeleteTarget(worker.name)}
                   isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
                   isDeleting={deletingWorkerNames.has(worker.name)}
@@ -805,6 +846,7 @@ export function WorkersSection() {
               onWake={(name) => wakeWorker.mutate(name)}
               onSleep={(name) => sleepWorker.mutate(name)}
               onEnsureReady={(name) => ensureReadyWorker.mutate(name)}
+              onUpgradeToQwenPaw={setUpgradeTarget}
               onDelete={setDeleteTarget}
               isActionPending={
                 wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
@@ -881,6 +923,23 @@ export function WorkersSection() {
         onConfirm={handleDelete}
         isLoading={deleteWorker.isPending}
       />
+
+      <AlertDialog open={!!upgradeTarget} onOpenChange={(open) => !open && setUpgradeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
+            <AlertDialogDescription>
+              将 Worker &quot;{upgradeTarget?.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。工作区、会话、记忆和凭据会按 Controller 迁移链路保留。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateWorker.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUpgradeToQwenPaw} disabled={updateWorker.isPending}>
+              {updateWorker.isPending ? '升级中...' : '确认升级'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
