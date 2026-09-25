@@ -23,7 +23,7 @@ export const RUNTIME_META: Record<WorkerRuntime, RuntimeMeta> = {
   copaw: {
     icon: Boxes,
     badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30',
-    description: 'AgentScope 体系，思考与工具以子消息呈现',
+    description: '已停止新建，请升级到 QwenPaw',
   },
   hermes: {
     icon: MessageSquare,
