@@ -1,6 +1,11 @@
 # 更新日志
 
 本文件记录 AgentTeams Dashboard 的版本发布历史。
+## Unreleased
+
+- Dashboard 停止新建 CoPaw：创建入口仅提供 OpenClaw / Hermes / QwenPaw / DeepSeek Harness；存量 CoPaw 仍可展示、编辑、删除，并提供升级到 QwenPaw 的入口
+- 调试日志与问天诊断优先探测 `.qwenpaw` 会话目录，存量 `.copaw` 布局继续作为回退
+
 ## v1.2.4.9 (2026-09-20)
 
 自 v1.2.4 以来合入 39 个 PR 与若干直接提交，覆盖聊天、知识库、项目看板、Worker 详情、模型网关、审计、登录与部署模式等方向。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证。

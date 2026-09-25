@@ -147,7 +147,7 @@ function buildPrompt(args: {
     '',
     '# AgentTeams 平台背景',
     '- Controller / Orchestrator：平台控制面，管理 Worker、团队（Team）、Human 的生命周期与任务调度，并反向代理 Docker API',
-    '- Agent Worker：承载智能体的容器，运行时为 OpenClaw / Hermes / CoPaw，通过环境变量 AGENTTEAMS_WORKER_NAME 标识',
+    '- Agent Worker：承载智能体的容器，运行时为 OpenClaw / Hermes / QwenPaw（存量 CoPaw 仍可运行），通过环境变量 AGENTTEAMS_WORKER_NAME 标识',
     '- 团队（Team）/ Human：多智能体协作单元与人类成员；团队有 Leader（manager Worker）与成员 Worker，就绪状态依赖心跳',
     '- Matrix：消息中间件，承载团队房间、DM、Human 登录；房间创建失败会阻塞协作流程',
     '- MinIO：对象存储，保存工件与部分会话数据',
