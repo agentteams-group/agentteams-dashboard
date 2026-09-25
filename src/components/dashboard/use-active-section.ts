@@ -38,7 +38,7 @@ function resolveSection(hash: string): string | null {
 }
 
 function resolveInitialSection(): string {
-  if (typeof window === 'undefined') return 'overview';
+  if (typeof window === 'undefined') return 'chat';
 
   const hash = window.location.hash.slice(1);
   const known = hash ? resolveSection(hash) : null;
@@ -58,7 +58,7 @@ function resolveInitialSection(): string {
   // overview page effectively unreachable, which in turn masked the heading-
   // downgrade React error #185 (minified) that triggered when users did
   // navigate to overview.
-  return 'overview';
+  return 'chat';
 }
 
 export function useActiveSection() {
@@ -78,7 +78,7 @@ export function useActiveSection() {
     // Read the live store value instead of the captured `activeSection`:
     // on mount the initial-resolution effect above has already written the
     // resolved section into the store, while this effect's closure still
-    // holds the pre-resolution default ('overview'). Writing that stale
+    // holds the pre-resolution default ('chat'). Writing that stale
     // value would momentarily clobber the URL hash, and the resulting
     // hashchange event races the re-render — when the event wins, the
     // handler reads the stale hash and bounces the user back to overview.
@@ -102,8 +102,8 @@ export function useActiveSection() {
         return;
       }
 
-      useSectionStore.getState().setActiveSection('overview');
-      window.location.hash = 'overview';
+      useSectionStore.getState().setActiveSection('chat');
+      window.location.hash = 'chat';
     };
 
     window.addEventListener('hashchange', handleHashChange);
