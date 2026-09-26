@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { WorkerCard } from './workers/worker-card';
 import { TeamCard } from './teams/team-card';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const worker: WorkerResponse = {
   name: 'worker-a',
@@ -45,20 +46,22 @@ describe('resource deletion lock', () => {
 
   it('keeps only Worker details available while deleting', () => {
     render(
-      <WorkerCard
-        worker={worker}
-        index={0}
-        isSelected={false}
-        isDeleting
-        isActionPending={false}
-        onToggleSelect={vi.fn()}
-        onView={vi.fn()}
-        onEdit={vi.fn()}
-        onWake={vi.fn()}
-        onSleep={vi.fn()}
-        onEnsureReady={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      <TooltipProvider>
+        <WorkerCard
+          worker={worker}
+          index={0}
+          isSelected={false}
+          isDeleting
+          isActionPending={false}
+          onToggleSelect={vi.fn()}
+          onView={vi.fn()}
+          onEdit={vi.fn()}
+          onWake={vi.fn()}
+          onSleep={vi.fn()}
+          onEnsureReady={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </TooltipProvider>,
     );
 
     expect(screen.getByRole('status').textContent).toContain('删除中');
@@ -70,19 +73,21 @@ describe('resource deletion lock', () => {
 
   it('keeps only team details available while deleting', () => {
     render(
-      <TeamCard
-        team={team}
-        index={0}
-        availableWorkers={[]}
-        isAddWorkerOpen={false}
-        isDeleting
-        onAddWorkerPopoverChange={vi.fn()}
-        onView={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onAddWorker={vi.fn()}
-        onShowTopology={vi.fn()}
-      />,
+      <TooltipProvider>
+        <TeamCard
+          team={team}
+          index={0}
+          availableWorkers={[]}
+          isAddWorkerOpen={false}
+          isDeleting
+          onAddWorkerPopoverChange={vi.fn()}
+          onView={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          onAddWorker={vi.fn()}
+          onShowTopology={vi.fn()}
+        />
+      </TooltipProvider>,
     );
 
     expect(screen.getByRole('status').textContent).toContain('删除中');

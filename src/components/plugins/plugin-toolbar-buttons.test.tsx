@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginToolbarButtons } from './plugin-toolbar-buttons';
 import { useExtensionStore } from '@/lib/plugins/extension-store';
 import type { ToolbarButtonContribution } from '@/lib/plugins/types';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 describe('PluginToolbarButtons', () => {
   beforeEach(() => {
@@ -23,7 +24,7 @@ describe('PluginToolbarButtons', () => {
     const button: ToolbarButtonContribution = { id: 'ping', label: 'Ping', icon: 'zap', onClick };
     useExtensionStore.getState().add('toolbarButtons', 'demo', button);
 
-    render(<PluginToolbarButtons />);
+    render(<PluginToolbarButtons />, { wrapper: TooltipProvider });
     const btn = screen.getByRole('button');
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledTimes(1);
@@ -37,7 +38,7 @@ describe('PluginToolbarButtons', () => {
     };
     useExtensionStore.getState().add('toolbarButtons', 'demo', button);
 
-    render(<PluginToolbarButtons />);
+    render(<PluginToolbarButtons />, { wrapper: TooltipProvider });
     expect(screen.getByText('custom toolbar node')).toBeInTheDocument();
   });
 });
