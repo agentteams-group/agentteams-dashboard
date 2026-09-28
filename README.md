@@ -57,7 +57,7 @@ Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr
 
 ## 🎨 Theming
 
-The Dashboard ships three built-in themes (light, dark, high-contrast), follows the system preference, and persists the choice across reloads. A theme editor in *Settings → Appearance* exposes 10+ visual parameters (colors, radius, font size) with live preview and JSON import/export. Operators can roll out an enterprise theme via `theme.config.json` or environment variables. See [docs/theme-customization.md](docs/theme-customization.md) (English) and [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md) (中文).
+The Dashboard ships three built-in themes (light, dark, high-contrast), follows the system preference, and persists the choice across reloads. A theme editor in *Settings → Appearance* exposes 30+ visual parameters (colors, radius, font size) with live preview and JSON import/export. Operators can roll out an enterprise theme via `theme.config.json` or environment variables. See [docs/theme-customization.md](docs/theme-customization.md) (English) and [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md) (中文).
 
 ## 🧩 Plugins
 
@@ -78,11 +78,11 @@ See [docs/plugin-development.md](docs/plugin-development.md) (English), [docs/pl
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer as an optional step in `agentteams-install.sh` (merged upstream via [PR #1075](https://github.com/agentscope-ai/AgentTeams/pull/1075)) — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager. Further upstream changes are contributed through pull requests to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
 - **Current Dashboard release**: `v1.2.4.9` (release tag). The app version source of truth is `version` in `package.json` (`1.2.4.9`); release tags use a four-segment variant (`v1.2.4.9` = `1.2.4` + ninth hotfix)
-- **Installer default**: `v1.2.2`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
+- **Installer default**: `v1.2.4.9`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
-- **Platform**: Linux/macOS (Bash installer) only. PowerShell support is planned.
+- **Platform**: Linux/macOS (Bash installer) and Windows (PowerShell installer, CI-verified).
 
 You can also install the Dashboard standalone against an already-running AgentTeams cluster:
 
@@ -105,7 +105,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.2` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.2.4.9` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 
@@ -120,7 +120,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.2 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.4.9 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -230,7 +230,6 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SETUP_TOKEN_ENFORCE` | `0` = pre-login config save needs no token (trusted LAN) | unset (gate enforced) |
 | `DASHBOARD_SHARED_MODE` | `1` = multiple users share this instance (L1-only config save, audited writes) | unset (one user per instance) |
 | `DASHBOARD_ALLOWED_HOSTS` | Strict allowlist for the setup "test connection" probe (it is token/session-gated; the metadata sentinel 169.254.169.254 is denied in all modes) | unset (allow for session/token holders) |
-| `DATABASE_URL` | SQLite database path | `file:./db/dashboard.db` |
 | `NEXT_PUBLIC_BASE_PATH` | URL base path (embedded deployment) | `/dashboard` |
 
 ### Stateless deployment mode (`DASHBOARD_STATELESS=1`)
@@ -321,14 +320,10 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 ## 🧪 Quality
 
-- **Unit tests** with vitest + Testing Library (724 tests across 80 files, `npm test`)
+- **Unit tests** with vitest + Testing Library (2000+ tests across 200+ files, `npm test`)
 - **Lint-clean** ESLint configuration (`npm run lint`)
 - **Type-safe** with strict TypeScript (`npm run typecheck`)
 - **Reproducible builds** via `npm ci` + lockfile and multi-arch Docker images (`make help`)
-
-## 🗺 Roadmap
-
-- [Worker 卡片生动化改造 + Chat 流式渲染适配（任务书 v0.2）](docs/plans/2026-08-11-worker-card-v2-chat-runtime-ux.md) — Worker 卡片活物条 / 状态叙述 / 运行时特征区，Chat 五种运行时的流式渲染归属与错误收尾统一，文案去 AI 味。
 
 ## 🤝 Related Projects
 

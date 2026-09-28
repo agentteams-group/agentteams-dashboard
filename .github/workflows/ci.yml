@@ -35,3 +35,14 @@ jobs:
 
       - name: Unit tests
         run: npm run test
+
+  docs-consistency:
+    name: Docs consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check docs consistency
+        run: bash scripts/check-docs-consistency.sh

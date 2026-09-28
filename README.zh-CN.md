@@ -38,7 +38,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 | **Debug Log** | 一键收集调试日志：容器诊断、Agent 会话、Matrix 消息打包成 ZIP 下载，默认 PII 脱敏 |
 | **问天诊断** | 运行时诊断助手：集群健康概览、AI 深度诊断（结构化 Markdown 报告：根因分析/影响评估/修复建议）、日志分析（SSE 实时进度条），内置 AgentTeams SRE 专家 Prompt 模板 |
 | **Architecture** | 架构图与组件关系说明 |
-| **主题** | 内置亮色 / 暗色 / 高对比度主题，自定义主题编辑器（10+ 参数）支持 JSON 导入/导出，企业 `theme.config.json` 注入 |
+| **主题** | 内置亮色 / 暗色 / 高对比度主题，自定义主题编辑器（30+ 参数）支持 JSON 导入/导出，企业 `theme.config.json` 注入 |
 | **插件** | 运行时插件系统：5 类扩展点、动态加载、插件级错误隔离、开发热更新、`create-dashboard-plugin` 脚手架 CLI |
 
 ## 🛠 技术栈
@@ -78,11 +78,11 @@ cd my-plugin && npm install && npm run dev
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
 - **当前 Dashboard 发布标签**：`v1.2.4.9`（应用版本以 `package.json` 的 `version` 为准：`1.2.4.9`）
-- **安装器默认版本**：`v1.2.2`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
+- **安装器默认版本**：`v1.2.4.9`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
 - **集成 PR**：https://github.com/agentscope-ai/AgentTeams/pull/1075
-- **平台支持**：目前仅支持 Linux/macOS（Bash 安装器），PowerShell 支持开发中。
+- **平台支持**：Linux/macOS（Bash 安装器）与 Windows（PowerShell 安装器，经 CI 验证）。
 
 你也可以在已运行的 AgentTeams 集群上独立安装：
 
@@ -105,7 +105,7 @@ bash install/agentteams-dashboard.sh uninstall
 |------|------|--------|
 | `AGENTTEAMS_DASHBOARD` | 是否安装 Dashboard（`1`=安装，`0`=跳过） | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Dashboard 主机端口 | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.2` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.2.4.9` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Dashboard 完整镜像名 | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL（共享登录，显式配置优先） | 自动探测 |
 
@@ -120,7 +120,7 @@ bash install/agentteams-dashboard.sh uninstall
 非交互安装示例：
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.2 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.2.4.9 \
   bash agentteams-install.sh --non-interactive
 ```
 
@@ -218,7 +218,6 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SETUP_TOKEN_ENFORCE` | `0` = pre-login 保存配置免 token（限可信 LAN） | 未设（门生效） |
 | `DASHBOARD_SHARED_MODE` | `1` = 多用户共享本实例（配置保存仅 L1、写操作审计） | 未设（一人一实例） |
 | `DASHBOARD_ALLOWED_HOSTS` | setup「测试连接」探针的严格白名单（探针已 token/会话门控；metadata 哨兵 169.254.169.254 全模式拒绝） | 未设（对 session/token 持有者放行） |
-| `DATABASE_URL` | SQLite 数据库路径 | `file:./db/dashboard.db` |
 | `NEXT_PUBLIC_BASE_PATH` | URL 基础路径（嵌入部署时用） | `/dashboard` |
 
 ## 🏗 核心设计
@@ -282,14 +281,10 @@ docker build -t agentteams-dashboard:local .
 
 ## 🧪 质量保障
 
-- **单元测试**：vitest + Testing Library（80 个测试文件共 724 个用例，`npm test`）
+- **单元测试**：vitest + Testing Library（200+ 个测试文件共 2000+ 个用例，`npm test`）
 - **代码规范**：ESLint 零问题（`npm run lint`）
 - **类型安全**：strict TypeScript（`npm run typecheck`）
 - **可复现构建**：`npm ci` + lockfile，多架构 Docker 镜像（`make help`）
-
-## 🗺 路线图
-
-- [Worker 卡片生动化改造 + Chat 流式渲染适配（任务书 v0.2）](docs/plans/2026-08-11-worker-card-v2-chat-runtime-ux.md) —— Worker 卡片活物条 / 状态叙述 / 运行时特征区，Chat 五种运行时的流式渲染归属与错误收尾统一，文案去 AI 味。
 
 ## 🤝 相关仓库
 

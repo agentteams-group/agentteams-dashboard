@@ -12,13 +12,12 @@
 ## 主题文档
 
 - [theme-customization.md](theme-customization.md) / [theme-customization.zh-CN.md](theme-customization.zh-CN.md) - 主题定制参数说明
-- [theme-provider-guide.md](theme-provider-guide.md) - Theme Provider 集成指南
 
 ## 功能文档
 
 - [debug-log-collection.md](debug-log-collection.md) - 一键调试日志收集功能
-- [plugin-system-guide.md](plugin-system-guide.md) - 插件系统开发指南
-- [openclaw-bridge.md](openclaw-bridge.md) - OpenClaw Bridge 实现
+- [plugin-development.md](plugin-development.md) / [plugin-development.zh-CN.md](plugin-development.zh-CN.md) - 插件开发指南
+- [plugin-system-design.md](plugin-system-design.md) - 插件系统设计
 - [项目.md](项目.md) - 项目（Projects）功能使用指南（用户视角）
 - [项目开发.md](项目开发.md) - 项目（Projects）开发指南（组件结构、API 客户端、缓存策略）
 
@@ -37,23 +36,7 @@
 
 ## 历史 Spec
 
-`.monkeycode/specs/` 目录包含已完成的功能规范文档：
-
-- [chat-unread-sort-rendering/](../.monkeycode/specs/chat-unread-sort-rendering/) - 聊天未读排序渲染
-- [chatroom-split/](../.monkeycode/specs/chatroom-split/) - ChatRoom 拆分（Phase 1：draft / upload / drag-drop）
-- [dashboard-navigation-cleanup/](../.monkeycode/specs/dashboard-navigation-cleanup/) - 导航清理
-- [debug-log-collection/](../.monkeycode/specs/debug-log-collection/) - 调试日志收集
-- [openclaw-bridge/](../.monkeycode/specs/openclaw-bridge/) - OpenClaw Bridge
-- [plugin-system/](../.monkeycode/specs/plugin-system/) - 插件系统
-- [runtime-block-protocol/](../.monkeycode/specs/runtime-block-protocol/) - `org.agentteams.run` v1 协议契约
-- [server-side-rbac-audit/](../.monkeycode/specs/server-side-rbac-audit/) - 服务端 RBAC + JSONL 审计
-- [theme-system/](../.monkeycode/specs/theme-system/) - 主题系统
-- [theme-system-ux-redesign/](../.monkeycode/specs/theme-system-ux-redesign/) - 主题 UX 重设计
-- [theme-system-ux-redesign-v2/](../.monkeycode/specs/theme-system-ux-redesign-v2/) - 主题 UX 重设计 v2
-- [theme-system-websocket/](../.monkeycode/specs/theme-system-websocket/) - WebSocket 同步
-- [worker-ui-ux/](../.monkeycode/specs/worker-ui-ux/) - Worker UI UX
-- [worker-card-v2-chat-runtime-ux/](../.monkeycode/specs/worker-card-v2-chat-runtime-ux/) - Worker 卡片 v2
-- [worker-deployment-fix/](../.monkeycode/specs/worker-deployment-fix/) - 部署修复
+`.monkeycode/specs/` 目录包含已完成的功能规范文档（任务书 requirements/design/tasklist 归档地），目录内容以实际为准；其中 `dashboard-optimization/` 是当前推进中的优化总计划（含任务列表与归档设计稿）。
 
 ## 注意事项
 

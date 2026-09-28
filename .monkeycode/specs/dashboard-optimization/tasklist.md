@@ -42,15 +42,16 @@
 
 ### 质量线
 
-- [ ] 6. A4 README/文档保鲜专项 + CI 防漂移（1-1.5 人日，P1）
-  - [ ] 6.1 修正 README 测试规模描述（改为「2000+ tests」类表述或建发布前刷新脚本；现文 :324 称 724 tests/80 files 已过期）
-  - [ ] 6.2 删除 README.md:233 幽灵 `DATABASE_URL` SQLite 配置行（实际持久化为 JSON 文件）
-  - [ ] 6.3 更正 PowerShell 支持状态为已支持（`install/agentteams-dashboard.ps1` 已存在 322 行且有 CI 验证）
-  - [ ] 6.4 同步安装器默认版本描述与 `install/agentteams-install.sh:2486`（v1.2.4.9）一致
-  - [ ] 6.5 统一主题编辑器参数描述（「10+ vs 30+」自相矛盾处）
-  - [ ] 6.6 修复 README.md:331 死链（更新指向或删除）
-  - [ ] 6.7 ci.yml 增加文档一致性 job：断言 README 不含已知过期字串（724 tests / DATABASE_URL / PowerShell planned）+ docs 与 README 内部相对链接存在性检查
+- [x] 6. A4 README/文档保鲜专项 + CI 防漂移（1-1.5 人日，P1）
+  - [x] 6.1 修正 README 测试规模描述（改为「2000+ tests」类表述或建发布前刷新脚本；现文 :324 称 724 tests/80 files 已过期）
+  - [x] 6.2 删除 README.md:233 幽灵 `DATABASE_URL` SQLite 配置行（实际持久化为 JSON 文件）
+  - [x] 6.3 更正 PowerShell 支持状态为已支持（`install/agentteams-dashboard.ps1` 已存在 322 行且有 CI 验证）
+  - [x] 6.4 同步安装器默认版本描述与 `install/agentteams-install.sh:2486`（v1.2.4.9）一致
+  - [x] 6.5 统一主题编辑器参数描述（「10+ vs 30+」自相矛盾处）
+  - [x] 6.6 修复 README.md:331 死链（更新指向或删除）
+  - [x] 6.7 ci.yml 增加文档一致性 job：断言 README 不含已知过期字串（724 tests / DATABASE_URL / PowerShell planned）+ docs 与 README 内部相对链接存在性检查
   - 验收：6 处修正落地；文档 job 进 ci.yml 且绿；故意提交一个死链能让 CI 变红（演练一次）
+  - 完成记录（2026-09-28）：6 处修正双语同步落地——测试规模改「2000+ tests / 200+ files」、删 DATABASE_URL 行（en/zh）、PowerShell 改「已支持（CI 验证）」、安装器默认 v1.2.4.9（:81/:108/:123 三处 en+zh）、主题参数统一 30+（以 docs/theme-customization.md 的 32 色 + 布局参数为权威口径）、删除 Roadmap 死链段落（唯一条目指向已不存在的 docs/plans/，en+zh）。新增 `scripts/check-docs-consistency.sh` + ci.yml `docs-consistency` job（禁字串 + 安装器默认版本与 install.sh 内嵌值断言同步 + README/docs 相对链接存在性检查，含 %5B/%5D 解码）；顺手修复门禁暴露的 docs/INDEX.md 14 处真死链（3 个不存在文档改指实际文件、历史 Spec 枚举列表改为目录指针防再漂移）。本地脚本绿；死链注入演练红（exit 1）后恢复绿
 
 - [ ] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
   - [ ] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
