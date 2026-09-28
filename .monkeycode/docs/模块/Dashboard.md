@@ -36,3 +36,5 @@ mutation 成功 -> 缓存失效或乐观更新 -> Toast / 通知 / 审计
 ## 测试
 
 测试与源码同目录。导航测试覆盖分组、部署模式可见性、hash 与 localStorage；资源 selector 测试覆盖筛选、排序和分页；模型、聊天、A2UI、API 客户端和路由守卫均有专项测试。
+
+涉及真实网络探测的路径走注入 seam 而非整模块 mock：`refreshEffective(names, timeoutMs, probeFn)` 的第三参（`BackendProbeFn = typeof probeBackend`，`src/lib/backend-config.ts`）供测试注入即时探测函数——整模块 `vi.mock` 替换 `probeBackend` 拦不到 `refreshEffective` 内部的模块私有绑定调用，会让保存后重探测做真实网络 I/O 并撞用例超时（A1，2026-09-28）。
