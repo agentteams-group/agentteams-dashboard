@@ -24,6 +24,7 @@ npm run dev
 | `npm run typecheck` | 运行 TypeScript 类型检查 |
 | `npm test` | 运行无需外部服务的 Vitest 单元与组件测试 |
 | `npm run test:integration` | 运行集成测试，需要 3000 端口开发服务与对应外部依赖配置 |
+| `bash scripts/check-docs-consistency.sh` | 文档一致性门禁（CI 同款）：README/docs 禁过期字串、安装器默认版本与 install.sh 内嵌值同步断言、相对链接存在性检查；改 README/docs 后必跑（A4，2026-09-28） |
 
 ## 代码约定
 
