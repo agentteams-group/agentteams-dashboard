@@ -33,6 +33,11 @@ function mockFetch(results_: FetchResult[]) {
   vi.stubGlobal('fetch', fn);
 }
 
+// A1 (2026-09-28): passes in isolation; under full-suite parallel load the
+// default 5s budget occasionally trips on render + waitFor churn. Loosen the
+// budget — assertions and waitFor intervals are unchanged.
+vi.setConfig({ testTimeout: 15_000 });
+
 describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
   beforeEach(() => {
     calls = [];

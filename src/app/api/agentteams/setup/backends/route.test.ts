@@ -9,28 +9,42 @@ import {
   createSession,
   sessionCookieHeader,
 } from '@/lib/dashboard-session';
-import { BACKEND_NAMES, forgetWorking, readConfigSync } from '@/lib/backend-config';
+import {
+  BACKEND_NAMES,
+  forgetWorking,
+  readConfigSync,
+  type BackendName,
+  type BackendProbeFn,
+} from '@/lib/backend-config';
 import { listAuditEvents, resetAuditLogForTests } from '@/lib/audit-log';
 import { GET, POST } from './route';
 
-// CI determinism: probeBackend performs a real network probe with one
-// 500ms-delayed retry, so a dropped (non-RST) address costs up to
-// 2×timeout+500ms per candidate — refreshEffective's 4000ms default can take
-// ~10.5s per saved backend, which blew vitest's 5000ms testTimeout on CI
-// runners whose firewall drops the embedded default addresses (2026-09-14,
-// 3× "Test timed out" in this file). Stub it to instant-unreachable: this
-// file's assertions already encode the "all unreachable in tests" semantics,
-// so behavior is unchanged — only the wall-clock cost is removed.
+// CI determinism (A1, 2026-09-28): probeBackend performs a real network
+// probe with one 500ms-delayed retry, so a dropped (non-RST) address costs
+// up to 2×timeout+500ms per candidate — refreshEffective's 4000ms default
+// can take ~10.5s per saved backend, blowing vitest's 5000ms testTimeout on
+// machines whose firewall drops instead of rejecting. A whole-module mock
+// of probeBackend alone does NOT fix that: refreshEffective calls it via a
+// module-internal binding the mock cannot intercept. So we use the
+// BackendProbeFn seam — the REAL refreshEffective (candidate election,
+// hysteresis) runs with an instant-unreachable probe and a 1ms budget
+// injected, keeping this file's assertions network-independent and fast.
 vi.mock('@/lib/backend-config', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/backend-config')>();
+  const unreachableProbe: BackendProbeFn = async () => ({
+    ok: false,
+    httpOk: false,
+    latencyMs: -1,
+    error: 'probe disabled in tests (network-independent)',
+  });
   return {
     ...original,
-    probeBackend: vi.fn(async () => ({
-      ok: false,
-      httpOk: false,
-      latencyMs: -1,
-      error: 'probe disabled in tests (network-independent)',
-    })),
+    // Route-level probes (GET embedded auto-detect).
+    probeBackend: vi.fn(unreachableProbe),
+    // Post-save re-probe: delegate to the real implementation through the
+    // seam, decoupling the probe cost from vitest's 5s test timeout.
+    refreshEffective: (names: BackendName[] = original.BACKEND_NAMES) =>
+      original.refreshEffective(names, 1, unreachableProbe),
   };
 });
 

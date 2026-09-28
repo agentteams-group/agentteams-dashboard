@@ -742,12 +742,18 @@ export interface RefreshResult {
   switched: Partial<Record<BackendName, boolean>>;
 }
 
+/** Injectable probe seam — tests substitute this so refreshEffective's
+ * election logic runs without real network I/O (a whole-module vi.mock of
+ * probeBackend cannot reach the module-internal call below). */
+export type BackendProbeFn = typeof probeBackend;
+
 /** Probe every candidate of the given backends and re-elect the effective
  * address. Used by the background re-rank loop (address-probe.ts) and the
  * post-save re-probe. */
 export async function refreshEffective(
   names: BackendName[] = BACKEND_NAMES,
   timeoutMs = 4000,
+  probeFn: BackendProbeFn = probeBackend,
 ): Promise<RefreshResult> {
   const effective: RefreshResult['effective'] = {};
   const switched: RefreshResult['switched'] = {};
@@ -756,7 +762,7 @@ export async function refreshEffective(
       const candidates = backendCandidatesSync(name);
       if (candidates.length === 0) return;
       const prev = workingEntry(name)?.url ?? null;
-      const results = await Promise.all(candidates.map((url) => probeBackend(name, url, timeoutMs)));
+      const results = await Promise.all(candidates.map((url) => probeFn(name, url, timeoutMs)));
       const rows = candidates.map((url, i) => toProbeRow(url, results[i]));
       const picked = selectAndMark(name, rows);
       if (picked) {

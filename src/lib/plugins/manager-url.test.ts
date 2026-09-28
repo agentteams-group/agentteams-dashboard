@@ -39,6 +39,11 @@ function reset() {
   pluginEventBus.clear();
 }
 
+// A1 (2026-09-28): passes in isolation, but init()'s bundled discovery does
+// real fs scanning — under full-suite parallel CPU/disk contention the
+// default 5s budget occasionally trips (flaky full runs, green when solo).
+vi.setConfig({ testTimeout: 15_000 });
+
 describe('plugin manager url flows', () => {
   beforeEach(() => {
     reset();

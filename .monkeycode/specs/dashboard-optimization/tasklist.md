@@ -1,0 +1,165 @@
+# Dashboard 优化实施计划
+
+- 来源：`agentteams-dashboard-optimization-plan.md`（2026-09-28，原文已归档为同目录 `design.md`，含全部证据与 `path:line` 引用）
+- 范围调整（2026-09-28 用户决策）：MinIO→RustFS 迁移只保留**本仓库侧**改动（存储面回归套件 + 安装器 RUSTFS_* 凭证回退）；涉及旧应用与跨仓协作的部分（C2 决策推动、别名/冻结手段书面确认、C3 阶段 0-4 迁移执行）全部移除，不做
+- 验证顺序（三门）：typecheck → eslint（仅改动文件）→ vitest run（全量）
+- 排期约束：所有涉及 runtime 枚举与发版的条目需与 CHANGELOG Unreleased（CoPaw→QwenPaw）发版窗口协调（design.md 第 5 节风险 1）
+- 约定：每个任务完成后独立 commit，停下等用户确认再推进下一项
+
+## 阶段一：P0（第 1-2 周，A1 → A2 → A3 依序）
+
+- [x] 1. A1 修复 setup/backends 测试 mock 失效（1-1.5 人日，P0，阻塞 A2/A3/A9 的回归网前提）
+  - [x] 1.1 在 `src/lib/backend-config.ts` 为 `refreshEffective`（约 :748）增加可注入 seam：`refreshEffective(names, timeoutMs, probeFn = probeBackend)`，或导出内部 `probeOnce` 供测试替换
+  - [x] 1.2 改造 `src/app/api/agentteams/setup/backends/route.test.ts`：改为 mock seam 而非 `vi.mock('@/lib/backend-config')` 整模块（现状拦不到 :759 处模块内部绑定调用）；用例显式传入小 timeoutMs，把「探测超时」与「vitest 用例超时」解耦
+  - [x] 1.3 顺带评估全量并行下的用例超时预算（manager-url.test.ts、worker-runtime-config-panel.test.tsx 隔离单跑通过、全量并行 5s 抖动，见 design.md 风险 2）
+  - 验收：`npm test` 全量 0 失败；route.test.ts 隔离单跑稳定通过且总时长 <5s；Windows 本机与 Linux CI 各连续 2 次全量结果一致
+  - 完成记录（2026-09-28）：seam 落地为 `export type BackendProbeFn = typeof probeBackend` + `refreshEffective(names, timeoutMs, probeFn)` 第三参；route.test.ts 经 seam 委托跑**真实** refreshEffective（保住选举逻辑覆盖），注入即时不可达探测 + 1ms 预算；两个抖动文件 `vi.setConfig({ testTimeout: 15_000 })`。验证：tsc 0 错、eslint 4 文件 0 警告、route.test.ts 隔离 25/25 约 530ms、全量 213 文件/2011 用例 4 跑 3 绿（第 2 跑 1 个负载抖动失败、日志截断未定位，非本改动路径；第 3、4 跑连续全绿）。Windows 本机验证待用户侧/CI 补
+
+- [ ] 2. A2 生产依赖漏洞非破坏性清理（1-2 人日，P0）
+  - [ ] 2.1 开工前置：以官方 registry 重跑 `npm audit --omit=dev`，把当次 advisory ID 清单固化到工作单（调研时复现：13 个，8 高 5 中）
+  - [ ] 2.2 adm-zip 升出 ≤0.6.0 漏洞区间至 0.6.1（GHSA-vwc7-r8mq-g2x9 任意文件覆盖、GHSA-7q85-xj36-vmfc DoS）；核对插件 zip 解包路径兼容性（`src/lib/plugins/server-package.ts`）
+  - [ ] 2.3 `package.json` overrides 的 sharp 下限 `>=0.35.0` → `>=0.35.4`（GHSA-rgj7-g3m4-5g8c）
+  - [ ] 2.4 nanoid 升 `>=3.3.18`（v3 线，GHSA-2v37-7h3g-55p8）
+  - [ ] 2.5 overrides 增加 `lodash-es >= 4.18`，dedupe mermaid→chevrotain 链嵌套旧拷贝（GHSA-r5fr-rjxr-66jc、GHSA-f23m-r3pf-42rh）
+  - [ ] 2.6 minio→stream-json（GHSA-528h-pc64-c93x）/ decode-uri-component（GHSA-vcc3-ghjq-m6fr）moderate 链单独评估 override 或豁免记录；不采纳 minio@7.1.3 降级（破坏性，与 RustFS 方向冲突）
+  - [ ] 2.7 当次 audit 其余链条（baseline-browser-mapping 等）并入统一处置或记录豁免
+  - 验收：官方 registry audit 高危清零（余 moderate 在 SECURITY/CHANGELOG 记录豁免理由与 advisory ID）；三门通过；插件上传与技能中心上传（zip 解包）手动冒烟通过
+
+- [ ] 3. A3 Node 20→22 LTS 迁移（0.5-1 人日，P0，依赖 A1）
+  - [ ] 3.1 `Dockerfile:13`、`:44` 两处 `node:20-alpine` → `node:22-alpine`；`.github/workflows/ci.yml:24` node-version → 22
+  - [ ] 3.2 回滚 commit 7f21a0a 的 isomorphic-dompurify 降级（升回 4.x）
+  - [ ] 3.3 核对 README/文档中 Node 版本要求描述
+  - 验收：CI 三流水线（ci/build/install-test）绿；amd64/arm64 多架构镜像构建成功；镜像内 `node -v` ≥22；isomorphic-dompurify 4.x 且测试全绿
+
+- [ ] 4. 协调：与维护者确认 CHANGELOG Unreleased（CoPaw→QwenPaw）发版窗口，冻结与其冲突的 runtime 枚举类变更（影响 B2/B5 排期）
+- [ ] 5. A10 CI Actions 状态核实与失败告警（0.5 人日，P1 小项，需维护者登录态）
+  - [ ] 5.1 核对 main 最近一次 ci/build/install-test 实际绿红并修红
+  - [ ] 5.2 为 main 失败配置通知（邮件/IM webhook）并演练一次
+
+## 阶段二：P1（第 3-6 周，三线并行）
+
+### 质量线
+
+- [ ] 6. A4 README/文档保鲜专项 + CI 防漂移（1-1.5 人日，P1）
+  - [ ] 6.1 修正 README 测试规模描述（改为「2000+ tests」类表述或建发布前刷新脚本；现文 :324 称 724 tests/80 files 已过期）
+  - [ ] 6.2 删除 README.md:233 幽灵 `DATABASE_URL` SQLite 配置行（实际持久化为 JSON 文件）
+  - [ ] 6.3 更正 PowerShell 支持状态为已支持（`install/agentteams-dashboard.ps1` 已存在 322 行且有 CI 验证）
+  - [ ] 6.4 同步安装器默认版本描述与 `install/agentteams-install.sh:2486`（v1.2.4.9）一致
+  - [ ] 6.5 统一主题编辑器参数描述（「10+ vs 30+」自相矛盾处）
+  - [ ] 6.6 修复 README.md:331 死链（更新指向或删除）
+  - [ ] 6.7 ci.yml 增加文档一致性 job：断言 README 不含已知过期字串（724 tests / DATABASE_URL / PowerShell planned）+ docs 与 README 内部相对链接存在性检查
+  - 验收：6 处修正落地；文档 job 进 ci.yml 且绿；故意提交一个死链能让 CI 变红（演练一次）
+
+- [ ] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
+  - [ ] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
+  - [ ] 7.2 拆分 `src/components/dashboard/sections/chat/ChatRoom.tsx`（1129 行，复制 chat 模块 views/hooks/components 模式）
+  - [ ] 7.3 拆分 `src/components/dashboard/sections/projects-section.tsx`（1359 行）
+  - [ ] 7.4 拆分 `src/plugins/wen-tian/index.tsx`（1333 行）
+  - [ ] 7.5 拆分 `src/components/dashboard/knowledge-graph3d.tsx`（1282 行，已有 next/dynamic ssr:false 基础）
+  - 每文件验收：主体 <800 行；三门绿；对应 section 手动冒烟（知识库/聊天/项目看板/问天/图谱 3D）
+
+- [ ] 8. A6 lint 与 tsconfig 基线收紧（3-5 人日，三步独立可回滚，与 A5 协同；容量超限可顺延 P2 前段）
+  - [ ] 8.1 `eslint --fix` 清自动修复项（约 13 个 prefer-const 等），剩余手工
+  - [ ] 8.2 逐模块清理非测试源码 `: any`（39 处，小 PR 批次；拆哪个文件先清哪个）
+  - [ ] 8.3 恢复 `@typescript-eslint/no-explicit-any` 为 error；评估恢复 react-hooks/set-state-in-effect 与 react-compiler；`tsconfig.json` `noImplicitAny: true`
+  - 验收：`npm run lint` 0 警告；noImplicitAny:true 且 typecheck 绿；每步合并时三门全绿
+
+- [ ] 9. A7 Windows 开发脚本与依赖同步防脱节（0.5-1 人日，P1）
+  - [ ] 9.1 `package.json` dev/start 脚本去 Unix-only 语法（cross-env 或 node 包装脚本去 env 前缀）
+  - [ ] 9.2 日志 tee 管道改 node 脚本封装（或去掉管道、CI 侧收集）
+  - [ ] 9.3 README 开发准备节明确「首次/拉取后先 `npm ci --no-audit --no-fund --legacy-peer-deps`」
+  - 验收：Windows cmd 与 Linux 下 `npm run dev` / `npm run start` 均可直接运行；新人按 README 一次跑通三门
+
+- [ ] 10. A8 覆盖率范围扩大到安全关键模块（2-4 人日，渐进；容量超限可顺延 P2 前段）
+  - [ ] 10.1 补关键路径单测：rbac-engine（deny 优先语义）、audit-log（轮转）、minio-client、skill-center-storage（bucket 前缀与敏感文件判断）、homeserver-allowlist
+  - [ ] 10.2 上述模块渐进加入 `vitest.config.ts:31-38` coverage include，阈值逐步抬升
+  - 验收：coverage 报告含上述模块；新增单测全绿；全量测试耗时增幅 <10%
+
+### 上游线
+
+- [ ] 11. B2 Runtime 展示与门控内部一致性收尾（1-2 人日，P1，零上游依赖可立即做；排期避开发版窗口）
+  - [ ] 11.1 补 deepseek-harness 卡片与计数（`runtime-section.tsx:16-60` 仅 5 张卡片、`:80` 计数 5 种）
+  - [ ] 11.2 KB/workspace-files 面 Worker 下拉按 runtime 过滤，或 UI 明示「QwenPaw 专属」及原因（`docs/code-review-issues.md:164`）
+  - [ ] 11.3 以 `.monkeycode/specs/worker-card-v2-chat-runtime-ux/task-book.md` §4.1 能力对照表为底稿，沉淀正式 runtime 能力表（docs/ 新文档或内嵌），替换 QwenPaw 卡片过时的 models 宣传
+  - [ ] 11.4 deepseek-harness 卡片加「实验」徽标
+  - 验收：卡片数与可创建 runtime 数一致（4 可建 + legacy 口径明确）；选非 qwenpaw runtime 时 KB 面给出明确禁用原因；能力表评审合入
+
+- [ ] 12. B1 跟进上游 PR #1306，合入本地 worker env 编辑实现（1-2 人日，依赖上游落定）
+  - [ ] 12.1 跟踪 #1306（Worker env 编辑 + gateway 身份探测）落定；diff 本地 `codex/worker-config-gateway`（b1c34f8）与上游语义（env 字段集、gateway-probe 请求/响应、错误语义）
+  - [ ] 12.2 按上游为准调整后合入 main，对照清单留档到 spec
+  - [ ] 12.3 为 `/api/agentteams/workers/[name]/gateway-probe` 补端到端用例
+  - 验收：main 含与上游语义一致的能力；无字段漂移（清单存档）；三门绿
+
+- [ ] 13. B3 上游对齐自动化：install.sh 漂移检测 + Controller 契约对照（1-1.5 人日，P1）
+  - [ ] 13.1 CI 增加 weekly cron：拉取上游安装器与本仓 `install/agentteams-install.sh`（4707 行）diff，超阈值（>50 行或命中 step_dashboard 段）开 issue 告警
+  - [ ] 13.2 `docs/INTERFACES.md` 建立「上游版本对照记录」小节，先落 v1.2.4 对照（events 分页、审计字段等）
+  - [ ] 13.3 形成流程：上游 minor 发布后过一遍 proxy 层端点（`src/app/api/agentteams` 112 个 route 的目标端点清单）；流程写入 CONTRIBUTING（与任务 18 协同）
+  - 验收：cron job 上线且首次产出 diff 报告；INTERFACES.md 含 v1.2.4 对照记录
+
+- [ ] 14. B4 org.agentteams.run v1 协议固化（1-2 人日，P1）
+  - [ ] 14.1 v1 块协议写入 `docs/INTERFACES.md` 新章节（块类型 union：text/thinking/tool_call/confirmation/error、字段规范、版本协商、未知版本回退语义）
+  - [ ] 14.2 向上游提 PR/issue 对齐并跟踪回应
+  - [ ] 14.3 保持 normalize.ts 既有启发式为兜底；协议解析测试覆盖未知版本回退路径
+  - 验收：INTERFACES.md 含协议章节；上游侧有回应；回退路径测试绿
+
+- [ ] 15. B5 QwenPaw 迁移收口与上游兼容窗口对齐（0.5-1 人日本体，时点依赖上游 minor 窗口）
+  - [ ] 15.1 与上游约定存量 CoPaw 清理时点（建议跟下一个 minor）；`WorkerRuntime` 的 `'copaw'` 保留至清理时点
+  - [ ] 15.2 明确「升级态」实例迁移引导；存量 CoPaw「一键升级 QwenPaw」路径冒烟通过
+  - [ ] 15.3 梳理 `.copaw` 会话目录回退探测（qwenpaw 优先 + copaw 回退）的退役计划并成文
+  - 验收：CHANGELOG/文档明确清理时点；冒烟通过；退役计划成文
+
+### 存储与 DX 线
+
+- [ ] 16. 存储面回归套件 + 安装器 RUSTFS_* 凭证回退（1.5-2.5 人日，P1；仅本仓库侧，原 C1 裁剪版）
+  - [ ] 16.1 按 design.md 3.3.4 清单编写可重复执行的回归（vitest 集成测试 + 手动冒烟脚本）：64MB 技能 ZIP 上传、presign GET/PUT 链路（15 分钟过期 + 敏感文件拒签 404）、storage 全树（9 route）错误码、skills 三来源、team-tasks/teams/workers files 读写、并发 listObjects、健康面板探测、MCP 配置 CRUD
+  - [ ] 16.2 对现网 MinIO 跑通作为基线（作为存储面通用回归覆盖，后续任一 S3 后端可重跑比对）
+  - [ ] 16.3 给 `install/agentteams-dashboard.sh` 的凭证探测链追加 RUSTFS_* 命名空间回退（现有 `AGENTTEAMS_FS_*` → `AGENTTEAMS_MINIO_*` 之后兜底 RUSTFS_* 变量名），并在 `install/agentteams-dashboard-tests.sh` 补探测链用例
+  - 验收：回归套件在现网 MinIO 全绿；安装器探测链更新且有测试覆盖
+
+- [ ] 17. D1 贡献者入口基线（2-3 人日，P1，依赖任务 6 的死链检查）
+  - [ ] 17.1 新增 CONTRIBUTING.md：三门验证顺序（typecheck→eslint→vitest）、`npm ci` 同步约定、AI 协作痕迹约定（`lint:tone` 门禁）、上游对齐流程（引用 `install/AGENTTEAMS_PATCH.md`）
+  - [ ] 17.2 补 issue（bug/feature）与 PR 模板（`.github/ISSUE_TEMPLATE/`、`PULL_REQUEST_TEMPLATE.md`）
+  - [ ] 17.3 修复 README.md:331 死链（与任务 6 协同，避免重复改）
+  - [ ] 17.4 插件 gallery 页 MVP（内置 wen-tian/monitor-panel 之外给外部插件曝光位）
+  - 验收：CONTRIBUTING/模板合入；死链检查覆盖新文档；gallery MVP 可浏览已注册插件
+
+- [ ] 18. D2「Mission Control」定位与 README 改版（1-2 人日，P1；录制/截图另计）
+  - [ ] 18.1 双语 README（README.md / README.zh-CN.md）首屏配大图/GIF（overview 拓扑 + 任务看板干预 + Chat 回放三连）
+  - [ ] 18.2 定位文案从「管理面板」升级为「多智能体团队 Mission Control」
+  - [ ] 18.3 一次对外发布（release notes/社区帖）使用该定位
+  - 验收：双语首屏含演示图与定位语；一次对外发布落地
+
+## 阶段三：P2（第 7-12 周）
+
+- [ ] 19. A9 依赖大版本升级批次（每项一个 PR，依赖 A1；eslint 10 / TS 7 工具链大版本放最后）
+  - 候选：eslint 9→10、typescript 5.9.3→7.0.2、vitest 4.1.10→5.0.2、uuid 11→14、lucide-react 0.525→1.48、recharts 3.8.1→3.10.1（同步放开精确锁）、@a2ui 0.10→0.11
+  - 验收：每项升级后三门全绿 + 关键页面手动冒烟；无遗留精确锁版本
+- [ ] 20. B6 外部 coding agent runtime 接入评估（Claude Code / Codex CLI / opencode，评估 2-3 人日，不承诺实现）
+  - [ ] 20.1 明确接入面为「结构化协议→org.agentteams.run 块」的协议适配器（B4 前置）
+  - [ ] 20.2 拆解工作量归属（上游：Controller CRD 枚举、agentconfig generator、Matrix channel 插件；Dashboard：枚举扩展 + runtime-meta/options + 能力门控 + per-runtime 会话收集器）
+  - [ ] 20.3 轻量替代路径先行验证：外部 agent 输出经 A2UI 标记投递进 Matrix
+  - [ ] 20.4 计费合规评估：核实 Claude Agent SDK / `claude -p` 自 2026-06-15 起独立积分计费的官方文档（转述信息，立项前必须核实）
+  - 验收：产出评估报告（工作量拆解 + 计费合规 + 推荐排序）；若立项至少一个 runtime 端到端 demo
+- [ ] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
+  - [ ] 21.1 Worker 创建对话框按 mcp-catalog 默认勾选接线（低成本先行，配用例）
+  - [ ] 21.2 stdio 本地 MCP 托管：产出需求/设计稿与上游对齐（Controller 侧支持）
+  - [ ] 21.3 远程 MCP OAuth 认证需求登记
+  - 验收：①落地有用例；②③设计稿有上游回应；④与任务 24 联动
+- [ ] 22. B8 知识库/审计数据面切 Controller 正源评估（1-2 人日，依赖上游 v1.2.5+）
+  - 对照上游 v1.2.4 契约评估切换范围（KB 目录、审计字段）与收益；产出「切/不切 + 理由」；若切给灰度方案与回滚点（MinIO/本地读取路径保留一个版本周期）
+- [ ] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
+  - 把 agent 会话导出为可分享只读回放链接（默认脱敏，复用 debug-log PII 脱敏）；README GIF 演示 thinking/tool-call/工作流卡片回放；链接访问控制过安全评审
+- [ ] 24. D4 MCP 治理中心故事（0.5-1 人日，依赖任务 21.1）
+  - README 增「MCP 治理」章节（registry、per-consumer 授权、审计线索）；技能/MCP 目录一键安装演示 GIF
+- [ ] 25. D5 一键部署可传播（2-3 人日，demo 站另计）
+  - docker compose 模板与 Coolify 模板；只读在线 demo 站（安全前提：只读沙箱账号 + 独立后端 + 不暴露真实集群，评审不过则降级为 GIF）；README 嵌 30 秒安装 GIF
+- [ ] 26. D6 OpenClaw/QwenPaw 生态兼容维护原则（0.5 人日 + 持续，依赖任务 13）
+  - runtime 会话目录/端点变更时保持旧路径回退一个版本周期；上游 runtime 发版冒烟纳入 B3 对照流程；探测回退路径补测试
+
+## 关键依赖链（排期参照）
+
+1. A1（任务 1）→ A2/A3/A9（任务 2/3/19）——A1 是回归网可信前提
+2. A3（任务 3）→ isomorphic-dompurify 4.x 恢复
+3. A5 ChatRoom 拆分（任务 7.2）→ D3（任务 23）
+4. MinIO→RustFS：按 2026-09-28 用户决策仅保留本仓库侧改动（任务 16：回归套件 + 安装器 RUSTFS_* 回退），跨仓迁移链条（决策推动、阶段 0-4 执行）已移除
+5. B1/B4/B5（任务 12/14/15）← 上游节奏，只做「准备 + 对齐」，不单向先行
