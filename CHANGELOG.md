@@ -5,6 +5,8 @@
 
 - Dashboard 停止新建 CoPaw：创建入口仅提供 OpenClaw / Hermes / QwenPaw / DeepSeek Harness；存量 CoPaw 仍可展示、编辑、删除，并提供升级到 QwenPaw 的入口
 - 调试日志与问天诊断优先探测 `.qwenpaw` 会话目录，存量 `.copaw` 布局继续作为回退
+- 生产依赖漏洞非破坏性清理（高危 8 → 0，官方 registry `npm audit --omit=dev` 复测）：adm-zip 0.6.0 → 0.6.1（GHSA-vwc7-r8mq-g2x9 / GHSA-7q85-xj36-vmfc，插件 zip 解包路径）；overrides 收紧 sharp ≥0.35.4（GHSA-rgj7-g3m4-5g8c）、新增 nanoid ^3.3.18（GHSA-2v37-7h3g-55p8，v3 线内修复）、lodash-es ≥4.18（GHSA-r5fr-rjxr-66jc / GHSA-f23m-r3pf-42rh，dedupe mermaid→chevrotain 链三处嵌套 4.17.23）、baseline-browser-mapping ≥2.11.0（GHSA-w5vr-8v7q-w6rv）
+- 已知豁免（minio@8.0.7 链 2 个 moderate，无破坏性修法）：stream-json ≤3.4.0（GHSA-528h-pc64-c93x，minio 依赖 ^1.8.0，无 1.x 修复版，3.x 为跨大版本）；decode-uri-component ≤0.4.2 经 query-string@7（GHSA-vcc3-ghjq-m6fr，修复版 0.5.0 为 ESM-only，与 query-string 7 的 CJS require 不兼容）。二者仅解析自有可信 S3 后端响应，利用面受限；audit 建议的 minio@7.1.3 降级为破坏性变更且与对象存储迁移方向冲突，不采纳
 
 ## v1.2.4.9 (2026-09-20)
 

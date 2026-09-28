@@ -15,15 +15,16 @@
   - 验收：`npm test` 全量 0 失败；route.test.ts 隔离单跑稳定通过且总时长 <5s；Windows 本机与 Linux CI 各连续 2 次全量结果一致
   - 完成记录（2026-09-28）：seam 落地为 `export type BackendProbeFn = typeof probeBackend` + `refreshEffective(names, timeoutMs, probeFn)` 第三参；route.test.ts 经 seam 委托跑**真实** refreshEffective（保住选举逻辑覆盖），注入即时不可达探测 + 1ms 预算；两个抖动文件 `vi.setConfig({ testTimeout: 15_000 })`。验证：tsc 0 错、eslint 4 文件 0 警告、route.test.ts 隔离 25/25 约 530ms、全量 213 文件/2011 用例 4 跑 3 绿（第 2 跑 1 个负载抖动失败、日志截断未定位，非本改动路径；第 3、4 跑连续全绿）。Windows 本机验证待用户侧/CI 补
 
-- [ ] 2. A2 生产依赖漏洞非破坏性清理（1-2 人日，P0）
-  - [ ] 2.1 开工前置：以官方 registry 重跑 `npm audit --omit=dev`，把当次 advisory ID 清单固化到工作单（调研时复现：13 个，8 高 5 中）
-  - [ ] 2.2 adm-zip 升出 ≤0.6.0 漏洞区间至 0.6.1（GHSA-vwc7-r8mq-g2x9 任意文件覆盖、GHSA-7q85-xj36-vmfc DoS）；核对插件 zip 解包路径兼容性（`src/lib/plugins/server-package.ts`）
-  - [ ] 2.3 `package.json` overrides 的 sharp 下限 `>=0.35.0` → `>=0.35.4`（GHSA-rgj7-g3m4-5g8c）
-  - [ ] 2.4 nanoid 升 `>=3.3.18`（v3 线，GHSA-2v37-7h3g-55p8）
-  - [ ] 2.5 overrides 增加 `lodash-es >= 4.18`，dedupe mermaid→chevrotain 链嵌套旧拷贝（GHSA-r5fr-rjxr-66jc、GHSA-f23m-r3pf-42rh）
-  - [ ] 2.6 minio→stream-json（GHSA-528h-pc64-c93x）/ decode-uri-component（GHSA-vcc3-ghjq-m6fr）moderate 链单独评估 override 或豁免记录；不采纳 minio@7.1.3 降级（破坏性，与 RustFS 方向冲突）
-  - [ ] 2.7 当次 audit 其余链条（baseline-browser-mapping 等）并入统一处置或记录豁免
+- [x] 2. A2 生产依赖漏洞非破坏性清理（1-2 人日，P0）
+  - [x] 2.1 开工前置：以官方 registry 重跑 `npm audit --omit=dev`，把当次 advisory ID 清单固化到工作单（调研时复现：13 个，8 高 5 中）
+  - [x] 2.2 adm-zip 升出 ≤0.6.0 漏洞区间至 0.6.1（GHSA-vwc7-r8mq-g2x9 任意文件覆盖、GHSA-7q85-xj36-vmfc DoS）；核对插件 zip 解包路径兼容性（`src/lib/plugins/server-package.ts`）
+  - [x] 2.3 `package.json` overrides 的 sharp 下限 `>=0.35.0` → `>=0.35.4`（GHSA-rgj7-g3m4-5g8c）
+  - [x] 2.4 nanoid 升 `>=3.3.18`（v3 线，GHSA-2v37-7h3g-55p8）
+  - [x] 2.5 overrides 增加 `lodash-es >= 4.18`，dedupe mermaid→chevrotain 链嵌套旧拷贝（GHSA-r5fr-rjxr-66jc、GHSA-f23m-r3pf-42rh）
+  - [x] 2.6 minio→stream-json（GHSA-528h-pc64-c93x）/ decode-uri-component（GHSA-vcc3-ghjq-m6fr）moderate 链单独评估 override 或豁免记录；不采纳 minio@7.1.3 降级（破坏性，与 RustFS 方向冲突）
+  - [x] 2.7 当次 audit 其余链条（baseline-browser-mapping 等）并入统一处置或记录豁免
   - 验收：官方 registry audit 高危清零（余 moderate 在 SECURITY/CHANGELOG 记录豁免理由与 advisory ID）；三门通过；插件上传与技能中心上传（zip 解包）手动冒烟通过
+  - 完成记录（2026-09-28）：官方 registry 复测 13（8 高 5 中）与调研一致。修复：adm-zip ^0.6.1（直接依赖）、sharp override ≥0.35.4（实装 0.35.5）、nanoid override ^3.3.18（v3 线内，实装 3.3.19；v4+ ESM-only 故用 caret 锁线）、lodash-es override ≥4.18（三处嵌套 4.17.23 全部 dedupe 至 4.18.1）、baseline-browser-mapping override ≥2.11.0（实装 2.11.26）。豁免（CHANGELOG Unreleased 已记录理由与 advisory ID）：stream-json（minio 需 ^1.8.0，无 1.x 修复版）、decode-uri-component（修复版 0.5.0 ESM-only，与 query-string@7 CJS require 不兼容）——audit 复测高危 0、moderate 4（均为 minio 链）。验证：tsc 0 错；server-package.test.ts 10/10（zip 解包 + 越界/膨胀防护）；全量 213 文件/2011 用例通过。插件/技能中心上传的 UI 手动冒烟需运行环境，待用户侧补
 
 - [ ] 3. A3 Node 20→22 LTS 迁移（0.5-1 人日，P0，依赖 A1）
   - [ ] 3.1 `Dockerfile:13`、`:44` 两处 `node:20-alpine` → `node:22-alpine`；`.github/workflows/ci.yml:24` node-version → 22

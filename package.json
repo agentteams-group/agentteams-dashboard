@@ -32,7 +32,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-query": "^5.103.3",
     "3d-force-graph": "1.80.0",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -88,8 +88,11 @@
   },
   "overrides": {
     "dompurify": ">=3.4.12",
-    "sharp": ">=0.35.0",
+    "sharp": ">=0.35.4",
     "fast-xml-parser": ">=5.10.1",
-    "postcss": ">=8.5.23"
+    "postcss": ">=8.5.23",
+    "nanoid": "^3.3.18",
+    "lodash-es": ">=4.18",
+    "baseline-browser-mapping": ">=2.11.0"
   }
 }
