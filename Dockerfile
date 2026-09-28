@@ -10,7 +10,7 @@
 #     -e NEXT_PUBLIC_MATRIX_API_URL=http://matrix-local.agentteams.io:6167 \
 #     agentteams-dashboard:latest
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Default basePath is empty for standalone deployment (served at root).
@@ -41,7 +41,7 @@ RUN npm run build
 # ============================================================
 # Runtime image
 # ============================================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

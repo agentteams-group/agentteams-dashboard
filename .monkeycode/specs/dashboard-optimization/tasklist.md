@@ -26,11 +26,12 @@
   - 验收：官方 registry audit 高危清零（余 moderate 在 SECURITY/CHANGELOG 记录豁免理由与 advisory ID）；三门通过；插件上传与技能中心上传（zip 解包）手动冒烟通过
   - 完成记录（2026-09-28）：官方 registry 复测 13（8 高 5 中）与调研一致。修复：adm-zip ^0.6.1（直接依赖）、sharp override ≥0.35.4（实装 0.35.5）、nanoid override ^3.3.18（v3 线内，实装 3.3.19；v4+ ESM-only 故用 caret 锁线）、lodash-es override ≥4.18（三处嵌套 4.17.23 全部 dedupe 至 4.18.1）、baseline-browser-mapping override ≥2.11.0（实装 2.11.26）。豁免（CHANGELOG Unreleased 已记录理由与 advisory ID）：stream-json（minio 需 ^1.8.0，无 1.x 修复版）、decode-uri-component（修复版 0.5.0 ESM-only，与 query-string@7 CJS require 不兼容）——audit 复测高危 0、moderate 4（均为 minio 链）。验证：tsc 0 错；server-package.test.ts 10/10（zip 解包 + 越界/膨胀防护）；全量 213 文件/2011 用例通过。插件/技能中心上传的 UI 手动冒烟需运行环境，待用户侧补
 
-- [ ] 3. A3 Node 20→22 LTS 迁移（0.5-1 人日，P0，依赖 A1）
-  - [ ] 3.1 `Dockerfile:13`、`:44` 两处 `node:20-alpine` → `node:22-alpine`；`.github/workflows/ci.yml:24` node-version → 22
-  - [ ] 3.2 回滚 commit 7f21a0a 的 isomorphic-dompurify 降级（升回 4.x）
-  - [ ] 3.3 核对 README/文档中 Node 版本要求描述
+- [x] 3. A3 Node 20→22 LTS 迁移（0.5-1 人日，P0，依赖 A1）
+  - [x] 3.1 `Dockerfile:13`、`:44` 两处 `node:20-alpine` → `node:22-alpine`；`.github/workflows/ci.yml:24` node-version → 22
+  - [x] 3.2 回滚 commit 7f21a0a 的 isomorphic-dompurify 降级（升回 4.x）
+  - [x] 3.3 核对 README/文档中 Node 版本要求描述
   - 验收：CI 三流水线（ci/build/install-test）绿；amd64/arm64 多架构镜像构建成功；镜像内 `node -v` ≥22；isomorphic-dompurify 4.x 且测试全绿
+  - 完成记录（2026-09-28）：Dockerfile 两处 node:22-alpine、ci.yml node-version 22（build.yml/install-test.yml 无 node 引用，无需改）；isomorphic-dompurify ^3.19.0 → ^4.4.0（实装 4.4.0 + jsdom 树；本机 Node 22.22.0 低于 jsdom 引擎下限 22.22.2 仅 EBADENGINE 警告，2011 用例实测全绿；7f21a0a 不在本仓历史，降级已固化于版本号，升回即等效回滚）；README.md/README.zh-CN.md:49 与 docs/DEVELOPER_GUIDE.md、.monkeycode/docs/DEVELOPER_GUIDE.md 同步为 Node.js 22+。本环境无 docker，多架构镜像构建与镜像内 node -v 验证待 push 后 CI（build.yml 走 tag 触发的 make push，node:22-alpine 浮动标签当前 ≥22.22.2 满足 jsdom 引擎要求）
 
 - [ ] 4. 协调：与维护者确认 CHANGELOG Unreleased（CoPaw→QwenPaw）发版窗口，冻结与其冲突的 runtime 枚举类变更（影响 B2/B5 排期）
 - [ ] 5. A10 CI Actions 状态核实与失败告警（0.5 人日，P1 小项，需维护者登录态）

@@ -46,7 +46,7 @@ AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](
 - **Framework**: Next.js 16 + React 19 + TypeScript 5
 - **Styling**: Tailwind CSS v4 + shadcn/ui
 - **State**: Zustand + TanStack Query
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 22+
 - **Deployment**: Docker, Next.js standalone output
 
 ## Matrix Chat

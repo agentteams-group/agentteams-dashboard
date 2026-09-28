@@ -46,7 +46,7 @@ AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视�
 - **框架**：Next.js 16 + React 19 + TypeScript 5
 - **样式**：Tailwind CSS v4 + shadcn/ui
 - **状态管理**：Zustand + TanStack Query
-- **运行时**：Node.js 20+
+- **运行时**：Node.js 22+
 - **部署**：Docker，Next.js standalone 输出
 
 ## Matrix 聊天

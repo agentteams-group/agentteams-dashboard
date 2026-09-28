@@ -2,7 +2,7 @@
 
 ## 环境
 
-- Node.js 20 或更高版本
+- Node.js 22 或更高版本
 - npm
 - 可选：运行中的 AgentTeams Controller、Matrix 与 Higress 服务
 
