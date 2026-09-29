@@ -129,8 +129,8 @@ AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERS
 ### 独立运行
 
 ```bash
-# 安装依赖
-npm install
+# 安装依赖（可复现安装；首次克隆与每次拉取后执行）
+npm ci --no-audit --no-fund --legacy-peer-deps
 
 # 配置环境变量
 cp .env.example .env

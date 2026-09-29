@@ -129,8 +129,8 @@ See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed in
 ### Run standalone
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (reproducible; run this on first clone and after every pull)
+npm ci --no-audit --no-fund --legacy-peer-deps
 
 # Configure environment
 cp .env.example .env

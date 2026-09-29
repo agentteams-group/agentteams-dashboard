@@ -7,11 +7,11 @@
 - 可选：运行中的 AgentTeams Controller、Matrix 与 Higress 服务
 
 ```bash
-npm install
+npm ci --no-audit --no-fund --legacy-peer-deps
 npm run dev
 ```
 
-开发服务器默认监听 3000 端口。使用 `.env.example` 作为本地配置起点；凭据保持在本地环境配置中。
+开发服务器默认监听 3000 端口，输出同步写入 `dev.log`（生产 `npm start` 同理写 `server.log`）。使用 `.env.example` 作为本地配置起点；凭据保持在本地环境配置中。
 
 ## 常用命令
 

@@ -3,9 +3,9 @@
   "version": "1.2.4.9",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
+    "dev": "node scripts/dev.mjs",
+    "build": "next build && node scripts/copy-standalone-assets.mjs",
+    "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "lint:tone": "node scripts/ai-tone-scan.mjs",
     "typecheck": "tsc --noEmit",

@@ -77,11 +77,15 @@
     - 完成记录（2026-09-29）：① no-explicit-any 恢复 error + 测试文件 override 豁免（`src/**/*.test.{ts,tsx}`——mock 替身惯例，非测试源码已在 8.2 清零）；顺带清掉 grep 模式漏网的第 37 处：a2ui/catalog.tsx `type AnyComponentApi = any` → 包侧 `ComponentApi` 类型 + makeApi 单点 `as unknown as` 断言（zod v3/v4 双包桥接收敛到一处）。② tsconfig `noImplicitAny: false → true`（回到 strict 完整语义），暴露 20 处隐式 any 并全部修复：backend-config IP_SEGMENT_HINTS 显式标注、hitl-inbox store 自引用循环推断加显式返回类型打断、backend-tab Object.keys 收窄 BackendName、a2ui 两测试文件收窄（矩阵 runtime 子集类型 MatrixRuntime/迭代键 cast，deepseek-harness 本就走泛用路径不入矩阵）、workspace-files 测试迭代键 cast；另暴露并删除一处死代码（skills 路由 `version: parsed.version`——ParsedSkillPackage 从无该字段，原值恒 undefined）。③ 规则评估：react-compiler/react-compiler 为悬空引用（eslint-config-next/react-hooks 插件链均未注册该插件，开启即配置报错），恢复需先引入插件依赖，保持 off；set-state-in-effect 试开 warn 实测 5 处违规（agent-teams-dashboard 刷新时间戳派生、overview 倒计时、worker-runtime-config-panel prop 变化重置、use-persistent-state/use-view-mode post-mount restore），全部为注释明示的有意模式，强制清零需行为级重构（水合闪烁/编辑态丢失风险），保持 off 并留档。验收：eslint . 0 错 0 警（no-explicit-any=error 下）、tsc 0 错（noImplicitAny=true 下）、全量 213 文件/2011 用例通过
   - 验收：`npm run lint` 0 警告；noImplicitAny:true 且 typecheck 绿；每步合并时三门全绿
 
-- [ ] 9. A7 Windows 开发脚本与依赖同步防脱节（0.5-1 人日，P1）
-  - [ ] 9.1 `package.json` dev/start 脚本去 Unix-only 语法（cross-env 或 node 包装脚本去 env 前缀）
-  - [ ] 9.2 日志 tee 管道改 node 脚本封装（或去掉管道、CI 侧收集）
-  - [ ] 9.3 README 开发准备节明确「首次/拉取后先 `npm ci --no-audit --no-fund --legacy-peer-deps`」
+- [x] 9. A7 Windows 开发脚本与依赖同步防脱节（0.5-1 人日，P1）
+  - [x] 9.1 `package.json` dev/start 脚本去 Unix-only 语法（cross-env 或 node 包装脚本去 env 前缀）
+    - 完成记录（2026-09-29）：node 包装脚本方案（零新增依赖，优于 cross-env）：`npm run dev` → `node scripts/dev.mjs`（createRequire 解析 next/dist/bin/next 后用 process.execPath 直跑，绕开 Windows .bin/.cmd 的 PATH 与 spawn 问题）；`npm run start` → `node scripts/start.mjs`（脚本内设 NODE_ENV=production + process.execPath 跑 standalone server.js）；`npm run build` 的 `cp -r` 链 → `scripts/copy-standalone-assets.mjs`（fs.cpSync 递归复制 static/ 与 public/ 进 standalone，同一 Unix-only 家族顺带清零）。tee 逻辑抽 `scripts/lib/tee-spawn.mjs`（piped stdio 双写终端+日志文件、SIGINT/SIGTERM 转发、退出码透传）。Linux 实测：dev 启动 + `GET / 200` + dev.log 双写 + 信号级联终止 ✓；build 全链路 + 产物复制 ✓；start 启动 + `GET /` 200 + server.log ✓（NODE_ENV=production 生效）
+  - [x] 9.2 日志 tee 管道改 node 脚本封装（或去掉管道、CI 侧收集）
+    - 完成记录（2026-09-29）：与 9.1 同一改动落地——tee 管道由 scripts/lib/tee-spawn.mjs 封装（child stdout/stderr 逐 chunk 镜像到 process.stdout 与 createWriteStream 日志），dev.log/server.log 文件名与原行为一致，CI 侧无感（CI 本就不依赖这两个文件）
+  - [x] 9.3 README 开发准备节明确「首次/拉取后先 `npm ci --no-audit --no-fund --legacy-peer-deps`」
+    - 完成记录（2026-09-29）：四处安装说明由 `npm install` 改为带注释的 `npm ci --no-audit --no-fund --legacy-peer-deps`（README.md / README.zh-CN.md / docs/DEVELOPER_GUIDE.md / .monkeycode/docs/DEVELOPER_GUIDE.md），指南并补充 dev.log/server.log 说明；docs-consistency 门禁绿
   - 验收：Windows cmd 与 Linux 下 `npm run dev` / `npm run start` 均可直接运行；新人按 README 一次跑通三门
+    - 验证记录（2026-09-29）：Linux 侧 dev/start/build 全链路实测通过（见 9.1）；三脚本为纯 node + 相对路径 + process.execPath，无 shell 语法、env 前缀、tee、cp 依赖，Windows cmd 可直接运行（Windows 真机冒烟待用户侧补验）。三门：eslint 0 错 0 警、tsc 0 错、全量 213 文件/2011 用例通过。插曲：本机首次跑真实 dev/start 后 instrumentation 自动生成 /data/.../.session-secret，导致 3 个 fail-closed 用例（无 secret 必须抛错）失败——已移除残留文件并复跑确认全绿，属环境残留非代码回归
 
 - [ ] 10. A8 覆盖率范围扩大到安全关键模块（2-4 人日，渐进；容量超限可顺延 P2 前段）
   - [ ] 10.1 补关键路径单测：rbac-engine（deny 优先语义）、audit-log（轮转）、minio-client、skill-center-storage（bucket 前缀与敏感文件判断）、homeserver-allowlist
