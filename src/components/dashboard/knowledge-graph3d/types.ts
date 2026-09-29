@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { ForceGraph3DInstance } from '3d-force-graph';
 
 export interface G3DNodeInput {
   id: string;
@@ -48,4 +49,21 @@ export interface G3DGraph {
   onSelect?: (_id: string) => void;
   onExit3D: () => void;
   height?: number;
+}
+
+/** 运行时实例句柄：库类型面 + d.ts 未暴露的 centerAt（来自
+ * three-render-objects 运行时 API）。 */
+export type Graph3DHandle = ForceGraph3DInstance & {
+  centerAt?: (_x?: number, _y?: number, _z?: number, _transitionMs?: number) => unknown;
+};
+
+/** controls() 的 d.ts 返回 object（不可用）——按用到的字段结构化声明
+ * （OrbitControls 同款表面）。 */
+export interface Graph3DControls {
+  minDistance: number;
+  maxDistance: number;
+  autoRotate: boolean;
+  target: { x: number; y: number; z: number };
+  addEventListener: (_type: string, _listener: () => void) => void;
+  removeEventListener?: (_type: string, _listener: () => void) => void;
 }

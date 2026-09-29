@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { getNacosConfig } from '@/lib/skill-center-config';
 import { isValidNameSegment } from '@/lib/skill-package';
@@ -11,7 +12,7 @@ import { zipSync } from 'fflate';
 import { fetchNacosSkillZip, cacheSkillContent } from '@/lib/nacos-fetcher';
 import type { NacosZipResult } from '@/lib/nacos-fetcher';
 
-async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
+async function getSkillMetadata(client: Client, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
   try {
     const stream = await client.getObject(SKILLS_BUCKET, key);

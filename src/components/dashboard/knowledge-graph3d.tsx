@@ -40,11 +40,15 @@ import { buildNodeVisual } from './knowledge-graph3d/node-visual';
 import { configureGraphScene } from './knowledge-graph3d/scene';
 import { attachSelfClickLayer } from './knowledge-graph3d/click-layer';
 import { Graph3DToolbar } from './knowledge-graph3d/toolbar';
-import type { G3DGraph, G3DNodeInput, NodeVisual } from './knowledge-graph3d/types';
+import type { G3DGraph, G3DNodeInput, Graph3DControls, Graph3DHandle, NodeVisual } from './knowledge-graph3d/types';
 
 export type { G3DNodeInput, G3DLinkInput } from './knowledge-graph3d/types';
 export { useGraph3DPalette } from './knowledge-graph3d/palette';
 export type { G3DPalette } from './knowledge-graph3d/palette';
+
+/** graphData memo 产出的引擎数据形状（node = 输入 + 布局派生字段）。 */
+type G3DNodeDatum = G3DNodeInput & { val: number; _deg: number };
+type G3DLinkDatum = { source: string; target: string; _bi?: boolean };
 
 // ── 主组件 ──────────────────────────────────────────────────────────────
 export function KnowledgeGraph3D(props: G3DGraph) {
@@ -61,7 +65,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
   } = props;
   const t = useGraph3DPalette();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const graphRef = React.useRef<any>(null);
+  const graphRef = React.useRef<Graph3DHandle | null>(null);
   const [ready, setReady] = React.useState(false);
   // WebGL 能力探测放惰性初始化（渲染期一次，客户端组件挂载即有 DOM）
   // ——不在 effect 里 setState（react-hooks/set-state-in-effect 规则）。
@@ -282,7 +286,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
           // 官方 onNodeClick=focusGraphNode 同款：相机聚焦到 root
           // （centerAt 600ms 平滑），不选中。
           try {
-            graphRef.current?.centerAt(n.x, n.y, n.z, 600);
+            graphRef.current?.centerAt?.(n.x, n.y, n.z, 600);
           } catch {
             /* noop */
           }
@@ -307,14 +311,15 @@ export function KnowledgeGraph3D(props: G3DGraph) {
         // 自绘节点（官方 extend=false 替换默认）+ nodeOpacity
         // **必须数字**（L1168 直接乘，函数=NaN 全隐形）。
         .nodeRelSize(1)
-        .nodeVal((n: any) => n.val)
+        .nodeVal((n) => (n as G3DNodeDatum).val)
         .nodeOpacity(1)
         .nodeResolution(24)
         .nodeColor(() => '#ffffff')
-        .nodeThreeObject((n: any) => {
-          nodeVisualsRef.current.delete(n.id);
-          const { obj, visual } = buildNodeVisual(n, stateRef.current);
-          nodeVisualsRef.current.set(n.id, visual);
+        .nodeThreeObject((n) => {
+          const node = n as G3DNodeDatum;
+          nodeVisualsRef.current.delete(node.id);
+          const { obj, visual } = buildNodeVisual(node, stateRef.current);
+          nodeVisualsRef.current.set(node.id, visual);
           return obj;
         })
         .nodeThreeObjectExtend(false)
@@ -336,7 +341,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
             : 'rgba(0,0,0,0.5)',
         )
         // 官方双向边曲率 ±0.12（单向 0）。
-        .linkCurvature((l: any) => (l._bi ? 0.12 : 0))
+        .linkCurvature((l) => ((l as G3DLinkDatum)._bi ? 0.12 : 0))
         .enableNodeDrag(false)
         .enableNavigationControls(true)
         // 物理参数官方原值（布局尺度 link distance 72！）。
@@ -347,17 +352,19 @@ export function KnowledgeGraph3D(props: G3DGraph) {
         .graphData({ nodes: [], links: [] })
         // 点击激活逻辑抽成共享函数——库 onNodeClick（静止点击）与
         // 自持点击层（被吞点击补位）走同一出口，行为完全一致。
-        .onNodeClick((n: any) => {
+        .onNodeClick((n) => {
+          const node = n as G3DNodeDatum;
           libClickRef.current = {
-            id: n.id,
+            id: node.id,
             t: performance.now(),
           };
-          handleNodeActivate(n);
+          handleNodeActivate(node);
         })
-        .onNodeHover((n: any) => {
+        .onNodeHover((n) => {
+          const node = n as G3DNodeDatum | null;
           // hover 视觉反馈（提亮+glow）——可见的"对准了"提示。
           const prev = hoverIdRef.current;
-          const next = n && !stateRef.current.isRoot(n) ? n.id : '';
+          const next = node && !stateRef.current.isRoot(node) ? node.id : '';
           if (prev !== next) {
             if (prev) applyHoverVisual(prev, false);
             if (next) applyHoverVisual(next, true);
@@ -366,13 +373,13 @@ export function KnowledgeGraph3D(props: G3DGraph) {
           el.style.cursor = next ? 'pointer' : 'default';
           // 全名提示：root 已有常驻标签不提示（插件同款），其余节点
           // 显示 名称 + 完整路径 + Worker（聚合）+ 未解析标注。
-          if (n && next) {
-            const lines = [String(n.name)];
+          if (node && next) {
+            const lines = [String(node.name)];
             const full =
-              n.path && n.path !== n.id ? String(n.path) : String(n.id);
-            if (full !== String(n.name)) lines.push(full);
-            if (n.agent) lines.push(`Worker：${n.agent}`);
-            if (n.resolved === false) lines.push('未解析引用（文件不存在，不可点开）');
+              node.path && node.path !== node.id ? String(node.path) : String(node.id);
+            if (full !== String(node.name)) lines.push(full);
+            if (node.agent) lines.push(`Worker：${node.agent}`);
+            if (node.resolved === false) lines.push('未解析引用（文件不存在，不可点开）');
             tip.textContent = lines.join('\n');
             tip.style.display = 'block';
             positionTip(lastPtr.x, lastPtr.y);
@@ -499,7 +506,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
         detachClickLayer();
         el.removeEventListener('pointermove', onTipMove);
         try {
-          (graph.controls?.() as any)?.removeEventListener?.(
+          (graph.controls?.() as Graph3DControls | undefined)?.removeEventListener?.(
             'change',
             updatePickScales,
           );
@@ -631,7 +638,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
     const g = graphRef.current;
     if (!g) return;
     try {
-      const controls = g.controls?.();
+      const controls = g.controls?.() as Graph3DControls | undefined;
       if (controls) controls.autoRotate = Boolean(autoRotate);
     } catch {
       /* noop */
@@ -645,7 +652,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
     if (!g) return;
     try {
       const cam = g.camera?.();
-      const controls = g.controls?.();
+      const controls = g.controls?.() as Graph3DControls | undefined;
       const target = controls?.target || { x: 0, y: 0, z: 0 };
       g.cameraPosition(
         {
@@ -653,6 +660,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
           y: target.y + (cam.position.y - target.y) * factor,
           z: target.z + (cam.position.z - target.z) * factor,
         },
+        undefined,
         240,
       );
     } catch {

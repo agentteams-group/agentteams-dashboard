@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import {
@@ -8,7 +9,7 @@ import {
 } from '@/lib/skill-center-types';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
-async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
+async function getSkillMetadata(client: Client, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
   try {
     const stream = await client.getObject(SKILLS_BUCKET, key);
@@ -24,7 +25,7 @@ async function getSkillMetadata(client: any, skillName: string): Promise<SkillEn
   }
 }
 
-async function listSkillFiles(client: any, skillName: string): Promise<string[]> {
+async function listSkillFiles(client: Client, skillName: string): Promise<string[]> {
   const prefix = `${skillName}/`;
   const files: string[] = [];
   const stream = client.listObjects(SKILLS_BUCKET, prefix, false);

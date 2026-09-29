@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import { getNacosConfig } from '@/lib/skill-center-config';
@@ -12,7 +13,7 @@ import { zipSync, unzipSync } from 'fflate';
 import { fetchNacosSkillZip, cacheSkillContent } from '@/lib/nacos-fetcher';
 import type { NacosZipResult } from '@/lib/nacos-fetcher';
 
-async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
+async function getSkillMetadata(client: Client, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
   try {
     const stream = await client.getObject(SKILLS_BUCKET, key);
@@ -28,7 +29,7 @@ async function getSkillMetadata(client: any, skillName: string): Promise<SkillEn
   }
 }
 
-async function listSkillFiles(client: any, skillName: string): Promise<string[]> {
+async function listSkillFiles(client: Client, skillName: string): Promise<string[]> {
   const prefix = `${skillName}/`;
   // Recursive listing is required: skills ship nested resources like
   // `scripts/**` and `references/**` that must be preserved when the package
@@ -64,7 +65,7 @@ function isMonorepoCache(fileNames: string[]): boolean {
   return rootSkillMds.length > 1;
 }
 
-async function readObject(client: any, skillName: string, relativePath: string): Promise<Buffer> {
+async function readObject(client: Client, skillName: string, relativePath: string): Promise<Buffer> {
   const key = `${skillName}/${relativePath}`;
   const stream = await client.getObject(SKILLS_BUCKET, key);
   const chunks: Buffer[] = [];

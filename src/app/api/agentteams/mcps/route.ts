@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { BucketItem, Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
@@ -20,8 +21,8 @@ function isValidMcpName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 }
 
-async function listAllObjects(client: any, bucket: string, prefix: string): Promise<any[]> {
-  const objects: any[] = [];
+async function listAllObjects(client: Client, bucket: string, prefix: string): Promise<BucketItem[]> {
+  const objects: BucketItem[] = [];
   const stream = client.listObjects(bucket, prefix, true);
   for await (const obj of stream) {
     objects.push(obj);

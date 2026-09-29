@@ -408,9 +408,9 @@ function TextViewer({ kind, ownerName, objectKey, ext }: { kind: 'worker' | 'tea
           setError(null);
         }
       })
-      .catch((e: any) => {
+      .catch((e: unknown) => {
         if (!cancelled) {
-          setError(e.message);
+          setError(e instanceof Error ? e.message : String(e));
           setContent(null);
         }
       });

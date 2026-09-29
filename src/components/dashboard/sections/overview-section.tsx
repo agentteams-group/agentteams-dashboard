@@ -40,6 +40,7 @@ import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { useLatestVersions } from '@/hooks/use-latest-versions';
 import { DASHBOARD_REPOSITORY } from '@/lib/dashboard-runtime';
 import { computeInsights, type Insight } from '@/lib/insights-engine';
+import type { DeploymentMode } from '@/components/dashboard/nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { WORKER_PHASE_COLORS } from '@/lib/phase-colors';
@@ -769,10 +770,10 @@ function InsightsBar({
   managers: ManagerResponse[] | undefined;
   infrastructure: InfrastructureInfo | null | undefined;
   isConnected: boolean;
-  mode: string | null | undefined;
+  mode: DeploymentMode | null | undefined;
 }) {
   const insights = useMemo(
-    () => computeInsights(workers, teams, managers, infrastructure ?? undefined, isConnected, mode as any),
+    () => computeInsights(workers, teams, managers, infrastructure ?? undefined, isConnected, mode),
     [workers, teams, managers, infrastructure, isConnected, mode]
   );
 

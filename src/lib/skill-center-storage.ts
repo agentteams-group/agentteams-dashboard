@@ -12,10 +12,77 @@ import { isValidNameSegment, parseSkillFrontmatter } from './skill-package';
 
 export { SKILLS_BUCKET, SKILLS_METADATA_PREFIX, SKILL_NAME_PATTERN, GLOBAL_SKILLS_PREFIX, CUSTOM_SKILL_MARKER };
 
+// 结构化最小客户端面（minio Client 结构满足；测试可注入鸭子类型替身）。
+// 按函数收窄到实际用到的方法，避免要求完整 Client 的 100+ 成员。
+// 迭代协议用宽 done?: boolean 形状（标准 IteratorResult 联合的超集，
+// 兼容手写测试替身）；消费端经 as AsyncIterable 收窄。
+export interface SkillObjectListItem {
+  name?: string;
+  prefix?: string;
+}
+
+export interface SkillListStream {
+  [Symbol.asyncIterator](): {
+    next: () => Promise<{ done?: boolean; value?: SkillObjectListItem | undefined }>;
+  };
+}
+
+export interface SkillReadStream {
+  on?: (_event: string, _cb: (_chunk: Buffer) => void) => unknown;
+  resume?: () => unknown;
+  [Symbol.asyncIterator](): {
+    next: () => Promise<{ done?: boolean; value?: Buffer | undefined }>;
+  };
+}
+
+export interface SkillListObjects {
+  listObjects: (
+    _bucket: string,
+    _prefix: string,
+    _recursive: boolean,
+  ) => SkillListStream;
+}
+
+export interface SkillGetObject {
+  getObject: (
+    _bucket: string,
+    _key: string,
+  ) => Promise<SkillReadStream>;
+}
+
+/** getSkillMetadata 的事件式读取面（on 必选——真实 minio Client 满足；
+ * 事件驱动的测试替身不经此函数）。 */
+export interface SkillGetObjectEvents {
+  getObject: (
+    _bucket: string,
+    _key: string,
+  ) => Promise<{
+    on: (_event: string, _cb: (_chunk: Buffer) => void) => unknown;
+    [Symbol.asyncIterator](): {
+      next: () => Promise<{ done?: boolean; value?: Buffer | undefined }>;
+    };
+  }>;
+}
+
+export interface SkillPutObject {
+  putObject: (
+    _bucket: string,
+    _key: string,
+    _data: Buffer,
+    _size?: number,
+    _meta?: Record<string, string>,
+  ) => Promise<unknown>;
+}
+
+export interface SkillBucketMgmt {
+  bucketExists: (_name: string) => Promise<boolean>;
+  makeBucket: (_name: string, _region?: string) => Promise<void>;
+}
+
 /**
  * Ensure the skills bucket exists, creating it if necessary
  */
-export async function ensureSkillsBucket(client: any): Promise<void> {
+export async function ensureSkillsBucket(client: SkillBucketMgmt): Promise<void> {
   const exists = await client.bucketExists(SKILLS_BUCKET);
   if (!exists) {
     await client.makeBucket(SKILLS_BUCKET);
@@ -25,7 +92,7 @@ export async function ensureSkillsBucket(client: any): Promise<void> {
 /**
  * Parse metadata from MinIO object or return null if not found
  */
-export async function getSkillMetadata(client: any, skillName: string): Promise<SkillEntry | null> {
+export async function getSkillMetadata(client: SkillGetObjectEvents, skillName: string): Promise<SkillEntry | null> {
   const key = `${SKILLS_METADATA_PREFIX}${skillName}.json`;
   try {
     const stream = await client.getObject(SKILLS_BUCKET, key);
@@ -44,7 +111,7 @@ export async function getSkillMetadata(client: any, skillName: string): Promise<
 /**
  * Save a SkillEntry metadata to MinIO
  */
-export async function saveSkillMetadata(client: any, entry: SkillEntry): Promise<void> {
+export async function saveSkillMetadata(client: SkillPutObject, entry: SkillEntry): Promise<void> {
   const key = `${SKILLS_METADATA_PREFIX}${entry.name}.json`;
   const data = Buffer.from(JSON.stringify(entry, null, 2));
   await client.putObject(
@@ -59,9 +126,9 @@ export async function saveSkillMetadata(client: any, entry: SkillEntry): Promise
 /**
  * List all skills (custom + nacos) from MinIO
  */
-export async function listSkills(client: any): Promise<SkillEntry[]> {
+export async function listSkills(client: SkillListObjects & SkillGetObjectEvents): Promise<SkillEntry[]> {
   const skills: SkillEntry[] = [];
-  const stream = client.listObjects(SKILLS_BUCKET, SKILLS_METADATA_PREFIX, true);
+  const stream = client.listObjects(SKILLS_BUCKET, SKILLS_METADATA_PREFIX, true) as AsyncIterable<SkillObjectListItem>;
 
   for await (const obj of stream) {
     if (!obj.name?.endsWith('.json')) continue;
@@ -82,12 +149,12 @@ export async function listSkills(client: any): Promise<SkillEntry[]> {
  * unique sorted list of the first path segment after the base prefix.
  */
 export async function collectFirstLevelPrefixes(
-  client: any,
+  client: SkillListObjects,
   bucket: string,
   basePrefix: string
 ): Promise<string[]> {
   const names = new Set<string>();
-  const stream = client.listObjects(bucket, basePrefix, false);
+  const stream = client.listObjects(bucket, basePrefix, false) as AsyncIterable<SkillObjectListItem>;
   for await (const obj of stream) {
     if (typeof obj.prefix === 'string' && obj.prefix.startsWith(basePrefix)) {
       const remainder = obj.prefix.slice(basePrefix.length).replace(/\/+$/, '');
@@ -100,12 +167,12 @@ export async function collectFirstLevelPrefixes(
 
 /** Counts objects under a prefix by listing them. */
 export async function countObjectsUnderPrefix(
-  client: any,
+  client: SkillListObjects,
   bucket: string,
   prefix: string
 ): Promise<number> {
   let count = 0;
-  const stream = client.listObjects(bucket, prefix, true);
+  const stream = client.listObjects(bucket, prefix, true) as AsyncIterable<SkillObjectListItem>;
   for await (const _obj of stream) {
     count += 1;
   }
@@ -113,7 +180,7 @@ export async function countObjectsUnderPrefix(
 }
 
 async function readObjectText(
-  client: any,
+  client: SkillGetObject,
   bucket: string,
   key: string
 ): Promise<string | null> {
@@ -131,7 +198,7 @@ async function readObjectText(
 
 /** Returns true when the skill prefix carries the "uploaded by dashboard" marker. */
 async function isCustomSkill(
-  client: any,
+  client: SkillGetObject,
   bucket: string,
   skillPrefix: string
 ): Promise<boolean> {
@@ -146,7 +213,7 @@ async function isCustomSkill(
 
 /** Reads description from a skill's SKILL.md if present, otherwise undefined. */
 async function readSkillDescription(
-  client: any,
+  client: SkillGetObject,
   bucket: string,
   skillPrefix: string
 ): Promise<string> {
@@ -165,7 +232,7 @@ async function readSkillDescription(
  * carrying the custom marker are tagged source='custom', otherwise 'builtin'.
  */
 export async function listGlobalSkills(
-  client: any,
+  client: SkillListObjects & SkillGetObject,
   bucket: string
 ): Promise<SkillEntry[]> {
   const names = await collectFirstLevelPrefixes(client, bucket, GLOBAL_SKILLS_PREFIX);

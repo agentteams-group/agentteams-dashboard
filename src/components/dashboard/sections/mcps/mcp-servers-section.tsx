@@ -68,10 +68,10 @@ export function McpServersSection() {
         ...prev,
         [server.name]: { success: result.success, message: result.message },
       }));
-    } catch (error: any) {
+    } catch (error) {
       setTestResults((prev) => ({
         ...prev,
-        [server.name]: { success: false, message: error.message || '测试失败' },
+        [server.name]: { success: false, message: error instanceof Error ? (error.message || '测试失败') : '测试失败' },
       }));
     } finally {
       setTestingServer(null);

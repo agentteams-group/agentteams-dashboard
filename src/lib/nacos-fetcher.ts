@@ -1,4 +1,5 @@
-import { getNacosConfig } from '@/lib/skill-center-config';
+import type { Client } from 'minio';
+import { getNacosConfig, type NacosConfig } from '@/lib/skill-center-config';
 import { SKILLS_BUCKET } from '@/lib/skill-center-types';
 import { unzipSync, zipSync } from 'fflate';
 
@@ -24,7 +25,7 @@ export interface NacosFetchDiagnostics {
 }
 
 export async function cacheSkillContent(
-  client: any,
+  client: Client,
   skillName: string,
   files: { relativePath: string; data: Uint8Array }[]
 ): Promise<void> {
@@ -42,7 +43,7 @@ export async function cacheSkillContent(
   }
 }
 
-async function deleteSkillCache(client: any, skillName: string): Promise<void> {
+async function deleteSkillCache(client: Client, skillName: string): Promise<void> {
   const prefix = `${skillName}/`;
   try {
     const objs: string[] = [];
@@ -148,7 +149,7 @@ function buildSingleSkillZip(
   return { zipBytes: zipSync(skillFiles), resolvedName };
 }
 
-export async function getNacosAccessToken(config: any): Promise<string> {
+export async function getNacosAccessToken(config: NacosConfig): Promise<string> {
   const protocol = config.protocol || 'http';
   const urlMatch = config.registryUrl.match(/^nacos:\/\/([^/]+)\/(.+)$/);
   if (!urlMatch) return '';
@@ -240,7 +241,7 @@ async function fetchNacosSkillZipByConsoleDownload(
 
 export async function fetchNacosSkillZip(
   skillName: string,
-  config?: any
+  config?: NacosConfig | null
 ): Promise<NacosZipResult> {
   if (!config) {
     config = await getNacosConfig();
