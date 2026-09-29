@@ -22,10 +22,10 @@
      task-board HITL intervention, chat replay). -->
 
 <p align="center">
-  <img src="docs/images/demo-overview.png" alt="Overview topology" width="85%" />
+  <img alt="Overview topology" width="85%" src="https://github.com/user-attachments/assets/5eeca690-0766-40a1-8d03-0ddaa1404c7d" />
 </p>
 <p align="center">
-  <img src="docs/images/demo-task-board.png" alt="Task board with HITL interventions" width="85%" />
+  <img alt="Task board with HITL interventions" width="85%" src="https://github.com/user-attachments/assets/e923d71c-b992-4174-8c14-be98afd95aef" />
 </p>
 <p align="center">
   <img src="docs/images/demo-chat.gif" alt="Matrix chat with runtime-aware rendering" width="85%" />
