@@ -14,7 +14,29 @@ interface State {
   error: Error | null;
 }
 
+const CHUNK_HEAL_KEY = 'agentteams-chunk-heal';
+
+/**
+ * Lazy-section chunks are content-addressed per build, so after a redeploy an
+ * already-open page requests .next chunks that the new container (or CDN
+ * cache) no longer serves. One automatic reload picks up the fresh page and
+ * its chunks; the sessionStorage guard caps self-heal at one attempt per
+ * browser session so a genuinely broken deployment degrades to the error
+ * card instead of an infinite refresh loop.
+ */
+function isChunkLoadError(error: Error | null): boolean {
+  if (!error) return false;
+  return (
+    error.name === 'ChunkLoadError' ||
+    /Failed to fetch dynamically imported module/i.test(error.message) ||
+    /Loading (chunk|CSS chunk) \S+ failed/i.test(error.message) ||
+    /error loading dynamically imported module/i.test(error.message)
+  );
+}
+
 export class SectionErrorBoundary extends Component<Props, State> {
+  private healScheduled = false;
+
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -22,6 +44,16 @@ export class SectionErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error): void {
+    if (this.healScheduled) return;
+    if (typeof window === 'undefined') return;
+    if (!isChunkLoadError(error)) return;
+    if (window.sessionStorage.getItem(CHUNK_HEAL_KEY)) return;
+    this.healScheduled = true;
+    window.sessionStorage.setItem(CHUNK_HEAL_KEY, '1');
+    window.setTimeout(() => window.location.reload(), 1500);
   }
 
   render() {

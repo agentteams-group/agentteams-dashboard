@@ -41,6 +41,7 @@ import { ThemeTab } from './settings/theme-tab';
 import { PluginsTab } from './settings/plugins-tab';
 import { BackendTab } from './settings/backend-tab';
 import { ClientConfigTab } from './settings/client-config-tab';
+import { UpdateTab } from './settings/update-tab';
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -157,7 +158,7 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="connection" className="w-full">
-          <TabsList className={`grid w-full ${isStateless ? 'grid-cols-6' : 'grid-cols-5'}`}>
+          <TabsList className={`grid w-full ${isStateless ? 'grid-cols-7' : 'grid-cols-6'}`}>
             <TabsTrigger value="connection">连接</TabsTrigger>
             {isStateless && (
               <TabsTrigger value="client">
@@ -181,7 +182,15 @@ export function SettingsDialog() {
               <Puzzle className="w-3.5 h-3.5 mr-1" />
               插件
             </TabsTrigger>
+            <TabsTrigger value="updates">
+              <History className="w-3.5 h-3.5 mr-1" />
+              更新
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="updates" className="py-4">
+            <UpdateTab />
+          </TabsContent>
 
           {isStateless && (
             <TabsContent value="client" className="py-4">
