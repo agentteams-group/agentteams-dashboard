@@ -10,6 +10,7 @@
     "lint:tone": "node scripts/ai-tone-scan.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run src/__tests__/integration",
     "test:watch": "vitest"

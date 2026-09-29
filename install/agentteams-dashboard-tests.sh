@@ -16,9 +16,15 @@ PASS=0
 FAIL=0
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_SCRIPT="${TESTS_DIR}/agentteams-install.sh"
+DASHBOARD_SCRIPT="${TESTS_DIR}/agentteams-dashboard.sh"
 
 if [ ! -f "${INSTALL_SCRIPT}" ]; then
     echo "ERROR: install script not found at ${INSTALL_SCRIPT}"
+    exit 1
+fi
+
+if [ ! -f "${DASHBOARD_SCRIPT}" ]; then
+    echo "ERROR: dashboard script not found at ${DASHBOARD_SCRIPT}"
     exit 1
 fi
 
@@ -836,6 +842,55 @@ else
     else
         fail "Exec quick-start: wrong image (got: $(echo "${_qs_result}" | grep RESULT_IMAGE))"
     fi
+fi
+
+# ---------- Test N: Storage credential detection chain (FS -> MINIO -> RUSTFS) ----------
+
+section "Test N: Storage credential detection chain (FS -> MINIO -> RUSTFS)"
+
+# 1) Chain membership: every credential field probes all three namespaces.
+chain_fields="BUCKET:AGENTTEAMS_FS_BUCKET,AGENTTEAMS_MINIO_BUCKET,RUSTFS_BUCKET ACCESS_KEY:AGENTTEAMS_FS_ACCESS_KEY,AGENTTEAMS_MINIO_USER,RUSTFS_ACCESS_KEY SECRET_KEY:AGENTTEAMS_FS_SECRET_KEY,AGENTTEAMS_MINIO_PASSWORD,RUSTFS_SECRET_KEY ENDPOINT:AGENTTEAMS_FS_ENDPOINT,AGENTTEAMS_MINIO_ENDPOINT,RUSTFS_ENDPOINT"
+for group in ${chain_fields}; do
+    field=$(echo "${group}" | cut -d: -f1)
+    vars=$(echo "${group}" | cut -d: -f2)
+    for var in ${vars//,/ }; do
+        if grep -q "${var}=" "${DASHBOARD_SCRIPT}"; then
+            pass "detection chain probes ${var}"
+        else
+            fail "detection chain missing ${var}"
+        fi
+    done
+done
+
+# 2) Fallback order: the RUSTFS_ line comes after the MINIO_ line per field.
+for pair in "AGENTTEAMS_MINIO_BUCKET:RUSTFS_BUCKET" "AGENTTEAMS_MINIO_USER:RUSTFS_ACCESS_KEY" "AGENTTEAMS_MINIO_PASSWORD:RUSTFS_SECRET_KEY" "AGENTTEAMS_MINIO_ENDPOINT:RUSTFS_ENDPOINT"; do
+    first=$(echo "${pair}" | cut -d: -f1)
+    second=$(echo "${pair}" | cut -d: -f2)
+    line_first=$(grep -n "${first}=" "${DASHBOARD_SCRIPT}" | head -1 | cut -d: -f1)
+    line_second=$(grep -n "${second}=" "${DASHBOARD_SCRIPT}" | head -1 | cut -d: -f1)
+    if [ -n "${line_first}" ] && [ -n "${line_second}" ] && [ "${line_second}" -gt "${line_first}" ]; then
+        pass "${second} falls back after ${first}"
+    else
+        fail "fallback order broken for ${first} -> ${second} (${line_first:-?} vs ${line_second:-?})"
+    fi
+done
+
+# 3) Functional check: feed a controller env sample carrying only RUSTFS_*
+#    values through the actual chain lines and verify they are picked up.
+env_out="RUSTFS_BUCKET=rustfs-bucket
+RUSTFS_ACCESS_KEY=rustfs-ak
+RUSTFS_SECRET_KEY=rustfs-sk
+RUSTFS_ENDPOINT=http://rustfs:9000"
+eval "$(grep -A2 'AGENTTEAMS_FS_BUCKET=\$(echo' "${DASHBOARD_SCRIPT}" | head -3)"
+eval "$(grep -A2 'AGENTTEAMS_FS_ACCESS_KEY=\$(echo' "${DASHBOARD_SCRIPT}" | head -3)"
+eval "$(grep -A2 'AGENTTEAMS_FS_SECRET_KEY=\$(echo' "${DASHBOARD_SCRIPT}" | head -3)"
+
+if [ "${AGENTTEAMS_FS_BUCKET}" = "rustfs-bucket" ] \
+    && [ "${AGENTTEAMS_FS_ACCESS_KEY}" = "rustfs-ak" ] \
+    && [ "${AGENTTEAMS_FS_SECRET_KEY}" = "rustfs-sk" ]; then
+    pass "RUSTFS_* sample resolves through the chain"
+else
+    fail "RUSTFS_* sample did not resolve (bucket=${AGENTTEAMS_FS_BUCKET:-?}, ak=${AGENTTEAMS_FS_ACCESS_KEY:+set}, sk=${AGENTTEAMS_FS_SECRET_KEY:+set})"
 fi
 
 # ---------- Summary ----------

@@ -323,18 +323,26 @@ detect_runtime_env() {
   local env_out
   env_out=$(${DOCKER_CMD} inspect "${ctrl_container}" --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}')
 
+  # Credential detection chain (A7/B-C1): AGENTTEAMS_FS_* is the canonical
+  # namespace, AGENTTEAMS_MINIO_* the long-standing alias, RUSTFS_* the
+  # fallback for controllers that switched storage backends without keeping
+  # the older exports (see tasklist B-C1 / AGENTTEAMS_PATCH.md).
   AGENTTEAMS_FS_BUCKET=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_FS_BUCKET=//p')
   [ -z "${AGENTTEAMS_FS_BUCKET}" ] && AGENTTEAMS_FS_BUCKET=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_MINIO_BUCKET=//p')
+  [ -z "${AGENTTEAMS_FS_BUCKET}" ] && AGENTTEAMS_FS_BUCKET=$(echo "${env_out}" | sed -n 's/^RUSTFS_BUCKET=//p')
 
   AGENTTEAMS_FS_ACCESS_KEY=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_FS_ACCESS_KEY=//p')
   [ -z "${AGENTTEAMS_FS_ACCESS_KEY}" ] && AGENTTEAMS_FS_ACCESS_KEY=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_MINIO_USER=//p')
+  [ -z "${AGENTTEAMS_FS_ACCESS_KEY}" ] && AGENTTEAMS_FS_ACCESS_KEY=$(echo "${env_out}" | sed -n 's/^RUSTFS_ACCESS_KEY=//p')
 
   AGENTTEAMS_FS_SECRET_KEY=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_FS_SECRET_KEY=//p')
   [ -z "${AGENTTEAMS_FS_SECRET_KEY}" ] && AGENTTEAMS_FS_SECRET_KEY=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_MINIO_PASSWORD=//p')
+  [ -z "${AGENTTEAMS_FS_SECRET_KEY}" ] && AGENTTEAMS_FS_SECRET_KEY=$(echo "${env_out}" | sed -n 's/^RUSTFS_SECRET_KEY=//p')
 
   local fs_endpoint
   fs_endpoint=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_FS_ENDPOINT=//p')
   [ -z "${fs_endpoint}" ] && fs_endpoint=$(echo "${env_out}" | sed -n 's/^AGENTTEAMS_MINIO_ENDPOINT=//p')
+  [ -z "${fs_endpoint}" ] && fs_endpoint=$(echo "${env_out}" | sed -n 's/^RUSTFS_ENDPOINT=//p')
   if [ -n "${fs_endpoint}" ]; then
     # Controller often advertises MinIO as 127.0.0.1, but Dashboard runs in a different container.
     AGENTTEAMS_FS_ENDPOINT=$(echo "${fs_endpoint}" | sed -e "s|127\\.0\\.0\\.1|${ctrl_container}|" -e "s|localhost|${ctrl_container}|")
@@ -390,7 +398,9 @@ detect_runtime_env() {
     warn "  To fix: upgrade AgentTeams to v1.2.0-beta.1+ or set AGENTTEAMS_AUTH_TOKEN manually."
   fi
   if [ -z "${AGENTTEAMS_FS_ACCESS_KEY}" ] || [ -z "${AGENTTEAMS_FS_SECRET_KEY}" ]; then
-    warn "Could not auto-detect MinIO credentials from ${ctrl_container}"
+    warn "Could not auto-detect storage credentials from ${ctrl_container}"
+    warn "  Detection chain tried: AGENTTEAMS_FS_* -> AGENTTEAMS_MINIO_* -> RUSTFS_*"
+    warn "  Set AGENTTEAMS_FS_ENDPOINT / AGENTTEAMS_FS_ACCESS_KEY / AGENTTEAMS_FS_SECRET_KEY manually to fix."
   fi
   if [ -z "${AGENTTEAMS_LLM_API_KEY}" ]; then
     warn "Could not auto-detect LLM API key from ${ctrl_container}"

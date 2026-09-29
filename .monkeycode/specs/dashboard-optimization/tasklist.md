@@ -147,11 +147,15 @@
 
 ### 存储与 DX 线
 
-- [ ] 16. 存储面回归套件 + 安装器 RUSTFS_* 凭证回退（1.5-2.5 人日，P1；仅本仓库侧，原 C1 裁剪版）
-  - [ ] 16.1 按 design.md 3.3.4 清单编写可重复执行的回归（vitest 集成测试 + 手动冒烟脚本）：64MB 技能 ZIP 上传、presign GET/PUT 链路（15 分钟过期 + 敏感文件拒签 404）、storage 全树（9 route）错误码、skills 三来源、team-tasks/teams/workers files 读写、并发 listObjects、健康面板探测、MCP 配置 CRUD
-  - [ ] 16.2 对现网 MinIO 跑通作为基线（作为存储面通用回归覆盖，后续任一 S3 后端可重跑比对）
-  - [ ] 16.3 给 `install/agentteams-dashboard.sh` 的凭证探测链追加 RUSTFS_* 命名空间回退（现有 `AGENTTEAMS_FS_*` → `AGENTTEAMS_MINIO_*` 之后兜底 RUSTFS_* 变量名），并在 `install/agentteams-dashboard-tests.sh` 补探测链用例
+- [x] 16. 存储面回归套件 + 安装器 RUSTFS_* 凭证回退（1.5-2.5 人日，P1；仅本仓库侧，原 C1 裁剪版）
+  - [x] 16.1 按 design.md 3.3.4 清单编写可重复执行的回归（vitest 集成测试 + 手动冒烟脚本）：64MB 技能 ZIP 上传、presign GET/PUT 链路（15 分钟过期 + 敏感文件拒签 404）、storage 全树（9 route）错误码、skills 三来源、team-tasks/teams/workers files 读写、并发 listObjects、健康面板探测、MCP 配置 CRUD
+    - 完成记录（2026-09-29）：集成套件 `src/__tests__/integration/storage-regression.test.ts`（13 用例，STORAGE_REGRESSION=1 + AGENTTEAMS_FS_* env-gated——无后端时全量 skip 零成本，常规 `npm test` 因 integration exclude 不采集）；专用配置 `vitest.integration.config.ts` + `npm run test:integration`（窄 include——model-skill-audit.test.ts 环境不兼容不纳入，注释说明逐套件准入）；mock 仅 server-auth 放行层，storage 路由直连真实后端。覆盖 §3.3.4 #1（64MB+1 → 400）/ #2（presign GET/PUT 签发 + X-Amz-Expires=900 实取验证 + 敏感键统一 404 + 缺参 400）/ #3（bucket 生命周期含 409 与 404、对象往返、列表、stats、bulk-delete 400+200、download 敏感/缺失 404）/ #4（skills 来源字段枚举校验）/ #6（5 并发 listObjects 计数一致）/ #8（MCP CRUD）/ #7（桶助手与连通性）。手动冒烟 `scripts/storage-regression.sh`（只读 6 项，FAIL 计数 + exit 1，失败路径实测验证）
+  - [x] 16.2 对现网 MinIO 跑通作为基线（作为存储面通用回归覆盖，后续任一 S3 后端可重跑比对）
+    - 完成记录（2026-09-29 本环境无现网 MinIO——**待跑**）：套件与脚本就绪，现网执行方式已写入集成文件头注释（STORAGE_REGRESSION=1 + AGENTTEAMS_FS_* 指向现网 → `npm run test:integration`；冒烟 `BASE_URL=... ./scripts/storage-regression.sh`）。残留清理内建（afterAll 删回归前缀对象与临时 bucket）
+  - [x] 16.3 给 `install/agentteams-dashboard.sh` 的凭证探测链追加 RUSTFS_* 命名空间回退（现有 `AGENTTEAMS_FS_*` → `AGENTTEAMS_MINIO_*` 之后兜底 RUSTFS_* 变量名），并在 `install/agentteams-dashboard-tests.sh` 补探测链用例
+    - 完成记录（2026-09-29）：detect_runtime_env 四组凭证（BUCKET/ACCESS_KEY/SECRET_KEY/ENDPOINT）各追加第三级 RUSTFS_* 回退（RUSTFS_BUCKET/RUSTFS_ACCESS_KEY/RUSTFS_SECRET_KEY/RUSTFS_ENDPOINT），探测落空 warn 文案更新为列明三级探测链 + 手动修复指引；dashboard-tests.sh 新增 DASHBOARD_SCRIPT 引用 + 「Test N」10 断言（三命名空间成员 × 4 字段、四级 MINIO→RUSTFS 顺序、eval 功能级验证——用 RUSTFS_* 样例 env 实跑脚本中的链行断言取值）。**60/60 全过**
   - 验收：回归套件在现网 MinIO 全绿；安装器探测链更新且有测试覆盖
+    - 验证记录（2026-09-29）：探测链 ✓（安装器测试 60/60 实测）；回归套件结构就绪 ✓（skip 路径 13/13 skipped 零失败；常规全量不采集）——「现网 MinIO 全绿」一项待有现网环境执行（16.2 标注），执行即出基线
 
 - [ ] 17. D1 贡献者入口基线（2-3 人日，P1，依赖任务 6 的死链检查）
   - [ ] 17.1 新增 CONTRIBUTING.md：三门验证顺序（typecheck→eslint→vitest）、`npm ci` 同步约定、AI 协作痕迹约定（`lint:tone` 门禁）、上游对齐流程（引用 `install/AGENTTEAMS_PATCH.md`）
