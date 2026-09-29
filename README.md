@@ -22,9 +22,6 @@
      task-board HITL intervention, chat replay). -->
 
 <p align="center">
-  <img alt="Overview topology" width="85%" src="https://github.com/user-attachments/assets/5eeca690-0766-40a1-8d03-0ddaa1404c7d" />
-</p>
-<p align="center">
   <img alt="Task board with HITL interventions" width="85%" src="https://github.com/user-attachments/assets/e923d71c-b992-4174-8c14-be98afd95aef" />
 </p>
 <p align="center">
