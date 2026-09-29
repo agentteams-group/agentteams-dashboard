@@ -68,7 +68,8 @@
   - 每文件验收：主体 <800 行；三门绿；对应 section 手动冒烟（知识库/聊天/项目看板/问天/图谱 3D）
 
 - [ ] 8. A6 lint 与 tsconfig 基线收紧（3-5 人日，三步独立可回滚，与 A5 协同；容量超限可顺延 P2 前段）
-  - [ ] 8.1 `eslint --fix` 清自动修复项（约 13 个 prefer-const 等），剩余手工
+  - [x] 8.1 `eslint --fix` 清自动修复项（约 13 个 prefer-const 等），剩余手工
+    - 完成记录（2026-09-29）：基线复测全量 6 警 0 错（任务书预估的 13 个 prefer-const 等已被 A5 拆分系列顺带清零）。--fix 自动清 4 处无用 eslint-disable 指令（overview-section/use-projects/use-persistent-state/use-view-mode——对应规则已 off 不再报问题），手工修复 --fix 残留的空行与 use-projects 断头注释（重新连句）。手工修 2 处 `@next/next/no-location-assign-relative-destination`：login-page.tsx `?setup=1` 与 backend-setup-page.tsx `/` 由 `window.location.assign` 改 `useRouter().push`（客户端事件处理器内的内部导航，Next 规则推荐方式，硬跳转改 SPA 导航）。验证：`eslint .` 0 错 0 警（= npm run lint）、tsc 0 错、全量 213 文件/2011 用例通过
   - [ ] 8.2 逐模块清理非测试源码 `: any`（39 处，小 PR 批次；拆哪个文件先清哪个）
   - [ ] 8.3 恢复 `@typescript-eslint/no-explicit-any` 为 error；评估恢复 react-hooks/set-state-in-effect 与 react-compiler；`tsconfig.json` `noImplicitAny: true`
   - 验收：`npm run lint` 0 警告；noImplicitAny:true 且 typecheck 绿；每步合并时三门全绿

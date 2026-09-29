@@ -373,9 +373,9 @@ export function useApiTaskBoard() {
       isRefetching: listQuery.isRefetching,
       refetch,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `board` is a
-    // pure projection of `projects` and `workflowQueries`; depending on
-    // them keeps the memo stable across renders where neither changed.
+    // `board` is a pure projection of `projects` and `workflowQueries`;
+    // depending on them keeps the memo stable across renders where neither
+    // changed.
     [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, refetch]
   );
 }

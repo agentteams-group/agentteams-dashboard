@@ -68,7 +68,6 @@ function useRefreshCountdown(intervalMs: number) {
 
   useEffect(() => {
     let startTime = Date.now();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCountdown(Math.ceil(intervalMs / 1000));
     const tick = () => {
       const elapsed = Date.now() - startTime;

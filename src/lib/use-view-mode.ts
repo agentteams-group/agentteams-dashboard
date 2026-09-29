@@ -34,7 +34,6 @@ export function useViewMode(initial: ViewMode = 'card', storageKey?: string): Us
     const stored = readStoredMode(storageKey);
     // Reading localStorage must happen post-mount (SSR renders the default);
     // applying the stored preference is exactly the effect's job.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored && stored !== initial) setViewMode(stored);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);

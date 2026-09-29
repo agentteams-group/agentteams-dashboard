@@ -12,6 +12,7 @@
 // appears and this screen can never be reached again from a logged-out
 // browser (level-3 session updates go through the settings dialog, F1b).
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ type TestState =
 const EMPTY_TEST: TestState = { status: 'idle' };
 
 export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () => void; reconfigure?: boolean }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addrs, setAddrs] = useState<Record<BackendName, { internal: string; external: string }>>(
@@ -343,7 +345,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           {reconfigure && (
             <button
               type="button"
-              onClick={() => window.location.assign('/')}
+              onClick={() => router.push('/')}
               className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               ← 返回登录页

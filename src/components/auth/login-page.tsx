@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { Lock, LogIn, RefreshCw, AlertCircle } from 'lucide-react';
@@ -15,6 +16,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPageProps) {
+  const router = useRouter();
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
@@ -177,7 +179,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
           <div className="pt-1 text-center">
             <button
               type="button"
-              onClick={() => window.location.assign('?setup=1')}
+              onClick={() => router.push('?setup=1')}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               无法登录？后端配置（地址 / 首启）

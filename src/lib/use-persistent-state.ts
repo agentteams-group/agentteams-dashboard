@@ -50,7 +50,6 @@ export function usePersistentState<T>(
         const parsed: unknown = JSON.parse(raw);
         // Post-mount restore (use-view-mode pattern): one bounded setState,
         // validation-guarded, no-op when the stored value is invalid.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (validate(parsed)) setValue(parsed as T);
       }
     } catch {
