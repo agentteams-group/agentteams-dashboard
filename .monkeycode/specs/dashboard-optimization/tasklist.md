@@ -182,8 +182,7 @@
 ## 阶段三：P2（第 7-12 周）
 
 - [ ] 19. A9 依赖大版本升级批次（每项一个 PR，依赖 A1；eslint 10 / TS 7 工具链大版本放最后）
-  - 候选：eslint 9→10、typescript 5.9.3→7.0.2、vitest 4.1.10→5.0.2、uuid 11→14、lucide-react 0.525→1.48、recharts 3.8.1→3.10.1（同步放开精确锁）、@a2ui 0.10→0.11
-  - 验收：每项升级后三门全绿 + 关键页面手动冒烟；无遗留精确锁版本
+  - 进度记录（2026-09-29）：**低风险 caret 补丁批完成**——`npm update`（caret 范围内 Wanted 全追平）：next 16.3.6→16.3.7、eslint-config-next 16.3.7、@tanstack/react-query 5.104.0、fast-check 4.10.2、framer-motion 13.4.6、react-hook-form 7.89.0、sonner 2.0.8、tailwind-merge 3.7.0、@a2ui/web_core 0.10.7、@vitest/coverage-v8 4.1.11 等（package.json 语义范围无变化、lock 重算 2268 行）。三门全绿（tsc 0 错、eslint 0/0、vitest 2088 用例）。**大版本批次待逐项 PR**（每项需独立分支 + 真机关键页面冒烟，本环境冒烟受限）：eslint 9→10.11、vitest 4→5.0.2（含 coverage-v8）、lucide-react 0.525→1.48、@a2ui 0.10→0.12、three 0.185→0.186、recharts 精确锁放开（3.8→3.10）、typescript 5.9→7.0（放最后）——升级顺序建议从 three/@types/three（KB 3D 独立面）开始至 typescript 收尾，每项验收同任务书
 - [x] 20. B6 外部 coding agent runtime 接入评估（Claude Code / Codex CLI / opencode，评估 2-3 人日，不承诺实现）
   - 完成记录（2026-09-29）：评估报告 `docs/external-runtime-integration-assessment.md`（INDEX 登记）。①接入面 = B4 协议适配器（外部事件流 → org.agentteams.run v1 块，Dashboard 零改动，未知版本回退保证增量安全）；②工作量归属：上游每 runtime 3-8 人日（CRD 枚举/generator/channel 为主），Dashboard 每 runtime 0.5-1 人日机械扩展（维护清单即路径）；③轻量替代路径 = 外部输出经 A2UI 标记投递进 Matrix（成本 ≈0，验证价值后反推立项必要性）；④计费合规实读官方文档核实：**「2026-06-15 独立积分计费」未获证实**，可证实口径 = bare 模式强制 ANTHROPIC_API_KEY（禁共享订阅，明确禁止第三方提供 claude.ai 登录）、total_cost_usd 客户端估算可观测、品牌条款（禁用「Claude Code」命名）。推荐排序：opencode（开源无合规项，首验）→ Claude Code（能力最强但三重约束）→ Codex CLI（观察）→ 轻量路径随时可做；立项三判据已列。验收「若立项至少一个 runtime demo」——评估结论为暂不立项（轻量路径先行），不触发 demo 义务
 - [x] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
