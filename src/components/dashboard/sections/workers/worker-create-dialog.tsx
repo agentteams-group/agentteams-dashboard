@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useMcpCatalog, trustedCatalogServerNames } from '@/hooks/use-mcp-catalog';
 import {
   Select,
   SelectContent,
@@ -71,6 +72,10 @@ export function WorkerCreateDialog({
   const modelCandidates = (modelOptions ?? []).map((option) => option.alias);
   const modelVerdict = validateModelValue(value.model ?? '', modelCandidates);
   const [confirmForceWrite, setConfirmForceWrite] = useState(false);
+  // B7 21.1: catalog 上标记 trusted 的 MCP server 在新建 Worker 时默认勾选
+  //（操作员可手动取消）；catalog 不可用（旧 Controller 404）时退化为无默认。
+  const mcpCatalog = useMcpCatalog();
+  const defaultMcpNames = trustedCatalogServerNames(mcpCatalog);
   // 重开弹窗时重置强写确认（React「render 时按 prop 重置 state」官方模式，
   // 不在 effect 里同步 setState——避免级联渲染告警）。
   const [lastOpen, setLastOpen] = useState(open);
@@ -278,6 +283,7 @@ export function WorkerCreateDialog({
             <div className="min-w-0 w-full overflow-hidden">
               <McpSelector
                 value={value.mcpServers || []}
+                defaultSelectedNames={defaultMcpNames}
                 onChange={(mcpServers) =>
                   onChange({ ...value, mcpServers: mcpServers.length ? mcpServers : undefined })
                 }

@@ -25,9 +25,16 @@ export interface SelectedMcpServer {
 interface McpSelectorProps {
   value: SelectedMcpServer[];
   onChange: (_mcps: SelectedMcpServer[]) => void;
+  /**
+   * Catalog server names pre-checked when the picker opens with an empty
+   * selection (B7 21.1: new Worker creation defaults to trusted catalog
+   * servers). Worker edit dialogs omit this — editing never silently
+   * changes the wiring.
+   */
+  defaultSelectedNames?: string[];
 }
 
-export function McpSelector({ value, onChange }: McpSelectorProps) {
+export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelectorProps) {
   const { data: servers = [] } = useMcpServers();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -44,7 +51,17 @@ export function McpSelector({ value, onChange }: McpSelectorProps) {
 
   const handleOpen = (isOpen: boolean) => {
     if (isOpen) {
-      setDraft([...value]);
+      // B7 21.1: on a fresh selection, seed the draft with the trusted
+      // catalog names so a new Worker wires to them by default. Explicitly
+      // selected entries (value) always win over the defaults.
+      if (value.length === 0 && defaultSelectedNames && defaultSelectedNames.length > 0) {
+        const defaults = defaultSelectedNames
+          .map((name) => servers.find((s) => s.name === name))
+          .filter((s): s is McpServerConfig => Boolean(s));
+        setDraft([...value, ...defaults]);
+      } else {
+        setDraft([...value]);
+      }
       setSearch('');
     }
     setOpen(isOpen);

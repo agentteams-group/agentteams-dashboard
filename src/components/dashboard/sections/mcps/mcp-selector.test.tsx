@@ -18,3 +18,32 @@ it('projects the Controller transport without copying upstream credentials', () 
  expect(change).toHaveBeenCalledWith([{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]);
  expect(screen.queryByText('upstream-secret')).toBeNull();
 });
+
+it('B7 21.1: defaultSelectedNames pre-seed the draft on first open', () => {
+ const change = vi.fn(); render(<McpSelector value={[]} onChange={change} defaultSelectedNames={['github']} />);
+ fireEvent.click(screen.getByRole('button', { name: /github.*streaminghttp/ }));
+ fireEvent.click(screen.getByRole('button', { name: '确定 (1 个)' }));
+ expect(change).toHaveBeenCalledWith([{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]);
+});
+
+it('B7 21.1: unknown default names are ignored', () => {
+ const change = vi.fn(); render(<McpSelector value={[]} onChange={change} defaultSelectedNames={['not-in-registry']} />);
+ fireEvent.click(screen.getByRole('button', { name: /选择 MCP 服务器/ }));
+ fireEvent.click(screen.getByRole('button', { name: '确定 (0 个)' }));
+ expect(change).toHaveBeenCalledWith([]);
+});
+
+it('B7 21.1: an explicit selection is not duplicated by the defaults', () => {
+ const change = vi.fn(); render(
+   <McpSelector
+     value={[{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]}
+     onChange={change}
+     defaultSelectedNames={['github']}
+   />,
+ );
+ // 已选 chips 只有一份 github，且它被排除出候选列表（filtered 按 value 排除），
+ // 因此 defaultSelectedNames 的叠加路径无从触发重复。
+ expect(screen.getAllByText('github').length).toBe(1);
+ expect(screen.getByText('暂无可用 MCP 服务器，请先在技能中心配置')).toBeTruthy();
+ expect(change).not.toHaveBeenCalled();
+});

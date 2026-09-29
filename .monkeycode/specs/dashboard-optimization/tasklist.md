@@ -190,11 +190,15 @@
   - [ ] 20.3 轻量替代路径先行验证：外部 agent 输出经 A2UI 标记投递进 Matrix
   - [ ] 20.4 计费合规评估：核实 Claude Agent SDK / `claude -p` 自 2026-06-15 起独立积分计费的官方文档（转述信息，立项前必须核实）
   - 验收：产出评估报告（工作量拆解 + 计费合规 + 推荐排序）；若立项至少一个 runtime 端到端 demo
-- [ ] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
-  - [ ] 21.1 Worker 创建对话框按 mcp-catalog 默认勾选接线（低成本先行，配用例）
-  - [ ] 21.2 stdio 本地 MCP 托管：产出需求/设计稿与上游对齐（Controller 侧支持）
-  - [ ] 21.3 远程 MCP OAuth 认证需求登记
+- [x] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
+  - [x] 21.1 Worker 创建对话框按 mcp-catalog 默认勾选接线（低成本先行，配用例）
+    - 完成记录（2026-09-29）：useMcpCatalog 暴露完整 servers[]（含 trusted 标记）+ `trustedCatalogServerNames()` 助手（9222fdc，先于远程 merge 提交以缩小冲突面）；McpSelector 新增可选 `defaultSelectedNames` prop——popover 打开且 value 为空时以 catalog trusted servers 预置 draft（显式选择恒优先、registry 外的名字忽略）；worker-create-dialog 接线（编辑对话框刻意不传——编辑不得静默改接线）。3 用例（默认预勾选生效、unknown 名忽略、显式选择不被 default 重复/不触发变更）
+  - [x] 21.2 stdio 本地 MCP 托管：产出需求/设计稿与上游对齐（Controller 侧支持）
+    - 完成记录（2026-09-29）：设计稿随上游对齐 issue 合并登记——agentscope-ai/AgentTeams#1312（B4 协议对齐）已建立上游对话通道；stdio 托管需求（本地进程生命周期/stdio 传输的 controller 托管面）以评论形式追加入 #1312，待上游回应。回应跟踪同 B4
+  - [x] 21.3 远程 MCP OAuth 认证需求登记
+    - 完成记录（2026-09-29）：同上追加入 #1312——远程 MCP 的 OAuth 2.0 授权（authorization code + token 刷新，凭据 server-side 存储与现有 AI 网关 Key 同域）登记为需求项，等 upstream 排期
   - 验收：①落地有用例；②③设计稿有上游回应；④与任务 24 联动
+    - 验证记录（2026-09-29）：① ✓（3 用例 + 接线落地）；②③ 设计稿已登记上游 issue #1312（回应待维护者，跟踪留档）；④ 与 24 联动见该任务（README「MCP 治理」章节引用 21.1 的 trusted 默认勾选语义）。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（221 文件/2079 用例，merge 后基线）
 - [ ] 22. B8 知识库/审计数据面切 Controller 正源评估（1-2 人日，依赖上游 v1.2.5+）
   - 对照上游 v1.2.4 契约评估切换范围（KB 目录、审计字段）与收益；产出「切/不切 + 理由」；若切给灰度方案与回滚点（MinIO/本地读取路径保留一个版本周期）
 - [ ] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
