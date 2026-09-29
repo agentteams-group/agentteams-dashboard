@@ -61,11 +61,28 @@ function resolveInitialSection(): string {
   return 'chat';
 }
 
+// Initial resolution must run once per app lifetime. TasksSection (and any
+// future caller) remounts useActiveSection whenever its section mounts; a
+// remount re-reads the URL hash, which still holds the PREVIOUS section in
+// the same-commit path (chat→tasks bypasses AnimatePresence, so the section
+// component mounts before the shell's hash-sync effect writes '#tasks').
+// That re-read clobbered the fresh 'tasks' selection straight back to 'chat'
+// — the operator-visible "click 任务看板 first time does nothing" bug.
+let initialResolutionDone = false;
+
+/** Test seam: reset the once-guard so each test gets a fresh resolution. */
+export function resetInitialResolutionForTests(): void {
+  initialResolutionDone = false;
+}
+
 export function useActiveSection() {
   const activeSection = useSectionStore((s) => s.activeSection);
 
   // Resolve the initial section once on mount (hash / localStorage / default).
+  // Subsequent mounts (TasksSection etc.) keep the live store value.
   useEffect(() => {
+    if (initialResolutionDone) return;
+    initialResolutionDone = true;
     useSectionStore.getState().setActiveSection(resolveInitialSection());
   }, []);
 

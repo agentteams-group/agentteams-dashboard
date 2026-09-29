@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore, useState, useCallback } from 'react';
+import { useSyncExternalStore, useState, useCallback, useEffect, useRef } from 'react';
 import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
@@ -275,6 +275,18 @@ export function ChatRoomSidebar({
   );
   const [isResizing, setIsResizing] = useState(false);
 
+  // Detach fn for an in-flight drag: if the sidebar unmounts mid-drag
+  // (operator switches section), the window listeners must go with it
+  // instead of leaking until a pointerup that may never arrive.
+  const detachResizeRef = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      detachResizeRef.current?.();
+      detachResizeRef.current = null;
+    },
+    []
+  );
+
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -284,11 +296,13 @@ export function ChatRoomSidebar({
       publishSidebarWidth(Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, startW + ev.clientX - startX)));
     };
     const onUp = () => {
+      detachResizeRef.current = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       setIsResizing(false);
       persistSidebarWidth(readSidebarWidthStore());
     };
+    detachResizeRef.current = onUp;
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };

@@ -1,9 +1,10 @@
 'use client';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
-import { useActiveSection } from './use-active-section';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
+import { useSectionStore } from '@/lib/section-store';
 
 function setHash(hash: string) {
   Object.defineProperty(window, 'location', {
@@ -14,8 +15,15 @@ function setHash(hash: string) {
 
 describe('useActiveSection', () => {
   beforeEach(() => {
+    resetInitialResolutionForTests();
+    useSectionStore.setState({ activeSection: 'overview' });
     localStorage.clear();
   });
+
+  // Unmount hooks between tests: a lingering hook's hash-sync effect
+  // re-fires on the next test's beforeEach setState and clobbers the
+  // location mock (writes an unprefixed section id), poisoning resolution.
+  afterEach(cleanup);
 
   afterEach(() => {
     localStorage.clear();
@@ -74,6 +82,30 @@ describe('useActiveSection', () => {
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('tasks');
       expect(window.location.hash).toBe('#tasks');
+    });
+  });
+
+  describe('remount keeps the live selection', () => {
+    it('does not roll the selection back when the hook remounts (chat→tasks revert bug)', () => {
+      // Root cause of "click 任务看板 first time does nothing": TasksSection
+      // remounts useActiveSection in the same commit as the selection change;
+      // the old mount effect re-read the still-stale '#chat' hash and clobbered
+      // the fresh 'tasks' selection back. The once-guard keeps the live value.
+      setHash('#chat');
+      const first = renderHook(() => useActiveSection());
+      expect(first.result.current.activeSection).toBe('chat');
+      act(() => {
+        first.result.current.setActiveSection('tasks');
+      });
+      expect(useSectionStore.getState().activeSection).toBe('tasks');
+
+      // Simulate the same-commit window: the shell's hash-sync effect has
+      // yet to observe the change, so the URL hash still says '#chat'.
+      setHash('#chat');
+
+      const second = renderHook(() => useActiveSection());
+      expect(second.result.current.activeSection).toBe('tasks');
+      expect(useSectionStore.getState().activeSection).toBe('tasks');
     });
   });
 
