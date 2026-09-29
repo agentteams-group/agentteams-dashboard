@@ -209,13 +209,18 @@ async function candidateFiles(activePath: string, to: number): Promise<string[]>
   }
   const archives = entries.filter((name) => name.startsWith(`${stem}.`) && name.endsWith(ext));
   archives.sort();
-  const ordered = [...archives.filter((n) => n !== base), base];
+  // Newest-first across files: the active file holds the newest events,
+  // then rotated archives from newest to oldest. Within each file lines are
+  // still read back-to-front, and the `from` early-stop keeps skipping the
+  // progressively older archives.
+  const ordered = [base, ...archives.filter((n) => n !== base).reverse()];
   // Stop reading archives older than `to`. Each archive's date is encoded in
   // the filename; reuse a 00:00 UTC timestamp to compare.
   const cutoff = new Date(to);
   const filtered = ordered.filter((name) => {
     const match = name.match(/\.(\d{4}-\d{2}-\d{2})/);
     if (!match) return true;
+    if (!Number.isFinite(cutoff.getTime())) return true;
     return new Date(`${match[1]}T23:59:59.999Z`).getTime() >= cutoff.getTime() - 24 * 3600 * 1000;
   });
   return filtered.map((name) => path.join(dir, name));

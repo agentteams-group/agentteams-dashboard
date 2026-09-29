@@ -35,7 +35,27 @@ export default defineConfig({
         'src/plugins/**',
         'src/components/theme/**',
         'src/components/plugins/**',
+        // A8: security-critical modules (RBAC denials, audit trail, storage
+        // credentials, homeserver SSRF guard, skill storage safety).
+        'src/lib/rbac-engine.ts',
+        'src/lib/audit-log.ts',
+        'src/lib/minio-client.ts',
+        'src/lib/homeserver-allowlist.ts',
+        'src/lib/skill-center-storage.ts',
+        'src/lib/skill-package.ts',
       ],
+      // A8: per-module floors pinned at the current baseline (2026-09-29).
+      // Progressive tightening: skill-center-storage is dragged down by
+      // syncNacosSkills (needs a live Nacos server); raise it once that flow
+      // gets a fixture-driven test, and ratchet the others upward from here.
+      thresholds: {
+        'src/lib/rbac-engine.ts': { lines: 100, branches: 92 },
+        'src/lib/minio-client.ts': { lines: 100 },
+        'src/lib/homeserver-allowlist.ts': { lines: 96, branches: 96 },
+        'src/lib/audit-log.ts': { lines: 89 },
+        'src/lib/skill-package.ts': { lines: 88 },
+        'src/lib/skill-center-storage.ts': { lines: 39 },
+      },
     },
   },
 });

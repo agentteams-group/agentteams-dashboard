@@ -108,6 +108,62 @@ describe('rotation', () => {
     const active = await fs.readFile(logPath, 'utf8');
     expect(active.split('\n').filter(Boolean)).toHaveLength(1);
   });
+
+  it('rotated archives remain queryable through listAuditEvents', async () => {
+    const old = await appendAuditEvent({ entity_type: 'worker', entity_name: 'archived', action: 'create' });
+    // Append an oversized line (keeps the archived record) to force rotation
+    // on the next append.
+    await fs.appendFile(logPath, 'x'.repeat(11 * 1024 * 1024) + '\n');
+    const fresh = await appendAuditEvent({ entity_type: 'worker', entity_name: 'active', action: 'create' });
+
+    const events = await listAuditEvents();
+    const names = events.map((e) => e.entity_name);
+    expect(names).toContain('archived');
+    expect(names).toContain('active');
+    // Newest-first ordering survives the archive boundary.
+    expect(names.indexOf('active')).toBeLessThan(names.indexOf('archived'));
+    expect(events[0].id).toBe(fresh?.id);
+    expect(events[events.length - 1].id).toBe(old?.id);
+  });
+
+  it('prunes oldest archives beyond MAX_RETAINED_FILES (30)', async () => {
+    const dir = path.dirname(logPath);
+    const base = path.basename(logPath);
+    // Pre-seed 31 archives with distinct dates (sortable names), then append
+    // past the size limit so rotate() runs pruneArchives.
+    for (let i = 1; i <= 31; i++) {
+      const date = new Date(Date.UTC(2026, 0, i)).toISOString().slice(0, 10);
+      await fs.writeFile(path.join(dir, base.replace('.jsonl', `.${date}.jsonl`)), 'seed\n');
+    }
+    await fs.writeFile(logPath, 'x'.repeat(11 * 1024 * 1024));
+    await appendAuditEvent({ entity_type: 'worker', entity_name: 'w1', action: 'create' });
+
+    const entries = (await fs.readdir(dir)).filter(
+      (n) => n.startsWith('audit.log.') && n.endsWith('.jsonl') && n !== base,
+    );
+    expect(entries.length).toBeLessThanOrEqual(30);
+    // The newest archive (latest date) must have survived.
+    expect(entries.some((n) => n.includes('2026-01-31'))).toBe(true);
+  });
+
+  it('skips corrupt lines instead of failing the query', async () => {
+    await appendAuditEvent({ entity_type: 'worker', entity_name: 'good', action: 'create' });
+    await fs.appendFile(logPath, 'this is not json\n');
+    await appendAuditEvent({ entity_type: 'worker', entity_name: 'good2', action: 'create' });
+
+    const events = await listAuditEvents();
+    expect(events.map((e) => e.entity_name)).toEqual(['good2', 'good']);
+  });
+
+  it('filters by actor (case-sensitive exact match)', async () => {
+    await appendAuditEvent({ actor: 'alice', entity_type: 'worker', entity_name: 'w1', action: 'create' });
+    await appendAuditEvent({ actor: 'bob', entity_type: 'worker', entity_name: 'w2', action: 'create' });
+    await appendAuditEvent({ actor: 'Bob', entity_type: 'worker', entity_name: 'w3', action: 'create' });
+
+    const events = await listAuditEvents({ actor: 'bob' });
+    expect(events).toHaveLength(1);
+    expect(events[0].entity_name).toBe('w2');
+  });
 });
 
 afterEach(async () => {

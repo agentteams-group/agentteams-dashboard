@@ -117,4 +117,56 @@ describe('validateHomeserverUrl', () => {
       }
     }
   });
+
+  it('never allows the cloud metadata range, even with allowPrivateNetwork', () => {
+    expect(() =>
+      validateHomeserverUrl('https://169.254.169.254', { allowPrivateNetwork: true })
+    ).toThrow(/cloud metadata/);
+    expect(() =>
+      validateHomeserverUrl('https://169.254.1.1', { allowPrivateNetwork: true })
+    ).toThrow(/cloud metadata/);
+  });
+
+  it('rejects IPv6 unique-local (ULA) and IPv4-mapped private ranges', () => {
+    expect(() => validateHomeserverUrl('https://[fd00::1]')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://[fc00::abcd]')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://[::]')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://[::ffff:10.0.0.1]')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://[::ffff:192.168.1.1]')).toThrow(HomeserverValidationError);
+  });
+
+  it('rejects reserved and multicast IPv4 ranges', () => {
+    expect(() => validateHomeserverUrl('https://0.0.0.0')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://224.0.0.1')).toThrow(HomeserverValidationError);
+    expect(() => validateHomeserverUrl('https://240.0.0.1')).toThrow(HomeserverValidationError);
+  });
+
+  it('normalizes hostname case and strips IPv6 brackets before checks', () => {
+    // Uppercase allowlisted host still matches (URL hostname lowercased).
+    expect(validateHomeserverUrl('https://MATRIX.ORG').hostname).toBe('matrix.org');
+    // Bracketed IPv6 loopback hits the loopback rejection after stripping.
+    expect(() => validateHomeserverUrl('https://[::1]:8008')).toThrow(HomeserverValidationError);
+  });
+
+  it('env allowlist entries are trimmed and lowercased', () => {
+    process.env.MATRIX_HOMESERVER_ALLOWLIST = '  Matrix.Org , EXAMPLE.com  ';
+    try {
+      expect(validateHomeserverUrl('https://matrix.org').hostname).toBe('matrix.org');
+      expect(validateHomeserverUrl('https://example.com').hostname).toBe('example.com');
+      expect(() => validateHomeserverUrl('https://other.example')).toThrow(HomeserverValidationError);
+    } finally {
+      process.env.MATRIX_HOMESERVER_ALLOWLIST = 'matrix.org,example.com';
+    }
+  });
+
+  it('an allowlisted host bypasses blocked-suffix checks (explicit trust)', () => {
+    // '.local' is in the default blocked suffixes, but an explicit allowlist
+    // entry is trusted before those checks run.
+    process.env.MATRIX_HOMESERVER_ALLOWLIST = 'matrix.org,example.com,my.matrix.local';
+    try {
+      expect(validateHomeserverUrl('https://my.matrix.local').hostname).toBe('my.matrix.local');
+    } finally {
+      process.env.MATRIX_HOMESERVER_ALLOWLIST = 'matrix.org,example.com';
+    }
+  });
 });

@@ -87,10 +87,13 @@
   - 验收：Windows cmd 与 Linux 下 `npm run dev` / `npm run start` 均可直接运行；新人按 README 一次跑通三门
     - 验证记录（2026-09-29）：Linux 侧 dev/start/build 全链路实测通过（见 9.1）；三脚本为纯 node + 相对路径 + process.execPath，无 shell 语法、env 前缀、tee、cp 依赖，Windows cmd 可直接运行（Windows 真机冒烟待用户侧补验）。三门：eslint 0 错 0 警、tsc 0 错、全量 213 文件/2011 用例通过。插曲：本机首次跑真实 dev/start 后 instrumentation 自动生成 /data/.../.session-secret，导致 3 个 fail-closed 用例（无 secret 必须抛错）失败——已移除残留文件并复跑确认全绿，属环境残留非代码回归
 
-- [ ] 10. A8 覆盖率范围扩大到安全关键模块（2-4 人日，渐进；容量超限可顺延 P2 前段）
-  - [ ] 10.1 补关键路径单测：rbac-engine（deny 优先语义）、audit-log（轮转）、minio-client、skill-center-storage（bucket 前缀与敏感文件判断）、homeserver-allowlist
-  - [ ] 10.2 上述模块渐进加入 `vitest.config.ts:31-38` coverage include，阈值逐步抬升
+- [x] 10. A8 覆盖率范围扩大到安全关键模块（2-4 人日，渐进；容量超限可顺延 P2 前段）
+  - [x] 10.1 补关键路径单测：rbac-engine（deny 优先语义）、audit-log（轮转）、minio-client、skill-center-storage（bucket 前缀与敏感文件判断）、homeserver-allowlist
+    - 完成记录（2026-09-29）：新增 rbac-engine.test.ts（23 用例：deny 优先/先匹配先胜、等级表三档语义、未知等级 fail-closed、global/类型/名字资源匹配、team/worker scoping 兜底、getAccessSummary）与 minio-client.test.ts（12 用例：端点解析 http/https/默认端口、F1 后端优先于遗留 env、localhost→controller host 回退及其 localhost 豁免、region 默认、bucket 前缀优先级、createMinioClient 无配置 fail-closed，pickBackendUrl 边界 mock）。既有三测试文件补缺口：audit-log +5（归档可查询、31 归档 prune 至 30、损坏行跳过、actor 过滤）并顺带修复两个源码缺陷——candidateFiles 对默认查询（to=Number.MAX_SAFE_INTEGER）产生无效日期比较导致**归档永远不被查询**（NaN 守卫修复）、跨文件遍历顺序归档在前导致**输出 oldest-first 违背 newest-first 文档语义**（ordered 改活动文件最前+归档新→旧，早停语义保持）；homeserver-allowlist +5（元数据段连 allowPrivateNetwork 也不可豁免、IPv6 ULA/mapped/`::`、保留与组播段、大小写与 IPv6 括号归一、env allowlist 归一、allowlist 显式信任绕过 blocked suffix）；skill-center-storage +4（canonical bucket+skills/ 前缀断言、元数据 save/get 往返、缺失/损坏对象返回 null、listSkills 名字校验过滤穿越与非法名）
+  - [x] 10.2 上述模块渐进加入 `vitest.config.ts:31-38` coverage include，阈值逐步抬升
+    - 完成记录（2026-09-29）：include 新增六模块（含 skill-package——Zip Slip 防护所在，skill-center-storage 的安全依赖）；基线（lines）：rbac-engine 100%、minio-client 100%、homeserver-allowlist 96.5%、audit-log 89.4%、skill-package 88.2%、skill-center-storage 39.5%（syncNacosSkills 需真实 Nacos 交互 ~175 行未测，为抬升首要目标）。vitest 4 per-glob thresholds 按当前基线钉地板（防回退），注释写明渐进抬升路径（skill-center-storage 出 fixture 后先抬、其余棘轮上行）。全量 coverage 运行 exit 0（阈值全过）
   - 验收：coverage 报告含上述模块；新增单测全绿；全量测试耗时增幅 <10%
+    - 验证记录（2026-09-29）：coverage 报告含全部六模块（数字见 10.2）；全量 215 文件/2060 用例全过（净增 2 文件/49 用例）；全量 vitest 的 tests 执行段 40.82s，处于任务前多次运行区间（39-59s）内，无实质增幅（Duration 总长的 ±20s 波动为环境噪声）。三门：eslint 0 错 0 警、tsc 0 错（coverage 配置在 tsc 范围内）、vitest 全量绿
 
 ### 上游线
 
