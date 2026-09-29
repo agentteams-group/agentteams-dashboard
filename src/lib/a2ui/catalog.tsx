@@ -3,7 +3,6 @@
 import { z } from 'zod';
 import {
   Catalog,
-  type ComponentApi,
 } from '@a2ui/web_core/v0_9';
 import {
   basicCatalog,
@@ -32,7 +31,7 @@ import rehypeHighlight from 'rehype-highlight';
 // The single `as` assertion bridges the package-level Zod type mismatch while
 // keeping the api shape typed (no explicit any).
 
-type AnyComponentApi = ComponentApi;
+type AnyComponentApi = ReactComponentImplementation;
 
 function makeApi(name: string, schema: z.ZodTypeAny): AnyComponentApi {
   return { name, schema } as unknown as AnyComponentApi;
@@ -337,6 +336,7 @@ const StatusBadge = createComponentImplementation(
 
 export const agentteamsChatCatalog = new Catalog<ReactComponentImplementation>(
   'agentteams-chat',
+  'v0.9',
   [
     ...basicCatalog.components.values(),
     ThinkingBlock,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { A2uiSurface } from '@a2ui/react/v0_9';
+import { A2uiSurface, type ReactComponentImplementation } from '@a2ui/react/v0_9';
 import { MessageProcessor, type A2uiMessage } from '@a2ui/web_core/v0_9';
 import { agentteamsChatCatalog } from '@/lib/a2ui/catalog';
 import { AlertTriangle } from 'lucide-react';
@@ -16,7 +16,7 @@ export function A2uiMessage({ messages }: A2uiMessageProps) {
   // malformed one must never crash the message list — degrade to a notice.
   const { surfaces, failed } = useMemo(() => {
     try {
-      const processor = new MessageProcessor([agentteamsChatCatalog]);
+      const processor = new MessageProcessor<ReactComponentImplementation>([agentteamsChatCatalog]);
       processor.processMessages(messages);
       return {
         surfaces: Array.from(processor.model.surfacesMap.values()),
