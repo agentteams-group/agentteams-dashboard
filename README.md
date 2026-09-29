@@ -101,6 +101,11 @@ One-click install from the skill/MCP catalog and the governance story above make
 
 ### Install as an AgentTeams component (recommended)
 
+<!-- TODO(record): 30-second install GIF placeholder - see docs/images/README.md. -->
+<p align="center">
+  <img src="docs/images/demo-install.gif" alt="30-second install" width="85%" />
+</p>
+
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer as an optional step in `agentteams-install.sh` (merged upstream via [PR #1075](https://github.com/agentscope-ai/AgentTeams/pull/1075)) — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager. Further upstream changes are contributed through pull requests to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
 - **Current Dashboard release**: `v1.2.4.9` (release tag). The app version source of truth is `version` in `package.json` (`1.2.4.9`); release tags use a four-segment variant (`v1.2.4.9` = `1.2.4` + ninth hotfix)

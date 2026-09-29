@@ -44,6 +44,8 @@ npm run lint:tone
 
 3. **安装器改动走上游**：本仓安装器是上游工作副本，dashboard 集成改动直接向 `agentscope-ai/AgentTeams` 提 PR（见 `install/AGENTTEAMS_PATCH.md`），不长期驻留本仓分支。
 
+4. **runtime 生态兼容**：会话目录/端点变更保持旧路径回退一个版本周期；上游 runtime 发版冒烟按第 1 步流程执行。原则全文见 `docs/runtime-capabilities.md`「生态兼容维护原则」。
+
 ## 提交约定
 
 - 每个独立改动一个 commit（任务式开发：一个任务点一个 commit）。

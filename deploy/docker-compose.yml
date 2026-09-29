@@ -1,0 +1,46 @@
+# AgentTeams Dashboard — standalone docker compose (D5)
+#
+# Standalone mode: the Dashboard connects to an EXISTING AgentTeams
+# controller. Point AGENTTEAMS_CONTROLLER_URL at your controller
+# (host reachable from this container) and provide the storage/
+# Matrix credentials the installer would normally auto-detect.
+#
+#   cp deploy/docker-compose.yml docker-compose.yml
+#   # edit the environment block below, then:
+#   docker compose up -d
+#
+# Embedded mode (dashboard installed by agentteams-install.sh) does
+# not use this file — the installer manages the container lifecycle.
+
+services:
+  dashboard:
+    image: ghcr.io/agentteams-group/agentteams-dashboard:latest
+    container_name: agentteams-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - agentteams-dashboard-data:/data/agentteams-dashboard
+    environment:
+      # --- controller ---
+      AGENTTEAMS_CONTROLLER_URL: "http://agentteams-controller:8080"
+      # --- storage (detection chain: FS_* -> MINIO_* -> RUSTFS_*) ---
+      AGENTTEAMS_FS_ENDPOINT: "http://agentteams-controller:9000"
+      AGENTTEAMS_FS_BUCKET: "agentteams-storage"
+      AGENTTEAMS_FS_ACCESS_KEY: "change-me"
+      AGENTTEAMS_FS_SECRET_KEY: "change-me"
+      # --- matrix ---
+      NEXT_PUBLIC_MATRIX_API_URL: "https://matrix.example.org"
+      # --- optional: AI gateway (model alias routing) ---
+      # AGENTTEAMS_AI_GATEWAY_URL: "http://higress-gateway:8080"
+      # AGENTTEAMS_AI_GATEWAY_ADMIN_URL: "http://higress-console:8081"
+      # --- session persistence ---
+      # Standalone auto-generates and persists the session secret on
+      # first boot (0600 under /data/agentteams-dashboard). Pin it with:
+      # DASHBOARD_SESSION_SECRET: "64-hex-chars-min-32-bytes"
+      # --- optional: read-only demo hardening (D5) ---
+      # Serve behind a reverse proxy that rate-limits and, for public
+      # demos, restrict to the observer account (session level 1).
+
+volumes:
+  agentteams-dashboard-data:

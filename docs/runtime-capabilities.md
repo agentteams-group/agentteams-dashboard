@@ -54,6 +54,12 @@
 - 实验性 DeepSeek 工具调用 Harness：思考与工具调用以结构化流呈现，chat 原生适配，依赖上游 streaming（`runtime-meta.ts`）。
 - 矩阵协议维度尚未纳入 §4.1 取证矩阵（`normalize-runtime-matrix.test.ts` 刻意不覆盖——它走泛用渲染路径）；接入新专属行为前先补底稿取证。
 
+## 生态兼容维护原则（D6）
+
+1. **路径回退一个版本周期**：runtime 的会话目录、端点路径、导出布局变更时，Dashboard 侧保留旧路径的读取回退至少一个上游版本周期（新路径优先、旧路径兜底），升级说明中标注定弃时间。
+2. **上游发版冒烟纳入 B3 对照流程**：上游 runtime（OpenClaw/QwenPaw/Hermes/DeepSeek Harness）发版后，按 `CONTRIBUTING.md` 的上游对齐流程过一遍 proxy 端点与本表维度；行为差异先记 `docs/INTERFACES.md` 对照记录再改代码。
+3. **探测回退路径必须有测试**：安装器凭证探测链（`agentteams-dashboard-tests.sh` Test N）、KB 面按 runtime 过滤的空态（`knowledge-section.test.tsx` ⑩⑪）、协议未知版本回退（`parser-agent-run.test.ts` + `normalize.test.ts`）——改动任何回退逻辑时同步补断言。
+
 ## 维护
 
 - 新增运行时：先在 `src/lib/agentteams-api.ts` 的 `WorkerRuntime` 联合类型登记 → `runtime-options.ts`（可创建性）→ `runtime-meta.ts`（徽标/描述）→ `runtime-section.tsx`（卡片与计数）→ 本表补列。

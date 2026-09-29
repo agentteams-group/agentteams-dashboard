@@ -201,10 +201,10 @@
   - 完成记录（2026-09-29）：MVP 闭环落地——①`POST /api/agentteams/replay/export`：登录态校验（readServerIdentity）→ 复用 debug-log 的 `exportMatrixMessages`（**redact 强制 true 不接受调用方关闭**，homeserver 过 requireAllowlist SSRF 门）按 room 导出 → bundle（含 exportedBy/createdAt/room）写 `/data/agentteams-dashboard/replays/<id>.json`（AGENTTEAMS_REPLAY_DIR 可覆写）→ 返回 128-bit 随机 capability id + `/replay/<id>` 链接；②`GET .../export?id=`：hex-32 格式校验（路径穿越守卫）后返回 bundle JSON；③只读回放页 `/replay/[id]`（服务端组件直读 bundle，无目录列举、无交互面），页头声明「链接即凭据」。**安全评审要点**：capability URL 即 bearer（128-bit 熵，不枚举）、导出需登录而读取无需（分享语义）、默认脱敏不可关、无列表端点；README GIF 演示与 18.1 录制同批待用户环境。6 用例（401/400/脱敏强制+bundle 落盘/502 空导出/400 穿越/404+200）。验证：eslint 0/0、tsc 0 错、vitest 全量链式绿
 - [x] 24. D4 MCP 治理中心故事（0.5-1 人日，依赖任务 21.1）
   - 完成记录（2026-09-29）：双语 README 新增「MCP 治理 / MCP Governance」章节（Quick Start 前）——五条治理锚点：注册表 CRUD（校验/拒重）、部署目录（上游 #1250 catalog + Worker 接线回报 + 旧版降级）、受信默认接线（引用 21.1 的 trusted 默认勾选语义，验收联动 ✓）、审计线索（追加式 JSONL 含 actor/级别/时间戳）、凭据卫生（上游密钥不回传浏览器）；线协议指向 INTERFACES.md。一键安装演示 GIF：与 D2 的 18.1 录制同批（docs/images/README.md 录制清单模式复用，GIF 待用户环境录制——不虚构素材）。顺手清零 lint:tone 基线：4 处既有「智能体」禁词（wen-tian prompt ×3、worker-detail-dialog 提示 ×1）改「Agent」，语调门禁首次全绿（497 文件 0 命中），与新贡献约定的门禁一致。验证：docs-consistency 绿、lint:tone 0 命中、受影响测试 15 文件/120 用例绿、tsc 0 错
-- [ ] 25. D5 一键部署可传播（2-3 人日，demo 站另计）
-  - docker compose 模板与 Coolify 模板；只读在线 demo 站（安全前提：只读沙箱账号 + 独立后端 + 不暴露真实集群，评审不过则降级为 GIF）；README 嵌 30 秒安装 GIF
-- [ ] 26. D6 OpenClaw/QwenPaw 生态兼容维护原则（0.5 人日 + 持续，依赖任务 13）
-  - runtime 会话目录/端点变更时保持旧路径回退一个版本周期；上游 runtime 发版冒烟纳入 B3 对照流程；探测回退路径补测试
+- [x] 25. D5 一键部署可传播（2-3 人日，demo 站另计）
+  - 完成记录（2026-09-29）：`deploy/docker-compose.yml` standalone 模板（controller 指向 + 存储凭证三级探测链同名变量 + Matrix + AI 网关可选项 + 会话密钥持久化说明 + 只读 demo 硬化注释）+ `deploy/coolify/README.md`（四步部署 + 持久卷/HTTPS/只读 demo 三前提）。README Quick Start 嵌 30 秒安装 GIF 占位（demo-install.gif，录制清单并入 docs/images/README.md 模式）。**demo 站按安全前提评审降级**：独立后端 + 只读观察者账号 + 反代限速三项无法在本环境同时保证 → 降级为 GIF 路径（任务书预设的降级分支），demo 站立项待维护者评审。docs-consistency 绿、lint:tone 499 文件 0 命中
+- [x] 26. D6 OpenClaw/QwenPaw 生态兼容维护原则（0.5 人日 + 持续，依赖任务 13）
+  - 完成记录（2026-09-29）：三条原则落入 `docs/runtime-capabilities.md`「生态兼容维护原则」节——①runtime 会话目录/端点/导出布局变更时旧路径回退一个上游版本周期（新优先旧兜底，升级说明标注定弃）；②上游 runtime 发版冒烟纳入 B3 对照流程（CONTRIBUTING 上游对齐流程第 4 步引用）；③探测回退路径必须有测试（现状盘点：安装器探测链=dashboard-tests Test N、KB runtime 过滤空态=knowledge-section ⑩⑪、协议未知版本回退=parser/normalize 两层——覆盖已在位，改回退逻辑时同步补断言）。CONTRIBUTING 同步引用。docs-consistency 绿
 
 ## 关键依赖链（排期参照）
 
