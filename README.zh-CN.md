@@ -84,6 +84,18 @@ cd my-plugin && npm install && npm run dev
 
 详见 [docs/plugin-development.zh-CN.md](docs/plugin-development.zh-CN.md)（中文）、[docs/plugin-development.md](docs/plugin-development.md)（英文）与设计文档 [docs/plugin-system-design.md](docs/plugin-system-design.md)。
 
+## 🕸 MCP 治理
+
+MCP 服务器在 Dashboard 里是治理面，不只是清单：
+
+- **注册表 CRUD** —— MCP 配置存于存储面注册表（名字校验、重复拒绝），在资源中心与技能并列呈现。
+- **部署目录** —— Controller 侧 catalog（`GET /api/v1/mcp-servers`，上游 #1250）回报每个 server 接线了哪些 Worker；旧版 Controller 自动降级隐藏该列。
+- **受信默认接线** —— catalog 中标记 `trusted` 的 server 在新建 Worker 时默认勾选，新智能体开箱即得获批工具集（可逐 Worker 手动取消）。
+- **审计线索** —— MCP 配置变更流入 Dashboard 审计日志（actor、级别、时间戳，追加式 JSONL）。
+- **凭据卫生** —— 上游密钥（如 `Authorization` 头）永不回传浏览器；选择器只展示传输类型。
+
+技能/MCP 目录一键安装 + 上述治理语义，让 Dashboard 成为「每个智能体能触达什么」的控制点。线协议见 [docs/INTERFACES.md](docs/INTERFACES.md)。
+
 ## 📦 快速开始
 
 ### 作为 AgentTeams 组件安装（推荐）

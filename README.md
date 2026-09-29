@@ -85,6 +85,18 @@ cd my-plugin && npm install && npm run dev
 
 See [docs/plugin-development.md](docs/plugin-development.md) (English), [docs/plugin-development.zh-CN.md](docs/plugin-development.zh-CN.md) (中文) and the design doc [docs/plugin-system-design.md](docs/plugin-system-design.md).
 
+## 🕸 MCP Governance
+
+MCP servers get a governance surface, not just a list:
+
+- **Registry with CRUD** — MCP server configs live in the storage-backed registry (name validation, duplicate rejection) and render in the resource center alongside skills.
+- **Deployment catalog** — the Controller-side catalog (`GET /api/v1/mcp-servers`, upstream #1250) reports which workers are wired to each server; the UI degrades gracefully on older controllers.
+- **Trusted-by-default wiring** — servers marked `trusted` in the catalog are pre-checked when creating a new Worker, so a fresh agent starts with the approved toolset (operators can uncheck per worker).
+- **Audit trail** — MCP config mutations flow through the Dashboard audit log with actor, level and timestamp (append-only JSONL).
+- **Credential hygiene** — upstream secrets (e.g. `Authorization` headers) are never echoed back to the browser; the selector projects transport names only.
+
+One-click install from the skill/MCP catalog and the governance story above make the Dashboard the control point for what every agent can reach. See [docs/INTERFACES.md](docs/INTERFACES.md) for the wire contracts.
+
 ## 📦 Quick Start
 
 ### Install as an AgentTeams component (recommended)

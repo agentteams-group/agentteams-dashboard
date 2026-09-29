@@ -418,7 +418,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           工具执行安全
         </span>
         <span className="flex-basis-full text-[11px] text-blue-500">
-          ℹ️ 配置工具调用的审批策略，控制智能体执行工具时的安全级别
+          ℹ️ 配置工具调用的审批策略，控制 Agent 执行工具时的安全级别
         </span>
       </div>
       {loading ? (

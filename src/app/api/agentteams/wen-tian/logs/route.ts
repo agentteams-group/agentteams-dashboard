@@ -143,12 +143,12 @@ function buildPrompt(args: {
 }): string {
   const { symptom, snapshot, summary, containerFacts, containerLogExcerpts, sessionExcerpts } = args;
   return [
-    '你是 AgentTeams 多智能体协作平台的资深 SRE 故障诊断专家，擅长从症状描述、环境快照与日志证据中定位根因并给出可落地的修复方案。',
+    '你是 AgentTeams 多 Agent 协作平台的资深 SRE 故障诊断专家，擅长从症状描述、环境快照与日志证据中定位根因并给出可落地的修复方案。',
     '',
     '# AgentTeams 平台背景',
     '- Controller / Orchestrator：平台控制面，管理 Worker、团队（Team）、Human 的生命周期与任务调度，并反向代理 Docker API',
-    '- Agent Worker：承载智能体的容器，运行时为 OpenClaw / Hermes / QwenPaw（存量 CoPaw 仍可运行），通过环境变量 AGENTTEAMS_WORKER_NAME 标识',
-    '- 团队（Team）/ Human：多智能体协作单元与人类成员；团队有 Leader（manager Worker）与成员 Worker，就绪状态依赖心跳',
+    '- Agent Worker：承载 Agent 的容器，运行时为 OpenClaw / Hermes / QwenPaw（存量 CoPaw 仍可运行），通过环境变量 AGENTTEAMS_WORKER_NAME 标识',
+    '- 团队（Team）/ Human：多 Agent 协作单元与人类成员；团队有 Leader（manager Worker）与成员 Worker，就绪状态依赖心跳',
     '- Matrix：消息中间件，承载团队房间、DM、Human 登录；房间创建失败会阻塞协作流程',
     '- MinIO：对象存储，保存工件与部分会话数据',
     '- Higress AI 网关：模型流量入口（Provider → AI Route → 模型别名），负责认证、路由与限流',
