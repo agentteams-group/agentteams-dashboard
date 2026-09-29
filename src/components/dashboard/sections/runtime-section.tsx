@@ -32,6 +32,7 @@ const runtimeInfo = [
     useCases: ['存量 Worker', '升级到 QwenPaw'],
     color: 'text-muted-foreground',
     bgColor: 'bg-muted/40 border-border',
+    badge: '存量',
   },
   {
     name: 'Hermes',
@@ -54,17 +55,30 @@ const runtimeInfo = [
     useCases: ['审批流程', '人工介入', '安全审核', '质量保证'],
     color: 'text-violet-500',
     bgColor: 'bg-violet-500/10 border-violet-500/20',
+    badge: '存量',
   },
   {
     name: 'QwenPaw',
     key: 'qwenpaw',
-    desc: 'CoPaw 后继运行时。完整流式协议，适合协作编排与千问生态。',
-    features: ['千问优化', '工具调用', '流式推理', '多轮对话', '协作编排'],
+    desc: 'CoPaw 后继运行时。完整流式协议（思考 / 工具 / 长消息结构化键），模型经 AI 网关按别名路由，知识库数据面专属运行时。',
+    features: ['工具调用', '流式推理', '长消息附件', '协作编排', '知识库数据面'],
     language: 'Python',
-    models: ['Qwen', 'Qwen-Max', 'Qwen-Plus'],
-    useCases: ['千问 Agent', '多 Agent 协作', '工具集成'],
+    models: ['多模型（经 AI 网关路由）', '千问生态优化'],
+    useCases: ['多 Agent 协作', '工具集成', '知识库场景'],
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/10 border-amber-500/20',
+  },
+  {
+    name: 'DeepSeek Harness',
+    key: 'deepseek-harness',
+    desc: '实验性 DeepSeek 工具调用 Harness：思考与工具调用以结构化流呈现（chat 原生适配，依赖上游 streaming）。',
+    features: ['实验性', '结构化思考流', '工具调用'],
+    language: 'Python',
+    models: ['DeepSeek 系'],
+    useCases: ['DeepSeek Agent', '工具调用验证'],
+    color: 'text-sky-500',
+    bgColor: 'bg-sky-500/10 border-sky-500/20',
+    badge: '实验',
   },
 ];
 
@@ -77,7 +91,7 @@ export function RuntimeSection() {
   }, [queryClient]);
 
   const runtimeCounts = useMemo(() => {
-    const counts: Record<string, number> = { openclaw: 0, copaw: 0, hermes: 0, openhuman: 0, qwenpaw: 0 };
+    const counts: Record<string, number> = { openclaw: 0, copaw: 0, hermes: 0, openhuman: 0, qwenpaw: 0, 'deepseek-harness': 0 };
     workers?.forEach((w) => {
       if (counts[w.runtime] !== undefined) counts[w.runtime]++;
     });
@@ -94,7 +108,7 @@ export function RuntimeSection() {
       />
 
       {/* Runtime Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {runtimeInfo.map((rt, i) => (
           <motion.div
             key={rt.name}
@@ -145,8 +159,8 @@ export function RuntimeSection() {
                       <div className="flex items-center gap-2">
                         <Cpu className={`w-4 h-4 ${rt.color}`} />
                         <span className="font-medium">{rt.name}</span>
-                        {(rt.key === 'copaw' || rt.key === 'openhuman') && (
-                          <Badge variant="outline" className="text-[10px]">存量</Badge>
+                        {rt.badge && (
+                          <Badge variant="outline" className="text-[10px]">{rt.badge}</Badge>
                         )}
                       </div>
                     </td>
@@ -206,8 +220,8 @@ export function RuntimeSection() {
                       <Badge variant="outline" className="text-xs">
                         {runtimeCounts[rt.key] || 0} 实例
                       </Badge>
-                      {(rt.key === 'copaw' || rt.key === 'openhuman') && (
-                        <Badge variant="outline" className="text-[10px]">存量</Badge>
+                      {rt.badge && (
+                        <Badge variant="outline" className="text-[10px]">{rt.badge}</Badge>
                       )}
                     </div>
                   </div>
@@ -265,6 +279,13 @@ export function RuntimeSection() {
                 <p className="text-xs text-muted-foreground">选择 Hermes — 低延迟消息处理，适合实时交互</p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-cyan-500 shrink-0" />
+            </div>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-sky-500/5 border border-sky-500/10">
+              <Terminal className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">DeepSeek 生态（实验）</p>
+                <p className="text-xs text-muted-foreground">选择 DeepSeek Harness — 实验性运行时，思考与工具调用以结构化流呈现</p>
+              </div>
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-violet-500/5 border border-violet-500/10">
               <Cpu className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />

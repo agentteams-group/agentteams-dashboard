@@ -30,6 +30,7 @@ import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  CircleAlert,
   Download,
   FileText,
   FolderOpen,
@@ -86,6 +87,14 @@ const KnowledgeGraph3D = dynamic(
 export function KnowledgeSection() {
   const { data: workers } = useWorkers();
   const [worker, setWorker] = useState('');
+  // KB 数据面（workspace-files/{tree,file-metadata,file-content}）是
+  // QwenPaw 专属能力（端点布局按 QwenPaw workspace_files.py 实锤形状定案，
+  // 其他 runtime 404 或非约定形状 → 降级横幅/空树）。下拉只列 qwenpaw
+  // Worker，聚合图谱同源收窄（FUNC-10，2026-09-20 用户确认口径）。
+  const kbWorkers = useMemo(
+    () => (workers ?? []).filter((wd) => wd.runtime === 'qwenpaw'),
+    [workers],
+  );
   // 默认 worker 漂移修复（9/16 真机 E2E 实锤）：Controller /api/v1/workers
   // 列表顺序不稳定（k8s list 序），未手动选择时每轮轮询跟 workers[0] 走会
   // 让整个视图静默重置换人（已展开的目录被清掉）。按任务看板同款「推导
@@ -93,10 +102,10 @@ export function KnowledgeSection() {
   // 确定序（按名）推导默认，跨轮询稳定；用户手动选择后以选择为准。
   const sortedWorkers = useMemo(
     () =>
-      [...(workers ?? [])].sort((a, b) =>
+      [...kbWorkers].sort((a, b) =>
         a.name.localeCompare(b.name, 'en'),
       ),
-    [workers],
+    [kbWorkers],
   );
   const effectiveWorker = worker || sortedWorkers[0]?.name || '';
 
@@ -143,9 +152,10 @@ export function KnowledgeSection() {
   const mergedGenRef = useRef(0);
 
   // 团队透传：worker 选择器按 team 分组（optgroup），负责人标记
-  // （loadMerged 聚合范围依赖此表，须先定义）
+  // （loadMerged 聚合范围依赖此表，须先定义）。源=kbWorkers（qwenpaw 过滤，
+  // 见上），聚合图谱的范围随之收窄。
   const teamGroups = useMemo(() => {
-    const list: WorkerResponse[] = workers ?? [];
+    const list: WorkerResponse[] = kbWorkers;
     const map = new Map<string, WorkerResponse[]>();
     for (const wd of list) {
       const team = wd.team || '';
@@ -158,7 +168,7 @@ export function KnowledgeSection() {
         team,
         workers: [...list].sort((x, y) => x.name.localeCompare(y.name)),
       }));
-  }, [workers]);
+  }, [kbWorkers]);
 
   // 聚合团队有效值（派生——团队消失时回退全部团队，不同步 setState）。
   // 必须先于 loadMerged 定义（其 useCallback 依赖数组在渲染期求值，
@@ -441,7 +451,7 @@ export function KnowledgeSection() {
               onChange={(e) => setWorker(e.target.value)}
               aria-label="选择 Worker（按团队分组）"
             >
-              {teamGroups.length === 0 && <option value="">（无 Worker）</option>}
+              {teamGroups.length === 0 && <option value="">（无 QwenPaw Worker）</option>}
               {teamGroups.map((g) => (
                 <optgroup key={g.team || 'ungrouped'} label={g.team || '未分组'}>
                   {g.workers.map((wd) => (
@@ -470,6 +480,18 @@ export function KnowledgeSection() {
         }
         isRefreshing={loading || graphLoading}
       />
+
+      {workers && workers.length > 0 && kbWorkers.length === 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400 flex items-start gap-2">
+          <CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">知识库当前仅支持 QwenPaw 运行时的 Worker</p>
+            <p className="text-xs opacity-80 mt-0.5">
+              数据面（workspace-files）按 QwenPaw 工作区布局实现；检测到 {workers.length} 个其他运行时 Worker（openclaw / hermes / copaw / openhuman / deepseek-harness）不在列表中。
+            </p>
+          </div>
+        </div>
+      )}
 
       {loadError ? (
         <div className="flex items-center gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">

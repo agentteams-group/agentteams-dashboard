@@ -16,8 +16,8 @@ import '@testing-library/jest-dom/vitest';
 // 可变 holder：⑥ 号用例模拟轮询重取后列表顺序漂移（Controller 顺序不稳定）
 const workersHolder = vi.hoisted(() => ({
   list: [
-    { name: 'w1', team: 't1', role: 'team_leader' },
-    { name: 'w2', team: 't2', role: 'worker' },
+    { name: 'w1', team: 't1', role: 'team_leader', runtime: 'qwenpaw' },
+    { name: 'w2', team: 't2', role: 'worker', runtime: 'qwenpaw' },
   ],
 }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({
@@ -181,8 +181,8 @@ describe('KnowledgeSection（v3：3D/2D 图谱 / 预览与图谱分离 / 团队�
   beforeEach(() => {
     vi.useRealTimers();
     workersHolder.list = [
-      { name: 'w1', team: 't1', role: 'team_leader' },
-      { name: 'w2', team: 't2', role: 'worker' },
+      { name: 'w1', team: 't1', role: 'team_leader', runtime: 'qwenpaw' },
+      { name: 'w2', team: 't2', role: 'worker', runtime: 'qwenpaw' },
     ];
     window.localStorage.clear();
   });
@@ -311,8 +311,8 @@ describe('KnowledgeSection（v3：3D/2D 图谱 / 预览与图谱分离 / 团队�
     await screen.findByText('a.md');
     // 轮询重取：列表顺序漂移（w2 变第一）+ 触发重渲染（折叠/展开图谱卡）
     workersHolder.list = [
-      { name: 'w2', team: 't2', role: 'worker' },
-      { name: 'w1', team: 't1', role: 'team_leader' },
+      { name: 'w2', team: 't2', role: 'worker', runtime: 'qwenpaw' },
+      { name: 'w1', team: 't1', role: 'team_leader', runtime: 'qwenpaw' },
     ];
     fireEvent.click(screen.getByRole('button', { name: '收起' }));
     await waitFor(() => expect(select.value).toBe('w1')); // 钉住不跟随 workers[0]
@@ -375,6 +375,34 @@ describe('KnowledgeSection（v3：3D/2D 图谱 / 预览与图谱分离 / 团队�
     await waitFor(() => expect(select.value).toBe('w1')); // 回退首名（推导默认）
     // 失效值不被当有效选择持久化——空选择=清除记忆键（回退=推导而非写入）
     expect(window.localStorage.getItem('agentteams:kb:worker')).toBeNull();
+  });
+
+  it('⑩ KB 面按 runtime 过滤：非 qwenpaw Worker 不进下拉（FUNC-10）', async () => {
+    mockFetch();
+    workersHolder.list = [
+      { name: 'w1', team: 't1', role: 'team_leader', runtime: 'qwenpaw' },
+      { name: 'w2', team: 't2', role: 'worker', runtime: 'openclaw' },
+      { name: 'w3', team: 't2', role: 'worker', runtime: 'deepseek-harness' },
+    ];
+    render(<KnowledgeSection />);
+    const select = screen.getByRole('combobox', { name: /选择 Worker/ }) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('w1'));
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
+    expect(options).toContain('w1');
+    expect(options).not.toContain('w2');
+    expect(options).not.toContain('w3');
+  });
+
+  it('⑪ 全非 qwenpaw → 空态横幅说明数据面专属原因（FUNC-10）', async () => {
+    mockFetch();
+    workersHolder.list = [
+      { name: 'w2', team: 't2', role: 'worker', runtime: 'openclaw' },
+    ];
+    render(<KnowledgeSection />);
+    const banner = await screen.findByText(/知识库当前仅支持 QwenPaw 运行时的 Worker/);
+    expect(banner).toBeTruthy();
+    // 下拉空态文案同步切换
+    expect(screen.getByText('（无 QwenPaw Worker）')).toBeTruthy();
   });
 });
 

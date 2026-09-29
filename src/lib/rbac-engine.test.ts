@@ -10,7 +10,7 @@ import type { HumanResponse } from '@/lib/agentteams-api';
 function makeHuman(overrides: Partial<HumanResponse> = {}): HumanResponse {
   return {
     name: 'carol',
-    phase: 'Running',
+    phase: 'Active',
     displayName: 'Carol',
     matrixUserID: '@carol:server',
     initialPassword: '',

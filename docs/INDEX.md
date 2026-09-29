@@ -8,6 +8,7 @@
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - 开发者入门指南
 - [INTERFACES.md](INTERFACES.md) - API 接口与契约
 - [AI_GATEWAY_GUIDE.md](AI_GATEWAY_GUIDE.md) - AI 网关多服务商路由配置
+- [runtime-capabilities.md](runtime-capabilities.md) - Worker 运行时能力对照表（流式协议 / 模型接入 / 知识库数据面）
 
 ## 主题文档
 

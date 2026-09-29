@@ -118,6 +118,16 @@ describe('bucket prefix and metadata lifecycle', () => {
             if (event === 'data') cb(Buffer.from(content));
             if (event === 'end') cb(Buffer.alloc(0));
           },
+          [Symbol.asyncIterator]() {
+            let done = false;
+            return {
+              next: async () => {
+                if (done) return { done: true, value: undefined };
+                done = true;
+                return { done: false, value: Buffer.from(content) };
+              },
+            };
+          },
         };
       },
       putObject: async (
@@ -151,6 +161,7 @@ describe('bucket prefix and metadata lifecycle', () => {
       source: 'custom',
       createdAt: '2026-09-29T00:00:00.000Z',
       updatedAt: '2026-09-29T00:00:00.000Z',
+      fileCount: 1,
     });
     expect(putCalls).toHaveLength(1);
     expect(putCalls[0].bucket).toBe(SKILLS_BUCKET);
@@ -165,6 +176,7 @@ describe('bucket prefix and metadata lifecycle', () => {
       source: 'builtin' as const,
       createdAt: '2026-09-29T00:00:00.000Z',
       updatedAt: '2026-09-29T00:00:00.000Z',
+      fileCount: 2,
     };
     const client = makeEventClient({});
     await saveSkillMetadata(client, entry);
@@ -220,6 +232,16 @@ describe('bucket prefix and metadata lifecycle', () => {
           on: (event: string, cb: (_chunk: Buffer) => void) => {
             if (event === 'data') cb(Buffer.from(content));
             if (event === 'end') cb(Buffer.alloc(0));
+          },
+          [Symbol.asyncIterator]() {
+            let done = false;
+            return {
+              next: async () => {
+                if (done) return { done: true, value: undefined };
+                done = true;
+                return { done: false, value: Buffer.from(content) };
+              },
+            };
           },
         };
       },

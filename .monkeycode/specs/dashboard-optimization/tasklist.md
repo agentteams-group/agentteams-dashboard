@@ -97,12 +97,17 @@
 
 ### 上游线
 
-- [ ] 11. B2 Runtime 展示与门控内部一致性收尾（1-2 人日，P1，零上游依赖可立即做；排期避开发版窗口）
-  - [ ] 11.1 补 deepseek-harness 卡片与计数（`runtime-section.tsx:16-60` 仅 5 张卡片、`:80` 计数 5 种）
-  - [ ] 11.2 KB/workspace-files 面 Worker 下拉按 runtime 过滤，或 UI 明示「QwenPaw 专属」及原因（`docs/code-review-issues.md:164`）
-  - [ ] 11.3 以 `.monkeycode/specs/worker-card-v2-chat-runtime-ux/task-book.md` §4.1 能力对照表为底稿，沉淀正式 runtime 能力表（docs/ 新文档或内嵌），替换 QwenPaw 卡片过时的 models 宣传
-  - [ ] 11.4 deepseek-harness 卡片加「实验」徽标
+- [x] 11. B2 Runtime 展示与门控内部一致性收尾（1-2 人日，P1，零上游依赖可立即做；排期避开发版窗口）
+  - [x] 11.1 补 deepseek-harness 卡片与计数（`runtime-section.tsx:16-60` 仅 5 张卡片、`:80` 计数 5 种）
+    - 完成记录（2026-09-29）：runtimeInfo 补第 6 张 DeepSeek Harness 卡（sky 色系区分 Hermes cyan；文案取 runtime-meta 实锤描述），runtimeCounts 计数补 'deepseek-harness'，选择指南补「DeepSeek 生态（实验）」行；概览网格 sm:grid-cols-4 → 3（6 卡 3+3 整齐）
+  - [x] 11.2 KB/workspace-files 面 Worker 下拉按 runtime 过滤，或 UI 明示「QwenPaw 专属」及原因（`docs/code-review-issues.md:164`）
+    - 完成记录（2026-09-29）：knowledge-section 数据源头过滤——新增 kbWorkers（runtime === 'qwenpaw'），sortedWorkers/teamGroups 全部消费点同源收窄（下拉、聚合图谱范围、记忆恢复校验、effectiveWorker 兜底）；workers 非空但全非 qwenpaw 时显示说明横幅（数据面专属原因 + 其他 runtime 清单），下拉空态文案改「（无 QwenPaw Worker）」。修正一处 wiki 误记：7.1 时曾把 FUNC-10 的「建议」写成已实现，本步实施后口径与代码一致。KB 测试 mock 补 runtime: 'qwenpaw'（3 处重置点）+ 新增 2 用例（⑩ 非 qwenpaw 不进下拉、⑪ 全非 qwenpaw 空态横幅）
+  - [x] 11.3 以 `.monkeycode/specs/worker-card-v2-chat-runtime-ux/task-book.md` §4.1 能力对照表为底稿，沉淀正式 runtime 能力表（docs/ 新文档或内嵌），替换 QwenPaw 卡片过时的 models 宣传
+    - 完成记录（2026-09-29）：新建 `docs/runtime-capabilities.md`（INDEX 架构文档段登记）——总表 6 runtime × 13 维度（底稿 §4.1 的流式协议维度 + 创建状态/模型接入/知识库数据面三列；deepseek-harness 补行并注明尚未纳入取证矩阵）、阅读约定（经 AI 网关路由的模型口径、KB 专属声明、存量语义）、§4.2-4.5 适配要点摘录 + deepseek-harness 小节、维护清单（新 runtime 接入路径）。QwenPaw 卡片过时 models（Qwen/Qwen-Max/Qwen-Plus）替换为「多模型（经 AI 网关路由）/千问生态优化」，desc 补流式协议与知识库专属事实
+  - [x] 11.4 deepseek-harness 卡片加「实验」徽标
+    - 完成记录（2026-09-29）：runtimeInfo 数据加 badge 字段统一三处徽标（copaw/openhuman='存量'、deepseek-harness='实验'），替换表格行与详情卡两处 key 硬编码判断
   - 验收：卡片数与可创建 runtime 数一致（4 可建 + legacy 口径明确）；选非 qwenpaw runtime 时 KB 面给出明确禁用原因；能力表评审合入
+    - 验证记录（2026-09-29）：卡片 6 张 = 4 可建（openclaw/hermes/qwenpaw/deepseek-harness「实验」）+ 2 存量（copaw/openhuman「存量」），与 runtime-options 的 CREATABLE_WORKER_RUNTIMES + isLegacyRuntime 口径一一对应；KB 面非 qwenpaw 已过滤 + 空态横幅给原因（两个新用例钉住行为）；能力表已入 docs/ 并过 docs-consistency 门禁。三门：eslint 0 错 0 警、tsc 0 错、vitest 215 文件/2062 用例通过。插曲：本轮 tsc 暴露 10.1 潜伏的 8 处测试类型错误（新测试当时只跑了 vitest+coverage 漏了 tsc；esbuild 转译不查类型故运行时全绿）——已全部修复（mock 返回类型对齐 pickBackendUrl 真实签名、HumanPhase 合法值、SkillEntry 补 fileCount、getObject mock 补 Symbol.asyncIterator 协议成员），后续任务回归三门必跑纪律
 
 - [ ] 12. B1 跟进上游 PR #1306，合入本地 worker env 编辑实现（1-2 人日，依赖上游落定）
   - [ ] 12.1 跟踪 #1306（Worker env 编辑 + gateway 身份探测）落定；diff 本地 `codex/worker-config-gateway`（b1c34f8）与上游语义（env 字段集、gateway-probe 请求/响应、错误语义）

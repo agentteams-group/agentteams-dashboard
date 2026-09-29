@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // pickBackendUrl hits the F1 backend-config store (file-backed); the unit
 // under test only consumes its return value, so mock it at the boundary.
 vi.mock('./backend-config', () => ({
-  pickBackendUrl: vi.fn(() => null),
+  pickBackendUrl: vi.fn<() => string | undefined>(() => undefined),
 }));
 
 import { pickBackendUrl } from './backend-config';
@@ -34,7 +34,7 @@ function withEnv(env: Record<string, string | undefined>, fn: () => void) {
 
 beforeEach(() => {
   mockedPick.mockReset();
-  mockedPick.mockReturnValue(null);
+  mockedPick.mockReturnValue(undefined);
 });
 
 describe('getMinioConfigFromEnv', () => {
