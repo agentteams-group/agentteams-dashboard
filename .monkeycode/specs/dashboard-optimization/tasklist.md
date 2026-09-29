@@ -54,7 +54,8 @@
   - 完成记录（2026-09-28）：6 处修正双语同步落地——测试规模改「2000+ tests / 200+ files」、删 DATABASE_URL 行（en/zh）、PowerShell 改「已支持（CI 验证）」、安装器默认 v1.2.4.9（:81/:108/:123 三处 en+zh）、主题参数统一 30+（以 docs/theme-customization.md 的 32 色 + 布局参数为权威口径）、删除 Roadmap 死链段落（唯一条目指向已不存在的 docs/plans/，en+zh）。新增 `scripts/check-docs-consistency.sh` + ci.yml `docs-consistency` job（禁字串 + 安装器默认版本与 install.sh 内嵌值断言同步 + README/docs 相对链接存在性检查，含 %5B/%5D 解码）；顺手修复门禁暴露的 docs/INDEX.md 14 处真死链（3 个不存在文档改指实际文件、历史 Spec 枚举列表改为目录指针防再漂移）。本地脚本绿；死链注入演练红（exit 1）后恢复绿
 
 - [ ] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
-  - [ ] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
+  - [x] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
+    - 完成记录（2026-09-28）：主文件 1899 → 759 行（<800 达标），实现按职责拆到 `sections/knowledge/` 七模块——types（57）/shared（50）/api（120）/graph（124）/view2d（300）/graph-2d（465）/tree-rows（97），纯代码搬移零行为变更；测试公开面（KnowledgeGraph/assembleGraph/clusterGridLayout/chipWidth/KB2D/focusView/clampZoomView/GNode）经再导出保持原路径不变，测试文件零改动。验证：eslint 新旧文件 0 警告、tsc 0 错、knowledge-section.test.tsx 35/35、全量 213 文件/2011 用例通过
   - [ ] 7.2 拆分 `src/components/dashboard/sections/chat/ChatRoom.tsx`（1129 行，复制 chat 模块 views/hooks/components 模式）
   - [ ] 7.3 拆分 `src/components/dashboard/sections/projects-section.tsx`（1359 行）
   - [ ] 7.4 拆分 `src/plugins/wen-tian/index.tsx`（1333 行）
