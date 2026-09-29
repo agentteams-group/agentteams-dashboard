@@ -53,14 +53,31 @@ export interface WorkerAgentStatusInfo {
 /** Window after which a "done" (green) dot decays to idle (gray). */
 export const DONE_DECAY_MS = 10 * 60 * 1000;
 
+/**
+ * Phases in which the worker process is known to be inactive. In these
+ * phases no live typing/heartbeat signal can be authoritative — the
+ * session dot is forced to 'idle' so the card (which shows the container
+ * phase via StatusDot/PhaseBadge) cannot render a "running" dot next to
+ * a stopped container.
+ */
+export const INACTIVE_PHASES = new Set<string>(['Stopped', 'Failed', 'Sleeping', 'Pending']);
+
 export function deriveWorkerSessionState(opts: {
   agentStatus?: WorkerAgentStatusInfo | null;
   isTyping: boolean;
   /** Epoch ms of the worker's latest message in this room (0/undefined = none). */
   lastMessageTs?: number;
   now: number;
+  /**
+   * Container/process-level phase from the backend. When the phase is in
+   * INACTIVE_PHASES the dot is forced to 'idle' regardless of typing /
+   * heartbeat, because those signals can lag a container stop by minutes
+   * (typing keep-alive has no ceiling; lastFinishAt decays over 10 min).
+   */
+  phase?: string;
 }): WorkerSessionState {
-  const { agentStatus, isTyping, lastMessageTs, now } = opts;
+  const { agentStatus, isTyping, lastMessageTs, now, phase } = opts;
+  if (phase && INACTIVE_PHASES.has(phase)) return 'idle';
 
   // 1) Task-level truth from the heartbeat — no time ceiling.
   if (
@@ -85,12 +102,19 @@ export const DONE_WINDOW_MS = 10 * 60 * 1000;
 /** Aging tick: re-derive every 60s (the done→idle flip needs no new message). */
 export const TICK_MS = 60 * 1000;
 
-/** Per-worker three-state: derived across all rooms by worker MXID. */
+/**
+ * Per-worker three-state: derived across all rooms by worker MXID.
+ * `phase` (optional) is the container-level phase; when it is in
+ * INACTIVE_PHASES the result is forced to 'idle' so the dot cannot
+ * claim "running" while the container is stopped (see deriveWorkerSessionState).
+ */
 export function workerSessionState(
   mxid: string | undefined,
   rooms: readonly SessionRoomLike[],
   now: number = Date.now(),
+  phase?: string,
 ): WorkerSessionState {
+  if (phase && INACTIVE_PHASES.has(phase)) return 'idle';
   if (!mxid) return 'idle';
   for (const r of rooms) {
     if ((r.typing || []).includes(mxid)) return 'running';

@@ -4,6 +4,13 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -13,6 +20,7 @@ import {
 import type { CreateManagerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { CREATABLE_MANAGER_RUNTIMES } from '@/lib/runtime-options';
 
 export function ManagerCreateDialog({
   open,
@@ -65,11 +73,24 @@ export function ManagerCreateDialog({
           </div>
           <div className="space-y-2">
             <Label>运行时</Label>
-            <Input
-              value={value.runtime || ''}
-              onChange={(e) => onChange({ ...value, runtime: e.target.value })}
-              placeholder="运行时名称（可选）"
-            />
+            <Select
+              value={value.runtime || 'openclaw'}
+              onValueChange={(runtime) => onChange({ ...value, runtime })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择运行时" />
+              </SelectTrigger>
+              <SelectContent>
+                {CREATABLE_MANAGER_RUNTIMES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              推荐 QwenPaw。CoPaw 已停止新建。
+            </p>
           </div>
           <div className="space-y-2">
             <Label>镜像</Label>

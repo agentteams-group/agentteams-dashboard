@@ -21,6 +21,9 @@
 // Reference implementation: git d9182c4^:src/lib/auth-local.ts (deleted 7/3).
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { promises as fs, readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { configFilePath } from '@/lib/backend-config';
 
 export const SESSION_COOKIE_NAME = 'at_dash_sess';
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -80,11 +83,33 @@ const store: SessionStore =
   globalForSessions.__agentteamsSessions ??= { sessions: new Map(), insertionOrder: [] };
 
 function getSecret(): string | null {
-  const secret = process.env.DASHBOARD_SESSION_SECRET || '';
-  if (secret.length < 64) {
-    return null; // hex of ≥32 bytes
+  const env = process.env.DASHBOARD_SESSION_SECRET || '';
+  if (env.length >= 64) return env;
+  // Shared Mode refuses to bootstrap from disk — the operator must supply
+  // DASHBOARD_SESSION_SECRET explicitly (F-1 / Shared fail-closed).
+  if (process.env.DASHBOARD_SHARED_MODE === '1') return null;
+  // Standalone Mode: a previously persisted .session-secret keeps cookie
+  // signatures stable across container rebuilds (volume reused). Lazy read —
+  // bootstrapSessionSecret() has already mirrored disk into env on first
+  // startup, so this branch only fires for cold starts where env was absent.
+  try {
+    const file = sessionSecretPath();
+    // Synchronous read is fine here: getSecret is called from login routes
+    // and createSession (already on the main thread); the file is <100 bytes.
+    const buf = readFileSync(file, 'utf8');
+    const trimmed = buf.trim();
+    if (trimmed.length >= 64) {
+      process.env.DASHBOARD_SESSION_SECRET = trimmed;
+      return trimmed;
+    }
+  } catch {
+    /* file missing or unreadable — fall through to null */
   }
-  return secret;
+  return null;
+}
+
+function sessionSecretPath(): string {
+  return path.join(path.dirname(configFilePath()), '.session-secret');
 }
 
 let secretWarned = false;
@@ -101,6 +126,66 @@ function requireSecret(): string {
     throw new Error('DASHBOARD_SESSION_SECRET not configured');
   }
   return secret;
+}
+
+/**
+ * Standalone-Mode startup hook: generate and persist DASHBOARD_SESSION_SECRET
+ * when missing, mirroring the bootstrap-setup-token behavior (F-1 / F-2).
+ *
+ * Behavior matrix:
+ *   Shared Mode + missing → no-op (fail-closed path in requireSecret kicks in).
+ *   Standalone + env ≥64 hex → use env, no disk write.
+ *   Standalone + .session-secret readable + ≥64 hex → load into env.
+ *   Standalone + missing on both → randomBytes(32).toString('hex'),
+ *     write to .session-secret mode 0600, set process.env, log a fingerprint
+ *     line (last 4 chars only — full secret MUST NOT enter the log stream).
+ *
+ * Best-effort: a disk write failure logs a stderr warning and continues with
+ * the in-memory secret for this process; the operator can retry on next boot.
+ */
+export async function bootstrapSessionSecret(): Promise<void> {
+  if (process.env.NEXT_PHASE) return;
+  if (process.env.VITEST) return;
+  if (process.env.DASHBOARD_SHARED_MODE === '1') return;
+  const env = process.env.DASHBOARD_SESSION_SECRET || '';
+  if (env.length >= 64) return;
+  const file = sessionSecretPath();
+  let fromDisk: string | null = null;
+  try {
+    const buf = await fs.readFile(file, 'utf8');
+    const trimmed = buf.trim();
+    if (trimmed.length >= 64) fromDisk = trimmed;
+  } catch {
+    /* missing or unreadable — fall through to generation */
+  }
+  if (fromDisk) {
+    process.env.DASHBOARD_SESSION_SECRET = fromDisk;
+    return;
+  }
+  const generated = randomBytes(32).toString('hex');
+  process.env.DASHBOARD_SESSION_SECRET = generated;
+  try {
+    const dir = path.dirname(file);
+    await fs.mkdir(dir, { mode: 0o700, recursive: true });
+    // Write atomically (temp file + rename) so a crash mid-write can't leave a
+    // half-written secret that fails to parse on next boot.
+    const tmp = `${file}.tmp.${process.pid}`;
+    await fs.writeFile(tmp, `${generated}\n`, { mode: 0o600 });
+    await fs.rename(tmp, file);
+    // chmod in case the file already existed with looser perms — the file
+    // exists check above missed the empty-file race.
+    await fs.chmod(file, 0o600);
+    const fingerprint = generated.slice(-4);
+    console.error(
+      `[dashboard] session secret fingerprint: …${fingerprint} ` +
+        `(stored at ${file}, mode 0600; the full secret is not logged)`,
+    );
+  } catch (err) {
+    console.error(
+      `[dashboard] session secret persist failed: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Continuing with the in-process secret for this run only — container restart will mint a new one.',
+    );
+  }
 }
 
 function sign(encoded: string, secret: string): string {

@@ -28,6 +28,7 @@ import { SoulField } from '@/components/dashboard/sections/shared/soul-field';
 import { validateModelValue, modelVerdictText } from '@/lib/model-verdict';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
+import { CREATABLE_WORKER_RUNTIMES } from '@/lib/runtime-options';
 
 export interface AgentSpecTemplateOption {
   name: string;
@@ -189,11 +190,16 @@ export function WorkerCreateDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="openclaw">OpenClaw</SelectItem>
-                <SelectItem value="hermes">Hermes</SelectItem>
-                <SelectItem value="qwenpaw">QwenPaw</SelectItem>
+                {CREATABLE_WORKER_RUNTIMES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              推荐 QwenPaw。CoPaw 已停止新建，存量实例请从卡片升级。
+            </p>
           </div>
 
           <div className="space-y-2 min-w-0">

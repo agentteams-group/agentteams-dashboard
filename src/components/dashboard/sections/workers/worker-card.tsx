@@ -13,6 +13,7 @@ import { useAgentHealth } from '@/hooks/use-agent-health';
 import { useNowTick } from '@/hooks/use-now-tick';
 import { getRuntimeMeta } from '@/lib/runtime-meta';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 import { countToolCalls24h } from '@/lib/tool-call-counter';
 import {
   buildStatusNarrative,
@@ -44,6 +45,7 @@ export function WorkerCard({
   onWake,
   onSleep,
   onEnsureReady,
+  onUpgradeToQwenPaw,
   onDelete,
   isActionPending,
   isDeleting,
@@ -58,6 +60,7 @@ export function WorkerCard({
   onWake: () => void;
   onSleep: () => void;
   onEnsureReady: () => void;
+  onUpgradeToQwenPaw?: () => void;
   onDelete: () => void;
   isActionPending: boolean;
   isDeleting: boolean;
@@ -252,6 +255,17 @@ export function WorkerCard({
               >
                 <Rocket className="w-3 h-3 mr-1" aria-hidden="true" />
                 Ensure Ready
+              </Button>
+            )}
+            {isLegacyCopaw(worker.runtime) && onUpgradeToQwenPaw && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs flex-1"
+                onClick={onUpgradeToQwenPaw}
+                disabled={isActionPending || isDeleting}
+              >
+                升级到 QwenPaw
               </Button>
             )}
             <Button

@@ -60,12 +60,22 @@ export interface MatrixSyncResponse {
   next_batch: string;
   rooms?: {
     join?: Record<string, MatrixJoinedRoom>;
-    invite?: Record<string, unknown>;
+    /** Map of roomId → invite snapshot. Each entry carries at least an
+     *  `invite_state.events` array with the invite event (m.room.member
+     *  with membership=invite) and the canonical m.room.name state event
+     *  for the sidebar's "from <name>" line. The previous loose
+     *  `Record<string, unknown>` lost the sender field on the client. */
+    invite?: Record<string, MatrixInviteRoom>;
     leave?: Record<string, unknown>;
   };
   presence?: { events: MatrixEvent[] };
   account_data?: { events: MatrixEvent[] };
   ephemeral?: { events: MatrixEvent[] };
+}
+
+/** Shape of a single entry in `rooms.invite` from a /sync response. */
+export interface MatrixInviteRoom {
+  invite_state?: { events?: MatrixEvent[] };
 }
 
 export interface MatrixMessagesResponse {
@@ -196,6 +206,37 @@ export const matrixApi = {
     const url = buildMatrixUrl('/api/matrix/joined-rooms', { homeserver });
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
     await throwIfNotOk(res, 'Failed to get joined rooms');
+    return res.json();
+  },
+
+  joinRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<MatrixJoinedRoom> => {
+    // F-6 / 需求 4.5: this goes through the dashboard server-side proxy
+    // so the homeserver allowlist + audit log stay on the server. Client-Server
+    // spec: POST /join/{roomIdOrAlias} accepts both `!room:hs` and `#alias:hs`.
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/join`,
+      { homeserver },
+    );
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...buildHeaders(accessToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    await throwIfNotOk(res, 'Failed to join room');
+    return res.json();
+  },
+
+  leaveRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<unknown> => {
+    const url = buildMatrixUrl(
+      `/api/matrix/rooms/${encodeURIComponent(roomId)}/leave`,
+      { homeserver },
+    );
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...buildHeaders(accessToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    await throwIfNotOk(res, 'Failed to leave room');
     return res.json();
   },
 

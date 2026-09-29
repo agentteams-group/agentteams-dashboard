@@ -38,6 +38,8 @@ import {
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { useInviteStore } from '@/lib/matrix-invite-store';
 import { usePluginSystem } from '@/hooks/use-plugin-system';
 import { PluginRouteView } from '@/components/plugins/plugin-route-view';
 import { usePluginRoutes } from '@/lib/plugins/extension-store';
@@ -135,14 +137,23 @@ export function AgentTeamsDashboard() {
     checkConnection();
   }, [checkConnection]);
 
-  // Track the last time entity data changed (adjust state during render)
-  const [prevData, setPrevData] = useState({ workers, teams, managers });
-  if (prevData.workers !== workers || prevData.teams !== teams || prevData.managers !== managers) {
-    setPrevData({ workers, teams, managers });
-    if (workers !== undefined || teams !== undefined || managers !== undefined) {
-      setLastRefreshTime(new Date());
+  // Track the last time entity data changed. React 19 is much stricter
+  // about "adjust state during render" patterns than React 18 — every
+  // setState in the render body that fires on every render trips the
+  // max-update-depth budget on first paint when the source data identity
+  // shifts between renders (the previous version compared ref objects
+  // whose identity drifted whenever a hook returned a fresh wrapper).
+  // Derive lastRefreshTime in an effect instead.
+  const lastDataRef = useRef<{ workers: typeof workers; teams: typeof teams; managers: typeof managers } | null>(null);
+  useEffect(() => {
+    const last = lastDataRef.current;
+    if (!last || last.workers !== workers || last.teams !== teams || last.managers !== managers) {
+      lastDataRef.current = { workers, teams, managers };
+      if (workers !== undefined || teams !== undefined || managers !== undefined) {
+        setLastRefreshTime(new Date());
+      }
     }
-  }
+  }, [workers, teams, managers]);
 
   // Guard active section: fall back to overview if the current section is
   // hidden in this mode or points at a plugin route that no longer exists.
@@ -246,12 +257,20 @@ export function AgentTeamsDashboard() {
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
   const managerCount = managers?.length ?? 0;
+  const roomMeta = useRoomMetaStore((s) => s.meta);
+  const unreadRoomCount = useMemo(
+    () => Object.values(roomMeta).filter((m) => (m.unreadCount ?? 0) > 0).length,
+    [roomMeta],
+  );
+  const invitePending = useInviteStore((s) => s.invites);
+  const chatCount = unreadRoomCount + Object.keys(invitePending).length;
 
   const countMap: Record<string, number> = useMemo(() => ({
     workers: workerCount,
     teams: teamCount,
     managers: managerCount,
-  }), [workerCount, teamCount, managerCount]);
+    chat: chatCount,
+  }), [workerCount, teamCount, managerCount, chatCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();
@@ -361,16 +380,22 @@ export function AgentTeamsDashboard() {
 
             <ConnectionBanner />
 
-            {activeSection === 'chat' ? (
-              /* Chat mode: bypass <main> scroll container, fill all available space */
-              <div className="flex-1 flex flex-col min-h-0">
-                <Suspense fallback={<SectionSkeleton />}>
-                  <ChatSection />
-                </Suspense>
-              </div>
-            ) : (
-              /* Normal mode: breadcrumb + scrollable content + footer */
-              <>
+            {/*
+              Single tree for every section. The chat layout only differs in
+              that it bypasses the breadcrumb + scrollable <main> wrapper and
+              fills the whole column — toggling visibility is cheaper than
+              branching the JSX, and avoids the AnimatePresence branch-swap
+              trap where switching between chat (no AnimatePresence children)
+              and any other section (one AnimatePresence child) used to skip
+              the entrance animation and sometimes left the new section
+              invisible (operator saw "click 任务看板 first time does
+              nothing"). The footer is hidden in chat mode to give chat the
+              full height.
+            */}
+            <div
+              className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'border-b border-border/50 bg-background/50'}`}
+            >
+              {activeSection !== 'chat' && (
                 <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
                   <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Home className="w-3.5 h-3.5" />
@@ -380,7 +405,17 @@ export function AgentTeamsDashboard() {
                     <span>{activeLabel}</span>
                   </nav>
                 </div>
+              )}
 
+              {activeSection === 'chat' ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <SectionErrorBoundary sectionName={activeLabel}>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <ChatSection />
+                    </Suspense>
+                  </SectionErrorBoundary>
+                </div>
+              ) : (
                 <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
                   <AnimatePresence mode="wait">
                     <motion.div
@@ -402,19 +437,21 @@ export function AgentTeamsDashboard() {
                     </motion.div>
                   </AnimatePresence>
                 </main>
+              )}
+            </div>
 
-                <DashboardFooter
-                  isConnected={isConnected}
-                  connectionLatency={connectionLatency}
-                  controllerUrl={controllerUrl}
-                  reconnectInterval={reconnectInterval}
-                  lastRefreshText={lastRefreshText}
-                  latencyColor={latencyColor}
-                  latencyText={latencyText}
-                  matrixLoggedIn={matrixLoggedIn}
-                  matrixSyncing={matrixSyncing}
-                />
-              </>
+            {activeSection !== 'chat' && (
+              <DashboardFooter
+                isConnected={isConnected}
+                connectionLatency={connectionLatency}
+                controllerUrl={controllerUrl}
+                reconnectInterval={reconnectInterval}
+                lastRefreshText={lastRefreshText}
+                latencyColor={latencyColor}
+                latencyText={latencyText}
+                matrixLoggedIn={matrixLoggedIn}
+                matrixSyncing={matrixSyncing}
+              />
             )}
           </div>
         </div>

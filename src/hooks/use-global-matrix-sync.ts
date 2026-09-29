@@ -8,6 +8,7 @@ import { ingestHitlTimelineEvents, useHitlInboxStore } from '@/lib/hitl-inbox';
 import { isWorkflowPayload } from '@/lib/a2ui/workflow';
 import { matrixApi } from '@/lib/matrix-api';
 import type { MatrixEvent } from '@/lib/matrix-api';
+import { useInviteStore } from '@/lib/matrix-invite-store';
 import {
   mergeTimelineEvents,
   useReceiptStore,
@@ -256,6 +257,33 @@ export function useGlobalMatrixSync(): void {
       }
     };
 
+    /** F-4 / 需求 4.1-4.3: ingest `rooms.invite` from a /sync response.
+     *  The Matrix spec guarantees invite keys are `!room:hs` room IDs (not
+     *  aliases) but our join proxy still accepts both, so we pass through
+     *  whatever the homeserver sent. Sender + best-effort room name come
+     *  from `invite_state.events`; we look for the canonical m.room.member
+     *  (membership=invite) and the optional m.room.name state event. */
+    const ingestInvites = (invited: Record<string, { invite_state?: { events?: MatrixEvent[] } }> | undefined) => {
+      if (!invited) return;
+      for (const [roomId, snap] of Object.entries(invited)) {
+        let sender = '';
+        let roomName: string | undefined;
+        let originTs: number | undefined;
+        for (const ev of snap.invite_state?.events ?? []) {
+          if (ev.sender && !sender) sender = ev.sender;
+          if (ev.type === 'm.room.name' && typeof ev.content?.name === 'string') {
+            const nm = ev.content.name.trim();
+            if (nm) roomName = nm;
+          }
+          if (typeof ev.origin_server_ts === 'number') {
+            originTs = Math.max(originTs ?? 0, ev.origin_server_ts);
+          }
+        }
+        if (!sender) continue; // malformed invite — skip
+        useInviteStore.getState().upsertInvite({ roomId, sender, roomName, originTs });
+      }
+    };
+
     const poll = async () => {
       // Stale/cancelled: this effect instance is dead — never reschedule.
       if (cancelled || isStale()) return;
@@ -291,6 +319,13 @@ export function useGlobalMatrixSync(): void {
             );
             ingestRoomMeta(rid, roomData);
 
+            // F-4: the invite snapshot is keyed by roomId and a single
+            // roomId can't be in both `invite` and `join` simultaneously
+            // (Client-Server spec); the homeserver drops an invite once we
+            // accept it, but we drop our cached entry eagerly here so the
+            // inbox count goes down the moment the operator clicks accept.
+            useInviteStore.getState().dropByRoomId(rid);
+
             // Element-style realtime: merge timeline events into the message
             // cache of EVERY room that has one (open or recently visited),
             // not only the active room. Events for rooms without a cache are
@@ -318,6 +353,25 @@ export function useGlobalMatrixSync(): void {
           }
         }
         recordSyncSuccess(maxEventTs);
+
+        // F-4 / 需求 4.1: ingest new invites after the join loop so the
+        // roomId set in `rooms.invite` is always the most recent snapshot.
+        ingestInvites(resp.rooms?.invite);
+
+        // F-4 / 需求 4.3: a `rooms.leave` entry for a room we never joined
+        // (the operator explicitly rejected or the inviter revoked the
+        // invitation) clears our cached invite entry. Joined rooms that the
+        // operator leaves are handled by `forgetRoom` elsewhere — we don't
+        // re-drop invites for those here.
+        const leftKeys = Object.keys(resp.rooms?.leave ?? {});
+        if (leftKeys.length > 0) {
+          const inviteState = useInviteStore.getState();
+          for (const rid of leftKeys) {
+            // The cache hit is gated on the room not being a join we just
+            // received in this same response — already covered above.
+            inviteState.dropByRoomId(rid);
+          }
+        }
       } catch (err) {
         // A sync failure is expected on network flaps — back off and retry
         // (max 5s). If the homeserver rejected our custom filter, fall back to

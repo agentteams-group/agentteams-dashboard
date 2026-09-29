@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import {
   listProjects,
@@ -53,6 +53,10 @@ export function useProjects() {
     refetchInterval: 15000,
     retry: 1,
     placeholderData: (previousData) => previousData,
+    // Don't take the whole overview / task board down with the section
+    // error boundary when a controller hiccup 500s the list endpoint; let
+    // useApiTaskBoard's `degraded` fallback (D5) take over instead.
+    throwOnError: false,
   });
 }
 
@@ -75,6 +79,12 @@ export function useProjectWorkflow(projectId: string | null, teamId?: string) {
     // a manual refresh.
     refetchInterval: 15000,
     retry: 1,
+    // Same defensive contract as useProjects: a single detail-fetch failure
+    // (404 on a deleted project, 500 on a controller hiccup) used to trip
+    // the section error boundary and wipe the project view entirely. Drop
+    // the failure to the query state so callers can show a "数据加载失败"
+    // badge instead of the "模块遇到了问题" card.
+    throwOnError: false,
   });
 }
 
@@ -316,6 +326,15 @@ export function useApiTaskBoard() {
       enabled: !degraded,
       retry: 1,
       staleTime: 15000,
+      // Per-project workflow fetches failing (one stale runId, one
+      // proxy hiccup, …) used to bubble up through useQueries and trip
+      // the section error boundary — the whole overview / task board
+      // would render the "module error" card and the operator would lose
+      // every other section too. Drop the failure on the floor here; the
+      // workflowToBoard mapper already skips projects with no workflow
+      // payload, so the board just shows one fewer project instead of
+      // crashing.
+      throwOnError: false,
     })),
   });
 
@@ -329,19 +348,34 @@ export function useApiTaskBoard() {
   });
   const board = workflowToBoard(projects, workflows);
 
-  return {
-    ...board,
-    degraded,
-    degradedReason: listQuery.data?.degradedReason,
-    isLoading: listQuery.isLoading,
-    isRefetching: listQuery.isRefetching,
-    // Refresh must re-pull the per-project workflows too — the list query
-    // alone would leave stale workflow data behind (staleTime 15s).
-    refetch: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ['agentteams-project-workflow'],
-      });
-      void listQuery.refetch();
-    },
-  };
+  // Refresh must re-pull the per-project workflows too — the list query
+  // alone would leave stale workflow data behind (staleTime 15s).
+  // Stable identity: re-creating the refetch arrow on every render made
+  // the consumer's useMemo chain re-evaluate every parent re-render,
+  // which combined with the render-time setState in the dashboard shell
+  // pushed React 19 past its max-update-depth.
+  const refetch = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ['agentteams-project-workflow'],
+    });
+    void listQuery.refetch();
+  }, [queryClient, listQuery]);
+
+  // Memoize the consumer-facing object so a parent re-render with the
+  // same source data returns the same reference (OverviewSection
+  // consumes this and passes pieces into useMemos downstream).
+  return useMemo(
+    () => ({
+      ...board,
+      degraded,
+      degradedReason: listQuery.data?.degradedReason,
+      isLoading: listQuery.isLoading,
+      isRefetching: listQuery.isRefetching,
+      refetch,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `board` is a
+    // pure projection of `projects` and `workflowQueries`; depending on
+    // them keeps the memo stable across renders where neither changed.
+    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, refetch]
+  );
 }

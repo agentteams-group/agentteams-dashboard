@@ -26,6 +26,12 @@ describe('runtime metadata', () => {
     expect(meta?.description).toMatch(/DeepSeek/);
   });
 
+  it('marks leftover CoPaw instances as upgrade-only', () => {
+    const meta = getRuntimeMeta('copaw');
+    expect(meta).not.toBeNull();
+    expect(meta?.description).toMatch(/升级到 QwenPaw/);
+  });
+
   it('returns null for unknown runtimes instead of falling back to a raw string', () => {
     expect(getRuntimeMeta('not_a_runtime')).toBeNull();
     expect(getRuntimeMeta(null)).toBeNull();

@@ -225,4 +225,24 @@ describe('ChatRoom read-position dual-write', () => {
     // Human row: no worker mapping → no dot at all.
     expect(within(humanRow as HTMLElement).queryByLabelText(/运行中|已完成|空闲/)).toBeNull();
   });
+
+  it('Stopped phase forces the worker dot to idle even with a running heartbeat', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
+    mocks.setAgentStatusMap({ '@w1:test': { agentStatus: 'running', runningTaskCount: 1, phase: 'Stopped' } });
+    mocks.roomMembersChunk.push({
+      type: 'm.room.member',
+      state_key: '@w1:test',
+      content: { membership: 'join', displayname: 'Worker One' },
+    });
+
+    renderChatRoom();
+    fireEvent.click(screen.getByTitle('显示成员'));
+
+    const rows = screen.getAllByTitle('点击复制用户ID');
+    const workerRow = rows.find((r) => r.textContent?.includes('Worker One'));
+    expect(workerRow).toBeTruthy();
+    // Stopped container phase overrides the stale running heartbeat → idle dot.
+    expect(within(workerRow as HTMLElement).getByLabelText('空闲')).toBeInTheDocument();
+    expect(within(workerRow as HTMLElement).queryByLabelText('运行中')).toBeNull();
+  });
 });

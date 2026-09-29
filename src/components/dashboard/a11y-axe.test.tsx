@@ -8,6 +8,7 @@ import { cleanup, render } from '@testing-library/react';
 import axe from 'axe-core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const hooksMock = vi.hoisted(() => ({
   useWorkers: vi.fn(),
@@ -54,7 +55,9 @@ function makeWrapper() {
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
-      <SearchProvider>{children}</SearchProvider>
+      <SearchProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+      </SearchProvider>
     </QueryClientProvider>
   );
 }

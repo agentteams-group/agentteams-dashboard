@@ -55,7 +55,7 @@
 #   AGENTTEAMS_PORT_MANAGER_CONSOLE  Host port for Manager console (default: 18888)
 #   AGENTTEAMS_WORKER_IDLE_TIMEOUT  Worker idle timeout in minutes (default: 720, i.e. 12 hours)
 #   AGENTTEAMS_DASHBOARD              Install agentteams-dashboard management UI (default: 1)
-#   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.2.2, independent of AgentTeams version)
+#   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.2.4.9, independent of AgentTeams version)
 #   AGENTTEAMS_PORT_DASHBOARD         Dashboard host port (default: 13000)
 #   AGENTTEAMS_DASHBOARD_IMAGE        Override dashboard image (default: <registry>/agentteams/agentteams-dashboard:<DASHBOARD_VERSION>)
 #   AGENTTEAMS_AI_GATEWAY_ADMIN_URL   Higress Console URL for shared auth (auto-detected)
@@ -2483,7 +2483,7 @@ step_workspace() {
 
 step_dashboard() {
     AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
-    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.2}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.4.9}"
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
     AGENTTEAMS_HIGRESS_ADAPTER_MODE="${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}"
     AGENTTEAMS_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-}"
@@ -3098,8 +3098,25 @@ _start_dashboard() {
     fi
 
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.2}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.4.9}"
     AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
+
+    # Multi-user session secret (F-2): generated once and persisted to
+    # AGENTTEAMS_ENV_FILE so container rebuilds keep the same secret
+    # (a changed secret invalidates all sessions).
+    DASHBOARD_SESSION_SECRET="${DASHBOARD_SESSION_SECRET:-}"
+    if [ -z "${DASHBOARD_SESSION_SECRET}" ] && [ -f "${AGENTTEAMS_ENV_FILE:-}" ]; then
+        DASHBOARD_SESSION_SECRET="$(grep '^DASHBOARD_SESSION_SECRET=' "${AGENTTEAMS_ENV_FILE}" 2>/dev/null | cut -d= -f2- | tr -d '\r' || true)"
+        [ -z "${DASHBOARD_SESSION_SECRET}" ] && DASHBOARD_SESSION_SECRET=""
+    fi
+    if [ -z "${DASHBOARD_SESSION_SECRET}" ]; then
+        DASHBOARD_SESSION_SECRET="$(openssl rand -hex 32)"
+        log "Generated DASHBOARD_SESSION_SECRET (persisted in ${AGENTTEAMS_ENV_FILE:-}, mode 600)."
+    fi
+
+    # Embedded deployment marker: controller lives on the same network as the
+    # dashboard, so the process can probe internal addresses on first boot.
+    AGENTTEAMS_DEPLOYMENT_MODE="${AGENTTEAMS_DEPLOYMENT_MODE:-embedded}"
 
     log ""
     log "Starting agentteams-dashboard..."
@@ -3129,6 +3146,9 @@ _start_dashboard() {
     env_args+=(-e AGENTTEAMS_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-}")
     env_args+=(-e AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}")
     env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="${CTRL_CONTAINER},matrix-local.agentteams.io,matrix.org")
+    env_args+=(-e DASHBOARD_SESSION_SECRET="${DASHBOARD_SESSION_SECRET}")
+    env_args+=(-e DASHBOARD_CONFIG_FILE="/data/agentteams-dashboard/config.json")
+    env_args+=(-e AGENTTEAMS_DEPLOYMENT_MODE="${AGENTTEAMS_DEPLOYMENT_MODE}")
 
     if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -qx "${CTRL_CONTAINER}"; then
         local env_out
@@ -3231,8 +3251,25 @@ _start_dashboard() {
         fi
     fi
 
-    # Create persistent data volume (for future use)
+    # Create persistent data volume (F-1): the dashboard process reads
+    # config.json and writes .session-secret / .setup-token under
+    # /data/agentteams-dashboard — must match configFilePath() in
+    # src/lib/backend-config.ts.
     ${DOCKER_CMD} volume create agentteams-dashboard-data >/dev/null 2>&1 || true
+
+    # Migration: legacy installs wrote into /app/db inside the same volume.
+    # Detect /app/db contents (any file under it) and bind that mount once so
+    # existing files survive this cycle. Next upgrade drops the legacy bind.
+    local _vol_args=()
+    _vol_args+=(-v "agentteams-dashboard-data:/data/agentteams-dashboard")
+    if ${DOCKER_CMD} volume inspect agentteams-dashboard-data >/dev/null 2>&1; then
+        local _legacy_entries
+        _legacy_entries=$(${DOCKER_CMD} run --rm -v agentteams-dashboard-data:/probe alpine:latest sh -c 'ls -1A /probe/app 2>/dev/null' 2>/dev/null || true)
+        if [ -n "${_legacy_entries}" ]; then
+            log "WARNING: dashboard data volume has files under /app/db (legacy path); mounting it once so this upgrade does not lose them. Next upgrade will drop the legacy bind."
+            _vol_args+=(-v "agentteams-dashboard-data:/app/db")
+        fi
+    fi
 
     ${DOCKER_CMD} run -d \
         --name "${DASHBOARD_CONTAINER}" \
@@ -3241,7 +3278,7 @@ _start_dashboard() {
         --network-alias dashboard.agentteams.io \
         -p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000" \
         "${env_args[@]}" \
-        -v agentteams-dashboard-data:/app/db \
+        "${_vol_args[@]}" \
         "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
     # Wait for dashboard to be ready
@@ -3540,7 +3577,7 @@ AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
 
 # agentteams-dashboard (management UI)
 AGENTTEAMS_DASHBOARD=${AGENTTEAMS_DASHBOARD:-1}
-AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.2}
+AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.4.9}
 AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD:-13000}
 AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}
 EOF
@@ -4633,7 +4670,7 @@ case "${1:-}" in
         check_container_runtime
         load_current_params_from_env
         AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
-        AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.2}"
+        AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.2.4.9}"
         AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
         AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
         AGENTTEAMS_USE_EMBEDDED=1

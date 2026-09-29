@@ -15,7 +15,7 @@ AgentTeams 主仓库提供了独立 Python 脚本 `scripts/export-debug-log.py`�
 | 收集器 | 数据源 | 采集方式 | 输出 |
 |---|---|---|---|
 | Matrix 消息 | Tuwunel Homeserver | 读 `~/agentteams-manager.env` 取 Manager/Admin 密码登录 Matrix，遍历 joined_rooms 分页拉取 `/messages` | `matrix-messages/<Room>_<roomid>.jsonl` |
-| Agent 会话 | 各容器内 session 文件 | `docker exec` 探测 OpenClaw / Hermes / CoPaw 三种 runtime 的 session 目录，按时间过滤后 cat 出来 | `agent-sessions/<容器>/<session>.jsonl` |
+| Agent 会话 | 各容器内 session 文件 | `docker exec` 探测 OpenClaw / Hermes / QwenPaw 三种 runtime 的 session 目录（存量 CoPaw 布局兜底），按时间过滤后 cat 出来 | `agent-sessions/<容器>/<session>.jsonl` |
 | 容器诊断 | Docker Engine | `docker ps/inspect/logs --since` | `container-logs/<容器>.log + .state.json` |
 | PII 脱敏 | 全部产出 | 19 条正则（身份证/手机号/邮箱/银行卡/IP/各类 API Key/Bearer/secret KV/Matrix token 等） | 默认开启，`--no-redact` 关闭 |
 | 汇总 | — | — | `summary.txt`，落盘 `debug-log/<时间戳>/` |
@@ -145,7 +145,7 @@ src/components/dashboard/settings-dialog.tsx   # 设置对话框新增第三个�
 - **runtime 探测（1 次 exec）**：原脚本是「读 `$AGENTTEAMS_WORKER_NAME` 一次 exec + 每个候选目录一次 `test -d`」，最多 8 次往返；TS 版把 worker 名读取 + 全部候选路径探测合成**一段 sh 脚本**一次执行，按优先级输出 `FOUND <dir>`，本地解析；未命中再走 `find / -maxdepth 7` 兜底（与原脚本一致）；
 - **文件读取（1 次 exec）**：原脚本对每个 session 文件 `head -1` / `tail -1` / `cat` 三次 exec（先判时间再决定是否全量拉取）；TS 版改为 `for f in <dir>/*.jsonl; do echo MARKER; cat; done` **一次拉全量**，时间过滤（header 保留、事件按 `timestamp >= since` 过滤、整会话过期丢弃）全部在 server 端本地完成。单次 payload 变大但往返次数从 O(3N) 降到 O(1)，在 HTTP 通道下整体更快、逻辑更简单；
 - **OpenClaw**：`.jsonl` 逐行解析，`type=="session"` 头始终保留；附带 `sessions.json` 索引；
-- **CoPaw**：`find -name '*.json'`，解 `agent.memory.content`（turn→msg 两层结构），过滤后重组为「session 头 + message 事件」的 jsonl；
+- **QwenPaw / 存量 CoPaw**：`find -name '*.json'`，解 `agent.memory.content`（turn→msg 两层结构），过滤后重组为「session 头 + message 事件」的 jsonl；优先探测 `.qwenpaw`，未命中再回退 `.copaw`；
 - **Hermes**：jsonl + `session_meta` 角色保留；附加 `state.db`（容器内有 python3 时用 sqlite3 导出最近 200 条）和 `logs/agent.log|errors.log|gateway.log`；
 - 每个容器独立 try/catch，失败记入 errors 数组，最终写进 summary。
 

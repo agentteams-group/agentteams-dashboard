@@ -1,10 +1,11 @@
-// @vitest-environment node
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
 import { createPluginApi } from '@/lib/plugins/api';
 import { useExtensionStore } from '@/lib/plugins/extension-store';
 import { pluginEventBus } from '@/lib/plugins/event-bus';
 import { manifest } from './manifest';
-import { activate, analyzeWorkers, buildChecks, buildReport, deactivate } from './index';
+import { activate, analyzeWorkers, buildChecks, buildReport, deactivate, DiagnosisReport } from './index';
 import type { WorkerResponse, TeamResponse, HumanResponse, InfrastructureInfo } from '@/lib/agentteams-api';
 
 describe('wen-tian diagnostic plugin', () => {
@@ -170,6 +171,34 @@ describe('wen-tian diagnostic plugin', () => {
       expect(report).toContain('Kubernetes');
       expect(report).toContain('v1.2.0');
       expect(report).toMatch(/生成时间：\d{4}-\d{2}-\d{2}T/);
+    });
+  });
+
+  // ── DiagnosisReport: React 19 compat (no bare h1/h2 in JSX tree) ───
+
+  describe('DiagnosisReport', () => {
+    it('renders markdown h1/h2 as safe heading tags (h3-h5), avoiding React #185', () => {
+      const md = [
+        '# Title',
+        '',
+        '## Section',
+        '',
+        '### Sub',
+        '',
+        'body',
+      ].join('\n');
+      const { container } = render(<DiagnosisReport content={md} />);
+      // Markdown # → <h3>, ## → <h4>, ### → <h5> (downgraded for React 19 safety)
+      expect(container.querySelector('h3')?.textContent).toBe('Title');
+      expect(container.querySelector('h4')?.textContent).toBe('Section');
+      expect(container.querySelector('h5')?.textContent).toBe('Sub');
+      expect(container.querySelector('p')?.textContent).toBe('body');
+    });
+
+    it('renders fenced code blocks with a copy button', () => {
+      const md = '```ts\nconst x = 1;\n```';
+      const { container } = render(<DiagnosisReport content={md} />);
+      expect(container.querySelector('pre code')).toBeTruthy();
     });
   });
 });

@@ -1,5 +1,6 @@
-// Agent session export — TypeScript port of the OpenClaw / Hermes / CoPaw
-// session collectors from export-debug-log.py. Session files live inside the
+// Agent session export — TypeScript port of the OpenClaw / Hermes / QwenPaw
+// session collectors from export-debug-log.py, with leftover CoPaw layouts
+// still probed as a fallback. Session files live inside the
 // agent containers, so they are read through docker exec (via the Controller
 // proxy). To keep the number of exec round-trips low, each export stage is
 // batched into a single sh script whose output is split locally.
@@ -65,7 +66,7 @@ function splitBatchedFiles(
 // Runtime detection
 // ---------------------------------------------------------------------------
 
-type Runtime = 'openclaw' | 'hermes' | 'copaw' | '';
+type Runtime = 'openclaw' | 'hermes' | 'qwenpaw' | 'copaw' | '';
 
 async function detectRuntime(
   ctx: DockerContext,
@@ -78,6 +79,7 @@ async function detectRuntime(
     'for d in \\',
     '  /root/manager-workspace/.openclaw/agents/main/sessions \\',
     '  /root/manager-workspace/.hermes/sessions \\',
+    '  /root/manager-workspace/.qwenpaw/workspaces/default/sessions \\',
     '  /root/manager-workspace/.copaw/workspaces/default/sessions; do',
     '  [ -d "$d" ] && echo "FOUND $d"',
     'done',
@@ -85,6 +87,9 @@ async function detectRuntime(
     '  for d in \\',
     '    "/root/agentteams-fs/agents/$wn/.openclaw/agents/main/sessions" \\',
     '    "/root/agentteams-fs/agents/$wn/.hermes/sessions" \\',
+    '    "/root/agentteams-fs/agents/$wn/.qwenpaw/workspaces/default/sessions" \\',
+    '    "/root/.agentteams-worker/$wn/.qwenpaw/workspaces/default/sessions" \\',
+    '    /root/agentteams-fs/.qwenpaw/workspaces/default/sessions \\',
     '    "/root/.agentteams-worker/$wn/.copaw/workspaces/default/sessions" \\',
     '    /root/agentteams-fs/.copaw/workspaces/default/sessions; do',
     '    [ -d "$d" ] && echo "FOUND $d"',
@@ -102,6 +107,7 @@ async function detectRuntime(
   for (const dir of found) {
     if (dir.includes('/.openclaw/')) return { runtime: 'openclaw', sessionsDir: dir };
     if (dir.includes('/.hermes/')) return { runtime: 'hermes', sessionsDir: dir };
+    if (dir.includes('/.qwenpaw/')) return { runtime: 'qwenpaw', sessionsDir: dir };
     if (dir.includes('/.copaw/')) return { runtime: 'copaw', sessionsDir: dir };
   }
 
@@ -109,12 +115,13 @@ async function detectRuntime(
   const scan = await dockerExec(
     ctx,
     container,
-    "find / -maxdepth 7 \\( -path '*/.openclaw/agents/main/sessions' -o -path '*/.hermes/sessions' -o -path '*/.copaw/workspaces/default/sessions' \\) -type d 2>/dev/null | head -1"
+    "find / -maxdepth 7 \\( -path '*/.openclaw/agents/main/sessions' -o -path '*/.hermes/sessions' -o -path '*/.qwenpaw/workspaces/default/sessions' -o -path '*/.copaw/workspaces/default/sessions' \\) -type d 2>/dev/null | head -1"
   );
   const dir = scan.trim();
   if (!dir) return { runtime: '', sessionsDir: '' };
   if (dir.includes('/.openclaw/')) return { runtime: 'openclaw', sessionsDir: dir };
   if (dir.includes('/.hermes/')) return { runtime: 'hermes', sessionsDir: dir };
+  if (dir.includes('/.qwenpaw/')) return { runtime: 'qwenpaw', sessionsDir: dir };
   return { runtime: 'copaw', sessionsDir: dir };
 }
 
@@ -186,10 +193,10 @@ async function exportOpenClawSessions(
 }
 
 // ---------------------------------------------------------------------------
-// CoPaw sessions
+// QwenPaw / leftover CoPaw sessions
 // ---------------------------------------------------------------------------
 
-async function exportCopawSessions(
+async function exportPawSessions(
   ctx: DockerContext,
   container: string,
   sessionsDir: string,
@@ -229,7 +236,7 @@ async function exportCopawSessions(
     const basename = (file.path.split('/').pop() ?? '').replace(/\.json$/, '');
     let header: Record<string, unknown> = {
       type: 'session',
-      runtime: 'copaw',
+      runtime: sessionsDir.includes('/.qwenpaw/') ? 'qwenpaw' : 'copaw',
       agent_name: agent.name ?? '',
       session_key: basename,
       compressed_summary: memory._compressed_summary ?? '',
@@ -399,7 +406,7 @@ export async function exportAgentSessions(
       } else if (runtime === 'hermes') {
         await exportHermesSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
       } else {
-        await exportCopawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
+        await exportPawSessions(ctx, container, sessionsDir, sinceEpochSec, redact, out, prefix, markers);
       }
       if (out.sessions > before) out.containers += 1;
     } catch (err) {

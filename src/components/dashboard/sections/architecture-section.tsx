@@ -178,7 +178,7 @@ export function ArchitectureSection() {
                     </div>
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background/60 text-sm">
                       <Cpu className="w-4 h-4 text-emerald-500" />
-                      <span>CoPaw</span>
+                      <span>QwenPaw</span>
                     </div>
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background/60 text-sm">
                       <Cpu className="w-4 h-4 text-emerald-500" />
@@ -186,7 +186,7 @@ export function ArchitectureSection() {
                     </div>
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background/60 text-sm">
                       <Cpu className="w-4 h-4 text-emerald-500" />
-                      <span>OpenHuman</span>
+                      <span>DeepSeek Harness</span>
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">Worker 执行具体任务，支持多运行时和技能插件</p>

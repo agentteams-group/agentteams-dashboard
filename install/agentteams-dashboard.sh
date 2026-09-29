@@ -17,11 +17,13 @@ set -euo pipefail
 CONTAINER_NAME="agentteams-dashboard"
 NETWORK_NAME="agentteams-net"
 DEFAULT_PORT=13000
-DEFAULT_DASHBOARD_VERSION="v1.2.2"
+DEFAULT_DASHBOARD_VERSION="v1.2.4.9"
 # Must match the Makefile image coordinates (REGISTRY/REPO/name).
 DEFAULT_REGISTRY="higress-registry.cn-hangzhou.cr.aliyuncs.com"
 DEFAULT_IMAGE="${DEFAULT_REGISTRY}/agentteams/agentteams-dashboard:${DEFAULT_DASHBOARD_VERSION}"
 DATA_VOLUME="agentteams-dashboard-data"
+DATA_MOUNT="/data/agentteams-dashboard"
+CONFIG_FILE="${DATA_MOUNT}/config.json"
 ENV_FILE="${HOME}/.agentteams-dashboard.env"
 
 # ---------- helpers ----------
@@ -72,6 +74,8 @@ AGENTTEAMS_AUTH_TOKEN=${AGENTTEAMS_AUTH_TOKEN:-}
 AGENTTEAMS_ADMIN_USER=${AGENTTEAMS_ADMIN_USER:-}
 AGENTTEAMS_ADMIN_PASSWORD=${AGENTTEAMS_ADMIN_PASSWORD:-}
 DASHBOARD_SESSION_SECRET=${DASHBOARD_SESSION_SECRET:-}
+DASHBOARD_CONFIG_FILE=${DASHBOARD_CONFIG_FILE:-${CONFIG_FILE}}
+AGENTTEAMS_DEPLOYMENT_MODE=${AGENTTEAMS_DEPLOYMENT_MODE:-}
 EOF
   chmod 600 "${_tmp}"
   mv -f "${_tmp}" "${ENV_FILE}"
@@ -106,8 +110,11 @@ load_env() {
   AGENTTEAMS_OPENAI_BASE_URL="${AGENTTEAMS_OPENAI_BASE_URL:-}"
   AGENTTEAMS_DEFAULT_MODEL="${AGENTTEAMS_DEFAULT_MODEL:-}"
   AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN:-}"
-  AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER:-}"
-  AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD:-}"
+AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER:-}"
+AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD:-}"
+DASHBOARD_SESSION_SECRET="${DASHBOARD_SESSION_SECRET:-}"
+DASHBOARD_CONFIG_FILE="${DASHBOARD_CONFIG_FILE:-${CONFIG_FILE}}"
+AGENTTEAMS_DEPLOYMENT_MODE="${AGENTTEAMS_DEPLOYMENT_MODE:-}"
 }
 
 # ---------- uninstall ----------
@@ -237,6 +244,21 @@ wizard() {
     done
   fi
   prompt_value AGENTTEAMS_AI_GATEWAY_ADMIN_URL "Higress Console URL (for shared login)" "${higress_url}"
+
+  # Embedded deployment marker: when the controller container lives on the
+  # agentteams-net alongside the dashboard, set the deployment mode so the
+  # process picks embedded defaults on first boot (F-1 / F-3). Only set when
+  # the operator hasn't overridden it via AGENTTEAMS_DEPLOYMENT_MODE.
+  if [ -z "${AGENTTEAMS_DEPLOYMENT_MODE:-}" ]; then
+    if ${DOCKER_CMD} ps --format '{{.Names}}' | grep -q "^agentteams-controller$"; then
+      if ${DOCKER_CMD} network inspect "${NETWORK_NAME}" >/dev/null 2>&1 \
+         && ${DOCKER_CMD} exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz >/dev/null 2>&1; then
+        AGENTTEAMS_DEPLOYMENT_MODE="embedded"
+      fi
+    fi
+    [ -z "${AGENTTEAMS_DEPLOYMENT_MODE:-}" ] && AGENTTEAMS_DEPLOYMENT_MODE="external"
+  fi
+  info "AGENTTEAMS_DEPLOYMENT_MODE=${AGENTTEAMS_DEPLOYMENT_MODE}"
 }
 
 # ---------- local-only binding ----------
@@ -418,6 +440,8 @@ recreate_container() {
   env_args+=(-e MATRIX_HOMESERVER_ALLOWLIST="agentteams-controller,matrix-local.agentteams.io,matrix.org")
   [ -n "${AGENTTEAMS_AUTH_TOKEN:-}" ] && env_args+=(-e AGENTTEAMS_AUTH_TOKEN="${AGENTTEAMS_AUTH_TOKEN}")
   env_args+=(-e DASHBOARD_SESSION_SECRET="${DASHBOARD_SESSION_SECRET:-}")
+  env_args+=(-e DASHBOARD_CONFIG_FILE="${DASHBOARD_CONFIG_FILE:-${CONFIG_FILE}}")
+  env_args+=(-e AGENTTEAMS_DEPLOYMENT_MODE="${AGENTTEAMS_DEPLOYMENT_MODE:-external}")
   [ -n "${AGENTTEAMS_ADMIN_USER:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_USER="${AGENTTEAMS_ADMIN_USER}")
   [ -n "${AGENTTEAMS_ADMIN_PASSWORD:-}" ] && env_args+=(-e AGENTTEAMS_ADMIN_PASSWORD="${AGENTTEAMS_ADMIN_PASSWORD}")
   [ -n "${AGENTTEAMS_FS_ENDPOINT:-}" ] && env_args+=(-e AGENTTEAMS_FS_ENDPOINT="${AGENTTEAMS_FS_ENDPOINT}")
@@ -434,11 +458,13 @@ recreate_container() {
 
   # Start container
   info "Starting ${CONTAINER_NAME}..."
+  ${DOCKER_CMD} volume create "${DATA_VOLUME}" >/dev/null 2>&1 || true
   ${DOCKER_CMD} run -d \
     --name "${CONTAINER_NAME}" \
     --restart unless-stopped \
     --network "${NETWORK_NAME}" \
     -p "${_port_prefix}${AGENTTEAMS_PORT_DASHBOARD}:3000" \
+    -v "${DATA_VOLUME}:${DATA_MOUNT}" \
     "${env_args[@]}" \
     "${AGENTTEAMS_DASHBOARD_IMAGE}"
 

@@ -32,6 +32,8 @@ export async function register(): Promise<void> {
   // (standalone + enforced mode; no-op elsewhere) — see bootstrapSetupToken.
   const { bootstrapSetupToken } = await import('./lib/backend-config');
   await bootstrapSetupToken();
+  const { bootstrapSessionSecret } = await import('./lib/dashboard-session');
+  await bootstrapSessionSecret();
   const { startAddressProbe } = await import('./lib/address-probe');
   startAddressProbe();
 }

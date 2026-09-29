@@ -1,6 +1,11 @@
 # 更新日志
 
 本文件记录 AgentTeams Dashboard 的版本发布历史。
+## Unreleased
+
+- Dashboard 停止新建 CoPaw：创建入口仅提供 OpenClaw / Hermes / QwenPaw / DeepSeek Harness；存量 CoPaw 仍可展示、编辑、删除，并提供升级到 QwenPaw 的入口
+- 调试日志与问天诊断优先探测 `.qwenpaw` 会话目录，存量 `.copaw` 布局继续作为回退
+
 ## v1.2.4.9 (2026-09-20)
 
 自 v1.2.4 以来合入 39 个 PR 与若干直接提交，覆盖聊天、知识库、项目看板、Worker 详情、模型网关、审计、登录与部署模式等方向。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证。
@@ -87,6 +92,11 @@
 - vitest 显式 pin `NODE_ENV=test`：容器 ambient production 使 React 走生产构建（无 `act`）导致 322 例批量失败的根治（直接提交）@nillikechatchat
 - 中性化内部身份测试夹具 (#114) @LUOSENGWA
 - fork-PR 合并工作流沉淀（credential fill、merge-lock 重试、force-with-lease 冲突解法）与 CHANGELOG / Wiki 同步（直接提交）@nillikechatchat
+- Dashboard 默认入口镜像升级到 `v1.2.4.9`；Standalone 模式自动生成并落盘会话密钥（mode 0600，stderr 仅打印末四位指纹），避免嵌入式登录 fail-closed；持久化卷迁至 `/data/agentteams-dashboard`，旧 `/app/db` 卷一次性双挂兼容
+- 嵌入式预填：首次启动 + 未配置后端 + `embeddedHealthy===true` 时自动写入 controller / matrix / minio 默认地址，并在输入框旁加 `嵌入式探测` Badge
+- 聊天优先：未带 hash 时主表面回退到 `chat`；导航 HUD `chat` 角标统计未读房间 + 待接受 Matrix 邀请
+- Matrix 邀请 inbox：第一期消费 `/sync` `rooms.invite`，新增 `/api/matrix/rooms/[roomId]/join|leave` 代理路由（强制 allowlist + Bearer + 形状校验 + 审计 `matrix.invite.accept`/`reject`），侧栏顶部渲染 `InviteInbox`，HITL 卡片新增「待接受的 Matrix 邀请」跳转行
+- setup token 优先走 `Authorization: Bearer`，`?token=` 保留一轮兼容（`verifySetupToken` timing-safe）
 
 ### Quality
 

@@ -17,9 +17,9 @@ import type { WorkerSessionState, WorkerAgentStatusInfo } from '@/lib/worker-ses
  * with all fields undefined — the derivation then falls back to typing +
  * message age. Consumed by the per-sender message-bubble dots in ChatRoom.
  */
-export function useWorkerAgentStatusMap(): Record<string, WorkerAgentStatusInfo> {
+export function useWorkerAgentStatusMap(): Record<string, WorkerAgentStatusInfo & { phase?: string }> {
   const { data: workers } = useWorkers();
-  const map: Record<string, WorkerAgentStatusInfo> = {};
+  const map: Record<string, WorkerAgentStatusInfo & { phase?: string }> = {};
   for (const w of workers ?? []) {
     if (!w.matrixUserID) continue;
     map[w.matrixUserID] = {
@@ -27,6 +27,7 @@ export function useWorkerAgentStatusMap(): Record<string, WorkerAgentStatusInfo>
       runningTaskCount: w.runningTaskCount,
       lastFinishAt: w.lastFinishAt,
       lastRunAt: w.lastRunAt,
+      phase: w.phase,
     };
   }
   return map;
@@ -79,7 +80,7 @@ export function useSessionTick(): number {
  * useSyncExternalStore churn.
  */
 export function useWorkerSessionState(
-  worker: { matrixUserID?: string; roomID?: string },
+  worker: { matrixUserID?: string; roomID?: string; phase?: string },
   nowArg?: number,
 ): WorkerSessionState {
   const tick = useSessionTick();
@@ -100,7 +101,7 @@ export function useWorkerSessionState(
       lastMessageTs,
       memberIds: worker.matrixUserID ? [worker.matrixUserID] : [],
     },
-  ], now);
+  ], now, worker.phase);
 }
 
 const EMPTY_TYPING: ReadonlyArray<{ userId: string; displayName: string }> = [];

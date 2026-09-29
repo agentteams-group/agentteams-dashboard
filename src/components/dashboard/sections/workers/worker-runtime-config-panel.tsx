@@ -86,6 +86,13 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
     return () => clearTimeout(t);
   }, [load]);
 
+  useEffect(() => {
+    setMaxIters(null);
+    setMaxInputTokens(null);
+    setCompaction(null);
+    setLoopText(null);
+  }, [config]);
+
   // ── 字段级 diff（spec 核心语义：未动字段不发）────────────────────
   const buildDiff = (): { diff: Record<string, unknown>; invalid: string } => {
     const diff: Record<string, unknown> = {};

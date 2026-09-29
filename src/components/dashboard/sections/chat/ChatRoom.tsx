@@ -226,6 +226,7 @@ export function ChatRoom({
         isTyping: typingSet.has(mxId),
         lastMessageTs: lastTsBySender[mxId],
         now: sessionTick,
+        phase: info.phase,
       });
     }
     return map;
@@ -911,7 +912,7 @@ export function ChatRoom({
               if (!o) setChatsWorkerName(null);
             }}
           >
-            <DialogContent className="max-w-3xl w-[min(92vw,760px)]">
+            <DialogContent className="w-full max-w-[min(100%-2rem,72rem)]">
               <DialogHeader>
                 <DialogTitle>Worker 会话 — {chatsWorkerName}</DialogTitle>
                 <DialogDescription>

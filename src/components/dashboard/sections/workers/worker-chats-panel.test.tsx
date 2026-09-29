@@ -118,7 +118,7 @@ describe('C WorkerChatsPanel（#1295 消费）', () => {
     await screen.findByText('idle');
   });
 
-  it('⑦ 详情 404（chat 不存在）→ 错误提示', async () => {
+  it('⑦ 详情 404（chat 不存在 / L2 边界外）→ soft hidden 占位（不显示红 banner）', async () => {
     mockFetch([
       { status: 200, body: CHATS },
       { status: 404, body: { detail: 'Not Found' } }, // status
@@ -127,7 +127,21 @@ describe('C WorkerChatsPanel（#1295 消费）', () => {
     render(<WorkerChatsPanel workerName="w1" />);
     await screen.findByText('会话（只读 · Agent 上下文）');
     fireEvent.click(screen.getByRole('button', { name: /matrix:!room1/ }));
-    expect(await screen.findByText(/Chat not found: c1/)).toBeInTheDocument();
+    expect(await screen.findByText(/该会话不可见/)).toBeInTheDocument();
+    expect(screen.queryByText(/详情加载失败/)).not.toBeInTheDocument();
+  });
+
+  it('⑦b 详情 403（无权限）→ 同 404 走 hidden 占位', async () => {
+    mockFetch([
+      { status: 200, body: CHATS },
+      { status: 404, body: { detail: 'Not Found' } }, // status
+      { status: 403, body: { detail: 'forbidden' } },
+    ]);
+    render(<WorkerChatsPanel workerName="w1" />);
+    await screen.findByText('会话（只读 · Agent 上下文）');
+    fireEvent.click(screen.getByRole('button', { name: /matrix:!room1/ }));
+    expect(await screen.findByText(/该会话不可见/)).toBeInTheDocument();
+    expect(screen.queryByText(/详情加载失败/)).not.toBeInTheDocument();
   });
 
   it('⑧ 返回列表按钮可用', async () => {

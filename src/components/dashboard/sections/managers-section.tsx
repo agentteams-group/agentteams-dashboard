@@ -24,7 +24,18 @@ import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bind
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
 import type {
   CreateManagerRequest,
   ManagerResponse,
@@ -107,6 +118,7 @@ export function ManagersSection() {
 
   const [newManager, setNewManager] = useState<CreateManagerRequest>({ name: '' });
   const [editForm, setEditForm] = useState<ManagerEditForm>({});
+  const [upgradeTarget, setUpgradeTarget] = useState<ManagerResponse | null>(null);
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const { viewMode, handleViewModeChange } = useViewMode('card');
@@ -133,6 +145,11 @@ export function ManagersSection() {
   }, [managers]);
 
   const handleCreate = useCallback(() => {
+    const blocked = rejectCopawCreate(newManager.runtime);
+    if (blocked) {
+      toast.error(blocked);
+      return;
+    }
     if (newManager.model && !sessionIssue && aiRoutes && providers && hasUnavailableModelAliases(
       [newManager.model],
       buildModelBindings([newManager.model], aiRoutes, providers),
@@ -170,10 +187,27 @@ export function ManagersSection() {
     setEditForm({});
   }, []);
 
+  const handleUpgradeToQwenPaw = useCallback(() => {
+    if (!upgradeTarget) return;
+    updateManager.mutate(
+      { name: upgradeTarget.name, data: { runtime: 'qwenpaw' } },
+      {
+        onSuccess: () => {
+          setUpgradeTarget(null);
+          toast.success(`已将 Manager "${upgradeTarget.name}" 的运行时改为 QwenPaw，Controller 将协调升级。`);
+        },
+      },
+    );
+  }, [upgradeTarget, updateManager]);
+
   const handleUpdate = useCallback(() => {
     if (!editManager) return;
     const { name: _ignored, ...data } = editForm;
     void _ignored;
+    if (isLegacyCopaw(data.runtime) && data.runtime !== editManager.runtime) {
+      toast.error('CoPaw 已停止新建。请将运行时改为 QwenPaw 后再保存。');
+      return;
+    }
     if (editForm.model && !sessionIssue && aiRoutes && providers && hasUnavailableModelAliases(
       [editForm.model],
       buildModelBindings([editForm.model], aiRoutes, providers),
@@ -271,6 +305,7 @@ export function ManagersSection() {
               index={i}
               onView={setDetailManager}
               onEdit={openEdit}
+              onUpgradeToQwenPaw={setUpgradeTarget}
               onDelete={setDeleteTarget}
             />
           ))}
@@ -280,6 +315,7 @@ export function ManagersSection() {
           managers={sortedManagers}
           onView={setDetailManager}
           onEdit={openEdit}
+          onUpgradeToQwenPaw={setUpgradeTarget}
           onDelete={setDeleteTarget}
         />
       )}
@@ -322,6 +358,23 @@ export function ManagersSection() {
         onConfirm={handleDelete}
         isLoading={deleteManager.isPending}
       />
+
+      <AlertDialog open={!!upgradeTarget} onOpenChange={(open) => !open && setUpgradeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
+            <AlertDialogDescription>
+              将 Manager &quot;{upgradeTarget?.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateManager.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUpgradeToQwenPaw} disabled={updateManager.isPending}>
+              {updateManager.isPending ? '升级中...' : '确认升级'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,9 +1,16 @@
 "use client"
-
 import * as React from "react"
 import * as TooltipPrimitive from "@radix-ui/react-tooltip"
-
 import { cn } from "@/lib/utils"
+
+// F-RefreshLoop: the previous implementation wrapped every Tooltip instance
+// in its own <TooltipProvider>. Radix's provider tracks shared delay / skip
+// state via context; re-creating it per tooltip and per re-render forced
+// Radix's internal state to settle on every parent update, which under
+// React 19 could stack up enough re-renders to trip minified error #185
+// (Maximum update depth exceeded). The dashboard shell already mounts a
+// single shared <TooltipProvider> at the top, so individual tooltips only
+// need the Root primitive.
 
 function TooltipProvider({
   delayDuration = 0,
@@ -21,11 +28,7 @@ function TooltipProvider({
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return (
-    <TooltipProvider>
-      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-    </TooltipProvider>
-  )
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
 function TooltipTrigger({

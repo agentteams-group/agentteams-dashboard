@@ -22,22 +22,29 @@ describe('useActiveSection', () => {
   });
 
   describe('initial active section', () => {
-    it('defaults to overview when no hash or localStorage is set', () => {
+    it('defaults to chat when no hash or localStorage is set', () => {
+      // v1.2.4.9: chat-first — the default surface is the matrix chat sidebar
+      // when the user has no hash or stored preference.
       setHash('');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('overview');
+      expect(result.current.activeSection).toBe('chat');
     });
 
-    it('falls back to overview for a legacy grouped hash', () => {
+    it('falls back to chat for a legacy grouped hash', () => {
+      // A legacy flat hash that doesn't match a known section falls through
+      // to the chat-first default (the previous behavior was overview).
       setHash('#agents/workers');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('overview');
+      expect(result.current.activeSection).toBe('chat');
     });
 
-    it('falls back to overview for a grouped overview hash', () => {
+    it('does not resolve a grouped overview hash and keeps chat default', () => {
+      // resolveSection() only accepts flat section ids; the legacy grouped
+      // form (#overview/overview) never made it to the supported surface.
+      // It is not a known section, so the chat-first default wins.
       setHash('#overview/overview');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('overview');
+      expect(result.current.activeSection).toBe('chat');
     });
 
     it('resolves a flat Worker hash', () => {
@@ -53,10 +60,10 @@ describe('useActiveSection', () => {
       expect(result.current.activeSection).toBe('teams');
     });
 
-    it('falls back to overview when hash is invalid', () => {
+    it('falls back to chat when hash is invalid', () => {
       setHash('#unknown-section');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('overview');
+      expect(result.current.activeSection).toBe('chat');
     });
 
     it('does not clobber the URL hash with the stale pre-resolution default', () => {

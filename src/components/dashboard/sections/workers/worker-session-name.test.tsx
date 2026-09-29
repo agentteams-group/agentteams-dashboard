@@ -38,4 +38,16 @@ describe('WorkerSessionName (A17 store wiring)', () => {
     expect(screen.queryByLabelText('运行中')).toBeNull();
     expect(screen.getByText('plain')).toBeTruthy();
   });
+
+  it('Stopped phase forces idle even while typing', () => {
+    useTypingStore.getState().setTypingUsers(ROOM, [{ userId: MXID, displayName: 'w1' }]);
+    render(<WorkerSessionName worker={{ ...WORKER, phase: 'Stopped' }} />);
+    expect(screen.getByLabelText('无任务')).toBeTruthy();
+  });
+
+  it('Running phase keeps typing → running', () => {
+    useTypingStore.getState().setTypingUsers(ROOM, [{ userId: MXID, displayName: 'w1' }]);
+    render(<WorkerSessionName worker={{ ...WORKER, phase: 'Running' }} />);
+    expect(screen.getByLabelText('运行中')).toBeTruthy();
+  });
 });

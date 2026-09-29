@@ -30,17 +30,15 @@ import {
   MemberPicker,
   workerPickerLabel,
 } from '@/components/dashboard/sections/shared/member-picker';
+import { CREATABLE_WORKER_RUNTIMES, rejectCopawCreate } from '@/lib/runtime-options';
 
 export function parseWorkerNames(value: string): string[] {
   return value.split(/[,，]/).map((name) => name.trim()).filter(Boolean);
 }
 
-const RUNTIME_OPTIONS: { value: WorkerRuntime; label: string }[] = [
-  { value: 'openclaw', label: 'OpenClaw（默认）' },
-  { value: 'hermes', label: 'Hermes' },
-  { value: 'qwenpaw', label: 'QwenPaw' },
-  { value: 'deepseek-harness', label: 'DeepSeek Harness（实验）' },
-];
+const RUNTIME_OPTIONS: { value: WorkerRuntime; label: string }[] = CREATABLE_WORKER_RUNTIMES.map((option) =>
+  option.value === 'openclaw' ? { ...option, label: 'OpenClaw（默认）' } : option,
+);
 
 /** 建队内联新建 Worker 的空白表单（对齐插件 nw 初始态）。
  * role：对齐插件 CrdManage 成员行 { name, role }——新建 Worker 后选择
@@ -129,6 +127,11 @@ export function TeamCreateDialog({
     }
     if (nwDuplicate) {
       setNwError('该 Worker 已存在，请从下方 Workers 列表选择');
+      return;
+    }
+    const blocked = rejectCopawCreate(nw.runtime);
+    if (blocked) {
+      setNwError(blocked);
       return;
     }
     setNwBusy(true);

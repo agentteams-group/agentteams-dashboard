@@ -22,16 +22,19 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import type { ManagerResponse } from '@/lib/agentteams-api';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 
 export function ManagerTable({
   managers,
   onView,
   onEdit,
+  onUpgradeToQwenPaw,
   onDelete,
 }: {
   managers: ManagerResponse[];
   onView: (_manager: ManagerResponse) => void;
   onEdit: (_manager: ManagerResponse) => void;
+  onUpgradeToQwenPaw?: (_manager: ManagerResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   return (
@@ -108,6 +111,18 @@ export function ManagerTable({
                   >
                     <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
+                  {isLegacyCopaw(manager.runtime) && onUpgradeToQwenPaw && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => onUpgradeToQwenPaw(manager)}
+                      title="升级到 QwenPaw"
+                      aria-label={`升级 ${manager.name} 到 QwenPaw`}
+                    >
+                      升级
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
