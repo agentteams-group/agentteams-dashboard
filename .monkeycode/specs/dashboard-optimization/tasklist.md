@@ -184,12 +184,8 @@
 - [ ] 19. A9 依赖大版本升级批次（每项一个 PR，依赖 A1；eslint 10 / TS 7 工具链大版本放最后）
   - 候选：eslint 9→10、typescript 5.9.3→7.0.2、vitest 4.1.10→5.0.2、uuid 11→14、lucide-react 0.525→1.48、recharts 3.8.1→3.10.1（同步放开精确锁）、@a2ui 0.10→0.11
   - 验收：每项升级后三门全绿 + 关键页面手动冒烟；无遗留精确锁版本
-- [ ] 20. B6 外部 coding agent runtime 接入评估（Claude Code / Codex CLI / opencode，评估 2-3 人日，不承诺实现）
-  - [ ] 20.1 明确接入面为「结构化协议→org.agentteams.run 块」的协议适配器（B4 前置）
-  - [ ] 20.2 拆解工作量归属（上游：Controller CRD 枚举、agentconfig generator、Matrix channel 插件；Dashboard：枚举扩展 + runtime-meta/options + 能力门控 + per-runtime 会话收集器）
-  - [ ] 20.3 轻量替代路径先行验证：外部 agent 输出经 A2UI 标记投递进 Matrix
-  - [ ] 20.4 计费合规评估：核实 Claude Agent SDK / `claude -p` 自 2026-06-15 起独立积分计费的官方文档（转述信息，立项前必须核实）
-  - 验收：产出评估报告（工作量拆解 + 计费合规 + 推荐排序）；若立项至少一个 runtime 端到端 demo
+- [x] 20. B6 外部 coding agent runtime 接入评估（Claude Code / Codex CLI / opencode，评估 2-3 人日，不承诺实现）
+  - 完成记录（2026-09-29）：评估报告 `docs/external-runtime-integration-assessment.md`（INDEX 登记）。①接入面 = B4 协议适配器（外部事件流 → org.agentteams.run v1 块，Dashboard 零改动，未知版本回退保证增量安全）；②工作量归属：上游每 runtime 3-8 人日（CRD 枚举/generator/channel 为主），Dashboard 每 runtime 0.5-1 人日机械扩展（维护清单即路径）；③轻量替代路径 = 外部输出经 A2UI 标记投递进 Matrix（成本 ≈0，验证价值后反推立项必要性）；④计费合规实读官方文档核实：**「2026-06-15 独立积分计费」未获证实**，可证实口径 = bare 模式强制 ANTHROPIC_API_KEY（禁共享订阅，明确禁止第三方提供 claude.ai 登录）、total_cost_usd 客户端估算可观测、品牌条款（禁用「Claude Code」命名）。推荐排序：opencode（开源无合规项，首验）→ Claude Code（能力最强但三重约束）→ Codex CLI（观察）→ 轻量路径随时可做；立项三判据已列。验收「若立项至少一个 runtime demo」——评估结论为暂不立项（轻量路径先行），不触发 demo 义务
 - [x] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
   - [x] 21.1 Worker 创建对话框按 mcp-catalog 默认勾选接线（低成本先行，配用例）
     - 完成记录（2026-09-29）：useMcpCatalog 暴露完整 servers[]（含 trusted 标记）+ `trustedCatalogServerNames()` 助手（9222fdc，先于远程 merge 提交以缩小冲突面）；McpSelector 新增可选 `defaultSelectedNames` prop——popover 打开且 value 为空时以 catalog trusted servers 预置 draft（显式选择恒优先、registry 外的名字忽略）；worker-create-dialog 接线（编辑对话框刻意不传——编辑不得静默改接线）。3 用例（默认预勾选生效、unknown 名忽略、显式选择不被 default 重复/不触发变更）
