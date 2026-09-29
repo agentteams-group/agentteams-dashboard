@@ -109,11 +109,15 @@
   - 验收：卡片数与可创建 runtime 数一致（4 可建 + legacy 口径明确）；选非 qwenpaw runtime 时 KB 面给出明确禁用原因；能力表评审合入
     - 验证记录（2026-09-29）：卡片 6 张 = 4 可建（openclaw/hermes/qwenpaw/deepseek-harness「实验」）+ 2 存量（copaw/openhuman「存量」），与 runtime-options 的 CREATABLE_WORKER_RUNTIMES + isLegacyRuntime 口径一一对应；KB 面非 qwenpaw 已过滤 + 空态横幅给原因（两个新用例钉住行为）；能力表已入 docs/ 并过 docs-consistency 门禁。三门：eslint 0 错 0 警、tsc 0 错、vitest 215 文件/2062 用例通过。插曲：本轮 tsc 暴露 10.1 潜伏的 8 处测试类型错误（新测试当时只跑了 vitest+coverage 漏了 tsc；esbuild 转译不查类型故运行时全绿）——已全部修复（mock 返回类型对齐 pickBackendUrl 真实签名、HumanPhase 合法值、SkillEntry 补 fileCount、getObject mock 补 Symbol.asyncIterator 协议成员），后续任务回归三门必跑纪律
 
-- [ ] 12. B1 跟进上游 PR #1306，合入本地 worker env 编辑实现（1-2 人日，依赖上游落定）
-  - [ ] 12.1 跟踪 #1306（Worker env 编辑 + gateway 身份探测）落定；diff 本地 `codex/worker-config-gateway`（b1c34f8）与上游语义（env 字段集、gateway-probe 请求/响应、错误语义）
-  - [ ] 12.2 按上游为准调整后合入 main，对照清单留档到 spec
-  - [ ] 12.3 为 `/api/agentteams/workers/[name]/gateway-probe` 补端到端用例
+- [x] 12. B1 跟进上游 PR #1306，合入本地 worker env 编辑实现（1-2 人日，依赖上游落定）
+  - [x] 12.1 跟踪 #1306（Worker env 编辑 + gateway 身份探测）落定；diff 本地 `codex/worker-config-gateway`（b1c34f8）与上游语义（env 字段集、gateway-probe 请求/响应、错误语义）
+    - 完成记录（2026-09-29）：带凭据 API 复核——任务书 "#1306" 为编号笔误，两仓库 #1306 均不存在；真实上游 PR 为 **dashboard#135**「feat: complete Worker environment editing and gateway access verification flow」（open，2026-09-21 创建后无动静，mergeable_state=dirty）。**PR head = codex/worker-config-gateway @ b1c34f8，即本地分支就是 PR head——本地与上游语义零漂移**（同一 commit）。字段/语义对照清单存档 `.monkeycode/specs/dashboard-optimization/b1-upstream-alignment.md`（env 写入门 L3-only / 读响应剥除 env+envEditable、gateway-probe 代理路径与 RBAC 面、更新体省略未变更 env、7 项复核要点）
+  - [x] 12.2 按上游为准调整后合入 main，对照清单留档到 spec
+    - 完成记录（2026-09-29）：cherry-pick b1c34f8 → 本仓库 `00e004b`。20 文件 19 个自动合并；唯一冲突 workers-section.tsx 保存 handler（main 侧 CoPaw 存量校验 vs 分支侧 env 未变更清理）为正交逻辑两者并留。合入能力：env 管理员-only 写入门（含 env 键且非 L3 → 403）、非 L3 读响应剥除 env 防部署凭据泄露、gateway-probe 代理路由（RBAC update × gateway.consumer）、worker-env-editor/worker-gateway-probe 组件与模型选择联动适配
+  - [x] 12.3 为 `/api/agentteams/workers/[name]/gateway-probe` 补端到端用例
+    - 完成记录（2026-09-29）：`gateway-probe/route.test.ts` 4 用例——RBAC 拒绝短路（不触代理）、放行时 RBAC 参数/控制器 URL/代理路径与 POST 方法正确、worker 名保留字符 URL 编码、上游错误（502 探测失败）原样透传
   - 验收：main 含与上游语义一致的能力；无字段漂移（清单存档）；三门绿
+    - 验证记录（2026-09-29）：上游语义 = PR head 即合入 commit，字段零漂移（清单存档 b1-upstream-alignment.md，含 PR 更新时的 4 项复核要点）。三门：eslint 0 错 0 警、tsc 0 错、vitest 217 文件/2074 用例通过（含分支自带测试与新增 gateway-probe 4 用例）
 
 - [ ] 13. B3 上游对齐自动化：install.sh 漂移检测 + Controller 契约对照（1-1.5 人日，P1）
   - [ ] 13.1 CI 增加 weekly cron：拉取上游安装器与本仓 `install/agentteams-install.sh`（4707 行）diff，超阈值（>50 行或命中 step_dashboard 段）开 issue 告警
