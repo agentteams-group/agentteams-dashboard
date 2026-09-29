@@ -46,7 +46,7 @@ function seedStore(state: {
   routes: Array<{ pluginId: string; contribution: { id: string } }>;
   widgets: Array<{ pluginId: string }>;
 }) {
-  vi.mocked(useExtensionStoreMock).mockImplementation((selector: (s: unknown) => unknown) =>
+  vi.mocked(useExtensionStoreMock).mockImplementation((selector: (_s: unknown) => unknown) =>
     selector(state),
   );
 }
@@ -54,7 +54,7 @@ function seedStore(state: {
 const useExtensionStoreMock = vi.fn();
 
 vi.mock('@/lib/plugins/extension-store', () => ({
-  useExtensionStore: (selector: (s: unknown) => unknown) => useExtensionStoreMock(selector),
+  useExtensionStore: (selector: (_s: unknown) => unknown) => useExtensionStoreMock(selector),
 }));
 
 describe('PluginGallery (D1 17.4 MVP)', () => {

@@ -3,7 +3,7 @@
 
   # AgentTeams Dashboard
 
-  **轻量级的 AgentTeams 集群 Web 管理面板 —— 可视化管理 Workers、Teams、Humans、Managers 与基础设施，并集成 Matrix 聊天能力。**
+  **多智能体团队的 Mission Control —— 在一个控制台驾驭 Workers、Teams、Humans 与 Managers：实时拓扑、带人工干预的任务看板、具备运行时感知渲染的 Matrix 聊天，以及 AI 辅助诊断。**
 
   [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -17,9 +17,22 @@
 
 ---
 
+<!-- TODO(录制)：以下三张占位图替换为真实截图/动图——录制清单见
+     docs/images/README.md（overview 拓扑 / 任务看板 HITL 干预 / Chat 回放）。 -->
+
+<p align="center">
+  <img src="docs/images/demo-overview.png" alt="Overview 拓扑" width="85%" />
+</p>
+<p align="center">
+  <img src="docs/images/demo-task-board.png" alt="任务看板 HITL 干预" width="85%" />
+</p>
+<p align="center">
+  <img src="docs/images/demo-chat.gif" alt="Matrix 聊天运行时感知渲染" width="85%" />
+</p>
+
 ## ✨ 简介
 
-AgentTeams Dashboard 是一个基于 **Next.js** 的 Web 界面，用于可视化管理 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 集群中的 Worker、Team、Human、Manager 等资源，内置 Matrix 聊天、拓扑视图与 RBAC/审计工具。既可以独立部署，也可以通过一行脚本嵌入到已有的 AgentTeams 安装中。
+AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 的 **Mission Control**——基于 **Next.js** 的操作台，让操作者实时督导多智能体团队：集群拓扑、带人工干预（HITL）的任务看板、具备运行时感知渲染的 Matrix 聊天、RBAC/审计治理，以及 AI 诊断助手。既可以独立部署，也可以通过一行脚本嵌入到已有的 AgentTeams 安装中。
 
 ## 🚀 功能模块
 

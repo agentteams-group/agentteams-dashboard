@@ -3,7 +3,7 @@
 
   # AgentTeams Dashboard
 
-  **A lightweight web console for managing AgentTeams clusters — Workers, Teams, Humans, Managers and infrastructure, with integrated Matrix chat.**
+  **Mission Control for multi-agent teams — run Workers, Teams, Humans and Managers from one console: live topology, a task board with human-in-the-loop interventions, integrated Matrix chat with runtime-aware rendering, and AI-assisted diagnostics.**
 
   [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -17,9 +17,23 @@
 
 ---
 
+<!-- TODO(record): replace the three placeholders below with real captures —
+     see docs/images/README.md for the recording checklist (overview topology,
+     task-board HITL intervention, chat replay). -->
+
+<p align="center">
+  <img src="docs/images/demo-overview.png" alt="Overview topology" width="85%" />
+</p>
+<p align="center">
+  <img src="docs/images/demo-task-board.png" alt="Task board with HITL interventions" width="85%" />
+</p>
+<p align="center">
+  <img src="docs/images/demo-chat.gif" alt="Matrix chat with runtime-aware rendering" width="85%" />
+</p>
+
 ## ✨ Overview
 
-AgentTeams Dashboard is a **Next.js** web UI for visually managing [AgentTeams](https://github.com/agentscope-ai/AgentTeams) cluster resources — Workers, Teams, Humans and Managers — with built-in Matrix chat, topology views and RBAC/audit tooling. It can be deployed standalone or embedded into an existing AgentTeams installation with a one-line install script.
+AgentTeams Dashboard is the **Mission Control** for [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — a **Next.js** console where operators supervise multi-agent teams in real time: cluster topology, a task board with human-in-the-loop interventions, integrated Matrix chat with runtime-aware message rendering, RBAC/audit governance, and an AI diagnostic assistant. It deploys standalone or embeds into an existing AgentTeams installation with a one-line script.
 
 ## 🚀 Features
 

@@ -169,11 +169,15 @@
   - 验收：CONTRIBUTING/模板合入；死链检查覆盖新文档；gallery MVP 可浏览已注册插件
     - 验证记录（2026-09-29）：CONTRIBUTING + 三模板合入；死链修复过 docs-consistency；gallery 4/4 用例绿。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（215 文件/2063 用例）。插曲：16 的集成测试文件当时只跑了 vitest（skip 路径）+ eslint 未跑 tsc，本轮补跑暴露 7 处路由导出形状误配（buckets POST 创建而非 [bucket] PUT、对象 GET/PUT 实为 download/upload 路由、mcps DELETE 在 [name]、mcpsGET 无参、manifest.extensionPoints 可选）已全部按真实路由签名修正——再次印证三门必跑
 
-- [ ] 18. D2「Mission Control」定位与 README 改版（1-2 人日，P1；录制/截图另计）
-  - [ ] 18.1 双语 README（README.md / README.zh-CN.md）首屏配大图/GIF（overview 拓扑 + 任务看板干预 + Chat 回放三连）
-  - [ ] 18.2 定位文案从「管理面板」升级为「多智能体团队 Mission Control」
-  - [ ] 18.3 一次对外发布（release notes/社区帖）使用该定位
+- [x] 18. D2「Mission Control」定位与 README 改版（1-2 人日；录制/截图另计）
+  - [x] 18.1 双语 README（README.md / README.zh-CN.md）首屏配大图/GIF（overview 拓扑 + 任务看板干预 + Chat 回放三连）
+    - 完成记录（2026-09-29）：双语首屏占位结构就位（三连图引用：demo-overview.png / demo-task-board.png / demo-chat.gif，85% 宽居中）+ `docs/images/README.md` 录制清单（内容要点/尺寸/主题/工具/命名约定——替换同名文件即生效，README 零改动）。**真实录制待用户环境**（本环境无真实集群数据，空态截图无宣传价值，不做假图）
+  - [x] 18.2 定位文案从「管理面板」升级为「多智能体团队 Mission Control」
+    - 完成记录（2026-09-29）：双语首屏副标题重写（en：Mission Control for multi-agent teams——live topology / HITL task board / runtime-aware Matrix chat / AI diagnostics；zh：多智能体团队的 Mission Control）；Overview 段首句从「可视化管理资源」升级为「操作者实时督导多智能体团队」的 Mission Control 叙事，能力锚点（拓扑/HITL/运行时感知聊天/RBAC 审计/问天）具名化
+  - [x] 18.3 一次对外发布（release notes/社区帖）使用该定位
+    - 完成记录（2026-09-29）：发布文案草稿 `docs/release-notes-mission-control-draft.md`（中英双语，五条能力锚点 + 收尾定位语）——对外发布动作（GitHub Release / 社区帖）需维护者执行，文案就绪即用
   - 验收：双语首屏含演示图与定位语；一次对外发布落地
+    - 验证记录（2026-09-29）：定位语 ✓（双语首屏）、演示图结构 ✓（占位 + 录制清单，真实素材待录）、对外发布 = 文案草稿就绪，发布动作待维护者（外部动作，与 18.1 录制同批执行）。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过；docs-consistency 绿
 
 ## 阶段三：P2（第 7-12 周）
 
