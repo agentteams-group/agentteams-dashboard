@@ -32,6 +32,8 @@ export interface MCPCatalogState {
   loading: boolean;
   /** server name → workers that wire to it. */
   workersByServer: Map<string, MCPWorkerRef[]>;
+  /** Full catalog entries (B7 21.1: trusted flag drives default selection). */
+  servers: MCPCatalogServer[];
 }
 
 export function useMcpCatalog(): MCPCatalogState {
@@ -39,6 +41,7 @@ export function useMcpCatalog(): MCPCatalogState {
     off: false,
     loading: true,
     workersByServer: new Map(),
+    servers: [],
   });
 
   useEffect(() => {
@@ -48,25 +51,27 @@ export function useMcpCatalog(): MCPCatalogState {
         const res = await fetch('/api/agentteams/mcp-catalog', { cache: 'no-store' });
         if (cancelled) return;
         if (res.status === 404) {
-          setState({ off: true, loading: false, workersByServer: new Map() });
+          setState({ off: true, loading: false, workersByServer: new Map(), servers: [] });
           return;
         }
         if (!res.ok) {
-          setState({ off: false, loading: false, workersByServer: new Map() });
+          setState({ off: false, loading: false, workersByServer: new Map(), servers: [] });
           return;
         }
         const data = (await res.json()) as { servers?: MCPCatalogServer[] };
         if (cancelled) return;
         const map = new Map<string, MCPWorkerRef[]>();
+        const servers: MCPCatalogServer[] = [];
         for (const s of Array.isArray(data.servers) ? data.servers : []) {
           if (s && typeof s.name === 'string') {
             map.set(s.name, Array.isArray(s.workers) ? s.workers : []);
+            servers.push(s);
           }
         }
-        setState({ off: false, loading: false, workersByServer: map });
+        setState({ off: false, loading: false, workersByServer: map, servers });
       } catch {
         if (!cancelled) {
-          setState({ off: false, loading: false, workersByServer: new Map() });
+          setState({ off: false, loading: false, workersByServer: new Map(), servers: [] });
         }
       }
     })();
@@ -76,4 +81,13 @@ export function useMcpCatalog(): MCPCatalogState {
   }, []);
 
   return state;
+}
+
+/**
+ * Names of catalog servers marked trusted — the default-selection source
+ * for new Worker creation (B7 21.1): a fresh worker wires to every trusted
+ * server unless the operator unchecks it.
+ */
+export function trustedCatalogServerNames(state: MCPCatalogState): string[] {
+  return state.servers.filter((s) => s.trusted === true).map((s) => s.name);
 }
