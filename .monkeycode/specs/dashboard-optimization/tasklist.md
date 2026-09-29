@@ -53,7 +53,8 @@
   - 验收：6 处修正落地；文档 job 进 ci.yml 且绿；故意提交一个死链能让 CI 变红（演练一次）
   - 完成记录（2026-09-28）：6 处修正双语同步落地——测试规模改「2000+ tests / 200+ files」、删 DATABASE_URL 行（en/zh）、PowerShell 改「已支持（CI 验证）」、安装器默认 v1.2.4.9（:81/:108/:123 三处 en+zh）、主题参数统一 30+（以 docs/theme-customization.md 的 32 色 + 布局参数为权威口径）、删除 Roadmap 死链段落（唯一条目指向已不存在的 docs/plans/，en+zh）。新增 `scripts/check-docs-consistency.sh` + ci.yml `docs-consistency` job（禁字串 + 安装器默认版本与 install.sh 内嵌值断言同步 + README/docs 相对链接存在性检查，含 %5B/%5D 解码）；顺手修复门禁暴露的 docs/INDEX.md 14 处真死链（3 个不存在文档改指实际文件、历史 Spec 枚举列表改为目录指针防再漂移）。本地脚本绿；死链注入演练红（exit 1）后恢复绿
 
-- [ ] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
+- [x] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
+  - 完成记录（2026-09-29）：五个巨型文件全部拆完——knowledge-section 1899→759、ChatRoom 1129→780、projects-section 1359→261、wen-tian/index 1333→163、knowledge-graph3d 1282→726；全部纯代码搬移零行为变更，测试文件零改动（公开面经原路径再导出保持），每任务三门全绿后独立提交（6669860/245acce/488af0a/ad92847 + 本任务）。对应 section 手动冒烟（知识库/聊天/项目看板/问天/图谱 3D）需运行环境，待用户侧补验
   - [x] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
     - 完成记录（2026-09-28）：主文件 1899 → 759 行（<800 达标），实现按职责拆到 `sections/knowledge/` 七模块——types（57）/shared（50）/api（120）/graph（124）/view2d（300）/graph-2d（465）/tree-rows（97），纯代码搬移零行为变更；测试公开面（KnowledgeGraph/assembleGraph/clusterGridLayout/chipWidth/KB2D/focusView/clampZoomView/GNode）经再导出保持原路径不变，测试文件零改动。验证：eslint 新旧文件 0 警告、tsc 0 错、knowledge-section.test.tsx 35/35、全量 213 文件/2011 用例通过
   - [x] 7.2 拆分 `src/components/dashboard/sections/chat/ChatRoom.tsx`（1129 行，复制 chat 模块 views/hooks/components 模式）
@@ -62,7 +63,8 @@
     - 完成记录（2026-09-29）：主文件 1359 → 261 行（<800 达标），实现按职责拆到 `sections/projects/` 七模块——workflow-config（109，状态常量/normalizeNodeStatus/isSameProject/toastMutationError 纯 TS）、status-views（43，ProjectStatusBadge/DegradedBanner）、artifact-link（206，产物预览+下载芯片）、task-detail（227，CancelTaskButton/TaskDetailRow）、workflow-detail（468，导出 WorkflowDetail 治理面板）、workflow-dag-view（80，拓扑依赖图）、project-card（40），纯代码搬移零行为变更；`WorkflowDetail` 经 projects-section 再导出保持 tasks-section 的导入路径不变（`ProjectsSection` 本身已无消费方但仍保留导出）。验证：eslint 8 文件 0 警告 0 错（修复再导出未绑定本地名导致的 jsx-no-undef）、tsc 0 错、全量 213 文件/2011 用例通过
   - [x] 7.4 拆分 `src/plugins/wen-tian/index.tsx`（1333 行）
     - 完成记录（2026-09-29）：主文件 1333 → 163 行（<800 达标），实现按职责拆四模块——`lib/diagnostics.ts`（302，纯 TS：快照类型/守卫/analyzeWorkers/buildChecks/buildReport/collectSSE/RANGE_OPTIONS/filenameFromDisposition）、`diagnosis-model-select.tsx`（173，诊断模型选择器）、`diagnosis-report.tsx`（118，DiagnosisReport 富 Markdown 渲染）、`diagnostics-page.tsx`（622，createDiagnosticsPage 独立页工厂 + SummaryStat），纯代码搬移零行为变更；index.tsx 保留 createHealthWidget + activate/deactivate 生命周期，测试公开面（activate/analyzeWorkers/buildChecks/buildReport/deactivate/DiagnosisReport/type CheckResult）经再导出保持 `./index` 路径不变，index.test.tsx 零改动。验证：eslint 目录 0 警告 0 错、tsc 0 错、wen-tian 专项 11/11、全量 213 文件/2011 用例通过
-  - [ ] 7.5 拆分 `src/components/dashboard/knowledge-graph3d.tsx`（1282 行，已有 next/dynamic ssr:false 基础）
+  - [x] 7.5 拆分 `src/components/dashboard/knowledge-graph3d.tsx`（1282 行，已有 next/dynamic ssr:false 基础）
+    - 完成记录（2026-09-29）：主文件 1282 → 726 行（<800 达标），实现按职责拆到 `knowledge-graph3d/` 七模块——types（51，G3DNodeInput/G3DLinkInput/NodeVisual/G3DGraph）、palette（80，useGraph3DPalette/resolveCssColor/readPalette）、camera（150，zoom/pick 常量 + applyGraphZoomLimits/fitGraphModel/nodeRadius）、node-visual（158，buildNodeVisual 结构化传 NodeBuildState）、scene（70，configureGraphScene 相机/灯/雾/物理力定格）、click-layer（89，自持点击层 attachSelfClickLayer 返回清理函数）、toolbar（78，Graph3DToolbar），纯代码搬移零行为变更；主文件保留主组件 + 挂载/数据/选中/自动旋转 effect 与 hover 提示闭包，模块面（default/KnowledgeGraph3D/G3DNodeInput/G3DLinkInput/G3DPalette/useGraph3DPalette）经定义+再导出保持原路径，knowledge-section.tsx 与其测试零改动。验证：eslint 8 文件 0 警告 0 错、tsc 0 错、全量 213 文件/2011 用例通过（knowledge-section.test.tsx 动态导入预热实测 3D 模块链）
   - 每文件验收：主体 <800 行；三门绿；对应 section 手动冒烟（知识库/聊天/项目看板/问天/图谱 3D）
 
 - [ ] 8. A6 lint 与 tsconfig 基线收紧（3-5 人日，三步独立可回滚，与 A5 协同；容量超限可顺延 P2 前段）
