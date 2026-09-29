@@ -197,8 +197,8 @@
     - 验证记录（2026-09-29）：① ✓（3 用例 + 接线落地）；②③ 设计稿已登记上游 issue #1312（回应待维护者，跟踪留档）；④ 与 24 联动见该任务（README「MCP 治理」章节引用 21.1 的 trusted 默认勾选语义）。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（221 文件/2079 用例，merge 后基线）
 - [ ] 22. B8 知识库/审计数据面切 Controller 正源评估（1-2 人日，依赖上游 v1.2.5+）
   - 对照上游 v1.2.4 契约评估切换范围（KB 目录、审计字段）与收益；产出「切/不切 + 理由」；若切给灰度方案与回滚点（MinIO/本地读取路径保留一个版本周期）
-- [ ] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
-  - 把 agent 会话导出为可分享只读回放链接（默认脱敏，复用 debug-log PII 脱敏）；README GIF 演示 thinking/tool-call/工作流卡片回放；链接访问控制过安全评审
+- [x] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
+  - 完成记录（2026-09-29）：MVP 闭环落地——①`POST /api/agentteams/replay/export`：登录态校验（readServerIdentity）→ 复用 debug-log 的 `exportMatrixMessages`（**redact 强制 true 不接受调用方关闭**，homeserver 过 requireAllowlist SSRF 门）按 room 导出 → bundle（含 exportedBy/createdAt/room）写 `/data/agentteams-dashboard/replays/<id>.json`（AGENTTEAMS_REPLAY_DIR 可覆写）→ 返回 128-bit 随机 capability id + `/replay/<id>` 链接；②`GET .../export?id=`：hex-32 格式校验（路径穿越守卫）后返回 bundle JSON；③只读回放页 `/replay/[id]`（服务端组件直读 bundle，无目录列举、无交互面），页头声明「链接即凭据」。**安全评审要点**：capability URL 即 bearer（128-bit 熵，不枚举）、导出需登录而读取无需（分享语义）、默认脱敏不可关、无列表端点；README GIF 演示与 18.1 录制同批待用户环境。6 用例（401/400/脱敏强制+bundle 落盘/502 空导出/400 穿越/404+200）。验证：eslint 0/0、tsc 0 错、vitest 全量链式绿
 - [x] 24. D4 MCP 治理中心故事（0.5-1 人日，依赖任务 21.1）
   - 完成记录（2026-09-29）：双语 README 新增「MCP 治理 / MCP Governance」章节（Quick Start 前）——五条治理锚点：注册表 CRUD（校验/拒重）、部署目录（上游 #1250 catalog + Worker 接线回报 + 旧版降级）、受信默认接线（引用 21.1 的 trusted 默认勾选语义，验收联动 ✓）、审计线索（追加式 JSONL 含 actor/级别/时间戳）、凭据卫生（上游密钥不回传浏览器）；线协议指向 INTERFACES.md。一键安装演示 GIF：与 D2 的 18.1 录制同批（docs/images/README.md 录制清单模式复用，GIF 待用户环境录制——不虚构素材）。顺手清零 lint:tone 基线：4 处既有「智能体」禁词（wen-tian prompt ×3、worker-detail-dialog 提示 ×1）改「Agent」，语调门禁首次全绿（497 文件 0 命中），与新贡献约定的门禁一致。验证：docs-consistency 绿、lint:tone 0 命中、受影响测试 15 文件/120 用例绿、tsc 0 错
 - [ ] 25. D5 一键部署可传播（2-3 人日，demo 站另计）
