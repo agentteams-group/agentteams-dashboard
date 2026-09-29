@@ -119,11 +119,15 @@
   - 验收：main 含与上游语义一致的能力；无字段漂移（清单存档）；三门绿
     - 验证记录（2026-09-29）：上游语义 = PR head 即合入 commit，字段零漂移（清单存档 b1-upstream-alignment.md，含 PR 更新时的 4 项复核要点）。三门：eslint 0 错 0 警、tsc 0 错、vitest 217 文件/2074 用例通过（含分支自带测试与新增 gateway-probe 4 用例）
 
-- [ ] 13. B3 上游对齐自动化：install.sh 漂移检测 + Controller 契约对照（1-1.5 人日，P1）
-  - [ ] 13.1 CI 增加 weekly cron：拉取上游安装器与本仓 `install/agentteams-install.sh`（4707 行）diff，超阈值（>50 行或命中 step_dashboard 段）开 issue 告警
-  - [ ] 13.2 `docs/INTERFACES.md` 建立「上游版本对照记录」小节，先落 v1.2.4 对照（events 分页、审计字段等）
-  - [ ] 13.3 形成流程：上游 minor 发布后过一遍 proxy 层端点（`src/app/api/agentteams` 112 个 route 的目标端点清单）；流程写入 CONTRIBUTING（与任务 18 协同）
+- [x] 13. B3 上游对齐自动化：install.sh 漂移检测 + Controller 契约对照（1-1.5 人日，P1）
+  - [x] 13.1 CI 增加 weekly cron：拉取上游安装器与本仓 `install/agentteams-install.sh`（4707 行）diff，超阈值（>50 行或命中 step_dashboard 段）开 issue 告警
+    - 完成记录（2026-09-29）：`.github/workflows/upstream-drift.yml`——每周一 03:23 UTC + 手动触发；拉取 `agentscope-ai/AgentTeams` main 的 `install/agentteams-install.sh` 与本仓副本 diff，>50 行或 diff 命中 dashboard 段时 `gh issue create` 告警（不带 label 防 label 缺失失败），diff 全文传 artifact
+  - [x] 13.2 `docs/INTERFACES.md` 建立「上游版本对照记录」小节，先落 v1.2.4 对照（events 分页、审计字段等）
+    - 完成记录（2026-09-29）：INTERFACES.md 新增小节（含对照方法与 cron 指引），v1.2.4 口径落 6 条可考证据契约——events 游标分页（limit 1..200/默认 50 + next_cursor，上游 PR #1233 实锤于路由注释）、worker env/envEditable（B1 合入，指向 b1-upstream-alignment.md 复核要点）、gateway-probe 透传契约、审计字段（dashboard 自持 JSONL 无上游契约——明确标注 dashboard-owned）、请求模型别名语义（AGENTTEAMS_PATCH.md migration）、安装器集成版本线（#1075 + follow-ups）
+  - [x] 13.3 形成流程：上游 minor 发布后过一遍 proxy 层端点（`src/app/api/agentteams` 112 个 route 的目标端点清单）；流程写入 CONTRIBUTING（与任务 18 协同）
+    - 完成记录（2026-09-29）：新建 CONTRIBUTING.md（任务书预期存在该文件，实无——本步创建）——三门纪律（含「vitest esbuild 不查类型、务必三门同跑」教训）、上游对齐三步流程（proxy 端点 grep 提取法 + 实数：84 个 route / 43 个走 proxyToAgentTeams——任务书 112 为写作时口径，以流程内命令实时统计为准）、安装器改动走上游 PR 约定、对照清单存档约定
   - 验收：cron job 上线且首次产出 diff 报告；INTERFACES.md 含 v1.2.4 对照记录
+    - 验证记录（2026-09-29）：workflow 文件上线（cron 生效待推送后由 GitHub 调度，本地已用同逻辑产出首份报告）；首份漂移报告 `.monkeycode/specs/dashboard-optimization/reports/2026-09-29-installer-drift.md`——**695 行漂移 + dashboard 段触碰，双阈值均触发**：本仓副本独有 Higress adapter env 段（pending upstream PR，预期差异）+ 上游独有 DeepSeek Harness 镜像安装支持（本仓落后，需评估同步，与 B2 runtime 卡片口径呼应）；报告含上游 main commit sha（89562fb）可追溯；docs-consistency 门禁绿
 
 - [ ] 14. B4 org.agentteams.run v1 协议固化（1-2 人日，P1）
   - [ ] 14.1 v1 块协议写入 `docs/INTERFACES.md` 新章节（块类型 union：text/thinking/tool_call/confirmation/error、字段规范、版本协商、未知版本回退语义）

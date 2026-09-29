@@ -128,6 +128,21 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 
 验证记录：`npm run lint`、`npm run typecheck` 与 `git diff --check` 已通过。完整 `npm test` 全量通过（58 个测试文件 445 个用例）。
 
+## 上游版本对照记录
+
+> B3（2026-09-29 起）：Dashboard 依赖的 Controller 契约随上游 `agentscope-ai/AgentTeams` minor 版本演进。每条契约记录「Dashboard 依赖 → 上游落点 → 版本/PR」。上游 minor 发布后按 CONTRIBUTING 的流程过一遍 proxy 层端点；安装器漂移由 weekly cron（`.github/workflows/upstream-drift.yml`）告警。
+
+### v1.2.4 口径（2026-09-29 落定）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 项目事件流分页 | `GET /api/agentteams/projects/{id}/events` 透传 `limit`（1..200，控制器默认 50）与不透明 `cursor`，翻页直到 `next_cursor` 耗尽（单次打开封顶 10 页 × 200 = 2000 条） | `GET /api/v1/projects/{id}/events`，上游 PR #1233（任务状态转换引擎：table + history + events + progress） | `src/app/api/agentteams/projects/[id]/events/route.ts` 注释 + `project-events-panel.tsx` 游标循环 |
+| Worker env 编辑 | `PUT /api/v1/workers/{name}` 请求体新增 `env`（字面量 key/value，未变更整体省略）；响应含 `env` / `envEditable`，非管理员读响应被 Dashboard 剥除 | controller 侧 worker 配置接口（与 dashboard PR #135 同期的上游能力，见 `.monkeycode/specs/dashboard-optimization/b1-upstream-alignment.md` 复核要点） | `workers/environment-access.ts` + B1 对照清单 |
+| gateway 身份探测 | `POST /api/agentteams/workers/{name}/gateway-probe` 纯透传至 `POST /api/v1/workers/{name}/gateway-probe`（RBAC `update` × `gateway.consumer`），错误语义原样返回 | 同上 | `workers/[name]/gateway-probe/route.ts` + route.test.ts |
+| 审计字段 | Dashboard 自持 JSONL 审计日志（`AuditEventRecord`：id/timestamp/severity/actor/actor_level/entity_type/entity_name/action/details/source_ip），**不依赖** controller 审计端点 | 无上游契约（dashboard-owned） | `src/lib/audit-log.ts` |
+| 请求模型别名 | Manager/Worker 的 `model` 字段语义 = 请求模型别名（经 AI 网关路由），非 Higress Provider 名；存量非空值原样重提交 | `install/AGENTTEAMS_PATCH.md`「Request Model Alias Migration」 | `external-model-binding-guard` 路由守卫 |
+| 安装器 dashboard 集成 | 本仓 `install/agentteams-install.sh` 为上游 `install/agentteams-install.sh` 的工作副本（PR #1075 已并入上游，后续 #1081/#1118/#1162/#1195） | `agentscope-ai/AgentTeams` main | weekly drift cron + `install/AGENTTEAMS_PATCH.md` |
+
 ## 安全边界
 
 - Controller API 使用 Dashboard 服务端代理与授权令牌。

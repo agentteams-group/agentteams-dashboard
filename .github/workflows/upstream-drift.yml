@@ -1,0 +1,82 @@
+name: Upstream Installer Drift
+
+# B3: 本仓 install/agentteams-install.sh 是 agentscope-ai/AgentTeams 上游
+# 安装器的工作副本（dashboard 集成已并入上游，见 install/AGENTTEAMS_PATCH.md）。
+# 每周拉取上游 main 的安装器与本仓副本 diff，超阈值或命中 dashboard 集成段
+# 时开 issue 告警——上游漂移会让本仓副本静默过时。
+
+on:
+  schedule:
+    - cron: '23 3 * * 1' # 每周一 03:23 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  drift:
+    name: Diff installer against upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream installer
+        run: |
+          curl -fsSL --max-time 60 \
+            "https://raw.githubusercontent.com/agentscope-ai/AgentTeams/main/install/agentteams-install.sh" \
+            -o /tmp/upstream-agentteams-install.sh
+          wc -l /tmp/upstream-agentteams-install.sh install/agentteams-install.sh
+
+      - name: Compute drift
+        id: drift
+        run: |
+          set -euo pipefail
+          diff -u install/agentteams-install.sh /tmp/upstream-agentteams-install.sh > /tmp/installer.diff || true
+          LINES=$(grep -c '^[+-][^+-]' /tmp/installer.diff || true)
+          echo "lines=$LINES" >> "$GITHUB_OUTPUT"
+          # dashboard 集成段命中：上游改了 dashboard 相关行 → 高优先告警
+          if grep -qi 'dashboard' /tmp/installer.diff; then
+            echo "dashboard_touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dashboard_touched=false" >> "$GITHUB_OUTPUT"
+          fi
+          head -100 /tmp/installer.diff > /tmp/installer.head.diff || true
+
+      - name: Open warning issue when drift exceeds threshold
+        if: steps.drift.outputs.lines > 50 || steps.drift.outputs.dashboard_touched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINES: ${{ steps.drift.outputs.lines }}
+          DASH: ${{ steps.drift.outputs.dashboard_touched }}
+        run: |
+          {
+            echo "## 上游安装器漂移告警"
+            echo ""
+            echo "- diff 行数：**${LINES}**（阈值 50）"
+            echo "- dashboard 集成段被触碰：**${DASH}**"
+            echo ""
+            echo "本仓 \`install/agentteams-install.sh\` 与上游 main 的安装器出现漂移。"
+            echo "按 \`install/AGENTTEAMS_PATCH.md\` 的流程：将本仓副本与上游对齐，"
+            echo "dashboard 集成改动直接向上游 \`agentscope-ai/AgentTeams\` 提 PR。"
+            echo ""
+            echo '<details><summary>diff 前 100 行</summary>'
+            echo ''
+            echo '```diff'
+            cat /tmp/installer.head.diff
+            echo '```'
+            echo '</details>'
+          } > /tmp/issue-body.md
+          gh issue create \
+            --title "上游安装器漂移：diff ${LINES} 行（dashboard 触碰=${DASH}）" \
+            --body-file /tmp/issue-body.md
+
+      - name: Upload diff artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-drift-diff
+          path: /tmp/installer.diff
+          if-no-files-found: ignore
