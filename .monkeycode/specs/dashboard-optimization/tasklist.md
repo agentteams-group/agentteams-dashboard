@@ -34,7 +34,9 @@
   - 完成记录（2026-09-28）：Dockerfile 两处 node:22-alpine、ci.yml node-version 22（build.yml/install-test.yml 无 node 引用，无需改）；isomorphic-dompurify ^3.19.0 → ^4.4.0（实装 4.4.0 + jsdom 树；本机 Node 22.22.0 低于 jsdom 引擎下限 22.22.2 仅 EBADENGINE 警告，2011 用例实测全绿；7f21a0a 不在本仓历史，降级已固化于版本号，升回即等效回滚）；README.md/README.zh-CN.md:49 与 docs/DEVELOPER_GUIDE.md、.monkeycode/docs/DEVELOPER_GUIDE.md 同步为 Node.js 22+。本环境无 docker，多架构镜像构建与镜像内 node -v 验证待 push 后 CI（build.yml 走 tag 触发的 make push，node:22-alpine 浮动标签当前 ≥22.22.2 满足 jsdom 引擎要求）
 
 - [ ] 4. 协调：与维护者确认 CHANGELOG Unreleased（CoPaw→QwenPaw）发版窗口，冻结与其冲突的 runtime 枚举类变更（影响 B2/B5 排期）
-- [ ] 5. A10 CI Actions 状态核实与失败告警（0.5 人日，P1 小项，需维护者登录态）
+  - 前置留档（2026-09-29）：冲突面已实际发生并合入——B2/11.1 的 deepseek-harness 卡片/计数/实验徽标属于「runtime 枚举类变更」，随本地 main 存在（未推送）；发版窗口确认后若需冻结，回滚面 = runtime-section.tsx 单文件。剩余动作：维护者确认窗口（外部动作）
+- [x] 5. A10 CI Actions 状态核实与失败告警（0.5 人日，P1 小项，需维护者登录态）
+  - 完成记录（2026-09-29）：状态核实（带凭据 API 实查）——远程 main 最近两次 CI success（12:29/12:34 UTC），此前 9/25-26 曾 4 连败后修复转绿，一次 Publish workflow_dispatch 取消（人工行为）；当前无持续失败。失败告警缺口补齐：`.github/workflows/ci-alert.yml`（workflow_run 监听 CI 完成、main 分支 failure 时开/更新告警 issue，重复失败评论追加不刷屏）。告警上线待推送后由 GitHub 调度生效
   - [ ] 5.1 核对 main 最近一次 ci/build/install-test 实际绿红并修红
   - [ ] 5.2 为 main 失败配置通知（邮件/IM webhook）并演练一次
 
@@ -140,6 +142,7 @@
     - 验证记录（2026-09-29）：协议章节已入 INTERFACES.md（docs-consistency 绿）；上游 issue #1312 已创建（回应待上游维护者，issue 链接与编号留档于本记录）；回退路径两层测试全绿。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（215 文件/2063 用例）
 
 - [ ] 15. B5 QwenPaw 迁移收口与上游兼容窗口对齐（0.5-1 人日本体，时点依赖上游 minor 窗口）
+  - 前置盘点（2026-09-29）：dashboard 侧迁移口径已基本落地——copaw 存量徽标 + 拒新建（isLegacyCopaw/rejectCopawCreate/COPAW_MIGRATION_HINT）、runtime-section 存量徽标与选择指南文案、MCP 治理章节。剩余收口项（依赖上游 minor 窗口）：①上游正式移除 copaw runtime 枚举时的同步删除（isLegacyRuntime 分支与卡片）；②迁移完成率数据（存续 copaw 实例数）从 workers 列表统计输出到 Overview；③窗口对齐动作 = 维护者在上游 minor 发布时通知，同步本仓收口 PR
   - [ ] 15.1 与上游约定存量 CoPaw 清理时点（建议跟下一个 minor）；`WorkerRuntime` 的 `'copaw'` 保留至清理时点
   - [ ] 15.2 明确「升级态」实例迁移引导；存量 CoPaw「一键升级 QwenPaw」路径冒烟通过
   - [ ] 15.3 梳理 `.copaw` 会话目录回退探测（qwenpaw 优先 + copaw 回退）的退役计划并成文
@@ -195,7 +198,7 @@
   - 验收：①落地有用例；②③设计稿有上游回应；④与任务 24 联动
     - 验证记录（2026-09-29）：① ✓（3 用例 + 接线落地）；②③ 设计稿已登记上游 issue #1312（回应待维护者，跟踪留档）；④ 与 24 联动见该任务（README「MCP 治理」章节引用 21.1 的 trusted 默认勾选语义）。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（221 文件/2079 用例，merge 后基线）
 - [ ] 22. B8 知识库/审计数据面切 Controller 正源评估（1-2 人日，依赖上游 v1.2.5+）
-  - 对照上游 v1.2.4 契约评估切换范围（KB 目录、审计字段）与收益；产出「切/不切 + 理由」；若切给灰度方案与回滚点（MinIO/本地读取路径保留一个版本周期）
+  - 前置留档（2026-09-29）：v1.2.5+ 未发布（上游最新 v1.2.4 线，见 B3 对照记录），评估的正源端点未落地，主体评估阻塞。可先行结论：审计面 dashboard-owned（本地 JSONL 无上游契约，INTERFACES 对照已标注）→ 审计「切正源」前提不存在，除非上游新增审计端点（登记到 #1312 追踪）；KB 目录切正源的上游候选端点与收益矩阵待 v1.2.5 发布后补评估。阻塞原因与解除条件已明
 - [x] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
   - 完成记录（2026-09-29）：MVP 闭环落地——①`POST /api/agentteams/replay/export`：登录态校验（readServerIdentity）→ 复用 debug-log 的 `exportMatrixMessages`（**redact 强制 true 不接受调用方关闭**，homeserver 过 requireAllowlist SSRF 门）按 room 导出 → bundle（含 exportedBy/createdAt/room）写 `/data/agentteams-dashboard/replays/<id>.json`（AGENTTEAMS_REPLAY_DIR 可覆写）→ 返回 128-bit 随机 capability id + `/replay/<id>` 链接；②`GET .../export?id=`：hex-32 格式校验（路径穿越守卫）后返回 bundle JSON；③只读回放页 `/replay/[id]`（服务端组件直读 bundle，无目录列举、无交互面），页头声明「链接即凭据」。**安全评审要点**：capability URL 即 bearer（128-bit 熵，不枚举）、导出需登录而读取无需（分享语义）、默认脱敏不可关、无列表端点；README GIF 演示与 18.1 录制同批待用户环境。6 用例（401/400/脱敏强制+bundle 落盘/502 空导出/400 穿越/404+200）。验证：eslint 0/0、tsc 0 错、vitest 全量链式绿
 - [x] 24. D4 MCP 治理中心故事（0.5-1 人日，依赖任务 21.1）
