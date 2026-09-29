@@ -288,8 +288,7 @@ docker build -t agentteams-dashboard:local .
 
 ## 🤝 相关仓库
 
-- [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — 多智能体协作运行时
-- [AgentTeams Controller](https://github.com/higress-group/agentteams) — Controller
+- [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — 多智能体协作运行时（Controller 位于 [`agentteams-controller/`](https://github.com/agentscope-ai/AgentTeams/tree/main/agentteams-controller) 目录）
 
 ## 📄 许可证
 

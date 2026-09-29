@@ -157,12 +157,17 @@
   - 验收：回归套件在现网 MinIO 全绿；安装器探测链更新且有测试覆盖
     - 验证记录（2026-09-29）：探测链 ✓（安装器测试 60/60 实测）；回归套件结构就绪 ✓（skip 路径 13/13 skipped 零失败；常规全量不采集）——「现网 MinIO 全绿」一项待有现网环境执行（16.2 标注），执行即出基线
 
-- [ ] 17. D1 贡献者入口基线（2-3 人日，P1，依赖任务 6 的死链检查）
-  - [ ] 17.1 新增 CONTRIBUTING.md：三门验证顺序（typecheck→eslint→vitest）、`npm ci` 同步约定、AI 协作痕迹约定（`lint:tone` 门禁）、上游对齐流程（引用 `install/AGENTTEAMS_PATCH.md`）
-  - [ ] 17.2 补 issue（bug/feature）与 PR 模板（`.github/ISSUE_TEMPLATE/`、`PULL_REQUEST_TEMPLATE.md`）
-  - [ ] 17.3 修复 README.md:331 死链（与任务 6 协同，避免重复改）
-  - [ ] 17.4 插件 gallery 页 MVP（内置 wen-tian/monitor-panel 之外给外部插件曝光位）
+- [x] 17. D1 贡献者入口基线（2-3 人日，P1，依赖任务 6 的死链检查）
+  - [x] 17.1 新增 CONTRIBUTING.md：三门验证顺序（typecheck→eslint→vitest）、`npm ci` 同步约定、AI 协作痕迹约定（`lint:tone` 门禁）、上游对齐流程（引用 `install/AGENTTEAMS_PATCH.md`）
+    - 完成记录（2026-09-29）：CONTRIBUTING.md 已于任务 13 先行创建（三门 + npm ci 约定 + 上游对齐流程 + 对照清单存档约定）；本步补齐缺口——三门顺序对齐任务书（typecheck→eslint→vitest）、新增「AI 协作痕迹约定」节（`npm run lint:tone` 语调门禁，说明扫描范围与改写要求）
+  - [x] 17.2 补 issue（bug/feature）与 PR 模板（`.github/ISSUE_TEMPLATE/`、`PULL_REQUEST_TEMPLATE.md`）
+    - 完成记录（2026-09-29）：bug_report.md（现象/复现/环境信息/日志指引——引导用「设置 → 日志收集」一键打包并提示 PII 自查）、feature_request.md（问题导向 + 影响面含上游契约对照提示）、PULL_REQUEST_TEMPLATE.md（三门自查清单 + docs-consistency/lint:tone 适用项 + 上游契约对齐说明项）
+  - [x] 17.3 修复 README.md:331 死链（与任务 6 协同，避免重复改）
+    - 完成记录（2026-09-29）：实侧发现新死链——README「Related Projects」的 `higress-group/agentteams`（Controller）GitHub 404（curl 实测）；双语 README（en :332 / zh :292）Controller 链接改指 `agentscope-ai/AgentTeams` 的 `agentteams-controller/` 子目录（上游真实布局，13.1 时已验证该仓库可达）；docs-consistency 门禁绿
+  - [x] 17.4 插件 gallery 页 MVP（内置 wen-tian/monitor-panel 之外给外部插件曝光位）
+    - 完成记录（2026-09-29）：资源中心新增「插件」tab + `plugins/plugin-gallery.tsx`——内置插件卡（BUNDLED_PLUGINS manifest 元数据：name/version/description/extensionPoints）+ 外部 URL 插件曝光（extension-store 有贡献但无内置 manifest 的 pluginId 自动成卡）+ 贡献计数（menu/route/widget 聚合）+「打开」按钮（pluginSectionId 跳转，实测前缀 `plugin-route:`）；未激活插件标记。4 用例（内置元数据与计数、外部曝光、未激活标记、跳转）全过
   - 验收：CONTRIBUTING/模板合入；死链检查覆盖新文档；gallery MVP 可浏览已注册插件
+    - 验证记录（2026-09-29）：CONTRIBUTING + 三模板合入；死链修复过 docs-consistency；gallery 4/4 用例绿。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（215 文件/2063 用例）。插曲：16 的集成测试文件当时只跑了 vitest（skip 路径）+ eslint 未跑 tsc，本轮补跑暴露 7 处路由导出形状误配（buckets POST 创建而非 [bucket] PUT、对象 GET/PUT 实为 download/upload 路由、mcps DELETE 在 [name]、mcpsGET 无参、manifest.extensionPoints 可选）已全部按真实路由签名修正——再次印证三门必跑
 
 - [ ] 18. D2「Mission Control」定位与 README 改版（1-2 人日，P1；录制/截图另计）
   - [ ] 18.1 双语 README（README.md / README.zh-CN.md）首屏配大图/GIF（overview 拓扑 + 任务看板干预 + Chat 回放三连）

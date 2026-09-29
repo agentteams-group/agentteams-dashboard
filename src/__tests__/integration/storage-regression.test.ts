@@ -26,13 +26,14 @@ import { GET as presignGET } from '@/app/api/agentteams/storage/presign/route';
 import { POST as uploadPOST } from '@/app/api/agentteams/storage/upload/route';
 import { GET as downloadGET } from '@/app/api/agentteams/storage/download/route';
 import { GET as bucketsGET, POST as bucketsPOST } from '@/app/api/agentteams/storage/buckets/route';
-import { GET as bucketGET, PUT as bucketPUT, DELETE as bucketDELETE } from '@/app/api/agentteams/storage/buckets/[bucket]/route';
+import { DELETE as bucketDELETE } from '@/app/api/agentteams/storage/buckets/[bucket]/route';
 import { GET as objectsGET } from '@/app/api/agentteams/storage/buckets/[bucket]/objects/route';
-import { PUT as objectPUT, GET as objectGET, DELETE as objectDELETE } from '@/app/api/agentteams/storage/buckets/[bucket]/objects/[...key]/route';
+import { DELETE as objectDELETE } from '@/app/api/agentteams/storage/buckets/[bucket]/objects/[...key]/route';
 import { POST as bulkDeletePOST } from '@/app/api/agentteams/storage/buckets/[bucket]/bulk-delete/route';
 import { GET as statsGET } from '@/app/api/agentteams/storage/buckets/[bucket]/stats/route';
 import { GET as skillsGET, POST as skillsPOST } from '@/app/api/agentteams/skills/route';
-import { GET as mcpsGET, POST as mcpsPOST, DELETE as mcpsDELETE } from '@/app/api/agentteams/mcps/route';
+import { GET as mcpsGET, POST as mcpsPOST } from '@/app/api/agentteams/mcps/route';
+import { DELETE as mcpDELETE } from '@/app/api/agentteams/mcps/[name]/route';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { SKILL_PACKAGE_MAX_BYTES } from '@/lib/skill-center-types';
 
@@ -149,22 +150,20 @@ d('§3.3.4 #2 presign chain', () => {
 });
 
 d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
-  it('bucket create / duplicate 409 / get / delete lifecycle', async () => {
+  it('bucket create (409 on duplicate) / delete / delete-missing 404 lifecycle', async () => {
     const listRes = await bucketsGET(jsonReq('http://localhost/api/agentteams/storage/buckets', 'GET'));
     expect(listRes.status).toBe(200);
     const listed = (await listRes.json()) as { buckets: Array<{ name: string }> };
     expect(listed.buckets.some((b) => b.name === config!.bucket)).toBe(true);
 
-    const created = await bucketPUT(
-      jsonReq(`http://localhost/api/agentteams/storage/buckets/${TEST_BUCKET}`, 'PUT'),
-      { params: Promise.resolve({ bucket: TEST_BUCKET }) },
+    const created = await bucketsPOST(
+      jsonReq('http://localhost/api/agentteams/storage/buckets', 'POST', { name: TEST_BUCKET }),
     );
     expect([200, 201]).toContain(created.status);
     createdBuckets.push(TEST_BUCKET);
 
-    const duplicate = await bucketPUT(
-      jsonReq(`http://localhost/api/agentteams/storage/buckets/${TEST_BUCKET}`, 'PUT'),
-      { params: Promise.resolve({ bucket: TEST_BUCKET }) },
+    const duplicate = await bucketsPOST(
+      jsonReq('http://localhost/api/agentteams/storage/buckets', 'POST', { name: TEST_BUCKET }),
     );
     expect(duplicate.status).toBe(409);
 
@@ -193,12 +192,11 @@ d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
     );
     expect(upload.status).toBe(200);
 
-    const objectRes = await objectGET(
-      jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects/${key}`, 'GET'),
-      { params: Promise.resolve({ bucket: config!.bucket, key: [key] }) },
+    const download = await downloadGET(
+      jsonReq(`http://localhost/api/agentteams/storage/download?bucket=${config!.bucket}&key=${encodeURIComponent(key)}`, 'GET'),
     );
-    expect(objectRes.status).toBe(200);
-    expect(await objectRes.text()).toBe('round-trip-content');
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe('round-trip-content');
 
     const list = await objectsGET(
       jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects?prefix=${encodeURIComponent(PREFIX)}`, 'GET'),
@@ -304,12 +302,12 @@ d('§3.3.4 #8 MCP config CRUD (mcp-servers/ prefix)', () => {
     );
     expect([200, 201]).toContain(created.status);
 
-    const list = await mcpsGET(jsonReq('http://localhost/api/agentteams/mcps', 'GET'));
+    const list = await mcpsGET();
     expect(list.status).toBe(200);
     const body = (await list.json()) as { servers: Array<{ name: string }> };
     expect(body.servers.some((s) => s.name === name)).toBe(true);
 
-    const removed = await mcpsDELETE(
+    const removed = await mcpDELETE(
       jsonReq(`http://localhost/api/agentteams/mcps/${name}`, 'DELETE'),
       { params: Promise.resolve({ name }) },
     );

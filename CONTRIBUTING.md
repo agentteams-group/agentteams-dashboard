@@ -12,11 +12,21 @@ npm run dev
 
 ## 每次改动必过「三门」
 
-1. `npm run lint`（eslint，0 警告基线）
-2. `npm run typecheck`（tsc --noEmit，`noImplicitAny: true` 完整 strict 语义）
+1. `npm run typecheck`（tsc --noEmit，`noImplicitAny: true` 完整 strict 语义）
+2. `npm run lint`（eslint，0 警告基线）
 3. `npm test`（vitest 全量）
 
 三项全绿再提交。注意：vitest 用 esbuild 转译、运行时不做类型检查——新测试文件只有 tsc 能暴露类型错误，务必三门同跑。
+
+## AI 协作痕迹约定
+
+涉及 AI 生成或 AI 辅助修改的文案（README、docs、UI 文案），提交前过一遍语调门禁：
+
+```bash
+npm run lint:tone
+```
+
+门禁扫描 AI 常见的夸大/套话表达（`scripts/ai-tone-scan.mjs`）；命中项改写为平实陈述后再提交。
 
 ## 上游对齐流程（B3）
 

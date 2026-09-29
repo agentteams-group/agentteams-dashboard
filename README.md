@@ -327,8 +327,7 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 ## 🤝 Related Projects
 
-- [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — multi-agent collaboration runtime
-- [AgentTeams Controller](https://github.com/higress-group/agentteams) — the Controller
+- [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — multi-agent collaboration runtime (controller lives in [`agentteams-controller/`](https://github.com/agentscope-ai/AgentTeams/tree/main/agentteams-controller))
 
 ## 📄 License
 
