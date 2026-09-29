@@ -21,10 +21,7 @@
      docs/images/README.md（overview 拓扑 / 任务看板 HITL 干预 / Chat 回放）。 -->
 
 <p align="center">
-  <img src="docs/images/demo-overview.png" alt="Overview 拓扑" width="85%" />
-</p>
-<p align="center">
-  <img src="docs/images/demo-task-board.png" alt="任务看板 HITL 干预" width="85%" />
+  <img alt="Task board with HITL interventions" width="85%" src="https://github.com/user-attachments/assets/e923d71c-b992-4174-8c14-be98afd95aef" />
 </p>
 <p align="center">
   <img src="docs/images/demo-chat.gif" alt="Matrix 聊天运行时感知渲染" width="85%" />
