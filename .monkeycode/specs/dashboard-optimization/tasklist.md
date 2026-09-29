@@ -129,11 +129,15 @@
   - 验收：cron job 上线且首次产出 diff 报告；INTERFACES.md 含 v1.2.4 对照记录
     - 验证记录（2026-09-29）：workflow 文件上线（cron 生效待推送后由 GitHub 调度，本地已用同逻辑产出首份报告）；首份漂移报告 `.monkeycode/specs/dashboard-optimization/reports/2026-09-29-installer-drift.md`——**695 行漂移 + dashboard 段触碰，双阈值均触发**：本仓副本独有 Higress adapter env 段（pending upstream PR，预期差异）+ 上游独有 DeepSeek Harness 镜像安装支持（本仓落后，需评估同步，与 B2 runtime 卡片口径呼应）；报告含上游 main commit sha（89562fb）可追溯；docs-consistency 门禁绿
 
-- [ ] 14. B4 org.agentteams.run v1 协议固化（1-2 人日，P1）
-  - [ ] 14.1 v1 块协议写入 `docs/INTERFACES.md` 新章节（块类型 union：text/thinking/tool_call/confirmation/error、字段规范、版本协商、未知版本回退语义）
-  - [ ] 14.2 向上游提 PR/issue 对齐并跟踪回应
-  - [ ] 14.3 保持 normalize.ts 既有启发式为兜底；协议解析测试覆盖未知版本回退路径
+- [x] 14. B4 org.agentteams.run v1 协议固化（1-2 人日，P1）
+  - [x] 14.1 v1 块协议写入 `docs/INTERFACES.md` 新章节（块类型 union：text/thinking/tool_call/confirmation/error、字段规范、版本协商、未知版本回退语义）
+    - 完成记录（2026-09-29）：INTERFACES.md 新增「运行时块协议（org.agentteams.run v1）」章节——信封字段表（version/run_id/step_id/blocks）、五类块 union 字段规范表（含 tool_call 的 status 四态与 tool_call_id 去重语义、confirmation 的 confirmation_id 必填约束、error 的 kind 三态哨兵）、版本协商四条（resolveProtocolVersion 分流、归一化默认值填充与未知字段剥除、未知块静默跳过、未知信封版本整体回退文本启发式「永不丢消息」承诺）、回退链路测试指针。契约源码 protocol.ts 为 source of truth，ARCHITECTURE.md 叙述章节互链
+  - [x] 14.2 向上游提 PR/issue 对齐并跟踪回应
+    - 完成记录（2026-09-29）：上游 **agentscope-ai/AgentTeams#1312**（2026-09-29 创建，open）——提议 runtime adapter 侧对齐 org.agentteams.run v1 可选载荷；附信封 JSON 草案、兼容性保证（未知版本/坏块回退启发式不丢消息，增量采用安全）、诉求（runtime 维护者评审形状覆盖度 + 意向确认后可提 controller/runtime 文档 PR）；关联 dashboard PR #135。跟踪方式：issue 订阅 + 后续任务回顾时查回应
+  - [x] 14.3 保持 normalize.ts 既有启发式为兜底；协议解析测试覆盖未知版本回退路径
+    - 完成记录（2026-09-29）：normalize.ts 启发式零改动（13 条规则顺序不变，run 结构化通道为 opt-in rule 2）；回退路径测试两层钉住——parser 层已有「returns undefined for unknown protocol versions」（parser-agent-run.test.ts），本步补 normalize 链路级用例「falls back to the body-text heuristics when the protocol version is unknown」（version: '9' 载荷 + Thinking: 前缀 body → legacy thinking 块产出、结构化 future 形状不泄漏）
   - 验收：INTERFACES.md 含协议章节；上游侧有回应；回退路径测试绿
+    - 验证记录（2026-09-29）：协议章节已入 INTERFACES.md（docs-consistency 绿）；上游 issue #1312 已创建（回应待上游维护者，issue 链接与编号留档于本记录）；回退路径两层测试全绿。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（215 文件/2063 用例）
 
 - [ ] 15. B5 QwenPaw 迁移收口与上游兼容窗口对齐（0.5-1 人日本体，时点依赖上游 minor 窗口）
   - [ ] 15.1 与上游约定存量 CoPaw 清理时点（建议跟下一个 minor）；`WorkerRuntime` 的 `'copaw'` 保留至清理时点

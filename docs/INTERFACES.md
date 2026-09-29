@@ -128,6 +128,36 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 
 验证记录：`npm run lint`、`npm run typecheck` 与 `git diff --check` 已通过。完整 `npm test` 全量通过（58 个测试文件 445 个用例）。
 
+## 运行时块协议（`org.agentteams.run` v1）
+
+> 契约源码：`src/lib/a2ui/protocol.ts`（union 与归一化）；解析分流：`src/lib/a2ui/parser.ts` `parseAgentRunBlocks`；叙述背景见 `docs/ARCHITECTURE.md`「运行时消息协议」。本节是字段规范（B4）。
+
+**信封**：Matrix 消息 `content['org.agentteams.run']`（opt-in 通道；无该键时 Dashboard 走 body 文本启发式）。
+
+| 信封字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `version` | `"1"` \| `"0"` \| 缺省 | 否 | `"0"`/缺省 = 旧宽松形状；`"1"` = 归一化形状。其他值 = 未知版本 → 解析器返回 `undefined`，调用方回退文本启发式（**永不丢消息**） |
+| `run_id` | string | 否 | 关联同一次执行的多条消息（v1 预留） |
+| `step_id` | string | 否 | run 内当前步骤（v1 预留） |
+| `blocks` | Block[] | 是 | 块数组，见下 |
+
+**块 union**（`type` 判别）：
+
+| type | 字段 | 说明 |
+|---|---|---|
+| `text` | `text: string`；`isStreaming?` | 正文片段 |
+| `thinking` | `content: string`；`isStreaming?` | 思考片段（折叠卡片） |
+| `tool_call` | `payload.tool_name: string`、`payload.arguments: object`、`payload.status: 'pending'\|'running'\|'succeeded'\|'failed'`；可选 `result`、`tool_call_id`（跨修订/重放去重的稳定 id）、`started_at`/`finished_at`（epoch ms） | 工具调用卡 |
+| `confirmation` | `payload.tool_name: string`、`payload.confirmation_id: string`（必填，关联批准/拒绝回复）；可选 `parameters`、`external_files`、`expires_at` | Tool Guard 审批卡 |
+| `error` | `payload.kind: 'cancelled'\|'failed'\|'quiet'`、`payload.title: string` | run 收尾哨兵（kind 之外的值被拒 → 回退文本启发式） |
+
+**版本协商与回退语义**：
+
+1. `resolveProtocolVersion`：`"1"` → v1；缺省/`null`/`"0"` → legacy；其余 → 未知（解析器整体返回 `undefined`）。
+2. v1 归一化（`normalizeToolCallPayload` 等）：缺省可选字段补安全默认（如 `status` 缺省 `running`），未知字段剥除保证可序列化；`confirmation` 缺 `confirmation_id`、`error` 的 `kind` 非法 → 该块被拒，调用方回退 legacy 文本启发式（审批卡仍可见）。
+3. 未知块类型静默跳过；未知**信封版本**整体回退——前向兼容承诺：新版本字段对旧 Dashboard 表现为纯文本启发式渲染，不炸、不丢。
+4. 回退链路有测试钉住：`parser-agent-run.test.ts`（解析层返回 `undefined`）+ `normalize.test.ts`「falls back to the body-text heuristics when the protocol version is unknown」（normalize 链路落到 legacy 块）。
+
 ## 上游版本对照记录
 
 > B3（2026-09-29 起）：Dashboard 依赖的 Controller 契约随上游 `agentscope-ai/AgentTeams` minor 版本演进。每条契约记录「Dashboard 依赖 → 上游落点 → 版本/PR」。上游 minor 发布后按 CONTRIBUTING 的流程过一遍 proxy 层端点；安装器漂移由 weekly cron（`.github/workflows/upstream-drift.yml`）告警。

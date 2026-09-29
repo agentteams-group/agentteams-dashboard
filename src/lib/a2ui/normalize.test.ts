@@ -46,6 +46,25 @@ describe('normalizeToBlocks rule 2: org.agentteams.run', () => {
     expect(blocks[0].type).toBe('thinking');
     expect(blocks[1].type).toBe('text');
   });
+
+  it('falls back to the body-text heuristics when the protocol version is unknown', () => {
+    // Unknown version → parseAgentRunBlocks returns undefined → the caller
+    // must fall through to the legacy text heuristic instead of dropping.
+    const input = makeInput({
+      body: 'Thinking:\n\n正在分析依赖关系',
+      runtime: 'qwenpaw',
+      content: {
+        'org.agentteams.run': {
+          version: '9',
+          blocks: [{ type: 'text', text: 'structured future shape' }],
+        },
+      },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.some((b) => b.type === 'thinking')).toBe(true);
+    expect(blocks.some((b) => b.type === 'text' && JSON.stringify(b).includes('structured future shape'))).toBe(false);
+  });
 });
 
 describe('normalizeToBlocks rule 3: A2UI markers', () => {
