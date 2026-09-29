@@ -56,7 +56,8 @@
 - [ ] 7. A5 巨型文件拆分（每文件独立 PR、纯重构不改行为，依赖 A1；容量超限可顺延 P2 前段）
   - [x] 7.1 拆分 `src/components/dashboard/sections/knowledge-section.tsx`（1899 行）
     - 完成记录（2026-09-28）：主文件 1899 → 759 行（<800 达标），实现按职责拆到 `sections/knowledge/` 七模块——types（57）/shared（50）/api（120）/graph（124）/view2d（300）/graph-2d（465）/tree-rows（97），纯代码搬移零行为变更；测试公开面（KnowledgeGraph/assembleGraph/clusterGridLayout/chipWidth/KB2D/focusView/clampZoomView/GNode）经再导出保持原路径不变，测试文件零改动。验证：eslint 新旧文件 0 警告、tsc 0 错、knowledge-section.test.tsx 35/35、全量 213 文件/2011 用例通过
-  - [ ] 7.2 拆分 `src/components/dashboard/sections/chat/ChatRoom.tsx`（1129 行，复制 chat 模块 views/hooks/components 模式）
+  - [x] 7.2 拆分 `src/components/dashboard/sections/chat/ChatRoom.tsx`（1129 行，复制 chat 模块 views/hooks/components 模式）
+    - 完成记录（2026-09-29）：主文件 1129 → 780 行（<800 达标），实现按职责拆到 chat 模块既有 hooks/components 目录——`hooks/useOutboundMessages.ts`（183 行，乐观气泡 + 系统通知 + sendOutbound + buildSystemNoticeFromError 整簇，markAllRead 以参数注入）、`hooks/useWorkerFileOptions.ts`（85 行，workerOptions 解析 + 团队共享空间默认选中）、`components/ChatRoomHeader.tsx`（128 行）、`components/MembersSidebar.tsx`（63 行）、`components/WorkersFilesSidebar.tsx`（118 行，含拖拽分隔条），纯代码搬移零行为变更；ChatRoom 仅保留查询/读标记/滚动/编辑会话与组装，测试公开面（ChatRoom 导出）路径不变，ChatRoom.test.tsx 零改动。验证：eslint 6 文件 0 警告 0 错（两处类型参数名按 base 规则改 `_` 前缀；hook 返回 setter 补入 deps 数组，setState 恒等语义不变）、tsc 0 错、全量 213 文件/2011 用例通过（两轮）
   - [ ] 7.3 拆分 `src/components/dashboard/sections/projects-section.tsx`（1359 行）
   - [ ] 7.4 拆分 `src/plugins/wen-tian/index.tsx`（1333 行）
   - [ ] 7.5 拆分 `src/components/dashboard/knowledge-graph3d.tsx`（1282 行，已有 next/dynamic ssr:false 基础）

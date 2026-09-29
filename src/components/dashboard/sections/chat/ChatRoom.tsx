@@ -2,12 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from './ChatStore';
-import { MessageList, type LocalOutboundMessage, type ChatSystemNotice } from './structures/MessageList';
+import { MessageList } from './structures/MessageList';
 import { ThreadPanel } from './structures/ThreadPanel';
 import type { ScrollPanelHandle } from './structures/ScrollPanel';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
+import { useOutboundMessages } from './hooks/useOutboundMessages';
+import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
+import { ChatRoomHeader } from './components/ChatRoomHeader';
+import { MembersSidebar } from './components/MembersSidebar';
+import { WorkersFilesSidebar } from './components/WorkersFilesSidebar';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
@@ -25,14 +30,10 @@ import {
   type RoomMember,
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
-import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker-chats-panel';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, PanelRightClose, ArrowDown, FolderTree, UserCheck } from 'lucide-react';
+import { PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { parseOutboundCommand } from './composer-commands';
@@ -48,11 +49,8 @@ import {
   deriveWorkerSessionState,
   type WorkerSessionState,
 } from '@/lib/worker-session-state';
-import { WorkerSessionDot, WorkerSessionCornerDot } from '@/components/worker-session-dot';
-import { FilesBrowserPanel } from './views/worker-files-panel';
 import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -105,19 +103,13 @@ export function ChatRoom({
   const { value: inputValue, setValue: setInputValue, setValueLocal: setInputValueLocal, clear: clearDraft } = usePersistedDraft(roomId);
   // Composer edit session (ArrowUp on empty input → edit my latest message)
   const [editSession, setEditSession] = useState<{ eventId: string; initialText: string } | null>(null);
-  const [localMessages, setLocalMessages] = useState<LocalOutboundMessage[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [systemNotices, setSystemNotices] = useState<ChatSystemNotice[]>([]);
   const [showWorkers, setShowWorkers] = useState(false);
-  // Worker rooms default to the owning worker so the files panel opens on
-  // "the current worker's" directory instead of an empty picker.
-  const [selectedWorker, setSelectedWorker] = useState<string | null>(defaultWorkerName ?? null);
   // C (#1295): worker avatar click → read-only QwenPaw sessions dialog.
   const [chatsWorkerName, setChatsWorkerName] = useState<string | null>(null);
   const handleOpenWorkerChats = useCallback((name: string) => setChatsWorkerName(name), []);
   const [workerPaneWidth, setWorkerPaneWidth] = useState(320);
   const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
-  const noticeCounterRef = useRef(0);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
 
   const { userId, isLoggedIn } = useMatrixStore();
@@ -138,7 +130,6 @@ export function ChatRoom({
   const prevMsgCountRef = useRef(0);
   const prevMsgLastIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
-  const localCounterRef = useRef(0);
   const didInitialScrollRef = useRef(false);
 
   useEffect(() => {
@@ -343,116 +334,21 @@ export function ChatRoom({
     }
   }, [messagesQuery.isSuccess, formattedMessages, readEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError]);
 
-  const removeLocal = useCallback((clientId: string) => {
-    setLocalMessages(prev => prev.filter(m => m.clientId !== clientId));
-  }, []);
-
-  const pushLocal = useCallback((message: LocalOutboundMessage) => {
-    setLocalMessages(prev => [...prev, message]);
-  }, []);
-
-  const patchLocal = useCallback((clientId: string, patch: Partial<LocalOutboundMessage>) => {
-    setLocalMessages(prev => prev.map(m => m.clientId === clientId ? { ...m, ...patch } : m));
-  }, []);
-
-  const pushSystemNotice = useCallback((notice: ChatSystemNotice) => {
-    setSystemNotices(prev => {
-      // De-duplicate on identical messages: refresh the countdown instead of
-      // stacking an endless pile of banners on repeated throttling.
-      const existing = prev.find(n => n.kind === notice.kind && n.message === notice.message);
-      if (existing) {
-        return prev.map(n =>
-          n.id === existing.id
-            ? { ...n, createdAt: Date.now(), retryAfterMs: notice.retryAfterMs, autoRetry: notice.autoRetry }
-            : n
-        );
-      }
-      return [...prev, notice];
-    });
-  }, []);
-
-  const sendOutbound = useCallback((params: {
-    content: string;
-    options?: { html?: boolean };
-    mentions?: MentionEntry[];
-    replyTo?: DisplayMessage | null;
-    clientId?: string;
-    msgtype?: string;
-  }) => {
-    if (!roomId || !isLoggedIn || !userId) return;
-    const { content, options, mentions, replyTo, clientId, msgtype } = params;
-
-    // Only mentions that still appear in the final text are sent (the user may
-    // have typed more after inserting them, or deleted the placeholder again).
-    const activeMentions = (mentions ?? []).filter((m) => content.includes(m.placeholder));
-    const mentionUserIds = activeMentions.map(m => m.userId);
-    const mentionData = mentionUserIds.length > 0
-      ? { 'm.mentions': { user_ids: mentionUserIds } }
-      : {};
-
-    // Build a Matrix-compatible formatted body with clickable mention links
-    // (https://matrix.to/#/userId). Without these the receiver only sees the
-    // raw "@name" text and the mention is not actionable.
-    let formattedBody: string | undefined = options?.html ? content : undefined;
-    if (activeMentions.length > 0) {
-      let body = formattedBody ?? content;
-      for (const m of activeMentions) {
-        const link = `<a href="https://matrix.to/#/${encodeURIComponent(m.userId)}">${m.displayName}</a>`;
-        body = body.replaceAll(m.placeholder, link);
-      }
-      formattedBody = body;
-    }
-    const cid = clientId ?? `local-${Date.now()}-${++localCounterRef.current}`;
-
-    // First attempt renders an optimistic "sending" bubble; a retry keeps the
-    // existing entry and flips it back to sending.
-    if (!clientId) {
-      setLocalMessages(prev => [...prev, {
-        clientId: cid,
-        sender: userId,
-        senderShort: userId.startsWith('@') ? userId.split(':')[0].slice(1) : userId,
-        content,
-        formattedContent: formattedBody ?? (options?.html ? content : undefined),
-        mentions,
-        replyTo,
-        timestamp: Date.now(),
-        status: 'sending' as const,
-      }]);
-    }
-
-    sendMutation.mutate(
-      {
-        roomId,
-        body: content,
-        formattedBody,
-        extra: { ...mentionData, ...(msgtype ? { msgtype } : {}) },
-        relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
-      },
-      {
-        onSuccess: (data) => {
-          removeLocal(cid);
-          // Sending a message advances the read position to the sent event.
-          markAllRead(data?.event_id);
-        },
-        onError: (err) => {
-          patchLocal(cid, { status: 'error', error: err.message });
-          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo }, ++noticeCounterRef.current));
-        },
-      }
-    );
-  }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal, pushSystemNotice, markAllRead]);
-
-  const removeSystemNotice = useCallback((notice: ChatSystemNotice) => {
-    setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
-  }, []);
-
-  const handleRetryNotice = useCallback((notice: ChatSystemNotice) => {
-    const payload = notice.retryPayload;
-    setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
-    if (payload && roomId && isLoggedIn && userId) {
-      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo });
-    }
-  }, [sendOutbound, roomId, isLoggedIn, userId]);
+  // Outbound message cluster (optimistic bubbles + system notices + send),
+  // extracted verbatim; markAllRead is injected because sending a message
+  // advances the read position to the sent event.
+  const {
+    localMessages,
+    systemNotices,
+    pushLocal,
+    patchLocal,
+    removeLocal,
+    pushSystemNotice,
+    removeSystemNotice,
+    sendOutbound,
+    handleRetryNotice,
+    buildSystemNotice: buildSystemNoticeFromError,
+  } = useOutboundMessages({ roomId, isLoggedIn, userId, sendMutation, markAllRead });
 
   // Upload a file to the Matrix homeserver, then send it as an m.image /
   // m.file message so it appears in the room timeline like any other message.
@@ -645,60 +541,12 @@ export function ChatRoom({
     [roomMembers]
   );
 
-  // Worker options for the files panel. Team rooms lead with the team shared
-  // workspace (agentteams layout: teams/{team}/shared/ — tasks/projects
-  // produced by TeamHarness MCP) followed by the authoritative
-  // `team.workerNames` roster (Matrix member lists may miss workers that
-  // never spoke in the room due to lazy-loaded membership); other rooms fall
-  // back to runtimeMap-resolved room members.
-  const TEAM_SHARED_VALUE = '__team_shared__';
-  const workerOptions = useMemo(() => {
-    const byWorkerName = new Map(
-      Object.values(runtimeMap).map((entry) => [entry.workerName, entry]),
-    );
-    const toOption = (workerName: string, userId?: string) => {
-      const entry = byWorkerName.get(workerName) ?? (userId ? runtimeMap[userId] : undefined);
-      if (!entry) return null;
-      const runtimeLabel = RUNTIME_LABELS[entry.runtime] || entry.runtime;
-      return {
-        userId: userId ?? `worker:${workerName}`,
-        workerName,
-        label: `${workerName} · ${runtimeLabel}`,
-      };
-    };
-    const teamOption = team
-      ? { userId: TEAM_SHARED_VALUE, workerName: TEAM_SHARED_VALUE, label: `团队共享空间 · teams/${team.name}/shared` }
-      : null;
-    const workerEntries: { userId: string; workerName: string; label: string }[] = [];
-    if (team?.workerNames?.length) {
-      const mxidByWorkerName = new Map(
-        roomMembers
-          .map((m) => (runtimeMap[m.userId] ? ([runtimeMap[m.userId].workerName, m.userId] as const) : null))
-          .filter((x): x is readonly [string, string] => x !== null),
-      );
-      for (const name of team.workerNames) {
-        const opt = toOption(name, mxidByWorkerName.get(name));
-        if (opt) workerEntries.push(opt);
-      }
-    } else {
-      for (const m of roomMembers) {
-        if (!runtimeMap[m.userId]) continue;
-        const opt = toOption(runtimeMap[m.userId].workerName, m.userId);
-        if (opt) workerEntries.push(opt);
-      }
-    }
-    return teamOption ? [teamOption, ...workerEntries] : workerEntries;
-  }, [team, roomMembers, runtimeMap]);
-
-  // Team rooms open on the shared workspace (the team's own space); worker
-  // rooms keep their owning worker; other rooms fall back to the first option.
-  const effectiveSelectedWorker =
-    selectedWorker
-    ?? (team ? TEAM_SHARED_VALUE : undefined)
-    ?? defaultWorkerName
-    ?? workerOptions[0]?.workerName
-    ?? null;
-  const selectedIsTeamShared = effectiveSelectedWorker === TEAM_SHARED_VALUE;
+  const {
+    workerOptions,
+    effectiveSelectedWorker,
+    selectedIsTeamShared,
+    setSelectedWorker,
+  } = useWorkerFileOptions({ team, roomMembers, runtimeMap, defaultWorkerName });
 
   // "查看工作目录" on an agent bubble: open the worker files panel with that
   // message's sender pre-selected (resolved via the runtime map).
@@ -708,7 +556,7 @@ export function ChatRoom({
     setSelectedWorker(workerName);
     setShowMembers(false);
     setShowWorkers(true);
-  }, [runtimeMap]);
+  }, [runtimeMap, setSelectedWorker]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
     // A thread panel replaces the member list, element-web style.
@@ -716,93 +564,15 @@ export function ChatRoom({
     setActiveThread(message);
   }, []);
 
-  const header = useMemo(() => (
-    <div className="flex items-center gap-2 px-4 py-3 border-b bg-card/70 backdrop-blur-sm">
-      {avatar ? (
-        <Avatar className="w-8 h-8 shrink-0">
-          <img src={avatar} alt={roomName} />
-        </Avatar>
-      ) : (
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm">
-           <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
-        </div>
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-sm truncate">{roomName}</h3>
-          {workerMatrixUserIds && workerMatrixUserIds.length > 0
-            ? sessionDot.runningOnly
-              ? sessionDot.state === 'running'
-                ? <WorkerSessionDot state="running" />
-                : null
-              : <WorkerSessionDot state={sessionDot.state} />
-            : null}
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
-          {roomPhase && (
-            <Badge variant="outline" className="text-[11px] px-1 py-0 h-4 shrink-0">
-              {roomPhase}
-            </Badge>
-          )}
-          {roomRuntime && (
-            <Badge variant="secondary" className="text-[11px] px-1 py-0 h-4 shrink-0">
-              {RUNTIME_LABELS[roomRuntime] || roomRuntime}
-            </Badge>
-          )}
-        </div>
-        {team ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <Users className="w-3 h-3" />
-              {team.teamName || team.name}
-            </span>
-            {team.description && (
-              <span className="truncate" title={team.description}>{team.description}</span>
-            )}
-            <span className="shrink-0 inline-flex items-center gap-1" title="就绪 Worker / 总 Worker">
-              <UserCheck className="w-3 h-3 text-emerald-500" />
-              {team.readyWorkers}/{team.totalWorkers}
-            </span>
-            {team.leaderName && (
-              <span className="shrink-0">Leader: {team.leaderName}</span>
-            )}
-          </div>
-        ) : (
-          topic && (
-            <p className="text-xs text-muted-foreground truncate">{topic}</p>
-          )
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 shrink-0"
-        onClick={() => setShowMembers(v => !v)}
-        title={showMembers ? '隐藏成员' : '显示成员'}
-      >
-        <Badge variant="secondary" className="text-xs cursor-pointer hover:bg-primary/10">
-          <Users className="w-3 h-3 mr-1" />
-          {roomMembers.length}
-        </Badge>
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 shrink-0"
-        onClick={() => {
-          if (showWorkers) {
-            setShowWorkers(false);
-            setSelectedWorker(null);
-          } else {
-            setShowWorkers(true);
-            setShowMembers(false);
-          }
-        }}
-        title={showWorkers ? '隐藏工作目录' : '显示工作目录'}
-      >
-        <FolderTree className="w-4 h-4" />
-      </Button>
-    </div>
-  ), [roomName, team, topic, avatar, roomMembers.length, showMembers, showWorkers, roomPhase, roomRuntime, workerMatrixUserIds, sessionDot.state, sessionDot.runningOnly]);
+  const handleToggleWorkersPanel = useCallback(() => {
+    if (showWorkers) {
+      setShowWorkers(false);
+      setSelectedWorker(null);
+    } else {
+      setShowWorkers(true);
+      setShowMembers(false);
+    }
+  }, [showWorkers, setSelectedWorker]);
 
   return (
     <div
@@ -821,7 +591,21 @@ export function ChatRoom({
       />
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {header}
+        <ChatRoomHeader
+          roomName={roomName}
+          team={team}
+          topic={topic}
+          avatar={avatar}
+          roomPhase={roomPhase}
+          roomRuntime={roomRuntime}
+          workerMatrixUserIds={workerMatrixUserIds}
+          sessionDot={sessionDot}
+          memberCount={roomMembers.length}
+          showMembers={showMembers}
+          showWorkers={showWorkers}
+          onToggleMembers={() => setShowMembers(v => !v)}
+          onToggleWorkers={handleToggleWorkersPanel}
+        />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {showLoadErrorBanner && (
             <div className="flex items-center gap-2 px-4 py-1.5 bg-red-500/10 border-b border-red-500/20 text-xs text-red-600 dark:text-red-400 shrink-0">
@@ -961,131 +745,26 @@ export function ChatRoom({
 
       {/* Members sidebar */}
       {showMembers && (
-        <div className="w-52 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
-          <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-            <h4 className="font-semibold text-xs">成员 ({roomMembers.length})</h4>
-            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setShowMembers(false)}>
-              <PanelRightClose className="w-3 h-3" />
-            </Button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar">
-            {roomMembers.map((member) => {
-              const color = member.userId.split(':').pop() === 'agentteams.io'
-                ? 'text-emerald-600'
-                : 'text-muted-foreground';
-              return (
-                <div
-                  key={member.userId}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer"
-                  onClick={() => {
-                    navigator.clipboard.writeText(member.userId);
-                  }}
-                  title="点击复制用户ID"
-                >
-                  <span className="relative inline-flex shrink-0">
-                    <Avatar className="w-6 h-6 shrink-0">
-                      <AvatarFallback className={`text-[10px] ${color}`}>
-                        {member.displayName.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    {/* A17（9/19）：成员列表头像角落状态灯（与消息头像同款
-                        WorkerSessionCornerDot；人类成员无映射不显）。 */}
-                    {senderStatusMap[member.userId] && (
-                      <WorkerSessionCornerDot state={senderStatusMap[member.userId]} ringClassName="ring-card" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">{member.displayName}</p>
-                    <p className="text-[11px] text-muted-foreground font-mono truncate">
-                      {member.userId.split(':')[0].slice(1)}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <MembersSidebar
+          roomMembers={roomMembers}
+          senderStatusMap={senderStatusMap}
+          onClose={() => setShowMembers(false)}
+        />
       )}
 
       {/* Workers files sidebar */}
       {showWorkers && (
-        <>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-valuemin={256}
-            aria-valuemax={600}
-            aria-valuenow={Math.round(workerPaneWidth)}
-            tabIndex={0}
-            className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60 focus:bg-primary/60 focus:outline-none max-md:hidden"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setIsResizingWorkerPane(true);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-              event.preventDefault();
-              const step = event.shiftKey ? 32 : 8;
-              // Pane is on the right: ArrowLeft drags the edge left (wider).
-              const delta = event.key === 'ArrowLeft' ? step : -step;
-              setWorkerPaneWidth((w) => Math.min(600, Math.max(256, w + delta)));
-            }}
-          />
-          <div
-            className="shrink-0 border-l border-border bg-card overflow-hidden flex flex-col
-              max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:shadow-xl max-md:max-w-[85vw]"
-            style={{ width: workerPaneWidth }}
-          >
-            <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-              <h4 className="font-semibold text-xs">工作目录</h4>
-              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => { setShowWorkers(false); setSelectedWorker(null); }}>
-                <PanelRightClose className="w-3 h-3" />
-              </Button>
-            </div>
-            {team && (
-              <div className="px-3 pt-2 pb-1 border-b border-border shrink-0">
-                <p className="text-[10px] leading-none text-muted-foreground">
-                  当前任务文件存放在「{team.teamName} 的团队共享空间」(teams/{team.name}/shared/)
-                </p>
-              </div>
-            )}
-            <div className="p-2 border-b border-border">
-              <Select
-                value={effectiveSelectedWorker || ''}
-                onValueChange={(v) => setSelectedWorker(v || null)}
-              >
-                <SelectTrigger className="w-full h-7 text-xs" aria-label="选择 Worker">
-                  <SelectValue placeholder={workerOptions.length === 0 ? '暂无可用的 Worker' : '选择 Worker'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {workerOptions.map((w) => (
-                    <SelectItem key={w.userId} value={w.workerName}>{w.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {effectiveSelectedWorker ? (
-              <div className="flex-1 overflow-hidden">
-                {/* key resets prefix/selection when the target changes */}
-                <FilesBrowserPanel
-                  key={effectiveSelectedWorker}
-                  kind={selectedIsTeamShared ? 'team' : 'worker'}
-                  ownerName={selectedIsTeamShared ? (team?.name ?? '') : effectiveSelectedWorker}
-                />
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center p-4">
-                <p className="text-xs text-muted-foreground text-center">
-                  {workerOptions.length === 0
-                    ? team
-                      ? '团队暂无已注册的 Worker'
-                      : '当前房间没有 AgentTeams Worker 成员'
-                    : '选择一个目标查看文件'}
-                </p>
-              </div>
-            )}
-          </div>
-        </>
+        <WorkersFilesSidebar
+          team={team}
+          workerOptions={workerOptions}
+          effectiveSelectedWorker={effectiveSelectedWorker}
+          selectedIsTeamShared={selectedIsTeamShared}
+          workerPaneWidth={workerPaneWidth}
+          onPaneWidthChange={setWorkerPaneWidth}
+          onResizeStart={() => setIsResizingWorkerPane(true)}
+          onClose={() => { setShowWorkers(false); setSelectedWorker(null); }}
+          onSelectWorker={setSelectedWorker}
+        />
       )}
       {/* Thread sidebar */}
       {activeThread && (
@@ -1098,32 +777,4 @@ export function ChatRoom({
       )}
     </div>
   );
-}
-
-function buildSystemNoticeFromError(
-  err: unknown,
-  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null },
-  id: number
-): ChatSystemNotice {
-  const retryAfterMs = getRateLimitRetryDelay(err);
-  const isRateLimited = err instanceof MatrixRequestError && err.isRateLimited;
-  if (isRateLimited) {
-    return {
-      id,
-      kind: 'rate-limited',
-      message: `消息发送失败：服务商限流中，${Math.ceil(retryAfterMs / 1000)} 秒后自动重试`,
-      createdAt: Date.now(),
-      retryAfterMs,
-      autoRetry: true,
-      retryPayload: payload,
-    };
-  }
-  return {
-    id,
-    kind: 'error',
-    message: `消息发送失败：${err instanceof Error ? err.message : '未知错误'}`,
-    createdAt: Date.now(),
-    autoRetry: false,
-    retryPayload: payload,
-  };
 }
