@@ -76,7 +76,9 @@ describe('installPluginPackage', () => {
     await expect(installPluginPackage(buffer, { pluginsDir: tmp })).rejects.toThrow(
       /未找到构建产物/
     );
-    expect(readdir(tmp)).resolves.toEqual([]);
+    // await the assertion: an unawaited rejection here only surfaces as an
+    // unhandled rejection after the test body ends (vitest 5 fails on it).
+    await expect(readdir(tmp)).resolves.toEqual([]);
   });
 
   it('rejects a path-traversal entry (zip-slip)', async () => {
