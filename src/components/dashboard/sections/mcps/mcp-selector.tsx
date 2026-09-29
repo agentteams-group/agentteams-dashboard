@@ -55,7 +55,7 @@ export function McpSelector({ value, onChange }: McpSelectorProps) {
     if (exists) {
       setDraft(draft.filter((d) => d.name !== srv.name));
     } else {
-      setDraft([...draft, { name: srv.name, url: srv.url, transport: srv.transport }]);
+      setDraft([...draft, { name: srv.name, url: srv.url, transport: srv.transport === "streaminghttp" ? "http" : srv.transport }]);
     }
   };
 
@@ -70,6 +70,7 @@ export function McpSelector({ value, onChange }: McpSelectorProps) {
 
   return (
     <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">这里只分配已登记的地址，不会创建网关服务或授予权限。请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。</p>
       <div className="flex flex-wrap gap-1.5">
         {value.length === 0 && (
           <span className="text-sm text-muted-foreground">暂未选择 MCP 服务器</span>

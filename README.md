@@ -338,3 +338,29 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 ## 📄 License
 
 This project belongs to higress-group. Please refer to the license file in the repository root for details.
+
+### Worker environment variables and gateway verification
+
+With a Controller that supports `envEditable` and
+`POST /api/v1/workers/{name}/gateway-probe`, administrators can edit Worker
+runtime environment variables and verify saved model/MCP configuration from the
+Worker edit dialog. Unchanged variables are omitted from updates; removing all
+variables sends an empty map. Managed containers are recreated after a change,
+which can interrupt active tasks; unmanaged Workers require a manual restart with
+the updated environment. Values are literal strings, and system-owned keys cannot
+be overridden. Lower-privilege Dashboard sessions cannot read or update these
+values. Older Controllers show the environment editor as unavailable.
+
+The MCP page registers endpoint metadata; it does not provision a Higress MCP
+service or grant Worker access. First configure the gateway endpoint and Consumer
+permissions through Manager/Higress, then save the Worker binding. AI route
+Consumer allowlists can be edited in model management. Neither selecting a model
+nor binding an MCP endpoint proves that the Worker is authorized.
+
+Verification uses the saved Worker's Consumer credential inside the Controller.
+Model verification sends one small inference request (up to 8 requested output
+tokens); MCP verification initializes a Streamable HTTP session and lists tools
+without executing them. Only saved MCP endpoints on the configured gateway are
+accepted. Provider-specific gateways and legacy SSE endpoints are not supported
+by this probe. A successful check verifies Controller-to-gateway access using the
+Worker identity, not connectivity from the Worker container or task completion.

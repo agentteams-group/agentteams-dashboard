@@ -147,6 +147,22 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     expect(mutations.deleteProvider).toHaveBeenCalledWith('openai', expect.any(Object));
   });
 
+  it('updates only the selected route Consumer allowlist and supports clearing it', () => {
+    render(<ModelsSection />);
+    fireEvent.click(screen.getByRole('button', { name: '编辑 team-chat' }));
+    const consumers = screen.getByLabelText('授权 Consumer（逗号分隔）');
+    fireEvent.change(consumers, { target: { value: 'worker-alice, worker-bob,worker-alice,' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(mutations.updateRoute).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: 'team-chat', data: expect.objectContaining({ authConfig: expect.objectContaining({ enabled: true, allowedConsumers: ['worker-alice', 'worker-bob'] }) }),
+    }), expect.any(Object));
+    fireEvent.change(consumers, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(mutations.updateRoute).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: 'team-chat', data: expect.objectContaining({ authConfig: expect.objectContaining({ enabled: true, allowedConsumers: [] }) }),
+    }), expect.any(Object));
+  });
+
   it('submits route edits and confirms route deletion', () => {
     render(<ModelsSection />);
     fireEvent.click(screen.getByRole('button', { name: '编辑 team-chat' }));
