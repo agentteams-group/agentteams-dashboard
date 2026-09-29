@@ -185,30 +185,16 @@
 ## 阶段三：P2（第 7-12 周）
 
 - [ ] 19. A9 依赖大版本升级批次（每项一个 PR，依赖 A1；eslint 10 / TS 7 工具链大版本放最后）
-  - 进度记录（2026-09-29）：**低风险 caret 补丁批完成**——`npm update`（caret 范围内 Wanted 全追平）：next 16.3.6→16.3.7、eslint-config-next 16.3.7、@tanstack/react-query 5.104.0、fast-check 4.10.2、framer-motion 13.4.6、react-hook-form 7.89.0、sonner 2.0.8、tailwind-merge 3.7.0、@a2ui/web_core 0.10.7、@vitest/coverage-v8 4.1.11 等（package.json 语义范围无变化、lock 重算 2268 行）。三门全绿（tsc 0 错、eslint 0/0、vitest 2088 用例）。**大版本批次待逐项 PR**（每项需独立分支 + 真机关键页面冒烟，本环境冒烟受限）：eslint 9→10.11、vitest 4→5.0.2（含 coverage-v8）、lucide-react 0.525→1.48、@a2ui 0.10→0.12、three 0.185→0.186、recharts 精确锁放开（3.8→3.10）、typescript 5.9→7.0（放最后）——升级顺序建议从 three/@types/three（KB 3D 独立面）开始至 typescript 收尾，每项验收同任务书
-- [x] 20. B6 外部 coding agent runtime 接入评估（Claude Code / Codex CLI / opencode，评估 2-3 人日，不承诺实现）
-  - 完成记录（2026-09-29）：评估报告 `docs/external-runtime-integration-assessment.md`（INDEX 登记）。①接入面 = B4 协议适配器（外部事件流 → org.agentteams.run v1 块，Dashboard 零改动，未知版本回退保证增量安全）；②工作量归属：上游每 runtime 3-8 人日（CRD 枚举/generator/channel 为主），Dashboard 每 runtime 0.5-1 人日机械扩展（维护清单即路径）；③轻量替代路径 = 外部输出经 A2UI 标记投递进 Matrix（成本 ≈0，验证价值后反推立项必要性）；④计费合规实读官方文档核实：**「2026-06-15 独立积分计费」未获证实**，可证实口径 = bare 模式强制 ANTHROPIC_API_KEY（禁共享订阅，明确禁止第三方提供 claude.ai 登录）、total_cost_usd 客户端估算可观测、品牌条款（禁用「Claude Code」命名）。推荐排序：opencode（开源无合规项，首验）→ Claude Code（能力最强但三重约束）→ Codex CLI（观察）→ 轻量路径随时可做；立项三判据已列。验收「若立项至少一个 runtime demo」——评估结论为暂不立项（轻量路径先行），不触发 demo 义务
-- [x] 21. B7 MCP 能力深化（① 1 人日；②③ 设计 1-2 人日，依赖上游）
-  - [x] 21.1 Worker 创建对话框按 mcp-catalog 默认勾选接线（低成本先行，配用例）
-    - 完成记录（2026-09-29）：useMcpCatalog 暴露完整 servers[]（含 trusted 标记）+ `trustedCatalogServerNames()` 助手（9222fdc，先于远程 merge 提交以缩小冲突面）；McpSelector 新增可选 `defaultSelectedNames` prop——popover 打开且 value 为空时以 catalog trusted servers 预置 draft（显式选择恒优先、registry 外的名字忽略）；worker-create-dialog 接线（编辑对话框刻意不传——编辑不得静默改接线）。3 用例（默认预勾选生效、unknown 名忽略、显式选择不被 default 重复/不触发变更）
-  - [x] 21.2 stdio 本地 MCP 托管：产出需求/设计稿与上游对齐（Controller 侧支持）
-    - 完成记录（2026-09-29）：设计稿随上游对齐 issue 合并登记——agentscope-ai/AgentTeams#1312（B4 协议对齐）已建立上游对话通道；stdio 托管需求（本地进程生命周期/stdio 传输的 controller 托管面）以评论形式追加入 #1312，待上游回应。回应跟踪同 B4
-  - [x] 21.3 远程 MCP OAuth 认证需求登记
-    - 完成记录（2026-09-29）：同上追加入 #1312——远程 MCP 的 OAuth 2.0 授权（authorization code + token 刷新，凭据 server-side 存储与现有 AI 网关 Key 同域）登记为需求项，等 upstream 排期
-  - 验收：①落地有用例；②③设计稿有上游回应；④与任务 24 联动
-    - 验证记录（2026-09-29）：① ✓（3 用例 + 接线落地）；②③ 设计稿已登记上游 issue #1312（回应待维护者，跟踪留档）；④ 与 24 联动见该任务（README「MCP 治理」章节引用 21.1 的 trusted 默认勾选语义）。三门：eslint 0 错 0 警、tsc 0 错、vitest 全量通过（221 文件/2079 用例，merge 后基线）
-- [ ] 22. B8 知识库/审计数据面切 Controller 正源评估（1-2 人日，依赖上游 v1.2.5+）
-  - 前置留档（2026-09-29）：v1.2.5+ 未发布（上游最新 v1.2.4 线，见 B3 对照记录），评估的正源端点未落地，主体评估阻塞。可先行结论：审计面 dashboard-owned（本地 JSONL 无上游契约，INTERFACES 对照已标注）→ 审计「切正源」前提不存在，除非上游新增审计端点（登记到 #1312 追踪）；KB 目录切正源的上游候选端点与收益矩阵待 v1.2.5 发布后补评估。阻塞原因与解除条件已明
-- [x] 23. D3 会话回放/可观测性卖点（3-5 人日，依赖任务 7.2 ChatRoom 拆分）
-  - 完成记录（2026-09-29）：MVP 闭环落地——①`POST /api/agentteams/replay/export`：登录态校验（readServerIdentity）→ 复用 debug-log 的 `exportMatrixMessages`（**redact 强制 true 不接受调用方关闭**，homeserver 过 requireAllowlist SSRF 门）按 room 导出 → bundle（含 exportedBy/createdAt/room）写 `/data/agentteams-dashboard/replays/<id>.json`（AGENTTEAMS_REPLAY_DIR 可覆写）→ 返回 128-bit 随机 capability id + `/replay/<id>` 链接；②`GET .../export?id=`：hex-32 格式校验（路径穿越守卫）后返回 bundle JSON；③只读回放页 `/replay/[id]`（服务端组件直读 bundle，无目录列举、无交互面），页头声明「链接即凭据」。**安全评审要点**：capability URL 即 bearer（128-bit 熵，不枚举）、导出需登录而读取无需（分享语义）、默认脱敏不可关、无列表端点；README GIF 演示与 18.1 录制同批待用户环境。6 用例（401/400/脱敏强制+bundle 落盘/502 空导出/400 穿越/404+200）。验证：eslint 0/0、tsc 0 错、vitest 全量链式绿
-- [x] 24. D4 MCP 治理中心故事（0.5-1 人日，依赖任务 21.1）
-  - 完成记录（2026-09-29）：双语 README 新增「MCP 治理 / MCP Governance」章节（Quick Start 前）——五条治理锚点：注册表 CRUD（校验/拒重）、部署目录（上游 #1250 catalog + Worker 接线回报 + 旧版降级）、受信默认接线（引用 21.1 的 trusted 默认勾选语义，验收联动 ✓）、审计线索（追加式 JSONL 含 actor/级别/时间戳）、凭据卫生（上游密钥不回传浏览器）；线协议指向 INTERFACES.md。一键安装演示 GIF：与 D2 的 18.1 录制同批（docs/images/README.md 录制清单模式复用，GIF 待用户环境录制——不虚构素材）。顺手清零 lint:tone 基线：4 处既有「智能体」禁词（wen-tian prompt ×3、worker-detail-dialog 提示 ×1）改「Agent」，语调门禁首次全绿（497 文件 0 命中），与新贡献约定的门禁一致。验证：docs-consistency 绿、lint:tone 0 命中、受影响测试 15 文件/120 用例绿、tsc 0 错
-- [x] 25. D5 一键部署可传播（2-3 人日，demo 站另计）
-  - 完成记录（2026-09-29）：`deploy/docker-compose.yml` standalone 模板（controller 指向 + 存储凭证三级探测链同名变量 + Matrix + AI 网关可选项 + 会话密钥持久化说明 + 只读 demo 硬化注释）+ `deploy/coolify/README.md`（四步部署 + 持久卷/HTTPS/只读 demo 三前提）。README Quick Start 嵌 30 秒安装 GIF 占位（demo-install.gif，录制清单并入 docs/images/README.md 模式）。**demo 站按安全前提评审降级**：独立后端 + 只读观察者账号 + 反代限速三项无法在本环境同时保证 → 降级为 GIF 路径（任务书预设的降级分支），demo 站立项待维护者评审。docs-consistency 绿、lint:tone 499 文件 0 命中
-- [x] 26. D6 OpenClaw/QwenPaw 生态兼容维护原则（0.5 人日 + 持续，依赖任务 13）
-  - 完成记录（2026-09-29）：三条原则落入 `docs/runtime-capabilities.md`「生态兼容维护原则」节——①runtime 会话目录/端点/导出布局变更时旧路径回退一个上游版本周期（新优先旧兜底，升级说明标注定弃）；②上游 runtime 发版冒烟纳入 B3 对照流程（CONTRIBUTING 上游对齐流程第 4 步引用）；③探测回退路径必须有测试（现状盘点：安装器探测链=dashboard-tests Test N、KB runtime 过滤空态=knowledge-section ⑩⑪、协议未知版本回退=parser/normalize 两层——覆盖已在位，改回退逻辑时同步补断言）。CONTRIBUTING 同步引用。docs-consistency 绿
-
-## 关键依赖链（排期参照）
+  - 进度记录（2026-09-29，批次收官）：**caret 补丁批**（已完成）——next 16.3.7、eslint-config-next 16.3.7、@tanstack/react-query 5.104、fast-check 4.10.2、framer-motion 13.4.6、react-hook-form 7.89、sonner 2.0.8、tailwind-merge 3.7、@a2ui/web_core 0.10.7、@vitest/coverage-v8（lock 重算，package.json 范围不变）。
+    **大版本 7 项逐项结果**（每项独立 commit + 三门）：
+    1. three 0.185.1→0.186.1 ✅（6008230，KB 3D 独立面，无 API 变化命中）
+    2. @a2ui 0.10→0.12 ✅（3a14462，吸收 3 个 breaking：Catalog 构造加 protocolVersion 参、ReactComponentImplementation 必选 render（工厂生成）、MessageProcessor 显式泛型）
+    3. lucide-react 0.525→1.48 ✅（e424d0d，零源码改动）
+    4. recharts 3.8.1→3.10.1 ✅（5ef0397，精确锁释放为 ^3.10.1——A9「无遗留精确锁」验收达成）
+    5. vitest 4.1→5.0.2 ✅（33394fa，补显式 vite@7 devDep——v5 不再内举；configs 兼容；jsdom-per-file 性能提示为信息级）
+    6. eslint 9→10.11 ⛔ **被上游阻塞**：eslint-config-next@16.3.7（当前最新）捆绑 eslint-plugin-react@7.37.5 使用 ESLint 10 移除的 context.getFilename() API，加载即崩；已回滚 9.39.5。解除条件：eslint-config-next 发布捆绑 eslint-plugin-react ≥8（或修复该弃用）的版本后重试
+    7. typescript 5.9.3→7.0.2 ⛔ **被上游阻塞**：tsc 本身通过（0 错，好信号），但 typescript-eslint 明确不支持 TS 7.0（官方 tracking typescript-eslint#10940：TS ≥7.1 才支持；官方另提供 TS 6 side-by-side 过渡方案），eslint 链启动即拒。已回滚 5.9.3。解除条件：typescript-eslint 发布 TS 7.1+ 支持后重试
+    验收口径执行：每项三门全绿（阻塞项如实回滚保持全绿）；「无遗留精确锁」达成（recharts 释放）；关键页面手动冒烟待真实数据环境（与 D2 录制同批）。## 关键依赖链（排期参照）
 
 1. A1（任务 1）→ A2/A3/A9（任务 2/3/19）——A1 是回归网可信前提
 2. A3（任务 3）→ isomorphic-dompurify 4.x 恢复
