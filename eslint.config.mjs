@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
     // TypeScript rules
-    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", vars: "local" }],
     "@typescript-eslint/no-non-null-assertion": "off",
     "@typescript-eslint/ban-ts-comment": "off",
@@ -49,6 +49,14 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
     "no-unused-vars": "off",
     "@typescript-eslint/no-unused-vars": "off",
+  },
+}, {
+  // Test files: explicit any stays allowed for mock doubles and partial
+  // fixtures (A6.2 only cleared non-test source; a full-test cleanup is a
+  // separate effort).
+  files: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  rules: {
+    "@typescript-eslint/no-explicit-any": "off",
   },
 }, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**"]

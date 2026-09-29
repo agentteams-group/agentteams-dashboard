@@ -563,7 +563,7 @@ export function classifyProbeError(err: unknown, timedOut: boolean): string {
 // Non-public address segments (port of plugin _FAKE_IP_HINTS): when DNS is
 // hijacked by a proxy, resolution lands in these ranges and the visible error
 // looks like a TLS failure while the root cause is on the deployment host.
-const IP_SEGMENT_HINTS = [
+const IP_SEGMENT_HINTS: Array<{ match: (_ip: string) => boolean; label: string }> = [
   { match: (ip) => ip.startsWith('198.18.') || ip.startsWith('198.19.'), label: 'fake-ip 段（代理/Clash 常用，非公网）' },
   {
     match: (ip) => ip.startsWith('::ffff:198.18.') || ip.startsWith('::ffff:198.19.'),

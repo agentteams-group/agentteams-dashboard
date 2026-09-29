@@ -91,14 +91,14 @@ export const useHitlInboxStore = create<HitlInboxState>()((set) => ({
 
   setPendingChatRoomId: (roomId) => set({ pendingChatRoomId: roomId }),
   setPendingProjectKey: (key) => set({ pendingProjectKey: key }),
-  takePendingChatRoomId: () => {
+  takePendingChatRoomId: (): string | null => {
     const current = useHitlInboxStore.getState().pendingChatRoomId;
     if (current) {
       useHitlInboxStore.setState({ pendingChatRoomId: null });
     }
     return current;
   },
-  takePendingProjectKey: () => {
+  takePendingProjectKey: (): PendingProjectKey | null => {
     const current = useHitlInboxStore.getState().pendingProjectKey;
     if (current) {
       useHitlInboxStore.setState({ pendingProjectKey: null });

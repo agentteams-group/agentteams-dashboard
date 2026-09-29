@@ -49,6 +49,7 @@ import {
   BACKEND_NAMES,
   EMBEDDED_DEFAULTS,
   REQUIRED_BACKENDS,
+  type BackendName,
 } from '@/lib/backend-names';
 
 interface BackendAddrs {
@@ -235,7 +236,7 @@ export function BackendTab() {
         void runTest(backends);
         const switchedNames: string[] = [];
         const unchangedNames: string[] = [];
-        for (const name of Object.keys(backends)) {
+        for (const name of Object.keys(backends) as BackendName[]) {
           if (data.switched?.[name]) switchedNames.push(BACKEND_LABELS[name]);
           else if (data.effective?.[name]) unchangedNames.push(BACKEND_LABELS[name]);
         }

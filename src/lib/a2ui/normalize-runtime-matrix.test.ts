@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import { formatMatrixEvents } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { normalizeToBlocks } from './normalize';
-import type { WorkerRuntime } from '@/lib/agentteams-api';
 
 const ME = '@me:server';
 const BASE_TS = 1_700_000_000_000;
@@ -78,8 +77,13 @@ const LONG_MESSAGE = {
   mimetype: 'text/plain',
 };
 
+/** Matrix 覆盖的 5 个 runtime（deepseek-harness 走泛用路径，无专属
+ * 渲染分支，不进矩阵）。 */
+const MATRIX_RUNTIMES = ['openclaw', 'copaw', 'hermes', 'openhuman', 'qwenpaw'] as const;
+type MatrixRuntime = (typeof MATRIX_RUNTIMES)[number];
+
 /** The 7 canonical sequence kinds, parameterized per runtime. */
-function sequencesFor(runtime: WorkerRuntime, sender: string): Record<string, MatrixEvent[]> {
+function sequencesFor(runtime: MatrixRuntime, sender: string): Record<string, MatrixEvent[]> {
   const root = `$${runtime}-root`;
   const placeholder = notice(root, sender, '处理中...', 0);
   return {
@@ -119,9 +123,9 @@ function sequencesFor(runtime: WorkerRuntime, sender: string): Record<string, Ma
   };
 }
 
-const RUNTIMES: WorkerRuntime[] = ['openclaw', 'copaw', 'hermes', 'openhuman', 'qwenpaw'];
+const RUNTIMES: MatrixRuntime[] = [...MATRIX_RUNTIMES];
 
-function runSequence(events: MatrixEvent[], runtime: WorkerRuntime) {
+function runSequence(events: MatrixEvent[], runtime: MatrixRuntime) {
   const messages = formatMatrixEvents(events, ME);
   return messages.map((message) => ({
     sender: message.sender,
@@ -168,7 +172,7 @@ describe('runtime matrix semantics', () => {
     const output = runSequence(
       [notice('$n1', '@stranger:server', '正在整理思路', 0)],
       // runtime unknown → cast through null
-      null as unknown as WorkerRuntime,
+      null as unknown as MatrixRuntime,
     );
     expect(output[0].blocks[0].type).toBe('thinking');
     expect(output[0].blocks[0].runtimeHint).toBeUndefined();
@@ -204,7 +208,7 @@ describe('runtime matrix semantics', () => {
   });
 
   it('maps run-ending sentinels to the three error block variants', () => {
-    const cases: Array<[WorkerRuntime, string, string]> = [
+    const cases: Array<[MatrixRuntime, string, string]> = [
       ['qwenpaw', 'quiet', '已处理（无回复）'],
       ['copaw', 'failed', '任务异常'],
       ['hermes', 'cancelled', '任务已取消'],

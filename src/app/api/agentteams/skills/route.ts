@@ -151,7 +151,6 @@ export async function POST(request: NextRequest) {
       name: parsed.skillName,
       description: parsed.description,
       source: 'custom',
-      version: parsed.version,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       fileCount: parsed.files.length,

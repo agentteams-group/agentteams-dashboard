@@ -139,7 +139,7 @@ const MEMORY_TAR: T[] = [
 
 describe('/workers/[name]/workspace-files/[sub]（v2：Controller Docker 代理数据面）', () => {
   beforeEach(() => {
-    Object.keys(fx).forEach((k) => delete fx[k]);
+    Object.keys(fx).forEach((k) => delete fx[k as keyof Fixtures]);
     fx.topTar = TOP_TAR;
     fx.memoryTar = MEMORY_TAR;
     __resetKbCacheForTests();

@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import {
   Catalog,
+  type ComponentApi,
 } from '@a2ui/web_core/v0_9';
 import {
   basicCatalog,
@@ -28,13 +29,13 @@ import rehypeHighlight from 'rehype-highlight';
 
 // ─── Helper: Create component API with permissive typing ─────────────────────
 // A2UI uses Zod v3 internally, but the project uses Zod v4.
-// We use 'as any' to bridge the type gap while maintaining runtime compatibility.
+// The single `as` assertion bridges the package-level Zod type mismatch while
+// keeping the api shape typed (no explicit any).
 
- 
-type AnyComponentApi = any;
+type AnyComponentApi = ComponentApi;
 
 function makeApi(name: string, schema: z.ZodTypeAny): AnyComponentApi {
-  return { name, schema };
+  return { name, schema } as unknown as AnyComponentApi;
 }
 
 // ─── ThinkingBlock ───────────────────────────────────────────────────────────
