@@ -36,6 +36,28 @@ export interface ModelSelectionOption {
   // (server-side, configured via AGENTTEAMS_SGLANG_URL).
   kind: 'builtin' | 'configured' | 'sglang';
   binding?: AgentTeamsModelBinding;
+  // Authorization summary of the route resolving this alias (configured
+  // options only, #133). A resolvable mapping says nothing about whether a
+  // given Worker Consumer may call it; this carries the visible half
+  // (auth enabled / allowedConsumers) from GET /api/higress/ai-routes.
+  routeAuth?: ModelRouteAuthorization;
+}
+
+/** Authorization state of the Higress route resolving a model alias (#133). */
+export interface ModelRouteAuthorization {
+  enabled: boolean;
+  allowedConsumers: string[];
+}
+
+/**
+ * Human-readable authorization summary for a resolving route (#133). Returns
+ * null when the route could not be resolved (nothing to describe).
+ */
+export function describeRouteAuthorization(auth: ModelRouteAuthorization | undefined): string | null {
+  if (!auth) return null;
+  if (!auth.enabled) return '路由未启用认证（无 Consumer 限制）';
+  if (auth.allowedConsumers.length === 0) return '已启用认证，未限定 Consumer';
+  return `授权 Consumer：${auth.allowedConsumers.join('、')}`;
 }
 
 export function buildModelSelectionOptions(
@@ -45,8 +67,22 @@ export function buildModelSelectionOptions(
 ): ModelSelectionOption[] {
   const available = listAvailableRequestModelAliases(routes, providers);
   const configuredAliases = new Set(available.map((binding) => binding.requestModelAlias));
+  const routesByName = new Map(routes.map((route) => [route.name, route]));
   const aliasLayer: ModelSelectionOption[] = [
-    ...available.map((binding) => ({ alias: binding.requestModelAlias, kind: 'configured' as const, binding })),
+    ...available.map((binding) => {
+      const route = binding.routeName ? routesByName.get(binding.routeName) : undefined;
+      return {
+        alias: binding.requestModelAlias,
+        kind: 'configured' as const,
+        binding,
+        routeAuth: route
+          ? {
+              enabled: route.authConfig?.enabled ?? false,
+              allowedConsumers: route.authConfig?.allowedConsumers ?? [],
+            }
+          : undefined,
+      };
+    }),
     ...BUILTIN_MODEL_ALIASES
       .filter((alias) => !configuredAliases.has(alias))
       .map((alias) => ({ alias, kind: 'builtin' as const })),

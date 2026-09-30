@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_MODEL_ALIASES, buildModelSelectionOptions } from './model-catalog';
+import { BUILTIN_MODEL_ALIASES, buildModelSelectionOptions, describeRouteAuthorization } from './model-catalog';
 
 const providers = [{ name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 }];
 const routes = [{
@@ -65,5 +65,51 @@ describe('model-catalog', () => {
     expect(options.filter((option) => option.alias === 'dup-model')).toHaveLength(1);
     expect(options.find((option) => option.alias === 'solo-model')?.kind).toBe('sglang');
     expect(options.some((option) => option.alias === '')).toBe(false);
+  });
+});
+
+describe('model-catalog route authorization (#133)', () => {
+  it('carries the resolving route auth summary onto configured options', () => {
+    const options = buildModelSelectionOptions(
+      [{ ...routes[0], authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'], allowedConsumers: ['worker-alpha', 'manager'] } }],
+      providers,
+    );
+
+    const option = options.find((item) => item.alias === 'team-chat');
+    expect(option?.routeAuth).toEqual({ enabled: true, allowedConsumers: ['worker-alpha', 'manager'] });
+  });
+
+  it('marks auth-disabled routes as unrestricted', () => {
+    const options = buildModelSelectionOptions(
+      [{ ...routes[0], authConfig: { enabled: false, allowedCredentialTypes: [] } }],
+      providers,
+    );
+
+    expect(options.find((item) => item.alias === 'team-chat')?.routeAuth).toEqual({
+      enabled: false,
+      allowedConsumers: [],
+    });
+  });
+
+  it('leaves routeAuth undefined for builtin and sglang options', () => {
+    const options = buildModelSelectionOptions(routes, providers, ['qwen-local']);
+
+    expect(options.find((item) => item.alias === 'deepseek-chat')?.routeAuth).toBeUndefined();
+    expect(options.find((item) => item.alias === 'qwen-local')?.routeAuth).toBeUndefined();
+  });
+});
+
+describe('describeRouteAuthorization', () => {
+  it('returns null when the route is unknown', () => {
+    expect(describeRouteAuthorization(undefined)).toBeNull();
+  });
+
+  it('describes unrestricted, unbounded and bounded auth in order', () => {
+    expect(describeRouteAuthorization({ enabled: false, allowedConsumers: [] }))
+      .toBe('路由未启用认证（无 Consumer 限制）');
+    expect(describeRouteAuthorization({ enabled: true, allowedConsumers: [] }))
+      .toBe('已启用认证，未限定 Consumer');
+    expect(describeRouteAuthorization({ enabled: true, allowedConsumers: ['worker-a', 'worker-b'] }))
+      .toBe('授权 Consumer：worker-a、worker-b');
   });
 });
