@@ -1,11 +1,13 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshCw, Send, Paperclip, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding } from 'lucide-react';
+import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
 import { filterEmoji } from './composer-commands';
+import { FileRefPickerDialog } from './components/FileRefPickerDialog';
+import type { FileRef } from '@/lib/file-refs';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -45,12 +47,15 @@ const SLASH_COMMANDS: SlashCommand[] = [
 interface ChatComposerProps {
   value: string;
   onChange: (_value: string) => void;
-  onSend: () => void;
+  /** Sends the message; receives the currently attached file references (#87). */
+  onSend: (_refs?: FileRef[]) => void;
   isSending: boolean;
   sendError: string | null;
   placeholder: string;
   disabled: boolean;
   members?: Member[];
+  /** Browsable workspace space for file references (#87). Absent hides the button. */
+  fileRefTarget?: { kind: 'worker' | 'team'; ownerName: string };
   onFileUpload?: (_file: File) => void;
   isUploading?: boolean;
   onSlashCommand?: (_command: string, _args: string) => void;
@@ -73,6 +78,7 @@ export function ChatComposer({
   placeholder,
   disabled,
   members = [],
+  fileRefTarget,
   onFileUpload,
   isUploading = false,
   onSlashCommand,
@@ -91,6 +97,10 @@ export function ChatComposer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Workspace file references attached to the next message (#87)
+  const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Menu state
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -191,8 +201,12 @@ export function ChatComposer({
   }, [menuType]);
 
   const handleSend = () => {
-    if (!value.trim() || isSending) return;
-    onSend();
+    if (isSending) return;
+    if (!value.trim() && fileRefs.length === 0) return;
+    onSend(fileRefs);
+    // The parent owns `value` and clears it through onChange; refs are local
+    // state so they are cleared here once handed to the parent.
+    setFileRefs([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -454,6 +468,28 @@ export function ChatComposer({
         </div>
       )}
 
+      {/* Attached file references (#87) */}
+      {fileRefs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 px-1" data-testid="composer-file-refs">
+          {fileRefs.map((ref) => (
+            <span
+              key={ref.key}
+              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              {ref.name}
+              <button
+                type="button"
+                aria-label={`移除 ${ref.name}`}
+                className="hover:text-foreground"
+                onClick={() => setFileRefs(prev => prev.filter(r => r.key !== ref.key))}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <div className="flex items-end gap-2">
         {/* File upload button */}
@@ -479,6 +515,19 @@ export function ChatComposer({
             <Paperclip className="w-4 h-4" />
           )}
         </Button>
+
+        {fileRefTarget && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setPickerOpen(true)}
+            disabled={disabled}
+            title="引用工作空间文件"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </Button>
+        )}
 
         <textarea
           ref={inputRef}
@@ -514,7 +563,7 @@ export function ChatComposer({
             size="sm"
             className="h-9 w-9 p-0 shrink-0"
             onClick={handleSend}
-            disabled={!value.trim() || isSending}
+            disabled={(!value.trim() && fileRefs.length === 0) || isSending}
           >
             {isSending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
@@ -530,6 +579,16 @@ export function ChatComposer({
           Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
         </p>
       </div>
+
+      {fileRefTarget && (
+        <FileRefPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          kind={fileRefTarget.kind}
+          ownerName={fileRefTarget.ownerName}
+          onConfirm={(refs) => setFileRefs(prev => [...prev, ...refs.filter(r => !prev.some(p => p.key === r.key))])}
+        />
+      )}
     </div>
   );
 }

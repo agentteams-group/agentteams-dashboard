@@ -19,12 +19,17 @@
  *  12. legacy ```card / <details>         → card/tool_call/thinking (existing)
  *  13. text fallback (Markdown)           → text block
  *
+ * Chat file references (`com.agentteams.file_refs`, composer picker) are not
+ * a dispatch step: they are appended as an extra `file_refs` block after the
+ * selected blocks so a message can carry both body text and refs.
+ *
  * `runtime` (resolved from the sender MXID → Worker mapping by the caller)
  * steers rule 7/10 dispatch and is attached to every produced block as
  * `runtimeHint` so renderers can badge the owning runtime.
  */
 
 import type { ParsedA2uiBlock } from './parser';
+import { FILE_REFS_CONTENT_KEY, parseFileRefs } from '../file-refs';
 import {
   parseA2uiMarkers,
   parseAgentRunBlocks,
@@ -141,7 +146,15 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
 
 export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   const blocks = selectBlocks(input);
+  // Chat file references (#87) ride alongside the body text instead of
+  // replacing it: the composer may attach files to any message, so the refs
+  // are appended as an extra block (ref-only messages render chips alone
+  // because empty text blocks are skipped downstream).
+  const fileRefs = parseFileRefs(input.content[FILE_REFS_CONTENT_KEY]);
+  const withRefs = fileRefs.length > 0
+    ? [...blocks, { type: 'file_refs', refs: fileRefs, isStreaming: input.isStreaming } satisfies ParsedA2uiBlock]
+    : blocks;
   const hint = input.runtime ?? undefined;
-  if (!hint) return blocks;
-  return blocks.map((block) => (block.runtimeHint ? block : { ...block, runtimeHint: hint }));
+  if (!hint) return withRefs;
+  return withRefs.map((block) => (block.runtimeHint ? block : { ...block, runtimeHint: hint }));
 }

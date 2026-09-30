@@ -17,6 +17,7 @@ import { ToolCallView, type ToolCallPayload } from './toolcalls';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
+import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
@@ -381,6 +382,12 @@ export function MessageBubble({
             </div>
           ) : (
             <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
+              {/* Optimistic local sends carry refs directly (no event content yet). */}
+              {message.fileRefs && message.fileRefs.length > 0 && (
+                <div className="w-[min(100%,56rem)] max-w-full">
+                  <FileRefChips refs={message.fileRefs} />
+                </div>
+              )}
               {parsedBlocks.map((block, idx) => {
                 if (block.type === 'confirmation' && onSendConfirmation) {
                   return (
@@ -448,6 +455,13 @@ export function MessageBubble({
                   return (
                     <div key={idx} className="w-[min(100%,56rem)] max-w-full">
                       <AttachmentCard payload={block.payload as unknown as AttachmentPayload} />
+                    </div>
+                  );
+                }
+                if (block.type === 'file_refs' && block.refs && block.refs.length > 0) {
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <FileRefChips refs={block.refs} />
                     </div>
                   );
                 }

@@ -19,6 +19,7 @@
 
 import type { A2uiMessage } from '@a2ui/web_core/v0_9';
 import { tryParseAgentReprBlocks } from './agent-repr';
+import type { FileRef } from '../file-refs';
 import {
   normalizeConfirmationPayload,
   normalizeErrorPayload,
@@ -31,13 +32,15 @@ import type { WorkflowPayload } from './workflow';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment' | 'error';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment' | 'file_refs' | 'error';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
   content?: string;
   /** Payload for card/tool_call/error blocks */
   payload?: Record<string, unknown>;
+  /** Referenced workspace files for 'file_refs' blocks */
+  refs?: FileRef[];
   /** Plain text for text blocks */
   text?: string;
   /** Whether this block is still streaming (incomplete) */

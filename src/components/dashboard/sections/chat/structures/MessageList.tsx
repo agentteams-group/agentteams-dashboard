@@ -6,6 +6,7 @@ import type { ScrollPanelHandle } from './ScrollPanel';
 import { buildGroupedMessages, type GroupedMessage } from '../grouper/MainGrouper';
 import { EventTile } from '../views/EventTile';
 import type { DisplayMessage } from '@/hooks/use-matrix';
+import type { FileRef } from '@/lib/file-refs';
 import { MessageSquare, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import type { MentionEntry } from '../chat-composer';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
@@ -108,6 +109,8 @@ export interface LocalOutboundMessage {
   mentions?: import('../chat-composer').MentionEntry[];
   /** Retained so a failed reply can be replayed with its m.in_reply_to target. */
   replyTo?: DisplayMessage | null;
+  /** Workspace file references attached to this message (#87). */
+  fileRefs?: FileRef[];
 }
 
 export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessage {
@@ -121,6 +124,7 @@ export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessa
     type: 'm.text',
     isMe: true,
     status: local.status,
+    fileRefs: local.fileRefs,
   };
 }
 
