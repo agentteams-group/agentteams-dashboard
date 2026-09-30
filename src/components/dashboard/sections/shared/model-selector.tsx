@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
+import { describeRouteAuthorization } from '@/lib/model-catalog';
 
 const CUSTOM_ALIAS = '__custom_alias__';
 
@@ -65,6 +66,9 @@ export function ModelSelector({
   }
 
   const selectedOption = uniqueOptions.find((option) => option.alias === value);
+  const selectedRouteAuth = describeRouteAuthorization(
+    selectedOption?.kind === 'configured' ? selectedOption.routeAuth : undefined,
+  );
   const customActive = customMode || Boolean(value && !known);
 
   if (customActive) {
@@ -140,6 +144,11 @@ export function ModelSelector({
                       网关路由可解析
                     </span>
                   )}
+                  {option.kind === 'configured' && option.routeAuth ? (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {describeRouteAuthorization(option.routeAuth)}
+                    </span>
+                  ) : null}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -196,6 +205,7 @@ export function ModelSelector({
         <p className="text-xs text-muted-foreground break-words">
           通过路由 {selectedOption.binding.routeName} 转发至{' '}
           {selectedOption.binding.providerName} / {selectedOption.binding.targetModel}
+          {selectedRouteAuth ? `；${selectedRouteAuth}` : ''}
         </p>
       ) : selectedOption?.kind === 'sglang' ? (
         <p className="text-xs text-muted-foreground break-words">

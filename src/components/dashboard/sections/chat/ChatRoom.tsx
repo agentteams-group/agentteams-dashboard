@@ -36,6 +36,7 @@ import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker
 import { PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
+import type { FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
 import { TypingIndicator } from './typing-indicator';
 import { AgentActivityTrack } from './agent-activity-track';
@@ -365,9 +366,12 @@ export function ChatRoom({
     buildSystemNotice: buildSystemNoticeFromError,
   });
 
-  const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[]) => {
-    let trimmed = content.trim();
-    if (!trimmed) return;
+  const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[], fileRefs?: FileRef[]) => {
+    const typed = content.trim();
+    // A message may carry only file references (#87); it then falls back to a
+    // short body so the send route's non-empty body contract still holds.
+    if (!typed && !fileRefs?.length) return;
+    let trimmed = typed || `引用 ${fileRefs?.length ?? 0} 个工作空间文件`;
     // element-style outbound commands: /me (m.emote) and /shrug
     const parsed = parseOutboundCommand(trimmed);
     if (parsed) trimmed = parsed.body;
@@ -380,7 +384,7 @@ export function ChatRoom({
     }
     if (!roomId || !isLoggedIn) return;
 
-    sendOutbound({ content: trimmed, options: _options, mentions, replyTo, msgtype });
+    sendOutbound({ content: trimmed, options: _options, mentions, replyTo, msgtype, fileRefs });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
@@ -547,6 +551,15 @@ export function ChatRoom({
     selectedIsTeamShared,
     setSelectedWorker,
   } = useWorkerFileOptions({ team, roomMembers, runtimeMap, defaultWorkerName });
+
+  // Workspace space the composer can reference files from (#87): the selected
+  // worker's private space, or the team's shared space when shared is selected
+  // or no worker is resolvable in this room.
+  const fileRefTarget = effectiveSelectedWorker && !selectedIsTeamShared
+    ? { kind: 'worker' as const, ownerName: effectiveSelectedWorker }
+    : team?.name
+      ? { kind: 'team' as const, ownerName: team.name }
+      : undefined;
 
   // "查看工作目录" on an agent bubble: open the worker files panel with that
   // message's sender pre-selected (resolved via the runtime map).
@@ -723,12 +736,13 @@ export function ChatRoom({
           <ChatComposer
             value={inputValue}
             onChange={handleInputChange}
-            onSend={() => handleSend(inputValue, undefined, mentions)}
+            onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
             placeholder={replyTo ? `回复 ${replyTo.senderShort}... (Enter 发送)` : `发送消息到 ${roomName}... (Enter 发送, Shift+Enter 换行)`}
             disabled={!canSend || !isLoggedIn}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
+            fileRefTarget={fileRefTarget}
             onFileUpload={handleFileUpload}
             isUploading={isUploading}
             onSlashCommand={(cmd) => {

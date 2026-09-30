@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { matrixApi, MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
+import type { FileRef } from '@/lib/file-refs';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import type { WorkerRuntime } from '@/lib/agentteams-api';
 import { create } from 'zustand';
@@ -646,6 +647,8 @@ export interface DisplayMessage {
   status?: 'sending' | 'sent' | 'error';
   mediaUrl?: string;
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
+  /** Workspace file references attached to this message (optimistic local sends). */
+  fileRefs?: FileRef[];
   /** Whether this message is still being streamed (AI response in progress) */
   isStreaming?: boolean;
   /** Agent run status from org.agentteams.status / content.status (streaming, in_progress, success, failed...). */

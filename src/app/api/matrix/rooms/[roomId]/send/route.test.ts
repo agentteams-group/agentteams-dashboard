@@ -87,4 +87,44 @@ describe('Matrix room message send route', () => {
       'com.agentteams.long_message': longMessage,
     });
   });
+
+  it('forwards com.agentteams.file_refs references', async () => {
+    const matrixFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ event_id: '$event' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    const fileRefs = {
+      refs: [
+        { name: 'report.md', key: 'agents/worker-a/report.md', size: 2048 },
+        { name: 'data.csv', key: 'teams/team-a/shared/data.csv' },
+      ],
+    };
+    const request = new NextRequest(
+      'http://dashboard.test/api/matrix/rooms/room/send?homeserver=http%3A%2F%2F127.0.0.1%3A6167',
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          msgtype: 'm.text',
+          body: '引用 2 个工作空间文件',
+          'com.agentteams.file_refs': fileRefs,
+        }),
+      }
+    );
+
+    const response = await PUT(request, { params: Promise.resolve({ roomId: '!room:test' }) });
+
+    expect(response.status).toBe(200);
+    const options = matrixFetch.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(options.body as string)).toEqual({
+      msgtype: 'm.text',
+      body: '引用 2 个工作空间文件',
+      'com.agentteams.file_refs': fileRefs,
+    });
+  });
 });

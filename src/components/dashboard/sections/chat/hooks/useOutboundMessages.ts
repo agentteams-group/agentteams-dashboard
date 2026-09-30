@@ -6,6 +6,7 @@ import {
   type DisplayMessage,
 } from '@/hooks/use-matrix';
 import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
+import { FILE_REFS_CONTENT_KEY, type FileRef } from '@/lib/file-refs';
 import { type LocalOutboundMessage, type ChatSystemNotice } from '../structures/MessageList';
 import type { MentionEntry } from '../chat-composer';
 
@@ -64,9 +65,11 @@ export function useOutboundMessages({
     replyTo?: DisplayMessage | null;
     clientId?: string;
     msgtype?: string;
+    /** Workspace file references attached to this message (#87). */
+    fileRefs?: FileRef[];
   }) => {
     if (!roomId || !isLoggedIn || !userId) return;
-    const { content, options, mentions, replyTo, clientId, msgtype } = params;
+    const { content, options, mentions, replyTo, clientId, msgtype, fileRefs } = params;
 
     // Only mentions that still appear in the final text are sent (the user may
     // have typed more after inserting them, or deleted the placeholder again).
@@ -101,6 +104,7 @@ export function useOutboundMessages({
         formattedContent: formattedBody ?? (options?.html ? content : undefined),
         mentions,
         replyTo,
+        fileRefs,
         timestamp: Date.now(),
         status: 'sending' as const,
       }]);
@@ -111,7 +115,11 @@ export function useOutboundMessages({
         roomId,
         body: content,
         formattedBody,
-        extra: { ...mentionData, ...(msgtype ? { msgtype } : {}) },
+        extra: {
+          ...mentionData,
+          ...(msgtype ? { msgtype } : {}),
+          ...(fileRefs && fileRefs.length > 0 ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
+        },
         relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
       },
       {

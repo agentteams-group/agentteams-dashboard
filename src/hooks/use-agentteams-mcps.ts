@@ -59,7 +59,7 @@ export function useDeleteMcpServer() {
 
 export function useTestMcpServer() {
   return useMutation({
-    mutationFn: (data: { url: string; transport: string; timeout?: number }) =>
+    mutationFn: (data: { url: string; transport: string; timeout?: number; headers?: Record<string, string> }) =>
       agentteamsApi.testMcpServer(data),
   });
 }

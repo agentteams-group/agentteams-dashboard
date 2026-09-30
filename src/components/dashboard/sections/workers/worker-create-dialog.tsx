@@ -236,6 +236,9 @@ export function WorkerCreateDialog({
             <p className="text-xs text-muted-foreground break-words">
               Worker 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
             </p>
+            <p className="text-xs text-muted-foreground break-words">
+              创建后请在编辑页运行「已保存配置的网关验证」（验证已保存模型 / 验证已保存 MCP），以该 Worker 的 Consumer 身份确认授权与调用。
+            </p>
           </div>
 
           <div className="space-y-2 min-w-0">

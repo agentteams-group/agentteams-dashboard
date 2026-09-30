@@ -848,7 +848,7 @@ export const agentteamsApi = {
     });
   },
 
-  testMcpServer: (data: { url: string; transport: string; timeout?: number }): Promise<McpTestResult> => {
+  testMcpServer: (data: { url: string; transport: string; headers?: Record<string, string>; timeout?: number }): Promise<McpTestResult> => {
     const res = fetch(apiUrl('/api/agentteams/mcps/test'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

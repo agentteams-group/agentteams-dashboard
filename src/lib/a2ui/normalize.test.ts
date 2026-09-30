@@ -406,3 +406,69 @@ describe('normalizeToBlocks streaming tolerance', () => {
     expect(blocks[0].type).toBe('text');
   });
 });
+
+describe('normalizeToBlocks file references (com.agentteams.file_refs)', () => {
+  it('appends a file_refs block alongside the body text', () => {
+    const input = makeInput({
+      body: '看下这个文件',
+      content: {
+        'com.agentteams.file_refs': { refs: [{ key: 'docs/report.md', name: 'report.md', size: 1024 }] },
+      },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'file_refs']);
+    expect(blocks[0].text).toBe('看下这个文件');
+    expect(blocks[1].refs).toEqual([{ key: 'docs/report.md', name: 'report.md', size: 1024 }]);
+  });
+
+  it('renders chips alone for a ref-only message (empty body)', () => {
+    const input = makeInput({
+      body: '',
+      content: {
+        'com.agentteams.file_refs': { refs: [{ key: 'a.txt', name: 'a.txt' }, { key: 'b.txt', name: 'b.txt' }] },
+      },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    const refBlocks = blocks.filter((b) => b.type === 'file_refs');
+    expect(refBlocks).toHaveLength(1);
+    expect(refBlocks[0].refs).toHaveLength(2);
+  });
+
+  it('does not dispatch on refs (an agent run block still wins and keeps refs appended)', () => {
+    const input = makeInput({
+      body: 'irrelevant',
+      content: {
+        'org.agentteams.run': {
+          blocks: [
+            { type: 'thinking', content: '分析中' },
+            { type: 'text', text: '分析结果' },
+          ],
+        },
+        'com.agentteams.file_refs': { refs: [{ key: 'a.txt', name: 'a.txt' }] },
+      },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((b) => b.type)).toEqual(['thinking', 'text', 'file_refs']);
+  });
+
+  it('stamps the runtime hint on the appended file_refs block', () => {
+    const input = makeInput({
+      body: 'hi',
+      runtime: 'hermes',
+      content: { 'com.agentteams.file_refs': { refs: [{ key: 'a.txt', name: 'a.txt' }] } },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    const refBlock = blocks.find((b) => b.type === 'file_refs');
+    expect(refBlock?.runtimeHint).toBe('hermes');
+  });
+
+  it('keeps messages without refs unchanged', () => {
+    const input = makeInput({ body: 'plain' });
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((b) => b.type)).toEqual(['text']);
+  });
+});

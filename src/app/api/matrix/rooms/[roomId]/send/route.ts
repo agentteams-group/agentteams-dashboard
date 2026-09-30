@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent, 'com.agentteams.long_message': longMessage } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent, 'com.agentteams.long_message': longMessage, 'com.agentteams.file_refs': fileRefs } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
@@ -53,6 +53,11 @@ export async function PUT(
     // attachment when a reply exceeds the 64KB threshold.
     if (longMessage) {
       messageContent['com.agentteams.long_message'] = longMessage;
+    }
+    // Chat file references (#87): workspace files attached to the outbound
+    // message so the agent run can access them in context.
+    if (fileRefs) {
+      messageContent['com.agentteams.file_refs'] = fileRefs;
     }
 
     const controller = new AbortController();

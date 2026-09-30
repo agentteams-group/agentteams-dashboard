@@ -44,6 +44,6 @@ it('B7 21.1: an explicit selection is not duplicated by the defaults', () => {
  // 已选 chips 只有一份 github，且它被排除出候选列表（filtered 按 value 排除），
  // 因此 defaultSelectedNames 的叠加路径无从触发重复。
  expect(screen.getAllByText('github').length).toBe(1);
- expect(screen.getByText('暂无可用 MCP 服务器，请先在技能中心配置')).toBeTruthy();
+ expect(screen.getByText('暂无已登记的 MCP 地址，请先到资源中心 → MCP 服务器登记')).toBeTruthy();
  expect(change).not.toHaveBeenCalled();
 });

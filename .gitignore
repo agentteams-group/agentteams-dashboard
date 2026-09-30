@@ -52,6 +52,8 @@ prompt
 # is source, not test artifacts — the bare `test` pattern above would
 # keep swallowing it (route.ts was force-added back in F1a/F1c).
 !src/app/api/agentteams/setup/backends/test/
+# Same for the MCP connectivity probe route (POST /api/agentteams/mcps/test).
+!src/app/api/agentteams/mcps/test/
 
 server.log
 # Audit log (default location is ${cwd}/logs/audit.log.jsonl; overridable via
