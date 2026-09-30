@@ -20,6 +20,7 @@ set -eu
 
 VERSION="${1:?usage: build-hotfix-bundle.sh vX.Y.Z [out-dir]}"
 OUT_DIR="${2:-.}"
+mkdir -p "$OUT_DIR"
 
 if [ ! -f .next/standalone/server.js ]; then
   echo "ERROR: .next/standalone/server.js not found — run 'npm run build' first." >&2
