@@ -97,13 +97,27 @@ export function McpServerDialog({
   const handleTest = async () => {
     setTestResult(null);
     const url = (document.getElementById('url') as HTMLInputElement)?.value || '';
-    const transport = server?.transport || 'sse';
+    const transport = (document.getElementById('transport-value') as HTMLInputElement)?.value
+      || server?.transport
+      || 'sse';
     if (!url.startsWith('http')) {
       setTestResult({ success: false, message: '请输入有效的 HTTP(S) URL 后再测试' });
       return;
     }
+    // The test must carry the form's own auth headers and timeout, otherwise a
+    // registered MCP that requires Authorization fails here while the list
+    // page (which passes both) succeeds.
+    const headers = Object.fromEntries(
+      headerKeys.filter((k) => k.trim()).map((k) => [k.trim(), headerValues[k] || ''])
+    );
+    const timeoutValue = Number((document.getElementById('timeout') as HTMLInputElement)?.value);
     try {
-      const result = await testMutation.mutateAsync({ url, transport, timeout: 8000 });
+      const result = await testMutation.mutateAsync({
+        url,
+        transport,
+        timeout: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 8000,
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      });
       setTestResult(result);
     } catch (err: unknown) {
       setTestResult({ success: false, message: err instanceof Error ? err.message : '测试请求失败' });
@@ -129,7 +143,7 @@ export function McpServerDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? '编辑 MCP 服务器' : '添加 MCP 服务器'}</DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">仅保存目录配置。地址更新后，已有 Worker 保持原地址，请逐个重新分配；Headers 仅保存在登记中，不会自动注入 Worker。</p>
+        <p className="text-xs text-muted-foreground">仅保存目录配置。地址更新后，已有 Worker 保持原地址，请逐个重新分配；Headers 仅保存在登记中，不会自动注入 Worker。此处的测试按登记的 Headers 直连配置地址，只验证登记地址可达，不代表 Worker 已获网关授权。</p>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {isEdit ? (
             <div className="space-y-2">
@@ -250,7 +264,7 @@ export function McpServerDialog({
                 ))}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('transport', { required: true })} />
+            <input type="hidden" id="transport-value" {...register('transport', { required: true })} />
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <Info className="w-3 h-3" />
               Streamable HTTP 为 MCP 协议推荐传输方式，支持多客户端连接

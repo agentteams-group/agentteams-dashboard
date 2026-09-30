@@ -87,7 +87,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">这里只分配已登记的地址，不会创建网关服务或授予权限。请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。</p>
+      <p className="text-xs text-muted-foreground">这里只分配已登记的地址，不会创建网关服务或授予权限。请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。分配后请在 Worker 编辑页底部运行「已保存配置的网关验证」，确认该 Worker 的 Consumer 已获授权。</p>
       <div className="flex flex-wrap gap-1.5">
         {value.length === 0 && (
           <span className="text-sm text-muted-foreground">暂未选择 MCP 服务器</span>
@@ -129,7 +129,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
             <div className="max-h-[240px] overflow-y-auto space-y-1">
               {filtered.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-6">
-                  {search ? '没有匹配的 MCP 服务器' : '暂无可用 MCP 服务器，请先在技能中心配置'}
+                  {search ? '没有匹配的 MCP 服务器' : '暂无已登记的 MCP 地址，请先到资源中心 → MCP 服务器登记'}
                 </p>
               )}
               {filtered.map((srv) => {
@@ -143,8 +143,8 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                       isSelected ? 'bg-primary/5 border border-primary/20' : 'hover:bg-accent'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <Wifi className="w-4 h-4 text-emerald-500" />
+                    <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0" title="仅表示已登记地址；可用性与授权需在 Worker 编辑页验证">
+                      <Wifi className="w-4 h-4 text-muted-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

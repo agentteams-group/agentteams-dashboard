@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { McpServerDialog } from './mcp-server-dialog';
+import { McpOnboardingPanel } from './mcp-onboarding-panel';
 import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useMcpCatalog } from '@/hooks/use-mcp-catalog';
 import type { McpServerConfig } from '@/lib/agentteams-api';
@@ -83,6 +84,7 @@ export function McpServersSection() {
   return (
     <div className="space-y-4">
       <p className="rounded border p-3 text-sm text-muted-foreground">这里登记已有 MCP 地址，不会在网关创建服务。请先通过 Manager 或 Higress 接入服务并授权 Worker，再登记网关地址。“已配置 Worker”只表示配置关系；实际可用性请在 Worker 编辑页验证。修改或删除登记不会同步修改已有 Worker 或撤销网关授权。</p>
+      <McpOnboardingPanel />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefetching}>
@@ -124,8 +126,8 @@ export function McpServersSection() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <Wifi className="w-5 h-5 text-emerald-500" />
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0" title="已在目录登记；网关接入、授权与可用性需在 Worker 编辑页验证">
+                      <Wifi className="w-5 h-5 text-muted-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
