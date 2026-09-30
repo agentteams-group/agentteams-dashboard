@@ -134,3 +134,15 @@ Entries discovered by the Agent while performing [specific task description] sho
   - Controller 200 分支无条件覆盖 Content-Type 为 application/json（worker 返回的 CT 是诚实的 text/html）→ 上游 header 不可信，dashboard 只能嗅 body（proxy-helper 已落地 HTML 嗅探改写 502）
   - worker 级 API 报 502 "worker workspace API unreachable" = 容器 DNS/连接失败：容器不存在、镜像拉取失败（如 qwenpaw-worker:latest pull 失败）、或凭据缺失（如 Message: refresh credentials: credentials not found for <name>）——用 ContainerState/Message 区分
   - 不存在的 worker 名走同一 502 路径；存在但容器坏的 502 与 SPA 兜底的 200 HTML 是两类故障，先分清再查
+
+[Project Knowledge Summary]
+- Date: 2026-09-30
+- Context: 热更新功能落地（应用内热补丁方案）后，用户要求把发布配合固化为发版规范
+- Category: Operations & Deployment
+- Instructions:
+  - 发版规范 canonical 文档：docs/RELEASE.md（版本三方一致、常规发版序列、热补丁通道、坑清单），本条目只存要点索引
+  - 发版序列：bump package.json → tag vX.Y.Z（build.yml 自动出镜像）→ gh release create → npm run build && sh scripts/build-hotfix-bundle.sh vX.Y.Z → gh release upload 两个资产 → 服务器 pull + up -d
+  - 热更新 = 应用内补丁（L1 触发，下载 release 热更新包 → sha256 校验 → 热替换 appDir 旧版留 app.prev → process.exit 由容器监管方拉起），无 docker socket / 无旁路容器；docker 与 k8s 行为一致
+  - k8s 约束：需可写根文件系统；多副本以镜像滚动更新为准，热补丁是单实例快速通道，Pod 重建后补丁丢失是预期语义
+  - 服务器需可达 api.github.com + github.com（热更新依赖）；仅影响热更新与上游提示，构建号追平（/api/dashboard-build）不受影响
+  - 版本三方一致是硬约定：tag = package.json = 构建代码；漏 bump 会导致检查更新误报上游新版本；release 用三段版本号（compareSemver 只比三段）
