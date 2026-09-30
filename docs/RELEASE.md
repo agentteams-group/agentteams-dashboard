@@ -15,7 +15,9 @@ git tag vX.Y.Z  =  package.json "version" X.Y.Z  =  本次构建的代码
 ## 常规发版（镜像路径，canonical）
 
 ```bash
-# 1. bump package.json version（如 1.2.4.9 → 1.2.5），提交
+# 0. 三门 gates 全绿：tsc → eslint → vitest
+#    （tsconfig include 含 **/*.ts，next.config.ts 等配置文件也在 tsc 覆盖范围）
+# 1. bump package.json version（如 1.2.5-beta.5 → 1.2.5），提交
 # 2. 打 tag 推送 —— build.yml 自动构建并发布镜像（vX.Y.Z + latest）
 git tag vX.Y.Z && git push origin main --tags
 
@@ -51,8 +53,18 @@ docker compose pull && docker compose up -d
 
 | 对比 | 数据源 | 结果 |
 |------|--------|------|
-| 页面构建号 vs 服务器构建号 | 内嵌 BUILD_ID vs `/api/dashboard-build` | 「立即更新」= 页面刷新追平（镜像已换、页面未刷的场景） |
-| 上游 release tag vs 内嵌 package.json version | GitHub `/releases/latest` | 「热更新」入口（L1）|
+| 页面内嵌版本 vs 服务器版本 | `NEXT_PUBLIC_APP_VERSION` vs `/api/dashboard-build` 的 `version` | 不同 → 「发现新版本 v{服务器版本}」+「立即更新」（带 `?_b=` 时间戳穿透缓存刷新追平）；相同 → 「已是最新」（**构建号差异不提示**，同版本重建属已是最新） |
+| 上游 release tag vs 内嵌 package.json version | GitHub `/releases/latest` | 高于 → 「上游有新版本」+ L1 可见的「热更新」入口 |
+| 旧版服务器（接口无 `version` 字段） | buildId 兜底比对 | 不一致 → 「立即更新」（legacy 兼容分支） |
+
+热更新完成判定同样以**版本号**为准：`updateContainer()` 轮询 `/api/dashboard-build`，version 变化即自动刷新（5 分钟超时）。
+
+## 构建号确定性
+
+- `next.config.ts` `resolveBuildId()` 三级回退：`DASHBOARD_BUILD_ID` env（CI / Makefile / `--build-arg`）→ git short sha → `.next/.build-id-lock` 锁文件（10 分钟有效，无 git 环境）。
+- CI 镜像构建注入 `--build-arg DASHBOARD_BUILD_ID=${VERSION}`：**镜像构建号即版本号**。
+- 背景：Turbopack client/server 编译各自独立加载 next.config，模块级时间戳被求值两次会造成一次构建内两个构建号（客户端内联 vs `.next/BUILD_ID` 文件），曾导致更新检测永久误报。
+- 发布前自检：`cat .next/BUILD_ID` 与 `grep -rhoE "git-[0-9a-f]{7,10}" .next/static/chunks .next/server \| sort -u` 必须只有单一值。
 
 ## 已知坑
 
@@ -60,3 +72,7 @@ docker compose pull && docker compose up -d
 2. **忘上传 hotfix assets** → `/api/self-update` 返回 404「未附带热更新包」，此时只能走镜像部署。
 3. **draft/prerelease** → 页面检查不到（`releases/latest` 只返回正式发布）。
 4. **compose 镜像源** → 与 build.yml 发布源可能不一致，部署前核对 `image:` 字段。
+5. **改 next.config.ts 忘跑 tsc** → tsconfig include 含 `**/*.ts`（覆盖配置文件），lint 不查重复 import，只有 `next build` 的 TypeScript 检查会拦；门禁必须三门（tsc → eslint → vitest）齐全。
+6. **tag 没打在最终代码上**（改了配置又追加提交）→ 补丁包/镜像与 tag 不一致；需要 `git tag -f` + `git push -f origin vX.Y.Z` 重打，release 无需重建。
+7. **gh release upload 大文件** → 前台执行会超时（慢上行），用后台任务；`GH_TOKEN` 从 workspace 目录取（gh 依赖 git credential）。
+8. **hotfix bundle 的已知现象** → `.next/standalone` 根被 Turbopack 整项目 tracing 污染（`server-package.ts` 动态 `process.cwd()` 路径触发），bundle ~32M 含 workspace 杂文件；布局与容器 appDir 兼容，applyHotfix 校验不受影响。

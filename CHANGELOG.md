@@ -3,6 +3,35 @@
 本文件记录 AgentTeams Dashboard 的版本发布历史。
 ## Unreleased
 
+## v1.2.5 (2026-09-30)
+
+自 v1.2.4.9 以来的功能发布：任务看板切换修复、按钮式更新与应用内热补丁、构建号确定性。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证；v1.2.5-beta.1 至 beta.5 预发迭代后转正。
+
+### New Features
+
+#### 版本更新与热补丁
+
+- 设置面板新增「更新」tab：展示版本号 / 构建号 / 构建时间，「检查更新」一键比对服务器与上游 Release
+- 页面落后服务器版本时展示「发现新版本」与「立即更新」：整页刷新携带 `?_b=` 时间戳查询参数，穿透反向代理缓存
+- **应用内热补丁（L1 管理员）**：`POST /api/self-update` 从最新正式 Release 下载 `dashboard-hotfix-*.tar.gz` → sha256 校验 → tar 解包完整性检查（server.js / BUILD_ID）→ 原子热替换应用目录（旧版本保留于 `app.prev`）→ 进程三级强杀（SIGTERM→SIGKILL→exit）由容器监管方拉起。无 docker socket、无旁路容器，docker restart 策略与 k8s restartPolicy 行为一致；页面轮询服务器版本号变化后自动刷新（5 分钟超时）
+- `GET /api/dashboard-build` 只读构建身份接口（buildId + version + builtAt，`Cache-Control: no-store`，免认证）
+- chunk 加载失败自愈：懒加载 chunk 被新部署清除时，会话内自动整页刷新一次，兜底既有错误边界卡片
+- 安装器部署默认 `--restart unless-stopped`，保证热补丁进程退出后被拉起
+
+### Bug Fixes
+
+- chat→任务看板首次点击失效：`useActiveSection()` 初始解析 effect 随组件挂载重复执行，同 commit 同步挂载路径下把 store 回滚为旧 hash 值（`410018a`）；修复为模块级 once 标记，附「remount 不回滚」回归测试
+- chat 会话侧栏拖拽中途切换区块时 pointermove/pointerup 监听器泄漏：处理器入 ref，卸载统一移除
+
+### Build & Deploy
+
+- **构建号确定性**：`resolveBuildId()` 三级回退（`DASHBOARD_BUILD_ID` env → git short sha → `.next/.build-id-lock` 10 分钟锁文件），修复 Turbopack client/server 编译 worker 独立加载 next.config 导致「一次构建两个构建号」的更新检测永久误报；CI 镜像经 `--build-arg DASHBOARD_BUILD_ID=${VERSION}` 注入，镜像构建号即版本号
+- 热更新完成判定从构建号轮询改为版本号轮询；同版本不同构建号视为「已是最新」，仅真实版本差异提示升级（旧版接口无 version 字段时回退构建号比对）
+- 新增发版规范 `docs/RELEASE.md`：版本三方一致（tag = package.json = 构建代码）、镜像发布链路、热补丁快速通道、构建号自检、已知坑清单
+- 热补丁包构建脚本 `scripts/build-hotfix-bundle.sh` 随 Release 资产分发（tar.gz + sha256）
+
+### 随本版附带的其他变更（Unreleased 结转）
+
 - Dashboard 停止新建 CoPaw：创建入口仅提供 OpenClaw / Hermes / QwenPaw / DeepSeek Harness；存量 CoPaw 仍可展示、编辑、删除，并提供升级到 QwenPaw 的入口
 - 调试日志与问天诊断优先探测 `.qwenpaw` 会话目录，存量 `.copaw` 布局继续作为回退
 - 生产依赖漏洞非破坏性清理（高危 8 → 0，官方 registry `npm audit --omit=dev` 复测）：adm-zip 0.6.0 → 0.6.1（GHSA-vwc7-r8mq-g2x9 / GHSA-7q85-xj36-vmfc，插件 zip 解包路径）；overrides 收紧 sharp ≥0.35.4（GHSA-rgj7-g3m4-5g8c）、新增 nanoid ^3.3.18（GHSA-2v37-7h3g-55p8，v3 线内修复）、lodash-es ≥4.18（GHSA-r5fr-rjxr-66jc / GHSA-f23m-r3pf-42rh，dedupe mermaid→chevrotain 链三处嵌套 4.17.23）、baseline-browser-mapping ≥2.11.0（GHSA-w5vr-8v7q-w6rv）
