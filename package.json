@@ -1,6 +1,6 @@
 {
   "name": "agentteams-dashboard",
-  "version": "1.2.4.9",
+  "version": "1.2.5-beta.1",
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",
