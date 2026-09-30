@@ -1,6 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { compareSemver } from '@/lib/version';
+
+export { compareSemver };
 
 export type UpdateCheckState =
   | { phase: 'idle' }
@@ -26,27 +29,14 @@ export interface UpdateCheckOptions {
   updateTimeoutMs?: number;
 }
 
-/** Positive result means `a` is newer than `b`. Prerelease suffixes compare as 0. */
-export function compareSemver(a: string, b: string): number {
-  const parse = (v: string) =>
-    v.replace(/^v/, '').split('.').map((n) => Number.parseInt(n, 10) || 0);
-  const pa = parse(a);
-  const pb = parse(b);
-  for (let i = 0; i < 3; i += 1) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
   return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -153,7 +143,9 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
 
     const run = async () => {
       try {
-        const res = await fetchWithTimeout('/api/self-update', { method: 'POST' });
+        // The route downloads + applies the bundle before responding — this
+        // legitimately takes a minute or two, so no client timeout here.
+        const res = await fetch('/api/self-update', { method: 'POST' });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
           const message = typeof body?.error === 'string' ? body.error : `更新触发失败（${res.status}）`;

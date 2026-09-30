@@ -18,16 +18,21 @@ Dashboard 是单个无状态容器（持久化仅 `/data/agentteams-dashboard` �
 公开 demo 必须满足：独立后端（不连真实集群）、只读观察者账号（session level 1）、反代限速。
 三项无法同时保证时，降级为 README 的 30 秒安装 GIF（录制清单见 `docs/images/README.md`）。
 
-## 容器自更新说明（设置 → 更新）
+## 应用内热更新说明（设置 → 更新）
 
-「更新容器」按钮依赖 compose 部署里的 watchtower 旁路更新器（见
-`deploy/docker-compose.yml` 的 `updater` 服务）。Coolify 部署有自己的
-重建链路，两种接法二选一：
+热更新为纯应用层实现（L1 管理员触发，下载最新 Release 的
+`dashboard-hotfix-*.tar.gz` 校验后热替换应用文件并自动重启），无
+docker socket、无旁路容器，docker run / compose / k8s 行为一致。
+使用前提：
 
-1. **推荐**：不部署 updater，让 Coolify 的 webhook/重新部署承担镜像
-   更新；页面上的版本对比（构建号 + GitHub release）照常工作，「更新
-   容器」按钮会在后端返回 503「更新器未配置」（未配置
-   `DASHBOARD_UPDATER_TOKEN` 时）。
-2. 手动加一个 watchtower 容器并给 dashboard 容器打
-   `com.centurylinklabs.watchtower.enable=true` label，再为 dashboard
-   配置 `DASHBOARD_UPDATER_URL` / `DASHBOARD_UPDATER_TOKEN`。
+1. **Release 附带热更新包**：发布时执行
+   `npm run build && sh scripts/build-hotfix-bundle.sh vX.Y.Z`，把
+   生成的 `.tar.gz` 与 `.tar.gz.sha256` 作为 Release assets 上传。
+2. **可写根文件系统**：k8s 部署需放开 `readOnlyRootFilesystem`；
+   热替换发生在容器文件系统内。
+3. **单副本语义**：热更新作用于接收请求的 Pod；多副本场景请以镜像
+   滚动更新为准（热更新是单实例快速通道，下一次镜像构建会包含同样
+   的代码，Pod 重建后状态收敛）。
+4. **回滚**：应用目录保留上一版本于 `app.prev`；常规回滚走重新部署
+   旧版本镜像。
+5. Coolify 的 webhook/重新部署链路与热更新互不冲突，可并行使用。

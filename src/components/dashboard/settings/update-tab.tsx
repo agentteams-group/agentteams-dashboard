@@ -4,7 +4,6 @@ import {
   AlertCircle,
   ArrowUpCircle,
   CheckCircle2,
-  Container,
   Download,
   Loader2,
   RefreshCw,
@@ -17,9 +16,10 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 /**
  * 「设置 → 更新」tab: shows the page's own build identity and runs the
  * manual update check (stale-page detection + upstream release advisory).
- * Admins (dashboard level 3 = CR L1) additionally get the container update
- * action — trigger the watchtower sidecar to pull and recreate the running
- * container, with the page polling until the new build is live.
+ * Admins (dashboard level 3 = CR L1) additionally get the in-app hot patch
+ * action — download the latest release bundle, hot-swap the app files, and
+ * let the supervisor restart the process, with the page polling until the
+ * new build is live.
  */
 export function UpdateTab() {
   const { state, check, applyUpdate, updateContainer, pageBuildId, pageBuiltAt, pageVersion } =
@@ -86,13 +86,13 @@ export function UpdateTab() {
             </p>
             <p className="text-xs text-muted-foreground">
               {isAdmin
-                ? '可触发容器自更新：拉取最新镜像并重启服务（约 1-3 分钟，期间页面会自动等待并刷新）。'
-                : '当前页面与服务器构建一致；请联系管理员（L1）触发容器更新。'}
+                ? '可一键热更新：应用内下载最新构建并自动重启（约 1-3 分钟，期间页面会自动等待并刷新）。'
+                : '当前页面与服务器构建一致；请联系管理员（L1）触发热更新。'}
             </p>
             {isAdmin && (
               <Button size="sm" onClick={updateContainer}>
-                <Container className="w-4 h-4 mr-1.5" />
-                更新容器
+                <ArrowUpCircle className="w-4 h-4 mr-1.5" />
+                热更新
               </Button>
             )}
           </div>
@@ -102,10 +102,10 @@ export function UpdateTab() {
           <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
             <p className="flex items-center gap-2 text-sm font-medium">
               <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-              正在更新容器，请勿关闭页面
+              正在应用热更新，请勿关闭页面
             </p>
             <p className="text-xs text-muted-foreground">
-              拉取镜像并重启服务中（最长约 5 分钟）；完成后页面将自动刷新进入新版本。
+              下载补丁包并热替换应用文件，随后服务自动重启（最长约 5 分钟）；完成后页面将自动刷新进入新版本。
             </p>
           </div>
         )}
