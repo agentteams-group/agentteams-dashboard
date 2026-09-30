@@ -10,9 +10,14 @@ export const dynamic = 'force-dynamic';
  * lib/build-id caches the read.
  */
 export async function GET() {
-  return NextResponse.json({
-    buildId: getServerBuildId(),
-    builtAt: getServerBuiltAt() ?? null,
-    version: process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0',
-  });
+  return NextResponse.json(
+    {
+      buildId: getServerBuildId(),
+      builtAt: getServerBuiltAt() ?? null,
+      version: process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0',
+    },
+    // Reverse proxies / CDNs must never serve a cached identity answer —
+    // a stale buildId here makes the stale-page banner unresolvable.
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }

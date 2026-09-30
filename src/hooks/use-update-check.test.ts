@@ -152,11 +152,11 @@ describe('useUpdateCheck', () => {
     });
   });
 
-  it('applyUpdate reloads the page', async () => {
-    const reload = vi.fn();
+  it('applyUpdate performs a cache-busting reload', async () => {
+    const replace = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
-      value: { ...window.location, reload },
+      value: { ...window.location, href: 'http://localhost:3000/', replace },
     });
 
     const { useUpdateCheck } = await import('./use-update-check');
@@ -165,14 +165,16 @@ describe('useUpdateCheck', () => {
       result.current.applyUpdate();
     });
 
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+    const target = replace.mock.calls[0][0] as string;
+    expect(target).toMatch(/^http:\/\/localhost:3000\/\?_b=\d+$/);
   });
 
   it('updateContainer triggers the updater and reloads once the build changes', async () => {
-    const reload = vi.fn();
+    const replace = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
-      value: { ...window.location, reload },
+      value: { ...window.location, href: "http://localhost:3000/", replace },
     });
 
     let buildPolls = 0;
@@ -214,14 +216,14 @@ describe('useUpdateCheck', () => {
       expect.objectContaining({ method: 'POST' })
     );
     expect(buildPolls).toBeGreaterThanOrEqual(2);
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
   });
 
   it('updateContainer surfaces updater-side errors without polling', async () => {
-    const reload = vi.fn();
+    const replace = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
-      value: { ...window.location, reload },
+      value: { ...window.location, href: "http://localhost:3000/", replace },
     });
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -252,14 +254,14 @@ describe('useUpdateCheck', () => {
     });
 
     expect(result.current.state).toEqual({ phase: 'error', message: '更新器未配置' });
-    expect(reload).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('updateContainer reports a timeout when the running build never changes', async () => {
-    const reload = vi.fn();
+    const replace = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
-      value: { ...window.location, reload },
+      value: { ...window.location, href: "http://localhost:3000/", replace },
     });
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -293,6 +295,6 @@ describe('useUpdateCheck', () => {
       phase: 'error',
       message: '更新超时：容器仍在旧版本运行，请检查 updater 容器后重试',
     });
-    expect(reload).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 });

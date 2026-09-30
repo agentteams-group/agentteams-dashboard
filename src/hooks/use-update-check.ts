@@ -39,6 +39,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Cache-busting reload. A plain location.reload() can keep hitting a
+ * reverse-proxy/CDN-cached HTML document, so the page reloads straight back
+ * onto the stale build (the "刷新了但构建号还是旧的" loop). Appending a
+ * timestamp query param forces every intermediary to treat it as a fresh
+ * URL and go to origin; the fresh HTML references the current build's
+ * content-hashed chunks, which are also cache-cold by construction.
+ */
+function bustingReload(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('_b', String(Date.now()));
+  window.location.replace(url.toString());
+}
+
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
@@ -141,7 +155,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
   }, []);
 
   const applyUpdate = useCallback(() => {
-    window.location.reload();
+    bustingReload();
   }, []);
 
   const updateContainer = useCallback(async () => {
@@ -185,7 +199,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
             const data = (await res.json().catch(() => null)) as { buildId?: unknown } | null;
             const buildId = typeof data?.buildId === 'string' ? data.buildId : 'unknown';
             if (buildId !== 'unknown' && buildId !== baselineServerBuildId) {
-              window.location.reload();
+              bustingReload();
               return;
             }
           }
