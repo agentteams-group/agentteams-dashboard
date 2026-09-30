@@ -67,7 +67,7 @@ jobs:
             VERSION="${{ steps.version.outputs.value }}" \
             REGISTRY="${{ env.REGISTRY }}" \
             REPO="${{ env.REPO }}" \
-            DOCKER_BUILD_ARGS="--build-arg NEXT_PUBLIC_BASE_PATH="
+            DOCKER_BUILD_ARGS="--build-arg NEXT_PUBLIC_BASE_PATH= --build-arg DASHBOARD_BUILD_ID=${{ steps.version.outputs.value }}"
 
       - name: Publish summary
         env:

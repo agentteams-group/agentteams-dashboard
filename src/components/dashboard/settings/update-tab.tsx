@@ -61,11 +61,11 @@ export function UpdateTab() {
           </p>
         )}
 
-        {state.phase === 'update-available' && !state.versionsEqual && (
+        {state.phase === 'update-available' && (
           <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
             <p className="flex items-center gap-1.5 text-sm font-medium">
               <ArrowUpCircle className="w-4 h-4 text-amber-500" />
-              发现新版本，页面需要刷新追平
+              发现新版本{state.serverVersion ? ` v${state.serverVersion}` : ''}，页面需要刷新追平
             </p>
             <p className="text-xs break-all text-muted-foreground font-mono">
               服务器构建号：{state.serverBuildId.slice(0, 16)}
@@ -74,25 +74,6 @@ export function UpdateTab() {
             <Button size="sm" onClick={applyUpdate}>
               <Download className="w-4 h-4 mr-1.5" />
               立即更新
-            </Button>
-          </div>
-        )}
-
-        {state.phase === 'update-available' && state.versionsEqual && (
-          <div className="space-y-2 rounded-md border border-blue-500/40 bg-blue-500/5 p-3">
-            <p className="flex items-center gap-1.5 text-sm font-medium">
-              <RefreshCw className="w-4 h-4 text-blue-500" />
-              同版本新构建，建议刷新同步
-            </p>
-            <p className="text-xs break-all text-muted-foreground font-mono">
-              页面 {pageBuildId.slice(0, 16)} · 服务器 {state.serverBuildId.slice(0, 16)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              版本号一致，仅构建号不同（该版本被构建了多次，或存在多个实例在运行）。若刷新后仍反复出现，请检查是否残留了旧容器。
-            </p>
-            <Button size="sm" variant="outline" onClick={applyUpdate}>
-              <Download className="w-4 h-4 mr-1.5" />
-              刷新同步
             </Button>
           </div>
         )}

@@ -35,6 +35,11 @@ RUN npm config set registry "${NPM_REGISTRY}" && \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
 # Copy source and build
+# DASHBOARD_BUILD_ID pins one build id across every config load inside the
+# build (client/server workers load next.config independently); without it
+# the build falls back to git sha, unavailable in the docker context.
+ARG DASHBOARD_BUILD_ID=
+ENV DASHBOARD_BUILD_ID=${DASHBOARD_BUILD_ID}
 COPY . .
 RUN npm run build
 

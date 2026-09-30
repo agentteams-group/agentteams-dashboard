@@ -10,15 +10,9 @@ export type UpdateCheckState =
   | { phase: 'checking' }
   | { phase: 'error'; message: string }
   | { phase: 'uptodate' }
-  | {
-      phase: 'update-available';
-      serverBuildId: string;
-      builtAt: string | null;
-      serverVersion: string;
-      versionsEqual: boolean;
-    }
+  | { phase: 'update-available'; serverBuildId: string; builtAt: string | null; serverVersion: string }
   | { phase: 'upstream-available'; latestVersion: string }
-  | { phase: 'updating'; baselineServerBuildId: string };
+  | { phase: 'updating'; baselineServerVersion: string };
 
 const PAGE_BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || 'unknown';
 const PAGE_BUILT_AT = process.env.NEXT_PUBLIC_BUILT_AT || null;
@@ -107,19 +101,21 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
         const serverBuildId = typeof data?.buildId === 'string' ? data.buildId : 'unknown';
         const serverVersion = typeof data?.version === 'string' ? data.version : '';
         const builtAt = typeof data?.builtAt === 'string' ? data.builtAt : null;
+        // Version-number gating (user decision 2026-09-30): the same version
+        // may legitimately exist as several build ids (manual build vs CI),
+        // and build-id mismatches produced endless false "new version"
+        // banners. Only an actual version difference counts as an update.
+        const versionDiffers = serverVersion !== '' && serverVersion !== PAGE_VERSION;
+        const legacyBuildDiffers = serverVersion === '' && serverBuildId !== PAGE_BUILD_ID;
         if (serverBuildId === 'unknown' && PAGE_BUILD_ID === 'unknown') {
           // Both sides unreadable: treat as current instead of false-positive.
           buildState = { phase: 'uptodate' };
-        } else if (serverBuildId !== PAGE_BUILD_ID) {
-          // Same version + different build id = the version was built more
-          // than once (manual build vs CI) or multiple instances are running.
-          // Surface it as a sync notice, not a "new version".
+        } else if (versionDiffers || legacyBuildDiffers) {
           buildState = {
             phase: 'update-available',
             serverBuildId,
             builtAt,
             serverVersion,
-            versionsEqual: serverVersion !== '' && serverVersion === PAGE_VERSION,
           };
         } else {
           buildState = { phase: 'uptodate' };
@@ -164,10 +160,15 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
     if (prev.phase !== 'update-available' && prev.phase !== 'upstream-available') {
       return;
     }
-    const baselineServerBuildId =
-      prev.phase === 'update-available' ? prev.serverBuildId : PAGE_BUILD_ID;
+    // Completion is version-gated: the patch bundle always carries the newer
+    // release version, so the running server reporting that version means
+    // the patched process is live. Build ids stay informational only.
+    const baselineServerVersion =
+      prev.phase === 'update-available' && prev.serverVersion !== ''
+        ? prev.serverVersion
+        : PAGE_VERSION;
     inFlightRef.current = true;
-    setState({ phase: 'updating', baselineServerBuildId });
+    setState({ phase: 'updating', baselineServerVersion });
 
     const run = async () => {
       try {
@@ -187,18 +188,17 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
         return;
       }
 
-      // Trigger accepted: watchtower pulls + recreates the container. The
-      // dashboard goes down mid-poll (connection failures are normal) —
-      // wait the running build id out, then land on the new version.
+      // Trigger accepted: watch the running version out (transient fetch
+      // failures during the restart are expected), then land on the new one.
       const deadline = Date.now() + updateTimeoutMs;
       while (Date.now() < deadline) {
         await sleep(pollIntervalMs);
         try {
           const res = await fetch('/api/dashboard-build');
           if (res.ok) {
-            const data = (await res.json().catch(() => null)) as { buildId?: unknown } | null;
-            const buildId = typeof data?.buildId === 'string' ? data.buildId : 'unknown';
-            if (buildId !== 'unknown' && buildId !== baselineServerBuildId) {
+            const data = (await res.json().catch(() => null)) as { version?: unknown } | null;
+            const version = typeof data?.version === 'string' ? data.version : '';
+            if (version !== 'unknown' && version !== '' && version !== baselineServerVersion) {
               bustingReload();
               return;
             }
@@ -208,7 +208,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
         }
       }
       inFlightRef.current = false;
-      setState({ phase: 'error', message: '更新超时：容器仍在旧版本运行，请检查 updater 容器后重试' });
+      setState({ phase: 'error', message: '更新超时：容器仍在旧版本运行，请检查容器状态后重试' });
     };
 
     // Returned for testability; the UI fire-and-forgets it.

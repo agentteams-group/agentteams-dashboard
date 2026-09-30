@@ -53,11 +53,10 @@ describe('useUpdateCheck', () => {
       serverBuildId: 'server-build',
       builtAt: '2026-09-29T08:03:00Z',
       serverVersion: '2.0.0',
-      versionsEqual: false,
     });
   });
 
-  it('marks same-version build mismatches as versionsEqual (sync notice, not new version)', async () => {
+  it('treats same-version build-id mismatches as uptodate (version-number gating)', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_VERSION', '1.2.5-beta.1');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
@@ -76,12 +75,26 @@ describe('useUpdateCheck', () => {
       await result.current.check();
     });
 
+    expect(result.current.state).toEqual({ phase: 'uptodate' });
+  });
+
+  it('falls back to build-id comparison when the server predates the version field', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ buildId: 'legacy-server-build', builtAt: null }))
+      .mockRejectedValueOnce(new Error('github unreachable'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { useUpdateCheck } = await import('./use-update-check');
+    const { result } = renderHook(() => useUpdateCheck());
+    await act(async () => {
+      await result.current.check();
+    });
+
     expect(result.current.state).toEqual({
       phase: 'update-available',
-      serverBuildId: 'other-build-same-version',
+      serverBuildId: 'legacy-server-build',
       builtAt: null,
-      serverVersion: '1.2.5-beta.1',
-      versionsEqual: true,
+      serverVersion: '',
     });
   });
 
@@ -170,7 +183,7 @@ describe('useUpdateCheck', () => {
     expect(target).toMatch(/^http:\/\/localhost:3000\/\?_b=\d+$/);
   });
 
-  it('updateContainer triggers the updater and reloads once the build changes', async () => {
+  it('updateContainer triggers the updater and reloads once the version changes', async () => {
     const replace = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
@@ -182,13 +195,14 @@ describe('useUpdateCheck', () => {
       const url = String(input);
       if (url.endsWith('/api/dashboard-build')) {
         buildPolls += 1;
-        // First call is the check itself (running build unchanged); the
-        // update polls then observe the container coming back on a new build.
-        const buildId = buildPolls === 1 ? 'page-build' : 'new-build';
-        return jsonResponse({ buildId, builtAt: null });
+        // First call is the check itself (running version unchanged); the
+        // update polls then observe the container coming back on the new
+        // version — the first poll still reports the old one.
+        const version = buildPolls <= 1 ? '1.2.4' : '1.2.5';
+        return jsonResponse({ buildId: `build-${buildPolls}`, version });
       }
       if (url.includes('releases/latest')) {
-        return jsonResponse({ tag_name: 'v2.0.0' });
+        return jsonResponse({ tag_name: 'v1.2.5' });
       }
       if (url.endsWith('/api/self-update')) {
         return jsonResponse({ ok: true });
@@ -205,7 +219,7 @@ describe('useUpdateCheck', () => {
     await act(async () => {
       await result.current.check();
     });
-    expect(result.current.state).toEqual({ phase: 'upstream-available', latestVersion: 'v2.0.0' });
+    expect(result.current.state).toEqual({ phase: 'upstream-available', latestVersion: 'v1.2.5' });
 
     await act(async () => {
       await result.current.updateContainer();
@@ -229,7 +243,7 @@ describe('useUpdateCheck', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/dashboard-build')) {
-        return jsonResponse({ buildId: 'page-build', builtAt: null });
+        return jsonResponse({ buildId: "page-build", version: "1.2.4" });
       }
       if (url.includes('releases/latest')) {
         return jsonResponse({ tag_name: 'v2.0.0' });
@@ -267,7 +281,7 @@ describe('useUpdateCheck', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/dashboard-build')) {
-        return jsonResponse({ buildId: 'page-build', builtAt: null });
+        return jsonResponse({ buildId: "page-build", version: "1.2.4" });
       }
       if (url.includes('releases/latest')) {
         return jsonResponse({ tag_name: 'v2.0.0' });
@@ -293,7 +307,7 @@ describe('useUpdateCheck', () => {
 
     expect(result.current.state).toEqual({
       phase: 'error',
-      message: '更新超时：容器仍在旧版本运行，请检查 updater 容器后重试',
+      message: '更新超时：容器仍在旧版本运行，请检查容器状态后重试',
     });
     expect(replace).not.toHaveBeenCalled();
   });
