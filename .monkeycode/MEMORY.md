@@ -146,3 +146,13 @@ Entries discovered by the Agent while performing [specific task description] sho
   - k8s 约束：需可写根文件系统；多副本以镜像滚动更新为准，热补丁是单实例快速通道，Pod 重建后补丁丢失是预期语义
   - 服务器需可达 api.github.com + github.com（热更新依赖）；仅影响热更新与上游提示，构建号追平（/api/dashboard-build）不受影响
   - 版本三方一致是硬约定：tag = package.json = 构建代码；漏 bump 会导致检查更新误报上游新版本；release 用三段版本号（compareSemver 只比三段）
+
+[Project Knowledge Summary]
+- Date: 2026-09-30
+- Context: Discovered by Agent while releasing v1.2.5-beta.5 with deterministic build-id fix
+- Category: Build & Compilation / Troubleshooting & Debugging
+- Instructions:
+  - 三门 gates 的 tsc 覆盖 next.config.ts（tsconfig include 含 **/*.ts），改配置文件后必须跑 tsc：本次 gates 只跑 eslint+vitest 漏掉 next.config.ts 的重复 import（readFileSync 双导入），只有 next build 的 TypeScript 检查拦下，导致一次构建返工、tag 被迫 git tag -f + gh release 重打
+  - gh release upload 32MB 补丁包在前台 bash 会超时（慢上行），须用 background_terminal_create；GH_TOKEN 需在 workspace 目录取（gh 依赖 git credential）
+  - hotfix bundle 已知现象：.next/standalone 根会被 Turbopack 整项目 tracing 污染（server-package.ts 动态 process.cwd() 路径触发），bundle ~32M 含 workspace 杂文件（coverage/logs/dev.log 等）；布局与容器 appDir 兼容、applyHotfix 校验不受影响，beta.2-beta.5 均如此，无需处理
+  - 构建号一致性验证法：cat .next/BUILD_ID 与 grep -rhoE "git-[0-9a-f]{7,10}" .next/static/chunks .next/server | sort -u 必须单一值；客户端 1 处内联 + 服务端约 19 处引用
