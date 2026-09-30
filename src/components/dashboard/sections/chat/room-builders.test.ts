@@ -115,6 +115,12 @@ describe('buildRooms', () => {
     expect(rooms[0].type).toBe('manager');
   });
 
+  it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
+    const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1', runtime: 'openclaw' })]);
+    expect(rooms[0].workerName).toBe('m1');
+    expect(rooms[0].runtime).toBe('openclaw');
+  });
+
   it('combines all sources in order', () => {
     const rooms = buildRooms(
       [worker({ name: 'w' })],

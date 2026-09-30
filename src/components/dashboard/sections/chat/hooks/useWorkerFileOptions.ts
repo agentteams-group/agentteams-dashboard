@@ -66,8 +66,21 @@ export function useWorkerFileOptions({
         if (opt) workerEntries.push(opt);
       }
     }
-    return teamOption ? [teamOption, ...workerEntries] : workerEntries;
-  }, [team, roomMembers, runtimeMap]);
+    const options = teamOption ? [teamOption, ...workerEntries] : workerEntries;
+    // Manager rooms (and any runtimeMap miss) have a workspace owner from
+    // defaultWorkerName but no runtimeMap entry — surface it as a plain
+    // option so the picker is not stuck on the placeholder (#87).
+    if (options.length === 0 && defaultWorkerName) {
+      return [
+        {
+          userId: `worker:${defaultWorkerName}`,
+          workerName: defaultWorkerName,
+          label: `${defaultWorkerName} · 工作空间`,
+        },
+      ];
+    }
+    return options;
+  }, [team, roomMembers, runtimeMap, defaultWorkerName]);
 
   // Team rooms open on the shared workspace (the team's own space); worker
   // rooms keep their owning worker; other rooms fall back to the first option.

@@ -105,6 +105,12 @@ export function buildRooms(
         matrixUserId: manager.matrixUserID,
         parentTeam: leadingTeam?.name,
         phase: manager.phase,
+        // Manager is an agent runtime with its own object-storage workspace
+        // ({manager}/ in MinIO, agents/{manager}/ fallback — same convention
+        // as workers). Feeding it as workerName opens the files sidebar on
+        // the manager workspace instead of an empty picker (#87).
+        workerName: manager.name,
+        runtime: manager.runtime,
         memberCount: 2,
         ...enrich(chatRoomId),
       });
