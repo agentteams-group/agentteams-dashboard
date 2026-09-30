@@ -10,7 +10,13 @@ export type UpdateCheckState =
   | { phase: 'checking' }
   | { phase: 'error'; message: string }
   | { phase: 'uptodate' }
-  | { phase: 'update-available'; serverBuildId: string; builtAt: string | null }
+  | {
+      phase: 'update-available';
+      serverBuildId: string;
+      builtAt: string | null;
+      serverVersion: string;
+      versionsEqual: boolean;
+    }
   | { phase: 'upstream-available'; latestVersion: string }
   | { phase: 'updating'; baselineServerBuildId: string };
 
@@ -82,16 +88,24 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
         const data = (await buildRes.value.json().catch(() => null)) as {
           buildId?: unknown;
           builtAt?: unknown;
+          version?: unknown;
         } | null;
         const serverBuildId = typeof data?.buildId === 'string' ? data.buildId : 'unknown';
+        const serverVersion = typeof data?.version === 'string' ? data.version : '';
+        const builtAt = typeof data?.builtAt === 'string' ? data.builtAt : null;
         if (serverBuildId === 'unknown' && PAGE_BUILD_ID === 'unknown') {
           // Both sides unreadable: treat as current instead of false-positive.
           buildState = { phase: 'uptodate' };
         } else if (serverBuildId !== PAGE_BUILD_ID) {
+          // Same version + different build id = the version was built more
+          // than once (manual build vs CI) or multiple instances are running.
+          // Surface it as a sync notice, not a "new version".
           buildState = {
             phase: 'update-available',
             serverBuildId,
-            builtAt: typeof data?.builtAt === 'string' ? data.builtAt : null,
+            builtAt,
+            serverVersion,
+            versionsEqual: serverVersion !== '' && serverVersion === PAGE_VERSION,
           };
         } else {
           buildState = { phase: 'uptodate' };

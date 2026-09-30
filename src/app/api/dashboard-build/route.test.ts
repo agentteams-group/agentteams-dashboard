@@ -14,16 +14,18 @@ import { GET } from './route';
 
 describe('GET /api/dashboard-build', () => {
   beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_APP_VERSION', '1.2.5-beta.1');
     mocks.getServerBuildId.mockReturnValue('abc123def456');
     mocks.getServerBuiltAt.mockReturnValue('2026-09-29T08:03:00Z');
   });
 
-  it('returns the process build identity', async () => {
+  it('returns the process build identity with its version', async () => {
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       buildId: 'abc123def456',
       builtAt: '2026-09-29T08:03:00Z',
+      version: '1.2.5-beta.1',
     });
   });
 
@@ -37,6 +39,10 @@ describe('GET /api/dashboard-build', () => {
     mocks.getServerBuildId.mockReturnValue('unknown');
     mocks.getServerBuiltAt.mockReturnValue(undefined);
     const res = await GET();
-    expect(await res.json()).toEqual({ buildId: 'unknown', builtAt: null });
+    expect(await res.json()).toEqual({
+      buildId: 'unknown',
+      builtAt: null,
+      version: '1.2.5-beta.1',
+    });
   });
 });

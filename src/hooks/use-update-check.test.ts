@@ -33,7 +33,11 @@ describe('useUpdateCheck', () => {
   it('flags a stale page when the server build id differs', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
-        jsonResponse({ buildId: 'server-build', builtAt: '2026-09-29T08:03:00Z' })
+        jsonResponse({
+          buildId: 'server-build',
+          builtAt: '2026-09-29T08:03:00Z',
+          version: '2.0.0',
+        })
       )
       .mockRejectedValueOnce(new Error('github unreachable'));
     vi.stubGlobal('fetch', fetchMock);
@@ -48,6 +52,36 @@ describe('useUpdateCheck', () => {
       phase: 'update-available',
       serverBuildId: 'server-build',
       builtAt: '2026-09-29T08:03:00Z',
+      serverVersion: '2.0.0',
+      versionsEqual: false,
+    });
+  });
+
+  it('marks same-version build mismatches as versionsEqual (sync notice, not new version)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_VERSION', '1.2.5-beta.1');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          buildId: 'other-build-same-version',
+          builtAt: null,
+          version: '1.2.5-beta.1',
+        })
+      )
+      .mockRejectedValueOnce(new Error('github unreachable'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { useUpdateCheck } = await import('./use-update-check');
+    const { result } = renderHook(() => useUpdateCheck());
+    await act(async () => {
+      await result.current.check();
+    });
+
+    expect(result.current.state).toEqual({
+      phase: 'update-available',
+      serverBuildId: 'other-build-same-version',
+      builtAt: null,
+      serverVersion: '1.2.5-beta.1',
+      versionsEqual: true,
     });
   });
 
