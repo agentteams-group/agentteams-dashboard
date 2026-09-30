@@ -3,6 +3,35 @@
 本文件记录 AgentTeams Dashboard 的版本发布历史。
 ## Unreleased
 
+## v1.3.0 (2026-09-30)
+
+自 v1.2.5 以来的功能发布：MCP Server 连接测试补齐（405 修复）、Manager 工作空间文件访问、聊天工作空间文件引用、MCP / 模型可用性语义诚实化。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证（234 files / 2160 tests）。
+
+### New Features
+
+#### 聊天文件引用 (#87)
+
+- Composer 新增「引用工作空间文件」按钮：FileRefPickerDialog 支持 Worker 私有空间 / Team 共享空间目录导航、多选去重、chips 可移除
+- 新内容键 `com.agentteams.file_refs`：发送路由白名单透传；a2ui normalize 将引用作为**附加** file_refs 块渲染（正文不被吞，ref-only 消息 chips 独立显示）；URL 列表与 optimistic 发送统一经 FileRefChips 渲染
+- 引用数上限 20、名称截断 256、信封与裸数组双形态解析，恶意事件无法撑爆渲染
+
+#### MCP Server 连接测试 (#101)
+
+- 新增 `POST /api/agentteams/mcps/test`：真实 MCP `initialize` 握手（streamablehttp 单次 POST，兼容 `application/json` 与 SSE 帧响应；legacy sse 打开 GET 事件流），登记 Headers 透传，401 / 403 / 404 / 405 分类提示
+- 前端 `testMcpServer` 同步透传 headers / timeout；编辑弹窗测试按钮改为读取表单自身配置
+
+### Bug Fixes
+
+- Manager 对话房间工作目录文件列表始终为空：manager 房间构建补 `workerName` / `runtime`（MinIO `{name}/` 前缀布局与 worker 一致），picker 增加兜底选项 (#87)
+- 编辑弹窗 MCP 测试按钮写死 timeout 8000 且不带 headers：带 Authorization 的登记地址在弹窗误报失败而列表页通过 (#132)
+
+### 可用性语义诚实化 (#132 #133)
+
+- MCP 页新增四态引导面板（网关接入 / Consumer 授权 / 登记地址 / 调用验证），「登记 ≠ 可用」显式呈现；误导空态文案（技能中心）改为资源中心指路
+- 翡翠绿 Wifi 暗示降为中性徽标 + tooltip；提供商探测补充「不经网关」边界说明；别名绑定「可用」徽标 tooltip 说明仅表示映射可解析
+- 模型路由表展示 `authConfig.allowedConsumers`；ModelSelector 选项与已选项下方展示路由授权三态摘要（未启用认证 / 未限定 Consumer / 授权 Consumer 列表）
+- Worker 创建弹窗补充创建后「已保存配置的网关验证」指路
+
 ## v1.2.5 (2026-09-30)
 
 自 v1.2.4.9 以来的功能发布：任务看板切换修复、按钮式更新与应用内热补丁、构建号确定性。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证；v1.2.5-beta.1 至 beta.5 预发迭代后转正。
