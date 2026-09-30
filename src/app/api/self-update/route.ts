@@ -20,6 +20,39 @@ function hotfixConfig(): { repo: string; assetPrefix: string; currentVersion: st
 // One patch at a time is enforced by lib/hotfix claim/release.
 
 /**
+ * Hard process termination. A bare process.exit(0) can be swallowed when
+ * route handlers execute in a worker/child context (only that context dies;
+ * the main server keeps serving the pre-patch build from its in-memory
+ * module cache while the disk holds the patched files — the exact
+ * "API reports new build, page stays old" failure mode). Escalate instead:
+ * SIGTERM (graceful, hits the main process — worker threads share its PID)
+ * → SIGKILL 1.5s later (cannot be ignored, even as PID 1) → exit fallback.
+ * The container supervisor (docker restart policy / k8s restartPolicy) then
+ * starts the process back up on the patched files.
+ */
+function scheduleHardRestart(): void {
+  setTimeout(() => {
+    try {
+      process.kill(process.pid, 'SIGTERM');
+    } catch {
+      /* already dying */
+    }
+    setTimeout(() => {
+      try {
+        process.kill(process.pid, 'SIGKILL');
+      } catch {
+        /* noop */
+      }
+      try {
+        process.exit(1);
+      } catch {
+        /* noop */
+      }
+    }, 1500).unref();
+  }, RESTART_DELAY_MS).unref();
+}
+
+/**
  * In-app hot patch (设置 → 更新 → 热更新, admin-gated + audited).
  *
  * Downloads the latest release's standalone bundle, verifies sha256, swaps
@@ -81,9 +114,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Let the response flush, then hand the process to the supervisor so it
-    // comes back up on the patched files.
-    setTimeout(() => process.exit(0), RESTART_DELAY_MS).unref();
+    // Let the response flush, then hard-terminate so the supervisor restarts
+    // the process on the patched files.
+    scheduleHardRestart();
     releaseHotfixRun();
     return NextResponse.json({ ok: true, version: result.version, buildId: result.buildId });
   } catch (error) {
