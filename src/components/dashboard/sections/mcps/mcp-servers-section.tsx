@@ -63,6 +63,8 @@ export function McpServersSection() {
       const result = await agentteamsApi.testMcpServer({
         url: server.url,
         transport: server.transport,
+        headers: server.headers,
+        timeout: server.timeout,
       });
       setTestResults((prev) => ({
         ...prev,
