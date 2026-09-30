@@ -17,3 +17,17 @@ Dashboard 是单个无状态容器（持久化仅 `/data/agentteams-dashboard` �
 
 公开 demo 必须满足：独立后端（不连真实集群）、只读观察者账号（session level 1）、反代限速。
 三项无法同时保证时，降级为 README 的 30 秒安装 GIF（录制清单见 `docs/images/README.md`）。
+
+## 容器自更新说明（设置 → 更新）
+
+「更新容器」按钮依赖 compose 部署里的 watchtower 旁路更新器（见
+`deploy/docker-compose.yml` 的 `updater` 服务）。Coolify 部署有自己的
+重建链路，两种接法二选一：
+
+1. **推荐**：不部署 updater，让 Coolify 的 webhook/重新部署承担镜像
+   更新；页面上的版本对比（构建号 + GitHub release）照常工作，「更新
+   容器」按钮会在后端返回 503「更新器未配置」（未配置
+   `DASHBOARD_UPDATER_TOKEN` 时）。
+2. 手动加一个 watchtower 容器并给 dashboard 容器打
+   `com.centurylinklabs.watchtower.enable=true` label，再为 dashboard
+   配置 `DASHBOARD_UPDATER_URL` / `DASHBOARD_UPDATER_TOKEN`。

@@ -21,6 +21,9 @@ services:
       - "3000:3000"
     volumes:
       - agentteams-dashboard-data:/data/agentteams-dashboard
+    labels:
+      # Watchtower scope: only this container is auto-updated.
+      - com.centurylinklabs.watchtower.enable=true
     environment:
       # --- controller ---
       AGENTTEAMS_CONTROLLER_URL: "http://agentteams-controller:8080"
@@ -38,9 +41,37 @@ services:
       # Standalone auto-generates and persists the session secret on
       # first boot (0600 under /data/agentteams-dashboard). Pin it with:
       # DASHBOARD_SESSION_SECRET: "64-hex-chars-min-32-bytes"
+      # --- container self-update (设置 → 更新 → 更新容器) ---
+      # The page button POSTs /api/self-update (admin-gated), which triggers
+      # the updater sidecar below. Put the shared token in a .env file next
+      # to this compose file:  WATCHTOWER_HTTP_API_TOKEN=<random-hex>
+      DASHBOARD_UPDATER_URL: "http://updater:8080"
+      DASHBOARD_UPDATER_TOKEN: "${WATCHTOWER_HTTP_API_TOKEN:?create .env with WATCHTOWER_HTTP_API_TOKEN=<random-hex>}"
       # --- optional: read-only demo hardening (D5) ---
       # Serve behind a reverse proxy that rate-limits and, for public
       # demos, restrict to the observer account (session level 1).
+
+  # Container self-updater (设置 → 更新 → 更新容器). Holds the docker
+  # socket — host-root-equivalent — so the blast radius is contained:
+  # --label-enable limits it to the labeled dashboard container, the HTTP
+  # API requires the shared bearer token, and the port stays internal
+  # (no host mapping). Runs on :latest so digest comparison detects new
+  # images; roll back by pinning the dashboard image to a version tag.
+  # Private registry? Give watchtower pull credentials via
+  # WATCHTOWER_REGISTRY_AUTH env or a mounted docker config.json.
+  updater:
+    image: containrrr/watchtower
+    container_name: agentteams-dashboard-updater
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >-
+      --http-api-update
+      --http-api-periodic-polls
+      --interval 21600
+      --http-api-token ${WATCHTOWER_HTTP_API_TOKEN:?create .env with WATCHTOWER_HTTP_API_TOKEN=<random-hex>}
+      --label-enable
+      --cleanup
 
 volumes:
   agentteams-dashboard-data:

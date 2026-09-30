@@ -8,7 +8,7 @@ Updated: 2026-09-29
 生产环境以 docker 镜像运行（`build.yml` 发布预构建镜像）。本设计覆盖两项：
 
 1. **任务看板切换失效**：真实根因为 `useActiveSection()` 的初始解析 effect 随组件挂载重复执行。TasksSection（`tasks-section.tsx:523`）挂载时把「当前 URL hash」重新写回 store——chat→tasks 同 commit 同步挂载路径下读到的 hash 还是旧值 `#chat`，切换被瞬间回滚。修复为模块级 once 标记：初始解析每个应用生命周期只执行一次。
-2. **按钮式线上热更新**：设置面板新增「检查更新」——对比页面构建号与服务器构建号（`/api/dashboard-build`），不一致则一键刷新追平；同时对比 GitHub 最新 release 与构建内嵌版本，提示上游有新版本。配套 chunk 自愈覆盖刷新前旧资源失效窗口。
+2. **按钮式线上热更新（含容器自更新）**：设置面板新增「更新」tab——对比页面构建号与服务器构建号（`/api/dashboard-build`），不一致则一键刷新追平；同时对比 GitHub 最新 release 与构建内嵌版本，提示上游有新版本。**管理员（L1）可点击「更新容器」触发 watchtower 旁路更新器**：拉取最新镜像、按 digest 对比、重建 dashboard 容器；页面轮询 `/api/dashboard-build` 直到构建号变化后自动 reload 进入新版本。配套 chunk 自愈覆盖刷新前旧资源失效窗口。
 
 时序图（bug 机理与修复后对照）：
 
@@ -41,10 +41,14 @@ graph TD
     P["浏览器页面 (设置面板)"] -->|"点击 检查更新"| E
     P -->|"点击 检查更新"| G["GitHub releases/latest"]
     E -->|"构建号不一致"| H["发现新版本 → 立即更新"]
-    G -->|"release 高于内嵌版本"| I["提示拉取代码重建镜像"]
+    G -->|"release 高于内嵌版本 + L1"| I["更新容器按钮"]
+    I -->|"POST /api/self-update (L1 门禁)"| W["watchtower 旁路容器"]
+    W -->|"pull :latest 按 digest 对比"| K["镜像仓库"]
+    W -->|"重建 dashboard 容器"| D
     H -->|"点击 立即更新"| J["location.reload()"]
-    K["SectionErrorBoundary 捕获 chunk 失败"] -->|"会话内首次"| J
-    K -->|"已自愈"| L["错误边界卡片"]
+    P -->|"轮询 buildId 直到变化 → reload"| E
+    L["SectionErrorBoundary 捕获 chunk 失败"] -->|"会话内首次"| J
+    L -->|"已自愈"| M["错误边界卡片"]
 ```
 
 ## Components and Interfaces
@@ -59,6 +63,9 @@ graph TD
 | 检查更新 Hook | `src/hooks/use-update-check.ts` (新增) | 并行取服务器构建号与 GitHub release，状态机 idle/checking/uptodate/update-available/refresh |
 | 检查更新 UI | 设置面板新增「版本与更新」区块 (`settings-dialog.tsx`) | 当前构建信息 + 检查更新按钮 + 各状态提示 |
 | chunk 自愈 | `src/components/dashboard/section-error-boundary.tsx` (增强) | 识别 chunk 类错误，会话内首次延迟 ~1.5s 刷新 |
+| 容器自更新触发 | `src/app/api/self-update/route.ts` (新增) | L1 门禁（session.level≥3），转发触发 watchtower `POST /v1/update`（Bearer 共享 token），触发即返回并记审计 |
+| 容器更新流 | `src/hooks/use-update-check.ts` (扩展) | `updateContainer()`: 触发后轮询 `/api/dashboard-build`（2s 间隔，5min 上限），容器重启期的连接失败静默重试，buildId 变化即 reload；超时报错 |
+| 更新器旁路 | `deploy/docker-compose.yml` (扩展) | watchtower 服务：挂 docker.sock、`--http-api-update --http-api-periodic-polls --interval 21600 --label-enable --cleanup`，仅更新带 label 的 dashboard 容器，端口不暴露宿主机；共享 token 经 `.env` 的 `WATCHTOWER_HTTP_API_TOKEN` |
 
 ### 接口定义
 
@@ -118,6 +125,10 @@ export function useUpdateCheck(): { state: UpdateCheckState; check: () => void; 
 | GitHub API 限流/网络失败 | 上游对比结果标记为不可用，服务器构建号对比结果照常展示 |
 | 检查请求超时（10s） | `phase='error'`，展示重试入口 |
 | 自愈刷新后仍 chunk 失败 | 现有错误边界卡片，等待人工刷新或下次部署 |
+| 更新器未配置（DASHBOARD_UPDATER_TOKEN 缺失） | 路由返回 503，UI 提示「更新器未配置」 |
+| 非 L1 用户触发 | 路由返回 403，UI 隐藏「更新容器」按钮 |
+| 容器更新期间连接失败 | 属预期（容器重启中），轮询静默重试直至 buildId 变化或超时 |
+| 更新超时（5min 内 buildId 未变化） | UI 报「更新超时」并提示检查 updater 容器 |
 | 拖拽中切走 chat 区块 | 卸载清理函数移除 window 监听器 |
 
 ## Test Strategy

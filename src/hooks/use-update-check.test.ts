@@ -133,4 +133,132 @@ describe('useUpdateCheck', () => {
 
     expect(reload).toHaveBeenCalledTimes(1);
   });
+
+  it('updateContainer triggers the updater and reloads once the build changes', async () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { ...window.location, reload },
+    });
+
+    let buildPolls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/dashboard-build')) {
+        buildPolls += 1;
+        // First call is the check itself (running build unchanged); the
+        // update polls then observe the container coming back on a new build.
+        const buildId = buildPolls === 1 ? 'page-build' : 'new-build';
+        return jsonResponse({ buildId, builtAt: null });
+      }
+      if (url.includes('releases/latest')) {
+        return jsonResponse({ tag_name: 'v2.0.0' });
+      }
+      if (url.endsWith('/api/self-update')) {
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { useUpdateCheck } = await import('./use-update-check');
+    const { result } = renderHook(() =>
+      useUpdateCheck({ pollIntervalMs: 5, updateTimeoutMs: 5_000 })
+    );
+
+    await act(async () => {
+      await result.current.check();
+    });
+    expect(result.current.state).toEqual({ phase: 'upstream-available', latestVersion: 'v2.0.0' });
+
+    await act(async () => {
+      await result.current.updateContainer();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/self-update',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect(buildPolls).toBeGreaterThanOrEqual(2);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('updateContainer surfaces updater-side errors without polling', async () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { ...window.location, reload },
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/dashboard-build')) {
+        return jsonResponse({ buildId: 'page-build', builtAt: null });
+      }
+      if (url.includes('releases/latest')) {
+        return jsonResponse({ tag_name: 'v2.0.0' });
+      }
+      if (url.endsWith('/api/self-update')) {
+        return new Response(JSON.stringify({ error: '更新器未配置' }), { status: 503 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { useUpdateCheck } = await import('./use-update-check');
+    const { result } = renderHook(() =>
+      useUpdateCheck({ pollIntervalMs: 5, updateTimeoutMs: 5_000 })
+    );
+
+    await act(async () => {
+      await result.current.check();
+    });
+    await act(async () => {
+      await result.current.updateContainer();
+    });
+
+    expect(result.current.state).toEqual({ phase: 'error', message: '更新器未配置' });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('updateContainer reports a timeout when the running build never changes', async () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { ...window.location, reload },
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/dashboard-build')) {
+        return jsonResponse({ buildId: 'page-build', builtAt: null });
+      }
+      if (url.includes('releases/latest')) {
+        return jsonResponse({ tag_name: 'v2.0.0' });
+      }
+      if (url.endsWith('/api/self-update')) {
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { useUpdateCheck } = await import('./use-update-check');
+    const { result } = renderHook(() =>
+      useUpdateCheck({ pollIntervalMs: 5, updateTimeoutMs: 40 })
+    );
+
+    await act(async () => {
+      await result.current.check();
+    });
+    await act(async () => {
+      await result.current.updateContainer();
+    });
+
+    expect(result.current.state).toEqual({
+      phase: 'error',
+      message: '更新超时：容器仍在旧版本运行，请检查 updater 容器后重试',
+    });
+    expect(reload).not.toHaveBeenCalled();
+  });
 });

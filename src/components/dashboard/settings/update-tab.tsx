@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowUpCircle,
   CheckCircle2,
+  Container,
   Download,
   Loader2,
   RefreshCw,
@@ -11,13 +12,20 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUpdateCheck } from '@/hooks/use-update-check';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 /**
  * 「设置 → 更新」tab: shows the page's own build identity and runs the
  * manual update check (stale-page detection + upstream release advisory).
+ * Admins (dashboard level 3 = CR L1) additionally get the container update
+ * action — trigger the watchtower sidecar to pull and recreate the running
+ * container, with the page polling until the new build is live.
  */
 export function UpdateTab() {
-  const { state, check, applyUpdate, pageBuildId, pageBuiltAt, pageVersion } = useUpdateCheck();
+  const { state, check, applyUpdate, updateContainer, pageBuildId, pageBuiltAt, pageVersion } =
+    useUpdateCheck();
+  const userLevel = useAgentTeamsStore((s) => s.userLevel);
+  const isAdmin = userLevel >= 3;
 
   return (
     <div className="space-y-5 py-4">
@@ -71,13 +79,33 @@ export function UpdateTab() {
         )}
 
         {state.phase === 'upstream-available' && (
-          <div className="space-y-1 rounded-md border border-blue-500/40 bg-blue-500/5 p-3">
+          <div className="space-y-2 rounded-md border border-blue-500/40 bg-blue-500/5 p-3">
             <p className="flex items-center gap-1.5 text-sm font-medium">
               <ArrowUpCircle className="w-4 h-4 text-blue-500" />
               上游有新版本 {state.latestVersion}
             </p>
             <p className="text-xs text-muted-foreground">
-              当前页面与服务器构建一致；可拉取最新代码重新构建镜像以完成升级。
+              {isAdmin
+                ? '可触发容器自更新：拉取最新镜像并重启服务（约 1-3 分钟，期间页面会自动等待并刷新）。'
+                : '当前页面与服务器构建一致；请联系管理员（L1）触发容器更新。'}
+            </p>
+            {isAdmin && (
+              <Button size="sm" onClick={updateContainer}>
+                <Container className="w-4 h-4 mr-1.5" />
+                更新容器
+              </Button>
+            )}
+          </div>
+        )}
+
+        {state.phase === 'updating' && (
+          <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+              正在更新容器，请勿关闭页面
+            </p>
+            <p className="text-xs text-muted-foreground">
+              拉取镜像并重启服务中（最长约 5 分钟）；完成后页面将自动刷新进入新版本。
             </p>
           </div>
         )}
