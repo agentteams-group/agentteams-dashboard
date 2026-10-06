@@ -24,6 +24,14 @@ import {
 } from '@/lib/matrix-sync-buffer';
 
 /**
+ * Parallel `GET /rooms/{id}/state` probes for room names / member counts.
+ * The old implementation fired one request per room in a single Promise.all
+ * (80 rooms → 80 concurrent requests). Batching keeps the homeserver load
+ * flat regardless of how many rooms the account is in.
+ */
+const NAME_PROBE_CONCURRENCY = 6;
+
+/**
  * Single global Matrix /sync loop, mounted once at dashboard level so it
  * lives for the whole login session regardless of which section is active.
  *
@@ -66,6 +74,62 @@ export function useGlobalMatrixSync(): void {
     let timeoutId: ReturnType<typeof setTimeout>;
     let retryDelay = 1000;
     let filterRejected = false;
+
+    // 12.13+：房间名/成员数补采。原实现对「前 80 个已加入房间」做一次
+    // Promise.all 扫描，超过 80 个房间之后的名字永久缺失；且 /sync 的 state
+    // 段只在房间有变更时才下发，安静房间（如 admin-manager DM）在首次 sync
+    // 之后永远等不到 m.room.name。改为：
+    //   1. 不限房间数，按 NAME_PROBE_CONCURRENCY 分批（避免并发风暴）；
+    //   2. 已带 roomName + memberCount 的房间跳过（初始 sync 已给全量 state）；
+    //   3. 探测记录按会话去重，且从 sync 的 rooms.join 反向补采——会话中途
+    //      接受的邀请、初始 sync 之后才加入的房间都不会漏。
+    const nameProbed = new Set<string>();
+    let nameProbeChain: Promise<void> = Promise.resolve();
+
+    /** Fetch m.room.name + joined member count for one room (best effort). */
+    const probeRoomName = async (rid: string) => {
+      try {
+        const state = await matrixApi.getRoomState(homeserver, accessToken, rid);
+        if (cancelled) return;
+        const nameEv = state.find((e) => e.type === 'm.room.name');
+        const content = (nameEv?.content ?? {}) as { name?: unknown };
+        const nm = typeof content.name === 'string' ? content.name.trim() : '';
+        const joined = state.filter(
+          (e) =>
+            e.type === 'm.room.member' &&
+            (e.content as { membership?: unknown })?.membership === 'join',
+        ).length;
+        const patch: { roomName?: string; memberCount?: number } = {};
+        if (nm) patch.roomName = nm;
+        if (joined > 0) patch.memberCount = joined;
+        if (Object.keys(patch).length > 0) {
+          useRoomMetaStore.getState().setRoomMeta(rid, patch);
+        }
+      } catch {
+        /* state may be restricted — skip; the room keeps its resource name */
+      }
+    };
+
+    /** Queue a name/member-count probe for rooms that still lack either field. */
+    const probeRoomNames = (rids: string[]) => {
+      const current = useRoomMetaStore.getState().meta;
+      const pending = rids.filter((rid) => {
+        if (!rid || nameProbed.has(rid)) return false;
+        const m = current[rid];
+        // Already fully populated (initial sync carries m.room.name + summary
+        // for every joined room) — nothing to fetch.
+        return !m?.roomName || !m?.memberCount;
+      });
+      if (pending.length === 0) return;
+      for (const rid of pending) nameProbed.add(rid);
+      nameProbeChain = nameProbeChain.then(async () => {
+        for (let i = 0; i < pending.length; i += NAME_PROBE_CONCURRENCY) {
+          if (cancelled) return;
+          const batch = pending.slice(i, i + NAME_PROBE_CONCURRENCY);
+          await Promise.all(batch.map(probeRoomName));
+        }
+      });
+    };
 
     const SYNC_FILTER = JSON.stringify({
       presence: { types: [] },
@@ -133,33 +197,13 @@ export function useGlobalMatrixSync(): void {
             }
           }),
         );
-        // 12.13：房间名采集——对全部已加入房间（上限 80）取 m.room.name，
-        // 填 meta.roomName（项目群等未归类房间在侧栏出现的前提；一次/会话）。
-        const nameRooms = roomsResp.joined_rooms.slice(0, 80);
-        await Promise.all(
-          nameRooms.map(async (rid) => {
-            if (cancelled) return;
-            try {
-              const state = await matrixApi.getRoomState(homeserver, accessToken, rid);
-              const nameEv = state.find((e) => e.type === 'm.room.name');
-              const content = (nameEv?.content ?? {}) as { name?: unknown };
-              const nm = typeof content.name === 'string' ? content.name.trim() : '';
-              const joined = state.filter(
-                (e) =>
-                  e.type === 'm.room.member' &&
-                  (e.content as { membership?: unknown })?.membership === 'join',
-              ).length;
-              const patch: { roomName?: string; memberCount?: number } = {};
-              if (nm) patch.roomName = nm;
-              if (joined > 0) patch.memberCount = joined;
-              if (Object.keys(patch).length > 0) {
-                useRoomMetaStore.getState().setRoomMeta(rid, patch);
-              }
-            } catch {
-              /* state may be restricted — skip */
-            }
-          }),
-        );
+        // 房间名/成员数补采：对全部已加入房间（无数量上限）。房间名是未归类
+        // 房间（项目群、admin-manager DM）在侧栏出现的前提；成员数驱动
+        // 群组/私聊分类。已带两者的房间会被 probeRoomNames 跳过。
+        probeRoomNames(roomsResp.joined_rooms);
+        // Track the queued probe chain so the historical pass only resolves
+        // once the backfill settled (and a cancelled effect stops early).
+        await nameProbeChain;
       } catch {
         /* getJoinedRooms may fail if Matrix is unreachable — sync loop will keep trying */
       }
@@ -318,6 +362,11 @@ export function useGlobalMatrixSync(): void {
               userId ?? '',
             );
             ingestRoomMeta(rid, roomData);
+            // Backfill room name / member count for rooms the one-shot sweep
+            // never saw (invite accepted this session, joined after the sweep).
+            // probeRoomNames de-dupes per session, so this is a no-op for
+            // rooms already covered.
+            probeRoomNames([rid]);
 
             // F-4: the invite snapshot is keyed by roomId and a single
             // roomId can't be in both `invite` and `join` simultaneously

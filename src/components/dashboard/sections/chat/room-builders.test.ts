@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import {
   buildRooms,
   extractMessagePreview,
@@ -63,6 +63,17 @@ const manager = (overrides: Partial<ManagerResponse> = {}): ManagerResponse => (
   ...overrides,
 });
 
+const human = (overrides: Partial<HumanResponse> = {}): HumanResponse => ({
+  name: 'admin',
+  phase: 'Active',
+  displayName: 'Admin',
+  matrixUserID: '@admin:matrix',
+  initialPassword: '',
+  rooms: ['!admin-dm:matrix'],
+  message: '',
+  ...overrides,
+});
+
 describe('buildRooms', () => {
   it('returns empty when no data', () => {
     expect(buildRooms(undefined, undefined, undefined)).toEqual([]);
@@ -113,6 +124,7 @@ describe('buildRooms', () => {
     const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1' })]);
     expect(rooms).toHaveLength(1);
     expect(rooms[0].type).toBe('manager');
+    expect(rooms[0].name).toBe('Manager: m1');
   });
 
   it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
@@ -121,15 +133,65 @@ describe('buildRooms', () => {
     expect(rooms[0].runtime).toBe('openclaw');
   });
 
+  it('lists both manager roomID and leaderDMRoomID without dropping the admin DM', () => {
+    const rooms = buildRooms(undefined, undefined, [
+      manager({ name: 'default', roomID: '!admin-dm:matrix', leaderDMRoomID: '!leader-dm:matrix' }),
+    ]);
+    expect(rooms.map((r) => r.id)).toEqual(['!admin-dm:matrix', '!leader-dm:matrix']);
+    expect(rooms.map((r) => r.name)).toEqual(['Manager: default', 'default 对话']);
+    expect(rooms.every((r) => r.type === 'manager')).toBe(true);
+  });
+
+  it('dedupes manager rooms when roomID and leaderDMRoomID are the same', () => {
+    const rooms = buildRooms(undefined, undefined, [
+      manager({ roomID: '!same:matrix', leaderDMRoomID: '!same:matrix' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].id).toBe('!same:matrix');
+  });
+
+  it('prefers Matrix roomName for manager rooms when sync meta is present', () => {
+    const rooms = buildRooms(
+      undefined,
+      undefined,
+      [manager({ name: 'default', roomID: '!sv0d:matrix' })],
+      { '!sv0d:matrix': { roomName: 'Manager: default' } },
+    );
+    expect(rooms[0].name).toBe('Manager: default');
+  });
+
+  it('builds human rooms from human.rooms', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, [
+      human({ name: 'alice', displayName: 'Alice', rooms: ['!h1:matrix', '!h2:matrix'] }),
+    ]);
+    expect(rooms).toHaveLength(2);
+    expect(rooms.map((r) => r.id)).toEqual(['!h1:matrix', '!h2:matrix']);
+    expect(rooms.every((r) => r.type === 'human')).toBe(true);
+    expect(rooms[0].name).toBe('Alice');
+  });
+
+  it('does not duplicate a human room that is already a manager room', () => {
+    const rooms = buildRooms(
+      undefined,
+      undefined,
+      [manager({ name: 'default', roomID: '!admin-dm:matrix' })],
+      undefined,
+      [human({ rooms: ['!admin-dm:matrix'] })],
+    );
+    expect(rooms.filter((r) => r.id === '!admin-dm:matrix')).toHaveLength(1);
+    expect(rooms[0].type).toBe('manager');
+  });
+
   it('combines all sources in order', () => {
     const rooms = buildRooms(
       [worker({ name: 'w' })],
       [team({ name: 't' })],
       [manager({ name: 'm' })],
+      undefined,
+      [human({ rooms: ['!h:matrix'] })],
     );
-    expect(rooms.map((r) => r.type)).toEqual(['team', 'worker', 'manager']);
+    expect(rooms.map((r) => r.type)).toEqual(['team', 'worker', 'manager', 'human']);
   });
-});
 
   it('includes sync-only rooms (project rooms) as unknown', () => {
     const rooms = buildRooms(undefined, undefined, undefined, {
@@ -153,7 +215,9 @@ describe('buildRooms', () => {
     });
     expect(rooms.filter((r) => r.id === '!w1:matrix')).toHaveLength(1);
     expect(rooms[0].type).toBe('worker');
+    expect(rooms[0].name).toBe('w1 房间');
   });
+});
 
 describe('filterRooms', () => {
   const rooms: RoomInfo[] = [
@@ -176,6 +240,15 @@ describe('filterRooms', () => {
 
   it('matches by member', () => {
     expect(filterRooms(rooms, 'charlie')).toHaveLength(1);
+  });
+
+  it('matches by parentTeam and workerName', () => {
+    const extra: RoomInfo[] = [
+      { id: '!d:matrix', name: 'Manager: default', type: 'manager', members: [], workerName: 'default', parentTeam: 'ops' },
+    ];
+    expect(filterRooms(extra, 'default')).toHaveLength(1);
+    expect(filterRooms(extra, 'ops')).toHaveLength(1);
+    expect(filterRooms(extra, 'Manager')).toHaveLength(1);
   });
 
   it('returns empty for no match', () => {

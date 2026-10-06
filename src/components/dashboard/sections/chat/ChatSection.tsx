@@ -15,8 +15,9 @@ import {
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { MessageSquare, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { AlertTriangle, MessageSquare, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
 import { ChatAuthBadge } from './chat-auth-badge';
 import { SyncStatusChip } from './sync-status-chip';
@@ -44,11 +45,47 @@ function getNarrowViewport(): boolean {
   return window.matchMedia(NARROW_MQ).matches;
 }
 
+function projectionHint(label: string, err: unknown): string {
+  const status = err instanceof ApiError ? err.status : undefined;
+  if (status === 403 || status === 401) {
+    return `${label} 投影失败（${status}）：当前账号无权查看，相关房间不会出现在侧栏。请用管理员身份重登。`;
+  }
+  if (status === 502) {
+    return `${label} 投影失败（502）：Controller 不可达，相关房间暂未加载。`;
+  }
+  const detail = err instanceof Error ? err.message : '未知错误';
+  return `${label} 投影失败：${detail}`;
+}
+
 export function ChatSection() {
-  const { data: workers, isLoading: workersLoading } = useWorkers();
-  const { data: teams, isLoading: teamsLoading } = useTeams();
-  const { data: managers, isLoading: managersLoading } = useManagers();
-  const { isLoading: humansLoading } = useHumans();
+  const {
+    data: workers,
+    isLoading: workersLoading,
+    isError: workersIsError,
+    error: workersError,
+    refetch: refetchWorkers,
+  } = useWorkers();
+  const {
+    data: teams,
+    isLoading: teamsLoading,
+    isError: teamsIsError,
+    error: teamsError,
+    refetch: refetchTeams,
+  } = useTeams();
+  const {
+    data: managers,
+    isLoading: managersLoading,
+    isError: managersIsError,
+    error: managersError,
+    refetch: refetchManagers,
+  } = useManagers();
+  const {
+    data: humans,
+    isLoading: humansLoading,
+    isError: humansIsError,
+    error: humansError,
+    refetch: refetchHumans,
+  } = useHumans();
   const { isConnected } = useAgentTeamsStore();
   const { isLoggedIn, userId, logout } = useMatrixStore();
 
@@ -91,9 +128,63 @@ export function ChatSection() {
   // buildRooms and sort at the boundary.
   const roomMeta = useRoomMetaStore((s) => s.meta);
   const rooms = useMemo(
-    () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId)),
-    [workers, teams, managers, roomMeta],
+    () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)),
+    [workers, teams, managers, humans, roomMeta],
   );
+
+  const projectionNotices = useMemo(() => {
+    const notices: { key: string; message: string; retry: () => void }[] = [];
+    if (workersIsError) {
+      notices.push({
+        key: 'workers',
+        message: projectionHint('Workers', workersError),
+        retry: () => {
+          void refetchWorkers();
+        },
+      });
+    }
+    if (teamsIsError) {
+      notices.push({
+        key: 'teams',
+        message: projectionHint('Teams', teamsError),
+        retry: () => {
+          void refetchTeams();
+        },
+      });
+    }
+    if (managersIsError) {
+      notices.push({
+        key: 'managers',
+        message: projectionHint('Managers', managersError),
+        retry: () => {
+          void refetchManagers();
+        },
+      });
+    }
+    if (humansIsError) {
+      notices.push({
+        key: 'humans',
+        message: projectionHint('Humans', humansError),
+        retry: () => {
+          void refetchHumans();
+        },
+      });
+    }
+    return notices;
+  }, [
+    workersIsError,
+    workersError,
+    refetchWorkers,
+    teamsIsError,
+    teamsError,
+    refetchTeams,
+    managersIsError,
+    managersError,
+    refetchManagers,
+    humansIsError,
+    humansError,
+    refetchHumans,
+  ]);
 
   // Deep-link consumption: read the pending value WITHOUT clearing it, and
   // only take (clear) it once the room list is loaded and actually contains
@@ -181,6 +272,20 @@ export function ChatSection() {
             />
           </div>
         </div>
+
+        {projectionNotices.map((notice) => (
+          <div
+            key={notice.key}
+            className="shrink-0 mx-4 mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300"
+            role="status"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <p className="flex-1">{notice.message}</p>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={notice.retry}>
+              重试
+            </Button>
+          </div>
+        ))}
 
         {/* Login banner */}
         {!isLoggedIn && (

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ApiError } from '@/lib/api-error';
 
 // --- Query hooks: controllable loading state -------------------------------
 const hooksMock = vi.hoisted(() => ({
@@ -75,17 +76,17 @@ const WORKER = {
 };
 
 function loaded() {
-  hooksMock.useWorkers.mockReturnValue({ data: [WORKER], isLoading: false });
-  hooksMock.useTeams.mockReturnValue({ data: [], isLoading: false });
-  hooksMock.useManagers.mockReturnValue({ data: [], isLoading: false });
-  hooksMock.useHumans.mockReturnValue({ data: [], isLoading: false });
+  hooksMock.useWorkers.mockReturnValue({ data: [WORKER], isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useTeams.mockReturnValue({ data: [], isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useManagers.mockReturnValue({ data: [], isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useHumans.mockReturnValue({ data: [], isLoading: false, isError: false, error: null, refetch: vi.fn() });
 }
 
 function loading() {
-  hooksMock.useWorkers.mockReturnValue({ data: undefined, isLoading: true });
-  hooksMock.useTeams.mockReturnValue({ data: undefined, isLoading: false });
-  hooksMock.useManagers.mockReturnValue({ data: undefined, isLoading: false });
-  hooksMock.useHumans.mockReturnValue({ data: undefined, isLoading: false });
+  hooksMock.useWorkers.mockReturnValue({ data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useTeams.mockReturnValue({ data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useManagers.mockReturnValue({ data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  hooksMock.useHumans.mockReturnValue({ data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() });
 }
 
 function renderWithQueryClient() {
@@ -108,6 +109,7 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    cleanup();
   });
 
   it('keeps the deep link alive while the room list is loading, then applies it', async () => {
@@ -149,5 +151,57 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
     renderWithQueryClient();
     // Unknown room: pending is retained (not silently eaten by a render).
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!gone:test');
+  });
+});
+
+describe('ChatSection projection failure notices', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useHitlInboxStore.setState({ pendingChatRoomId: null, pendingProjectKey: null });
+    useRoomMetaStore.setState({ meta: {}, activeRoomId: null });
+    loaded();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows an inline notice when managers projection fails, without hiding worker rooms', () => {
+    hooksMock.useManagers.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError('API Error 403: forbidden', 403, '/managers'),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient();
+    expect(screen.getByText(/Managers 投影失败（403）/)).toBeTruthy();
+    // The chat section must stay mounted (sidebar + empty state), not be
+    // replaced by a full-page ApiErrorState.
+    expect(screen.getAllByTestId('sidebar-stub').length).toBe(1);
+    expect(screen.getByTestId('empty-stub')).toBeTruthy();
+  });
+
+  it('does not show a notice when every projection succeeds', () => {
+    renderWithQueryClient();
+    expect(screen.queryByRole('status', { name: /投影失败/ })).toBeNull();
+    expect(screen.getByTestId('empty-stub')).toBeTruthy();
+  });
+
+  it('retries the failed projection when the notice button is clicked', () => {
+    const refetch = vi.fn();
+    hooksMock.useWorkers.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom'),
+      refetch,
+    });
+
+    renderWithQueryClient();
+    expect(screen.getByText(/Workers 投影失败/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(refetch).toHaveBeenCalled();
   });
 });
