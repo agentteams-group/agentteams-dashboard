@@ -404,7 +404,9 @@ export function ChatRoomSidebar({
             <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
             <p className="text-xs text-muted-foreground">暂无聊天房间</p>
             <p className="text-[10px] text-muted-foreground mt-1">
-              创建 Worker 或 Team 后会自动生成 Matrix 房间
+              {isLoggedIn
+                ? '创建 Worker 或 Team 后会自动生成 Matrix 房间'
+                : '创建 Worker 或 Team 后会自动生成 Matrix 房间；登录 Matrix 后还将加载项目群等其他房间'}
             </p>
           </div>
         ) : (

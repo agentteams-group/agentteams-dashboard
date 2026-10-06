@@ -1,4 +1,5 @@
-import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import { managerRoomIds } from '@/lib/task-actors';
 import type { RoomInfo } from './room-info';
 
 export interface RoomMetaInput {
@@ -15,18 +16,34 @@ export interface RoomMetaInput {
 /** Lookup table for per-room meta. Keys are Matrix room ids. */
 export type RoomMetaByRoomId = Record<string, RoomMetaInput>;
 
+function managerDisplayName(
+  manager: ManagerResponse,
+  rid: string,
+  lookup: RoomMetaByRoomId,
+): string {
+  const named = lookup[rid]?.roomName;
+  if (named) return named;
+  if (rid === manager.roomID) return `Manager: ${manager.name}`;
+  return `${manager.name} 对话`;
+}
+
 /**
- * Build the sidebar room list from agent/team/manager resources.
+ * Build the sidebar room list from agent/team/manager/human resources.
  *
  * Each room's lastMessageTs / unreadCount is filled in from the supplied
  * `metaByRoomId` (driven by /sync). Rooms with newer activity float to the
  * top of the sidebar naturally because ChatSection sorts after this returns.
+ *
+ * A Manager contributes every distinct room in `managerRoomIds` (own room
+ * plus leader DM). Previously only one of the two was listed, so the
+ * admin-manager DM vanished as soon as a leader DM existed.
  */
 export function buildRooms(
   workers: WorkerResponse[] | undefined,
   teams: TeamResponse[] | undefined,
   managers: ManagerResponse[] | undefined,
   metaByRoomId?: RoomMetaByRoomId,
+  humans?: HumanResponse[],
 ): RoomInfo[] {
   const lookup = metaByRoomId ?? {};
   const enrich = (
@@ -47,6 +64,13 @@ export function buildRooms(
   };
 
   const roomList: RoomInfo[] = [];
+  const known = new Set<string>();
+  const pushRoom = (room: RoomInfo) => {
+    if (!room.id || known.has(room.id)) return;
+    known.add(room.id);
+    roomList.push(room);
+  };
+
   // name → MXID for resolving a team's workers to Matrix ids (A17 dot)
   const workerMxidByTeam = new Map<string, Map<string, string>>();
   workers?.forEach((worker) => {
@@ -57,9 +81,9 @@ export function buildRooms(
   teams?.forEach((team) => {
     if (team.teamRoomID) {
       const teamWorkers = workerMxidByTeam.get(team.name);
-      roomList.push({
+      pushRoom({
         id: team.teamRoomID,
-        name: `${team.name} 团队房间`,
+        name: lookup[team.teamRoomID]?.roomName || `${team.name} 团队房间`,
         type: 'team',
         members: team.workerNames || [],
         workerMatrixUserIds: (team.workerNames || [])
@@ -75,9 +99,9 @@ export function buildRooms(
   });
   workers?.forEach((worker) => {
     if (worker.roomID) {
-      roomList.push({
+      pushRoom({
         id: worker.roomID,
-        name: `${worker.name} 房间`,
+        name: lookup[worker.roomID]?.roomName || `${worker.name} 房间`,
         type: 'worker',
         members: [worker.matrixUserID].filter(Boolean),
         parentTeam: worker.team,
@@ -92,23 +116,16 @@ export function buildRooms(
     }
   });
   managers?.forEach((manager) => {
-    // Prefer the DM room for human-manager interaction; fall back to manager's own room
-    const chatRoomId = manager.leaderDMRoomID || manager.roomID;
-    if (chatRoomId) {
-      // Find the team this manager leads
-      const leadingTeam = teams?.find((t) => t.leaderName === manager.name);
-      roomList.push({
+    const leadingTeam = teams?.find((t) => t.leaderName === manager.name);
+    for (const chatRoomId of managerRoomIds(manager)) {
+      pushRoom({
         id: chatRoomId,
-        name: `${manager.name} 对话`,
+        name: managerDisplayName(manager, chatRoomId, lookup),
         type: 'manager',
         members: [manager.matrixUserID].filter(Boolean),
         matrixUserId: manager.matrixUserID,
         parentTeam: leadingTeam?.name,
         phase: manager.phase,
-        // Manager is an agent runtime with its own object-storage workspace
-        // ({manager}/ in MinIO, agents/{manager}/ fallback — same convention
-        // as workers). Feeding it as workerName opens the files sidebar on
-        // the manager workspace instead of an empty picker (#87).
         workerName: manager.name,
         runtime: manager.runtime,
         memberCount: 2,
@@ -116,13 +133,25 @@ export function buildRooms(
       });
     }
   });
+  humans?.forEach((human) => {
+    for (const rid of human.rooms ?? []) {
+      pushRoom({
+        id: rid,
+        name: lookup[rid]?.roomName || human.displayName || human.name,
+        type: 'human',
+        members: [human.matrixUserID].filter(Boolean),
+        matrixUserId: human.matrixUserID,
+        phase: human.phase,
+        ...enrich(rid),
+      });
+    }
+  });
   // 12.13（装验反馈「看不到项目群」）：/sync 原生房间补齐——资源推导只
   // 覆盖 team/worker/manager 房间；项目群等普通房间此前完全不可见（插件
   // 走全量 /sync 可见，行为不一致）。按 meta.roomName 补「其他」分组。
-  const known = new Set(roomList.map((room) => room.id));
   for (const [rid, meta] of Object.entries(lookup)) {
     if (known.has(rid) || !meta.roomName) continue;
-    roomList.push({
+    pushRoom({
       id: rid,
       name: meta.roomName,
       type: 'unknown',
@@ -140,7 +169,9 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
     (r) =>
       r.name.toLowerCase().includes(q) ||
       r.id.toLowerCase().includes(q) ||
-      r.members.some((m) => m && m.toLowerCase().includes(q)),
+      r.members.some((m) => m && m.toLowerCase().includes(q)) ||
+      (r.parentTeam ? r.parentTeam.toLowerCase().includes(q) : false) ||
+      (r.workerName ? r.workerName.toLowerCase().includes(q) : false),
   );
 }
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGlobalMatrixSync } from './use-global-matrix-sync';
-import { matrixApi, type MatrixEvent, type MatrixJoinedRoom, type MatrixSyncResponse } from '@/lib/matrix-api';
+import { matrixApi, type MatrixEvent, type MatrixJoinedRoom, type MatrixRoomStateEvent, type MatrixSyncResponse } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useReceiptStore, useRoomMetaStore, useTypingStore } from './use-matrix';
 import { useTaskStore } from '@/lib/task-store';
@@ -19,6 +19,7 @@ vi.mock('@/lib/matrix-api', async () => {
       sync: vi.fn(),
       getJoinedRooms: vi.fn(),
       getRoomMessages: vi.fn(),
+      getRoomState: vi.fn(),
     },
   };
 });
@@ -93,6 +94,7 @@ describe('useGlobalMatrixSync', () => {
     resetSyncBufferForTests();
     (matrixApi.sync as ReturnType<typeof vi.fn>).mockReset();
     (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: [] });
+    (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -468,6 +470,117 @@ Type /approve to approve, or send any message to deny.`;
     expect(items).toHaveLength(1);
     expect(items[0].toolName).toBe('execute_shell_command');
     expect(items[0].roomId).toBe('!hist:test');
+
+    unmount();
+  });
+});
+
+describe('useGlobalMatrixSync — room name / member count backfill', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetStores();
+    resetSyncBufferForTests();
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockReset();
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockReset();
+    (matrixApi.getRoomMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk: [], start: 's', end: 'e' });
+    (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Render + let the mount-time sweep and the first poll settle. */
+  async function mountAndSettle() {
+    const queryClient = getQueryClientMock();
+    const hook = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(queryClient),
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    return hook;
+  }
+
+  it('probes every joined room, with no 80-room cap', async () => {
+    const ids = Array.from({ length: 85 }, (_, i) => `!r${i}:test`);
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ids });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+
+    const { unmount } = await mountAndSettle();
+
+    const probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[2]);
+    expect(probed).toHaveLength(85);
+    for (const id of ids) expect(probed).toContain(id);
+
+    unmount();
+  });
+
+  it('skips rooms that already carry roomName + memberCount', async () => {
+    useRoomMetaStore.getState().setRoomMeta('!known:test', { roomName: 'Known room', memberCount: 4 });
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({
+      joined_rooms: ['!known:test', '!missing:test'],
+    });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+
+    const { unmount } = await mountAndSettle();
+
+    const probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[2]);
+    expect(probed).toEqual(['!missing:test']);
+
+    unmount();
+  });
+
+  it('stores m.room.name and the joined member count from the probe', async () => {
+    const state: MatrixRoomStateEvent[] = [
+      { type: 'm.room.name', state_key: '', content: { name: '  Manager: default  ' } },
+      { type: 'm.room.member', state_key: '@a:test', content: { membership: 'join' } },
+      { type: 'm.room.member', state_key: '@b:test', content: { membership: 'join' } },
+      { type: 'm.room.member', state_key: '@c:test', content: { membership: 'leave' } },
+      { type: 'm.topic', state_key: '', content: { topic: 'x' } },
+    ];
+    (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mockResolvedValue(state);
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ['!sv0d:test'] });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+
+    const { unmount } = await mountAndSettle();
+
+    const meta = useRoomMetaStore.getState().meta['!sv0d:test'];
+    expect(meta.roomName).toBe('Manager: default');
+    expect(meta.memberCount).toBe(2);
+
+    unmount();
+  });
+
+  it('backfills a room that only appears in /sync (joined mid-session) and never re-probes it', async () => {
+    // Sweep sees nothing — the room was created/joined afterwards.
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: [] });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
+      syncWith({ '!late:test': joinedRoom() }),
+    );
+
+    const { unmount } = await mountAndSettle();
+
+    const probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[2]);
+    expect(probed.filter((r) => r === '!late:test')).toHaveLength(1);
+
+    unmount();
+  });
+
+  it('probes rooms that /sync leaves without a state name (quiet rooms)', async () => {
+    // The initial sync carries only the message timeline; no m.room.name and
+    // no member summary — the probe must fill both.
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ['!quiet:test'] });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
+      syncWith({ '!quiet:test': joinedRoom({ timeline: { events: [msgEvent('$q1', 1000)], limited: false, prev_batch: 'p' } }) }),
+    );
+
+    const { unmount } = await mountAndSettle();
+
+    const probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[2]);
+    expect(probed).toContain('!quiet:test');
+    // lastMessageTs from the timeline still lands even though the probe fills the rest.
+    expect(useRoomMetaStore.getState().meta['!quiet:test'].lastMessageTs).toBe(1000);
 
     unmount();
   });
