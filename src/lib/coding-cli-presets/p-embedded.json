@@ -1,0 +1,29 @@
+{
+  "id": "p-embedded",
+  "name": { "zh-CN": "MCU / Embedded", "en-US": "MCU / Embedded" },
+  "description": {
+    "zh-CN": "MCU/embedded 开发 preset。arm64 容器注意 ripgrep 自动降级（见 arch_note）。"
+  },
+  "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
+  "arch_note": {
+    "zh-CN": "arm64 16K 页系统：qwen-code bundled ripgrep 崩溃后自动降级 built-in grep，无需配置字段。"
+  },
+  "toolchain": {
+    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/embedded/",
+    "install": {
+      "zh-CN": "arm-none-eabi-gcc / ESP-IDF / Zephyr 按 MCU 平台 → 共享卷"
+    },
+    "env": {},
+    "human_confirm": true,
+    "note": { "zh-CN": "工具链动 CR（env）需人工确认，preset 只生成建议清单" }
+  },
+  "mcp": {
+    "suggested": ["平台文档库 MCP", "串口/烧录 MCP（可选）"],
+    "human_confirm": true,
+    "note": "走现有 MCP 绑定入口手动确认"
+  },
+  "artifacts": {
+    "minio_path": "teams/<team>/artifacts/embedded/",
+    "note": ".bin/.elf"
+  }
+}
