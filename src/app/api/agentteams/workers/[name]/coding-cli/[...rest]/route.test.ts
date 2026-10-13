@@ -114,6 +114,23 @@ describe('B7 /workers/[name]/coding-cli/[...rest] 白名单', () => {
     expect(enforceServerSideRbac).not.toHaveBeenCalled();
   });
 
+  it('GET install/task_id 允许 base64 字符并编码出站', async () => {
+    proxyToAgentTeams.mockResolvedValue(NextResponse.json({ status: 'running' }));
+    await call(GET, 'GET', 'w1', ['qwen-code', 'install', 'abc+def=']);
+    expect(proxyToAgentTeams).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      C,
+      '/api/v1/workers/w1/coding-cli/qwen-code/install/abc%2Bdef%3D',
+      { forwardBody: false, method: 'GET' },
+    );
+  });
+
+  it('非法 task_id 含斜杠 → 400 零透传', async () => {
+    const res = await call(GET, 'GET', 'w1', ['qwen-code', 'install', 'a/b']);
+    expect(res.status).toBe(400);
+    expect(proxyToAgentTeams).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['qoder 不在白名单', ['qoder', 'settings']],
     ['未知子路径', ['qwen-code', 'bogus']],
