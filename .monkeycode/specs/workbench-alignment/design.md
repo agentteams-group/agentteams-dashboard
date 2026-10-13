@@ -90,6 +90,8 @@ sequenceDiagram
 - `model.name`（或顶层 `model` 字符串）渲染为模型名输入。
 - 其余可 JSON 序列化的键以只读预览 + 可选 JSON 补丁区展示，避免猜 CLI 私有字段。
 
+`collectRedacted` 只递归普通对象；数组元素内的 `{redacted:true}` 不进入密钥输入，需经 JSON 补丁区写入。
+
 PUT body 只含改动字段（深度合并在 Controller）。空对象不发。哨兵 400（无原值可保留）时提示填写真实密钥。
 
 ### 4. 安装任务

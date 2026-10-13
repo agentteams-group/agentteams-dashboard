@@ -15,19 +15,18 @@ import { isCodingCliId } from '@/lib/coding-cli-presets';
 interface Endpoint {
   method: 'GET' | 'PUT' | 'POST';
   forwardBody: boolean;
-  mutates: boolean;
 }
 
 function resolveEndpoint(rest: string[]): Endpoint | null {
   if (rest.length < 2 || !isCodingCliId(rest[0])) return null;
   if (rest.length === 2 && rest[1] === 'settings') {
-    return { method: 'GET', forwardBody: false, mutates: false };
+    return { method: 'GET', forwardBody: false };
   }
   if (rest.length === 2 && rest[1] === 'install') {
-    return { method: 'POST', forwardBody: true, mutates: true };
+    return { method: 'POST', forwardBody: true };
   }
   if (rest.length === 3 && rest[1] === 'install') {
-    return { method: 'GET', forwardBody: false, mutates: false };
+    return { method: 'GET', forwardBody: false };
   }
   return null;
 }

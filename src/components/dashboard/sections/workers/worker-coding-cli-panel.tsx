@@ -11,6 +11,17 @@ import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   CODING_CLI_IDS,
   CODING_CLI_PRESETS,
@@ -80,6 +91,7 @@ function normalizeProbe(body: unknown): CodingCliProbeItem[] {
       }
     }
   }
+  // 白名单重映射：未知 CLI id 静默丢弃，面板只展示 qwen-code / opencode。
   return CODING_CLI_IDS.map((id) => {
     const found = byId.get(id);
     return {
@@ -105,6 +117,7 @@ function collectRedacted(
   obj: SettingsObject,
   path: string[] = [],
 ): Array<{ path: string[]; has_value: boolean }> {
+  // 只递归普通对象；数组内脱敏键走 JSON 补丁区。
   const out: Array<{ path: string[]; has_value: boolean }> = [];
   for (const [key, value] of Object.entries(obj)) {
     const next = [...path, key];
@@ -129,6 +142,26 @@ function assignPath(target: SettingsObject, path: string[], value: SettingsValue
   cursor[path[path.length - 1]] = value;
 }
 
+function mergePatch(target: SettingsObject, patch: SettingsObject) {
+  for (const [key, value] of Object.entries(patch)) {
+    const current = target[key];
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      !isRedacted(value) &&
+      current &&
+      typeof current === 'object' &&
+      !Array.isArray(current) &&
+      !isRedacted(current)
+    ) {
+      mergePatch(current as SettingsObject, value as SettingsObject);
+    } else {
+      target[key] = value;
+    }
+  }
+}
+
 export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
@@ -144,6 +177,8 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<CodingCliPreset | null>(null);
+  const [jsonPatch, setJsonPatch] = useState('');
+  const [uninstallTarget, setUninstallTarget] = useState<CodingCliId | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
 
@@ -196,8 +231,16 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     async (cli: CodingCliId) => {
       setSelected(cli);
       setSettingsOpen(true);
+      setSettings(null);
+      setModelName('');
+      setSecrets({});
+      setJsonPatch('');
       try {
         const res = await fetch(`${base}/${encodeURIComponent(cli)}/settings`, { cache: 'no-store' });
+        if (res.status === 404) {
+          setState('unavailable');
+          return;
+        }
         if (res.status === 403) {
           setReadOnly(true);
           setMsg({ kind: 'err', text: '当前角色仅可查看，不能修改编码 CLI' });
@@ -230,6 +273,21 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       if (typed) assignPath(diff, field.path, typed);
       else if (field.has_value) assignPath(diff, field.path, SENTINEL);
     }
+    const patchText = jsonPatch.trim();
+    if (patchText) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(patchText) as unknown;
+      } catch {
+        setMsg({ kind: 'err', text: '补丁不是合法 JSON' });
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setMsg({ kind: 'err', text: '补丁须为 JSON 对象' });
+        return;
+      }
+      mergePatch(diff, parsed as SettingsObject);
+    }
     if (Object.keys(diff).length === 0) return;
     setBusy(true);
     setMsg(null);
@@ -255,7 +313,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     } finally {
       setBusy(false);
     }
-  }, [base, busy, loadSettings, modelName, readOnly, secrets, selected, settings]);
+  }, [base, busy, jsonPatch, loadSettings, modelName, readOnly, secrets, selected, settings]);
 
   const pollTask = useCallback(
     async (cli: CodingCliId, taskId: string) => {
@@ -435,6 +493,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   }
 
   const redacted = settings ? collectRedacted(settings) : [];
+  const selectedInstalled = items.some((cli) => cli.id === selected && cli.installed);
 
   return (
     <div className="space-y-2 pt-2">
@@ -463,7 +522,13 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                 type="button"
                 className="font-mono text-xs"
                 aria-label={`选择 ${CLI_LABEL[cli.id]}`}
-                onClick={() => setSelected(cli.id)}
+                aria-pressed={selected === cli.id}
+                onClick={() => {
+                  setSelected(cli.id);
+                  setSettingsOpen(false);
+                  setSettings(null);
+                  setJsonPatch('');
+                }}
               >
                 {CLI_LABEL[cli.id]}
               </button>
@@ -487,7 +552,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                       variant="ghost"
                       size="sm"
                       className="h-6 px-2 text-xs"
-                      disabled={busy}
+                      disabled={busy || readOnly}
                       aria-label={`编辑 ${CLI_LABEL[cli.id]} 配置`}
                       onClick={() => void loadSettings(cli.id)}
                     >
@@ -499,7 +564,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                       className="h-6 px-2 text-xs"
                       disabled={busy || readOnly}
                       aria-label={`卸载 ${CLI_LABEL[cli.id]}`}
-                      onClick={() => void runInstall(cli.id, 'uninstall')}
+                      onClick={() => setUninstallTarget(cli.id)}
                     >
                       卸载
                     </Button>
@@ -533,6 +598,10 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         />
       </div>
 
+      {settingsOpen && !settings && (
+        <p className="text-[11px] text-muted-foreground">加载 settings…</p>
+      )}
+
       {settingsOpen && settings && (
         <div className="space-y-1.5 rounded-md border border-border/60 p-2">
           <p className="text-[11px] text-muted-foreground">{CLI_LABEL[selected]} settings</p>
@@ -562,6 +631,23 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               </label>
             );
           })}
+          <p className="text-[11px] text-muted-foreground">当前配置（只读）</p>
+          <pre
+            className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px]"
+            aria-label="当前配置只读预览"
+          >
+            {JSON.stringify(settings, null, 2)}
+          </pre>
+          <label className="block text-[11px] text-muted-foreground">
+            可选 JSON 补丁
+            <Textarea
+              value={jsonPatch}
+              onChange={(e) => setJsonPatch(e.target.value)}
+              className="mt-0.5 min-h-16 font-mono text-xs"
+              placeholder='{"mcp":{"enabled":true}}'
+              disabled={readOnly}
+            />
+          </label>
           <Button
             size="sm"
             className="h-7 text-xs"
@@ -577,6 +663,9 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         <p className="text-[11px] text-muted-foreground">
           场景模板（只写模型名，工具链/MCP 需确认）· 当前 CLI：{CLI_LABEL[selected]}
         </p>
+        {!selectedInstalled && (
+          <p className="text-[11px] text-muted-foreground">先安装当前 CLI，再套用场景模板</p>
+        )}
         <div className="flex flex-wrap gap-1">
           {CODING_CLI_PRESETS.map((preset) => (
             <Button
@@ -584,7 +673,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               variant={appliedPreset === preset.id ? 'default' : 'outline'}
               size="sm"
               className="h-6 px-2 text-xs"
-              disabled={busy || readOnly}
+              disabled={busy || readOnly || !selectedInstalled}
               onClick={() => void applyPreset(preset)}
             >
               {localizedText(preset.name)}
@@ -625,6 +714,36 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
           {msg.text}
         </span>
       )}
+
+      <AlertDialog
+        open={uninstallTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setUninstallTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认卸载</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`将从该 Worker 容器卸载 ${uninstallTarget ? CLI_LABEL[uninstallTarget] : ''}。安装状态会丢失，已保存的鉴权可保留。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => {
+                if (!uninstallTarget) return;
+                const cli = uninstallTarget;
+                setUninstallTarget(null);
+                void runInstall(cli, 'uninstall');
+              }}
+            >
+              确认卸载
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -78,7 +78,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     ]);
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
-    expect(await screen.findByText(/api_key/)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/api_key/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
     await waitFor(() => {
       const put = calls.find((c) => c.method === 'PUT');
@@ -214,5 +214,106 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     mockFetch([{ status: 502, body: { error: 'unreachable' } }]);
     render(<WorkerCodingCliPanel workerName="w1" />);
     expect(await screen.findByText(/无法在该 Worker 容器内执行管理命令/)).toBeInTheDocument();
+  });
+
+  it('⑫ settings 只读预览 + JSON 补丁并入 PUT', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' }, temperature: 0.2 } },
+      { status: 200, body: { ok: true } },
+      { status: 200, body: { model: { name: 'qwen3-coder' }, temperature: 0.2 } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    expect(await screen.findByLabelText('当前配置只读预览')).toHaveTextContent('temperature');
+    fireEvent.change(screen.getByLabelText('可选 JSON 补丁'), {
+      target: { value: '{"mcp":{"enabled":true}}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put!.body!)).toEqual({ mcp: { enabled: true } });
+    });
+  });
+
+  it('⑬ 切换 CLI 加载失败时不串档上一份 settings', async () => {
+    mockFetch([
+      {
+        status: 200,
+        body: {
+          clis: [
+            { id: 'qwen-code', installed: true, version: '0.25.0' },
+            { id: 'opencode', installed: true, version: '1.0.0' },
+          ],
+        },
+      },
+      { status: 200, body: SETTINGS },
+      { status: 500, body: { error: 'boom' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    expect(await screen.findByLabelText(/api_key/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '编辑 OpenCode 配置' }));
+    expect(await screen.findByText('boom')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/api_key/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('当前配置只读预览')).not.toBeInTheDocument();
+  });
+
+  it('⑭ settings 404 → 占位横幅', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 404, body: { error: 'not found' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    const banner = await screen.findByText(/编码 CLI 管理暂不可用/);
+    expect(banner.textContent).not.toMatch(/1360|#\d+/);
+  });
+
+  it('⑮ 卸载需确认后才 POST', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 202, body: { task_id: 'u1' } },
+      { status: 200, body: { task_id: 'u1', status: 'done' } },
+      { status: 200, body: PROBE },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '卸载 Qwen Code' }));
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    fireEvent.click(await screen.findByRole('button', { name: '确认卸载' }));
+    expect(await screen.findByText(/任务完成/)).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/qwen-code/install'))).toBe(
+      true,
+    );
+  });
+
+  it('⑯ POST 403 后编辑配置禁用', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 403, body: { error: 'forbidden' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '卸载 Qwen Code' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认卸载' }));
+    expect(await screen.findByText('当前角色仅可查看，不能修改编码 CLI')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑 Qwen Code 配置' })).toBeDisabled();
+  });
+
+  it('⑰ 未安装时场景模板禁用', async () => {
+    mockFetch([
+      {
+        status: 200,
+        body: {
+          clis: [
+            { id: 'qwen-code', installed: false },
+            { id: 'opencode', installed: false },
+          ],
+        },
+      },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    expect(await screen.findByText(/先安装当前 CLI/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '鸿蒙 AI 开发' })).toBeDisabled();
   });
 });
