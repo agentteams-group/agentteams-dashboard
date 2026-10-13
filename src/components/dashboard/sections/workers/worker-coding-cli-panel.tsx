@@ -162,6 +162,26 @@ function mergePatch(target: SettingsObject, patch: SettingsObject) {
   }
 }
 
+function hasRedactedPlaceholder(value: SettingsValue): boolean {
+  if (isRedacted(value)) return true;
+  if (Array.isArray(value)) return value.some((item) => hasRedactedPlaceholder(item));
+  if (value && typeof value === 'object') {
+    return Object.values(value).some((item) => hasRedactedPlaceholder(item));
+  }
+  return false;
+}
+
+function previewJson(settings: SettingsObject): string {
+  return JSON.stringify(
+    settings,
+    (_key, value) => {
+      if (isRedacted(value)) return value.has_value ? '***' : null;
+      return value;
+    },
+    2,
+  );
+}
+
 export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
@@ -179,14 +199,15 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [suggestion, setSuggestion] = useState<CodingCliPreset | null>(null);
   const [jsonPatch, setJsonPatch] = useState('');
   const [uninstallTarget, setUninstallTarget] = useState<CodingCliId | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+  const settingsReqRef = useRef(0);
 
   const base = `/api/agentteams/workers/${encodeURIComponent(workerName)}/coding-cli`;
 
   const stopPoll = useCallback(() => {
     if (pollRef.current) {
-      clearInterval(pollRef.current);
+      clearTimeout(pollRef.current);
       pollRef.current = null;
     }
   }, []);
@@ -229,6 +250,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
 
   const loadSettings = useCallback(
     async (cli: CodingCliId) => {
+      const reqId = ++settingsReqRef.current;
       setSelected(cli);
       setSettingsOpen(true);
       setSettings(null);
@@ -237,24 +259,32 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       setJsonPatch('');
       try {
         const res = await fetch(`${base}/${encodeURIComponent(cli)}/settings`, { cache: 'no-store' });
+        if (cancelledRef.current || reqId !== settingsReqRef.current) return;
         if (res.status === 404) {
           setState('unavailable');
           return;
         }
         if (res.status === 403) {
           setReadOnly(true);
+          setSettingsOpen(false);
           setMsg({ kind: 'err', text: '当前角色仅可查看，不能修改编码 CLI' });
           return;
         }
         if (!res.ok) {
-          setMsg({ kind: 'err', text: await readError(res) });
+          const text = await readError(res);
+          if (cancelledRef.current || reqId !== settingsReqRef.current) return;
+          setSettingsOpen(false);
+          setMsg({ kind: 'err', text });
           return;
         }
         const json = (await res.json()) as SettingsObject;
+        if (cancelledRef.current || reqId !== settingsReqRef.current) return;
         setSettings(json && typeof json === 'object' ? json : {});
         setModelName(getModelName(json && typeof json === 'object' ? json : {}));
         setSecrets({});
       } catch (err) {
+        if (cancelledRef.current || reqId !== settingsReqRef.current) return;
+        setSettingsOpen(false);
         setMsg({ kind: 'err', text: err instanceof Error ? err.message : '加载 settings 失败' });
       }
     },
@@ -284,6 +314,10 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         setMsg({ kind: 'err', text: '补丁须为 JSON 对象' });
+        return;
+      }
+      if (hasRedactedPlaceholder(parsed as SettingsObject)) {
+        setMsg({ kind: 'err', text: '补丁不能包含脱敏占位，请填写真实密钥或留空由密钥栏保留' });
         return;
       }
       mergePatch(diff, parsed as SettingsObject);
@@ -324,11 +358,13 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
             `${base}/${encodeURIComponent(cli)}/install/${encodeURIComponent(taskId)}`,
             { cache: 'no-store' },
           );
+          if (cancelledRef.current) return 'stop';
           if (!res.ok) {
             setMsg({ kind: 'err', text: await readError(res) });
             return 'stop';
           }
           const task = (await res.json()) as InstallTask;
+          if (cancelledRef.current) return 'stop';
           if (task.status === 'done') {
             setMsg({ kind: 'ok', text: `${CLI_LABEL[cli]} 任务完成` });
             await load();
@@ -346,6 +382,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
           }
           return 'continue';
         } catch (err) {
+          if (cancelledRef.current) return 'stop';
           setMsg({ kind: 'err', text: err instanceof Error ? err.message : '查询任务失败' });
           return 'stop';
         }
@@ -356,21 +393,29 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       }
       const started = Date.now();
       stopPoll();
-      pollRef.current = setInterval(() => {
-        void (async () => {
-          if (Date.now() - started > POLL_MAX_MS) {
-            stopPoll();
-            setBusy(false);
-            setMsg({ kind: 'err', text: '安装仍在进行，请稍后刷新' });
-            return;
-          }
-          const result = await tick();
-          if (result === 'stop') {
-            stopPoll();
-            setBusy(false);
-          }
-        })();
-      }, POLL_MS);
+      const schedule = () => {
+        pollRef.current = setTimeout(() => {
+          void (async () => {
+            if (cancelledRef.current) {
+              setBusy(false);
+              return;
+            }
+            if (Date.now() - started > POLL_MAX_MS) {
+              stopPoll();
+              setBusy(false);
+              setMsg({ kind: 'err', text: '安装仍在进行，请稍后刷新' });
+              return;
+            }
+            const result = await tick();
+            if (result === 'stop') {
+              setBusy(false);
+              return;
+            }
+            schedule();
+          })();
+        }, POLL_MS);
+      };
+      schedule();
     },
     [base, load, stopPoll],
   );
@@ -524,6 +569,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                 aria-label={`选择 ${CLI_LABEL[cli.id]}`}
                 aria-pressed={selected === cli.id}
                 onClick={() => {
+                  settingsReqRef.current += 1;
                   setSelected(cli.id);
                   setSettingsOpen(false);
                   setSettings(null);
@@ -636,10 +682,10 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
             className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px]"
             aria-label="当前配置只读预览"
           >
-            {JSON.stringify(settings, null, 2)}
+            {previewJson(settings)}
           </pre>
           <label className="block text-[11px] text-muted-foreground">
-            可选 JSON 补丁
+            可选 JSON 补丁（同键以补丁为准）
             <Textarea
               value={jsonPatch}
               onChange={(e) => setJsonPatch(e.target.value)}

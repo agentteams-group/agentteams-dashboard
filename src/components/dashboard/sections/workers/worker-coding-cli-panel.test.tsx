@@ -79,6 +79,9 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     expect(await screen.findByLabelText(/api_key/)).toBeInTheDocument();
+    const preview = screen.getByLabelText('当前配置只读预览');
+    expect(preview).toHaveTextContent('***');
+    expect(preview.textContent).not.toMatch(/"redacted"/);
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
     await waitFor(() => {
       const put = calls.find((c) => c.method === 'PUT');
@@ -226,7 +229,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     expect(await screen.findByLabelText('当前配置只读预览')).toHaveTextContent('temperature');
-    fireEvent.change(screen.getByLabelText('可选 JSON 补丁'), {
+    fireEvent.change(screen.getByLabelText(/可选 JSON 补丁/), {
       target: { value: '{"mcp":{"enabled":true}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
@@ -258,6 +261,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     expect(await screen.findByText('boom')).toBeInTheDocument();
     expect(screen.queryByLabelText(/api_key/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('当前配置只读预览')).not.toBeInTheDocument();
+    expect(screen.queryByText('加载 settings…')).not.toBeInTheDocument();
   });
 
   it('⑭ settings 404 → 占位横幅', async () => {
@@ -315,5 +319,74 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     expect(await screen.findByText(/先安装当前 CLI/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '鸿蒙 AI 开发' })).toBeDisabled();
+  });
+
+  it('⑱ 慢请求返回后不覆盖后点开的 CLI settings', async () => {
+    let releaseQwen = () => {};
+    const qwenHold = new Promise<void>((resolve) => {
+      releaseQwen = resolve;
+    });
+    const both = {
+      clis: [
+        { id: 'qwen-code', installed: true, version: '0.25.0' },
+        { id: 'opencode', installed: true, version: '1.0.0' },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        const body = typeof init?.body === 'string' ? init.body : undefined;
+        calls.push({ url, method, body });
+        if (url.endsWith('/coding-cli')) {
+          return { ok: true, status: 200, json: async () => both } as Response;
+        }
+        if (url.includes('qwen-code/settings')) {
+          await qwenHold;
+          return { ok: true, status: 200, json: async () => SETTINGS } as Response;
+        }
+        if (url.includes('opencode/settings')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ model: { name: 'opencode-model' } }),
+          } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      }),
+    );
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 OpenCode 配置' }));
+    expect(await screen.findByLabelText('当前配置只读预览')).toHaveTextContent('opencode-model');
+    releaseQwen();
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/api_key/)).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('当前配置只读预览')).toHaveTextContent('opencode-model');
+  });
+
+  it('⑲ JSON 补丁含脱敏占位则拒绝 PUT', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    await screen.findByLabelText('当前配置只读预览');
+    fireEvent.change(screen.getByLabelText(/可选 JSON 补丁/), {
+      target: { value: '{"api_key":{"redacted":true,"has_value":true}}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    expect(await screen.findByText(/补丁不能包含脱敏占位/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('⑳ 通用 Coding 空补丁不发 PUT', async () => {
+    mockFetch([{ status: 200, body: PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '通用 Coding（最小形态）' }));
+    expect(await screen.findByText(/已套用 通用 Coding/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
   });
 });

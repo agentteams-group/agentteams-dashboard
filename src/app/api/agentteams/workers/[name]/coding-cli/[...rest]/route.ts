@@ -13,20 +13,19 @@ import { isCodingCliId } from '@/lib/coding-cli-presets';
 // CLI 白名单：qwen-code、opencode。其余 rest 组合 400。
 
 interface Endpoint {
-  method: 'GET' | 'PUT' | 'POST';
-  forwardBody: boolean;
+  method: 'GET' | 'POST';
 }
 
 function resolveEndpoint(rest: string[]): Endpoint | null {
   if (rest.length < 2 || !isCodingCliId(rest[0])) return null;
   if (rest.length === 2 && rest[1] === 'settings') {
-    return { method: 'GET', forwardBody: false };
+    return { method: 'GET' };
   }
   if (rest.length === 2 && rest[1] === 'install') {
-    return { method: 'POST', forwardBody: true };
+    return { method: 'POST' };
   }
   if (rest.length === 3 && rest[1] === 'install') {
-    return { method: 'GET', forwardBody: false };
+    return { method: 'GET' };
   }
   return null;
 }
@@ -37,6 +36,16 @@ function pathFor(name: string, rest: string[]): string {
   return `/api/v1/workers/${seg(name)}/coding-cli/${rest.map(seg).join('/')}`;
 }
 
+function isValidTaskId(s: string): boolean {
+  return (
+    s !== '.' &&
+    s !== '..' &&
+    s.length > 0 &&
+    s.length <= 128 &&
+    /^[A-Za-z0-9._:+%=-]+$/.test(s)
+  );
+}
+
 async function parseNameRest(
   params: Promise<{ name: string; rest: string[] }>,
 ): Promise<{ name: string; rest: string[] } | NextResponse> {
@@ -44,9 +53,11 @@ async function parseNameRest(
   if (!isValidNameSegment(name)) {
     return NextResponse.json({ error: '非法 Worker 名' }, { status: 400 });
   }
-  for (const s of rest) {
-    if (!isValidNameSegment(s)) {
-      return NextResponse.json({ error: '非法路径段' }, { status: 400 });
+  for (let i = 0; i < rest.length; i++) {
+    const allowTaskId = i === 2 && rest[1] === 'install';
+    const ok = allowTaskId ? isValidTaskId(rest[i]) : isValidNameSegment(rest[i]);
+    if (!ok) {
+      return NextResponse.json({ error: allowTaskId ? '非法任务 ID' : '非法路径段' }, { status: 400 });
     }
   }
   return { name, rest };
