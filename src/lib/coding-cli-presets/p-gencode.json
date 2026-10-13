@@ -2,12 +2,18 @@
   "id": "p-gencode",
   "name": { "zh-CN": "通用 Coding（最小形态）", "en-US": "General Coding (minimal)" },
   "description": {
-    "zh-CN": "最小 preset：仅 auth+model（= 安装后默认态，preset 不额外写 settings）。"
+    "zh-CN": "最小 preset：仅 auth+model（= 安装后默认态，preset 不额外写 settings）。用作状态卡「当前 preset = None」的显式回退。",
+    "en-US": "Minimal preset: auth+model only (= post-install default; preset writes no extra settings). Serves as the explicit fallback shown as 'current preset = None'."
+  },
+  "team_mapping": {
+    "team": "any",
+    "workers": ["any worker"],
+    "note": { "zh-CN": "任意 team 任意 worker", "en-US": "any team, any worker" }
   },
   "settings_patch": {},
   "toolchain": {
     "shared_volume": null,
-    "install": { "zh-CN": "无" },
+    "install": { "zh-CN": "无", "en-US": "none" },
     "env": {},
     "human_confirm": false,
     "note": null

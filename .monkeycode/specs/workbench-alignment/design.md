@@ -157,7 +157,12 @@ interface InstallTask {
 interface CodingCliPreset {
   id: string;
   name: { 'zh-CN': string; 'en-US'?: string };
-  description?: { 'zh-CN': string };
+  description?: { 'zh-CN': string; 'en-US'?: string };
+  team_mapping?: {
+    team: string;
+    workers: string[];
+    note?: { 'zh-CN': string; 'en-US'?: string };
+  };
   settings_patch: SettingsObject;
   toolchain: {
     shared_volume?: string | null;
@@ -172,6 +177,8 @@ interface CodingCliPreset {
     note?: string | null;
   };
   artifacts?: { minio_path?: string; note?: string };
+  arch_note?: { 'zh-CN': string; 'en-US'?: string };
+  discipline?: { 'zh-CN': string; 'en-US'?: string };
 }
 ```
 

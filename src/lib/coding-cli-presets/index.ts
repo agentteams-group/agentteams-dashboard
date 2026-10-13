@@ -28,6 +28,7 @@ export type {
   InstallRequest,
   InstallTask,
   Localized,
+  PresetTeamMapping,
   Redacted,
   SettingsObject,
   SettingsValue,
