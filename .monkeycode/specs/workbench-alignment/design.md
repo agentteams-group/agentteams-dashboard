@@ -157,14 +157,19 @@ interface InstallTask {
 interface CodingCliPreset {
   id: string;
   name: { 'zh-CN': string; 'en-US'?: string };
-  description?: { 'zh-CN': string };
+  description?: { 'zh-CN': string; 'en-US'?: string };
+  team_mapping?: {
+    team: string;
+    workers: string[];
+    note?: { 'zh-CN': string; 'en-US'?: string };
+  };
   settings_patch: SettingsObject;
   toolchain: {
     shared_volume?: string | null;
-    install?: { 'zh-CN': string };
+    install?: { 'zh-CN': string; 'en-US'?: string };
     env?: Record<string, string>;
     human_confirm: boolean;
-    note?: { 'zh-CN': string } | string | null;
+    note?: { 'zh-CN': string; 'en-US'?: string } | string | null;
   };
   mcp: {
     suggested: string[];
@@ -172,6 +177,8 @@ interface CodingCliPreset {
     note?: string | null;
   };
   artifacts?: { minio_path?: string; note?: string };
+  arch_note?: { 'zh-CN': string; 'en-US'?: string };
+  discipline?: { 'zh-CN': string; 'en-US'?: string };
 }
 ```
 
@@ -187,6 +194,7 @@ interface CodingCliPreset {
 - 占位文案使用中性产品用语。
 - kube / 非 embedded 的 503、容器不可达的 502 原样透传 status，由面板映射中文说明。
 - qwenpaw / openclaw / coworker / deepseek-harness 共用同一面板，无运行时分支。
+- `team_mapping` / `discipline` 与双语字段为随模板导入的参考数据，Dashboard 不读取；`team_mapping.workers` 是展示标签列表（与真实 Worker id 混排），任何代码都不得把它当作 Worker 名使用。
 
 ## Error Handling
 

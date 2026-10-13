@@ -731,16 +731,25 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       {suggestion && (
         <div className="space-y-1 rounded-md border border-border/60 p-2 text-[11px]">
           <p className="text-muted-foreground">建议清单（需人工确认，未写入 Worker CR）</p>
+          {suggestion.toolchain.shared_volume && (
+            <p>共享卷：{suggestion.toolchain.shared_volume}</p>
+          )}
           {suggestion.toolchain.install && (
             <p>工具链：{localizedText(suggestion.toolchain.install)}</p>
           )}
           {suggestion.toolchain.env && Object.keys(suggestion.toolchain.env).length > 0 && (
             <p>环境变量：{Object.keys(suggestion.toolchain.env).join(', ')}</p>
           )}
+          {suggestion.toolchain.note && (
+            <p>工具链说明：{localizedText(suggestion.toolchain.note)}</p>
+          )}
           {suggestion.mcp.suggested.length > 0 && (
             <p>MCP：{suggestion.mcp.suggested.join('；')}</p>
           )}
           {suggestion.artifacts?.note && <p>产物：{suggestion.artifacts.note}</p>}
+          {suggestion.arch_note && (
+            <p>架构注意：{localizedText(suggestion.arch_note)}</p>
+          )}
         </div>
       )}
 

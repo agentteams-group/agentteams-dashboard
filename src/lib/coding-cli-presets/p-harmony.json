@@ -2,13 +2,23 @@
   "id": "p-harmony",
   "name": { "zh-CN": "鸿蒙 AI 开发", "en-US": "HarmonyOS AI Development" },
   "description": {
-    "zh-CN": "鸿蒙（ArkTS）原生开发 preset。harmony-dev worker 试点主力。"
+    "zh-CN": "鸿蒙（ArkTS）原生开发 preset。",
+    "en-US": "HarmonyOS (ArkTS) native development preset."
+  },
+  "team_mapping": {
+    "team": "sysdev",
+    "workers": ["harmony-dev"],
+    "note": {
+      "zh-CN": "sysdev-team 下 harmony-dev worker；embedded+sysdev MCU 属第①层（工具链共享卷）",
+      "en-US": "Under the sysdev-team harmony-dev worker; embedded+sysdev MCU is layer ① (shared-volume toolchain)"
+    }
   },
   "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
   "toolchain": {
-    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/harmony/",
+    "shared_volume": "/mnt/agentteam/toolchains/harmony/",
     "install": {
-      "zh-CN": "CLT 26.0.0（内嵌 NEXT SDK+hdc）+ JDK 21 + Node 22.20+"
+      "zh-CN": "CLT 26.0.0（内嵌 NEXT SDK+hdc）+ JDK 21 + Node 22.20+（engines 硬要求 + TLS 指纹代际）",
+      "en-US": "CLT 26.0.0 (embedded NEXT SDK + hdc) + JDK 21 + Node 22.20+ (engines hard requirement + TLS fingerprint generation)"
     },
     "env": {
       "DEVECO_CLI_CLT_PATH": "<shared_volume>/clt",
@@ -17,18 +27,25 @@
       "DEVECO_CLI_DISABLE_TELEMETRY": "1"
     },
     "human_confirm": true,
-    "note": { "zh-CN": "工具链动 CR（env）需人工确认，preset 只生成建议清单" }
+    "note": {
+      "zh-CN": "工具链动 CR（env）= 团队级决策，preset 只生成建议清单，不自动执行",
+      "en-US": "Toolchain changes touch the CR (env) = team-level decision; preset only generates the suggestion list, never auto-applies"
+    }
   },
   "mcp": {
     "suggested": [
-      "devecocli serve（官方 stdio MCP 主锚）",
+      "devecocli serve（官方 stdio MCP 主锚：ArkTS LSP check/hover/definition + clangd + 文档）",
       "devecocli-mcp（可选，capability_search）"
     ],
     "human_confirm": true,
-    "note": "走现有 MCP 绑定入口手动确认"
+    "note": "走现有 McpSelector 链手动绑定，零新接口"
+  },
+  "discipline": {
+    "zh-CN": "docs-first + check 零错 + 构建通过 = 硬验收门（注入 worker SOUL/skill）",
+    "en-US": "docs-first + zero check errors + build pass = hard acceptance gate (injected into worker SOUL/skill)"
   },
   "artifacts": {
     "minio_path": "teams/<team>/artifacts/harmony/",
-    "note": "HAP 包"
+    "note": "HAP 包 → MinIO → 工作台审批"
   }
 }

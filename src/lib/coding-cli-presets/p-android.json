@@ -2,22 +2,32 @@
   "id": "p-android",
   "name": { "zh-CN": "Android 开发", "en-US": "Android Development" },
   "description": {
-    "zh-CN": "Android 原生开发 preset。SDK cmdline-tools 共享卷 + 可选 adb 设备 MCP。"
+    "zh-CN": "Android 原生开发 preset。SDK cmdline-tools 共享卷 + 可选 adb 设备 MCP。",
+    "en-US": "Android native development preset. SDK cmdline-tools on shared volume + optional adb device MCP."
+  },
+  "team_mapping": {
+    "team": "sysdev",
+    "workers": ["android-dev"],
+    "note": { "zh-CN": "sysdev 扩展", "en-US": "sysdev extension" }
   },
   "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
   "toolchain": {
-    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/android/",
+    "shared_volume": "/mnt/agentteam/toolchains/android/",
     "install": {
-      "zh-CN": "Android SDK cmdline-tools + JDK 17 → 共享卷"
+      "zh-CN": "Android SDK cmdline-tools + JDK 17 → 共享卷（大件）",
+      "en-US": "Android SDK cmdline-tools + JDK 17 → shared volume (large)"
     },
     "env": { "ANDROID_HOME": "<shared_volume>/android-sdk" },
     "human_confirm": true,
-    "note": { "zh-CN": "工具链动 CR（env）需人工确认，preset 只生成建议清单" }
+    "note": {
+      "zh-CN": "工具链动 CR（env）= 团队级决策，preset 只生成建议清单",
+      "en-US": "Toolchain changes touch the CR (env) = team-level decision; preset only generates the suggestion list"
+    }
   },
   "mcp": {
     "suggested": ["SDK 文档库 MCP（API 文档检索）", "adb 设备 MCP（可选，真机/模拟器）"],
     "human_confirm": true,
-    "note": "走现有 MCP 绑定入口手动确认"
+    "note": "走现有 McpSelector 链手动绑定"
   },
   "artifacts": {
     "minio_path": "teams/<team>/artifacts/android/",

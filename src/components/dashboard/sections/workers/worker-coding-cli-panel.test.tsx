@@ -158,6 +158,23 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     });
     expect(await screen.findByText(/建议清单（需人工确认/)).toBeInTheDocument();
     expect(screen.getByText(/CLT 26.0.0/)).toBeInTheDocument();
+    expect(screen.getByText(/\/mnt\/agentteam\/toolchains\/harmony\//)).toBeInTheDocument();
+    expect(screen.getByText(/团队级决策/)).toBeInTheDocument();
+  });
+
+  it('⑦b 应用 MCU/Embedded preset → 建议清单含共享卷与架构注意', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { ok: true } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'MCU / Embedded' }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+    expect(await screen.findByText(/建议清单（需人工确认/)).toBeInTheDocument();
+    expect(screen.getByText(/\/mnt\/agentteam\/toolchains\/embedded\//)).toBeInTheDocument();
+    expect(screen.getByText(/useRipgrep:false/)).toBeInTheDocument();
   });
 
   it('⑧ auth_configured 且未安装 → 重装提示', async () => {

@@ -13,7 +13,7 @@ export const CODING_CLI_PRESETS: CodingCliPreset[] = [
   pIos,
   pEmbedded,
   pGencode,
-] as CodingCliPreset[];
+];
 
 export {
   CODING_CLI_IDS,
@@ -28,6 +28,7 @@ export type {
   InstallRequest,
   InstallTask,
   Localized,
+  PresetTeamMapping,
   Redacted,
   SettingsObject,
   SettingsValue,

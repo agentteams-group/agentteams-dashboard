@@ -2,22 +2,32 @@
   "id": "p-web",
   "name": { "zh-CN": "网站开发", "en-US": "Web Development" },
   "description": {
-    "zh-CN": "Web 前端/全栈开发 preset。Node 24.5+ 指纹代际 + 浏览器 MCP 验证闭环。"
+    "zh-CN": "Web 前端/全栈开发 preset。Node 24.5+ 指纹代际 + 浏览器 MCP 验证闭环。",
+    "en-US": "Web front-end/full-stack preset. Node 24.5+ (fingerprint generation) + browser MCP verification loop."
+  },
+  "team_mapping": {
+    "team": "sysdev",
+    "workers": ["web front-end / full-stack worker"],
+    "note": { "zh-CN": "sysdev web 前端/全栈 worker", "en-US": "sysdev web front-end / full-stack worker" }
   },
   "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
   "toolchain": {
-    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/web/",
+    "shared_volume": "/mnt/agentteam/toolchains/web/",
     "install": {
-      "zh-CN": "Node 24.5+（共享卷或 nvm-in-container）；pnpm/corepack 随场景"
+      "zh-CN": "Node 24.5+（指纹代际；容器不 apt 系统包，走共享卷或 nvm-in-container）；pnpm/corepack 随场景",
+      "en-US": "Node 24.5+ (fingerprint generation; no apt system packages in container — shared volume or nvm-in-container); pnpm/corepack per scenario"
     },
     "env": {},
     "human_confirm": true,
-    "note": { "zh-CN": "工具链动 CR（env）需人工确认，preset 只生成建议清单" }
+    "note": {
+      "zh-CN": "工具链动 CR（env）= 团队级决策，preset 只生成建议清单",
+      "en-US": "Toolchain changes touch the CR (env) = team-level decision; preset only generates the suggestion list"
+    }
   },
   "mcp": {
     "suggested": ["浏览器 MCP（playwright 类，UI 验证闭环）", "部署目标 MCP（视场景）"],
     "human_confirm": true,
-    "note": "走现有 MCP 绑定入口手动确认"
+    "note": "走现有 McpSelector 链手动绑定"
   },
   "artifacts": {
     "minio_path": "teams/<team>/artifacts/web/",

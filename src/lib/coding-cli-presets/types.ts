@@ -41,10 +41,17 @@ export interface InstallTask {
   stderr?: string;
 }
 
+export interface PresetTeamMapping {
+  team: string;
+  workers: string[];
+  note?: Localized;
+}
+
 export interface CodingCliPreset {
   id: string;
   name: Localized;
   description?: Localized;
+  team_mapping?: PresetTeamMapping;
   settings_patch: SettingsObject;
   toolchain: {
     shared_volume?: string | null;
@@ -60,6 +67,7 @@ export interface CodingCliPreset {
   };
   artifacts?: { minio_path?: string; note?: string };
   arch_note?: Localized;
+  discipline?: Localized;
 }
 
 export function localizedText(value: Localized | null | undefined): string {
