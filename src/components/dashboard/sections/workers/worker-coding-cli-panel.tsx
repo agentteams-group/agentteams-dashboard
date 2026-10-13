@@ -171,6 +171,17 @@ function hasRedactedPlaceholder(value: SettingsValue): boolean {
   return false;
 }
 
+function previewJson(settings: SettingsObject): string {
+  return JSON.stringify(
+    settings,
+    (_key, value) => {
+      if (isRedacted(value)) return value.has_value ? '***' : null;
+      return value;
+    },
+    2,
+  );
+}
+
 export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
@@ -255,12 +266,14 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         }
         if (res.status === 403) {
           setReadOnly(true);
+          setSettingsOpen(false);
           setMsg({ kind: 'err', text: '当前角色仅可查看，不能修改编码 CLI' });
           return;
         }
         if (!res.ok) {
           const text = await readError(res);
           if (cancelledRef.current || reqId !== settingsReqRef.current) return;
+          setSettingsOpen(false);
           setMsg({ kind: 'err', text });
           return;
         }
@@ -271,6 +284,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         setSecrets({});
       } catch (err) {
         if (cancelledRef.current || reqId !== settingsReqRef.current) return;
+        setSettingsOpen(false);
         setMsg({ kind: 'err', text: err instanceof Error ? err.message : '加载 settings 失败' });
       }
     },
@@ -668,10 +682,10 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
             className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px]"
             aria-label="当前配置只读预览"
           >
-            {JSON.stringify(settings, null, 2)}
+            {previewJson(settings)}
           </pre>
           <label className="block text-[11px] text-muted-foreground">
-            可选 JSON 补丁
+            可选 JSON 补丁（同键以补丁为准）
             <Textarea
               value={jsonPatch}
               onChange={(e) => setJsonPatch(e.target.value)}

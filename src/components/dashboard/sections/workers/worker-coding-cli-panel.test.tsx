@@ -79,6 +79,9 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     expect(await screen.findByLabelText(/api_key/)).toBeInTheDocument();
+    const preview = screen.getByLabelText('当前配置只读预览');
+    expect(preview).toHaveTextContent('***');
+    expect(preview.textContent).not.toMatch(/"redacted"/);
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
     await waitFor(() => {
       const put = calls.find((c) => c.method === 'PUT');
@@ -226,7 +229,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     expect(await screen.findByLabelText('当前配置只读预览')).toHaveTextContent('temperature');
-    fireEvent.change(screen.getByLabelText('可选 JSON 补丁'), {
+    fireEvent.change(screen.getByLabelText(/可选 JSON 补丁/), {
       target: { value: '{"mcp":{"enabled":true}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
@@ -258,6 +261,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     expect(await screen.findByText('boom')).toBeInTheDocument();
     expect(screen.queryByLabelText(/api_key/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('当前配置只读预览')).not.toBeInTheDocument();
+    expect(screen.queryByText('加载 settings…')).not.toBeInTheDocument();
   });
 
   it('⑭ settings 404 → 占位横幅', async () => {
@@ -370,7 +374,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     render(<WorkerCodingCliPanel workerName="w1" />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     await screen.findByLabelText('当前配置只读预览');
-    fireEvent.change(screen.getByLabelText('可选 JSON 补丁'), {
+    fireEvent.change(screen.getByLabelText(/可选 JSON 补丁/), {
       target: { value: '{"api_key":{"redacted":true,"has_value":true}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));

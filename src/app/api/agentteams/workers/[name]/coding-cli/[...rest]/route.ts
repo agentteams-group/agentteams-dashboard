@@ -13,7 +13,7 @@ import { isCodingCliId } from '@/lib/coding-cli-presets';
 // CLI 白名单：qwen-code、opencode。其余 rest 组合 400。
 
 interface Endpoint {
-  method: 'GET' | 'PUT' | 'POST';
+  method: 'GET' | 'POST';
 }
 
 function resolveEndpoint(rest: string[]): Endpoint | null {
@@ -37,7 +37,13 @@ function pathFor(name: string, rest: string[]): string {
 }
 
 function isValidTaskId(s: string): boolean {
-  return s.length > 0 && s.length <= 128 && /^[A-Za-z0-9._:+%=-]+$/.test(s);
+  return (
+    s !== '.' &&
+    s !== '..' &&
+    s.length > 0 &&
+    s.length <= 128 &&
+    /^[A-Za-z0-9._:+%=-]+$/.test(s)
+  );
 }
 
 async function parseNameRest(

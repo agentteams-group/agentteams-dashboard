@@ -131,6 +131,12 @@ describe('B7 /workers/[name]/coding-cli/[...rest] 白名单', () => {
     expect(proxyToAgentTeams).not.toHaveBeenCalled();
   });
 
+  it.each(['.', '..'])('非法 task_id %s → 400 零透传', async (taskId) => {
+    const res = await call(GET, 'GET', 'w1', ['qwen-code', 'install', taskId]);
+    expect(res.status).toBe(400);
+    expect(proxyToAgentTeams).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['qoder 不在白名单', ['qoder', 'settings']],
     ['未知子路径', ['qwen-code', 'bogus']],
