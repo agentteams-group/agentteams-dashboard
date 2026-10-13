@@ -1,0 +1,24 @@
+{
+  "id": "p-gencode",
+  "name": { "zh-CN": "通用 Coding（最小形态）", "en-US": "General Coding (minimal)" },
+  "description": {
+    "zh-CN": "最小 preset：仅 auth+model（= 安装后默认态，preset 不额外写 settings）。"
+  },
+  "settings_patch": {},
+  "toolchain": {
+    "shared_volume": null,
+    "install": { "zh-CN": "无" },
+    "env": {},
+    "human_confirm": false,
+    "note": null
+  },
+  "mcp": {
+    "suggested": [],
+    "human_confirm": false,
+    "note": null
+  },
+  "artifacts": {
+    "minio_path": "teams/<team>/artifacts/gencode/",
+    "note": "任意代码产物"
+  }
+}

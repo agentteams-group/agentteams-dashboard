@@ -1,0 +1,34 @@
+{
+  "id": "p-harmony",
+  "name": { "zh-CN": "鸿蒙 AI 开发", "en-US": "HarmonyOS AI Development" },
+  "description": {
+    "zh-CN": "鸿蒙（ArkTS）原生开发 preset。harmony-dev worker 试点主力。"
+  },
+  "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
+  "toolchain": {
+    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/harmony/",
+    "install": {
+      "zh-CN": "CLT 26.0.0（内嵌 NEXT SDK+hdc）+ JDK 21 + Node 22.20+"
+    },
+    "env": {
+      "DEVECO_CLI_CLT_PATH": "<shared_volume>/clt",
+      "DEVECO_CLI_DATA_DIR": "<shared_volume>/data",
+      "JAVA_HOME": "<shared_volume>/jdk21",
+      "DEVECO_CLI_DISABLE_TELEMETRY": "1"
+    },
+    "human_confirm": true,
+    "note": { "zh-CN": "工具链动 CR（env）需人工确认，preset 只生成建议清单" }
+  },
+  "mcp": {
+    "suggested": [
+      "devecocli serve（官方 stdio MCP 主锚）",
+      "devecocli-mcp（可选，capability_search）"
+    ],
+    "human_confirm": true,
+    "note": "走现有 MCP 绑定入口手动确认"
+  },
+  "artifacts": {
+    "minio_path": "teams/<team>/artifacts/harmony/",
+    "note": "HAP 包"
+  }
+}

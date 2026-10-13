@@ -1,0 +1,26 @@
+{
+  "id": "p-ios",
+  "name": { "zh-CN": "iOS 开发", "en-US": "iOS Development" },
+  "description": {
+    "zh-CN": "iOS 开发 preset（受限：签名/模拟器 macOS only）。Linux worker 侧只做代码+文档级验证，构建签名回 macOS 侧。"
+  },
+  "settings_patch": { "model": { "name": "qwen3.6-27b-fp8" } },
+  "toolchain": {
+    "shared_volume": "/mnt/SRAIDZ1/AgentTeam/toolchains/ios/",
+    "install": {
+      "zh-CN": "Swift 文档库（离线）→ 共享卷；Linux 容器内无 Xcode，明确边界"
+    },
+    "env": {},
+    "human_confirm": true,
+    "note": { "zh-CN": "边界写死：.ipa 构建/签名必须回 macOS 侧" }
+  },
+  "mcp": {
+    "suggested": ["Apple 文档检索 MCP"],
+    "human_confirm": true,
+    "note": "走现有 MCP 绑定入口手动确认"
+  },
+  "artifacts": {
+    "minio_path": "teams/<team>/artifacts/ios/",
+    "note": "工程快照（.ipa 走 macOS 构建侧）"
+  }
+}
