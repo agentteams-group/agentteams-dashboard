@@ -77,7 +77,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
       { status: 200, body: SETTINGS },
     ]);
     render(<WorkerCodingCliPanel workerName="w1" />);
-    fireEvent.click(await screen.findByRole('button', { name: '编辑配置' }));
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
     expect(await screen.findByText(/api_key/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
     await waitFor(() => {
@@ -103,8 +103,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
       { status: 200, body: PROBE },
     ]);
     render(<WorkerCodingCliPanel workerName="w1" />);
-    const installBtns = await screen.findAllByRole('button', { name: '安装' });
-    fireEvent.click(installBtns[0]);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qwen Code' }));
     expect(await screen.findByText(/任务完成/)).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/qwen-code/install'))).toBe(
       true,
@@ -130,8 +129,7 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
       { status: 200, body: { status: 'failed', stderr: 'npm ETARGET', exit_code: 1 } },
     ]);
     render(<WorkerCodingCliPanel workerName="w1" />);
-    const installBtns = await screen.findAllByRole('button', { name: '安装' });
-    fireEvent.click(installBtns[0]);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qwen Code' }));
     expect(await screen.findByText('npm ETARGET')).toBeInTheDocument();
   });
 
@@ -173,5 +171,48 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     ]);
     render(<WorkerCodingCliPanel workerName="w1" />);
     expect(await screen.findByText(/容器重建后需重新安装/)).toBeInTheDocument();
+  });
+
+  it('⑨ POST 403（Leader 只读）→ 整面板转只读', async () => {
+    mockFetch([
+      {
+        status: 200,
+        body: {
+          clis: [
+            { id: 'qwen-code', installed: false },
+            { id: 'opencode', installed: false },
+          ],
+        },
+      },
+      { status: 403, body: { error: 'forbidden' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qwen Code' }));
+    expect(await screen.findByText('当前角色仅可查看，不能修改编码 CLI')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '安装 Qwen Code' })).toBeDisabled();
+  });
+
+  it('⑩ POST 409 → 占用中说明', async () => {
+    mockFetch([
+      {
+        status: 200,
+        body: {
+          clis: [
+            { id: 'qwen-code', installed: false },
+            { id: 'opencode', installed: false },
+          ],
+        },
+      },
+      { status: 409, body: { error: 'busy' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qwen Code' }));
+    expect(await screen.findByText('该 CLI 已有安装任务进行中')).toBeInTheDocument();
+  });
+
+  it('⑪ GET 502 → 容器不可达文案', async () => {
+    mockFetch([{ status: 502, body: { error: 'unreachable' } }]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    expect(await screen.findByText(/无法在该 Worker 容器内执行管理命令/)).toBeInTheDocument();
   });
 });

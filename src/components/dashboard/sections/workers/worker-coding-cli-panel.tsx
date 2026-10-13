@@ -66,7 +66,7 @@ function ingestProbeItem(item: unknown, into: Map<string, CodingCliProbeItem>) {
   });
 }
 
-export function normalizeProbe(body: unknown): CodingCliProbeItem[] {
+function normalizeProbe(body: unknown): CodingCliProbeItem[] {
   const byId = new Map<string, CodingCliProbeItem>();
   if (Array.isArray(body)) {
     body.forEach((item) => ingestProbeItem(item, byId));
@@ -462,6 +462,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               <button
                 type="button"
                 className="font-mono text-xs"
+                aria-label={`选择 ${CLI_LABEL[cli.id]}`}
                 onClick={() => setSelected(cli.id)}
               >
                 {CLI_LABEL[cli.id]}
@@ -487,6 +488,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                       size="sm"
                       className="h-6 px-2 text-xs"
                       disabled={busy}
+                      aria-label={`编辑 ${CLI_LABEL[cli.id]} 配置`}
                       onClick={() => void loadSettings(cli.id)}
                     >
                       编辑配置
@@ -496,6 +498,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                       size="sm"
                       className="h-6 px-2 text-xs"
                       disabled={busy || readOnly}
+                      aria-label={`卸载 ${CLI_LABEL[cli.id]}`}
                       onClick={() => void runInstall(cli.id, 'uninstall')}
                     >
                       卸载
@@ -507,6 +510,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
                     size="sm"
                     className="h-6 px-2 text-xs"
                     disabled={busy || readOnly}
+                    aria-label={`安装 ${CLI_LABEL[cli.id]}`}
                     onClick={() => void runInstall(cli.id, 'install')}
                   >
                     安装
