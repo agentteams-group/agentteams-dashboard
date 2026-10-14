@@ -156,3 +156,15 @@ Entries discovered by the Agent while performing [specific task description] sho
   - gh release upload 32MB 补丁包在前台 bash 会超时（慢上行），须用 background_terminal_create；GH_TOKEN 需在 workspace 目录取（gh 依赖 git credential）
   - hotfix bundle 已知现象：.next/standalone 根会被 Turbopack 整项目 tracing 污染（server-package.ts 动态 process.cwd() 路径触发），bundle ~32M 含 workspace 杂文件（coverage/logs/dev.log 等）；布局与容器 appDir 兼容、applyHotfix 校验不受影响，beta.2-beta.5 均如此，无需处理
   - 构建号一致性验证法：cat .next/BUILD_ID 与 grep -rhoE "git-[0-9a-f]{7,10}" .next/static/chunks .next/server | sort -u 必须单一值；客户端 1 处内联 + 服务端约 19 处引用
+
+[Project Knowledge Summary]
+- Date: 2026-10-14
+- Context: 新建独立项目 3end-bot（三端 bot）时，用户要求与外仓代码零相关、独立仓库
+- Category: Operations & Deployment | Build Methods | Workflow & Collaboration
+- Instructions:
+  - 参考项目 `github.com/QingJ01/DS-Bot` 本人仓库不存在；实际是 `QingJ01/DS-Bot-App`（fork 自 `Fei2411/DeepSeek-Bot`，插件包名 `ds-bot`，运行在 DeepSeek Harness 上）。可行性评估落在本仓 `docs/at-bot-feasibility-assessment.md`
+  - 三端 bot 位于 `/workspace/3end-bot`，是独立 git 仓库（已 `git init`，分支 main）；外层 `/workspace/.gitignore` 已加 `/3end-bot/` 隔离，主仓不追踪它
+  - 技术栈 npm workspaces + TS 单仓库：`packages/core`（团队/@解析/群聊回合/记忆/LLM）、`packages/server`（原生 node:http，无 web 框架）、`packages/web`（Vite+React）；`packages/desktop`（Electron）与 `packages/mobile`（Expo）刻意不进 workspace，需各自 `npm install`（重型依赖）
+  - 运行：`cd /workspace/3end-bot && npm install && npm run build`（web→packages/web/dist）`&& npm start`（服务端 :8787 同时托管 API 与 web）；开发用 `npm run dev`（server + Vite HMR）
+  - 模型走 OpenAI 兼容 `/chat/completions`，用户自备 key 写 `.env` 的 `USER_LLM_BASE_URL/API_KEY/MODEL`；无 key 时服务端回退 mock 回复，全链路仍可演示。数据落 `data/state.json` + `data/memory/*.md`，`DATA_DIR` 可覆盖
+  - 验证：`npm run typecheck`（tsconfig.base 需 `allowImportingTsExtensions: true`）；群聊默认主管回答，`@Name` 定向，`[PASS]` 静默
