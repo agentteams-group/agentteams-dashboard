@@ -19,7 +19,10 @@ param(
     [string]$Image = "",
     [string]$ControllerUrl = "http://agentteams-controller:8090",
     [string]$MatrixUrl = "http://agentteams-controller:6167",
+    [string]$HigressAdapterMode = "",
+    [string]$AiGatewayUrl = "",
     [string]$AiGatewayAdminUrl = "",
+    [string]$AiGatewayAdminAllowedHosts = "",
     [switch]$LocalOnly
 )
 
@@ -29,6 +32,8 @@ $ErrorActionPreference = "Stop"
 $ContainerName = "agentteams-dashboard"
 $NetworkName = "agentteams-net"
 $DataVolume = "agentteams-dashboard-data"
+$DataMount = "/data/agentteams-dashboard"
+$ConfigFile = "$DataMount/config.json"
 $EnvFile = Join-Path $env:USERPROFILE ".agentteams-dashboard.env"
 $DefaultRegistry = "higress-registry.cn-hangzhou.cr.aliyuncs.com"
 
@@ -43,9 +48,23 @@ if ($env:AGENTTEAMS_DASHBOARD_IMAGE) {
 if ($env:AGENTTEAMS_DASHBOARD_VERSION) {
     $DashboardVersion = $env:AGENTTEAMS_DASHBOARD_VERSION
 }
+if ($env:AGENTTEAMS_HIGRESS_ADAPTER_MODE) {
+    $HigressAdapterMode = $env:AGENTTEAMS_HIGRESS_ADAPTER_MODE
+}
+if ($env:AGENTTEAMS_AI_GATEWAY_URL) {
+    $AiGatewayUrl = $env:AGENTTEAMS_AI_GATEWAY_URL
+}
 if ($env:AGENTTEAMS_AI_GATEWAY_ADMIN_URL) {
     $AiGatewayAdminUrl = $env:AGENTTEAMS_AI_GATEWAY_ADMIN_URL
 }
+if ($env:AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS) {
+    $AiGatewayAdminAllowedHosts = $env:AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS
+}
+if (-not $HigressAdapterMode) {
+    $HigressAdapterMode = "direct"
+}
+# Deployment mode is auto-detected in Do-Install when not set by the operator.
+$script:DeploymentMode = "$env:AGENTTEAMS_DEPLOYMENT_MODE"
 
 # ---------- helpers ----------
 function Write-Info($msg)  { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
@@ -104,6 +123,11 @@ function Build-EnvArgs {
     $envArgs = @(
         "-e", "AGENTTEAMS_CONTROLLER_URL=$ControllerUrl",
         "-e", "NEXT_PUBLIC_MATRIX_API_URL=$MatrixUrl",
+        "-e", "AGENTTEAMS_HIGRESS_ADAPTER_MODE=$HigressAdapterMode",
+        "-e", "AGENTTEAMS_AI_GATEWAY_URL=$AiGatewayUrl",
+        "-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=$AiGatewayAdminAllowedHosts",
+        "-e", "DASHBOARD_CONFIG_FILE=$ConfigFile",
+        "-e", "AGENTTEAMS_DEPLOYMENT_MODE=$script:DeploymentMode",
         "-e", "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org"
     )
 
@@ -166,13 +190,14 @@ function Build-EnvArgs {
     if ($CtrlEnv.ContainsKey("AGENTTEAMS_DEFAULT_MODEL")) { $envArgs += @("-e", "AGENTTEAMS_DEFAULT_MODEL=$($CtrlEnv['AGENTTEAMS_DEFAULT_MODEL'])") }
 
     # Higress Console URL: explicit config takes priority, auto-detect as fallback.
+    # In external adapter mode the embedded Console must never be probed.
     if ($AiGatewayAdminUrl) {
         # Normalize URL: add http:// prefix if missing
         if ($AiGatewayAdminUrl -notmatch "^https?://") {
             $AiGatewayAdminUrl = "http://$AiGatewayAdminUrl"
         }
         $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=$AiGatewayAdminUrl")
-    } else {
+    } elseif ($HigressAdapterMode -ne "external") {
         $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
         if ($higressCheck) {
             $envArgs += @("-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_URL=http://agentteams-controller:8001")
@@ -236,7 +261,7 @@ function Do-Install {
         $higressDefault = ""
         if ($AiGatewayAdminUrl) {
             $higressDefault = $AiGatewayAdminUrl
-        } else {
+        } elseif ($HigressAdapterMode -ne "external") {
             $higressCheck = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8001/ 2>$null
             if ($higressCheck) {
                 $higressDefault = "http://agentteams-controller:8001"
@@ -272,6 +297,18 @@ function Do-Install {
         $ctrlEnv = Get-ControllerEnv -ContainerName "agentteams-controller"
     }
 
+    # Deployment mode: mark embedded when the controller lives on the same
+    # network as the dashboard, otherwise external. Only auto-detect when the
+    # operator has not set AGENTTEAMS_DEPLOYMENT_MODE.
+    if (-not $script:DeploymentMode) {
+        if ($ctrlRunning -and $netExists) {
+            $health = & $DockerCmd exec agentteams-controller wget -q -O- --timeout=2 http://127.0.0.1:8090/healthz 2>$null
+            if ($health) { $script:DeploymentMode = "embedded" }
+        }
+        if (-not $script:DeploymentMode) { $script:DeploymentMode = "external" }
+    }
+    Write-Info "AGENTTEAMS_DEPLOYMENT_MODE=$script:DeploymentMode"
+
     $envArgs = Build-EnvArgs -CtrlEnv $ctrlEnv
 
     # Port binding (default to localhost only)
@@ -282,12 +319,28 @@ function Do-Install {
 
     $portArg = "{0}:3000" -f $portBind
 
+    # Persistent data volume (F-1): the dashboard writes config.json and its
+    # session secret under /data/agentteams-dashboard (must match
+    # configFilePath() in src/lib/backend-config.ts).
+    & $DockerCmd volume create $DataVolume *> $null
+    $volumeArgs = @("-v", "${DataVolume}:${DataMount}")
+
+    # Migration: legacy installs wrote into /app/db inside the same volume.
+    # Detect /app/db contents and bind that mount once so existing files survive
+    # this cycle. Next upgrade drops the legacy bind.
+    $legacyEntries = & $DockerCmd run --rm -v "${DataVolume}:/probe" alpine:latest sh -c 'ls -1A /probe/app 2>/dev/null' 2>$null
+    if ($legacyEntries) {
+        Write-Warn "dashboard data volume has files under /app/db (legacy path); mounting it once so this upgrade does not lose them. Next upgrade will drop the legacy bind."
+        $volumeArgs += @("-v", "${DataVolume}:/app/db")
+    }
+
     Write-Info "Starting $ContainerName..."
     & $DockerCmd run -d `
         --name $ContainerName `
         --restart unless-stopped `
         --network $NetworkName `
         -p $portArg `
+        @volumeArgs `
         @envArgs `
         $Image
 

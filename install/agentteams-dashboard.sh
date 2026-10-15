@@ -469,12 +469,25 @@ recreate_container() {
   # Start container
   info "Starting ${CONTAINER_NAME}..."
   ${DOCKER_CMD} volume create "${DATA_VOLUME}" >/dev/null 2>&1 || true
+
+  # Migration: legacy installs wrote into /app/db inside the same volume.
+  # Detect /app/db contents and bind that mount once so existing files survive
+  # this cycle. Next upgrade drops the legacy bind.
+  local _vol_args=()
+  _vol_args+=(-v "${DATA_VOLUME}:${DATA_MOUNT}")
+  local _legacy_entries
+  _legacy_entries=$(${DOCKER_CMD} run --rm -v "${DATA_VOLUME}:/probe" alpine:latest sh -c 'ls -1A /probe/app 2>/dev/null' 2>/dev/null || true)
+  if [ -n "${_legacy_entries}" ]; then
+    warn "dashboard data volume has files under /app/db (legacy path); mounting it once so this upgrade does not lose them. Next upgrade will drop the legacy bind."
+    _vol_args+=(-v "${DATA_VOLUME}:/app/db")
+  fi
+
   ${DOCKER_CMD} run -d \
     --name "${CONTAINER_NAME}" \
     --restart unless-stopped \
     --network "${NETWORK_NAME}" \
     -p "${_port_prefix}${AGENTTEAMS_PORT_DASHBOARD}:3000" \
-    -v "${DATA_VOLUME}:${DATA_MOUNT}" \
+    "${_vol_args[@]}" \
     "${env_args[@]}" \
     "${AGENTTEAMS_DASHBOARD_IMAGE}"
 
