@@ -61,6 +61,7 @@ const ModelsSection = lazy(() => import('./sections/models-section').then(m => (
 const ChatSection = lazy(() => import('./sections/chat/ChatSection').then(m => ({ default: m.ChatSection })));
 const TasksSection = lazy(() => import('./sections/tasks-section').then(m => ({ default: m.TasksSection })));
 const ArtifactsSection = lazy(() => import('./sections/artifacts-section').then(m => ({ default: m.ArtifactsSection })));
+const CodingRunsSection = lazy(() => import('./sections/coding-runs-section').then(m => ({ default: m.CodingRunsSection })));
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
 
@@ -68,6 +69,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
   tasks: TasksSection,
   artifacts: ArtifactsSection,
+  'coding-runs': CodingRunsSection,
   workers: WorkersSection,
   skills: ResourceCenterSection,
   teams: TeamsSection,

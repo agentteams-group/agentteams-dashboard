@@ -181,6 +181,16 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 | settings | `GET/PUT /api/agentteams/workers/{name}/coding-cli/{cli}/settings`（`{cli}` ∈ qwen-code, opencode, qoder） | 同构；PUT 深度合并，脱敏键留空发哨兵 `***` | `[...rest]/route.ts` 白名单 + 面板 settings 表单 |
 | 异步安装 | `POST .../{cli}/install` → 202 `{task_id}`；`GET .../{cli}/install/{task_id}` | 同构；kube 一律 503，仅 embedded docker 可 exec | 面板 1.5s 轮询，满 5 分钟提示稍后刷新 |
 
+### 编码执行记录与 LLM 调优（#146，上游 @ `d84e839`）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 编码执行记录列表 | `GET /api/agentteams/coding-runs` → `[{task_id, run, team?}]`（上限 200，按调用方可读前缀过滤） | `internal/server/coding_runs.go`；注册见 `internal/server/http.go:157-159`；数据在对象存储 `shared/tasks/{taskID}/workspace/coding-cli-logs/` | `coding-runs/route.ts` + route.test.ts |
+| 编码执行记录详情 | `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` → `text/plain` 原始日志字节透传 | 同上；`run` = `run-YYYYMMDD-HHMMSS.log` 文件 | `coding-runs/[taskID]/runs/[run]/route.ts`：taskID / run 本地白名单校验 |
+| 编码执行记录列表字段缺口 | 列表无 worker / status / source CLI / 独立时间字段，时间仅能从文件名推导 | 上游当前契约如此 | `src/lib/coding-runs.ts` + `coding-runs-section.tsx` 注释 |
+| Worker LLM 调优 | `PUT /api/v1/workers/{name}` 请求体可含 10 个 `Llm*` 字段（8 启动期 + 2 流超时） | `api/v1beta1/types.go` WorkerSpec（~195-224）；registry 默认 3/1/10/10/600/5/1/300 | `src/lib/llm-tuning.ts` + `worker-llm-tuning-panel.tsx` |
+| 团队 LLM 默认 | `PUT /api/v1/teams/{name}` 请求体可含同 10 字段（团队默认，被 Worker 覆盖） | `api/v1beta1/types.go` TeamSpec（~511-531）；流超时需 QwenPaw >= 2.2.1 | `team-edit-dialog.tsx` + `llm-tuning-fields.tsx` |
+
 ## 安全边界
 
 - Controller API 使用 Dashboard 服务端代理与授权令牌。

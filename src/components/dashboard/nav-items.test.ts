@@ -10,6 +10,7 @@ describe('Navigation with groups', () => {
       'chat',
       'tasks',
       'artifacts',
+      'coding-runs',
 
       'workers',
       'managers',
@@ -34,6 +35,7 @@ describe('Navigation with groups', () => {
     expect(groupMap.get('chat')).toBe('core');
     expect(groupMap.get('tasks')).toBe('runtime');
     expect(groupMap.get('artifacts')).toBe('runtime');
+    expect(groupMap.get('coding-runs')).toBe('runtime');
     expect(groupMap.get('workers')).toBe('runtime');
     expect(groupMap.get('managers')).toBe('runtime');
     expect(groupMap.get('teams')).toBe('runtime');

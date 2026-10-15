@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/dialog';
 import type { UpdateTeamRequest, WorkerResponse } from '@/lib/agentteams-api';
 import { workerPickerLabel } from '@/components/dashboard/sections/shared/member-picker';
+import { findLlmTuningError, pickLlmTuning, type LlmTuningKey } from '@/lib/llm-tuning';
+import { LlmTuningFields } from '@/components/dashboard/sections/workers/llm-tuning-fields';
 
 export type TeamEditForm = UpdateTeamRequest & { name?: string };
 
@@ -59,6 +61,11 @@ export function TeamEditDialog({
       label: workerPickerLabel(worker.name, worker.model),
     }));
 
+  // 团队级 LLM 默认（#146 缺口 3）：成员 Worker 未显式设置时继承。
+  const llmValues = pickLlmTuning(value);
+  const llmError = findLlmTuningError(llmValues);
+  const handleLlmChange = (key: LlmTuningKey, next: string) => onChange({ ...value, [key]: next });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -82,6 +89,20 @@ export function TeamEditDialog({
               placeholder="团队描述"
               rows={3}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>LLM 调优默认（成员 Worker 未设置时继承）</Label>
+            <LlmTuningFields
+              values={llmValues}
+              onChange={handleLlmChange}
+              disabled={isPending}
+              idPrefix={`team-llm-${teamName ?? 'new'}`}
+            />
+            {llmError && (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                {llmError.label}：{llmError.message}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Workers（从已有 Worker 选择）</Label>
@@ -149,7 +170,7 @@ export function TeamEditDialog({
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={missingWorkerNames.length > 0 || isPending}
+            disabled={missingWorkerNames.length > 0 || isPending || !!llmError}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '更新中...' : '更新'}

@@ -27,6 +27,7 @@ import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialo
 import { toast } from 'sonner';
 import { formatErrorMessage } from '@/lib/api-error';
 import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse, ManagerResponse } from '@/lib/agentteams-api';
+import { pickLlmTuningSet } from '@/lib/llm-tuning';
 import { ITEMS_PER_PAGE, SORT_OPTIONS, type SortKey } from './teams/team-types';
 import {
   filterTeams,
@@ -223,6 +224,8 @@ export function TeamsSection() {
       description: team.description || '',
       leader: team.leaderName ? { name: team.leaderName } : null,
       workerNames: team.workerNames || [],
+      // 回读团队级 LLM 默认；空串不入表单（避免整对象覆盖时把未设置项写成“清除”）。
+      ...pickLlmTuningSet(team),
     });
   }, []);
 

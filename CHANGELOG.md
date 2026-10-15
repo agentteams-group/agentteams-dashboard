@@ -5,6 +5,12 @@
 
 ### Bug Fixes
 
+#### 编码执行记录与 LLM 调优 (#146)
+
+- 新增只读「编码执行」页面：透传上游 `GET /api/v1/coding-runs` 列表（`{task_id, run, team}`，上限 200）与 `GET /api/v1/coding-runs/{taskID}/runs/{run}` 原始日志（`text/plain` 字节透传）；时间从 `run-YYYYMMDD-HHMMSS.log` 文件名推导，详情 path 参数本地白名单校验（防路径穿越），旧 Controller 404 走未部署占位
+- Worker 详情新增「LLM 调优」面板、团队编辑弹窗新增「LLM 默认」字段区：覆盖上游 8 个启动期字段（`llmMaxRetries` / `llmBackoffBase` / `llmBackoffCap` / `llmMaxConcurrent` / `llmMaxQpm` / `llmRateLimitPause` / `llmRateLimitJitter` / `llmAcquireTimeout`）与 2 个流超时字段（`llmStreamFirstContentTimeout` / `llmStreamIdleTimeout`）
+- 值语义对齐上游指针语义：空串 = 清除回 registry 默认，缺省 = 不改动；Worker 面板按字段级 diff 只提交变更键，团队编辑只带非空项
+
 #### Coding CLI 管理补齐 Qoder (#146)
 
 - CLI 白名单由 `qwen-code` / `opencode` 扩展为 `qwen-code` / `opencode` / `qoder`，与上游 Controller CLI registry 对齐
