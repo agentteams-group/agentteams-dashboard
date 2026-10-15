@@ -168,3 +168,13 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 运行：`cd /workspace/3end-bot && npm install && npm run build`（web→packages/web/dist）`&& npm start`（服务端 :8787 同时托管 API 与 web）；开发用 `npm run dev`（server + Vite HMR）
   - 模型走 OpenAI 兼容 `/chat/completions`，用户自备 key 写 `.env` 的 `USER_LLM_BASE_URL/API_KEY/MODEL`；无 key 时服务端回退 mock 回复，全链路仍可演示。数据落 `data/state.json` + `data/memory/*.md`，`DATA_DIR` 可覆盖
   - 验证：`npm run typecheck`（tsconfig.base 需 `allowImportingTsExtensions: true`）；群聊默认主管回答，`@Name` 定向，`[PASS]` 静默
+
+[Project Knowledge Summary]
+- Date: 2026-10-15
+- Context: Discovered by Agent while fixing #138 license and #139 installer drift
+- Category: Workflow & Collaboration | Testing Methods
+- Instructions:
+  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本，额外含待上游化的 Higress external adapter 改动（`AGENTTEAMS_HIGRESS_ADAPTER_MODE` / `AGENTTEAMS_AI_GATEWAY_URL` / `AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS` 及 `DASHBOARD_CONFIG_FILE` 数据卷路径）。上游漂移由 `.github/workflows/upstream-drift.yml` 每周一开 issue 告警，阈值 50 行或 diff 命中 "dashboard"
+  - 对齐方法（3-way rebase）：本仓副本基于上游 `82cbd5f`（#1075 引入 dashboard 集成），该 commit → 本仓副本的差异即"待上游改动集"；用 base/local/upstream 三分支 `git rebase` 将其重放到 upstream main，冲突保留上游新结构（`_ctrl_env_prefix`、QwenPaw/DeepSeek 镜像、`DASHBOARD_SESSION_SECRET` 持久化）再叠加 adapter。残余 diff 约 90 行，adapter 未上游化前每周仍会触发告警
+  - 安装器验证命令（无需 Docker）：`bash -n install/agentteams-install.sh`、`bash scripts/check-docs-consistency.sh`、`bash install/agentteams-dashboard-tests.sh`（60 用例）
+  - 本仓根目录原本缺 `LICENSE`；许可证采用 Apache-2.0（Copyright 2026 AgentTeams Contributors，与上游一致），`package.json` 亦补 `license` 字段
