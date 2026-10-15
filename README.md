@@ -359,7 +359,7 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 ## 📄 License
 
-This project belongs to higress-group. Please refer to the license file in the repository root for details.
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file in the repository root for the full text.
 
 ### Worker environment variables and gateway verification
 

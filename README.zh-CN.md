@@ -314,4 +314,4 @@ docker build -t agentteams-dashboard:local .
 
 ## 📄 许可证
 
-本项目属于 higress-group，具体许可证请参考仓库根目录授权文件。
+本项目采用 Apache License 2.0 许可协议，完整文本见仓库根目录的 [LICENSE](LICENSE) 文件。
