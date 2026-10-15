@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WorkerRuntimeConfigPanel } from './worker-runtime-config-panel';
 
@@ -37,6 +37,13 @@ function mockFetch(results_: FetchResult[]) {
 // default 5s budget occasionally trips on render + waitFor churn. Loosen the
 // budget — assertions and waitFor intervals are unchanged.
 vi.setConfig({ testTimeout: 15_000 });
+
+// A1 (2026-10-14): the ⑥ 409 case failed on CI after ~1s — findByText waits on
+// Testing Library's asyncUtilTimeout (default 1s), not vitest's testTimeout, so
+// the earlier bump above did not cover it. Under parallel load the mocked PUT's
+// async .then chain slips past 1s before setSaveMsg re-renders. Widen only this
+// file (vitest isolates module registry per file).
+configure({ asyncUtilTimeout: 5000 });
 
 describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
   beforeEach(() => {
