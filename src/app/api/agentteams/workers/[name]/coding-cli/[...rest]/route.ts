@@ -10,7 +10,7 @@ import { isCodingCliId } from '@/lib/coding-cli-presets';
 //   PUT  {cli}/settings          — RBAC update worker
 //   POST {cli}/install           — RBAC update worker
 //   GET  {cli}/install/{task_id}
-// CLI 白名单：qwen-code、opencode。其余 rest 组合 400。
+// CLI 白名单：qwen-code、opencode、qoder。其余 rest 组合 400。
 
 interface Endpoint {
   method: 'GET' | 'POST';

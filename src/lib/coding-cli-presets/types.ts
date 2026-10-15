@@ -1,4 +1,4 @@
-export const CODING_CLI_IDS = ['qwen-code', 'opencode'] as const;
+export const CODING_CLI_IDS = ['qwen-code', 'opencode', 'qoder'] as const;
 export type CodingCliId = (typeof CODING_CLI_IDS)[number];
 
 export function isCodingCliId(value: string): value is CodingCliId {

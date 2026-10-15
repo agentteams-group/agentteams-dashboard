@@ -3,6 +3,14 @@
 本文件记录 AgentTeams Dashboard 的版本发布历史。
 ## Unreleased
 
+### Bug Fixes
+
+#### Coding CLI 管理补齐 Qoder (#146)
+
+- CLI 白名单由 `qwen-code` / `opencode` 扩展为 `qwen-code` / `opencode` / `qoder`，与上游 Controller CLI registry 对齐
+- Worker 详情编码 CLI 面板新增 Qoder 行：探测安装/版本、鉴权徽标、安装/卸载与 settings 读写复用既有语义（脱敏键留空保留、`***` 哨兵）
+- 路由白名单仍固定：未列名 CLI id 一律 400 零透传，不放行任何未登记 CLI
+
 ## v1.3.0 (2026-09-30)
 
 自 v1.2.5 以来的功能发布：MCP Server 连接测试补齐（405 修复）、Manager 工作空间文件访问、聊天工作空间文件引用、MCP / 模型可用性语义诚实化。合入前均通过 CI（Lint, Typecheck & Test）与本地 tsc / eslint / vitest 全量验证（234 files / 2160 tests）。

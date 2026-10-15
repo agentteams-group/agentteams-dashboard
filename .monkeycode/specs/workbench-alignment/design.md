@@ -7,7 +7,7 @@ Updated: 2026-10-13
 
 在 Dashboard Worker 详情中新增 Coding CLI 管理面板，经固定路径白名单代理消费 Controller `/api/v1/workers/{name}/coding-cli*`。Controller 端点未合入时走 404 占位；合入后同一面板点亮。六场景 preset 作为静态 JSON 随 Dashboard 打包，应用时只合并写入 `settings.model.name`。
 
-本期消费面与 workbench 插件的 Worker 自管 `/api/coding-cli` 分离：Dashboard 只打 Controller。CLI 白名单为 `qwen-code` 与 `opencode`。
+本期消费面与 workbench 插件的 Worker 自管 `/api/coding-cli` 分离：Dashboard 只打 Controller。CLI 白名单为 `qwen-code`、`opencode` 与 `qoder`。
 
 ## Architecture
 
@@ -61,7 +61,7 @@ sequenceDiagram
 | `/api/agentteams/workers/{name}/coding-cli/{cli}/install` | POST | 同构 | 是 |
 | `/api/agentteams/workers/{name}/coding-cli/{cli}/install/{task_id}` | GET | 同构 | 否 |
 
-`{cli}` 仅 `{qwen-code, opencode}`。`qwen-code` 含连字符，已通过现有 `NAME_PATTERN`。`task_id` 走同一段名规则。
+`{cli}` 仅 `{qwen-code, opencode, qoder}`。`qwen-code` 含连字符，已通过现有 `NAME_PATTERN`。`task_id` 走同一段名规则。`qoder` 于 #146 补齐，与既有 CLI 同级消费 Controller 同一管理面（上游 CLI registry 已含 `qoder`）。
 
 ### 2. Coding CLI 面板
 
@@ -120,7 +120,7 @@ POST body：`{ "action": "install" | "uninstall", "version"?: string }`。接受
 ## Data Models
 
 ```typescript
-type CodingCliId = 'qwen-code' | 'opencode';
+type CodingCliId = 'qwen-code' | 'opencode' | 'qoder';
 
 interface CodingCliProbeItem {
   id: CodingCliId;
@@ -182,7 +182,7 @@ interface CodingCliPreset {
 }
 ```
 
-探测响应若缺 `clis` 数组，面板按空列表渲染白名单两行（均未安装），避免上游字段漂移导致空白。
+探测响应若缺 `clis` 数组，面板按空列表渲染白名单各行（均未安装），避免上游字段漂移导致空白。
 
 ## Correctness Properties
 
@@ -214,10 +214,10 @@ interface CodingCliPreset {
 路由测试 `coding-cli/[...rest]/route.test.ts`（对齐 channels）：
 
 1. GET `[]` 转发探测，`forwardBody: false`。
-2. GET/PUT `{cli}/settings` 仅 `qwen-code`、`opencode`。
+2. GET/PUT `{cli}/settings` 仅 `qwen-code`、`opencode`、`qoder`。
 3. POST `{cli}/install` 调 RBAC 且 `forwardBody: true`。
 4. GET `{cli}/install/{task_id}` 转发。
-5. `qoder`、多余段、非法 Worker 名 → 400，不调 proxy。
+5. 白名单外 CLI id、多余段、非法 Worker 名 → 400，不调 proxy。
 6. PUT/POST 在 RBAC 拒绝时短路，不调 proxy。
 
 面板测试 `worker-coding-cli-panel.test.tsx`（对齐 runtime-config / tools）：
