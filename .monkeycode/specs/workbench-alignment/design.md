@@ -254,7 +254,7 @@ interface CodingCliPreset {
 
 **契约缺口（如实标注，不臆造）**：列表项无 worker / status / source CLI / 独立时间字段，时间只能从 `run-YYYYMMDD-HHMMSS.log` 文件名推导（`parseCodingRunTime`）；详情为未结构化原始日志。待上游补齐字段后再增强。
 
-**安全**：taskID 走 `^[A-Za-z0-9._:+%=-]+$`（排除 `.` / `..`）、`run` 走 `^run-\d{8}-\d{6}\.log$`，不匹配即 400 零透传（防路径穿越）。只读端点无审计（与 chats / checkpoints 一致）。
+**安全**：taskID 走 `^[A-Za-z0-9][A-Za-z0-9._-]*$`（对齐上游 `isSafeTaskID`：首字符字母数字，排除 `.` / `..`）、`run` 走 `^run-\d{8}-\d{6}\.log$`，不匹配即 400 零透传（防路径穿越）。只读端点无审计（与 chats / checkpoints 一致）。
 
 **状态机**：loading / 未部署（上游 404）/ error / empty / ready。旧 Controller 404 → 未部署占位，不报错。
 
