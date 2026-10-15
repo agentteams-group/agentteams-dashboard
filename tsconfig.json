@@ -41,6 +41,7 @@
     "dist",
     "examples",
     "skills",
+    "3end-bot",
     "vitest.config.ts",
     "vitest.setup.ts"
   ]

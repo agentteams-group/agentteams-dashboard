@@ -59,7 +59,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "@typescript-eslint/no-explicit-any": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**"]
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**"]
 }];
 
 export default eslintConfig;
