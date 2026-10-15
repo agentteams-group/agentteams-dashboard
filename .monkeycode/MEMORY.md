@@ -50,6 +50,12 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 仍存在 ensure-ai 三重死链（middleware PUBLIC_PATHS 条目 + agentteams-api.ts 的 ensureAiGateway + integration 测试引用），路由本身不存在，待后续清理
   - 旧条 "GET /api/agentteams/audit 是 admin-only" 已于 2026-09-07 升级为 L2 自审 / L3 全审模型，详见下方 09-07 条目
 
+[User Instruction Summary]
+- Date: 2026-10-15
+- Context: #146 缺口 2/3 修复验证阶段
+- Instructions:
+  - 不要运行对接/集成测试（`test:integration` 等需要真实上游或网络的用例）；验证只用 tsc --noEmit + eslint（改动文件）+ 目标单测
+
 [Project Knowledge Summary]
 - Date: 2026-08-21
 - Context: 修改 Beta 设置与 Overview 运行信息面板时执行构建验证

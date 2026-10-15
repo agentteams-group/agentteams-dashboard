@@ -22,7 +22,22 @@ export interface ExposedPort {
   domain: string;
 }
 
-export interface WorkerResponse {
+// LLM 调优字段（#146 缺口 3）：见 src/lib/llm-tuning.ts。空/缺省 = 未设置
+// （回退团队默认，再回退 QwenPaw registry 默认）。Worker / Team 同构。
+export interface LlmTuningFields {
+  llmMaxRetries?: string;
+  llmBackoffBase?: string;
+  llmBackoffCap?: string;
+  llmMaxConcurrent?: string;
+  llmMaxQpm?: string;
+  llmRateLimitPause?: string;
+  llmRateLimitJitter?: string;
+  llmAcquireTimeout?: string;
+  llmStreamFirstContentTimeout?: string;
+  llmStreamIdleTimeout?: string;
+}
+
+export interface WorkerResponse extends LlmTuningFields {
   env?: Record<string, string>;
   envEditable?: boolean;
   name: string;
@@ -59,7 +74,7 @@ export interface WorkerResponse {
   lastFinishAt?: string;
 }
 
-export interface TeamResponse {
+export interface TeamResponse extends LlmTuningFields {
   name: string;
   teamName: string;
   phase: TeamPhase;
@@ -125,7 +140,8 @@ export interface CreateWorkerRequest {
   containerManaged?: boolean;
 }
 
-export interface UpdateWorkerRequest {
+// LLM 调优（#146 缺口 3）：空串 = 清除回默认；缺省 = 不改动。
+export interface UpdateWorkerRequest extends LlmTuningFields {
   env?: Record<string, string>;
   model?: RequestModelAlias;
   runtime?: WorkerRuntime;
@@ -139,7 +155,7 @@ export interface UpdateWorkerRequest {
   containerManaged?: boolean;
 }
 
-export interface CreateTeamRequest {
+export interface CreateTeamRequest extends LlmTuningFields {
   name: string;
   teamName?: string;
   description?: string;
@@ -153,7 +169,7 @@ export interface CreateTeamRequest {
   defaultWorkerRuntime?: WorkerRuntime;
 }
 
-export interface UpdateTeamRequest {
+export interface UpdateTeamRequest extends LlmTuningFields {
   teamName?: string;
   description?: string;
   leader?: { name: string } | null;
@@ -439,6 +455,14 @@ async function healthRequest(controllerUrl: string): Promise<string> {
   return res.text();
 }
 
+// 编码执行记录（#146 缺口 2）：上游 GET /api/v1/coding-runs 的列表项。
+// 结构受上游契约限制——仅 {task_id, run, team?}，无 worker/status/source CLI。
+export interface CodingRun {
+  task_id: string;
+  run: string;
+  team?: string;
+}
+
 // ============ API Methods ============
 
 export const agentteamsApi = {
@@ -535,6 +559,29 @@ export const agentteamsApi = {
 
   deleteTeam: (name: string) =>
     proxyRequest<void>(`/teams/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  // 编码执行记录（#146 缺口 2，只读）
+  listCodingRuns: () => proxyRequest<CodingRun[]>('/coding-runs'),
+
+  getCodingRunLog: async (taskId: string, run: string, team?: string): Promise<string> => {
+    const qs = team ? `?team=${encodeURIComponent(team)}` : '';
+    const path = `/coding-runs/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(run)}${qs}`;
+    let res: Response;
+    try {
+      res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+    } catch (err) {
+      throw new NetworkError(path, err);
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(
+        `API Error ${res.status}: ${text || res.statusText}`,
+        res.status,
+        path,
+      );
+    }
+    return res.text();
+  },
 
   // Humans
   listHumans: async (): Promise<HumanResponse[]> => {

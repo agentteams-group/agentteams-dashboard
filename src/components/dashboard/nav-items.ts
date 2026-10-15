@@ -9,6 +9,7 @@ import {
   Sparkles,
   ListTodo,
   ScrollText,
+  SquareTerminal,
   type LucideIcon,
 } from 'lucide-react';
 import { ArtifactsBoxIcon } from '@/components/dashboard/artifacts-box-icon';
@@ -49,6 +50,8 @@ export const navItems: NavItem[] = [
   // 数据依赖同样是 Controller 项目端点，故与任务看板同走 taskBoard 标志；
   // 图标为手绘 SVG 箱子（lucide 同款规格）。
   { id: 'artifacts', label: '产物', icon: ArtifactsBoxIcon, group: 'runtime', hiddenByFlag: 'taskBoard' },
+  // 编码执行记录（#146 缺口 2）：编码 CLI 一次性执行记录 + 原始日志（只读）。
+  { id: 'coding-runs', label: '编码执行', icon: SquareTerminal, group: 'runtime' },
 
   { id: 'workers', label: 'Workers', icon: Bot, group: 'runtime' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)

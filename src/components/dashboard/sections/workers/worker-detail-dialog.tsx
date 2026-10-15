@@ -19,6 +19,7 @@ import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerChannelsPanel } from '@/components/dashboard/sections/workers/worker-channels-panel';
 import { WorkerToolsPanel } from '@/components/dashboard/sections/workers/worker-tools-panel';
 import { WorkerCodingCliPanel } from '@/components/dashboard/sections/workers/worker-coding-cli-panel';
+import { WorkerLlmTuningPanel } from '@/components/dashboard/sections/workers/worker-llm-tuning-panel';
 
 const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['名称', (w) => w.name],
@@ -164,6 +165,10 @@ export function WorkerDetailDialog({
               {/* B5: runtime-config 编辑（#1231 消费；上游未合并时 404 占位横幅）。
                   key=worker.name：换 worker 重挂载，编辑态自然清零 */}
               <WorkerRuntimeConfigPanel key={worker.name} workerName={worker.name} />
+
+              {/* 缺口 3: LLM 调优（#146；读回显 + 字段级 diff，归属 Worker→团队→registry）。
+                  key=worker.name：换 worker 重挂载，编辑态自然清零 */}
+              <WorkerLlmTuningPanel key={`llm-${worker.name}`} workerName={worker.name} />
 
               <WorkerSkillAssign worker={worker} onSaved={onSaved} />
 

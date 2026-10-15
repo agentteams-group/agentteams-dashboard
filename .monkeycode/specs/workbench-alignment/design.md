@@ -1,7 +1,7 @@
 # Workbench 对齐（Coding CLI 管理面）
 
 Feature Name: workbench-alignment
-Updated: 2026-10-13
+Updated: 2026-10-15
 
 ## Description
 
@@ -240,6 +240,37 @@ interface CodingCliPreset {
 3. 面板与面板测试。
 4. 挂到 `worker-detail-dialog.tsx`。
 5. 三门验证。
+
+## 增补：#146 缺口 2（编码执行记录）
+
+**位置**：`src/app/api/agentteams/coding-runs/route.ts`、`coding-runs/[taskID]/runs/[run]/route.ts`、`src/components/dashboard/sections/coding-runs-section.tsx`、`src/lib/coding-runs.ts`。
+
+只读消费上游编码执行记录面（`internal/server/coding_runs.go`，注册 `internal/server/http.go:157-159`）：
+
+| Dashboard 路径 | Controller 路径 | 说明 |
+| --- | --- | --- |
+| `GET /api/agentteams/coding-runs` | `GET /api/v1/coding-runs` | `[{task_id, run, team?}]`，上限 200，按调用方可读前缀过滤 |
+| `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` | 同构 | `text/plain` 原始日志字节透传 |
+
+**契约缺口（如实标注，不臆造）**：列表项无 worker / status / source CLI / 独立时间字段，时间只能从 `run-YYYYMMDD-HHMMSS.log` 文件名推导（`parseCodingRunTime`）；详情为未结构化原始日志。待上游补齐字段后再增强。
+
+**安全**：taskID 走 `^[A-Za-z0-9._:+%=-]+$`（排除 `.` / `..`）、`run` 走 `^run-\d{8}-\d{6}\.log$`，不匹配即 400 零透传（防路径穿越）。只读端点无审计（与 chats / checkpoints 一致）。
+
+**状态机**：loading / 未部署（上游 404）/ error / empty / ready。旧 Controller 404 → 未部署占位，不报错。
+
+**导航**：注册于 `nav-items.ts` runtime 分组（id `coding-runs`），在 `agent-teams-dashboard.tsx` 懒加载挂载。
+
+## 增补：#146 缺口 3（LLM 调优）
+
+**位置**：`src/lib/llm-tuning.ts`（字段元数据/校验/diff）、`src/components/dashboard/sections/workers/worker-llm-tuning-panel.tsx`、`workers/llm-tuning-fields.tsx`、`teams/team-edit-dialog.tsx`。
+
+层级对齐上游：Worker 覆盖 → 团队默认 → registry 兜底。10 个字段（8 启动期 + 2 流超时）：
+
+`llmMaxRetries`、`llmBackoffBase`、`llmBackoffCap`、`llmMaxConcurrent`、`llmMaxQpm`、`llmRateLimitPause`、`llmRateLimitJitter`、`llmAcquireTimeout`、`llmStreamFirstContentTimeout`、`llmStreamIdleTimeout`。
+
+**值语义对齐上游指针语义**：空串 = 清除回 registry 默认；缺省 = 不改动。Worker 面板按字段级 diff（`diffLlmTuning`）只提交变更键；团队编辑为整对象覆盖，用 `pickLlmTuningSet` 只带非空项。流超时字段需 QwenPaw >= 2.2.1。
+
+**挂载**：Worker 详情 `worker-detail-dialog.tsx` 内挂载 `WorkerLlmTuningPanel`（key 为 `llm-${worker.name}`，换 Worker 时重挂载）；团队默认在 `team-edit-dialog.tsx` 表单区，校验失败禁用提交。
 
 ## References
 
