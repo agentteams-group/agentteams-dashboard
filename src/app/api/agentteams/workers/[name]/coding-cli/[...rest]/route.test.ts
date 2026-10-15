@@ -54,6 +54,7 @@ describe('B7 /workers/[name]/coding-cli/[...rest] 白名单', () => {
   it.each([
     ['qwen-code', '/api/v1/workers/w1/coding-cli/qwen-code/settings'],
     ['opencode', '/api/v1/workers/w1/coding-cli/opencode/settings'],
+    ['qoder', '/api/v1/workers/w1/coding-cli/qoder/settings'],
   ])('GET %s/settings 转发', async (cli, path) => {
     proxyToAgentTeams.mockResolvedValue(NextResponse.json({}));
     await call(GET, 'GET', 'w1', [cli, 'settings']);
@@ -102,6 +103,24 @@ describe('B7 /workers/[name]/coding-cli/[...rest] 白名单', () => {
     );
   });
 
+  it('qoder 与既有 CLI 同级：PUT settings 与 POST install 均透传', async () => {
+    proxyToAgentTeams.mockResolvedValue(NextResponse.json({}));
+    await call(PUT, 'PUT', 'w1', ['qoder', 'settings'], '{"model":{"name":"qoder-model"}}');
+    expect(proxyToAgentTeams).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      C,
+      '/api/v1/workers/w1/coding-cli/qoder/settings',
+      { forwardBody: true, method: 'PUT' },
+    );
+    await call(POST, 'POST', 'w1', ['qoder', 'install'], '{"action":"install"}');
+    expect(proxyToAgentTeams).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      C,
+      '/api/v1/workers/w1/coding-cli/qoder/install',
+      { forwardBody: true, method: 'POST' },
+    );
+  });
+
   it('GET install/task_id 转发', async () => {
     proxyToAgentTeams.mockResolvedValue(NextResponse.json({ status: 'running' }));
     await call(GET, 'GET', 'w1', ['opencode', 'install', 'task-1']);
@@ -138,7 +157,7 @@ describe('B7 /workers/[name]/coding-cli/[...rest] 白名单', () => {
   });
 
   it.each([
-    ['qoder 不在白名单', ['qoder', 'settings']],
+    ['未知 CLI id 不在白名单', ['cursor', 'settings']],
     ['未知子路径', ['qwen-code', 'bogus']],
     ['超长段', ['qwen-code', 'install', 't1', 'x']],
     ['空 rest', []],

@@ -178,7 +178,7 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 | 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
 |---|---|---|---|
 | CLI 探测 | `GET /api/agentteams/workers/{name}/coding-cli` | `GET /api/v1/workers/{name}/coding-cli`；未合入时 404 占位 | `workers/[name]/coding-cli/route.ts` + `worker-coding-cli-panel.tsx` |
-| settings | `GET/PUT /api/agentteams/workers/{name}/coding-cli/{cli}/settings`（`{cli}` ∈ qwen-code, opencode） | 同构；PUT 深度合并，脱敏键留空发哨兵 `***` | `[...rest]/route.ts` 白名单 + 面板 settings 表单 |
+| settings | `GET/PUT /api/agentteams/workers/{name}/coding-cli/{cli}/settings`（`{cli}` ∈ qwen-code, opencode, qoder） | 同构；PUT 深度合并，脱敏键留空发哨兵 `***` | `[...rest]/route.ts` 白名单 + 面板 settings 表单 |
 | 异步安装 | `POST .../{cli}/install` → 202 `{task_id}`；`GET .../{cli}/install/{task_id}` | 同构；kube 一律 503，仅 embedded docker 可 exec | 面板 1.5s 轮询，满 5 分钟提示稍后刷新 |
 
 ## 安全边界

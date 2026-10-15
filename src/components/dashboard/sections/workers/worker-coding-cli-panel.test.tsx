@@ -7,6 +7,7 @@ const PROBE = {
   clis: [
     { id: 'qwen-code', installed: true, version: '0.25.0', auth_configured: true },
     { id: 'opencode', installed: false, auth_configured: false },
+    { id: 'qoder', installed: true, version: '1.2.3', auth_configured: true },
   ],
 };
 
@@ -49,13 +50,15 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     vi.unstubAllGlobals();
   });
 
-  it('① GET 200 → 渲染两行 CLI 状态', async () => {
+  it('① GET 200 → 渲染三行 CLI 状态（含 Qoder）', async () => {
     mockFetch([{ status: 200, body: PROBE }]);
     render(<WorkerCodingCliPanel workerName="w1" />);
     expect(await screen.findByText('编码 CLI（探测 / 安装 / 配置）')).toBeInTheDocument();
     expect(screen.getByText('Qwen Code')).toBeInTheDocument();
     expect(screen.getByText('OpenCode')).toBeInTheDocument();
+    expect(screen.getByText('Qoder')).toBeInTheDocument();
     expect(screen.getByText('0.25.0')).toBeInTheDocument();
+    expect(screen.getByText('1.2.3')).toBeInTheDocument();
     expect(screen.getByText('未安装')).toBeInTheDocument();
     expect(calls[0].url).toBe('/api/agentteams/workers/w1/coding-cli');
   });

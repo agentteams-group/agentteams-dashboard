@@ -40,6 +40,7 @@ type LoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 const CLI_LABEL: Record<CodingCliId, string> = {
   'qwen-code': 'Qwen Code',
   opencode: 'OpenCode',
+  qoder: 'Qoder',
 };
 
 const SENTINEL = '***';
@@ -91,7 +92,7 @@ function normalizeProbe(body: unknown): CodingCliProbeItem[] {
       }
     }
   }
-  // 白名单重映射：未知 CLI id 静默丢弃，面板只展示 qwen-code / opencode。
+  // 白名单重映射：未知 CLI id 静默丢弃，面板只展示 qwen-code / opencode / qoder。
   return CODING_CLI_IDS.map((id) => {
     const found = byId.get(id);
     return {
