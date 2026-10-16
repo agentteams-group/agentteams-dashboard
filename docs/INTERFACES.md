@@ -185,9 +185,9 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 
 | 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
 |---|---|---|---|
-| 编码执行记录列表 | `GET /api/agentteams/coding-runs` → `[{task_id, run, team?}]`（上限 200，按调用方可读前缀过滤） | `internal/server/coding_runs.go`；注册见 `internal/server/http.go:157-159`；数据在对象存储 `shared/tasks/{taskID}/workspace/coding-cli-logs/` | `coding-runs/route.ts` + route.test.ts |
-| 编码执行记录详情 | `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` → `text/plain` 原始日志字节透传 | 同上；`run` = `run-YYYYMMDD-HHMMSS.log` 文件 | `coding-runs/[taskID]/runs/[run]/route.ts`：taskID / run 本地白名单校验 |
-| 编码执行记录列表字段缺口 | 列表无 worker / status / source CLI / 独立时间字段，时间仅能从文件名推导 | 上游当前契约如此 | `src/lib/coding-runs.ts` + `coding-runs-section.tsx` 注释 |
+| 编码执行记录列表 | `GET /api/agentteams/coding-runs` → `[{task_id, run, team?, cli?, worker?, status?, exit_code?, started_at?, ended_at?, log_bytes?}]`（上限 200，按调用方可读前缀过滤；v2 元数据来自 `runs.jsonl`，未记录时省略） | `internal/server/coding_runs.go`；注册见 `internal/server/http.go:157-159`；数据在对象存储 `shared/tasks/{taskID}/workspace/coding-cli-logs/` | `coding-runs/route.ts` + route.test.ts |
+| 编码执行记录详情 | `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` → `text/plain` 原始日志字节透传；`?format=json` → 结构化信封 `{task_id, run, team?, meta, input, output}` | 同上；`run` = `run-YYYYMMDD-HHMMSS.log` 文件 | `coding-runs/[taskID]/runs/[run]/route.ts`：taskID / run 本地白名单校验；`format` / `team` 原样转发 |
+| 编码执行记录时间语义 | `started_at` 仅取上游 UTC 值（`runs.jsonl`，`date -u` 写入）；上游明确**不**从 run 文件名推导（容器本地时间，时区不可知），缺省即未知 | 上游 v2 契约 @ `agentscope-ai/AgentTeams#1381`（2026-10-15 合并，merge `f02ac5b2`） | `src/lib/coding-runs.ts`（`parseCodingRunTime` 仅作 v1 降级展示，`formatCodingRunInstant` 转本地） |
 | Worker LLM 调优 | `PUT /api/v1/workers/{name}` 请求体可含 10 个 `Llm*` 字段（8 启动期 + 2 流超时） | `api/v1beta1/types.go` WorkerSpec（~195-224）；registry 默认 3/1/10/10/600/5/1/300 | `src/lib/llm-tuning.ts` + `worker-llm-tuning-panel.tsx` |
 | 团队 LLM 默认 | `PUT /api/v1/teams/{name}` 请求体可含同 10 字段（团队默认，被 Worker 覆盖） | `api/v1beta1/types.go` TeamSpec（~511-531）；流超时需 QwenPaw >= 2.2.1 | `team-edit-dialog.tsx` + `llm-tuning-fields.tsx` |
 

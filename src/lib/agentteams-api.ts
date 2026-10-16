@@ -455,12 +455,97 @@ async function healthRequest(controllerUrl: string): Promise<string> {
   return res.text();
 }
 
-// 编码执行记录（#146 缺口 2）：上游 GET /api/v1/coding-runs 的列表项。
-// 结构受上游契约限制——仅 {task_id, run, team?}，无 worker/status/source CLI。
+// 编码执行记录（#146 缺口 2；上游 v2 契约 @ agentscope-ai/AgentTeams#1381）。
+// 列表项基础字段为 v1 {task_id, run, team?}；v2 元数据为加性字段，来自每个
+// task 的 runs.jsonl 索引，未记录时上游省略（旧 run 降级为 v1）。
+//
+// 注意：上游最终契约**不**从 run 文件名推导 started_at（文件名是容器本地时间，
+// 上游明确拒绝把本地时间当 UTC 呈现）。因此 started_at 仅在有 runs.jsonl 记录
+// 时出现；缺省即“未知”，前端不应伪造。
 export interface CodingRun {
   task_id: string;
   run: string;
   team?: string;
+  cli?: string;
+  worker?: string;
+  status?: CodingRunStatus;
+  exit_code?: number;
+  started_at?: string;
+  ended_at?: string;
+  log_bytes?: number;
+}
+
+export type CodingRunStatus = 'ok' | 'failed' | 'timeout' | 'blocked';
+
+// 详情 ?format=json 信封（上游 codingRunDetail）。meta 无记录时为空对象，
+// input.prompt_available 表示 prompt 是否已镜像可读，output.transcript 为原始日志。
+export interface CodingRunMeta {
+  cli?: string;
+  worker?: string;
+  runner?: string;
+  status?: CodingRunStatus;
+  reason?: string;
+  exit_code?: number;
+  timeout_secs?: number;
+  started_at?: string;
+  ended_at?: string;
+  log_bytes?: number;
+  prompt_file?: string;
+  prompt_sha256?: string;
+}
+
+export interface CodingRunInput {
+  prompt_summary?: string;
+  prompt_sha256?: string;
+  prompt?: string;
+  prompt_available: boolean;
+}
+
+export interface CodingRunOutput {
+  transcript: string;
+  status?: CodingRunStatus;
+  exit_code?: number;
+}
+
+export interface CodingRunDetail {
+  task_id: string;
+  run: string;
+  team?: string;
+  meta: CodingRunMeta;
+  input: CodingRunInput;
+  output: CodingRunOutput;
+}
+
+/**
+ * 拉取单条编码执行记录详情。format='json' 时上游返回结构化信封（v2），
+ * 缺省（不传）返回原始 text/plain。本地校验同路由一致：非 2xx 抛 ApiError。
+ */
+async function fetchCodingRunDetail(
+  taskId: string,
+  run: string,
+  team?: string,
+  format?: 'json',
+): Promise<Response> {
+  const params = new URLSearchParams();
+  if (team) params.set('team', team);
+  if (format) params.set('format', format);
+  const qs = params.toString();
+  const path = `/coding-runs/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(run)}${qs ? `?${qs}` : ''}`;
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+  } catch (err) {
+    throw new NetworkError(path, err);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(
+      `API Error ${res.status}: ${text || res.statusText}`,
+      res.status,
+      path,
+    );
+  }
+  return res;
 }
 
 // ============ API Methods ============
@@ -563,24 +648,31 @@ export const agentteamsApi = {
   // 编码执行记录（#146 缺口 2，只读）
   listCodingRuns: () => proxyRequest<CodingRun[]>('/coding-runs'),
 
-  getCodingRunLog: async (taskId: string, run: string, team?: string): Promise<string> => {
-    const qs = team ? `?team=${encodeURIComponent(team)}` : '';
-    const path = `/coding-runs/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(run)}${qs}`;
-    let res: Response;
-    try {
-      res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
-    } catch (err) {
-      throw new NetworkError(path, err);
+  // 原始日志（v1 默认 text/plain，字节透传）。
+  getCodingRunLog: (taskId: string, run: string, team?: string): Promise<string> =>
+    fetchCodingRunDetail(taskId, run, team).then((res) => res.text()),
+
+  // 详情视图：优先 v2 ?format=json 结构化信封；旧 Controller（忽略 format）
+  // 仍返回 text/plain，此时降级为原始日志（detail=null, text=原始内容）。
+  getCodingRunView: async (
+    taskId: string,
+    run: string,
+    team?: string,
+  ): Promise<{ detail: CodingRunDetail | null; text: string }> => {
+    const res = await fetchCodingRunDetail(taskId, run, team, 'json');
+    const text = await res.text();
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      try {
+        const detail = JSON.parse(text) as CodingRunDetail;
+        if (detail && typeof detail === 'object' && detail.output) {
+          return { detail, text: detail.output.transcript ?? '' };
+        }
+      } catch {
+        // 落回原始文本
+      }
     }
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new ApiError(
-        `API Error ${res.status}: ${text || res.statusText}`,
-        res.status,
-        path,
-      );
-    }
-    return res.text();
+    return { detail: null, text };
   },
 
   // Humans

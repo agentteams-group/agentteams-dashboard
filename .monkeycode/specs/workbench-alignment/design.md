@@ -249,10 +249,16 @@ interface CodingCliPreset {
 
 | Dashboard 路径 | Controller 路径 | 说明 |
 | --- | --- | --- |
-| `GET /api/agentteams/coding-runs` | `GET /api/v1/coding-runs` | `[{task_id, run, team?}]`，上限 200，按调用方可读前缀过滤 |
-| `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` | 同构 | `text/plain` 原始日志字节透传 |
+| `GET /api/agentteams/coding-runs` | `GET /api/v1/coding-runs` | 列表项（v1 基础 + v2 加性元数据），上限 200，按调用方可读前缀过滤 |
+| `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=&format=` | 同构 | 缺省 `text/plain` 原始日志字节透传；`?format=json` 返回结构化信封 |
 
-**契约缺口（如实标注，不臆造）**：列表项无 worker / status / source CLI / 独立时间字段，时间只能从 `run-YYYYMMDD-HHMMSS.log` 文件名推导（`parseCodingRunTime`）；详情为未结构化原始日志。待上游补齐字段后再增强。
+**v2 契约（@ agentscope-ai/AgentTeams#1381，2026-10-15 合并，merge `f02ac5b2`）**：
+
+- 列表加性字段：`cli` / `worker` / `status`（`ok`|`failed`|`timeout`|`blocked`）/ `exit_code` / `started_at` / `ended_at` / `log_bytes`，来自每个 task 的 `runs.jsonl` 索引；旧 run 无记录时上游省略，前端降级为 v1 `{task_id, run, team}`。
+- 详情 `?format=json` 信封：`{task_id, run, team?, meta, input, output}`。`meta` 无记录时为空对象；`input.prompt_available` 表示 prompt 是否镜像可读；`output.transcript` 为原始日志。
+- **时间语义**：`started_at` 仅取上游 UTC 值（`runs.jsonl`，`date -u` 写入）。上游明确拒绝从 run 文件名推导（容器本地时间、时区不可知），缺省即未知。前端 `parseCodingRunTime` 仅作 v1 降级展示，`formatCodingRunInstant` 把上游 UTC 转本地。
+
+**降级**：旧 Controller（忽略 `format`）仍返回 `text/plain`，`getCodingRunView` 按 content-type 判分并回退原始日志渲染，不报错。
 
 **安全**：taskID 走 `^[A-Za-z0-9][A-Za-z0-9._-]*$`（对齐上游 `isSafeTaskID`：首字符字母数字，排除 `.` / `..`）、`run` 走 `^run-\d{8}-\d{6}\.log$`，不匹配即 400 零透传（防路径穿越）。只读端点无审计（与 chats / checkpoints 一致）。
 
