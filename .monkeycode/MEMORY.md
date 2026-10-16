@@ -64,6 +64,7 @@ Entries discovered by the Agent while performing [specific task description] sho
   - typecheck 必须用 ./node_modules/.bin/tsc --noEmit 或 npm run typecheck；直接 npx tsc 会误装废弃的 tsc@2.0.4 包报错
   - vitest 4 已移除 --reporter=basic，直接运行 ./node_modules/.bin/vitest run 或 npm test
   - 验证顺序：typecheck -> eslint（仅改动的文件）-> vitest run（全量 129 文件约 3 分钟）
+  - 组件测试 flake：React 被动 effect（如按 config 变化清空编辑态）可能晚于 screen.findByText 返回才 flush，落在该窗口内的 fireEvent.change 会被随后的重置擦掉，导致保存按钮保持 disabled、点击空转。渲染 + 等表单就绪后先 `await act(async () => {})` 冲掉挂起 effect 再交互，比加大 asyncUtilTimeout 可靠（2026-10-16 修 worker-runtime-config 用例 ⑥）
 
 [Project Knowledge Summary]
 - Date: 2026-08-25
