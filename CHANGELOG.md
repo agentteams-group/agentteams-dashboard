@@ -1,9 +1,19 @@
 # 更新日志
 
 本文件记录 AgentTeams Dashboard 的版本发布历史。
-## Unreleased
+## v1.3.1 (2026-10-16)
+
+自 v1.3.0 以来合入 29 个提交（含 6 个 PR 合并），覆盖 Coding CLI 管理、编码执行记录 v2 契约、LLM 调优、Worker 详情面板稳定性、聊天侧栏房间可见性、PowerShell 安装器平权、许可证与 CI 修复。
 
 ### New Features
+
+#### Coding CLI 管理面板 (#140 #142 #146)
+
+- Worker 详情新增「编码 CLI」面板：透传上游 Controller coding-cli 端点（探测安装/版本、鉴权徽标、settings 读写、异步安装轮询），旧 Controller 404 走未部署占位
+- 路由白名单固定，未列名 CLI id 一律 400 零透传；settings 写入采用 `***` 哨兵与「脱敏键留空保留」语义
+- 白名单由 `qwen-code` / `opencode` 扩展为 `qwen-code` / `opencode` / `qoder`，与上游 Controller CLI registry 对齐
+- 场景预设对齐 workbench main（六个 preset JSON），建议块展示 shared_volume / note / arch_note
+- 评审加固：拒绝 `.` / `..` 等点号 task id、settings 预览按脱敏规则渲染为 `***`、settings 加载失败关闭表单、唯一 action 标签、补齐 403/409 覆盖
 
 #### 编码执行记录消费上游 v2 契约 (#150)
 
@@ -12,19 +22,42 @@
 - 时间语义对齐上游：`started_at` 仅取上游 UTC 值（`runs.jsonl`），不再把 run 文件名的容器本地时间当 UTC 呈现；无记录时仅以文件名做带标注的降级展示
 - 旧 Controller 忽略 `format` 仍返回 `text/plain`，详情自动降级为原始日志渲染，不报错
 
-### Bug Fixes
-
-#### 编码执行记录与 LLM 调优 (#146)
+#### 编码执行记录只读页与 LLM 调优 (#146)
 
 - 新增只读「编码执行」页面：透传上游 `GET /api/v1/coding-runs` 列表（`{task_id, run, team}`，上限 200）与 `GET /api/v1/coding-runs/{taskID}/runs/{run}` 原始日志（`text/plain` 字节透传）；时间从 `run-YYYYMMDD-HHMMSS.log` 文件名推导，详情 path 参数本地白名单校验（防路径穿越），旧 Controller 404 走未部署占位
 - Worker 详情新增「LLM 调优」面板、团队编辑弹窗新增「LLM 默认」字段区：覆盖上游 8 个启动期字段（`llmMaxRetries` / `llmBackoffBase` / `llmBackoffCap` / `llmMaxConcurrent` / `llmMaxQpm` / `llmRateLimitPause` / `llmRateLimitJitter` / `llmAcquireTimeout`）与 2 个流超时字段（`llmStreamFirstContentTimeout` / `llmStreamIdleTimeout`）
 - 值语义对齐上游指针语义：空串 = 清除回 registry 默认，缺省 = 不改动；Worker 面板按字段级 diff 只提交变更键，团队编辑只带非空项
 
-#### Coding CLI 管理补齐 Qoder (#146)
+#### 安装器与许可证
 
-- CLI 白名单由 `qwen-code` / `opencode` 扩展为 `qwen-code` / `opencode` / `qoder`，与上游 Controller CLI registry 对齐
-- Worker 详情编码 CLI 面板新增 Qoder 行：探测安装/版本、鉴权徽标、安装/卸载与 settings 读写复用既有语义（脱敏键留空保留、`***` 哨兵）
-- 路由白名单仍固定：未列名 CLI id 一律 400 零透传，不放行任何未登记 CLI
+- PowerShell dashboard 安装器与 Bash 平权：Higress 外部适配器透传（`AGENTTEAMS_HIGRESS_ADAPTER_MODE` / `AGENTTEAMS_AI_GATEWAY_URL` / `AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS`；external 模式不再探测内嵌 Console）、`AGENTTEAMS_DEPLOYMENT_MODE` 自动探测、数据卷挂载 `/data/agentteams-dashboard` + `DASHBOARD_CONFIG_FILE` 持久化、旧 `/app/db` 一次性兼容挂载
+- `agentteams-install.sh` rebase 到上游 main，保留 Higress 外部适配器 (#139)
+- 新增 Apache-2.0 LICENSE 并订正许可证引用 (#138)
+
+#### 聊天侧栏房间可见性
+
+- `buildRooms` 遍历全部 `managerRoomIds`（含 `leaderDMRoomID`）并按 room id 去重，Manager 管理员私聊房间得以展示；从 `HumanResponse.rooms` 派生 human 类型房间；显示名优先 `meta.roomName`
+- 投影查询失败时侧栏保持可用并展示原因与重试入口，不再静默丢弃 manager/human 房间；`/sync` 缺名房间回填名称与成员数、去除 80 房间上限、并发探测去重；`filterRooms` 同时匹配团队父级与 Worker 名
+
+### Bug Fixes
+
+- Worker 详情 Runtime 配置面板反复「加载中 ↔ 加载失败」并重复请求：approval 面板与 runtime-config 面板同用 `key={worker.name}` 造成兄弟节点键冲突重挂载，approval 键改为 `approval-${worker.name}` 并加回归用例 (#152)
+- Worker 详情弹窗桌面端被基础类 `sm:max-w-lg`（512px）覆盖导致双列面板横向溢出：显式给出 `sm:max-w-[min(100%-2rem,64rem)]`，并加 `overflow-x-hidden` / 内容列 `min-w-0` 兜底 (#156)
+- 编码 CLI 面板对齐 Controller 响应语义 (#154)
+- CI 告警补 repo 上下文（`GH_REPO`），并将独立仓库 `3end-bot/` 排除出根 tsconfig / eslint，使本地 typecheck/lint 与 CI 一致
+
+### Improvements / Maintenance
+
+- 消除 `worker-runtime-config` ⑥（PUT 409）用例的编辑态重置竞态：渲染并等表单就绪后显式 `await act(async () => {})` 冲掉挂起的 passive effect，与调度器负载无关确定性通过（修复 main CI，#155）；此前已将该文件 `asyncUtilTimeout` 放宽至 5s（`e27f9f9`，仅延长等待未触根因）
+- 设计文档订正：coding-runs taskID 正则对齐代码 (#149)、Coding CLI 需求与设计落盘
+- 新增 AT Bot 可行性评估文档，隔离 standalone `3end-bot` 项目
+
+### Contributors
+
+- @nillikechatchat
+- @鸿渐
+- @shiyiyue1102
+- @monkeycode-ai（平台 AI 协作者）
 
 ## v1.3.0 (2026-09-30)
 
