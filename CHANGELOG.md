@@ -3,6 +3,15 @@
 本文件记录 AgentTeams Dashboard 的版本发布历史。
 ## Unreleased
 
+### New Features
+
+#### 编码执行记录消费上游 v2 契约 (#150)
+
+- 列表新增来源 CLI、Worker、状态（成功/失败/超时/受阻）、退出码、起止时间、日志大小（对齐上游 `agentscope-ai/AgentTeams#1381` 的 `runs.jsonl` 元数据）；旧 run 无记录时降级为 v1 `{task_id, run, team}` 展示
+- 详情新增 `?format=json` 结构化视图：渲染 `meta`（CLI/Worker/Runner/状态/退出码/耗时/日志大小）与 `input.prompt`（未镜像时隐藏）；`output.transcript` 保留原始日志
+- 时间语义对齐上游：`started_at` 仅取上游 UTC 值（`runs.jsonl`），不再把 run 文件名的容器本地时间当 UTC 呈现；无记录时仅以文件名做带标注的降级展示
+- 旧 Controller 忽略 `format` 仍返回 `text/plain`，详情自动降级为原始日志渲染，不报错
+
 ### Bug Fixes
 
 #### 编码执行记录与 LLM 调优 (#146)

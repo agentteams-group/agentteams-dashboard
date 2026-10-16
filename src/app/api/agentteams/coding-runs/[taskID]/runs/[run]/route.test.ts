@@ -56,6 +56,22 @@ describe('GET /api/agentteams/coding-runs/[taskID]/runs/[run] (proxy)', () => {
     );
   });
 
+  it('forwards the ?format=json query (v2 envelope)', async () => {
+    await callGet('t1', 'run-20261015-131415.log', 'format=json');
+    expect(fetch).toHaveBeenCalledWith(
+      'http://controller.test/api/v1/coding-runs/t1/runs/run-20261015-131415.log?format=json',
+      expect.anything(),
+    );
+  });
+
+  it('forwards both team and format', async () => {
+    await callGet('t1', 'run-20261015-131415.log', 'team=alpha&format=json');
+    expect(fetch).toHaveBeenCalledWith(
+      'http://controller.test/api/v1/coding-runs/t1/runs/run-20261015-131415.log?team=alpha&format=json',
+      expect.anything(),
+    );
+  });
+
   it('rejects a traversal-y task id without calling upstream', async () => {
     const res = await callGet('..', 'run-20261015-131415.log');
     expect(res.status).toBe(400);

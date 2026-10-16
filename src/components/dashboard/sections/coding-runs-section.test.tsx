@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest';
 
 const mocks = vi.hoisted(() => ({
   useCodingRuns: vi.fn(),
-  getCodingRunLog: vi.fn(),
+  getCodingRunView: vi.fn(),
 }));
 
 vi.mock('@/hooks/use-coding-runs', () => ({
@@ -14,7 +14,7 @@ vi.mock('@/hooks/use-coding-runs', () => ({
 vi.mock('@/lib/agentteams-api', () => {
   return {
     agentteamsApi: {
-      getCodingRunLog: (...a: unknown[]) => mocks.getCodingRunLog(...a),
+      getCodingRunView: (...a: unknown[]) => mocks.getCodingRunView(...a),
     },
   };
 });
@@ -36,12 +36,15 @@ function queryResult(overrides: Record<string, unknown> = {}) {
 describe('CodingRunsSection（#146 缺口 2）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCodingRunLog.mockResolvedValue('log line 1\nlog line 2\n');
+    mocks.getCodingRunView.mockResolvedValue({
+      detail: null,
+      text: 'log line 1\nlog line 2\n',
+    });
   });
 
   afterEach(() => cleanup());
 
-  it('渲染列表并把 run 文件名解析成时间', () => {
+  it('渲染 v1 列表项（无 v2 元数据）并把 run 文件名解析成时间', () => {
     mocks.useCodingRuns.mockReturnValue(
       queryResult({
         data: [{ task_id: 't1', run: 'run-20261015-131415.log', team: 'alpha' }],
@@ -54,7 +57,65 @@ describe('CodingRunsSection（#146 缺口 2）', () => {
     expect(screen.getByText('run-20261015-131415.log')).toBeInTheDocument();
   });
 
-  it('点查看日志拉取并展示原始日志', async () => {
+  it('渲染 v2 列表项（cli/worker/status/exit_code/size/started_at）', () => {
+    mocks.useCodingRuns.mockReturnValue(
+      queryResult({
+        data: [
+          {
+            task_id: 't1',
+            run: 'run-20261015-131415.log',
+            team: 'alpha',
+            cli: 'qwen',
+            worker: 'sysdev-coder',
+            status: 'ok',
+            exit_code: 0,
+            started_at: '2026-10-15T05:14:15Z',
+            log_bytes: 2048,
+          },
+        ],
+      }),
+    );
+    render(<CodingRunsSection />);
+    expect(screen.getByText('qwen')).toBeInTheDocument();
+    expect(screen.getByText('sysdev-coder')).toBeInTheDocument();
+    expect(screen.getByText('成功')).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getByText('2.0 KB')).toBeInTheDocument();
+  });
+
+  it('点查看日志拉取详情并展示结构化 meta 与原始日志', async () => {
+    mocks.useCodingRuns.mockReturnValue(
+      queryResult({
+        data: [{ task_id: 't1', run: 'run-20261015-131415.log', team: 'alpha' }],
+      }),
+    );
+    mocks.getCodingRunView.mockResolvedValue({
+      detail: {
+        task_id: 't1',
+        run: 'run-20261015-131415.log',
+        team: 'alpha',
+        meta: { cli: 'qwen', worker: 'sysdev-coder', status: 'ok', exit_code: 0 },
+        input: { prompt: 'do the thing', prompt_available: true },
+        output: { transcript: 'log line 1\nlog line 2\n' },
+      },
+      text: 'log line 1\nlog line 2\n',
+    });
+    render(<CodingRunsSection />);
+    fireEvent.click(screen.getByRole('button', { name: /查看日志/ }));
+    await waitFor(() =>
+      expect(mocks.getCodingRunView).toHaveBeenCalledWith(
+        't1',
+        'run-20261015-131415.log',
+        'alpha',
+      ),
+    );
+    expect(await screen.findByText('输入（Prompt）')).toBeInTheDocument();
+    expect(screen.getByText('do the thing')).toBeInTheDocument();
+    expect(screen.getByText('输出（原始日志）')).toBeInTheDocument();
+    expect(screen.getByText(/log line 1/)).toBeInTheDocument();
+  });
+
+  it('详情降级：旧 Controller 返回 text/plain 时只展示原始日志', async () => {
     mocks.useCodingRuns.mockReturnValue(
       queryResult({
         data: [{ task_id: 't1', run: 'run-20261015-131415.log', team: 'alpha' }],
@@ -62,7 +123,9 @@ describe('CodingRunsSection（#146 缺口 2）', () => {
     );
     render(<CodingRunsSection />);
     fireEvent.click(screen.getByRole('button', { name: /查看日志/ }));
-    await waitFor(() => expect(mocks.getCodingRunLog).toHaveBeenCalledWith('t1', 'run-20261015-131415.log', 'alpha'));
+    await waitFor(() => expect(mocks.getCodingRunView).toHaveBeenCalled());
+    expect(await screen.findByText('原始日志')).toBeInTheDocument();
+    expect(screen.queryByText('输入（Prompt）')).not.toBeInTheDocument();
     expect(await screen.findByText(/log line 1/)).toBeInTheDocument();
   });
 

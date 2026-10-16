@@ -3,12 +3,19 @@
 // 编码执行记录（#146 缺口 2）：只读查看编码 CLI 的一次性执行记录与原始日志。
 //
 // 数据面：上游只读端点（agentteams-controller/internal/server/coding_runs.go）——
-//   GET /api/v1/coding-runs                     → [{task_id, run, team?}]（上限 200）
+//   GET /api/v1/coding-runs                     → 列表项（v2 加性字段）
 //   GET /api/v1/coding-runs/{taskID}/runs/{run} → 原始日志（text/plain 字节透传）
+//   …?format=json                               → 结构化信封 {meta, input, output}
 //
-// 上游契约限制（如实标注）：列表无 worker / status / source CLI 字段，时间只能从
-// run-YYYYMMDD-HHMMSS.log 文件名推导；详情是未结构化的原始日志，无法区分
-// 输入 / 输出 / 日志。待上游补齐字段后再增强，不臆造数据。
+// v2 契约 @ agentscope-ai/AgentTeams#1381（2026-10-15 合并）：
+//   · 列表新增 cli / worker / status / exit_code / started_at / ended_at /
+//     log_bytes，来自每个 task 的 runs.jsonl 索引；旧 run 无记录时上游省略
+//     （降级为 v1 task/run/team）。
+//   · started_at 仅来自 runs.jsonl（UTC）；上游明确不从文件名推导（本地时间），
+//     故无记录时本页时间列为未知，仅用文件名做带标注的降级展示，不声称 UTC。
+//   · 详情 ?format=json 提供 meta / input.prompt / output.transcript；
+//     prompt 未镜像时 prompt_available=false。旧 Controller 忽略 format 仍返回
+//     text/plain，本页降级为原始日志渲染。
 //
 // 与聊天区的 QwenPaw 会话上下文（WorkerChatsPanel）不是同一数据面：这里是编码
 // 执行（编码 CLI）的记录，不是 Agent 上下文。
@@ -33,30 +40,46 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { agentteamsApi, type CodingRun } from '@/lib/agentteams-api';
+import {
+  agentteamsApi,
+  type CodingRun,
+  type CodingRunDetail,
+} from '@/lib/agentteams-api';
 import { ApiError } from '@/lib/api-error';
 import { useCodingRuns } from '@/hooks/use-coding-runs';
-import { parseCodingRunTime } from '@/lib/coding-runs';
+import {
+  CODING_RUN_STATUS_META,
+  formatBytes,
+  formatCodingRunInstant,
+  parseCodingRunTime,
+} from '@/lib/coding-runs';
 
 export function CodingRunsSection() {
   const { data: runs, isLoading, isFetching, error, refetch } = useCodingRuns();
   const [selected, setSelected] = useState<CodingRun | null>(null);
-  const [log, setLog] = useState<string | null>(null);
-  const [logLoading, setLogLoading] = useState(false);
-  const [logError, setLogError] = useState('');
+  const [detail, setDetail] = useState<CodingRunDetail | null>(null);
+  const [rawLog, setRawLog] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   const openRun = useCallback(async (run: CodingRun) => {
     setSelected(run);
-    setLog(null);
-    setLogError('');
-    setLogLoading(true);
+    setDetail(null);
+    setRawLog(null);
+    setDetailError('');
+    setDetailLoading(true);
     try {
-      const text = await agentteamsApi.getCodingRunLog(run.task_id, run.run, run.team);
-      setLog(text);
+      const { detail: d, text } = await agentteamsApi.getCodingRunView(
+        run.task_id,
+        run.run,
+        run.team,
+      );
+      setDetail(d);
+      setRawLog(text);
     } catch (err) {
-      setLogError(err instanceof Error ? err.message : '读取失败');
+      setDetailError(err instanceof Error ? err.message : '读取失败');
     } finally {
-      setLogLoading(false);
+      setDetailLoading(false);
     }
   }, []);
 
@@ -99,6 +122,11 @@ export function CodingRunsSection() {
                 <TableHead>时间</TableHead>
                 <TableHead>任务</TableHead>
                 <TableHead>团队</TableHead>
+                <TableHead>CLI</TableHead>
+                <TableHead>Worker</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>退出码</TableHead>
+                <TableHead>大小</TableHead>
                 <TableHead>执行记录</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -106,8 +134,15 @@ export function CodingRunsSection() {
             <TableBody>
               {runs.map((run) => (
                 <TableRow key={`${run.task_id}/${run.run}`}>
-                  <TableCell className="font-mono text-xs">
-                    {parseCodingRunTime(run.run)}
+                  <TableCell
+                    className="font-mono text-xs"
+                    title={
+                      run.started_at
+                        ? undefined
+                        : '由 run 文件名推导（容器本地时间，非 UTC）'
+                    }
+                  >
+                    {runTime(run)}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{run.task_id}</TableCell>
                   <TableCell>
@@ -116,6 +151,15 @@ export function CodingRunsSection() {
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{run.cli ?? '-'}</TableCell>
+                  <TableCell className="font-mono text-xs">{run.worker ?? '-'}</TableCell>
+                  <TableCell>{runStatus(run.status)}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {run.exit_code !== undefined ? run.exit_code : '-'}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {run.log_bytes !== undefined ? formatBytes(run.log_bytes) : '-'}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{run.run}</TableCell>
                   <TableCell className="text-right">
@@ -150,20 +194,87 @@ export function CodingRunsSection() {
               {selected?.team ? ` · ${selected.team}` : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[65vh] overflow-auto rounded-md border bg-muted/20 p-3">
-            {logLoading ? (
+          <div className="max-h-[65vh] space-y-4 overflow-auto">
+            {detailLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                读取日志…
+                读取详情…
               </div>
-            ) : logError ? (
-              <p className="text-sm text-red-600 dark:text-red-400">{logError}</p>
+            ) : detailError ? (
+              <p className="text-sm text-red-600 dark:text-red-400">{detailError}</p>
             ) : (
-              <pre className="whitespace-pre-wrap break-all font-mono text-xs">{log ?? ''}</pre>
+              <>
+                {detail && <RunMetaBlock detail={detail} />}
+                {detail?.input.prompt_available && detail.input.prompt && (
+                  <section className="space-y-1">
+                    <h3 className="text-xs font-medium text-muted-foreground">输入（Prompt）</h3>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted/20 p-3 font-mono text-xs">
+                      {detail.input.prompt}
+                    </pre>
+                  </section>
+                )}
+                <section className="space-y-1">
+                  <h3 className="text-xs font-medium text-muted-foreground">
+                    {detail ? '输出（原始日志）' : '原始日志'}
+                  </h3>
+                  <pre className="whitespace-pre-wrap break-all rounded-md border bg-muted/20 p-3 font-mono text-xs">
+                    {rawLog ?? ''}
+                  </pre>
+                </section>
+              </>
             )}
           </div>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function runTime(run: CodingRun): string {
+  if (run.started_at) return formatCodingRunInstant(run.started_at);
+  return parseCodingRunTime(run.run);
+}
+
+function runStatus(status: CodingRun['status']) {
+  if (!status) return <span className="text-muted-foreground">-</span>;
+  const meta = CODING_RUN_STATUS_META[status];
+  return (
+    <Badge variant="outline" className={meta.className}>
+      {meta.label}
+    </Badge>
+  );
+}
+
+function RunMetaBlock({ detail }: { detail: CodingRunDetail }) {
+  const { meta, output } = detail;
+  const rows: { label: string; value: string }[] = [];
+  if (meta.cli) rows.push({ label: 'CLI', value: meta.cli });
+  if (meta.worker) rows.push({ label: 'Worker', value: meta.worker });
+  if (meta.runner) rows.push({ label: 'Runner', value: meta.runner });
+  if (meta.status) rows.push({ label: '状态', value: CODING_RUN_STATUS_META[meta.status].label });
+  if (meta.exit_code !== undefined) rows.push({ label: '退出码', value: String(meta.exit_code) });
+  if (meta.timeout_secs !== undefined) rows.push({ label: '超时上限', value: `${meta.timeout_secs}s` });
+  if (meta.started_at) rows.push({ label: '开始', value: formatCodingRunInstant(meta.started_at) });
+  if (meta.ended_at) rows.push({ label: '结束', value: formatCodingRunInstant(meta.ended_at) });
+  if (meta.log_bytes !== undefined) rows.push({ label: '日志大小', value: formatBytes(meta.log_bytes) });
+  if (output.status && !meta.status) {
+    rows.push({ label: '状态', value: CODING_RUN_STATUS_META[output.status].label });
+  }
+  if (rows.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        该执行记录无结构化元数据（旧 run 或上游未记录）。
+      </p>
+    );
+  }
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+      {rows.map((row) => (
+        <div key={row.label} className="flex gap-2">
+          <dt className="text-muted-foreground">{row.label}</dt>
+          <dd className="font-mono">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
