@@ -172,8 +172,11 @@ export function WorkerDetailDialog({
 
               <WorkerSkillAssign worker={worker} onSaved={onSaved} />
 
-              {/* key=worker.name：换 worker 重挂载，状态自然清零（插件同款模式） */}
-              <WorkerApprovalControl key={worker.name} workerName={worker.name} />
+              {/* key=`approval-${worker.name}`：换 worker 重挂载，状态自然清零。
+                  key 必须唯一——runtime-config 面板也用 worker.name 作 key，
+                  两个兄弟同 key 会让 React 每次 reconcile 重挂载碰撞的子树
+                  （表现为 runtime-config 面板反复「加载中… ↔ 加载失败」）。 */}
+              <WorkerApprovalControl key={`approval-${worker.name}`} workerName={worker.name} />
 
               {/* Plugin-contributed blocks (extension point: detail-panel) */}
               <PluginDetailBlocks entity="worker" data={worker} />
