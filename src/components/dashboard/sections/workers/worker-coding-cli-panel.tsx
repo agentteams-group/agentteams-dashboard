@@ -68,13 +68,15 @@ async function readError(res: Response): Promise<string> {
 function ingestProbeItem(item: unknown, into: Map<string, CodingCliProbeItem>) {
   if (!item || typeof item !== 'object') return;
   const o = item as Record<string, unknown>;
+  const auth = o.auth as { configured?: boolean } | undefined;
   const id = typeof o.id === 'string' ? o.id : typeof o.name === 'string' ? o.name : '';
   if (!id) return;
   into.set(id, {
     id: id as CodingCliId,
     installed: o.installed === true,
     version: typeof o.version === 'string' ? o.version : undefined,
-    auth_configured: o.auth_configured === true || o.authConfigured === true,
+    auth_configured:
+      auth?.configured === true || o.auth_configured === true || o.authConfigured === true,
   });
 }
 
@@ -280,8 +282,13 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         }
         const json = (await res.json()) as SettingsObject;
         if (cancelledRef.current || reqId !== settingsReqRef.current) return;
-        setSettings(json && typeof json === 'object' ? json : {});
-        setModelName(getModelName(json && typeof json === 'object' ? json : {}));
+        const value = json && typeof json === 'object' ? json.settings ?? json : {};
+        const config =
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? (value as SettingsObject)
+            : {};
+        setSettings(config);
+        setModelName(getModelName(config));
         setSecrets({});
       } catch (err) {
         if (cancelledRef.current || reqId !== settingsReqRef.current) return;
@@ -366,15 +373,17 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
           }
           const task = (await res.json()) as InstallTask;
           if (cancelledRef.current) return 'stop';
-          if (task.status === 'done') {
+          const state = task.state ?? task.status;
+          if (state === 'done') {
             setMsg({ kind: 'ok', text: `${CLI_LABEL[cli]} 任务完成` });
             await load();
             return 'stop';
           }
-          if (task.status === 'failed') {
+          if (state === 'failed') {
+            const stderr = task.stderr_tail ?? task.stderr;
             const extra =
-              typeof task.stderr === 'string' && task.stderr
-                ? task.stderr
+              typeof stderr === 'string' && stderr
+                ? stderr
                 : typeof task.exit_code === 'number'
                   ? `退出码 ${task.exit_code}`
                   : '安装失败';

@@ -16,6 +16,18 @@ const SETTINGS = {
   api_key: { redacted: true, has_value: true },
 };
 
+// Controller probe response captured by the local Qoder PAT-only regression.
+const CONTROLLER_PROBE = {
+  'qwen-code': { cli: 'qwen-code', installed: false },
+  opencode: { cli: 'opencode', installed: false },
+  qoder: {
+    cli: 'qoder',
+    installed: true,
+    version: '1.1.71',
+    auth: { configured: true, method: 'env' },
+  },
+};
+
 type FetchResult = { status: number; body: unknown };
 let results: FetchResult[] = [];
 let calls: Array<{ url: string; method: string; body?: string }> = [];
@@ -61,6 +73,99 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     expect(screen.getByText('1.2.3')).toBeInTheDocument();
     expect(screen.getByText('未安装')).toBeInTheDocument();
     expect(calls[0].url).toBe('/api/agentteams/workers/w1/coding-cli');
+  });
+
+  it('Controller 嵌套 auth.configured → 显示 Qoder PAT 已配置', async () => {
+    mockFetch([{ status: 200, body: CONTROLLER_PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    expect(await screen.findByText('1.1.71')).toBeInTheDocument();
+    expect(screen.getAllByText('鉴权已配置')).toHaveLength(1);
+  });
+
+  it('Controller settings 包装 → 模型保存后回显，密钥补丁不带包装路径', async () => {
+    const settings = {
+      model: { name: 'qwen3-coder' },
+      security: { auth: { apiKey: { redacted: true, has_value: true } } },
+    };
+    const envelope = {
+      cli: 'qoder',
+      path: '/root/.qoder/settings.json',
+      exists: true,
+      settings,
+    };
+    const saved = { ...envelope, settings: { ...settings, model: { name: 'auto' } } };
+    mockFetch([
+      { status: 200, body: CONTROLLER_PROBE },
+      { status: 200, body: envelope },
+      { status: 200, body: saved },
+      { status: 200, body: saved },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qoder 配置' }));
+    await waitFor(() => expect(screen.getByLabelText('模型名')).toHaveValue('qwen3-coder'));
+    expect(screen.getByLabelText(/security.auth.apiKey/)).toHaveValue('');
+    expect(screen.getByLabelText('当前配置只读预览')).not.toHaveTextContent('/root/.qoder');
+    fireEvent.change(screen.getByLabelText('模型名'), { target: { value: 'auto' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(JSON.parse(put!.body!)).toEqual({
+        model: { name: 'auto' },
+        security: { auth: { apiKey: '***' } },
+      });
+      expect(calls).toHaveLength(4);
+      expect(screen.getByLabelText('模型名')).toHaveValue('auto');
+    });
+  });
+
+  it('Controller settings 文件不存在 → 空配置可创建且不提交包装元数据', async () => {
+    mockFetch([
+      { status: 200, body: CONTROLLER_PROBE },
+      {
+        status: 200,
+        body: { cli: 'qoder', path: '/root/.qoder/settings.json', exists: false, settings: {} },
+      },
+      { status: 200, body: { settings: { model: { name: 'auto' } } } },
+      { status: 200, body: { settings: { model: { name: 'auto' } } } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qoder 配置' }));
+    expect(await screen.findByLabelText('当前配置只读预览')).toHaveTextContent('{}');
+    fireEvent.change(screen.getByLabelText('模型名'), { target: { value: 'auto' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(JSON.parse(put!.body!)).toEqual({ model: { name: 'auto' } });
+    });
+  });
+
+  it('Controller state running → done 后刷新安装状态并解除按钮禁用', async () => {
+    mockFetch([
+      { status: 200, body: { qoder: { cli: 'qoder', installed: false } } },
+      { status: 202, body: { task_id: 'qoder-install', state: 'running' } },
+      { status: 200, body: { task_id: 'qoder-install', state: 'running' } },
+      { status: 200, body: { task_id: 'qoder-install', state: 'done', exit_code: 0 } },
+      { status: 200, body: CONTROLLER_PROBE },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qoder' }));
+    expect(screen.getByRole('button', { name: '安装 Qoder' })).toBeDisabled();
+    expect(await screen.findByText('Qoder 任务完成', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByText('1.1.71')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑 Qoder 配置' })).toBeEnabled();
+    expect(calls.filter((c) => c.url.endsWith('/install/qoder-install'))).toHaveLength(2);
+  });
+
+  it('Controller state failed → 显示 stderr_tail 并允许重试', async () => {
+    mockFetch([
+      { status: 200, body: { qoder: { cli: 'qoder', installed: false } } },
+      { status: 202, body: { task_id: 'qoder-failed', state: 'running' } },
+      { status: 200, body: { task_id: 'qoder-failed', state: 'failed', stderr_tail: 'npm ETARGET', exit_code: 1 } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '安装 Qoder' }));
+    expect(await screen.findByText('npm ETARGET')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '安装 Qoder' })).toBeEnabled();
   });
 
   it('② GET 404 → 占位文案，不含 PR 数字', async () => {

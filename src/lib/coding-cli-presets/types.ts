@@ -36,8 +36,10 @@ export interface InstallRequest {
 
 export interface InstallTask {
   task_id: string;
-  status: 'running' | 'done' | 'failed';
+  state?: 'running' | 'done' | 'failed';
+  status?: 'running' | 'done' | 'failed';
   exit_code?: number;
+  stderr_tail?: string;
   stderr?: string;
 }
 
