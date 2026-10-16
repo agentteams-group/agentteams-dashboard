@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WorkerRuntimeConfigPanel } from './worker-runtime-config-panel';
 
@@ -40,10 +40,23 @@ vi.setConfig({ testTimeout: 15_000 });
 
 // A1 (2026-10-14): the ⑥ 409 case failed on CI after ~1s — findByText waits on
 // Testing Library's asyncUtilTimeout (default 1s), not vitest's testTimeout, so
-// the earlier bump above did not cover it. Under parallel load the mocked PUT's
-// async .then chain slips past 1s before setSaveMsg re-renders. Widen only this
-// file (vitest isolates module registry per file).
+// the earlier bump above did not cover it. Widen only this file (vitest isolates
+// module registry per file).
 configure({ asyncUtilTimeout: 5000 });
+
+// A1 (2026-10-16): widening timeouts did NOT fix ⑥ — on #152 CI it failed at
+// the full 5s with `max_iters` still showing 20 and the save button disabled.
+// The panel clears edit state in a passive effect keyed on `config` (initial
+// load + after save), and React can defer that effect past the point where
+// `findByText` resolves. A `fireEvent.change` landing in that window is then
+// wiped by the reset, so `hasChanges` stays false, the save click is a no-op,
+// and the 409 banner never appears. Flush pending effects after the loaded form
+// is on screen, before interacting — deterministic regardless of scheduler load.
+async function renderLoadedPanel(workerName = 'w1') {
+  render(<WorkerRuntimeConfigPanel workerName={workerName} />);
+  await screen.findByText('Runtime 配置（字段级保存）');
+  await act(async () => {});
+}
 
 describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
   beforeEach(() => {
@@ -56,8 +69,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
 
   it('① GET 200 → 字段载入（max_iters=20 / 160000 / 0.8）', async () => {
     mockFetch([{ status: 200, body: CONFIG }]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    expect(await screen.findByText('Runtime 配置（字段级保存）')).toBeInTheDocument();
+    await renderLoadedPanel();
     expect(screen.getByDisplayValue('20')).toBeInTheDocument();
     expect(screen.getByDisplayValue('160000')).toBeInTheDocument();
     expect(screen.getByDisplayValue('0.8')).toBeInTheDocument();
@@ -75,8 +87,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
       { status: 200, body: CONFIG },
       { status: 200, body: { ok: true } },
     ]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    await screen.findByText('Runtime 配置（字段级保存）');
+    await renderLoadedPanel();
     fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '30' } });
     fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
     await waitFor(() => {
@@ -89,8 +100,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
 
   it('④ 无改动 → 保存按钮禁用（不发空 PUT）', async () => {
     mockFetch([{ status: 200, body: CONFIG }]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    await screen.findByText('Runtime 配置（字段级保存）');
+    await renderLoadedPanel();
     const btn = screen.getByRole('button', { name: /保存改动/ }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(calls.filter((c) => c.method === 'PUT').length).toBe(0);
@@ -101,8 +111,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
       { status: 200, body: CONFIG },
       { status: 200, body: { ok: true } },
     ]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    await screen.findByText('Runtime 配置（字段级保存）');
+    await renderLoadedPanel();
     fireEvent.click(screen.getByText('loop_config（整块替换）'));
     // 多行值不依赖 findByDisplayValue（whitespace 归一化不稳），直查 DOM
     const textarea = await waitFor(
@@ -132,8 +141,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
       { status: 200, body: CONFIG },
       { status: 409, body: { error: 'config locked' } },
     ]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    await screen.findByText('Runtime 配置（字段级保存）');
+    await renderLoadedPanel();
     fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '25' } });
     fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
     expect(await screen.findByText(/配置被锁定（409）/)).toBeInTheDocument();
@@ -141,8 +149,7 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
 
   it('⑦ 非法输入（max_iters=0）→ 内联校验错误 + 保存禁用', async () => {
     mockFetch([{ status: 200, body: CONFIG }]);
-    render(<WorkerRuntimeConfigPanel workerName="w1" />);
-    await screen.findByText('Runtime 配置（字段级保存）');
+    await renderLoadedPanel();
     fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '0' } });
     expect(screen.getByText('max_iters 须为正整数')).toBeInTheDocument();
     expect((screen.getByRole('button', { name: /保存改动/ }) as HTMLButtonElement).disabled).toBe(true);
