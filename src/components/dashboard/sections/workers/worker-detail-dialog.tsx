@@ -86,7 +86,7 @@ export function WorkerDetailDialog({
   return (
     <>
       <Dialog open={!!worker} onOpenChange={onOpenChange}>
-        <DialogContent className="w-full max-w-[min(100%-2rem,56rem)] max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-[min(100%-2rem,64rem)] sm:max-w-[min(100%-2rem,64rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Worker 详情 - {worker?.name}</span>
@@ -104,7 +104,7 @@ export function WorkerDetailDialog({
             </DialogTitle>
           </DialogHeader>
           {worker && (
-            <div className="space-y-3 py-4 text-sm">
+            <div className="min-w-0 space-y-3 py-4 text-sm">
               <div className="flex items-center gap-2 mb-3">
                 <StatusDot phase={worker.phase} />
                 <PhaseBadge kind="worker" phase={worker.phase} />
@@ -129,7 +129,7 @@ export function WorkerDetailDialog({
                     <div key={i} className="text-xs font-mono flex items-center gap-2">
                       <span className="font-medium">{s.name}</span>
                       <span className="text-muted-foreground">({s.transport})</span>
-                      <span className="truncate">{s.url}</span>
+                      <span className="min-w-0 break-all">{s.url}</span>
                     </div>
                   ))}
                 </div>
