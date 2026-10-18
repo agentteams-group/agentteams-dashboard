@@ -12,6 +12,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { recordHitlAudit } from '@/lib/hitl-audit';
 
 /** 干预超时默认（PRD F2.2 / Q3：全局 30 分钟，按空间覆盖待上游契约）。 */
 export const INTERVENTION_TIMEOUT_MS = 30 * 60 * 1000;
@@ -159,6 +160,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
 
   // 超时升级：只发一次通知（管理员视角事件；管理员身份由用户侧判定，
   // 观察者/协作者也会收到可见通知 —— 通知中心按现有优先级展示）。
+  // 同时落 hitl.expire 审计（F2.4：actor/任务/耗时）。
   useEffect(() => {
     if (!expired || expiredNotifiedRef.current) return;
     expiredNotifiedRef.current = true;
@@ -168,7 +170,16 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       message: `「${questions[page]?.question ?? payload.tool_name}」在 30 分钟内未获答复，任务保持阻塞，请管理员关注。`,
       origin: 'system',
     });
-  }, [expired, questions, page, payload.tool_name, addNotification]);
+    const requestedAt = useHitlInboxStore.getState().confirmations[payload.confirmation_id]?.timestamp;
+    recordHitlAudit({
+      action: 'expire',
+      confirmationId: payload.confirmation_id,
+      toolName: payload.tool_name,
+      question: questions[0]?.question,
+      ...(typeof requestedAt === 'number' ? { elapsedMs: Date.now() - requestedAt } : {}),
+      actor: currentUserId ?? undefined,
+    });
+  }, [expired, questions, page, payload.tool_name, payload.confirmation_id, addNotification, currentUserId]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
   useEffect(() => {
@@ -214,6 +225,18 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     const text = composeAnswerText(questions, answers);
     onAnswer(text);
     setSubmitted({ by: currentUserId ?? '', at: Date.now() });
+    // hitl.answer 审计（F2.4）：actor/问题/所选答案/耗时（先读请求时间戳，
+    // dropConfirmation 会把收件箱条目移除）。
+    const requestedAt = useHitlInboxStore.getState().confirmations[payload.confirmation_id]?.timestamp;
+    recordHitlAudit({
+      action: 'answer',
+      confirmationId: payload.confirmation_id,
+      toolName: payload.tool_name,
+      question: questions[0]?.question,
+      answer: text,
+      ...(typeof requestedAt === 'number' ? { elapsedMs: Date.now() - requestedAt } : {}),
+      actor: currentUserId ?? undefined,
+    });
     // 收件箱互通（F2.3）：任一处处理，另一处同步消失。
     useHitlInboxStore.getState().dropConfirmation(payload.confirmation_id);
   };

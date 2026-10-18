@@ -6,6 +6,8 @@ import { useProjectWorkflow } from '@/hooks/use-projects';
 import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
 import { buildWorkflowDag } from '@/lib/project-dag';
 import { WORKFLOW_NODE_FILL } from './workflow-config';
+import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { openChatRoom } from '@/lib/open-chat-room';
 
 // ----- Workflow DAG view (topo) -----
 
@@ -17,17 +19,34 @@ export function WorkflowDagView({
   teamId?: string;
 }) {
   const { data: wf, isLoading, isError } = useProjectWorkflow(projectId, teamId);
+  // 卡住节点定位（F5.1）：责任 Agent 名 → roomID，点击直达其会话。
+  const { data: workers } = useWorkers();
   const dag = useMemo(
     () =>
       wf
         ? buildWorkflowDag(
-            wf.nodes.map((n) => ({ id: n.id, name: n.name, status: n.status })),
-            wf.edges.map((e) => ({ source: e.source, target: e.target })),
+            wf.nodes.map((n) => ({
+              id: n.id,
+              name: n.name,
+              status: n.status,
+              ...(n.assignee ? { assignee: n.assignee } : {}),
+            })),
+            wf.edges.map((e) => ({
+              source: e.source,
+              target: e.target,
+              ...(e.conditional === true ? { conditional: true } : {}),
+            })),
             wf.next,
           )
         : { nodes: [], edges: [], externalDeps: [] as string[] },
     [wf],
   );
+
+  const stuckNodeOwnerRoom = (nodeId: string): string | undefined => {
+    const node = dag.nodes.find((n) => n.id === nodeId);
+    if (!node?.assignee) return undefined;
+    return workers?.find((w) => w.name === node.assignee)?.roomID;
+  };
 
   if (isLoading) {
     return (
@@ -72,8 +91,17 @@ export function WorkflowDagView({
         <ProjectDagSvg
           dag={dag}
           nodeColors={WORKFLOW_NODE_FILL}
-          title={`${wf.title} 任务依赖图`}
+          title={`${wf.title} 任务依赖图（amber=关键路径 · 虚线=条件分支 · 红点=卡住节点）`}
+          onStuckNodeClick={(nodeId) => openChatRoom(stuckNodeOwnerRoom(nodeId))}
         />
+        <p className="mt-1.5 text-[10px] text-muted-foreground/70">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1 align-middle" aria-hidden="true" />
+          关键路径
+          <span className="inline-block w-4 border-t border-dashed border-muted-foreground ml-3 mr-1 align-middle" aria-hidden="true" />
+          条件分支
+          <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-3 mr-1 align-middle" aria-hidden="true" />
+          卡住节点（点击直达责任 Agent 会话）
+        </p>
       </div>
     </div>
   );

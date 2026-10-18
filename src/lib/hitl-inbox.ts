@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
+import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
 
 export interface HitlConfirmation {
@@ -48,6 +49,19 @@ export const useHitlInboxStore = create<HitlInboxState>()((set) => ({
 
   upsertConfirmation: (item) =>
     set((state) => {
+      const isNew = !(item.id in state.confirmations);
+      // hitl.request 审计（F2.4）：仅新条目上报一次（m.replace 修订
+      // 静默 upsert，不重复计审计）。
+      if (isNew) {
+        recordHitlAudit({
+          action: 'request',
+          confirmationId: item.id,
+          roomId: item.roomId,
+          toolName: item.toolName,
+          question: item.question,
+          actor: item.sender,
+        });
+      }
       const next = { ...state.confirmations, [item.id]: item };
       const ids = Object.keys(next);
       if (ids.length > MAX_CONFIRMATIONS) {
