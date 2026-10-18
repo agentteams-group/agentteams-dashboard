@@ -8,6 +8,8 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
 import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { InterventionCard } from '../intervention-card';
+import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
@@ -390,6 +392,18 @@ export function MessageBubble({
               )}
               {parsedBlocks.map((block, idx) => {
                 if (block.type === 'confirmation' && onSendConfirmation) {
+                  // F2.1 分流：v2 结构化提问（question/options/questions）走
+                  // 选项式干预卡；v1 二态工具确认保持原卡（向后兼容）。
+                  if (isInterventionConfirmation(block)) {
+                    return (
+                      <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                        <InterventionCard
+                          payload={(block as RuntimeConfirmationBlock).payload}
+                          onAnswer={handleConfirmationApprove}
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={idx} className="w-[min(100%,56rem)] max-w-full">
                       <ConfirmationCard

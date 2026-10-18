@@ -12,6 +12,8 @@ export interface HitlConfirmation {
   parameters?: string;
   approveReply: string;
   rejectReply: string;
+  /** v2 干预问题（F2.1）：存在 = 干预条目（非工具审批二态）。 */
+  question?: string;
   timestamp: number;
 }
 
@@ -169,6 +171,11 @@ export function extractConfirmationFromEvent(
   const toolName = asString(payload.toolName) ?? asString(payload.tool_name) ?? '未知工具';
   const confirmationId = asString(payload.confirmation_id);
   const eventId = rootEventIdOf(event);
+  const question =
+    asString(payload.question) ??
+    (Array.isArray(payload.questions)
+      ? asString((payload.questions[0] as Record<string, unknown> | undefined)?.question)
+      : undefined);
 
   return {
     id: confirmationId ?? `${roomId}:${eventId}`,
@@ -180,6 +187,7 @@ export function extractConfirmationFromEvent(
     parameters: asString(payload.parameters),
     approveReply: asString(payload.approveReply) ?? '/approve',
     rejectReply: asString(payload.rejectReply) ?? '拒绝',
+    ...(question ? { question } : {}),
     timestamp: event.origin_server_ts,
   };
 }

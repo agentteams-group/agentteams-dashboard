@@ -56,6 +56,26 @@ export interface RuntimeToolCallBlock {
   };
 }
 
+/**
+ * 选项式干预（PRD F2.1 / §7.3 org.agentteams.run v2 提案，消费侧先行）。
+ * 上游 runtime 未发布 v2 时这些字段恒缺省 → 块回落为 v1 工具确认卡，
+ * 前向兼容语义与既有未知字段处理一致（不丢消息、文本启发式兜底）。
+ */
+export interface RuntimeConfirmationOption {
+  id: string;
+  label: string;
+  description?: string;
+  /** Agent 标记的推荐项：置顶 + 默认选中（PRD F2.1）。 */
+  recommended?: boolean;
+}
+
+export interface RuntimeConfirmationQuestion {
+  id?: string;
+  question: string;
+  options?: RuntimeConfirmationOption[];
+  multi_select?: boolean;
+}
+
 export interface RuntimeConfirmationBlock {
   type: 'confirmation';
   payload: {
@@ -65,6 +85,18 @@ export interface RuntimeConfirmationBlock {
     /** Stable id used to correlate approve / deny replies. */
     confirmation_id: string;
     expires_at?: number;
+    /** v2 干预：问题文本（单问题形态）。 */
+    question?: string;
+    /** v2 干预：选项列表（与 question 配套）。 */
+    options?: RuntimeConfirmationOption[];
+    /** v2 干预：多选（默认单选）。 */
+    multi_select?: boolean;
+    /** v2 干预：多问题分页形态。 */
+    questions?: RuntimeConfirmationQuestion[];
+    /** v2 提案：答案回传 schema（上游消费约定，Dashboard 仅透传）。 */
+    answer_schema?: Record<string, unknown>;
+    /** v2 提案：被请求人 MXID；缺省 = 房间全员可答复（现状语义）。 */
+    requested_of?: string;
   };
 }
 
@@ -141,10 +173,65 @@ function normalizeToolCallStatus(value: unknown): RuntimeToolCallStatus {
   return 'running';
 }
 
+/** Loose normalizer for one v2 option entry: requires id + label. */
+function normalizeConfirmationOption(raw: unknown): RuntimeConfirmationOption | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.id !== 'string' || source.id.length === 0) return undefined;
+  if (typeof source.label !== 'string' || source.label.length === 0) return undefined;
+  const option: RuntimeConfirmationOption = { id: source.id, label: source.label };
+  if (typeof source.description === 'string' && source.description.length > 0) {
+    option.description = source.description;
+  }
+  if (source.recommended === true) option.recommended = true;
+  return option;
+}
+
+function normalizeConfirmationOptions(raw: unknown): RuntimeConfirmationOption[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const options = raw
+    .map(normalizeConfirmationOption)
+    .filter((o): o is RuntimeConfirmationOption => o !== undefined);
+  return options.length > 0 ? options : undefined;
+}
+
+function normalizeConfirmationQuestions(raw: unknown): RuntimeConfirmationQuestion[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const questions: RuntimeConfirmationQuestion[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const source = entry as Record<string, unknown>;
+    if (typeof source.question !== 'string' || source.question.length === 0) continue;
+    const question: RuntimeConfirmationQuestion = { question: source.question };
+    if (typeof source.id === 'string' && source.id.length > 0) question.id = source.id;
+    const options = normalizeConfirmationOptions(source.options);
+    if (options) question.options = options;
+    if (source.multi_select === true) question.multi_select = true;
+    questions.push(question);
+  }
+  return questions.length > 0 ? questions : undefined;
+}
+
+/**
+ * True when a confirmation block carries the v2 structured question shape
+ * (干预卡 F2.1). Without any question field the block renders as the legacy
+ * two-button tool approval card. Accepts both runtime blocks and the wider
+ * parsed-block union (ParsedA2uiBlock) so renderers can branch directly.
+ */
+export function isInterventionConfirmation(
+  block: { type: unknown; payload?: unknown }
+): boolean {
+  if (block.type !== 'confirmation') return false;
+  const payload = block.payload as RuntimeConfirmationBlock['payload'] | undefined;
+  return Boolean(payload?.question || payload?.options || payload?.questions);
+}
+
 /**
  * Normalise a v1 confirmation block. Requires confirmation_id; without it the
  * caller should fall back to the legacy text heuristic so the operator still
- * sees an approval card.
+ * sees an approval card. v2 intervention fields (question/options/questions…)
+ * are carried through when well-formed — they are additive and the card
+ * renderer decides which shape to draw.
  */
 export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationBlock | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -161,6 +248,25 @@ export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationB
   if (typeof source.parameters === 'string') payload.parameters = source.parameters;
   if (typeof source.external_files === 'string') payload.external_files = source.external_files;
   if (typeof source.expires_at === 'number') payload.expires_at = source.expires_at;
+  // ── v2 intervention fields (additive, forward compatible) ──
+  if (typeof source.question === 'string' && source.question.length > 0) {
+    payload.question = source.question;
+  }
+  const options = normalizeConfirmationOptions(source.options);
+  if (options) payload.options = options;
+  if (source.multi_select === true) payload.multi_select = true;
+  const questions = normalizeConfirmationQuestions(source.questions);
+  if (questions) payload.questions = questions;
+  if (
+    source.answer_schema &&
+    typeof source.answer_schema === 'object' &&
+    !Array.isArray(source.answer_schema)
+  ) {
+    payload.answer_schema = source.answer_schema as Record<string, unknown>;
+  }
+  if (typeof source.requested_of === 'string' && source.requested_of.length > 0) {
+    payload.requested_of = source.requested_of;
+  }
   return { type: 'confirmation', payload };
 }
 
