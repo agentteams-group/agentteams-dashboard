@@ -10,7 +10,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +22,8 @@ import { workflowLiveFromProject, isProjectMiss } from '@/lib/chat-workflow-live
 import { ApiError } from '@/lib/api-error';
 import type { WorkflowPayload } from '@/lib/a2ui/workflow';
 import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
+import { useSectionStore } from '@/lib/section-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
 const mockWorkflow = vi.fn();
 vi.mock('@/lib/agentteams-projects-api', () => ({
@@ -67,6 +69,33 @@ const liveResponse: WorkflowResponse = {
   ],
 };
 
+/** 5 节点 DAG（F1.2 验收口径）：架构 ∥ 视觉 → 设计 → 审查，含依赖边与任务摘要。 */
+const relayResponse: WorkflowResponse = {
+  project_id: 'proj-relay',
+  status: 'active',
+  title: '产品介绍页生产线',
+  nodes: [
+    { id: 't1', name: '架构设计', status: 'completed', assignee: 'arch-bot' },
+    { id: 't2', name: '视觉设计', status: 'completed', assignee: 'vision-bot' },
+    { id: 't3', name: '页面实现', status: 'in-progress', assignee: 'dev-bot' },
+    { id: 't4', name: '内容填充', status: 'pending' },
+    { id: 't5', name: '集成审查', status: 'pending', assignee: 'review-bot' },
+  ],
+  edges: [
+    { source: 't1', target: 't3' },
+    { source: 't2', target: 't3' },
+    { source: 't3', target: 't5' },
+    { source: 't4', target: 't5' },
+  ],
+  next: [],
+  interrupts: [],
+  values: { project_id: 'proj-relay', title: '产品介绍页生产线', status: 'active' },
+  tasks_detail: [
+    { task_id: 't1', status: 'completed', assigned_to: 'arch-bot', summary: '产出信息架构与泳道划分。' },
+    { task_id: 't3', status: 'in-progress', assigned_to: 'dev-bot', summary: '按设计稿实现响应式页面。' },
+  ],
+};
+
 describe('workflowLiveFromProject（正源 → 卡片 overlay 映射）', () => {
   it('① nodes→steps（name/status/assignee→assignedTo），空 assignee 不带字段', () => {
     const live = workflowLiveFromProject(liveResponse)!;
@@ -92,6 +121,24 @@ describe('workflowLiveFromProject（正源 → 卡片 overlay 映射）', () => 
     expect(live.status).toBe('planning');
     expect(live.steps).toEqual([]);
     expect(live.subagents).toEqual([]);
+  });
+
+  it('③b projectId 透传（接力卡跳转项目详情用）', () => {
+    expect(workflowLiveFromProject(liveResponse).projectId).toBe('proj-42');
+  });
+
+  it('③c 5 节点 DAG：edges 反推 dependsOn（显示名）、tasks_detail 对齐 summary/assignedTo（F1.2）', () => {
+    const live = workflowLiveFromProject(relayResponse);
+    const byId = new Map(live.steps.map((s) => [s.id, s]));
+    // 并行兄弟（架构/视觉 → 页面实现）：两条上游按 edges 顺序去重
+    expect(byId.get('t3')?.dependsOn).toEqual(['架构设计', '视觉设计']);
+    expect(byId.get('t5')?.dependsOn).toEqual(['页面实现', '内容填充']);
+    // 无上游的首层节点不带 dependsOn 字段
+    expect(byId.get('t1')?.dependsOn).toBeUndefined();
+    // summary 按 task_id 对齐，空 summary 不带字段
+    expect(byId.get('t1')?.summary).toBe('产出信息架构与泳道划分。');
+    expect(byId.get('t2')?.summary).toBeUndefined();
+    expect(live.projectId).toBe('proj-relay');
   });
 });
 
@@ -152,5 +199,64 @@ describe('WorkflowCard live overlay（渲染契约）', () => {
     await waitFor(() => expect(mockWorkflow).toHaveBeenCalledTimes(1));
     expect(screen.getByText('快照步骤一')).toBeInTheDocument();
     expect(await screen.findByText(/live \d{2}:\d{2}:\d{2}/)).toBeInTheDocument();
+  });
+});
+
+describe('RelayCard 接力卡升级（F1.2 渲染契约）', () => {
+  const relayPayload: WorkflowPayload = {
+    type: 'project',
+    runId: 'proj-relay',
+    status: 'active',
+    title: '产品介绍页生产线',
+    steps: [],
+    subagents: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('⑨ 步骤行渲染责任 Agent 与依赖副行', async () => {
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={relayPayload} />);
+    await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
+    // 责任 Agent
+    expect(screen.getByText('@arch-bot')).toBeInTheDocument();
+    expect(screen.getByText('@dev-bot')).toBeInTheDocument();
+    // 依赖副行（显示名；并行兄弟 → 双上游）
+    expect(screen.getByText('依赖：架构设计、视觉设计')).toBeInTheDocument();
+    expect(screen.getByText('依赖：页面实现、内容填充')).toBeInTheDocument();
+    // 摘要默认收起
+    expect(screen.queryByText('产出信息架构与泳道划分。')).not.toBeInTheDocument();
+  });
+
+  it('⑩ 有摘要步骤点开显示摘要，再点收起', async () => {
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={relayPayload} />);
+    await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
+    const row = screen.getByText('架构设计');
+    expect(screen.queryByText('产出信息架构与泳道划分。')).not.toBeInTheDocument();
+    fireEvent.click(row);
+    expect(screen.getByText('产出信息架构与泳道划分。')).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(screen.queryByText('产出信息架构与泳道划分。')).not.toBeInTheDocument();
+  });
+
+  it('⑪ 正源接通 → 「项目详情」按钮，点击切任务中心并投递 pendingProjectKey', async () => {
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={relayPayload} />);
+    await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
+    const btn = screen.getByRole('button', { name: /项目详情/ });
+    fireEvent.click(btn);
+    expect(useSectionStore.getState().activeSection).toBe('tasks');
+    expect(useHitlInboxStore.getState().takePendingProjectKey()).toEqual({ id: 'proj-relay' });
+  });
+
+  it('⑫ workerflow 卡（停探）→ 不渲染项目详情入口', async () => {
+    const wfPayload: WorkflowPayload = { ...relayPayload, type: 'workerflow', runId: 'run-abc' };
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={wfPayload} />);
+    await waitFor(() => expect(screen.getByText('产品介绍页生产线')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /项目详情/ })).not.toBeInTheDocument();
   });
 });

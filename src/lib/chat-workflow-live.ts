@@ -20,21 +20,48 @@ import type { WorkflowItem } from '@/lib/a2ui/workflow';
 export interface ChatWorkflowLive {
   status?: string;
   title?: string;
+  /** 项目 id（接力卡 F1.2：跳转任务中心项目详情用）。 */
+  projectId?: string;
   steps: WorkflowItem[];
   subagents: WorkflowItem[];
 }
 
 /** WorkflowResponse → 卡片 overlay。steps=workflow nodes（status 已归一化，
- * 与任务看板同一口径）；workers=tasks_detail.assigned_to 去重（稳定顺序）。
+ * 与任务看板同一口径）；每个 step 附带 assignedTo（node.assignee）、
+ * dependsOn（edges 反推的上游显示名，串行链语义）、summary（tasks_detail
+ * 按 task_id 对齐）；workers=tasks_detail.assigned_to 去重（稳定顺序）。
  * 恒返回（status 为必返回字段）——planning 等无 DAG 项目=纯状态 overlay，
  * 空 steps/subagents 由卡片逐字段回退快照。查询未成功（含 404 停探）才回退快照。 */
 export function workflowLiveFromProject(wf: WorkflowResponse): ChatWorkflowLive {
-  const steps: WorkflowItem[] = (wf.nodes ?? []).map((n) => ({
-    id: n.id,
-    name: n.name,
-    status: n.status,
-    ...(n.assignee ? { assignedTo: n.assignee } : {}),
-  }));
+  const nodes = wf.nodes ?? [];
+  // id → 显示名：依赖边存的是 node id，渲染用名字更可读。
+  const nameById = new Map(nodes.map((n) => [n.id, n.name] as const));
+  // node id → 上游显示名列表（按 edges 顺序去重 → 串行链/并行兄弟可辨）。
+  const depsByNodeId = new Map<string, string[]>();
+  for (const e of wf.edges ?? []) {
+    const list = depsByNodeId.get(e.target) ?? [];
+    const upstream = nameById.get(e.source) ?? e.source;
+    if (!list.includes(upstream)) list.push(upstream);
+    depsByNodeId.set(e.target, list);
+  }
+  // 任务摘要按 task_id === node.id 对齐（对不上的节点静默省略 summary）。
+  const summaryByTaskId = new Map<string, string>();
+  for (const t of wf.tasks_detail ?? []) {
+    const s = String(t.summary ?? '').trim();
+    if (s) summaryByTaskId.set(t.task_id, s);
+  }
+  const steps: WorkflowItem[] = nodes.map((n) => {
+    const dependsOn = depsByNodeId.get(n.id);
+    const summary = summaryByTaskId.get(n.id);
+    return {
+      id: n.id,
+      name: n.name,
+      status: n.status,
+      ...(n.assignee ? { assignedTo: n.assignee } : {}),
+      ...(dependsOn ? { dependsOn } : {}),
+      ...(summary ? { summary } : {}),
+    };
+  });
   const seen = new Set<string>();
   const subagents: WorkflowItem[] = [];
   for (const t of wf.tasks_detail ?? []) {
@@ -43,7 +70,7 @@ export function workflowLiveFromProject(wf: WorkflowResponse): ChatWorkflowLive 
     seen.add(a);
     subagents.push({ id: a, name: a });
   }
-  return { status: wf.status, title: wf.title, steps, subagents };
+  return { status: wf.status, title: wf.title, projectId: wf.project_id, steps, subagents };
 }
 
 /** runId 不是项目（404 无此项目 / 409 跨团队歧义 / 400 非法 id）→ 停探。

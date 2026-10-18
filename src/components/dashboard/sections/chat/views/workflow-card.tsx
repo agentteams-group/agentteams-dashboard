@@ -1,11 +1,15 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { isProjectMiss, workflowLiveFromProject } from '@/lib/chat-workflow-live';
 import { getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { useSectionStore } from '@/lib/section-store';
 import type { WorkflowItem, WorkflowPayload } from '@/lib/a2ui/workflow';
-import { CircleCheck, CircleX, Loader2, Workflow } from 'lucide-react';
+import { CircleCheck, CircleX, CornerDownRight, ExternalLink, Loader2, Workflow } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 
 const COMPLETE_STATUSES = new Set(['completed', 'success', 'done']);
 const ERROR_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
@@ -56,8 +60,57 @@ function StepGlyph({ status }: { status?: string }) {
   return <PendingGlyph />;
 }
 
+/** 接力卡单步（F1.2）：状态 glyph + 名称 + 责任 Agent + 依赖副行；
+ * 有摘要的步骤可点开显示 summary（运行时块全量视图在 F5.4 运行实例视图落地）。 */
+function RelayStepRow({
+  step,
+  index,
+  expanded,
+  onToggle,
+}: {
+  step: WorkflowItem;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const expandable = Boolean(step.summary);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={expandable ? onToggle : undefined}
+        aria-expanded={expandable ? expanded : undefined}
+        className={`flex w-full items-center gap-2 text-left text-xs ${expandable ? 'cursor-pointer rounded hover:bg-accent/50' : 'cursor-default'}`}
+      >
+        <StepGlyph status={step.status} />
+        <span className="min-w-0 flex-1 truncate">{itemLabel(step, `步骤 ${index + 1}`)}</span>
+        {step.assignedTo && (
+          <span className="shrink-0 text-muted-foreground">@{step.assignedTo}</span>
+        )}
+        <span className="text-muted-foreground">{statusLabel(step.status)}</span>
+      </button>
+      {(step.dependsOn?.length || (expandable && expanded)) && (
+        <div className="ml-5 space-y-0.5">
+          {step.dependsOn && step.dependsOn.length > 0 && (
+            <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <CornerDownRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+              依赖：{step.dependsOn.join('、')}
+            </p>
+          )}
+          {expandable && expanded && (
+            <p className="rounded bg-muted/50 px-2 py-1.5 text-[11px] leading-relaxed text-foreground/80">
+              {step.summary}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
   const runId = payload.runId || payload.run_id;
+  const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
   // live 刷新（第 11 轮）：项目工作流卡是一次性发布的快照，任务推进在
   // controller 侧 → 按 runId 轮询项目 workflow 正源（与任务看板同源同频 15s）
   // overlay 状态/步骤/参与 Worker。workerflow 卡（type=workerflow）运行时靠
@@ -87,6 +140,14 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
     ? new Date(liveQuery.dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })
     : null;
 
+  // 接力卡 F1.2 双向跳转（正源确认是项目才显示入口，避免 workerflow 卡误跳）：
+  // 卡片 → 任务中心项目详情，复用 HITL 深链通道（setPendingProjectKey + tasks）。
+  const openProjectDetail = () => {
+    if (!runId) return;
+    useHitlInboxStore.getState().setPendingProjectKey({ id: String(runId) });
+    useSectionStore.getState().setActiveSection('tasks');
+  };
+
   return (
     <Card className="my-2 w-[min(100%,56rem)] max-w-full border-l-4 border-l-violet-500 py-4">
       <CardHeader className="gap-2 px-4 py-0">
@@ -105,7 +166,20 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
               </span>
             )}
           </CardTitle>
-          <StatusBadge status={status} />
+          <div className="flex items-center gap-2">
+            {liveReady && runId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px]"
+                onClick={openProjectDetail}
+              >
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                项目详情
+              </Button>
+            )}
+            <StatusBadge status={status} />
+          </div>
         </div>
         {runId && <p className="font-mono text-xs text-muted-foreground">runId: {runId}</p>}
       </CardHeader>
@@ -133,11 +207,13 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
               <Progress value={progress} aria-label={`执行进度 ${completedSteps}/${steps.length}`} />
               <div className="mt-2 space-y-1.5">
                 {steps.map((step, index) => (
-                  <div key={step.id || step.name || String(index)} className="flex items-center gap-2 text-xs">
-                    <StepGlyph status={step.status} />
-                    <span className="min-w-0 flex-1 truncate">{itemLabel(step, `步骤 ${index + 1}`)}</span>
-                    <span className="text-muted-foreground">{statusLabel(step.status)}</span>
-                  </div>
+                  <RelayStepRow
+                    key={step.id || step.name || String(index)}
+                    step={step}
+                    index={index}
+                    expanded={Boolean(step.id) && expandedStepId === step.id}
+                    onToggle={() => setExpandedStepId((prev) => (prev === step.id ? null : step.id ?? null))}
+                  />
                 ))}
               </div>
             </section>
