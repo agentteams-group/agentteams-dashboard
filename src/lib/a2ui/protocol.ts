@@ -105,11 +105,47 @@ export interface RuntimeErrorBlock {
   payload: { kind: RuntimeRunEndingKind; title: string };
 }
 
+/** 问题分级（PRD F3.1：阻断 / 建议）。 */
+export type ReviewIssueSeverity = 'blocker' | 'suggestion';
+
+export interface RuntimeReviewIssue {
+  id: string;
+  severity: ReviewIssueSeverity;
+  /** 位置描述（文件/段落/锚点）。 */
+  anchor?: string;
+  /** 复现步骤。 */
+  repro?: string;
+  /** 责任节点（对应项目 workflow 节点 id/名）。 */
+  owner_node?: string;
+}
+
+export type ReviewVerdict = 'pass' | 'revision_needed' | 'blocked';
+
+/**
+ * 结构化审查报告块（PRD F3.1 / §7.3 v2 提案 `review.report`，消费侧先行）。
+ * 上游未发布前恒缺省 → 消息按普通 Markdown 渲染（Outcome 语义已由
+ * run-ending 卡覆盖），前向兼容不丢内容。
+ */
+export interface RuntimeReviewReportBlock {
+  type: 'review.report';
+  payload: {
+    /** 审查轮次（F3.2 修复往返标注「第 N 轮」）。 */
+    round: number;
+    verdict: ReviewVerdict;
+    title?: string;
+    summary?: string;
+    issues: RuntimeReviewIssue[];
+    /** 报告所属项目（跳转任务中心用）。 */
+    project_id?: string;
+  };
+}
+
 export type RuntimeBlock =
   | RuntimeTextBlock
   | RuntimeThinkingBlock
   | RuntimeToolCallBlock
   | RuntimeConfirmationBlock
+  | RuntimeReviewReportBlock
   | RuntimeErrorBlock;
 
 export interface RuntimeBlockEnvelope {
@@ -281,4 +317,54 @@ export function normalizeErrorPayload(raw: unknown): RuntimeErrorBlock | undefin
   if (source.kind !== 'cancelled' && source.kind !== 'failed' && source.kind !== 'quiet') return undefined;
   if (typeof source.title !== 'string') return undefined;
   return { type: 'error', payload: { kind: source.kind, title: source.title } };
+}
+
+const REVIEW_VERDICTS: ReadonlySet<string> = new Set(['pass', 'revision_needed', 'blocked']);
+const REVIEW_SEVERITIES: ReadonlySet<string> = new Set(['blocker', 'suggestion']);
+
+function normalizeReviewIssues(raw: unknown): RuntimeReviewIssue[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const issues: RuntimeReviewIssue[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const source = entry as Record<string, unknown>;
+    if (typeof source.id !== 'string' || source.id.length === 0) continue;
+    if (typeof source.severity !== 'string' || !REVIEW_SEVERITIES.has(source.severity)) continue;
+    const issue: RuntimeReviewIssue = {
+      id: source.id,
+      severity: source.severity as ReviewIssueSeverity,
+    };
+    if (typeof source.anchor === 'string' && source.anchor.length > 0) issue.anchor = source.anchor;
+    if (typeof source.repro === 'string' && source.repro.length > 0) issue.repro = source.repro;
+    if (typeof source.owner_node === 'string' && source.owner_node.length > 0) {
+      issue.owner_node = source.owner_node;
+    }
+    issues.push(issue);
+  }
+  return issues.length > 0 ? issues : undefined;
+}
+
+/**
+ * Normalise a v2 `review.report` block (审查报告卡 F3.1). Requires a numeric
+ * round, a known verdict and at least one well-formed issue; anything else is
+ * rejected so the caller falls through to plain Markdown rendering.
+ */
+export function normalizeReviewReportPayload(raw: unknown): RuntimeReviewReportBlock | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.round !== 'number' || !Number.isFinite(source.round) || source.round < 1) return undefined;
+  if (typeof source.verdict !== 'string' || !REVIEW_VERDICTS.has(source.verdict)) return undefined;
+  const issues = normalizeReviewIssues(source.issues);
+  if (!issues) return undefined;
+  const payload: RuntimeReviewReportBlock['payload'] = {
+    round: source.round,
+    verdict: source.verdict as ReviewVerdict,
+    issues,
+  };
+  if (typeof source.title === 'string' && source.title.length > 0) payload.title = source.title;
+  if (typeof source.summary === 'string' && source.summary.length > 0) payload.summary = source.summary;
+  if (typeof source.project_id === 'string' && source.project_id.length > 0) {
+    payload.project_id = source.project_id;
+  }
+  return { type: 'review.report', payload };
 }

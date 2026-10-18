@@ -24,8 +24,7 @@ import {
   toastMutationError,
 } from './workflow-config';
 import { ArtifactLink } from './artifact-link';
-import { ArtifactStateBadge } from './artifact-state-badge';
-import { artifactStateFromTask } from '@/lib/artifact-state';
+import { ReleaseControls } from './release-controls';
 
 /** Cancel button for one task row (POST .../tasks/{taskId}/cancel).
  * Renders only for non-terminal tasks; opens a reason dialog. */
@@ -110,10 +109,13 @@ export function TaskDetailRow({
   task,
   projectId,
   teamId,
+  roomId,
 }: {
   task: WorkflowTaskDetail;
   projectId: string;
   teamId?: string;
+  /** 项目来源房间（workflow.source_room_id）：有则提供放行控制。 */
+  roomId?: string;
 }) {
   const deliverables = Array.isArray(task.deliverables)
     ? task.deliverables.filter((d): d is string => typeof d === 'string')
@@ -209,8 +211,16 @@ export function TaskDetailRow({
       {(task.result_path || deliverables.length > 0) && (
         <div className="flex items-center gap-2 flex-wrap pt-1">
           <span className="text-[10px] text-muted-foreground shrink-0">产物：</span>
-          {/* 工件三态徽标（F1.3）：任务维度推导，15s 正源轮询即时反映 */}
-          <ArtifactStateBadge info={artifactStateFromTask(task)} />
+          {/* 工件三态 + 放行控制（F1.3/F3.3）：有放行历史以最新记录为准，
+              否则由任务状态推导（15s 正源轮询即时反映） */}
+          <ReleaseControls
+            roomId={roomId}
+            projectId={projectId}
+            taskId={task.task_id}
+            taskStatus={task.status}
+            resultStatus={task.result_status}
+            compact
+          />
           {task.result_path ? (
             <ArtifactLink
               href={getTaskArtifactUrl(projectId, task.task_id)}

@@ -6,6 +6,7 @@ import { isProjectMiss, workflowLiveFromProject } from '@/lib/chat-workflow-live
 import { getProjectWorkflow, getTaskArtifactUrl } from '@/lib/agentteams-projects-api';
 import { artifactStateFromTask } from '@/lib/artifact-state';
 import { ArtifactStateBadge } from '@/components/dashboard/sections/projects/artifact-state-badge';
+import { ReleaseControls } from '@/components/dashboard/sections/projects/release-controls';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
@@ -89,18 +90,20 @@ function AssigneeChip({ name }: { name: string }) {
 }
 
 /** 接力卡单步（F1.2）：状态 glyph + 名称 + 责任 Agent + 依赖副行；
- * 有摘要或工件的步骤可点开：摘要 + 工件三态徽标 + 产物直达
- * （F1.3 工件态由任务状态推导，15s 正源轮询即时反映）。 */
+ * 有摘要或工件的步骤可点开：摘要 + 工件三态（有来源房间时含放行控制，
+ * F3.3）+ 产物直达；15s 正源轮询即时反映。 */
 function RelayStepRow({
   step,
   index,
   projectId,
+  sourceRoomId,
   expanded,
   onToggle,
 }: {
   step: WorkflowItem;
   index: number;
   projectId?: string;
+  sourceRoomId?: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -134,7 +137,17 @@ function RelayStepRow({
               {(step.deliverableCount || step.resultPath) && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] text-muted-foreground shrink-0">工件：</span>
-                  {projectId && step.id && artifactStateBadgeFor(step)}
+                  {projectId && step.id && sourceRoomId ? (
+                    <ReleaseControls
+                      roomId={sourceRoomId}
+                      projectId={projectId}
+                      taskId={step.id}
+                      taskStatus={step.status}
+                      compact
+                    />
+                  ) : (
+                    projectId && step.id && artifactStateBadgeFor(step)
+                  )}
                   {projectId && step.resultPath && step.id && (
                     <a
                       href={getTaskArtifactUrl(projectId, step.id, step.resultPath)}
@@ -264,6 +277,7 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
                     step={step}
                     index={index}
                     projectId={live?.projectId}
+                    sourceRoomId={live?.sourceRoomId}
                     expanded={Boolean(step.id) && expandedStepId === step.id}
                     onToggle={() => setExpandedStepId((prev) => (prev === step.id ? null : step.id ?? null))}
                   />

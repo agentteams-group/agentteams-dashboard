@@ -9,6 +9,7 @@ import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix
 import { MarkdownMessage } from '../markdown-message';
 import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
 import { InterventionCard } from '../intervention-card';
+import { ReviewReportCard } from '../review-report-card';
 import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
@@ -410,6 +411,19 @@ export function MessageBubble({
                         payload={block.payload as unknown as ConfirmationCardPayload}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}
+                      />
+                    </div>
+                  );
+                }
+                if (block.type === 'review.report') {
+                  // F3.1 结构化审查报告卡；无结构时本分支不触发，
+                  // 消息照常走 Markdown 渲染（降级不丢内容）。
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <ReviewReportCard
+                        payload={block.payload as unknown as import('@/lib/a2ui/protocol').RuntimeReviewReportBlock['payload']}
+                        eventId={message.eventId}
+                        onSend={onSendConfirmation}
                       />
                     </div>
                   );

@@ -16,6 +16,13 @@ export interface ArtifactStateInfo {
   note?: string;
 }
 
+interface ReleaseRecordLike {
+  action: 'release' | 'revoke';
+  actor: string;
+  ts: number;
+  task_id?: string;
+}
+
 /** 上游 result_status（Outcome 口径）里代表"要返工"的取值。 */
 const REWORK_OUTCOMES = new Set(['REVISION_NEEDED', 'BLOCKED']);
 
@@ -24,17 +31,32 @@ const COMPLETE_TASK_STATUSES = new Set(['completed', 'success', 'done']);
 /**
  * 从任务状态推导其交付物的工件态。
  *
- * - completed（且 result_status 非返工）→ released，附 M1 降级说明
- *   （放行记录待 M2 审查闭环写入）；
- * - result_status 为 REVISION_NEEDED / BLOCKED → draft（需修订）；
- * - 其余（pending/delegated/in-progress/revision/未知）→ draft。
- * - pending_review 预留给 M2：runtime 发出审查请求（F2/F3 结构化块）后，
- *   「已提交待审」才有事实源；M1 不会返回该态。
+ * @param releases 该空间（或该任务）的放行记录历史（升序；来自
+ *   `com.agentteams.release` 房间状态事件）。有记录时以最新为准 ——
+ *   release → released（人工放行，事实源充分，无降级说明）；
+ *   revoke → 回 draft（附撤销说明）。历史不覆盖，撤销生成新记录。
+ * @param taskId 当前任务 id：过滤任务级记录；项目级记录（无 task_id）
+ *   对所有任务生效。
  */
-export function artifactStateFromTask(task: {
-  status?: string;
-  result_status?: string;
-}): ArtifactStateInfo {
+export function artifactStateFromTask(
+  task: {
+    status?: string;
+    result_status?: string;
+  },
+  releases?: ReleaseRecordLike[],
+  taskId?: string
+): ArtifactStateInfo {
+  if (releases && releases.length > 0) {
+    const scoped = releases.filter((r) => (taskId ? !r.task_id || r.task_id === taskId : true));
+    const latest = scoped[scoped.length - 1];
+    if (latest) {
+      if (latest.action === 'release') {
+        return { state: 'released', note: `人工放行（${latest.actor}）` };
+      }
+      return { state: 'draft', note: `人工放行已撤销（${latest.actor}），回退草稿` };
+    }
+  }
+
   const status = (task.status ?? '').toLowerCase();
   const outcome = (task.result_status ?? '').toUpperCase();
 

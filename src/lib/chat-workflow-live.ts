@@ -22,6 +22,8 @@ export interface ChatWorkflowLive {
   title?: string;
   /** 项目 id（接力卡 F1.2：跳转任务中心项目详情用）。 */
   projectId?: string;
+  /** 项目来源房间（F3.3：放行控制需要房间状态事件载体）。 */
+  sourceRoomId?: string;
   steps: WorkflowItem[];
   subagents: WorkflowItem[];
 }
@@ -81,7 +83,14 @@ export function workflowLiveFromProject(wf: WorkflowResponse): ChatWorkflowLive 
     seen.add(a);
     subagents.push({ id: a, name: a });
   }
-  return { status: wf.status, title: wf.title, projectId: wf.project_id, steps, subagents };
+  return {
+    status: wf.status,
+    title: wf.title,
+    projectId: wf.project_id,
+    ...(wf.source_room_id ? { sourceRoomId: wf.source_room_id } : {}),
+    steps,
+    subagents,
+  };
 }
 
 /** runId 不是项目（404 无此项目 / 409 跨团队歧义 / 400 非法 id）→ 停探。

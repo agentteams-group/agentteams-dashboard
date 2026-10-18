@@ -50,3 +50,39 @@ describe('artifactStateFromTask（F1.3 三态映射）', () => {
     });
   });
 });
+
+describe('artifactStateFromTask — 放行记录（F3.3）', () => {
+  const releases = [
+    { action: 'release' as const, actor: '@alice:example.org', ts: 1000 },
+    { action: 'revoke' as const, actor: '@alice:example.org', ts: 2000 },
+  ];
+
+  it('最新记录 release → released（人工放行，无降级说明）', () => {
+    const info = artifactStateFromTask(
+      { status: 'in-progress' },
+      [releases[0]],
+      't1',
+    );
+    expect(info.state).toBe('released');
+    expect(info.note).toContain('人工放行');
+    expect(info.note).toContain('@alice:example.org');
+  });
+
+  it('release 后 revoke → 回 draft 并附撤销说明（历史不覆盖）', () => {
+    const info = artifactStateFromTask({ status: 'completed' }, releases, 't1');
+    expect(info.state).toBe('draft');
+    expect(info.note).toContain('已撤销');
+  });
+
+  it('任务级记录只对匹配任务生效；项目级记录（无 task_id）对所有任务生效', () => {
+    const taskScoped = [{ action: 'release' as const, actor: 'a', ts: 1, task_id: 't9' }];
+    expect(artifactStateFromTask({ status: 'pending' }, taskScoped, 't1').state).toBe('draft');
+    expect(artifactStateFromTask({ status: 'pending' }, taskScoped, 't9').state).toBe('released');
+    const projectScoped = [{ action: 'release' as const, actor: 'a', ts: 1 }];
+    expect(artifactStateFromTask({ status: 'pending' }, projectScoped, 't1').state).toBe('released');
+  });
+
+  it('空历史回退任务状态推导', () => {
+    expect(artifactStateFromTask({ status: 'pending' }, [], 't1').state).toBe('draft');
+  });
+});
