@@ -194,6 +194,8 @@ Entries discovered by the Agent while performing [specific task description] sho
   - Workbench 重构 PRD 归档在 .monkeycode/specs/workbench-refactor/prd.md（v1.1 终稿，14 周 4 里程碑）
   - M1 骨架已全部落地（分支 261018-feat-workbench-refactor-m1）：混合 IA、分层 hash、经典导航开关、孤儿清理、版本统一、命令面板扩展、F1.1 空间切片、F1.2 接力卡（依赖/责任/摘要/展开/跳转）、F1.3 工件三态（任务维度，released 带 M1 降级说明）、F1.5 切片（@name 直达会话）、F4.1 切片（roomId 直达空间）
   - F1.3 注意：消息流工件卡与 pending_review 态的事实源（放行记录 com.agentteams.release / 审查请求块）待 M2 F2/F3 落地，M1 只在任务详情与接力卡展开区呈现三态
+  - M2 进度：F2.1 干预卡（v2 协议消费侧 + 全交互规格 + 消息回写降级徽标）、F2.2 超时置灰与升级通知（审计 hitl.expire 待 BFF 落点）、F2.3 收件箱互通已完成；F2.4 回写审计、F3 审查闭环（F3.1-F3.4）未开始
+  - 干预协议约定：isInterventionConfirmation 按 question/options/questions 字段存在判定，v1 工具确认不受影响；答案回写上游 v2 answer 契约就绪前一律走「自然语言消息发回房间」降级，UI 徽标常显
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
