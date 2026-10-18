@@ -35,6 +35,7 @@ import {
   Palette,
   Puzzle,
   Sparkles,
+  ListTree,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { ThemeTab } from './settings/theme-tab';
@@ -67,6 +68,8 @@ export function SettingsDialog() {
     connectionHistory,
     taskBoardVisible,
     setTaskBoardVisible,
+    classicNavigation,
+    setClassicNavigation,
     userLevel,
   } = useAgentTeamsStore();
 
@@ -375,6 +378,23 @@ export function SettingsDialog() {
               <Switch
                 checked={taskBoardVisible}
                 onCheckedChange={setTaskBoardVisible}
+              />
+            </div>
+
+            {/* Classic navigation (PRD §5.4)：v1.x 平铺导航过渡开关 */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="flex items-center gap-2">
+                  <ListTree className="w-3.5 h-3.5" />
+                  经典导航
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  开启后侧边栏回退到旧版的「基础/运行时/资源中心」平铺布局；新版的「工作台/控制台」两级导航为默认。经典导航保留一个版本周期
+                </p>
+              </div>
+              <Switch
+                checked={classicNavigation}
+                onCheckedChange={setClassicNavigation}
               />
             </div>
           </TabsContent>

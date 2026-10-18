@@ -42,6 +42,7 @@ import { NotificationPopover } from './notification-popover';
 import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
+import { openChatRoom } from '@/lib/open-chat-room';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
 
 interface DashboardHeaderProps {
@@ -171,7 +172,7 @@ export function DashboardHeader({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
         <Input
           ref={searchInputRef}
-          placeholder="搜索 Workers、团队、Manager... (K)"
+          placeholder="搜索页面、房间、Workers、团队... (K)"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
           onFocus={() => setPaletteOpen(true)}
@@ -185,6 +186,9 @@ export function DashboardHeader({
           <CommandPalette
             results={searchResults}
             onSelect={(result: SearchResult) => {
+              if (result.roomId) {
+                openChatRoom(result.roomId);
+              }
               onNavClick(result.section);
               setDebouncedQuery('');
               setPaletteOpen(false);

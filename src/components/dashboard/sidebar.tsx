@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import {
@@ -16,14 +15,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  navItems,
-  navGroups,
-  isNavItemVisible,
-  type NavItem,
-  type DeploymentMode,
-  type NavGroup,
-} from './nav-items';
+import type { NavItem, DeploymentMode } from './nav-items';
+import { useNavSections } from './use-nav-sections';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
 
@@ -120,11 +113,22 @@ function NavButton({
 // GroupHeader
 // ──────────────────────────────────────────
 
-function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
-  if (!group.label) return null;
+function GroupHeader({ label }: { label: string }) {
   return (
     <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-      {group.label}
+      {label}
+    </div>
+  );
+}
+
+/** Area header (工作台 / 控制台) — only rendered in Workbench mode. */
+function AreaHeader({ label, collapsed }: { label: string; collapsed: boolean }) {
+  if (collapsed) {
+    return <div className="mx-3 my-2 border-t border-border" aria-label={label} />;
+  }
+  return (
+    <div className="px-4 pt-3 pb-1 text-xs font-bold text-foreground/80 flex items-center gap-1.5">
+      {label}
     </div>
   );
 }
@@ -144,16 +148,8 @@ export function Sidebar({
 }: SidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
-  const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible, userLevel)),
-    [mode, taskBoardVisible, userLevel]
-  );
-
-  // Group items by their group field
-  const groupedItems = navGroups.map((group) => ({
-    group,
-    items: visibleItems.filter((item) => item.group === group.id),
-  })).filter(({ items }) => items.length > 0);
+  const classicNavigation = useAgentTeamsStore((s) => s.classicNavigation);
+  const areaSections = useNavSections(mode, taskBoardVisible, userLevel, classicNavigation);
 
   return (
     <aside
@@ -219,24 +215,30 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {groupedItems.map(({ group, items }) => (
-          <div key={group.id}>
-            {!collapsed && <GroupHeader group={group} />}
-            {items.map((item) => (
-              <NavButton
-                key={item.id}
-                item={item}
-                isActive={activeSection === item.id}
-                count={countMap[item.id] ?? 0}
-                hasNotification={sectionsWithNotifications.has(item.id)}
-                collapsed={collapsed}
-                onNavClick={onNavClick}
-              />
+        {areaSections.map((area) => (
+          <div key={area.key}>
+            {area.label && <AreaHeader label={area.label} collapsed={collapsed} />}
+            {area.groups.map((group) => (
+              <div key={group.key}>
+                {!collapsed && <GroupHeader label={group.label} />}
+                {group.items.map((item) => (
+                  <NavButton
+                    key={item.id}
+                    item={item}
+                    isActive={activeSection === item.id}
+                    count={countMap[item.id] ?? 0}
+                    hasNotification={sectionsWithNotifications.has(item.id)}
+                    collapsed={collapsed}
+                    onNavClick={onNavClick}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         ))}
 
-        {/* Plugin-contributed menu items (extension point: sidebar-menu) */}
+        {/* Plugin-contributed menu items (extension point: sidebar-menu).
+            挂载点随控制台收敛迁移（PRD §9），仍追加在侧栏尾部。 */}
         <PluginNavItems
           activeSection={activeSection}
           collapsed={collapsed}

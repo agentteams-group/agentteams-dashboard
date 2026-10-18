@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { sectionMap } from './agent-teams-dashboard';
-import { createActions, isCreateActionVisible, isNavItemVisible, navItems, navGroups } from './nav-items';
+import {
+  createActions,
+  isCreateActionVisible,
+  isNavItemVisible,
+  navItems,
+  navGroups,
+  navAreas,
+  legacyNavGroups,
+} from './nav-items';
 
-describe('Navigation with groups', () => {
-  it('exposes grouped top-level entries', () => {
+describe('Navigation with groups (Workbench IA)', () => {
+  it('exposes all 13 sections with zero removals (PRD §5.2)', () => {
     const ids = navItems.map((item) => item.id);
+    expect(ids).toHaveLength(13);
     expect(ids).toEqual([
-      'overview',
+      // 工作台
       'chat',
       'tasks',
       'artifacts',
       'coding-runs',
-
+      // 控制台
       'workers',
       'managers',
       'teams',
@@ -20,30 +29,48 @@ describe('Navigation with groups', () => {
       'models',
       'knowledge',
       'audit',
+      'overview',
     ]);
     expect(navItems.every((item) => 'group' in item)).toBe(true);
+    expect(navItems.every((item) => 'area' in item)).toBe(true);
   });
 
-  it('defines all navigation groups', () => {
-    const groupIds = navGroups.map((g) => g.id);
-    expect(groupIds).toEqual(['core', 'runtime', 'resource']);
+  it('defines the two IA areas and their groups', () => {
+    expect(navAreas.map((a) => a.id)).toEqual(['workbench', 'console']);
+    expect(navGroups.map((g) => g.id)).toEqual([
+      'space',
+      'task-center',
+      'resources',
+      'governance',
+      'system',
+    ]);
   });
 
-  it('assigns correct groups to items', () => {
-    const groupMap = new Map(navItems.map((item) => [item.id, item.group]));
-    expect(groupMap.get('overview')).toBe('core');
-    expect(groupMap.get('chat')).toBe('core');
-    expect(groupMap.get('tasks')).toBe('runtime');
-    expect(groupMap.get('artifacts')).toBe('runtime');
-    expect(groupMap.get('coding-runs')).toBe('runtime');
-    expect(groupMap.get('workers')).toBe('runtime');
-    expect(groupMap.get('managers')).toBe('runtime');
-    expect(groupMap.get('teams')).toBe('runtime');
-    expect(groupMap.get('humans')).toBe('runtime');
-    expect(groupMap.get('skills')).toBe('resource');
-    expect(groupMap.get('models')).toBe('resource');
-    expect(groupMap.get('knowledge')).toBe('resource');
-    expect(groupMap.get('audit')).toBe('resource');
+  it('assigns items to workbench groups', () => {
+    const byId = new Map(navItems.map((item) => [item.id, item]));
+    expect(byId.get('chat')).toMatchObject({ area: 'workbench', group: 'space' });
+    expect(byId.get('tasks')).toMatchObject({ area: 'workbench', group: 'task-center' });
+    expect(byId.get('artifacts')).toMatchObject({ area: 'workbench', group: 'task-center' });
+    expect(byId.get('coding-runs')).toMatchObject({ area: 'workbench', group: 'task-center' });
+  });
+
+  it('assigns items to console groups (附录 A 归属)', () => {
+    const byId = new Map(navItems.map((item) => [item.id, item]));
+    expect(byId.get('workers')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('managers')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('teams')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('humans')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('skills')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('models')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('knowledge')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('audit')).toMatchObject({ area: 'console', group: 'governance' });
+    expect(byId.get('overview')).toMatchObject({ area: 'console', group: 'system' });
+  });
+
+  it('keeps a legacy grouping for the classic-navigation switch', () => {
+    expect(legacyNavGroups.map((g) => g.id)).toEqual(['core', 'runtime', 'resource']);
+    // Every item must keep a legacy home so classic mode shows all 13.
+    expect(navItems.every((item) => item.legacyGroup)).toBe(true);
   });
 
   it('maps every navigation entry to a section', () => {

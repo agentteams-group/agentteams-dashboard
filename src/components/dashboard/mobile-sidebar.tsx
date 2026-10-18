@@ -1,18 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  navItems,
-  navGroups,
-  isNavItemVisible,
-  type DeploymentMode,
-  type NavGroup,
-} from './nav-items';
+import type { DeploymentMode } from './nav-items';
+import { useNavSections } from './use-nav-sections';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
 
@@ -26,11 +20,18 @@ interface MobileSidebarProps {
   mode?: DeploymentMode | null;
 }
 
-function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
-  if (!group.label) return null;
+function GroupHeader({ label }: { label: string }) {
   return (
     <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-      {group.label}
+      {label}
+    </div>
+  );
+}
+
+function AreaHeader({ label }: { label: string }) {
+  return (
+    <div className="px-4 pt-3 pb-1 text-xs font-bold text-foreground/80">
+      {label}
     </div>
   );
 }
@@ -46,16 +47,8 @@ export function MobileSidebar({
 }: MobileSidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
-  const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible, userLevel)),
-    [mode, taskBoardVisible, userLevel]
-  );
-
-  // Group items by their group field
-  const groupedItems = navGroups.map((group) => ({
-    group,
-    items: visibleItems.filter((item) => item.group === group.id),
-  })).filter(({ items }) => items.length > 0);
+  const classicNavigation = useAgentTeamsStore((s) => s.classicNavigation);
+  const areaSections = useNavSections(mode, taskBoardVisible, userLevel, classicNavigation);
 
   return (
     <AnimatePresence>
@@ -94,46 +87,51 @@ export function MobileSidebar({
 
             {/* Scrollable nav */}
             <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">
-              {groupedItems.map(({ group, items }) => (
-                <div key={group.id}>
-                  <GroupHeader group={group} />
-                  {items.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = activeSection === item.id;
-                    const count = countMap[item.id] ?? 0;
-                    const hasNotification =
-                      sectionsWithNotifications.has(item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onNavClick(item.id)}
-                        data-nav-section={item.id}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm ${
-                          isActive
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
-                            : 'text-muted-foreground hover:bg-accent'
-                        }`}
-                      >
-                        <Icon
-                          className={`w-5 h-5 ${
-                            isActive ? 'text-emerald-500' : ''
-                          }`}
-                        />
-                        <span className="truncate">{item.label}</span>
-                        {count > 0 && (
-                          <Badge
-                            variant="secondary"
-                            className="ml-auto text-[10px] h-5 min-w-[20px] px-1.5"
+              {areaSections.map((area) => (
+                <div key={area.key}>
+                  {area.label && <AreaHeader label={area.label} />}
+                  {area.groups.map((group) => (
+                    <div key={group.key}>
+                      <GroupHeader label={group.label} />
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeSection === item.id;
+                        const count = countMap[item.id] ?? 0;
+                        const hasNotification =
+                          sectionsWithNotifications.has(item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => onNavClick(item.id)}
+                            data-nav-section={item.id}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm ${
+                              isActive
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
+                                : 'text-muted-foreground hover:bg-accent'
+                            }`}
                           >
-                            {count}
-                          </Badge>
-                        )}
-                        {hasNotification && !isActive && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-1" />
-                        )}
-                      </button>
-                    );
-                  })}
+                            <Icon
+                              className={`w-5 h-5 ${
+                                isActive ? 'text-emerald-500' : ''
+                              }`}
+                            />
+                            <span className="truncate">{item.label}</span>
+                            {count > 0 && (
+                              <Badge
+                                variant="secondary"
+                                className="ml-auto text-[10px] h-5 min-w-[20px] px-1.5"
+                              >
+                                {count}
+                              </Badge>
+                            )}
+                            {hasNotification && !isActive && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-1" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               ))}
 

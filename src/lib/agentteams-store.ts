@@ -31,6 +31,12 @@ interface AgentTeamsState {
   taskBoardVisible: boolean;
 
   /**
+   * 经典导航开关（PRD §5.4）：开启后侧栏回退到 v1.x 的 13 项三组平铺，
+   * 供老用户过渡。默认关（Workbench 两级导航）。保留一个版本周期。
+   */
+  classicNavigation: boolean;
+
+  /**
    * Dashboard rbac level of the logged-in user (M19 dual track):
    * 3 Admin (L1, SA credential) / 2 Operator (L2, own Matrix token) /
    * 1 Observer. Used ONLY for the UI level gate — the security boundary is
@@ -55,6 +61,7 @@ interface AgentTeamsState {
   setAutoReconnect: (_val: boolean) => void;
   setReconnectInterval: (_ms: number) => void;
   setTaskBoardVisible: (_val: boolean) => void;
+  setClassicNavigation: (_val: boolean) => void;
   setUserLevel: (_val: number) => void;
   setSessionUser: (_val: string | null) => void;
   addConnectionAttempt: (_attempt: ConnectionAttempt) => void;
@@ -79,6 +86,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       connectionLatency: null,
       connectionHistory: [],
       taskBoardVisible: true,
+      classicNavigation: false,
       userLevel: 3,
       sessionUser: null,
 
@@ -159,6 +167,10 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         set({ taskBoardVisible: val });
       },
 
+      setClassicNavigation: (val: boolean) => {
+        set({ classicNavigation: val });
+      },
+
       setUserLevel: (val: number) => {
         set({ userLevel: val });
       },
@@ -174,13 +186,14 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
     }),
     {
       name: 'agentteams-store',
-      version: 3,
+      version: 4,
       partialize: (state) => ({
         controllerUrl: state.controllerUrl,
         autoReconnect: state.autoReconnect,
         reconnectInterval: state.reconnectInterval,
         lastConnectedAt: state.lastConnectedAt,
         taskBoardVisible: state.taskBoardVisible,
+        classicNavigation: state.classicNavigation,
       }),
       migrate: (persistedState) => {
         // Clear the legacy hard-coded default so the dashboard falls back to

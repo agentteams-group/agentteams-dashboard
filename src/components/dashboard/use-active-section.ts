@@ -4,15 +4,23 @@ import { useEffect, useCallback } from 'react';
 import { navItems, STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
 import { isPluginSectionId } from '@/lib/plugins/types';
+import {
+  hashForSection,
+  needsHashNormalization,
+  resolveHash,
+} from '@/lib/nav-hash';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
 /**
- * Active section resolution.
+ * Active section resolution for the Workbench IA.
  *
- * Built-in sections come from nav-items; plugin routes use the
- * `plugin-route:<pluginId>/<routeId>` form contributed at runtime. Plugin
- * ids look like hash fragments already, so they survive the URL-hash round
- * trip. Existence of the plugin route itself is verified by the dashboard
- * shell (which falls back to overview when a plugin is absent/disabled).
+ * The store keeps flat section ids ('chat', 'tasks', plugin routes, …); the
+ * URL carries layered hashes (`#workbench/space/<roomId>`,
+ * `#console/resources/workers`, …). Legacy flat hashes (#chat, #workers…)
+ * resolve through the compat table and are normalized in place via
+ * history.replaceState, so old bookmarks keep working without polluting the
+ * history stack (PRD §5.4). Plugin routes keep their flat
+ * `plugin-route:<pluginId>/<routeId>` form.
  */
 
 function isKnownSection(hash: string): boolean {
@@ -20,44 +28,43 @@ function isKnownSection(hash: string): boolean {
   return isPluginSectionId(hash);
 }
 
-/**
- * Legacy section ids merged away from the nav: the standalone projects
- * section was folded into the task board's 项目 view, so old #projects deep
- * links and stored sections keep working by resolving to 'tasks'.
- */
-const SECTION_ALIASES: Record<string, string> = {
-  projects: 'tasks',
-};
-
-function resolveSection(hash: string): string | null {
-  if (navItems.some((n) => n.id === hash)) return hash;
-  const alias = SECTION_ALIASES[hash];
-  if (alias && navItems.some((n) => n.id === alias)) return alias;
-  if (isPluginSectionId(hash)) return hash;
-  return null;
+/** Apply a resolved hash's deep-link payload (room id) to the target store. */
+function applyDeepLinks(resolved: ReturnType<typeof resolveHash>): void {
+  if (resolved?.section === 'chat' && resolved.roomId) {
+    useHitlInboxStore.getState().setPendingChatRoomId(resolved.roomId);
+  }
 }
 
 function resolveInitialSection(): string {
   if (typeof window === 'undefined') return 'chat';
 
   const hash = window.location.hash.slice(1);
-  const known = hash ? resolveSection(hash) : null;
-  if (known) return known;
+  if (hash) {
+    const resolved = resolveHash(hash, isKnownSection);
+    if (resolved) {
+      applyDeepLinks(resolved);
+      // Normalize legacy flat hashes (#chat → #workbench/space) in place —
+      // replaceState keeps the history stack clean for redirected bookmarks.
+      // Layered hashes stay untouched: they may carry deep-link segments
+      // (room id, query params) that must survive in the URL.
+      if (needsHashNormalization(hash)) {
+        window.history.replaceState(null, '', `#${hashForSection(resolved.section)}`);
+      }
+      return resolved.section;
+    }
+  }
 
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && isKnownSection(stored)) return stored;
-    if (stored && SECTION_ALIASES[stored]) return SECTION_ALIASES[stored];
+    // Pre-Workbench stored ids remain valid section ids — they were flat.
   } catch {
     /* localStorage unavailable */
   }
 
-  // Default landing section. Operators who want the conversation-first shell
-  // can pin `chat` via deep link (#chat) or localStorage; everyone else opens
-  // on overview — the commit that flipped this default to 'chat' made the
-  // overview page effectively unreachable, which in turn masked the heading-
-  // downgrade React error #185 (minified) that triggered when users did
-  // navigate to overview.
+  // Default landing section: the collaboration space (conversation-first
+  // shell). Operators can pin another surface via a layered deep link or
+  // localStorage.
   return 'chat';
 }
 
@@ -65,9 +72,9 @@ function resolveInitialSection(): string {
 // future caller) remounts useActiveSection whenever its section mounts; a
 // remount re-reads the URL hash, which still holds the PREVIOUS section in
 // the same-commit path (chat→tasks bypasses AnimatePresence, so the section
-// component mounts before the shell's hash-sync effect writes '#tasks').
-// That re-read clobbered the fresh 'tasks' selection straight back to 'chat'
-// — the operator-visible "click 任务看板 first time does nothing" bug.
+// component mounts before the shell's hash-sync effect writes the layered
+// hash). That re-read clobbered the fresh 'tasks' selection straight back to
+// 'chat' — the operator-visible "click 任务看板 first time does nothing" bug.
 let initialResolutionDone = false;
 
 /** Test seam: reset the once-guard so each test gets a fresh resolution. */
@@ -90,7 +97,7 @@ export function useActiveSection() {
     useSectionStore.getState().setActiveSection(section);
   }, []);
 
-  // --- Sync URL hash ---
+  // --- Sync URL hash (flat section → layered hash) ---
   useEffect(() => {
     // Read the live store value instead of the captured `activeSection`:
     // on mount the initial-resolution effect above has already written the
@@ -100,8 +107,9 @@ export function useActiveSection() {
     // hashchange event races the re-render — when the event wins, the
     // handler reads the stale hash and bounces the user back to overview.
     const section = useSectionStore.getState().activeSection;
-    if (window.location.hash.slice(1) !== section) {
-      window.location.hash = section;
+    const canonical = `#${hashForSection(section)}`;
+    if (window.location.hash !== canonical) {
+      window.location.hash = canonical;
     }
   }, [activeSection]);
 
@@ -109,18 +117,20 @@ export function useActiveSection() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
+      const canonical = `#${hashForSection(useSectionStore.getState().activeSection)}`;
 
       // Pure echo of our own programmatic write — nothing to sync.
-      if (hash === useSectionStore.getState().activeSection) return;
+      if (window.location.hash === canonical) return;
 
-      const known = hash ? resolveSection(hash) : null;
-      if (known) {
-        useSectionStore.getState().setActiveSection(known);
+      const resolved = hash ? resolveHash(hash, isKnownSection) : null;
+      if (resolved) {
+        applyDeepLinks(resolved);
+        useSectionStore.getState().setActiveSection(resolved.section);
         return;
       }
 
       useSectionStore.getState().setActiveSection('chat');
-      window.location.hash = 'chat';
+      window.location.hash = '#workbench/space';
     };
 
     window.addEventListener('hashchange', handleHashChange);

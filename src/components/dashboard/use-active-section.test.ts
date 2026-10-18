@@ -1,6 +1,6 @@
 'use client';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
@@ -14,10 +14,13 @@ function setHash(hash: string) {
 }
 
 describe('useActiveSection', () => {
+  let replaceStateSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     resetInitialResolutionForTests();
     useSectionStore.setState({ activeSection: 'overview' });
     localStorage.clear();
+    replaceStateSpy = vi.spyOn(window.history, 'replaceState');
   });
 
   // Unmount hooks between tests: a lingering hook's hash-sync effect
@@ -26,39 +29,50 @@ describe('useActiveSection', () => {
   afterEach(cleanup);
 
   afterEach(() => {
+    replaceStateSpy.mockRestore();
     localStorage.clear();
   });
 
   describe('initial active section', () => {
-    it('defaults to chat when no hash or localStorage is set', () => {
-      // v1.2.4.9: chat-first — the default surface is the matrix chat sidebar
-      // when the user has no hash or stored preference.
+    it('defaults to the collaboration space when no hash or localStorage is set', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('chat');
     });
 
-    it('falls back to chat for a legacy grouped hash', () => {
-      // A legacy flat hash that doesn't match a known section falls through
-      // to the chat-first default (the previous behavior was overview).
-      setHash('#agents/workers');
+    it('resolves the layered space hash (PRD §5.3)', () => {
+      setHash('#workbench/space');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('chat');
     });
 
-    it('does not resolve a grouped overview hash and keeps chat default', () => {
-      // resolveSection() only accepts flat section ids; the legacy grouped
-      // form (#overview/overview) never made it to the supported surface.
-      // It is not a known section, so the chat-first default wins.
-      setHash('#overview/overview');
-      const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
-    });
-
-    it('resolves a flat Worker hash', () => {
+    it('resolves a legacy flat hash and normalizes the URL in place', () => {
       setHash('#workers');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('workers');
+      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#console/resources/workers');
+    });
+
+    it('normalizes #chat to the layered space hash', () => {
+      setHash('#chat');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('chat');
+      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#workbench/space');
+    });
+
+    it('keeps layered deep-link hashes untouched in the URL', () => {
+      setHash('#workbench/space/!room:example.org');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('chat');
+      expect(replaceStateSpy).not.toHaveBeenCalled();
+    });
+
+    it('routes the legacy grouped hash through to the fallback default', () => {
+      // Unknown grouped hashes were never a supported surface; they fall
+      // through to the collaboration-space default.
+      setHash('#overview/overview');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('chat');
     });
 
     it('falls back to localStorage when hash is empty', () => {
@@ -78,10 +92,10 @@ describe('useActiveSection', () => {
       // Regression: the hash-sync effect used to write the closure-captured
       // initial value ('overview') during the mount effect flush, racing the
       // resolved section and bouncing the user back to overview.
-      setHash('#tasks');
+      setHash('#workbench/tasks');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('tasks');
-      expect(window.location.hash).toBe('#tasks');
+      expect(window.location.hash).toBe('#workbench/tasks');
     });
   });
 
@@ -89,9 +103,9 @@ describe('useActiveSection', () => {
     it('does not roll the selection back when the hook remounts (chat→tasks revert bug)', () => {
       // Root cause of "click 任务看板 first time does nothing": TasksSection
       // remounts useActiveSection in the same commit as the selection change;
-      // the old mount effect re-read the still-stale '#chat' hash and clobbered
+      // the old mount effect re-read the still-stale space hash and clobbered
       // the fresh 'tasks' selection back. The once-guard keeps the live value.
-      setHash('#chat');
+      setHash('#workbench/space');
       const first = renderHook(() => useActiveSection());
       expect(first.result.current.activeSection).toBe('chat');
       act(() => {
@@ -100,8 +114,8 @@ describe('useActiveSection', () => {
       expect(useSectionStore.getState().activeSection).toBe('tasks');
 
       // Simulate the same-commit window: the shell's hash-sync effect has
-      // yet to observe the change, so the URL hash still says '#chat'.
-      setHash('#chat');
+      // yet to observe the change, so the URL hash still says the space hash.
+      setHash('#workbench/space');
 
       const second = renderHook(() => useActiveSection());
       expect(second.result.current.activeSection).toBe('tasks');
@@ -110,22 +124,31 @@ describe('useActiveSection', () => {
   });
 
   describe('setActiveSection', () => {
-    it('writes a flat section hash to URL hash', () => {
+    it('writes the canonical layered hash for workers', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       act(() => {
         result.current.setActiveSection('workers');
       });
-      expect(window.location.hash).toBe('workers');
+      expect(window.location.hash).toBe('#console/resources/workers');
     });
 
-    it('writes plain section hash for persistent items (docs)', () => {
+    it('writes the canonical layered hash for the collaboration space', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       act(() => {
-        result.current.setActiveSection('docs');
+        result.current.setActiveSection('chat');
       });
-      expect(window.location.hash).toBe('docs');
+      expect(window.location.hash).toBe('#workbench/space');
+    });
+
+    it('writes plain section hash for unmapped ids (fallback)', () => {
+      setHash('');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => {
+        result.current.setActiveSection('plugin-route:foo/bar');
+      });
+      expect(window.location.hash).toBe('#plugin-route:foo/bar');
     });
 
     it('persists active section to localStorage', () => {

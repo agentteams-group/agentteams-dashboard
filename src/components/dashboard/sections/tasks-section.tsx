@@ -56,7 +56,7 @@ import { useProjectRoomTimestamps } from '@/hooks/use-project-room-ts';
 // Project governance panel (pause / resume / replan / cancel / artifacts /
 // timeline) — defined in the (now-merged) projects section; only the panel
 // crosses the module boundary.
-import { WorkflowDetail } from './projects-section';
+import { WorkflowDetail } from './projects/workflow-detail';
 import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { buildProjectDag } from '@/lib/project-dag';
