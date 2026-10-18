@@ -7,7 +7,7 @@ import {
 } from './nav-hash';
 
 const allSections = new Set([
-  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops',
+  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
   'workers', 'managers', 'teams', 'humans', 'skills', 'models',
   'knowledge', 'audit',
 ]);
@@ -32,6 +32,7 @@ describe('hashForSection', () => {
     expect(hashForSection('artifacts')).toBe('workbench/tasks/artifacts');
     expect(hashForSection('coding-runs')).toBe('workbench/tasks/coding-runs');
     expect(hashForSection('loops')).toBe('workbench/loop');
+    expect(hashForSection('my-workbench')).toBe('workbench/me');
     expect(hashForSection('workers')).toBe('console/resources/workers');
     expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('teams')).toBe('console/resources/teams');

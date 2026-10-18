@@ -1,4 +1,5 @@
 import {
+  Inbox,
   LayoutDashboard,
   Bot,
   Users,
@@ -29,6 +30,7 @@ export type DeploymentMode = 'embedded' | 'k8s';
  * （资源 + 治理 + 系统）为二级。分组按「区 + 区内分组」两段表达。
  */
 export type NavGroup =
+  | 'mine'
   | 'space'
   | 'task-center'
   | 'loop'
@@ -65,6 +67,8 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   // ── 工作台（一级主线） ──
+  // 我的工作台（F4.2）：聚合「等我」事项（待干预/待审批/@我的）。
+  { id: 'my-workbench', label: '我的工作台', icon: Inbox, area: 'workbench', group: 'mine' },
   // 协作空间：Matrix 房间升级为「工作单元」（F1.1）。id 仍为 chat。
   { id: 'chat', label: '协作空间', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
   // 任务中心（原「任务看板 + 产物 + 编码执行」收拢，13 项零删减）。
@@ -108,6 +112,7 @@ export const navAreas: { id: NavArea; label: string; icon: LucideIcon }[] = [
 
 /** 区内分组定义。 */
 export const navGroups: { area: NavArea; id: NavGroup; label: string }[] = [
+  { area: 'workbench', id: 'mine', label: '我的' },
   { area: 'workbench', id: 'space', label: '协作空间' },
   { area: 'workbench', id: 'task-center', label: '任务中心' },
   { area: 'workbench', id: 'loop', label: '循环' },

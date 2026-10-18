@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import {
@@ -121,15 +122,35 @@ function GroupHeader({ label }: { label: string }) {
   );
 }
 
-/** Area header (工作台 / 控制台) — only rendered in Workbench mode. */
-function AreaHeader({ label, collapsed }: { label: string; collapsed: boolean }) {
+/** Area header (工作台 / 控制台) — only rendered in Workbench mode.
+ *  角色自适应（PRD §5.3）：控制台区默认对观察者/协作者折叠，管理员展开；
+ *  点击区头切换（§5.2 可达性：命令面板仍可达全部 14 项）。 */
+function AreaHeader({
+  label,
+  collapsed,
+  areaCollapsed,
+  onToggle,
+}: {
+  label: string;
+  collapsed: boolean;
+  areaCollapsed: boolean;
+  onToggle: () => void;
+}) {
   if (collapsed) {
     return <div className="mx-3 my-2 border-t border-border" aria-label={label} />;
   }
   return (
-    <div className="px-4 pt-3 pb-1 text-xs font-bold text-foreground/80 flex items-center gap-1.5">
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!areaCollapsed}
+      className="w-full px-4 pt-3 pb-1 text-xs font-bold text-foreground/80 flex items-center gap-1.5 hover:text-foreground transition-colors"
+    >
       {label}
-    </div>
+      <span className={`ml-auto text-[10px] text-muted-foreground transition-transform ${areaCollapsed ? '' : 'rotate-90'}`} aria-hidden="true">
+        ▸
+      </span>
+    </button>
   );
 }
 
@@ -150,6 +171,13 @@ export function Sidebar({
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const classicNavigation = useAgentTeamsStore((s) => s.classicNavigation);
   const areaSections = useNavSections(mode, taskBoardVisible, userLevel, classicNavigation);
+  // 角色自适应默认视图（§5.3）：控制台区非管理员默认折叠；用户手动切换后
+  // 以本会话态为准（不持久化，尊重默认口径）。userLevel 从 fail-open 默认
+  // 值变为真实等级时重置一次。
+  const [consoleCollapsed, setConsoleCollapsed] = useState(() => userLevel < 3);
+  useEffect(() => {
+    setConsoleCollapsed(userLevel < 3);
+  }, [userLevel]);
 
   return (
     <aside
@@ -215,27 +243,38 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {areaSections.map((area) => (
-          <div key={area.key}>
-            {area.label && <AreaHeader label={area.label} collapsed={collapsed} />}
-            {area.groups.map((group) => (
-              <div key={group.key}>
-                {!collapsed && <GroupHeader label={group.label} />}
-                {group.items.map((item) => (
-                  <NavButton
-                    key={item.id}
-                    item={item}
-                    isActive={activeSection === item.id}
-                    count={countMap[item.id] ?? 0}
-                    hasNotification={sectionsWithNotifications.has(item.id)}
-                    collapsed={collapsed}
-                    onNavClick={onNavClick}
-                  />
+        {areaSections.map((area) => {
+          const areaCollapsed = area.key === 'console' && consoleCollapsed;
+          return (
+            <div key={area.key}>
+              {area.label && (
+                <AreaHeader
+                  label={area.label}
+                  collapsed={collapsed}
+                  areaCollapsed={areaCollapsed}
+                  onToggle={() => setConsoleCollapsed((v) => !v)}
+                />
+              )}
+              {!areaCollapsed &&
+                area.groups.map((group) => (
+                  <div key={group.key}>
+                    {!collapsed && <GroupHeader label={group.label} />}
+                    {group.items.map((item) => (
+                      <NavButton
+                        key={item.id}
+                        item={item}
+                        isActive={activeSection === item.id}
+                        count={countMap[item.id] ?? 0}
+                        hasNotification={sectionsWithNotifications.has(item.id)}
+                        collapsed={collapsed}
+                        onNavClick={onNavClick}
+                      />
+                    ))}
+                  </div>
                 ))}
-              </div>
-            ))}
-          </div>
-        ))}
+            </div>
+          );
+        })}
 
         {/* Plugin-contributed menu items (extension point: sidebar-menu).
             挂载点随控制台收敛迁移（PRD §9），仍追加在侧栏尾部。 */}

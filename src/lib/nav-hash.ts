@@ -21,6 +21,7 @@ export interface ResolvedHash {
 
 /** section id -> canonical layered hash path (without the leading '#'). */
 const SECTION_TO_HASH: Record<string, string> = {
+  'my-workbench': 'workbench/me',
   chat: 'workbench/space',
   tasks: 'workbench/tasks',
   artifacts: 'workbench/tasks/artifacts',
@@ -110,6 +111,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Workbench: space (chat) / tasks (+ artifacts, coding-runs) / loop
   if (segments[0] === 'workbench') {
+    if (segments[1] === 'me') return { section: 'my-workbench' };
     if (segments[1] === 'space') {
       // `workbench/space` or `workbench/space/<roomId>`
       return { section: 'chat', roomId: segments[2], params };

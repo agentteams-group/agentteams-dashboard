@@ -15,6 +15,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     const ids = navItems.map((item) => item.id);
     expect(ids).toEqual([
       // 工作台
+      'my-workbench',
       'chat',
       'tasks',
       'artifacts',
@@ -39,6 +40,7 @@ describe('Navigation with groups (Workbench IA)', () => {
   it('defines the two IA areas and their groups', () => {
     expect(navAreas.map((a) => a.id)).toEqual(['workbench', 'console']);
     expect(navGroups.map((g) => g.id)).toEqual([
+      'mine',
       'space',
       'task-center',
       'loop',
@@ -50,6 +52,7 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('assigns items to workbench groups', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
+    expect(byId.get('my-workbench')).toMatchObject({ area: 'workbench', group: 'mine' });
     expect(byId.get('chat')).toMatchObject({ area: 'workbench', group: 'space' });
     expect(byId.get('tasks')).toMatchObject({ area: 'workbench', group: 'task-center' });
     expect(byId.get('artifacts')).toMatchObject({ area: 'workbench', group: 'task-center' });
@@ -74,7 +77,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(legacyNavGroups.map((g) => g.id)).toEqual(['core', 'runtime', 'resource']);
     // Every pre-Workbench item must keep a legacy home so classic mode shows
     // all 13 v1.x sections. M3 新增的 loops 在 v1.x 无对应导航，经典模式不显示。
-    const withoutM3 = navItems.filter((item) => item.id !== 'loops');
+    const withoutM3 = navItems.filter((item) => item.id !== 'loops' && item.id !== 'my-workbench');
     expect(withoutM3.every((item) => item.legacyGroup)).toBe(true);
   });
 
