@@ -24,6 +24,8 @@ import {
   toastMutationError,
 } from './workflow-config';
 import { ArtifactLink } from './artifact-link';
+import { ArtifactStateBadge } from './artifact-state-badge';
+import { artifactStateFromTask } from '@/lib/artifact-state';
 
 /** Cancel button for one task row (POST .../tasks/{taskId}/cancel).
  * Renders only for non-terminal tasks; opens a reason dialog. */
@@ -207,6 +209,8 @@ export function TaskDetailRow({
       {(task.result_path || deliverables.length > 0) && (
         <div className="flex items-center gap-2 flex-wrap pt-1">
           <span className="text-[10px] text-muted-foreground shrink-0">产物：</span>
+          {/* 工件三态徽标（F1.3）：任务维度推导，15s 正源轮询即时反映 */}
+          <ArtifactStateBadge info={artifactStateFromTask(task)} />
           {task.result_path ? (
             <ArtifactLink
               href={getTaskArtifactUrl(projectId, task.task_id)}

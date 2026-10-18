@@ -26,7 +26,8 @@ import { useSectionStore } from '@/lib/section-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
 const mockWorkflow = vi.fn();
-vi.mock('@/lib/agentteams-projects-api', () => ({
+vi.mock('@/lib/agentteams-projects-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/agentteams-projects-api')>()),
   getProjectWorkflow: (...args: unknown[]) => mockWorkflow(...args),
 }));
 
@@ -91,7 +92,14 @@ const relayResponse: WorkflowResponse = {
   interrupts: [],
   values: { project_id: 'proj-relay', title: '产品介绍页生产线', status: 'active' },
   tasks_detail: [
-    { task_id: 't1', status: 'completed', assigned_to: 'arch-bot', summary: '产出信息架构与泳道划分。' },
+    {
+      task_id: 't1',
+      status: 'completed',
+      assigned_to: 'arch-bot',
+      summary: '产出信息架构与泳道划分。',
+      deliverables: ['index.html'],
+      result_path: 'out/result.md',
+    },
     { task_id: 't3', status: 'in-progress', assigned_to: 'dev-bot', summary: '按设计稿实现响应式页面。' },
   ],
 };
@@ -138,6 +146,10 @@ describe('workflowLiveFromProject（正源 → 卡片 overlay 映射）', () => 
     // summary 按 task_id 对齐，空 summary 不带字段
     expect(byId.get('t1')?.summary).toBe('产出信息架构与泳道划分。');
     expect(byId.get('t2')?.summary).toBeUndefined();
+    // F1.3：交付物数量与结果路径按 task_id 对齐
+    expect(byId.get('t1')?.deliverableCount).toBe(1);
+    expect(byId.get('t1')?.resultPath).toBe('out/result.md');
+    expect(byId.get('t3')?.deliverableCount).toBeUndefined();
     expect(live.projectId).toBe('proj-relay');
   });
 });
@@ -240,6 +252,18 @@ describe('RelayCard 接力卡升级（F1.2 渲染契约）', () => {
     expect(screen.getByText('产出信息架构与泳道划分。')).toBeInTheDocument();
     fireEvent.click(row);
     expect(screen.queryByText('产出信息架构与泳道划分。')).not.toBeInTheDocument();
+  });
+
+  it('⑩b 展开区渲染工件三态徽标与产物直达链接（F1.3）', async () => {
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={relayPayload} />);
+    await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
+    fireEvent.click(screen.getByText('架构设计'));
+    // 已完成任务 → released 徽标（M1 依据任务完成态 + 降级 tooltip）
+    expect(screen.getByText('已放行')).toBeInTheDocument();
+    // 产物链接走任务产物代理
+    const link = screen.getByText('result.md');
+    expect(link).toHaveAttribute('href', '/api/agentteams/projects/proj-relay/tasks/t1/artifact?path=out%2Fresult.md');
   });
 
   it('⑪ 正源接通 → 「项目详情」按钮，点击切任务中心并投递 pendingProjectKey', async () => {

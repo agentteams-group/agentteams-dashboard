@@ -3,7 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { isProjectMiss, workflowLiveFromProject } from '@/lib/chat-workflow-live';
-import { getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { getProjectWorkflow, getTaskArtifactUrl } from '@/lib/agentteams-projects-api';
+import { artifactStateFromTask } from '@/lib/artifact-state';
+import { ArtifactStateBadge } from '@/components/dashboard/sections/projects/artifact-state-badge';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import type { WorkflowItem, WorkflowPayload } from '@/lib/a2ui/workflow';
@@ -21,9 +23,14 @@ function itemLabel(item: WorkflowItem, fallback: string) {
 function statusLabel(status?: string) {
   if (!status) return '等待中';
   if (COMPLETE_STATUSES.has(status)) return '已完成';
-  if (ERROR_STATUSES.has(status)) return '失败';
+  if (ERROR_STATUSES.has(status || '')) return '失败';
   if (status === 'in_progress' || status === 'running') return '进行中';
   return status;
+}
+
+/** 步骤工件态徽标（F1.3）：任务状态推导，projectId 缺失时不渲染（无任务上下文）。 */
+function artifactStateBadgeFor(step: WorkflowItem) {
+  return <ArtifactStateBadge info={artifactStateFromTask(step)} />;
 }
 
 function StatusBadge({ status }: { status?: string }) {
@@ -61,19 +68,22 @@ function StepGlyph({ status }: { status?: string }) {
 }
 
 /** 接力卡单步（F1.2）：状态 glyph + 名称 + 责任 Agent + 依赖副行；
- * 有摘要的步骤可点开显示 summary（运行时块全量视图在 F5.4 运行实例视图落地）。 */
+ * 有摘要或工件的步骤可点开：摘要 + 工件三态徽标 + 产物直达
+ * （F1.3 工件态由任务状态推导，15s 正源轮询即时反映）。 */
 function RelayStepRow({
   step,
   index,
+  projectId,
   expanded,
   onToggle,
 }: {
   step: WorkflowItem;
   index: number;
+  projectId?: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const expandable = Boolean(step.summary);
+  const expandable = Boolean(step.summary || step.deliverableCount);
   return (
     <div>
       <button
@@ -98,9 +108,32 @@ function RelayStepRow({
             </p>
           )}
           {expandable && expanded && (
-            <p className="rounded bg-muted/50 px-2 py-1.5 text-[11px] leading-relaxed text-foreground/80">
-              {step.summary}
-            </p>
+            <div className="rounded bg-muted/50 px-2 py-1.5 space-y-1.5">
+              {step.summary && (
+                <p className="text-[11px] leading-relaxed text-foreground/80">{step.summary}</p>
+              )}
+              {(step.deliverableCount || step.resultPath) && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground shrink-0">工件：</span>
+                  {projectId && step.id && artifactStateBadgeFor(step)}
+                  {projectId && step.resultPath && step.id && (
+                    <a
+                      href={getTaskArtifactUrl(projectId, step.id, step.resultPath)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] text-violet-600 dark:text-violet-400 underline decoration-dotted underline-offset-2"
+                    >
+                      {step.resultPath.split('/').pop() || step.resultPath}
+                    </a>
+                  )}
+                  {!projectId && step.deliverableCount ? (
+                    <span className="text-[10px] text-muted-foreground">
+                      {step.deliverableCount} 个交付物
+                    </span>
+                  ) : null}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -211,6 +244,7 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
                     key={step.id || step.name || String(index)}
                     step={step}
                     index={index}
+                    projectId={live?.projectId}
                     expanded={Boolean(step.id) && expandedStepId === step.id}
                     onToggle={() => setExpandedStepId((prev) => (prev === step.id ? null : step.id ?? null))}
                   />

@@ -44,15 +44,24 @@ export function workflowLiveFromProject(wf: WorkflowResponse): ChatWorkflowLive 
     if (!list.includes(upstream)) list.push(upstream);
     depsByNodeId.set(e.target, list);
   }
-  // 任务摘要按 task_id === node.id 对齐（对不上的节点静默省略 summary）。
+  // 任务摘要/工件按 task_id === node.id 对齐（对不上的节点静默省略）。
   const summaryByTaskId = new Map<string, string>();
+  const deliverableCountByTaskId = new Map<string, number>();
+  const resultPathByTaskId = new Map<string, string>();
   for (const t of wf.tasks_detail ?? []) {
     const s = String(t.summary ?? '').trim();
     if (s) summaryByTaskId.set(t.task_id, s);
+    const deliverables = Array.isArray(t.deliverables)
+      ? t.deliverables.filter((d): d is string => typeof d === 'string')
+      : [];
+    if (deliverables.length > 0) deliverableCountByTaskId.set(t.task_id, deliverables.length);
+    if (t.result_path) resultPathByTaskId.set(t.task_id, t.result_path);
   }
   const steps: WorkflowItem[] = nodes.map((n) => {
     const dependsOn = depsByNodeId.get(n.id);
     const summary = summaryByTaskId.get(n.id);
+    const deliverableCount = deliverableCountByTaskId.get(n.id);
+    const resultPath = resultPathByTaskId.get(n.id);
     return {
       id: n.id,
       name: n.name,
@@ -60,6 +69,8 @@ export function workflowLiveFromProject(wf: WorkflowResponse): ChatWorkflowLive 
       ...(n.assignee ? { assignedTo: n.assignee } : {}),
       ...(dependsOn ? { dependsOn } : {}),
       ...(summary ? { summary } : {}),
+      ...(deliverableCount ? { deliverableCount } : {}),
+      ...(resultPath ? { resultPath } : {}),
     };
   });
   const seen = new Set<string>();
