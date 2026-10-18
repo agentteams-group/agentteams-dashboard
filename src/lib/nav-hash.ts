@@ -27,6 +27,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   artifacts: 'workbench/tasks/artifacts',
   'coding-runs': 'workbench/tasks/coding-runs',
   loops: 'workbench/loop',
+  resources: 'console/resources',
   workers: 'console/resources/workers',
   teams: 'console/resources/teams',
   humans: 'console/resources/humans',
@@ -128,11 +129,13 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Console: resources / governance / system
   if (segments[0] === 'console') {
+    // 资源收敛（F7.1）：workers/teams/humans/managers 分层路径全部进入
+    // Agent 目录容器（tab 由 ResourcesSection 从第三段解析）。
     const consoleMap: Record<string, string> = {
-      'resources/workers': 'workers',
-      'resources/teams': 'teams',
-      'resources/humans': 'humans',
-      'resources/managers': 'managers',
+      'resources/workers': 'resources',
+      'resources/teams': 'resources',
+      'resources/humans': 'resources',
+      'resources/managers': 'resources',
       'resources/skills': 'skills',
       'resources/models': 'models',
       'resources/knowledge': 'knowledge',

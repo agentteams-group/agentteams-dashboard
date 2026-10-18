@@ -53,6 +53,12 @@ export interface NavItem {
   group: NavGroup;
   /** Classic-navigation grouping; omitted for items with no legacy home. */
   legacyGroup?: LegacyNavGroup;
+  /**
+   * F7.1 资源收敛：该项在 Workbench 模式下并入目标容器 section
+   * （如 workers → resources 的二级 tab），侧栏不再单列；经典导航
+   * 与 sectionMap 保留原项（功能零删减，旧深链直达）。
+   */
+  mergedInto?: 'resources';
   /** Visible in these modes only. Omit = visible everywhere. */
   modes?: DeploymentMode[];
   /** When true, the item is hidden if the matching feature flag is off. */
@@ -85,14 +91,16 @@ export const navItems: NavItem[] = [
   { id: 'loops', label: '循环', icon: RefreshCcw, area: 'workbench', group: 'loop' },
 
   // ── 控制台（二级：资源与治理合并） ──
-  // 资源：Agent 目录 + 市场 + 模型 + 知识库（F7.1）。
-  { id: 'workers', label: 'Workers', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime' },
+  // 资源：Agent 目录（F7.1 资源收敛容器：Workers/团队/Humans/Managers
+  // 以二级 tab 呈现）+ 市场 + 模型 + 知识库。
+  { id: 'resources', label: 'Agent 目录', icon: Bot, area: 'console', group: 'resources' },
+  { id: 'workers', label: 'Workers', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
   // (initialPassword) that must not be visible to team-level users.
-  { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3 },
-  { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
-  { id: 'humans', label: 'Humans', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3 },
+  { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
+  { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
+  { id: 'humans', label: 'Humans', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
   { id: 'skills', label: '市场', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },
   // 知识库（#1208 workspace-files 消费：MEMORY.md/memory/**/digest/** 只读 +

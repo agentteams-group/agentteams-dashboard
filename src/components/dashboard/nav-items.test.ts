@@ -21,7 +21,8 @@ describe('Navigation with groups (Workbench IA)', () => {
       'artifacts',
       'coding-runs',
       'loops',
-      // 控制台
+      // 控制台（workers/teams/humans/managers 已并入 resources 容器，仍保留可达）
+      'resources',
       'workers',
       'managers',
       'teams',
@@ -62,6 +63,12 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
+    expect(byId.get('resources')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('workers')?.mergedInto).toBe('resources');
+    expect(byId.get('teams')?.mergedInto).toBe('resources');
+    expect(byId.get('humans')?.mergedInto).toBe('resources');
+    expect(byId.get('managers')?.mergedInto).toBe('resources');
+    expect(byId.get('skills')?.mergedInto).toBeUndefined(); // 市场/模型/知识库不并入
     expect(byId.get('workers')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('managers')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('teams')).toMatchObject({ area: 'console', group: 'resources' });
@@ -77,7 +84,9 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(legacyNavGroups.map((g) => g.id)).toEqual(['core', 'runtime', 'resource']);
     // Every pre-Workbench item must keep a legacy home so classic mode shows
     // all 13 v1.x sections. M3 新增的 loops 在 v1.x 无对应导航，经典模式不显示。
-    const withoutM3 = navItems.filter((item) => item.id !== 'loops' && item.id !== 'my-workbench');
+    const withoutM3 = navItems.filter(
+      (item) => item.id !== 'loops' && item.id !== 'my-workbench' && item.id !== 'resources'
+    );
     expect(withoutM3.every((item) => item.legacyGroup)).toBe(true);
   });
 

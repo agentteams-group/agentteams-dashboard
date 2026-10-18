@@ -59,6 +59,9 @@ export function useNavSections(
         },
       ];
     }
+    // F7.1：Workbench 侧栏隐藏已并入容器（resources tab）的旧资源项；
+    // sectionMap/深链保持原 section 可达（功能零删减）。
+    const workbenchVisible = visible.filter((item) => !item.mergedInto);
 
     return navAreas.map((area) => ({
       key: area.id,
@@ -68,7 +71,7 @@ export function useNavSections(
         .map((group) => ({
           key: `${area.id}-${group.id}`,
           label: group.label,
-          items: visible.filter(
+          items: workbenchVisible.filter(
             (item) => item.area === (area.id as NavArea) && item.group === group.id
           ),
         }))
