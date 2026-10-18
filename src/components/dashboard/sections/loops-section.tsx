@@ -1,7 +1,8 @@
 'use client';
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { CircleAlert, Download, Library, Save, Send, Upload } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { CircleAlert, Download, Library, ListChecks, Save, Send, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,7 +16,12 @@ import {
   isValidLoopDefinition,
   templateToDraft,
   type LoopDefinition,
+  type LoopEdge,
+  type LoopNode,
 } from '@/lib/loop-definition';
+import { listProjects, getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { useSectionStore } from '@/lib/section-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useCapabilityStore, capabilityNote } from '@/lib/capability-probe';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -191,6 +197,65 @@ export function LoopsSection() {
 
   const rooms = roomOptions.length > 0 ? roomOptions : Object.entries(roomMeta).map(([id]) => ({ id, name: id }));
 
+  // ── F5.4 运行实例：项目列表 + 从历史运行另存为循环（F5.5 复用）──
+  const [showRuns, setShowRuns] = useState(false);
+  const projectsQuery = useQuery({
+    queryKey: ['loops-run-instances'],
+    queryFn: listProjects,
+    enabled: showRuns,
+    refetchInterval: 15000,
+    staleTime: 5000,
+  });
+
+  const saveRunAsLoop = async (runId: string, teamId?: string) => {
+    try {
+      const wf = await getProjectWorkflow(runId, { includeTasks: true, teamId });
+      const nodesById = new Map(wf.nodes.map((n) => [n.id, n]));
+      const loopNodes: LoopNode[] = wf.nodes.map((n) => ({
+        id: n.id,
+        type: n.id === 'start' ? 'start' : n.id === 'end' ? 'end' : 'agent',
+        label: n.name || n.id,
+        ...(n.assignee ? { assignee: n.assignee } : {}),
+      }));
+      const loopEdges: LoopEdge[] = wf.edges.map((e, i) => ({
+        id: `e${i}`,
+        source: e.source,
+        target: e.target,
+        ...(e.conditional === true ? { conditional: true } : {}),
+      }));
+      if (!nodesById.has('start')) {
+        loopNodes.unshift({ id: 'start', type: 'start', label: '开始' });
+      }
+      if (!nodesById.has('end')) {
+        loopNodes.push({ id: 'end', type: 'end', label: '结束' });
+      }
+      const def: LoopDefinition = {
+        id: `loop-${runId}`,
+        name: `${wf.title || runId}（来自运行）`,
+        description: '从历史项目运行另存的循环草稿（F5.5）',
+        version: 1,
+        status: 'draft',
+        nodes: loopNodes,
+        edges: loopEdges,
+        updatedAt: Date.now(),
+        updatedBy: currentUserId ?? 'unknown',
+      };
+      if (!isValidLoopDefinition(def)) throw new Error('生成的循环结构不合法');
+      const stored = { id: def.id, name: def.name, definition: def };
+      persistDrafts([stored, ...drafts]);
+      setSelectedId(stored.id);
+      setShowRuns(false);
+      toast.success(`已另存为循环草稿：${def.name}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '另存失败');
+    }
+  };
+
+  const openRunInTaskCenter = (runId: string, teamId?: string) => {
+    useHitlInboxStore.getState().setPendingProjectKey({ id: runId, ...(teamId ? { team: teamId } : {}) });
+    useSectionStore.getState().setActiveSection('tasks');
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -269,6 +334,61 @@ export function LoopsSection() {
                 <p className="text-[10px] text-muted-foreground">
                   从模板一键实例化，或导入 JSON 定义。
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* F5.4 运行实例（P0 只读子项）：项目列表 → 任务中心详情 / 另存为循环 */}
+          <Card className="py-3">
+            <CardContent className="px-3 space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowRuns((v) => !v)}
+                className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground"
+              >
+                <span className="flex items-center gap-1.5">
+                  <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                  运行实例
+                </span>
+                <span className="text-[10px]">{showRuns ? '收起' : '展开'}</span>
+              </button>
+              {showRuns && (
+                <div className="space-y-1">
+                  {projectsQuery.isLoading && (
+                    <p className="text-[10px] text-muted-foreground">加载运行…</p>
+                  )}
+                  {projectsQuery.data?.projects.slice(0, 10).map((p) => (
+                    <div key={p.project_id} className="rounded-md border border-border/60 px-2 py-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium truncate">{p.title}</span>
+                        <Badge variant="outline" className="text-[9px] shrink-0">
+                          {p.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px]"
+                          onClick={() => openRunInTaskCenter(p.project_id, p.team_id)}
+                        >
+                          详情
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px]"
+                          onClick={() => void saveRunAsLoop(p.project_id, p.team_id)}
+                        >
+                          另存为循环
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {projectsQuery.data?.projects.length === 0 && (
+                    <p className="text-[10px] text-muted-foreground">暂无运行中的项目。</p>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

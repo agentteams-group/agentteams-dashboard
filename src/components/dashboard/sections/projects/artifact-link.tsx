@@ -20,6 +20,7 @@ import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-m
 // 配置，F6.1），下载保留为独立图标按钮 + 对话框底部按钮。独立实现避免跨
 // section 耦合（与 artifacts-section 的 ArtifactDownloadButton 同款语义约定）。
 import { previewMaxBytes, previewMaxBytesLabel } from '@/lib/preview-limit';
+import { ArtifactCommentPanel } from './artifact-comment-panel';
 const ARTIFACT_PREVIEW_MAX_BYTES = previewMaxBytes();
 const ARTIFACT_IMAGE_EXTS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif',
@@ -35,9 +36,22 @@ interface ArtifactPreviewState {
   isImage?: boolean;
 }
 
-export function ArtifactLink({ href, label }: { href: string; label: string }) {
+export function ArtifactLink({
+  href,
+  label,
+  roomId,
+  assignee,
+}: {
+  href: string;
+  label: string;
+  /** 来源房间（F6.2 评论载体）；缺省只读预览。 */
+  roomId?: string;
+  /** 责任 Agent（F6.3 批量派单默认指派对象）。 */
+  assignee?: string;
+}) {
   const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<ArtifactPreviewState | null>(null);
+  const [anchorLine, setAnchorLine] = useState<number | null>(null);
   const openPreview = () => {
     setPreview({ status: 'loading' });
     void (async () => {
@@ -179,11 +193,39 @@ export function ArtifactLink({ href, label }: { href: string; label: string }) {
                 ) : ['md', 'markdown'].includes(artifactExt(label)) ? (
                   <MarkdownMessage content={preview.text ?? ''} formattedContent={undefined} />
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
-                    {preview.text}
-                  </pre>
+                  <div>
+                    {/* F6.2 行锚点：点击行号设置评论锚（高亮当前锚行） */}
+                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                      {(preview.text ?? '').split('\n').map((lineText, i) => {
+                        const lineNo = i + 1;
+                        const anchored = anchorLine === lineNo;
+                        return (
+                          <span
+                            key={lineNo}
+                            className={`flex ${anchored ? 'bg-sky-500/15' : 'hover:bg-accent/40'} rounded cursor-pointer`}
+                            onClick={() => setAnchorLine(anchored ? null : lineNo)}
+                            title={`点击${anchored ? '取消' : '锚定'} L${lineNo} 评论`}
+                          >
+                            <span className="w-8 shrink-0 select-none text-right pr-2 text-muted-foreground/60">
+                              {lineNo}
+                            </span>
+                            <span className="min-w-0 flex-1">{lineText || ' '}</span>
+                          </span>
+                        );
+                      })}
+                    </pre>
+                  </div>
                 ))}
             </div>
+          )}
+          {/* F6.2/F6.3 位置级评论 + 批量派发（绑定房间的任务可用） */}
+          {roomId && preview?.status === 'ready' && (
+            <ArtifactCommentPanel
+              roomId={roomId}
+              artifact={label}
+              anchorLine={anchorLine}
+              defaultAssignee={assignee}
+            />
           )}
           <DialogFooter>
             <Button

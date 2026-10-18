@@ -225,6 +225,8 @@ export function TaskDetailRow({
             <ArtifactLink
               href={getTaskArtifactUrl(projectId, task.task_id)}
               label="结果文件"
+              roomId={roomId}
+              assignee={task.assigned_to}
             />
           ) : null}
           {deliverables.map((d) => (
@@ -232,6 +234,8 @@ export function TaskDetailRow({
               key={d}
               href={getTaskArtifactUrl(projectId, task.task_id, d)}
               label={d.split('/').pop() || d}
+              roomId={roomId}
+              assignee={task.assigned_to}
             />
           ))}
         </div>
