@@ -197,7 +197,7 @@ Entries discovered by the Agent while performing [specific task description] sho
   - M2 进度：F2.1 干预卡（v2 协议消费侧 + 全交互规格 + 消息回写降级徽标）、F2.2 超时置灰与升级通知（审计 hitl.expire 待 BFF 落点）、F2.3 收件箱互通已完成；F2.4 回写审计、F3 审查闭环（F3.1-F3.4）未开始
   - 干预协议约定：isInterventionConfirmation 按 question/options/questions 字段存在判定，v1 工具确认不受影响；答案回写上游 v2 answer 契约就绪前一律走「自然语言消息发回房间」降级，UI 徽标常显
   - F3 审查闭环已落地：review.report v2 块（协议/parser/报告卡）、放行记录走 com.agentteams.release 房间状态事件（新 BFF state-event 仅放行 com.agentteams.* 前缀，session 归因 + release.* 审计）、自动放行走 com.agentteams.space 事件（默认关）；放行记录独立 stateKey 写入历史不覆盖；artifact-state 放行历史优先于任务状态推导
-  - F2.4 剩余：hitl.request/answer/expire 审计事件需前端动作回传 BFF 落点（state-event 模式可复用）；M2 出口「旅程 B/D 端到端」待上游联调
+  - M2 全部落地：F2.4 hitl.* 审计经 POST /api/agentteams/hitl/audit（白名单校验 + session 归因）；F5.1 拓扑强化（assignee/条件边/关键路径 criticalPathOf/卡住节点点击直达会话）。M2 出口「旅程 B/D 端到端」待上游联调；剩余里程碑 M3（循环资产 F5.2-F5.6 + F6 交付物协作 + F8 引导）、M4（控制台收敛 F7 + 我的工作台 F4.2/F4.3）
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
