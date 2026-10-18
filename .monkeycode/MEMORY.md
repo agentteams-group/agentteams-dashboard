@@ -199,7 +199,8 @@ Entries discovered by the Agent while performing [specific task description] sho
   - F3 审查闭环已落地：review.report v2 块（协议/parser/报告卡）、放行记录走 com.agentteams.release 房间状态事件（新 BFF state-event 仅放行 com.agentteams.* 前缀，session 归因 + release.* 审计）、自动放行走 com.agentteams.space 事件（默认关）；放行记录独立 stateKey 写入历史不覆盖；artifact-state 放行历史优先于任务状态推导
   - M2 全部落地：F2.4 hitl.* 审计经 POST /api/agentteams/hitl/audit（白名单校验 + session 归因）；F5.1 拓扑强化（assignee/条件边/关键路径 criticalPathOf/卡住节点点击直达会话）。M2 出口「旅程 B/D 端到端」待上游联调
   - M3 全部落地（F8.3 示例空间/循环除外——依赖演示运行时）。M4 进度：F4.2 我的工作台（第 15 项导航 my-workbench，聚合干预/审批/@我）、F4.3 PendingBanner 顶栏待办横幅、F8.2 三步引导（welcome-steps，localStorage 跳过）、侧栏控制台区角色自适应折叠（userLevel<3 默认收起）已落地
-  - M4 剩余：F7.1/F7.2 控制台页面级合并（M1 已完成分组归属收敛，四资源 section 合并为单页带子 tab 的工作量较大，功能零删减回归要求高）、F4.3 的 SSE 化（P2）、性能预算验收（Lighthouse CI）、灰度发版 v2.0
+  - M4 进度：F4.2/F4.3 横幅/引导/角色折叠 + F7.1 资源收敛（ResourcesSection 容器 + mergedInto 机制：Workbench 侧栏隐藏旧项，经典导航/sectionMap/旧深链保留，功能零删减）已落地
+  - 重构整体状态：PRD P0 全部交付，P1 除 F4.3 SSE 化（P2 口径）与 F8.3 示例空间（依赖演示运行时）外全部落地。残余事项：F7.1 的「Agent 目录产品化」增强（头像/技能标签/加到空间——现有 workers-section 已有卡片基础）、性能验收（Lighthouse CI）、v2.0 灰度发版（docs/RELEASE.md 流程）
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
