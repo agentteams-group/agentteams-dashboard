@@ -185,3 +185,14 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 对齐方法（3-way rebase）：本仓副本基于上游 `82cbd5f`（#1075 引入 dashboard 集成），该 commit → 本仓副本的差异即"待上游改动集"；用 base/local/upstream 三分支 `git rebase` 将其重放到 upstream main，冲突保留上游新结构（`_ctrl_env_prefix`、QwenPaw/DeepSeek 镜像、`DASHBOARD_SESSION_SECRET` 持久化）再叠加 adapter。残余 diff 约 90 行，adapter 未上游化前每周仍会触发告警
   - 安装器验证命令（无需 Docker）：`bash -n install/agentteams-install.sh`、`bash scripts/check-docs-consistency.sh`、`bash install/agentteams-dashboard-tests.sh`（60 用例）
   - 本仓根目录原本缺 `LICENSE`；许可证采用 Apache-2.0（Copyright 2026 AgentTeams Contributors，与上游一致），`package.json` 亦补 `license` 字段
+
+[Project Knowledge Summary]
+- Date: 2026-10-18
+- Context: Workbench 重构（PRD v1.1）M1 骨架实施，分支 261018-feat-workbench-refactor-m1
+- Category: Workflow & Collaboration | Build Methods | Environment Configuration
+- Instructions:
+  - Workbench 重构 PRD 归档在 .monkeycode/specs/workbench-refactor/prd.md（v1.1 终稿，14 周 4 里程碑）；M1 剩余：接力卡 F1.2、工件卡 F1.3、Agent 成员卡 F1.5、看板会话维度 F4.1
+  - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
+  - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
+  - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
+  - 全量 vitest 基线：244 文件 / 2281 测试（孤儿清理后），全量跑约 3.5-4 分钟；孤儿 section（architecture/security/quickstart/runtime/docs/projects 共 7 文件）已于 M1 删除
