@@ -8,6 +8,8 @@ import { artifactStateFromTask } from '@/lib/artifact-state';
 import { ArtifactStateBadge } from '@/components/dashboard/sections/projects/artifact-state-badge';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
+import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { openChatRoom } from '@/lib/open-chat-room';
 import type { WorkflowItem, WorkflowPayload } from '@/lib/a2ui/workflow';
 import { CircleCheck, CircleX, CornerDownRight, ExternalLink, Loader2, Workflow } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -67,6 +69,25 @@ function StepGlyph({ status }: { status?: string }) {
   return <PendingGlyph />;
 }
 
+/** 责任 Agent 徽标（F1.5）：已知该 Agent 的房间时一步直达其会话。 */
+function AssigneeChip({ name }: { name: string }) {
+  const { data: workers } = useWorkers();
+  const roomId = workers?.find((w) => w.name === name)?.roomID;
+  if (!roomId) {
+    return <span className="shrink-0 text-muted-foreground">@{name}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => openChatRoom(roomId)}
+      title={`打开 ${name} 的会话`}
+      className="shrink-0 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+    >
+      @{name}
+    </button>
+  );
+}
+
 /** 接力卡单步（F1.2）：状态 glyph + 名称 + 责任 Agent + 依赖副行；
  * 有摘要或工件的步骤可点开：摘要 + 工件三态徽标 + 产物直达
  * （F1.3 工件态由任务状态推导，15s 正源轮询即时反映）。 */
@@ -94,9 +115,7 @@ function RelayStepRow({
       >
         <StepGlyph status={step.status} />
         <span className="min-w-0 flex-1 truncate">{itemLabel(step, `步骤 ${index + 1}`)}</span>
-        {step.assignedTo && (
-          <span className="shrink-0 text-muted-foreground">@{step.assignedTo}</span>
-        )}
+        {step.assignedTo && <AssigneeChip name={step.assignedTo} />}
         <span className="text-muted-foreground">{statusLabel(step.status)}</span>
       </button>
       {(step.dependsOn?.length || (expandable && expanded)) && (

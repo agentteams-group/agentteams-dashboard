@@ -31,6 +31,13 @@ vi.mock('@/lib/agentteams-projects-api', async (importOriginal) => ({
   getProjectWorkflow: (...args: unknown[]) => mockWorkflow(...args),
 }));
 
+// F1.5：arch-bot 有已知房间 → @name 可点直达；dev-bot 无数据 → 纯文本退化。
+vi.mock('@/hooks/use-agentteams-workers', () => ({
+  useWorkers: () => ({
+    data: [{ name: 'arch-bot', roomID: '!room-arch:example.org' }],
+  }),
+}));
+
 function renderWithQuery(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -232,14 +239,23 @@ describe('RelayCard 接力卡升级（F1.2 渲染契约）', () => {
     mockWorkflow.mockResolvedValue(relayResponse);
     renderWithQuery(<WorkflowCard payload={relayPayload} />);
     await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
-    // 责任 Agent
-    expect(screen.getByText('@arch-bot')).toBeInTheDocument();
-    expect(screen.getByText('@dev-bot')).toBeInTheDocument();
+    // 责任 Agent：有房间信息的可点（button），无数据的纯文本（span）
+    expect(screen.getByText('@arch-bot').tagName).toBe('BUTTON');
+    expect(screen.getByText('@dev-bot').tagName).toBe('SPAN');
     // 依赖副行（显示名；并行兄弟 → 双上游）
     expect(screen.getByText('依赖：架构设计、视觉设计')).toBeInTheDocument();
     expect(screen.getByText('依赖：页面实现、内容填充')).toBeInTheDocument();
     // 摘要默认收起
     expect(screen.queryByText('产出信息架构与泳道划分。')).not.toBeInTheDocument();
+  });
+
+  it('⑨b 点击 Agent 名字直达其会话（F1.5：worker 名→roomID→openChatRoom）', async () => {
+    mockWorkflow.mockResolvedValue(relayResponse);
+    renderWithQuery(<WorkflowCard payload={relayPayload} />);
+    await screen.findByText(/live \d{2}:\d{2}:\d{2}/);
+    fireEvent.click(screen.getByText('@arch-bot'));
+    expect(useSectionStore.getState().activeSection).toBe('chat');
+    expect(useHitlInboxStore.getState().takePendingChatRoomId()).toBe('!room-arch:example.org');
   });
 
   it('⑩ 有摘要步骤点开显示摘要，再点收起', async () => {
