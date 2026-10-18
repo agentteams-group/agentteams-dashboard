@@ -37,6 +37,7 @@
 //   getTaskArtifactUrl(id, taskId, path?)  → 下载/预览 URL（白名单在 controller）
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { previewMaxBytes, previewMaxBytesLabel } from '@/lib/preview-limit';
 import {
   ChevronDown,
   ChevronRight,
@@ -144,8 +145,8 @@ interface PreviewState {
   error?: string;
 }
 
-// 预览拉取上限（1MB）：更大的文件不做内联预览，引导下载。
-const PREVIEW_MAX_BYTES = 1024 * 1024;
+// 预览拉取上限（F6.1 统一配置，默认 5MB）：更大的文件不做内联预览，引导下载。
+const PREVIEW_MAX_BYTES = previewMaxBytes();
 
 // projectTs（多源兜底时间戳）统一在 @/lib/project-time（9/16 抽出，
 // projects section 拓扑排序复用）。
@@ -754,7 +755,7 @@ export function ArtifactsSection() {
               {preview.status === 'binary' && (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                   <CircleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  二进制或超过 1MB 的文件不支持内联预览，请直接用「下载」。
+                  {`二进制或超过 ${previewMaxBytesLabel()} 的文件不支持内联预览，请直接用「下载」。`}
                 </p>
               )}
               {preview.status === 'ready' &&

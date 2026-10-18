@@ -10,6 +10,7 @@ import {
   ListTodo,
   ScrollText,
   SquareTerminal,
+  RefreshCcw,
   Hammer,
   Wrench,
   type LucideIcon,
@@ -30,6 +31,7 @@ export type DeploymentMode = 'embedded' | 'k8s';
 export type NavGroup =
   | 'space'
   | 'task-center'
+  | 'loop'
   | 'resources'
   | 'governance'
   | 'system'
@@ -75,6 +77,8 @@ export const navItems: NavItem[] = [
   { id: 'artifacts', label: '产物', icon: ArtifactsBoxIcon, area: 'workbench', group: 'task-center', legacyGroup: 'runtime', hiddenByFlag: 'taskBoard' },
   // 编码执行记录（#146 缺口 2）：编码 CLI 一次性执行记录 + 原始日志（只读）。
   { id: 'coding-runs', label: '编码执行', icon: SquareTerminal, area: 'workbench', group: 'task-center', legacyGroup: 'runtime' },
+  // 循环（M3 F5.2-F5.5）：定义/发布/复用由 Dashboard 承载，执行在上游。
+  { id: 'loops', label: '循环', icon: RefreshCcw, area: 'workbench', group: 'loop' },
 
   // ── 控制台（二级：资源与治理合并） ──
   // 资源：Agent 目录 + 市场 + 模型 + 知识库（F7.1）。
@@ -106,6 +110,7 @@ export const navAreas: { id: NavArea; label: string; icon: LucideIcon }[] = [
 export const navGroups: { area: NavArea; id: NavGroup; label: string }[] = [
   { area: 'workbench', id: 'space', label: '协作空间' },
   { area: 'workbench', id: 'task-center', label: '任务中心' },
+  { area: 'workbench', id: 'loop', label: '循环' },
   { area: 'console', id: 'resources', label: '资源' },
   { area: 'console', id: 'governance', label: '治理' },
   { area: 'console', id: 'system', label: '系统' },

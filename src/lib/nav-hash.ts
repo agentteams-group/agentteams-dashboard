@@ -25,6 +25,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   tasks: 'workbench/tasks',
   artifacts: 'workbench/tasks/artifacts',
   'coding-runs': 'workbench/tasks/coding-runs',
+  loops: 'workbench/loop',
   workers: 'console/resources/workers',
   teams: 'console/resources/teams',
   humans: 'console/resources/humans',
@@ -118,8 +119,8 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       if (segments[2] === 'coding-runs') return { section: 'coding-runs', params };
       return { section: 'tasks', params };
     }
-    // P1 循环：只读运行视图先归入任务中心的项目视图。
-    if (segments[1] === 'loop') return { section: 'tasks', params };
+    // P1 循环：正式 section（F5.2-F5.5 作者画布/模板库）。
+    if (segments[1] === 'loop') return { section: 'loops', params };
     return null;
   }
 

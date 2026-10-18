@@ -11,15 +11,15 @@ import {
 } from './nav-items';
 
 describe('Navigation with groups (Workbench IA)', () => {
-  it('exposes all 13 sections with zero removals (PRD §5.2)', () => {
+  it('exposes the Workbench sections with zero removals (PRD §5.2 + M3 循环)', () => {
     const ids = navItems.map((item) => item.id);
-    expect(ids).toHaveLength(13);
     expect(ids).toEqual([
       // 工作台
       'chat',
       'tasks',
       'artifacts',
       'coding-runs',
+      'loops',
       // 控制台
       'workers',
       'managers',
@@ -31,6 +31,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       'audit',
       'overview',
     ]);
+    expect(ids).toContain('tasks'); // 13 项零删减基线
     expect(navItems.every((item) => 'group' in item)).toBe(true);
     expect(navItems.every((item) => 'area' in item)).toBe(true);
   });
@@ -40,6 +41,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(navGroups.map((g) => g.id)).toEqual([
       'space',
       'task-center',
+      'loop',
       'resources',
       'governance',
       'system',
@@ -52,6 +54,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(byId.get('tasks')).toMatchObject({ area: 'workbench', group: 'task-center' });
     expect(byId.get('artifacts')).toMatchObject({ area: 'workbench', group: 'task-center' });
     expect(byId.get('coding-runs')).toMatchObject({ area: 'workbench', group: 'task-center' });
+    expect(byId.get('loops')).toMatchObject({ area: 'workbench', group: 'loop' });
   });
 
   it('assigns items to console groups (附录 A 归属)', () => {
@@ -69,8 +72,10 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('keeps a legacy grouping for the classic-navigation switch', () => {
     expect(legacyNavGroups.map((g) => g.id)).toEqual(['core', 'runtime', 'resource']);
-    // Every item must keep a legacy home so classic mode shows all 13.
-    expect(navItems.every((item) => item.legacyGroup)).toBe(true);
+    // Every pre-Workbench item must keep a legacy home so classic mode shows
+    // all 13 v1.x sections. M3 新增的 loops 在 v1.x 无对应导航，经典模式不显示。
+    const withoutM3 = navItems.filter((item) => item.id !== 'loops');
+    expect(withoutM3.every((item) => item.legacyGroup)).toBe(true);
   });
 
   it('maps every navigation entry to a section', () => {

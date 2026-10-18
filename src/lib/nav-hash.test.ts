@@ -7,7 +7,7 @@ import {
 } from './nav-hash';
 
 const allSections = new Set([
-  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs',
+  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops',
   'workers', 'managers', 'teams', 'humans', 'skills', 'models',
   'knowledge', 'audit',
 ]);
@@ -31,6 +31,7 @@ describe('hashForSection', () => {
     expect(hashForSection('tasks')).toBe('workbench/tasks');
     expect(hashForSection('artifacts')).toBe('workbench/tasks/artifacts');
     expect(hashForSection('coding-runs')).toBe('workbench/tasks/coding-runs');
+    expect(hashForSection('loops')).toBe('workbench/loop');
     expect(hashForSection('workers')).toBe('console/resources/workers');
     expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('teams')).toBe('console/resources/teams');
@@ -67,8 +68,8 @@ describe('resolveHash — layered hashes', () => {
     expect(resolved?.params?.get('project')).toBe('p1');
   });
 
-  it('maps the P1 loop hash to the task center read view for now', () => {
-    expect(resolveHash('workbench/loop/l1', isKnown)?.section).toBe('tasks');
+  it('maps the loop hash to the loops section (F5.2 作者画布)', () => {
+    expect(resolveHash('workbench/loop/l1', isKnown)?.section).toBe('loops');
   });
 
   it('resolves console hashes (附录 A)', () => {

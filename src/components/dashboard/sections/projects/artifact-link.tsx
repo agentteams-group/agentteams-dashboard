@@ -16,10 +16,11 @@ import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-m
 
 // ── 产物预览（9/17 验收第六轮：任务看板产物点按=预览，行为对齐产物 tab）────
 // 此前 ArtifactLink 点按=直接下载；装验反馈「加上预览」→ 点按开预览对话框
-// （md 走 MarkdownMessage、图片 <img>、文本 <pre>，1MB 上限），下载保留为
-// 独立图标按钮 + 对话框底部按钮。独立实现避免跨 section 耦合（与
-// artifacts-section 的 ArtifactDownloadButton 同款语义约定）。
-const ARTIFACT_PREVIEW_MAX_BYTES = 1024 * 1024;
+// （md 走 MarkdownMessage、图片 <img>、文本 <pre>，上限统一走 preview-limit
+// 配置，F6.1），下载保留为独立图标按钮 + 对话框底部按钮。独立实现避免跨
+// section 耦合（与 artifacts-section 的 ArtifactDownloadButton 同款语义约定）。
+import { previewMaxBytes, previewMaxBytesLabel } from '@/lib/preview-limit';
+const ARTIFACT_PREVIEW_MAX_BYTES = previewMaxBytes();
 const ARTIFACT_IMAGE_EXTS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif',
 ]);
@@ -165,7 +166,7 @@ export function ArtifactLink({ href, label }: { href: string; label: string }) {
               {preview.status === 'binary' && (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                   <CircleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  二进制或超过 1MB 的文件不支持内联预览，请用「下载」。
+                  {`二进制或超过 ${previewMaxBytesLabel()} 的文件不支持内联预览，请用「下载」。`}
                 </p>
               )}
               {preview.status === 'ready' &&
