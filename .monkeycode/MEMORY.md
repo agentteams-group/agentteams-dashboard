@@ -191,7 +191,9 @@ Entries discovered by the Agent while performing [specific task description] sho
 - Context: Workbench 重构（PRD v1.1）M1 骨架实施，分支 261018-feat-workbench-refactor-m1
 - Category: Workflow & Collaboration | Build Methods | Environment Configuration
 - Instructions:
-  - Workbench 重构 PRD 归档在 .monkeycode/specs/workbench-refactor/prd.md（v1.1 终稿，14 周 4 里程碑）；M1 剩余：接力卡 F1.2、工件卡 F1.3、Agent 成员卡 F1.5、看板会话维度 F4.1
+  - Workbench 重构 PRD 归档在 .monkeycode/specs/workbench-refactor/prd.md（v1.1 终稿，14 周 4 里程碑）
+  - M1 骨架已全部落地（分支 261018-feat-workbench-refactor-m1）：混合 IA、分层 hash、经典导航开关、孤儿清理、版本统一、命令面板扩展、F1.1 空间切片、F1.2 接力卡（依赖/责任/摘要/展开/跳转）、F1.3 工件三态（任务维度，released 带 M1 降级说明）、F1.5 切片（@name 直达会话）、F4.1 切片（roomId 直达空间）
+  - F1.3 注意：消息流工件卡与 pending_review 态的事实源（放行记录 com.agentteams.release / 审查请求块）待 M2 F2/F3 落地，M1 只在任务详情与接力卡展开区呈现三态
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
