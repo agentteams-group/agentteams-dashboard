@@ -509,7 +509,19 @@ export function MessageBubble({
                       : null;
                   if (heuristic && onSendConfirmation) {
                     return (
-                      <div key={idx} className="w-[min(100%,42rem)] max-w-full">
+                      <div key={idx} className="w-[min(100%,42rem)] max-w-full space-y-1.5">
+                        {/* 引言（选项块之前）原样保留 */}
+                        {heuristic.before && (
+                          <div className={bubbleClasses}>
+                            <MarkdownMessage
+                              content={heuristic.before}
+                              msgType={message.type}
+                              mediaUrl={message.mediaUrl}
+                              mediaInfo={message.mediaInfo}
+                              memberMap={memberMap}
+                            />
+                          </div>
+                        )}
                         <InterventionCard
                           payload={heuristicToInterventionPayload(
                             heuristic,
@@ -517,6 +529,18 @@ export function MessageBubble({
                           )}
                           onAnswer={handleConfirmationApprove}
                         />
+                        {/* 同一条消息里的其它问题（选项块之后）原样保留 */}
+                        {heuristic.after && (
+                          <div className={bubbleClasses}>
+                            <MarkdownMessage
+                              content={heuristic.after}
+                              msgType={message.type}
+                              mediaUrl={message.mediaUrl}
+                              mediaInfo={message.mediaInfo}
+                              memberMap={memberMap}
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   }
