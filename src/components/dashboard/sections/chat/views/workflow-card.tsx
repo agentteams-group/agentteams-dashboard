@@ -214,7 +214,7 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
   };
 
   return (
-    <Card className="my-2 w-[min(100%,56rem)] max-w-full border-l-4 border-l-violet-500 py-4">
+    <Card className="my-2 w-[min(100%,56rem)] max-w-full border-l-4 border-l-violet-500 py-4 shadow-none">
       <CardHeader className="gap-2 px-4 py-0">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 text-sm">

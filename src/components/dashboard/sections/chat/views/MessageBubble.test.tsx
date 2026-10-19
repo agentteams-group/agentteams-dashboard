@@ -222,7 +222,7 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(92%,72ch)]');
+    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(100%,46rem)]');
     textMessage.unmount();
 
     renderWithProvider(

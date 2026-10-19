@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HelpCircle, Star, Clock, AlertTriangle, Info, Check } from 'lucide-react';
+import { Clock, AlertTriangle, Info, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -242,22 +242,17 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   };
 
   return (
+    // Codex 风格（交互选项卡 · 2026-10 反馈）：白底圆角大卡 + 充足留白 +
+    // 序号键提示 + 底部自由输入与深色提交按钮；交互逻辑（推荐默认选中/
+    // 快捷键/互斥/分页/权限/超时/审计）不变。
     <div
-      className={`my-2 w-[min(100%,56rem)] max-w-full rounded-lg border border-l-4 bg-sky-500/5 overflow-hidden ${
-        locked ? 'border-sky-500/20 border-l-muted-foreground/40 opacity-70' : 'border-sky-500/30 border-l-sky-500'
+      className={`my-2 w-[min(100%,42rem)] max-w-full rounded-xl border bg-card shadow-sm overflow-hidden ${
+        locked ? 'opacity-60' : ''
       }`}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <span className="flex items-center gap-2 text-xs font-medium text-sky-600 dark:text-sky-400">
-          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
-          执行中提问 — {payload.tool_name}
-        </span>
-        <div className="flex items-center gap-1.5">
-          {/* 能力徽标（§7.4 降级可见）：v2 结构化回写未接通，答案以消息形态回房间 */}
-          <Badge variant="outline" className="text-[10px] gap-1" title="上游 v2 answer 契约未就绪：答复将以一条消息发回房间，本次选择未回写运行时状态">
-            <Info className="h-2.5 w-2.5" aria-hidden="true" />
-            消息回写
-          </Badge>
+      <div className="px-5 pt-4 pb-1 flex items-start justify-between gap-3">
+        <h3 className="text-[15px] font-semibold leading-snug">{question.question}</h3>
+        <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           {expired && (
             <Badge variant="outline" className="text-[10px] gap-1 border-red-500/40 text-red-600 dark:text-red-400">
               <AlertTriangle className="h-2.5 w-2.5" aria-hidden="true" />
@@ -267,10 +262,8 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         </div>
       </div>
 
-      <div className="px-3 pb-3 space-y-2">
-        <p className="text-xs leading-relaxed">{question.question}</p>
-
-        <div className="space-y-1" role="radiogroup" aria-label={question.question}>
+      <div className="px-5 pb-4 space-y-2">
+        <div className="space-y-2" role="radiogroup" aria-label={question.question}>
           {list.map((option, index) => {
             const checked = selected.includes(option.id);
             return (
@@ -281,98 +274,108 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                 aria-checked={checked}
                 disabled={locked || forbidden}
                 onClick={() => toggleOption(page, option.id)}
-                className={`w-full flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                className={`w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
                   checked
-                    ? 'border-sky-500/60 bg-sky-500/10'
-                    : 'border-border/60 hover:border-sky-500/40 hover:bg-accent/50'
+                    ? 'border-sky-500 bg-sky-500/[0.06]'
+                    : 'border-border hover:border-sky-500/40 hover:bg-accent/40'
                 } ${locked || forbidden ? 'cursor-not-allowed opacity-60' : ''}`}
               >
+                {/* 单选圆钮 / 多选方钮 */}
                 <span
-                  className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-${
-                    question.multi_select ? 'sm' : 'full'
-                  } border ${checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-muted-foreground/50'}`}
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${
+                    question.multi_select ? '[4px]' : 'full'
+                  } border-2 transition-colors ${
+                    checked ? 'border-sky-500' : 'border-zinc-300 dark:border-zinc-600'
+                  }`}
                   aria-hidden="true"
                 >
-                  {checked && <Check className="h-2.5 w-2.5" />}
+                  {checked && <span className="h-2 w-2 rounded-full bg-sky-500" />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="font-medium">
-                    <span className="mr-1 font-mono text-[10px] text-muted-foreground">{index + 1}.</span>
+                  <span className="block text-sm font-medium">
                     {option.label}
+                    {option.recommended && (
+                      <span className="ml-1.5 text-xs font-normal text-sky-600 dark:text-sky-400">（推荐）</span>
+                    )}
                   </span>
                   {option.description && (
-                    <span className="block text-[10px] text-muted-foreground">{option.description}</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">{option.description}</span>
                   )}
                 </span>
-                {option.recommended && (
-                  <Badge className="shrink-0 border-amber-500/40 bg-amber-500/15 text-[10px] text-amber-700 dark:text-amber-400">
-                    <Star className="h-2.5 w-2.5" aria-hidden="true" />
-                    推荐
-                  </Badge>
-                )}
+                {/* 序号快捷键提示（Codex 同款右侧方块） */}
+                <span
+                  className="hidden sm:flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] text-muted-foreground"
+                  aria-hidden="true"
+                >
+                  {index + 1}
+                </span>
               </button>
             );
           })}
         </div>
 
-        <div>
-          <label htmlFor={`intervention-free-${payload.confirmation_id}`} className="text-[10px] text-muted-foreground">
-            自由输入（与选项互斥）
-          </label>
+        <div className="pt-2 border-t border-border/60">
           <textarea
             id={`intervention-free-${payload.confirmation_id}`}
+            aria-label="自由输入"
             value={answers.freeText[page] ?? ''}
             disabled={locked || forbidden}
             onChange={(e) => setFreeText(page, e.target.value)}
             rows={2}
-            className="mt-1 w-full rounded-md border border-border/60 bg-background/60 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
-            placeholder="选 None of these？直接输入你的想法…"
+            className="mt-3 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60 resize-none"
+            placeholder="也可以直接输入你的想法…"
           />
         </div>
 
         {forbidden ? (
-          <p className="text-[10px] text-muted-foreground">该提问指定由 {payload.requested_of} 答复（管理员可代答）。</p>
+          <p className="text-[11px] text-muted-foreground">该提问指定由 {payload.requested_of} 答复（管理员可代答）。</p>
         ) : null}
 
         {expired && (
-          <p className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400" role="alert">
+          <p className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400" role="alert">
             <Clock className="h-3 w-3" aria-hidden="true" />
             超过 30 分钟未答复：卡片已置灰，任务保持 blocked，已升级通知。
           </p>
         )}
 
         <div className="flex items-center gap-2 pt-1">
+          {/* 左下：分页指示（Codex 同款「1 / 1」） */}
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {page + 1} / {questions.length}
+          </span>
+          <span className="flex-1" aria-hidden="true" />
           {questions.length > 1 && page > 0 && (
-            <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => setPage((p) => p - 1)} disabled={locked}>
+            <Button variant="ghost" size="sm" className="h-8 px-3 text-xs" onClick={() => setPage((p) => p - 1)} disabled={locked}>
               上一题
             </Button>
           )}
           {!isLastPage ? (
             <Button
               size="sm"
-              className="h-7 px-3 text-xs bg-sky-600 hover:bg-sky-700"
+              className="h-8 px-4 text-xs"
               onClick={() => setPage((p) => p + 1)}
               disabled={locked}
             >
-              下一题（{page + 2}/{questions.length}）
+              下一题
             </Button>
           ) : (
             <Button
               size="sm"
-              className="h-7 px-3 text-xs bg-sky-600 hover:bg-sky-700"
+              className="h-8 px-4 text-xs bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               onClick={submit}
               disabled={locked || forbidden || !canSubmitPage}
               title={canSubmitPage ? '答案将以一条消息发回房间' : '请先选择选项或输入答复'}
             >
-              提交答复
+              提交选择 ⏎
             </Button>
           )}
-          {questions.length > 1 && (
-            <span className="text-[10px] text-muted-foreground">
-              {page + 1} / {questions.length}
-            </span>
-          )}
         </div>
+
+        {/* 能力徽标（§7.4 降级可见）：降级说明收进页脚小字，保持卡面干净 */}
+        <p className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+          <Info className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+          答复将以一条消息发回房间（{payload.tool_name}）· 本次选择未回写运行时状态
+        </p>
       </div>
     </div>
   );

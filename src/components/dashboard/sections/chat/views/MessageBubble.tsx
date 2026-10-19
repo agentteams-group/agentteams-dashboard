@@ -276,12 +276,14 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
+  // 会话呈现对标主流（Codex/ChatGPT 风格 · 2026-10 反馈）：浅色轻气泡 +
+  // 大留白，去阴影重装饰；自己的消息品牌浅底右对齐，Agent 消息中性浅底。
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3.5 py-2 rounded-2xl text-sm break-words leading-relaxed',
-    'shadow-sm hover:shadow-md transition-all duration-200',
+    'w-fit max-w-[min(100%,46rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed',
+    'transition-colors duration-150',
     message.isMe
-      ? 'bg-primary text-primary-foreground rounded-tr-sm'
-      : 'bg-muted/80 text-foreground rounded-tl-sm border border-border/50',
+      ? 'bg-emerald-500/10 text-foreground border border-emerald-500/25 rounded-tr-md'
+      : 'bg-muted/60 text-foreground border border-border/40 rounded-tl-md',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');

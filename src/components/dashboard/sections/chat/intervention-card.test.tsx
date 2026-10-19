@@ -78,8 +78,9 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(buttons[0]).toHaveTextContent('按角色');
     expect(buttons[1]).toHaveTextContent('按模块');
     expect(buttons[1]).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByText('1.')).toBeInTheDocument();
-    expect(screen.getByText('2.')).toBeInTheDocument();
+    // Codex 风格：序号快捷键提示为右侧方块（独立数字节点）
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('2', { exact: true })).toBeInTheDocument();
   });
 
   it('② 自由输入与选项互斥：输入后清空选项，再点选项清空输入', () => {
@@ -99,7 +100,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
 
   it('④ 提交按钮禁用规则：推荐默认选中即可提交；取消选中且无输入则禁用', () => {
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
-    const submit = screen.getByRole('button', { name: '提交答复' });
+    const submit = screen.getByRole('button', { name: /提交选择/ });
     expect(submit).toBeEnabled(); // 推荐项默认选中
     fireEvent.click(screen.getByRole('radio', { name: /按角色/ })); // 取消选中
     expect(submit).toBeDisabled();
@@ -121,7 +122,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     });
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
-    fireEvent.click(screen.getByRole('button', { name: '提交答复' }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
     expect(mockOnAnswer).toHaveBeenCalledTimes(1);
     expect(mockOnAnswer.mock.calls[0][0]).toContain('【干预答复】');
     expect(mockOnAnswer.mock.calls[0][0]).toContain('A1：按模块');
@@ -140,7 +141,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
       />,
     );
     expect(screen.getByText('已超时')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '提交答复' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
     expect(screen.getByRole('radio', { name: /按角色/ })).toBeDisabled();
     expect(mockAddNotification).toHaveBeenCalledTimes(1);
     expect(mockAddNotification.mock.calls[0][0].title).toContain('超时');

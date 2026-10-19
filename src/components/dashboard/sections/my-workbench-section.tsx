@@ -31,7 +31,11 @@ function formatRelative(ts: number): string {
  * 优先级：待干预 > 待放行/审批 > @我（F4.3 同一口径）。
  */
 export function MyWorkbenchSection() {
-  const confirmations = useHitlInboxStore((s) => selectConfirmationList(s.confirmations));
+  // selector 只取 map（引用稳定），排序派生走 useMemo —— 直接把
+  // selectConfirmationList 当 selector 会每次返回新数组，触发
+  // useSyncExternalStore 的 getSnapshot 缓存告警并无限重渲染。
+  const confirmationsMap = useHitlInboxStore((s) => s.confirmations);
+  const confirmations = useMemo(() => selectConfirmationList(confirmationsMap), [confirmationsMap]);
   const invites = useInviteStore((s) => s.invites);
   const roomMeta = useRoomMetaStore((s) => s.meta);
   const roomLabels = useRoomLabels();

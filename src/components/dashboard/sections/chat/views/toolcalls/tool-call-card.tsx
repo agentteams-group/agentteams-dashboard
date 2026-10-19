@@ -89,7 +89,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
   const errorSummary = isError ? errorSummaryOf(payload) : null;
 
   return (
-    <section className={`my-2 w-full overflow-hidden rounded-xl border border-l-4 ${accent} shadow-sm hover:shadow-md transition-shadow duration-200`}>
+    <section className={`my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`}>
       <Button
         variant="ghost"
         size="sm"

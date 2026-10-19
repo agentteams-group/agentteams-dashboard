@@ -70,7 +70,7 @@ function NavButton({
     >
       <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-emerald-500' : ''}`} />
       {!collapsed && (
-        <span className="truncate">{item.label}</span>
+        <span className="whitespace-nowrap">{item.label}</span>
       )}
       {!collapsed && count > 0 && (
         <Badge
@@ -181,8 +181,10 @@ export function Sidebar({
 
   return (
     <aside
-      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 ${
-        collapsed ? 'w-16' : 'w-56'
+      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-[width] duration-300 ${
+        // 宽度按菜单文案自适应（F4.6 反馈）：展开态由最宽项（图标+文字+
+        // 徽标）决定，夹在 168–256px 之间；折叠态固定图标条。
+        collapsed ? 'w-16' : 'w-auto min-w-[10.5rem] max-w-[16rem]'
       }`}
     >
       {/* Logo area */}
