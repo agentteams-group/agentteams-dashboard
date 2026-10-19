@@ -37,11 +37,12 @@ export interface HeuristicIntervention {
 }
 
 /**
- * 选项行形态（2026-10 装验二轮）：数字 `1） 1. 1、 1)` 与字母
- * `A. A、 A)` （大小写均可，A-F 上限 6 项）均认；两类不可混用。
+ * 选项行形态（2026-10 装验）：数字 `1） 1. 1、 1) 1 = 1 -` 与字母
+ * `A. A、 A) A = A -`（大小写均可，A-F 上限 6 项）均认；两类不可混用。
  */
-const DIGIT_OPTION_RE = /^\s*(\d{1,2})[）).、]\s*(.+?)\s*$/;
-const ALPHA_OPTION_RE = /^\s*([A-Fa-f])[）).、]\s*(.+?)\s*$/;
+const OPTION_SEP = '[）).、:：=＝\\-–—]';
+const DIGIT_OPTION_RE = new RegExp(`^\\s*(\\d{1,2})\\s*${OPTION_SEP}\\s*(.+?)\\s*$`);
+const ALPHA_OPTION_RE = new RegExp(`^\\s*([A-Fa-f])\\s*${OPTION_SEP}\\s*(.+?)\\s*$`);
 
 const ALPHA_INDEX = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -135,11 +136,11 @@ function parseInlineLine(
   line: string,
   kind: 'digit' | 'alpha'
 ): Array<{ id: string; label: string }> | null {
-  const t = line.trim();
+  const t = stripInlineMarkdown(line);
   if (!t) return null;
   const re = kind === 'digit'
-    ? /(?:^|\s)(\d{1,2})\s*[）).、]\s*/g
-    : /(?:^|\s)([A-Fa-f])\s*[）).、]\s*/g;
+    ? new RegExp(`(?:^|\\s)(\\d{1,2})\\s*${OPTION_SEP}\\s*`, 'g')
+    : new RegExp(`(?:^|\\s)([A-Fa-f])\\s*${OPTION_SEP}\\s*`, 'g');
   const matches = [...t.matchAll(re)];
   if (matches.length < 2) return null;
   if (matches[0].index !== 0) return null;
@@ -171,12 +172,13 @@ function matchOption(
   line: string,
   kind: 'digit' | 'alpha'
 ): OptionMatch | null {
+  const text = stripInlineMarkdown(line);
   if (kind === 'digit') {
-    const m = DIGIT_OPTION_RE.exec(line);
+    const m = DIGIT_OPTION_RE.exec(text);
     if (!m) return null;
     return { id: `opt-${m[1]}`, label: m[2], seq: Number(m[1]) };
   }
-  const m = ALPHA_OPTION_RE.exec(line);
+  const m = ALPHA_OPTION_RE.exec(text);
   if (!m) return null;
   const upper = m[1].toUpperCase();
   return { id: `opt-${upper}`, label: m[2], seq: ALPHA_INDEX.indexOf(upper) + 1 };

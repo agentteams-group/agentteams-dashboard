@@ -574,6 +574,30 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
 
+  it('QwenPaw「1 = 选项」逐题追问也升格为干预卡', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: [
+            '收到，我换个方式——一次只问一个问题，尽量短。我们先定第一个：',
+            '**问题 1/6：你想要哪种页面？**',
+            '1 = 宣传落地页（滚动浏览，像特斯拉官网那种）',
+            '2 = 3D 互动页（中间一个飞行汽车模型，能拖动旋转）',
+            '3 = 简单图文介绍页',
+            '回一个数字（比如「1」）就行，我再问下一个。',
+          ].join('\n'),
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('问题 1/6：你想要哪种页面？')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /宣传落地页/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+  });
+
   it('流式中的消息不升格（等定稿再渲染卡片）', () => {
     renderWithProvider(
       <MessageBubble

@@ -220,6 +220,23 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(result?.after).toContain('最快方式');
   });
 
+  it('等号分隔的 `1 = 选项` 升格（QwenPaw 逐题追问形态）', () => {
+    const body = [
+      '收到，我换个方式——一次只问一个问题，尽量短。我们先定第一个：',
+      '**问题 1/6：你想要哪种页面？**',
+      '1 = 宣传落地页（滚动浏览，像特斯拉官网那种）',
+      '2 = 3D 互动页（中间一个飞行汽车模型，能拖动旋转）',
+      '3 = 简单图文介绍页',
+      '回一个数字（比如「1」）就行，我再问下一个。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.question).toBe('问题 1/6：你想要哪种页面？');
+    expect(result?.options.map((o) => o.id)).toEqual(['opt-1', 'opt-2', 'opt-3']);
+    expect(result?.options[1].label).toBe('3D 互动页（中间一个飞行汽车模型，能拖动旋转）');
+    expect(result?.before).toContain('我换个方式');
+    expect(result?.after).toContain('回一个数字');
+  });
+
   it('单组问题不输出 questions（保持单问题降级形态）', () => {
     const result = parseInterventionHeuristic('选哪个？\n1. 甲\n2. 乙');
     expect(result?.questions).toBeUndefined();
