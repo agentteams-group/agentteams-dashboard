@@ -237,6 +237,60 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(result?.after).toContain('回一个数字');
   });
 
+  it('包裹式编号、箭头/竖线分隔与「选项N：」前缀均认', () => {
+    expect(
+      parseInterventionHeuristic('选哪个？\n(1) 甲\n(2) 乙')?.options.map((o) => o.id),
+    ).toEqual(['opt-1', 'opt-2']);
+    expect(
+      parseInterventionHeuristic('选哪个？\n（1）甲\n（2）乙')?.options.length,
+    ).toBe(2);
+    expect(
+      parseInterventionHeuristic('选哪个？\n【1】甲\n【2】乙')?.options.length,
+    ).toBe(2);
+    expect(
+      parseInterventionHeuristic('选哪个？\n(1) 甲 (2) 乙')?.options.map((o) => o.label),
+    ).toEqual(['甲', '乙']);
+    expect(
+      parseInterventionHeuristic('选哪个？\n(A) 甲\n(B) 乙')?.options.map((o) => o.id),
+    ).toEqual(['opt-A', 'opt-B']);
+    expect(
+      parseInterventionHeuristic('选哪个？\n1 → 甲\n2 → 乙')?.options.length,
+    ).toBe(2);
+    expect(
+      parseInterventionHeuristic('选哪个？\n1 | 甲\n2 | 乙')?.options.length,
+    ).toBe(2);
+    expect(
+      parseInterventionHeuristic('选哪个？\n选项1：甲\n选项2：乙')?.options.length,
+    ).toBe(2);
+  });
+
+  it('过程/教程语义的普通 Markdown 列表不升格', () => {
+    expect(parseInterventionHeuristic('选择步骤如下：\n1. 安装\n2. 启动')).toBeNull();
+    expect(parseInterventionHeuristic('选择流程：\n1. 甲\n2. 乙')).toBeNull();
+    expect(parseInterventionHeuristic('请参照指南选择：\n1. 甲\n2. 乙')).toBeNull();
+    // 真正的提问仍然升格。
+    expect(parseInterventionHeuristic('请选择：\n1. 甲\n2. 乙')?.options).toHaveLength(2);
+  });
+
+  it('仅拿到 formatted_body HTML 时，有序列表编号会还原', () => {
+    const result = parseInterventionHeuristic(
+      '<p>想要哪种？</p><ol><li>甲</li><li>乙</li></ol>',
+    );
+    expect(result?.options.map((o) => o.id)).toEqual(['opt-1', 'opt-2']);
+    expect(result?.options.map((o) => o.label)).toEqual(['甲', '乙']);
+
+    const alpha = parseInterventionHeuristic(
+      '<p>想要哪种？</p><ol type="A"><li>甲</li><li>乙</li></ol>',
+    );
+    expect(alpha?.options.map((o) => o.id)).toEqual(['opt-A', 'opt-B']);
+  });
+
+  it('Markdown 标题符号会从问题标题中剥离', () => {
+    expect(
+      parseInterventionHeuristic('### 你想要哪种？\n1. 甲\n2. 乙')?.question,
+    ).toBe('你想要哪种？');
+  });
+
   it('单组问题不输出 questions（保持单问题降级形态）', () => {
     const result = parseInterventionHeuristic('选哪个？\n1. 甲\n2. 乙');
     expect(result?.questions).toBeUndefined();

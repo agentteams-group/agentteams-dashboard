@@ -37,12 +37,26 @@ export interface HeuristicIntervention {
 }
 
 /**
- * 选项行形态（2026-10 装验）：数字 `1） 1. 1、 1) 1 = 1 -` 与字母
- * `A. A、 A) A = A -`（大小写均可，A-F 上限 6 项）均认；两类不可混用。
+ * 选项行形态（2026-10 装验 + 兜底）：
+ * - 数字 `1） 1. 1、 1) 1 = 1 - 1 →`，字母 `A. A、 A) A = A -`；
+ * - 包裹式 `(1) （1） 【1】 (A)`；
+ * - `选项1：` 前缀；
+ * - HTML 有序列表 `<ol><li>` 会先还原成 `1.` 行（formatted_body 兜底）。
+ * 数字与字母两类不可混用。
  */
-const OPTION_SEP = '[）).、:：=＝\\-–—]';
-const DIGIT_OPTION_RE = new RegExp(`^\\s*(\\d{1,2})\\s*${OPTION_SEP}\\s*(.+?)\\s*$`);
-const ALPHA_OPTION_RE = new RegExp(`^\\s*([A-Fa-f])\\s*${OPTION_SEP}\\s*(.+?)\\s*$`);
+const SEP_CLASS = '[）).、:：=＝\\-–—|｜→]';
+const DIGIT_MARKER = String.raw`(?:[（(\[【]\s*(\d{1,2})\s*[）)\]】]|(?:选项\s*)?(\d{1,2})\s*${SEP_CLASS})`;
+const ALPHA_MARKER = String.raw`(?:[（(\[【]\s*([A-Fa-f])\s*[）)\]】]|(?:选项\s*)?([A-Fa-f])\s*${SEP_CLASS})`;
+const DIGIT_OPTION_RE = new RegExp(String.raw`^\s*${DIGIT_MARKER}\s*(.+?)\s*$`);
+const ALPHA_OPTION_RE = new RegExp(String.raw`^\s*${ALPHA_MARKER}\s*(.+?)\s*$`);
+const DIGIT_INLINE_RE = new RegExp(
+  String.raw`(?:[（(\[【]\s*(\d{1,2})\s*[）)\]】]|(?:^|\s)(?:选项\s*)?(\d{1,2})\s*${SEP_CLASS})\s*`,
+  'g'
+);
+const ALPHA_INLINE_RE = new RegExp(
+  String.raw`(?:[（(\[【]\s*([A-Fa-f])\s*[）)\]】]|(?:^|\s)(?:选项\s*)?([A-Fa-f])\s*${SEP_CLASS})\s*`,
+  'g'
+);
 
 const ALPHA_INDEX = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -53,6 +67,9 @@ const CIRCLED_RE = /[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲�
 /** 引导行最小疑问语义（防误伤「步骤如下：」式普通列表）。 */
 const GUIDE_HINT_RE = /(哪个|哪些|哪种|是否|要不要|选|确认|偏好|倾向|还是)/;
 
+/** 过程/教程语义：即使含「选」也不当作选项提问（防误伤普通 Markdown 列表）。 */
+const PROCEDURE_HINT_RE = /(步骤|流程|如下|教程|指南)/;
+
 /** 题型标签：「页面类型（单选）」「内容板块（多选，选你要的）」。 */
 const TYPE_LABEL_RE = /[（(][^）)]*(?:单选|多选|可多选)[^）)]*[）)]/;
 
@@ -60,13 +77,20 @@ function isQuestionish(line: string): boolean {
   const t = line.trim();
   if (!t) return false;
   if (/[?？]\s*$/.test(t)) return true;
-  if (/[：:]\s*$/.test(t)) return t.length <= 40 && GUIDE_HINT_RE.test(t);
+  if (/[：:]\s*$/.test(t)) {
+    return t.length <= 40 && GUIDE_HINT_RE.test(t) && !PROCEDURE_HINT_RE.test(t);
+  }
   return false;
 }
 
-/** 去掉标题行上的 Markdown 装饰（`**页面类型**：` → `页面类型：`）。 */
+/** 去掉标题行上的 Markdown 装饰（`**页面类型**：` / `### 页面类型`）。 */
 function stripInlineMarkdown(line: string): string {
-  return line.replace(/\*\*/g, '').replace(/__/g, '').replace(/`/g, '').trim();
+  return line
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
+    .replace(/`/g, '')
+    .trim();
 }
 
 function normalizeQuestion(line: string): string {
@@ -138,16 +162,15 @@ function parseInlineLine(
 ): Array<{ id: string; label: string }> | null {
   const t = stripInlineMarkdown(line);
   if (!t) return null;
-  const re = kind === 'digit'
-    ? new RegExp(`(?:^|\\s)(\\d{1,2})\\s*${OPTION_SEP}\\s*`, 'g')
-    : new RegExp(`(?:^|\\s)([A-Fa-f])\\s*${OPTION_SEP}\\s*`, 'g');
+  const re = kind === 'digit' ? DIGIT_INLINE_RE : ALPHA_INLINE_RE;
+  re.lastIndex = 0;
   const matches = [...t.matchAll(re)];
   if (matches.length < 2) return null;
   if (matches[0].index !== 0) return null;
   const maxItems = kind === 'digit' ? 9 : 6;
   const items: Array<{ id: string; label: string }> = [];
   for (let i = 0; i < matches.length && i < maxItems; i += 1) {
-    const raw = matches[i][1];
+    const raw = matches[i][1] ?? matches[i][2];
     const seq = kind === 'digit' ? Number(raw) : ALPHA_INDEX.indexOf(raw.toUpperCase()) + 1;
     if (seq !== i + 1) return null;
     const labelStart = (matches[i].index ?? 0) + matches[i][0].length;
@@ -173,20 +196,58 @@ function matchOption(
   kind: 'digit' | 'alpha'
 ): OptionMatch | null {
   const text = stripInlineMarkdown(line);
-  if (kind === 'digit') {
-    const m = DIGIT_OPTION_RE.exec(text);
-    if (!m) return null;
-    return { id: `opt-${m[1]}`, label: m[2], seq: Number(m[1]) };
-  }
-  const m = ALPHA_OPTION_RE.exec(text);
+  const re = kind === 'digit' ? DIGIT_OPTION_RE : ALPHA_OPTION_RE;
+  const m = re.exec(text);
   if (!m) return null;
-  const upper = m[1].toUpperCase();
-  return { id: `opt-${upper}`, label: m[2], seq: ALPHA_INDEX.indexOf(upper) + 1 };
+  const raw = m[1] ?? m[2];
+  if (!raw) return null;
+  if (kind === 'digit') {
+    return { id: `opt-${raw}`, label: m[3], seq: Number(raw) };
+  }
+  const upper = raw.toUpperCase();
+  return { id: `opt-${upper}`, label: m[3], seq: ALPHA_INDEX.indexOf(upper) + 1 };
 }
 
-/** Matrix formatted_body 是 HTML；启发式按纯文本行匹配，先剥标签。 */
+/** `<ol start?/type?>` 的列表标记：数字，或 A/a 字母。 */
+function htmlListMarker(attrs: string, index: number): string {
+  const start = Number(/start=["']?(\d+)/i.exec(attrs)?.[1] ?? '1');
+  const type = /type=["']?([Aa])/.exec(attrs)?.[1];
+  const value = start + index - 1;
+  if (type) {
+    const letter = ALPHA_INDEX[(value - 1) % 26] ?? String(value);
+    return type === 'a' ? letter.toLowerCase() : letter;
+  }
+  return String(value);
+}
+
+/**
+ * Matrix formatted_body 是 HTML；启发式按纯文本行匹配，先剥标签。
+ * 有序列表会先还原成 `1.` 行：只拿到 HTML 时，`<li>` 剥标签会丢掉
+ * 编号，导致整组选项漏判。
+ */
 function htmlToPlainText(html: string): string {
-  return html
+  const withOrderedLists = html.replace(
+    /<ol([^>]*)>([\s\S]*?)<\/ol>/gi,
+    (_match, attrs: string, inner: string) => {
+      let index = 0;
+      const lines = inner.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_li, item: string) => {
+        index += 1;
+        return `${htmlListMarker(attrs, index)}. ${htmlToPlainText(item)}\n`;
+      });
+      return `\n${lines}\n`;
+    }
+  );
+  const withLists = withOrderedLists.replace(
+    /<ul[^>]*>([\s\S]*?)<\/ul>/gi,
+    (_match, inner: string) => {
+      const lines = inner.replace(
+        /<li[^>]*>([\s\S]*?)<\/li>/gi,
+        (_li, item: string) => `- ${htmlToPlainText(item)}\n`
+      );
+      return `\n${lines}\n`;
+    }
+  );
+  return withLists
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(?:p|div|tr|h[1-6]|li|blockquote)>/gi, '\n')
     .replace(/<[^>]+>/g, '')

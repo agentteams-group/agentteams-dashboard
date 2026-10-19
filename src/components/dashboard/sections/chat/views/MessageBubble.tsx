@@ -503,12 +503,12 @@ export function MessageBubble({
                   // F2.1 降级完整形态：上游未发 v2 块时，Agent 文本回复中的
                   // 「问句 + 编号选项」升格为选项式干预卡（提交转自然语言
                   // 消息回房间）。发卡片能力在 Dashboard 侧，不依赖上游。
-                  // 启发式只吃纯文本 body。QwenPaw 等 runtime 会带
-                  // formatted_body HTML，parseLegacyContent 把它塞进
-                  // block.text，按行匹配会失败。
+                  // 按 text block 逐个判定：多块消息里每块各自渲染，避免
+                  // 整条消息判定后同一张卡在多个块上重复出现。block.text
+                  // 可能是 formatted_body 的 HTML 片段，解析器内部会先剥标签。
                   const heuristic =
                     !message.isMe && !message.isStreaming
-                      ? parseInterventionHeuristic(message.content || block.text)
+                      ? parseInterventionHeuristic(block.text)
                       : null;
                   if (heuristic && onSendConfirmation) {
                     return (

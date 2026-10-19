@@ -85,6 +85,30 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/"tool_name"/)).toBeNull();
   });
 
+  it('renders the intervention card once when the message has multiple text blocks', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$multi-block-choice',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content:
+            '请选择一种方案？\n1. 方案甲\n2. 方案乙\n```card\n{"type":"tool_call","tool_name":"read_file","status":"success"}\n```\n补充说明',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText('请选择一种方案？')).toHaveLength(1);
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.getAllByText('补充说明')).toHaveLength(1);
+  });
+
   it('uses the command renderer and safely displays invalid JSON arguments', () => {
     renderWithProvider(
       <MessageBubble
