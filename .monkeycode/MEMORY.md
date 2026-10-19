@@ -201,6 +201,8 @@ Entries discovered by the Agent while performing [specific task description] sho
   - M3 全部落地（F8.3 示例空间/循环除外——依赖演示运行时）。M4 进度：F4.2 我的工作台（第 15 项导航 my-workbench，聚合干预/审批/@我）、F4.3 PendingBanner 顶栏待办横幅、F8.2 三步引导（welcome-steps，localStorage 跳过）、侧栏控制台区角色自适应折叠（userLevel<3 默认收起）已落地
   - M4 进度：F4.2/F4.3 横幅/引导/角色折叠 + F7.1 资源收敛（ResourcesSection 容器 + mergedInto 机制：Workbench 侧栏隐藏旧项，经典导航/sectionMap/旧深链保留，功能零删减）已落地
   - 重构整体状态：PRD P0 全部交付，P1 除 F4.3 SSE 化（P2 口径）与 F8.3 示例空间（依赖演示运行时）外全部落地。残余事项：F7.1 的「Agent 目录产品化」增强（头像/技能标签/加到空间——现有 workers-section 已有卡片基础）、性能验收（Lighthouse CI）、v2.0 灰度发版（docs/RELEASE.md 流程）
+  - 干预卡可用性关键认知（2026-10 装验）：发 v2 卡片的能力在上游 runtime（G4），Agent 侧只会回纯文本——Dashboard 已落「干预启发式」（intervention-heuristic.ts）：问句/引导行 + 连续编号选项（1） 1. 1、 1)）自动升格为 InterventionCard，防误伤护栏=代码块不参与/无疑问语义不升格/流式与自己的消息不升格；提交走 composeAnswerText 回房间，上游零改动闭环。装验时引导 Agent「用编号列表列选项」即可触发卡片
+  - 装验视觉口径（2026-10 反馈已落）：会话气泡浅色轻装饰（自己=emerald 浅底/Agent=中性浅底，46rem 宽）；标签卡（thinking/toolcall/streaming）统一 rounded-lg 无阴影；顶栏资源计数与连接状态合并为两枚胶囊；侧栏宽度 w-auto 自适应（168-256px）
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
