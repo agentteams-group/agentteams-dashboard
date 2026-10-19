@@ -156,6 +156,75 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(parseInterventionHeuristic(`选哪个？\n${options}`)?.options).toHaveLength(9);
   });
 
+  it('多组「标签头 + 选项」按出现顺序分页（装验三轮截图原文）', () => {
+    const body = [
+      '好，我重新问一遍，尽量问得清楚：',
+      '',
+      '背景：你要的「马斯克飞行汽车」HTML，大概率是指一台概念版电动垂直起降飞行汽车（eVTOL）的宣传页。以下 6 个问题决定页面长什么样：',
+      '',
+      '**页面类型（单选）**',
+      'A. 宣传落地页：滚动浏览，像特斯拉/苹果官网',
+      'B. 3D 交互演示：页面中央有飞行汽车 3D 模型，可拖动旋转',
+      'C. 图文介绍页：简单几屏，讲清楚这是什么',
+      '',
+      '**视觉风格（单选）**',
+      'A. 深色科技风：黑/深灰底 + 冷色霓虹点缀',
+      'B. 浅色极简风：白底、大留白',
+      'C. 赛博朋克风：暗色 + 强霓虹、故障艺术字效',
+      '',
+      '**内容板块（多选，选你要的）**',
+      '① Hero 首屏大标题 ② 产品参数表 ③ 飞行原理/技术亮点 ④ 应用场景 ⑤ 价格与预约表单 ⑥ FAQ 常见问题 ⑦ 发展时间线',
+      '',
+      '**动效程度（单选）**',
+      'A. 轻量：CSS 动画 + 滚动显现，单文件双击就能开',
+      'B. 丰富：再加 Three.js 3D 模型和粒子背景（需联网加载 JS 库）',
+      '',
+      '**语言（单选）**',
+      'A. 中文为主 B. 全中文 C. 中英双语',
+      '',
+      '**用来做什么（单选，决定文案调性）**',
+      'A. 概念作品/个人项目 B. 演示汇报 C. 活动预热宣传',
+      '',
+      '最快方式：回我「1A 2A 3①2⑤ 4A 5A 6A」这种格式，或者干脆回「按推荐来」——我会用 1A / 2A / 3①③⑤ / 4A / 5A / 6A 开工。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.questions?.map((q) => q.question)).toEqual([
+      '页面类型（单选）',
+      '视觉风格（单选）',
+      '内容板块（多选，选你要的）',
+      '动效程度（单选）',
+      '语言（单选）',
+      '用来做什么（单选，决定文案调性）',
+    ]);
+    expect(result?.questions?.[0].options.map((o) => o.id)).toEqual([
+      'opt-A',
+      'opt-B',
+      'opt-C',
+    ]);
+    expect(result?.questions?.[2].multi_select).toBe(true);
+    expect(result?.questions?.[2].options.map((o) => o.id)).toEqual([
+      'opt-①',
+      'opt-②',
+      'opt-③',
+      'opt-④',
+      'opt-⑤',
+      'opt-⑥',
+      'opt-⑦',
+    ]);
+    expect(result?.questions?.[4].options.map((o) => o.label)).toEqual([
+      '中文为主',
+      '全中文',
+      '中英双语',
+    ]);
+    expect(result?.before).toContain('背景：');
+    expect(result?.after).toContain('最快方式');
+  });
+
+  it('单组问题不输出 questions（保持单问题降级形态）', () => {
+    const result = parseInterventionHeuristic('选哪个？\n1. 甲\n2. 乙');
+    expect(result?.questions).toBeUndefined();
+  });
+
   it('heuristicToInterventionPayload 补齐 v2 形态', () => {
     const payload = heuristicToInterventionPayload(
       { question: '选哪个？', options: [{ id: 'opt-1', label: '甲' }], before: '', after: '' },
