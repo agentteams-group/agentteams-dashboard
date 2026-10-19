@@ -66,6 +66,24 @@ function matchOption(
   return { id: `opt-${upper}`, label: m[2], seq: ALPHA_INDEX.indexOf(upper) + 1 };
 }
 
+/** Matrix formatted_body 是 HTML；启发式按纯文本行匹配，先剥标签。 */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|tr|h[1-6]|li|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function looksLikeHtml(text: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(text);
+}
+
 /** 去掉代码块行与引用行，返回可解析行序号集合的副本。 */
 function stripNonContent(body: string): string[] {
   const lines = body.split('\n');
@@ -84,8 +102,10 @@ function stripNonContent(body: string): string[] {
 }
 
 export function parseInterventionHeuristic(body: string): HeuristicIntervention | null {
-  if (!body || body.length > 4000) return null;
-  const lines = stripNonContent(body);
+  if (!body || body.length > 12000) return null;
+  const plain = looksLikeHtml(body) ? htmlToPlainText(body) : body;
+  if (!plain.trim() || plain.length > 4000) return null;
+  const lines = stripNonContent(plain);
 
   // 找最长的一段连续编号选项块（允许中间夹一个空行；数字/字母各扫一轮，
   // 取更长者——两类不混用）。

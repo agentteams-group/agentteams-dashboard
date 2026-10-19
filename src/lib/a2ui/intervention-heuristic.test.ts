@@ -80,6 +80,57 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(parseInterventionHeuristic('选哪个？\nB. 甲\nC. 乙')).toBeNull();
   });
 
+  it('截图原文（Markdown body）升格为 A/B/C 卡', () => {
+    const body = [
+      '你好！很高兴接单。在动手之前，我想先把需求弄清楚，避免做出来不是你想要的样子。以下几个关键问题，麻烦一次性回答：',
+      '',
+      '**页面类型**：想要哪种？',
+      'A. 产品宣传落地页（类似特斯拉官网风格，滚动展示）',
+      'B. 3D 交互演示页（可以用鼠标旋转、看飞行汽车模型）',
+      'C. 简单的信息展示页（图文介绍这款概念飞行汽车）',
+      '**视觉风格**：科技极简风（黑/白 + 大图）、赛博朋克风（霓虹、暗色）、还是其他偏好？',
+      '**页面内容板块**：希望包含哪些？比如：Hero 大标题、产品参数、飞行原理、价格/预约表单、FAQ……（你说留哪些）',
+      '**动效与交互**：纯 CSS 动画就够，还是需要 Three.js 的 3D 飞行汽车模型（可旋转）？',
+      '**语言**：全中文、中英双语，还是英文？',
+      '**用途**：这个页面是做什么用的？（演示汇报 / 概念作品集 / 活动预热 / 纯好玩） —— 方便我把握调性。',
+      '你回完这些，我就直接开做出一个完整的 HTML 文件给你。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.question).toBe('页面类型：想要哪种？');
+    expect(result?.options.map((o) => o.id)).toEqual(['opt-A', 'opt-B', 'opt-C']);
+    expect(result?.after).toContain('视觉风格');
+    expect(result?.after).toContain('用途');
+  });
+
+  it('formatted_body HTML（QwenPaw 实际形态）仍能升格', () => {
+    const html = [
+      '<p>以下几个关键问题，麻烦一次性回答：</p>',
+      '<p><strong>页面类型</strong>：想要哪种？</p>',
+      '<p>A. 产品宣传落地页（类似特斯拉官网风格，滚动展示）</p>',
+      '<p>B. 3D 交互演示页（可以用鼠标旋转、看飞行汽车模型）</p>',
+      '<p>C. 简单的信息展示页（图文介绍这款概念飞行汽车）</p>',
+      '<p><strong>视觉风格</strong>：科技极简还是赛博朋克？</p>',
+    ].join('');
+    const result = parseInterventionHeuristic(html);
+    expect(result?.question).toBe('页面类型：想要哪种？');
+    expect(result?.options).toHaveLength(3);
+    expect(result?.options[0]).toEqual({
+      id: 'opt-A',
+      label: '产品宣传落地页（类似特斯拉官网风格，滚动展示）',
+    });
+    expect(result?.after).toContain('视觉风格');
+  });
+
+  it('同一段落内 br 分隔的字母选项也能升格', () => {
+    const html =
+      '<p>想要哪种？<br>A. 落地页<br>B. 3D 演示页<br>C. 信息展示页</p>';
+    expect(parseInterventionHeuristic(html)?.options.map((o) => o.id)).toEqual([
+      'opt-A',
+      'opt-B',
+      'opt-C',
+    ]);
+  });
+
   it('引导行以冒号收尾同样命中；1. / 1、 风格均认', () => {
     expect(
       parseInterventionHeuristic('想确认一下你指的是哪个：\n1. 甲\n2. 乙')?.question,

@@ -555,6 +555,25 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
     expect(screen.queryByText(/2）底部快捷操作/)).not.toBeInTheDocument();
   });
 
+  it('有 formatted_body HTML 时仍按纯文本 body 升格', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '页面类型：想要哪种？\nA. 落地页\nB. 3D 演示页\nC. 信息展示页',
+          formattedContent:
+            '<p><strong>页面类型</strong>：想要哪种？</p><p>A. 落地页</p><p>B. 3D 演示页</p><p>C. 信息展示页</p>',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('页面类型：想要哪种？')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /落地页/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+  });
+
   it('流式中的消息不升格（等定稿再渲染卡片）', () => {
     renderWithProvider(
       <MessageBubble
