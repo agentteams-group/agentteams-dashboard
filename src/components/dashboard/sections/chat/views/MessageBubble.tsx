@@ -18,6 +18,10 @@ import { RunEndingNote, type RunEndingPayload } from '../run-ending-note';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
+import {
+  heuristicToInterventionPayload,
+  parseInterventionHeuristic,
+} from '@/lib/a2ui/intervention-heuristic';
 import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
@@ -496,6 +500,26 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'text' && block.text) {
+                  // F2.1 降级完整形态：上游未发 v2 块时，Agent 文本回复中的
+                  // 「问句 + 编号选项」升格为选项式干预卡（提交转自然语言
+                  // 消息回房间）。发卡片能力在 Dashboard 侧，不依赖上游。
+                  const heuristic =
+                    !message.isMe && !message.isStreaming
+                      ? parseInterventionHeuristic(block.text)
+                      : null;
+                  if (heuristic && onSendConfirmation) {
+                    return (
+                      <div key={idx} className="w-[min(100%,42rem)] max-w-full">
+                        <InterventionCard
+                          payload={heuristicToInterventionPayload(
+                            heuristic,
+                            `heuristic:${message.eventId ?? message.id}:${idx}`
+                          )}
+                          onAnswer={handleConfirmationApprove}
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={idx} className={bubbleClasses}>
                       <MarkdownMessage

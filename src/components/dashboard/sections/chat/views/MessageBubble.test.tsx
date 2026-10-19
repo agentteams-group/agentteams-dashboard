@@ -520,3 +520,71 @@ describe('MessageBubble — worker avatar → sessions (C / #1295)', () => {
     expect(btn).toBeNull();
   });
 });
+
+describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）', () => {
+  const baseMessage = {
+    id: '$heuristic',
+    sender: '@manager:example.com',
+    senderShort: 'manager',
+    content: '',
+    timestamp: 0,
+    type: 'm.text',
+    isMe: false,
+  };
+
+  it('Agent 回复「问句 + 编号选项」→ 渲染干预卡（不再渲染原文本）', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '你希望先实现哪一种交互？\n1）消息内嵌卡片\n2）底部快捷操作\n3）独立详情面板',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    // 卡片标题（问题原句）
+    expect(screen.getByText('你希望先实现哪一种交互？')).toBeInTheDocument();
+    // 选项进入卡内（radio 形态）
+    expect(screen.getByRole('radio', { name: /消息内嵌卡片/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /底部快捷操作/ })).toBeInTheDocument();
+    // 提交按钮（Codex 风格文案）
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+    // 原始编号列表文本不再重复渲染
+    expect(screen.queryByText(/2）底部快捷操作/)).not.toBeInTheDocument();
+  });
+
+  it('流式中的消息不升格（等定稿再渲染卡片）', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '选哪个？\n1）甲\n2）乙',
+          isStreaming: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('radio', { name: /甲/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/选哪个/)).toBeInTheDocument();
+  });
+
+  it('自己的消息与普通列表不升格', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '步骤如下：\n1. 安装\n2. 启动',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+});
