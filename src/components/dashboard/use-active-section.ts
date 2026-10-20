@@ -120,7 +120,11 @@ export function useActiveSection() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const canonical = `#${hashForSection(useSectionStore.getState().activeSection)}`;
+      const section = useSectionStore.getState().activeSection;
+      // Echo of our own programmatic write — nothing to sync. Use the same
+      // canonical form as the write effect so a preserved resource-tab deep
+      // link (`#console/resources/<tab>`) still counts as an echo.
+      const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
 
       // Pure echo of our own programmatic write — nothing to sync.
       if (window.location.hash === canonical) return;
