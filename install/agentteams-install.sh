@@ -18,7 +18,7 @@
 # Environment variables (for automation):
 #   AGENTTEAMS_NON_INTERACTIVE    Skip all prompts, use defaults  (default: 0)
 #   AGENTTEAMS_LLM_PROVIDER      LLM provider       (default: openai-compat for zh non-interactive Token Plan; qwen for en)
-#   AGENTTEAMS_DEFAULT_MODEL      Request model alias (default: qwen3.6-plus for zh Token Plan and en non-interactive)
+#   AGENTTEAMS_DEFAULT_MODEL      Default model       (default: qwen3.6-plus for zh Token Plan and en non-interactive)
 #   AGENTTEAMS_OPENAI_BASE_URL    OpenAI-compatible base URL (default for zh non-interactive: Alibaba Token Plan endpoint)
 #   AGENTTEAMS_HIGRESS_ADAPTER_MODE Higress adapter mode (default: direct; external preserves the configured Gateway URL)
 #   AGENTTEAMS_AI_GATEWAY_URL     Higress Gateway data-plane URL for Manager and Worker model requests
@@ -74,7 +74,7 @@
 set -e
 
 AGENTTEAMS_VERSION="${AGENTTEAMS_VERSION:-}"
-AGENTTEAMS_KNOWN_STABLE_VERSION="v1.2.3"   # fallback if GitHub API is unreachable
+AGENTTEAMS_KNOWN_STABLE_VERSION="v1.2.5"   # fallback if GitHub API is unreachable
 AGENTTEAMS_FALLBACK_VERSION="${AGENTTEAMS_KNOWN_STABLE_VERSION}"
 AGENTTEAMS_AUTO_VERSION=0
 AGENTTEAMS_DEEPSEEK_HARNESS_MIN_VERSION="v1.2.4"
@@ -4779,7 +4779,6 @@ install_worker() {
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_ENDPOINT=${FS}"
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_ACCESS_KEY=${FS_KEY}"
     DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_SECRET_KEY=${FS_SECRET}"
-    DOCKER_ENV="${DOCKER_ENV} -e AGENTTEAMS_FS_BUCKET=${AGENTTEAMS_FS_BUCKET:-agentteams-storage}"
 
     if [ -z "${SKILLS_API_URL}" ]; then
         if [ -n "${AGENTTEAMS_SKILLS_API_URL:-}" ]; then

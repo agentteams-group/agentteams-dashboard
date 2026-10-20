@@ -97,7 +97,7 @@ fi
 
 # Test 1c: Default dashboard version is independent of AGENTTEAMS_VERSION
 dashboard_version_line=$(grep -E 'AGENTTEAMS_DASHBOARD_VERSION=.*:-' "${INSTALL_SCRIPT}" | head -1)
-if echo "${dashboard_version_line}" | grep -q 'v1\.2\.4\.9'; then
+if echo "${dashboard_version_line}" | grep -q 'v1\.3\.1'; then
     pass "Dashboard has independent default version (v1.3.1)"
 else
     fail "Dashboard default version line: ${dashboard_version_line}"
