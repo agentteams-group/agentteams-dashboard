@@ -83,6 +83,7 @@ import {
 } from '@/lib/agentteams-projects-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
+import { HtmlPreview } from '@/components/dashboard/html-preview';
 
 // ── 文件类型（与插件 Artifacts.kindOf 同款扩展名分组）──────────────────
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp']);
@@ -767,6 +768,21 @@ export function ArtifactsSection() {
                   />
                 ) : ['md', 'markdown'].includes(extOf(preview.entry.name)) ? (
                   <MarkdownMessage content={preview.text ?? ''} formattedContent={undefined} />
+                ) : ['html', 'htm'].includes(extOf(preview.entry.name)) ? (
+                  <div className="space-y-2">
+                    <div className="flex justify-end">
+                      <ArtifactDownloadButton
+                        href={getTaskArtifactUrl(preview.entry.projectId, preview.entry.taskId, preview.entry.path)}
+                        filename={preview.entry.name}
+                        withLabel
+                      />
+                    </div>
+                    <HtmlPreview
+                      html={preview.text ?? ''}
+                      title={`${preview.entry.name} 预览`}
+                      baseHref={getTaskArtifactUrl(preview.entry.projectId, preview.entry.taskId, preview.entry.path)}
+                    />
+                  </div>
                 ) : (
                   <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
                     {preview.text}
@@ -812,7 +828,15 @@ function TreeRow({
 
 /** 下载（fetch→blob，代理透传 controller JSON 错误体→toast 真实原因）。
  *  与 projects-section 的 ArtifactLink 同款语义（独立实现避免跨 section 耦合）。 */
-function ArtifactDownloadButton({ href, filename }: { href: string; filename: string }) {
+function ArtifactDownloadButton({
+  href,
+  filename,
+  withLabel = false,
+}: {
+  href: string;
+  filename: string;
+  withLabel?: boolean;
+}) {
   const [downloading, setDownloading] = useState(false);
   const handleDownload = async () => {
     setDownloading(true);
@@ -846,8 +870,8 @@ function ArtifactDownloadButton({ href, filename }: { href: string; filename: st
   return (
     <Button
       variant="ghost"
-      size="icon"
-      className="h-7 w-7"
+      size={withLabel ? 'sm' : 'icon'}
+      className={withLabel ? 'h-7 text-xs' : 'h-7 w-7'}
       title="下载"
       disabled={downloading}
       onClick={() => void handleDownload()}
@@ -857,6 +881,7 @@ function ArtifactDownloadButton({ href, filename }: { href: string; filename: st
       ) : (
         <Download className="h-3.5 w-3.5" aria-hidden="true" />
       )}
+      {withLabel && '下载'}
     </Button>
   );
 }

@@ -230,7 +230,21 @@ export function ArtifactLink({
                   />
                 ) : preview.isHtml ? (
                   <div className="space-y-2">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => void handleDownload()}
+                        disabled={downloading}
+                      >
+                        {downloading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        下载
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
