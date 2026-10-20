@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiUrl } from '@/lib/api-base';
 import {
   File as FileIcon,
   Folder,
@@ -23,6 +22,7 @@ import {
 } from 'lucide-react';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { matrixProxyFetch, matrixProxyUrl } from '@/lib/matrix-write';
 
 // 敏感过滤共享定义（知识库 v2 server 侧同款，见 lib/sensitive-files）
 import { SENSITIVE_PATTERNS } from '@/lib/sensitive-files';
@@ -96,7 +96,10 @@ interface RoomFilesQueryResult {
 }
 
 async function fetchRoomFiles(homeserver: string, accessToken: string, roomId: string): Promise<RoomFilesResult> {
-  const url = apiUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=200`);
+  const url = matrixProxyUrl(
+    `/api/matrix/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=200`,
+    homeserver,
+  );
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -132,8 +135,8 @@ export function RoomFilesPanel({ roomId }: { roomId: string }) {
     mutationFn: async (file: File) => {
       const form = new FormData();
       form.append('file', file);
-      const url = apiUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/upload`);
-      const res = await fetch(url, { method: 'POST', body: form });
+      const url = `/api/matrix/rooms/${encodeURIComponent(roomId)}/upload`;
+      const res = await matrixProxyFetch(url, { method: 'POST', body: form });
       if (!res.ok) throw new Error(`上传失败: ${res.status}`);
       return res.json();
     },

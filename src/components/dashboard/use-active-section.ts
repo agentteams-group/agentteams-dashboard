@@ -5,6 +5,7 @@ import { navItems, STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
 import { isPluginSectionId } from '@/lib/plugins/types';
 import {
+  hashForActiveSection,
   hashForSection,
   needsHashNormalization,
   resolveHash,
@@ -107,7 +108,9 @@ export function useActiveSection() {
     // hashchange event races the re-render — when the event wins, the
     // handler reads the stale hash and bounces the user back to overview.
     const section = useSectionStore.getState().activeSection;
-    const canonical = `#${hashForSection(section)}`;
+    // Preserve a valid resource-tab deep link (`#console/resources/<tab>`)
+    // instead of collapsing it to `#console/resources` on mount.
+    const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
     if (window.location.hash !== canonical) {
       window.location.hash = canonical;
     }

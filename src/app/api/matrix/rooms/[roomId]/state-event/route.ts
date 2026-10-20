@@ -4,7 +4,7 @@
 // （com.agentteams.release）、空间配置（com.agentteams.space）等协作资产
 // 以 Matrix 房间状态事件承载 —— Stateless 兼容（零服务端存储域）。
 // 仅允许 `com.agentteams.` 前缀的事件类型（防滥用与仿冒核心事件类型），
-// 写动作落 release.* / space.* 审计事件以便审计页归因。
+// 写动作按事件域落审计（release.* / space.* / loop.*）。
 import { NextRequest, NextResponse } from 'next/server';
 import { HomeserverValidationError } from '@/lib/homeserver-allowlist';
 import { appendAuditEvent } from '@/lib/audit-log';
@@ -22,6 +22,26 @@ function isRoomId(value: string): boolean {
     /^![A-Za-z0-9._=\/+-]+:[A-Za-z0-9.-]+(?::\d+)?$/.test(value) ||
     /^#[A-Za-z0-9._-]+:[A-Za-z0-9.-]+$/.test(value)
   );
+}
+
+/**
+ * Audit action for a namespaced state write.
+ *
+ * Audit attribution must follow the event domain: a space-config or loop
+ * publish is not a release action. Release records keep their `action`
+ * (`release` / `revoke`).
+ */
+export function auditActionFor(
+  eventType: string,
+  content: Record<string, unknown>
+): string {
+  if (eventType === 'com.agentteams.release') {
+    const action = typeof content.action === 'string' ? content.action : 'update';
+    return `release.${action}`;
+  }
+  if (eventType === 'com.agentteams.space') return 'space.update';
+  if (eventType === 'com.agentteams.loop.definition') return 'loop.update';
+  return 'state.update';
 }
 
 export async function POST(
@@ -103,14 +123,12 @@ export async function POST(
   });
 
   if (response.ok) {
-    const action =
-      typeof content.action === 'string' ? content.action : 'update';
     await appendAuditEvent({
       actor,
       actor_level: actorLevel,
       entity_type: 'system',
       entity_name: typeof content.project_id === 'string' ? content.project_id : roomId,
-      action: `release.${action}`,
+      action: auditActionFor(eventType, content),
       details: JSON.stringify({
         eventType,
         stateKey,

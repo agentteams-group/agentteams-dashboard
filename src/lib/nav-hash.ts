@@ -19,6 +19,10 @@ export interface ResolvedHash {
   params?: URLSearchParams;
 }
 
+/** Resource tab ids reachable via `#console/resources/<tab>` deep links. */
+export const RESOURCE_TABS = ['workers', 'teams', 'humans', 'managers'] as const;
+export type ResourceTabId = (typeof RESOURCE_TABS)[number];
+
 /** section id -> canonical layered hash path (without the leading '#'). */
 const SECTION_TO_HASH: Record<string, string> = {
   'my-workbench': 'workbench/me',
@@ -78,6 +82,24 @@ export function hashForSection(sectionId: string): string {
 }
 
 /**
+ * Canonical hash for an active section while preserving a valid
+ * `#console/resources/<tab>` deep link.
+ *
+ * `hashForSection('resources')` collapses to `console/resources`, which would
+ * silently reset the tab on mount. The third segment is reserved for resource
+ * tabs, so keep it when it names a known tab.
+ */
+export function hashForActiveSection(sectionId: string, currentHash: string): string {
+  const canonical = hashForSection(sectionId);
+  if (sectionId !== 'resources') return canonical;
+  const path = currentHash.replace(/^#/, '').split('?')[0];
+  const match = /^console\/resources\/([^/]+)$/.exec(path);
+  return match && (RESOURCE_TABS as readonly string[]).includes(match[1])
+    ? path
+    : canonical;
+}
+
+/**
  * Resolve a raw hash fragment (no leading '#') to a navigation target.
  * Accepts layered hashes, legacy flat hashes and plugin route hashes.
  * Returns null for unknown hashes so callers can apply their own fallback.
@@ -132,6 +154,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
     // 资源收敛（F7.1）：workers/teams/humans/managers 分层路径全部进入
     // Agent 目录容器（tab 由 ResourcesSection 从第三段解析）。
     const consoleMap: Record<string, string> = {
+      'resources': 'resources',
       'resources/workers': 'resources',
       'resources/teams': 'resources',
       'resources/humans': 'resources',

@@ -53,6 +53,15 @@ export function ResourcesSection() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // 切换 tab 时同步第三段，保证深链可分享、刷新不丢当前分类。
+  const selectTab = (id: ResourceTab) => {
+    setTab(id);
+    const next = `#console/resources/${id}`;
+    if (window.location.hash !== next) {
+      window.history.replaceState(null, '', next);
+    }
+  };
+
   const visibleTabs = useMemo(
     () => TABS.filter((t) => !t.minLevel || userLevel >= t.minLevel),
     [userLevel],
@@ -78,7 +87,7 @@ export function ResourcesSection() {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setTab(t.id)}
+              onClick={() => selectTab(t.id)}
               data-resource-tab={t.id}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
                 active

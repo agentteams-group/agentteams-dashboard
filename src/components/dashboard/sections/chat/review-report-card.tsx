@@ -260,6 +260,12 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
             )}
           </div>
 
+          {writeState.isError && (
+            <p role="alert" className="text-[10px] text-red-600 dark:text-red-400">
+              {writeState.error instanceof Error ? writeState.error.message : '写入失败'}
+            </p>
+          )}
+
           {autoReleaseHint && userLevel >= 2 && (
             <p className="rounded bg-emerald-500/10 px-2 py-1.5 text-[10px] text-emerald-700 dark:text-emerald-400">
               自动放行已开启且本轮审查通过 —— 点击上方「放行」确认（同一轮次幂等，不会重复放行）。

@@ -8,6 +8,8 @@
  * 生成结构化指令消息发回房间由 Manager 消费。
  */
 
+import { matrixProxyFetch } from './matrix-write';
+
 export const ARTIFACT_COMMENT_CONTENT_KEY = 'com.agentteams.artifact_comment';
 
 export interface ArtifactComment {
@@ -108,10 +110,8 @@ export async function sendArtifactComment(input: SendArtifactCommentInput): Prom
     ...(input.action === 'resolve' ? { action: 'resolve', resolves_ts: input.resolvesTs } : {}),
   };
   const prefix = input.line !== undefined ? `L${input.line} ` : '';
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(input.roomId)}/send`, {
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(input.roomId)}/send`, {
     method: 'PUT',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       msgtype: 'm.text',
       body:
@@ -126,10 +126,8 @@ export async function sendArtifactComment(input: SendArtifactCommentInput): Prom
 
 /** 发送普通文本消息（F6.3 批量派发的降级通道）。 */
 export async function sendRoomText(roomId: string, body: string): Promise<void> {
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, {
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, {
     method: 'PUT',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ msgtype: 'm.text', body }),
   });
   if (!res.ok) throw new Error(`消息发送失败（${res.status}）`);

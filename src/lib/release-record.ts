@@ -7,6 +7,8 @@
  * 空间级配置（自动放行开关 F3.4）走 `com.agentteams.space`。
  */
 
+import { matrixProxyFetch } from './matrix-write';
+
 export const RELEASE_STATE_EVENT = 'com.agentteams.release';
 export const SPACE_STATE_EVENT = 'com.agentteams.space';
 
@@ -105,10 +107,8 @@ export async function sendReleaseRecord(
   roomId: string,
   record: Omit<ReleaseRecord, 'ts'> & { ts?: number }
 ): Promise<void> {
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       eventType: RELEASE_STATE_EVENT,
       stateKey: releaseStateKey(record.action),
@@ -126,10 +126,8 @@ export async function sendSpaceConfig(
   roomId: string,
   config: Partial<SpaceConfigRecord> & { ts?: number }
 ): Promise<void> {
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       eventType: SPACE_STATE_EVENT,
       stateKey: 'auto_release',
@@ -144,8 +142,8 @@ export async function sendSpaceConfig(
 
 /** 读取房间全量 state（经现有 GET BFF）。 */
 export async function fetchRoomState(roomId: string): Promise<unknown> {
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state`, {
-    credentials: 'same-origin',
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state`, {
+    method: 'GET',
   });
   if (!res.ok) throw new Error(`room state failed (${res.status})`);
   return res.json();

@@ -92,10 +92,27 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(screen.getByRole('radio', { name: /按模块/ })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('③ 序号快捷键 1-9 选中展示序选项（输入框聚焦时让位）', () => {
+  it('③ 序号快捷键 1-9 选中展示序选项（卡片获焦时；输入框聚焦时让位）', () => {
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
-    fireEvent.keyDown(window, { key: '2' });
+    fireEvent.keyDown(screen.getByRole('radiogroup', { name: /划分/ }), { key: '2' });
     expect(screen.getByRole('radio', { name: /按模块/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('③b 未聚焦卡片时 window 按键不改动（多卡互不干扰）', () => {
+    render(
+      <>
+        <InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />
+        <InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />
+      </>
+    );
+    fireEvent.keyDown(window, { key: '2' });
+    expect(screen.getAllByRole('radio', { name: /按角色/ })).toHaveLength(2);
+    for (const radio of screen.getAllByRole('radio', { name: /按角色/ })) {
+      expect(radio).toHaveAttribute('aria-checked', 'true');
+    }
+    for (const radio of screen.getAllByRole('radio', { name: /按模块/ })) {
+      expect(radio).toHaveAttribute('aria-checked', 'false');
+    }
   });
 
   it('④ 提交按钮禁用规则：推荐默认选中即可提交；取消选中且无输入则禁用', () => {

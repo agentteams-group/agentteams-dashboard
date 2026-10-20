@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hashForActiveSection,
   hashForSection,
   isLayeredHash,
   needsHashNormalization,
@@ -8,7 +9,7 @@ import {
 
 const allSections = new Set([
   'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
-  'workers', 'managers', 'teams', 'humans', 'skills', 'models',
+  'resources', 'workers', 'managers', 'teams', 'humans', 'skills', 'models',
   'knowledge', 'audit',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
@@ -33,6 +34,7 @@ describe('hashForSection', () => {
     expect(hashForSection('coding-runs')).toBe('workbench/tasks/coding-runs');
     expect(hashForSection('loops')).toBe('workbench/loop');
     expect(hashForSection('my-workbench')).toBe('workbench/me');
+    expect(hashForSection('resources')).toBe('console/resources');
     expect(hashForSection('workers')).toBe('console/resources/workers');
     expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('teams')).toBe('console/resources/teams');
@@ -42,6 +44,29 @@ describe('hashForSection', () => {
     expect(hashForSection('knowledge')).toBe('console/resources/knowledge');
     expect(hashForSection('audit')).toBe('console/governance/audit');
     expect(hashForSection('overview')).toBe('console/system/overview');
+  });
+});
+
+describe('hashForActiveSection', () => {
+  it('keeps a valid resource tab deep link', () => {
+    expect(hashForActiveSection('resources', '#console/resources/humans')).toBe(
+      'console/resources/humans'
+    );
+    expect(hashForActiveSection('resources', '#console/resources/workers')).toBe(
+      'console/resources/workers'
+    );
+  });
+
+  it('collapses to the canonical hash when the tab is absent or unknown', () => {
+    expect(hashForActiveSection('resources', '#console/resources')).toBe('console/resources');
+    expect(hashForActiveSection('resources', '#console/resources/nope')).toBe(
+      'console/resources'
+    );
+    expect(hashForActiveSection('resources', '#workbench/space')).toBe('console/resources');
+  });
+
+  it('never preserves a third segment for non-resource sections', () => {
+    expect(hashForActiveSection('chat', '#console/resources/humans')).toBe('workbench/space');
   });
 });
 
@@ -74,6 +99,7 @@ describe('resolveHash — layered hashes', () => {
   });
 
   it('resolves console hashes (附录 A；F7.1 资源路径进容器)', () => {
+    expect(resolveHash('console/resources', isKnown)?.section).toBe('resources');
     expect(resolveHash('console/resources/workers', isKnown)?.section).toBe('resources');
     expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('resources');
     expect(resolveHash('console/resources/skills', isKnown)?.section).toBe('skills');

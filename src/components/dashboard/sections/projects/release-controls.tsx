@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ export function ReleaseControls({
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const currentUserId = useMatrixStore((s) => s.userId);
   const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const stateQuery = useQuery({
     queryKey: ['room-release-state', roomId],
@@ -64,6 +66,7 @@ export function ReleaseControls({
 
   const act = async (action: 'release' | 'revoke') => {
     if (!roomId) return;
+    setActionError(null);
     try {
       await sendReleaseRecord(roomId, {
         action,
@@ -73,8 +76,10 @@ export function ReleaseControls({
         actor: currentUserId ?? 'unknown',
       });
       await queryClient.invalidateQueries({ queryKey: ['room-release-state', roomId] });
-    } catch {
-      /* 失败静默：查询 15s 后自校准；操作结果以状态事件正源为准 */
+    } catch (err) {
+      // Surface the failure: a silent write failure leaves the operator
+      // believing the artifact was released while the room state never moved.
+      setActionError(err instanceof Error ? err.message : '放行写入失败');
     }
   };
 
@@ -111,6 +116,11 @@ export function ReleaseControls({
             放行
           </Button>
         )
+      )}
+      {actionError && (
+        <span role="alert" className="text-[10px] text-red-600 dark:text-red-400">
+          {actionError}
+        </span>
       )}
       {!compact && !roomId && info.state === 'released' && (
         <span className="text-[10px] text-muted-foreground" title={info.note}>

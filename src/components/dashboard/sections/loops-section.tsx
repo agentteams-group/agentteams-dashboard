@@ -20,6 +20,7 @@ import {
   type LoopNode,
 } from '@/lib/loop-definition';
 import { listProjects, getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { matrixProxyFetch } from '@/lib/matrix-write';
 import { useSectionStore } from '@/lib/section-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useCapabilityStore, capabilityNote } from '@/lib/capability-probe';
@@ -59,17 +60,18 @@ function writeDrafts(drafts: StoredLoopDraft[]): void {
 /** 向房间写循环定义（复用 state-event BFF；管理员）。 */
 async function publishLoopToRoom(roomId: string, def: LoopDefinition): Promise<void> {
   // state-event BFF 只接受 com.agentteams.* 前缀 —— 循环定义直接复用。
-  const res = await fetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
+  const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       eventType: LOOP_STATE_EVENT,
       stateKey: `loop:${def.id}:v${def.version}`,
       content: def,
     }),
   });
-  if (!res.ok) throw new Error(`发布失败（${res.status}）`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.error ?? `发布失败（${res.status}）`);
+  }
 }
 
 export function LoopsSection() {

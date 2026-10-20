@@ -14,12 +14,13 @@ import {
   sendRoomText,
 } from '@/lib/artifact-comment';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { matrixProxyFetch } from '@/lib/matrix-write';
 
 // 注：评论读取走 /messages chunk（含自定义 content key），15s 轮询口径。
 async function fetchRoomMessages(roomId: string): Promise<unknown> {
-  const res = await fetch(
+  const res = await matrixProxyFetch(
     `/api/matrix/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=200`,
-    { credentials: 'same-origin' },
+    { method: 'GET' },
   );
   if (!res.ok) throw new Error(`messages failed (${res.status})`);
   return res.json();

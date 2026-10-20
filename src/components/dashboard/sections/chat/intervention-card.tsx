@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Clock, AlertTriangle, Info, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -182,21 +182,19 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   }, [expired, questions, page, payload.tool_name, payload.confirmation_id, addNotification, currentUserId]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
-  useEffect(() => {
+  // 绑定在卡片根节点而非 window：多个干预卡同时可见时，按键只作用于
+  // 获得焦点的卡片，避免一次按键改动所有卡片。
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (submitted || expired) return;
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-      const index = Number(e.key) - 1;
-      const question = questions[page];
-      const list = orderedOptions(question);
-      if (!question || Number.isNaN(index) || index < 0 || index >= list.length) return;
-      e.preventDefault();
-      toggleOption(page, list[index].id);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [submitted, expired, questions, page, toggleOption]);
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    const index = Number(e.key) - 1;
+    const question = questions[page];
+    const list = orderedOptions(question);
+    if (!question || Number.isNaN(index) || index < 0 || index >= list.length) return;
+    e.preventDefault();
+    toggleOption(page, list[index].id);
+  };
 
   if (submitted) {
     return (
@@ -246,7 +244,11 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     // 序号键提示 + 底部自由输入与深色提交按钮；交互逻辑（推荐默认选中/
     // 快捷键/互斥/分页/权限/超时/审计）不变。
     <div
-      className={`my-2 w-[min(100%,42rem)] max-w-full rounded-xl border bg-card shadow-sm overflow-hidden ${
+      role="group"
+      aria-label="干预请求"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className={`my-2 w-[min(100%,42rem)] max-w-full rounded-xl border bg-card shadow-sm overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 ${
         locked ? 'opacity-60' : ''
       }`}
     >
