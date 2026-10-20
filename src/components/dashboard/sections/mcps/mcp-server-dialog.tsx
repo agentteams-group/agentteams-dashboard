@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Play, Loader2, CheckCircle2, XCircle, Info } from 'lucide-react';
+import { Play, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -147,6 +147,7 @@ export function McpServerDialog({
             <InfoTip label="MCP 目录配置说明">
               <span className="block">仅保存目录配置。地址更新后，已有 Worker 保持原地址，请逐个重新分配。</span>
               <span className="mt-1 block">Headers 仅保存在登记中，不会自动注入 Worker。此处测试按登记的 Headers 直连配置地址，只验证登记地址可达。</span>
+              <span className="mt-1 block">登记或测试成功不代表 Worker 已获网关授权；请在 Worker 编辑页运行「已保存配置的网关验证」。</span>
             </InfoTip>
           </DialogTitle>
         </DialogHeader>
@@ -251,7 +252,10 @@ export function McpServerDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="transport">传输方式 <span className="text-destructive">*</span></Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="transport">传输方式 <span className="text-destructive">*</span></Label>
+              <InfoTip label="传输方式说明">Streamable HTTP 为 MCP 协议推荐传输方式，支持多客户端连接。</InfoTip>
+            </div>
             <Select
               defaultValue={server?.transport || 'sse'}
               onValueChange={(v) => {
@@ -271,22 +275,18 @@ export function McpServerDialog({
               </SelectContent>
             </Select>
             <input type="hidden" id="transport-value" {...register('transport', { required: true })} />
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Info className="w-3 h-3" />
-              Streamable HTTP 为 MCP 协议推荐传输方式，支持多客户端连接
-            </p>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>自定义请求头</Label>
+              <div className="flex items-center gap-1">
+                <Label>自定义请求头</Label>
+                <InfoTip label="自定义请求头说明">如 Authorization 或 X-API-Key，用于认证和自定义路由。Headers 仅保存在登记中，不会自动注入 Worker。</InfoTip>
+              </div>
               <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={addHeaderRow}>
                 添加
               </Button>
             </div>
-            {headerKeys.length === 0 && (
-              <p className="text-xs text-muted-foreground">如 Authorization 或 X-API-Key，用于认证和自定义路由</p>
-            )}
             {headerKeys.map((key, idx) => (
               <div key={idx} className="flex gap-2 items-center">
                 <Input

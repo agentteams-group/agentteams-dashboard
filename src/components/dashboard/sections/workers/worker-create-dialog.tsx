@@ -208,7 +208,6 @@ export function WorkerCreateDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">推荐 QwenPaw。</p>
           </div>
 
           <div className="space-y-2 min-w-0">

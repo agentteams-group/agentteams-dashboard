@@ -95,7 +95,6 @@ export function ManagerCreateDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">推荐 QwenPaw。</p>
           </div>
           <div className="space-y-2">
             <Label>镜像</Label>

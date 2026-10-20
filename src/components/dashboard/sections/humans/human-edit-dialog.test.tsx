@@ -150,6 +150,7 @@ describe('HumanEditDialog', () => {
   it('no changes → save disabled', () => {
     renderDialog();
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(screen.getByLabelText('权限等级说明')).toBeInTheDocument();
   });
 
   it('level select offers the controller-correct labels (1=管理员 2=团队成员 3=Worker)', () => {

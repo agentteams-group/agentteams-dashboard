@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelector } from './model-selector';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // Radix Select opens its popover with a Popper that requires ResizeObserver.
 class ResizeObserverStub {
@@ -42,14 +43,16 @@ describe('ModelSelector', () => {
   afterEach(cleanup);
 
   it('preserves an existing model value as a request model alias', () => {
-    render(<ModelSelector value="legacy-provider" onChange={vi.fn()} />);
+    render(<TooltipProvider><ModelSelector value="legacy-provider" onChange={vi.fn()} /></TooltipProvider>);
 
     expect((screen.getByLabelText('请求模型别名') as HTMLInputElement).value).toBe('legacy-provider');
+    expect(screen.getByLabelText('自定义请求模型别名说明')).toBeTruthy();
+    expect(screen.queryByText(/将由通配符路由或服务端绑定校验处理/)).toBeNull();
   });
 
   it('forwards the entered custom request model alias unchanged', () => {
     const onChange = vi.fn();
-    render(<ModelSelector value="legacy-provider" onChange={onChange} />);
+    render(<TooltipProvider><ModelSelector value="legacy-provider" onChange={onChange} /></TooltipProvider>);
 
     fireEvent.change(screen.getByLabelText('请求模型别名'), {
       target: { value: 'team-chat' },
@@ -88,7 +91,7 @@ describe('ModelSelector', () => {
       Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, configurable: true });
     }
     const onChange = vi.fn();
-    render(<ModelSelector value="" onChange={onChange} options={options} />);
+    render(<TooltipProvider><ModelSelector value="" onChange={onChange} options={options} /></TooltipProvider>);
 
     fireEvent.click(screen.getByLabelText('请求模型别名'));
     fireEvent.click(screen.getByRole('option', { name: /自定义别名/ }));
@@ -105,7 +108,7 @@ describe('ModelSelector', () => {
     }
     function Controlled() {
       const [value, setValue] = useState('my-unknown-alias');
-      return <ModelSelector value={value} onChange={setValue} options={options} />;
+      return <TooltipProvider><ModelSelector value={value} onChange={setValue} options={options} /></TooltipProvider>;
     }
     render(<Controlled />);
 

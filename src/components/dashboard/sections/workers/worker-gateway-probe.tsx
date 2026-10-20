@@ -38,6 +38,7 @@ export function WorkerGatewayProbe({ workerName }: { workerName: string }) {
         <span className="block">验证使用该 Worker 的 Consumer 身份，不使用上游 API Key。请先保存修改；表单中尚未保存的模型与 MCP 不参与验证。</span>
         <span className="mt-1 block">请求由 Controller 发出。模型验证会产生一次最多 8 个输出 token 的推理调用；MCP 验证仅初始化并读取工具列表，不执行工具。</span>
         <span className="mt-1 block">未授权时，请管理员在「模型管理 → Consumers」检查 AI 路由绑定范围；MCP 需通过 Manager 或 Higress 授权。这里不会自动扩大权限。</span>
+        <span className="mt-1 block">验证成功表示当前 Consumer 能完成该探测，不代表业务链路端到端可用。</span>
       </InfoTip>
     </div>
     <div className="flex gap-2"><Button type="button" variant="outline" disabled={pending} onClick={() => void verify('model')}>验证已保存模型</Button><Button type="button" variant="outline" disabled={pending} onClick={() => void verify('mcp')}>验证已保存 MCP</Button></div>

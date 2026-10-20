@@ -100,9 +100,10 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
     renderDialog();
     expect(screen.queryByRole('option', { name: 'CoPaw' })).toBeNull();
     expect(screen.getByRole('option', { name: 'QwenPaw' })).toBeInTheDocument();
-    // 迁移说明收进 ⓘ，默认视图只保留「推荐 QwenPaw」。
+    // 运行时推荐与迁移说明都收进 ⓘ，默认视图不展示技术文案。
     expect(screen.getByLabelText('运行时选择说明')).toBeInTheDocument();
     expect(screen.queryByText(/CoPaw 已停止新建/)).not.toBeInTheDocument();
+    expect(screen.queryByText('推荐 QwenPaw。')).not.toBeInTheDocument();
   });
 
   it('留空 = 跟随集群默认（✓，不拦提交）', () => {

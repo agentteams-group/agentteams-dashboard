@@ -7,6 +7,7 @@ afterEach(cleanup);
 it('preserves literal values and sends an empty object when removing the final variable', () => {
   const change = vi.fn();
   render(<TooltipProvider><WorkerEnvEditor value={{ TOKEN: ' space\n$literal ' }} onChange={change} onValidityChange={vi.fn()} /></TooltipProvider>);
+  expect(screen.getByLabelText('环境变量说明')).toBeTruthy();
   expect((screen.getByLabelText('变量值 1') as HTMLTextAreaElement).value).toBe(' space\n$literal ');
   fireEvent.change(screen.getByLabelText('变量值 1'), { target: { value: '' } });
   expect(change).toHaveBeenLastCalledWith({ TOKEN: '' });
