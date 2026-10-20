@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { matrixProxyFetch, matrixProxyUrl } from '@/lib/matrix-write';
+import { matrixProxyFetch } from '@/lib/matrix-write';
 
 // 敏感过滤共享定义（知识库 v2 server 侧同款，见 lib/sensitive-files）
 import { SENSITIVE_PATTERNS } from '@/lib/sensitive-files';
@@ -95,14 +95,11 @@ interface RoomFilesQueryResult {
   }>;
 }
 
-async function fetchRoomFiles(homeserver: string, accessToken: string, roomId: string): Promise<RoomFilesResult> {
-  const url = matrixProxyUrl(
+async function fetchRoomFiles(homeserver: string, roomId: string): Promise<RoomFilesResult> {
+  const res = await matrixProxyFetch(
     `/api/matrix/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=200`,
-    homeserver,
+    { method: 'GET' },
   );
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
   if (!res.ok) throw new Error(`获取房间消息失败: ${res.status}`);
   const data = await res.json() as RoomFilesQueryResult;
   const files = extractFilesFromMessages(homeserver, data.chunk);
@@ -122,7 +119,7 @@ export function RoomFilesPanel({ roomId }: { roomId: string }) {
     queryKey: ['room-files', roomId],
     queryFn: () => {
       if (!homeserver || !accessToken) return Promise.resolve({ files: [], totalSize: 0 });
-      return fetchRoomFiles(homeserver, accessToken, roomId);
+      return fetchRoomFiles(homeserver, roomId);
     },
     enabled: !!roomId && !!homeserver && !!accessToken,
     retry: 1,

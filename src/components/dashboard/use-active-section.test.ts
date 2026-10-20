@@ -97,6 +97,13 @@ describe('useActiveSection', () => {
       expect(result.current.activeSection).toBe('tasks');
       expect(window.location.hash).toBe('#workbench/tasks');
     });
+
+    it('preserves a resource tab deep link on mount', () => {
+      setHash('#console/resources/humans');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('resources');
+      expect(window.location.hash).toBe('#console/resources/humans');
+    });
   });
 
   describe('remount keeps the live selection', () => {

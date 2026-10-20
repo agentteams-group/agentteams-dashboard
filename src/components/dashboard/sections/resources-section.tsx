@@ -53,12 +53,13 @@ export function ResourcesSection() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // 切换 tab 时同步第三段，保证深链可分享、刷新不丢当前分类。
+  // 切换 tab 时同步第三段，保证深链可分享、刷新不丢当前分类；pushState
+  // 让浏览器后退可以逐步回退 tab（hashchange 监听负责跟随）。
   const selectTab = (id: ResourceTab) => {
     setTab(id);
     const next = `#console/resources/${id}`;
     if (window.location.hash !== next) {
-      window.history.replaceState(null, '', next);
+      window.history.pushState(null, '', next);
     }
   };
 
