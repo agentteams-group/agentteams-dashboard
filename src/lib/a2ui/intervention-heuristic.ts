@@ -83,14 +83,20 @@ function isQuestionish(line: string): boolean {
   return false;
 }
 
-/** 去掉标题行上的 Markdown 装饰（`**页面类型**：` / `### 页面类型`）。 */
+/** 去掉标题行上的 Markdown 装饰（`**页面类型**：` / `### 页面类型` / `- 页面类型`）。 */
 function stripInlineMarkdown(line: string): string {
   return line
+    .replace(/^\s*[-*+]\s+/, '')
     .replace(/^\s*#{1,6}\s+/, '')
     .replace(/\*\*/g, '')
     .replace(/__/g, '')
     .replace(/`/g, '')
     .trim();
+}
+
+/** 去掉标题前的序号（`1. 页面类型` / `2、视觉风格`）。 */
+function stripHeadingOrdinal(line: string): string {
+  return stripInlineMarkdown(line).replace(/^\d{1,2}\s*[.)、]\s*/, '').trim();
 }
 
 function normalizeQuestion(line: string): string {
@@ -124,8 +130,19 @@ function headingAbove(lines: string[], start: number): HeadingInfo | null {
   for (let j = start - 1; j >= 0; j -= 1) {
     const t = (lines[j] ?? '').trim();
     if (!t) continue;
-    // 紧邻的上一行仍是选项行 → 说明这不是一组新问题的标题。
-    if (matchOption(t, 'digit') || matchOption(t, 'alpha')) return null;
+    const isOptionRow = Boolean(matchOption(t, 'digit') || matchOption(t, 'alpha'));
+    if (isOptionRow) {
+      // `1. **页面类型**（单选）` 这类带序号的标题会被 matchOption 当成
+      // 数字选项。去掉序号后若是题型标签，直接认作标题；否则要求它独占
+      // 一段（上一行为空），避免把「1. 是否继续？」这类选项误判成标题。
+      const ordinal = stripHeadingOrdinal(t);
+      if (ordinal === stripInlineMarkdown(t)) return null;
+      const heading = parseHeading(ordinal);
+      if (!heading) return null;
+      const standalone = j === 0 || !(lines[j - 1] ?? '').trim();
+      if (!TYPE_LABEL_RE.test(ordinal) && !standalone) return null;
+      return { index: j, ...heading };
+    }
     const heading = parseHeading(t);
     return heading ? { index: j, ...heading } : null;
   }
@@ -134,7 +151,7 @@ function headingAbove(lines: string[], start: number): HeadingInfo | null {
 
 /** 单行圈号选项（① A ② B …），必须从 ① 起连续。 */
 function parseCircledLine(line: string): Array<{ id: string; label: string }> | null {
-  const t = line.trim();
+  const t = stripInlineMarkdown(line);
   if (!t) return null;
   const matches = [...t.matchAll(CIRCLED_RE)];
   if (matches.length < 2) return null;

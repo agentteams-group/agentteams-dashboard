@@ -220,6 +220,58 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(result?.after).toContain('最快方式');
   });
 
+  it('线上真实 Markdown 形态：序号标题 + 子弹列表 + 圈号行', () => {
+    const body = [
+      '* 好，我重新问一遍，尽量问得清楚：',
+      '',
+      '**背景**：以下 6 个问题决定页面长什么样：',
+      '',
+      '1. **页面类型**（单选）',
+      '   - A. 宣传落地页',
+      '   - B. 3D 交互演示',
+      '   - C. 图文介绍页',
+      '',
+      '2. **视觉风格**（单选）',
+      '   - A. 深色科技风',
+      '   - B. 浅色极简风',
+      '',
+      '3. **内容板块**（多选，选你要的）',
+      '   - ① Hero 首屏大标题 ② 产品参数表 ③ 飞行原理/技术亮点',
+      '',
+      '4. **动效程度**（单选）',
+      '   - A. 轻量  B. 丰富',
+      '',
+      '5. **语言**（单选）',
+      '   - A. 中文为主  B. 全中文  C. 中英双语',
+      '',
+      '**最快方式**：回我「1A 2A」这种格式。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.questions?.map((q) => q.question)).toEqual([
+      '页面类型（单选）',
+      '视觉风格（单选）',
+      '内容板块（多选，选你要的）',
+      '动效程度（单选）',
+      '语言（单选）',
+    ]);
+    expect(result?.questions?.[0].options.map((o) => o.label)).toEqual([
+      '宣传落地页',
+      '3D 交互演示',
+      '图文介绍页',
+    ]);
+    expect(result?.questions?.[2].multi_select).toBe(true);
+    expect(result?.questions?.[2].options).toHaveLength(3);
+    expect(result?.questions?.[4].options.map((o) => o.label)).toEqual([
+      '中文为主',
+      '全中文',
+      '中英双语',
+    ]);
+    expect(result?.before).toContain('背景');
+    expect(result?.before).not.toContain('A. 宣传落地页');
+    expect(result?.after).toContain('最快方式');
+    expect(result?.after).not.toContain('A. 轻量');
+  });
+
   it('等号分隔的 `1 = 选项` 升格（QwenPaw 逐题追问形态）', () => {
     const body = [
       '收到，我换个方式——一次只问一个问题，尽量短。我们先定第一个：',
