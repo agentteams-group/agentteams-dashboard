@@ -101,6 +101,8 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
 
   it('retains provider form input when immediate validation fails', () => {
     render(<TooltipProvider><ModelsSection /></TooltipProvider>);
+    expect(screen.getByLabelText('AI 路由分发说明')).toBeTruthy();
+    expect(screen.queryByText(/AI 路由按/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
 
     const name = screen.getAllByRole('textbox')[0];

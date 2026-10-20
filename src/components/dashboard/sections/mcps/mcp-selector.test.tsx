@@ -14,6 +14,8 @@ vi.mock('@/components/ui/dialog', () => ({
 afterEach(cleanup);
 it('projects the Controller transport without copying upstream credentials', () => {
  const change = vi.fn(); render(<TooltipProvider><McpSelector value={[]} onChange={change} /></TooltipProvider>);
+  expect(screen.getByLabelText('MCP 分配与授权说明')).toBeTruthy();
+  expect(screen.queryByText(/授权与可用性需在 Worker 编辑页验证/)).toBeNull();
  fireEvent.click(screen.getByRole('button', { name: /github.*streaminghttp/ }));
  fireEvent.click(screen.getByRole('button', { name: '确定 (1 个)' }));
  expect(change).toHaveBeenCalledWith([{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]);

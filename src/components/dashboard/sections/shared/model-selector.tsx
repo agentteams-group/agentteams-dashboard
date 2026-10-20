@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { describeRouteAuthorization } from '@/lib/model-catalog';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 const CUSTOM_ALIAS = '__custom_alias__';
 
@@ -74,7 +75,6 @@ export function ModelSelector({
   if (customActive) {
     return (
       <div className="space-y-1.5 min-w-0 w-full">
-      <p className="text-xs text-muted-foreground">已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。</p>
         <div className="flex gap-2 min-w-0">
           <Input
             className="min-w-0 flex-1"
@@ -84,6 +84,9 @@ export function ModelSelector({
             disabled={disabled}
             aria-label="请求模型别名"
           />
+          <InfoTip label="自定义请求模型别名说明">
+            自定义请求模型别名，将由通配符路由或服务端绑定校验处理。
+          </InfoTip>
           {uniqueOptions.length > 0 && (
             <Button
               type="button"
@@ -100,9 +103,6 @@ export function ModelSelector({
             </Button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground break-words">
-          自定义请求模型别名，将由通配符路由或服务端绑定校验处理。
-        </p>
         {sessionIssue ? <SessionIssueNote message={sessionIssue} /> : null}
       </div>
     );
@@ -110,7 +110,6 @@ export function ModelSelector({
 
   return (
     <div className="space-y-1.5 min-w-0 w-full">
-      <p className="text-xs text-muted-foreground">已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。</p>
       <Select
         value={value ?? ''}
         onValueChange={(next) => {

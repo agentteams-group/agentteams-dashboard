@@ -21,6 +21,7 @@ import { McpOnboardingPanel } from './mcp-onboarding-panel';
 import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useMcpCatalog } from '@/hooks/use-mcp-catalog';
 import type { McpServerConfig } from '@/lib/agentteams-api';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function McpServersSection() {
   const [search, setSearch] = useState('');
@@ -83,7 +84,13 @@ export function McpServersSection() {
 
   return (
     <div className="space-y-4">
-      <p className="rounded border p-3 text-sm text-muted-foreground">这里登记已有 MCP 地址，不会在网关创建服务。请先通过 Manager 或 Higress 接入服务并授权 Worker，再登记网关地址。“已配置 Worker”只表示配置关系；实际可用性请在 Worker 编辑页验证。修改或删除登记不会同步修改已有 Worker 或撤销网关授权。</p>
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <span>登记已接入的 MCP 地址</span>
+        <InfoTip label="MCP 登记说明">
+          <span className="block">这里只登记已有地址，不会在网关创建服务。请先通过 Manager 或 Higress 接入并授权 Worker，再登记网关地址。</span>
+          <span className="mt-1 block">「已配置 Worker」只表示配置关系；实际可用性请在 Worker 编辑页验证。修改或删除登记不会同步修改已有 Worker 或撤销网关授权。</span>
+        </InfoTip>
+      </div>
       <McpOnboardingPanel />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

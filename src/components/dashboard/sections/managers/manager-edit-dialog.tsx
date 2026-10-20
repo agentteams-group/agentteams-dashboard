@@ -21,6 +21,7 @@ import type { UpdateManagerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 import { CREATABLE_MANAGER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export type ManagerEditForm = UpdateManagerRequest & { name?: string };
 
@@ -55,7 +56,12 @@ export function ManagerEditDialog({
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>请求模型别名</Label>
+            <div className="flex items-center gap-1">
+              <Label>请求模型别名</Label>
+              <InfoTip label="模型访问与验证说明">
+                Manager 通过 AI 网关访问模型。已配置别名仅表示存在模型映射，请运行「已保存配置的网关验证」。
+              </InfoTip>
+            </div>
             <ModelSelector
               value={value.model}
               onChange={(model) => onChange({ ...value, model })}

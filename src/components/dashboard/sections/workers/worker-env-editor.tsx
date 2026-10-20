@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function validateEnvRows(rows: [string, string][]): string | null {
   const names = new Set<string>();
@@ -29,7 +30,13 @@ export function WorkerEnvEditor({ value, onChange, onValidityChange }: {
     if (valid) onChange(Object.fromEntries(next));
   }
   return <div className="space-y-2">
-    <p className="text-xs text-muted-foreground">修改环境变量会重建托管 Worker 容器，可能中断当前任务；持久化工作区保留。非托管 Worker 需由运行方手动更新进程环境。系统已设置的变量优先，不应在这里覆盖。值可能含密钥，请勿截图分享。</p>
+    <div className="flex items-start gap-1">
+      <p className="text-xs text-muted-foreground">修改环境变量会重建托管 Worker 容器，可能中断当前任务。</p>
+      <InfoTip label="环境变量说明">
+        <span className="block">持久化工作区会保留。非托管 Worker 需由运行方手动更新进程环境。</span>
+        <span className="mt-1 block">系统已设置的变量优先，不应在这里覆盖。值可能含密钥，请勿截图分享。</span>
+      </InfoTip>
+    </div>
     {rows.map(([name, val], index) => <div className="flex items-start gap-2" key={index}>
       <Input aria-label={`变量名 ${index + 1}`} value={name} onChange={(event) => update(rows.map((row, i) => i === index ? [event.target.value, row[1]] : row))} />
       <textarea aria-label={`变量值 ${index + 1}`} className="min-w-0 flex-1 rounded border p-2 text-sm" value={val} onChange={(event) => update(rows.map((row, i) => i === index ? [row[0], event.target.value] : row))} />

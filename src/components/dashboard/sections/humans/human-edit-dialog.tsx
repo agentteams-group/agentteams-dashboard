@@ -22,6 +22,7 @@ import {
 import type { HumanResponse, UpdateHumanRequest } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS, PERMISSION_LEVELS } from './human-types';
 import { MemberPicker } from '../shared/member-picker';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function parseNameList(value: string): string[] {
   return value
@@ -141,7 +142,12 @@ export function HumanEditDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>权限等级</Label>
+              <div className="flex items-center gap-1">
+                <Label>权限等级</Label>
+                <InfoTip label="权限等级说明">
+                  L1 = 管理员（Controller 管理员 token；Matrix 登录获得 L2）
+                </InfoTip>
+              </div>
               <Select
                 value={String(draft.permissionLevel)}
                 onValueChange={(v) => setDraft({ ...draft, permissionLevel: Number(v) as 1 | 2 | 3 })}
@@ -157,9 +163,6 @@ export function HumanEditDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                L1 = 管理员（Controller 管理员 token；Matrix 登录获得 L2）
-              </p>
             </div>
             <div className="space-y-2">
               <Label>可访问团队（留空 = 清空）</Label>

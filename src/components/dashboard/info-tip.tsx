@@ -34,7 +34,7 @@ export function InfoTip({ children, label, className, iconClassName }: InfoTipPr
           <Info className={cn('h-3.5 w-3.5', iconClassName)} aria-hidden="true" />
         </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs text-xs leading-relaxed">{children}</TooltipContent>
+      <TooltipContent className="max-w-sm text-xs leading-relaxed">{children}</TooltipContent>
     </Tooltip>
   );
 }
