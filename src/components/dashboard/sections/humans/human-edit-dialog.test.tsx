@@ -7,6 +7,7 @@ import {
   type HumanEditDraft,
 } from './human-edit-dialog';
 import type { HumanResponse } from '@/lib/agentteams-api';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
@@ -75,14 +76,16 @@ const renderDialog = (props?: {
   const workers = props?.workers ?? ['w1'];
   const isPending = props?.isPending ?? false;
   const result = render(
-    <HumanEditDialog
-      human={human}
-      teams={teams}
-      workers={workers}
-      isPending={isPending}
-      onOpenChange={() => {}}
-      onSubmit={onSubmit}
-    />,
+    <TooltipProvider>
+      <HumanEditDialog
+        human={human}
+        teams={teams}
+        workers={workers}
+        isPending={isPending}
+        onOpenChange={() => {}}
+        onSubmit={onSubmit}
+      />
+    </TooltipProvider>,
   );
   return { onSubmit, container: result.container };
 };

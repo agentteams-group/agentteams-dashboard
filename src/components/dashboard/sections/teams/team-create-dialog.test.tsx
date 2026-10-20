@@ -5,6 +5,7 @@ import { TeamCreateDialog, parseWorkerNames } from './team-create-dialog';
 import { agentteamsApi, buildWorkerMembers } from '@/lib/agentteams-api';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/lib/agentteams-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/agentteams-api')>();
@@ -63,17 +64,19 @@ const renderDialog = (
   const onChange = vi.fn((_next: unknown) => {});
   const onWorkerCreated = vi.fn((_name: string) => {});
   const result = render(
-    <TeamCreateDialog
-      open
-      value={value}
-      onChange={(next) => onChange(next)}
-      isPending={false}
-      onOpenChange={() => {}}
-      onSubmit={() => {}}
-      workers={workers}
-      modelOptions={MODEL_OPTIONS}
-      onWorkerCreated={(name) => onWorkerCreated(name)}
-    />,
+    <TooltipProvider>
+      <TeamCreateDialog
+        open
+        value={value}
+        onChange={(next) => onChange(next)}
+        isPending={false}
+        onOpenChange={() => {}}
+        onSubmit={() => {}}
+        workers={workers}
+        modelOptions={MODEL_OPTIONS}
+        onWorkerCreated={(name) => onWorkerCreated(name)}
+      />
+    </TooltipProvider>,
   );
   return { onChange, onWorkerCreated, container: result.container };
 };

@@ -31,6 +31,7 @@ import {
   workerPickerLabel,
 } from '@/components/dashboard/sections/shared/member-picker';
 import { CREATABLE_WORKER_RUNTIMES, rejectCopawCreate } from '@/lib/runtime-options';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function parseWorkerNames(value: string): string[] {
   return value.split(/[,，]/).map((name) => name.trim()).filter(Boolean);
@@ -286,7 +287,12 @@ export function TeamCreateDialog({
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">请求模型别名</Label>
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs">请求模型别名</Label>
+                    <InfoTip label="模型访问与验证说明">
+                      已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。
+                    </InfoTip>
+                  </div>
                   <ModelSelector
                     value={nw.model}
                     onChange={(model) => setNw((p) => ({ ...p, model }))}
