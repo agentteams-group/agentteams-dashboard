@@ -3,6 +3,7 @@
 import { useState, useCallback, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeftRight, ArrowRight, ChevronDown, ChevronRight, Clock, Gauge, Globe, Info, Key, Link2, Loader2, Monitor, Pencil, Play, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -393,9 +394,11 @@ export function ModelsSection() {
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
   return <div className="space-y-6">
     <SectionHeader title="模型管理" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
-    <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-muted-foreground">
-      <Info className="size-3.5 text-cyan-500 shrink-0 mt-0.5" />
-      <span>所有 AI 路由共享网关路径前缀（默认 <code className="font-mono text-[11px]">/v1</code>），网关通过请求体中的 <code className="font-mono text-[11px]">model</code> 别名匹配对应路由分发到不同提供商；创建时给不同提供商配置不同的模型映射别名即可实现多路分发。</span>
+    <div className="flex items-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-muted-foreground">
+      <span>AI 路由按 <code className="font-mono text-[11px]">model</code> 别名分发到不同提供商。</span>
+      <InfoTip label="AI 路由分发说明">
+        所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同提供商；给不同提供商配置不同的模型映射别名即可实现多路分发。
+      </InfoTip>
     </div>
     <RuntimeStatusCard higress={infrastructure?.higress} />
     <Card className="glass-card"><CardHeader><CardTitle className="text-base">AI 模型提供商</CardTitle><CardDescription>协议、Token 故障转移、模型映射与公开高级配置</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button><span className="text-xs text-muted-foreground">共 {providers.length} 个提供商</span></div><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>

@@ -21,7 +21,7 @@ interface SkillSelectorProps {
   placeholder?: string;
 }
 
-export function SkillSelector({ value, onChange, placeholder = '搜索并选择技能...' }: SkillSelectorProps) {
+export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelectorProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'custom' | 'nacos'>('all');
   const [open, setOpen] = useState(false);
@@ -86,7 +86,7 @@ export function SkillSelector({ value, onChange, placeholder = '搜索并选择�
             />
           </Badge>
         ))}
-        {value.length === 0 && (
+        {value.length === 0 && placeholder && (
           <span className="text-sm text-muted-foreground">{placeholder}</span>
         )}
       </div>

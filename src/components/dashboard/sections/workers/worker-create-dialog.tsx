@@ -30,6 +30,7 @@ import { validateModelValue, modelVerdictText } from '@/lib/model-verdict';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 import { CREATABLE_WORKER_RUNTIMES } from '@/lib/runtime-options';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export interface AgentSpecTemplateOption {
   name: string;
@@ -186,7 +187,12 @@ export function WorkerCreateDialog({
           </div>
 
           <div className="space-y-2 min-w-0">
-            <Label>运行时 *</Label>
+            <div className="flex items-center gap-1">
+              <Label>运行时 *</Label>
+              <InfoTip label="运行时选择说明">
+                推荐 QwenPaw。CoPaw 已停止新建；存量实例请在 Worker 卡片上升级。
+              </InfoTip>
+            </div>
             <Select
               value={value.runtime}
               onValueChange={(v) => onChange({ ...value, runtime: v as CreateWorkerRequest['runtime'] })}
@@ -202,13 +208,21 @@ export function WorkerCreateDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              推荐 QwenPaw。CoPaw 已停止新建，存量实例请从卡片升级。
-            </p>
+            <p className="text-xs text-muted-foreground">推荐 QwenPaw。</p>
           </div>
 
           <div className="space-y-2 min-w-0">
-            <Label>请求模型别名</Label>
+            <div className="flex items-center gap-1">
+              <Label>请求模型别名</Label>
+              <InfoTip label="模型访问与验证说明">
+                <span className="block">
+                  Worker 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
+                </span>
+                <span className="mt-1 block">
+                  创建后请在编辑页运行「已保存配置的网关验证」，以该 Worker 的 Consumer 身份确认授权与调用。
+                </span>
+              </InfoTip>
+            </div>
             <div className="min-w-0 w-full overflow-hidden">
               <ModelSelector
                 value={value.model}
@@ -232,12 +246,6 @@ export function WorkerCreateDialog({
             >
               {modelVerdict.level === 'error' ? '✗ ' : modelVerdict.level === 'warn' ? '⚠ ' : '✓ '}
               {modelVerdictText(modelVerdict, value.model ?? '', modelCandidates)}
-            </p>
-            <p className="text-xs text-muted-foreground break-words">
-              Worker 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
-            </p>
-            <p className="text-xs text-muted-foreground break-words">
-              创建后请在编辑页运行「已保存配置的网关验证」（验证已保存模型 / 验证已保存 MCP），以该 Worker 的 Consumer 身份确认授权与调用。
             </p>
           </div>
 

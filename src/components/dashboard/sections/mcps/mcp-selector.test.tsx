@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { McpSelector } from './mcp-selector';
+import { TooltipProvider } from '@/components/ui/tooltip';
 vi.mock('@/hooks/use-agentteams-mcps', () => ({ useMcpServers: () => ({ data: [{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'streaminghttp', headers: { Authorization: 'upstream-secret' } }] }) }));
 vi.mock('@/components/ui/dialog', () => ({
  Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -12,7 +13,7 @@ vi.mock('@/components/ui/dialog', () => ({
 }));
 afterEach(cleanup);
 it('projects the Controller transport without copying upstream credentials', () => {
- const change = vi.fn(); render(<McpSelector value={[]} onChange={change} />);
+ const change = vi.fn(); render(<TooltipProvider><McpSelector value={[]} onChange={change} /></TooltipProvider>);
  fireEvent.click(screen.getByRole('button', { name: /github.*streaminghttp/ }));
  fireEvent.click(screen.getByRole('button', { name: '确定 (1 个)' }));
  expect(change).toHaveBeenCalledWith([{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]);
@@ -20,14 +21,14 @@ it('projects the Controller transport without copying upstream credentials', () 
 });
 
 it('B7 21.1: defaultSelectedNames pre-seed the draft on first open', () => {
- const change = vi.fn(); render(<McpSelector value={[]} onChange={change} defaultSelectedNames={['github']} />);
+ const change = vi.fn(); render(<TooltipProvider><McpSelector value={[]} onChange={change} defaultSelectedNames={['github']} /></TooltipProvider>);
  fireEvent.click(screen.getByRole('button', { name: /github.*streaminghttp/ }));
  fireEvent.click(screen.getByRole('button', { name: '确定 (1 个)' }));
  expect(change).toHaveBeenCalledWith([{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]);
 });
 
 it('B7 21.1: unknown default names are ignored', () => {
- const change = vi.fn(); render(<McpSelector value={[]} onChange={change} defaultSelectedNames={['not-in-registry']} />);
+ const change = vi.fn(); render(<TooltipProvider><McpSelector value={[]} onChange={change} defaultSelectedNames={['not-in-registry']} /></TooltipProvider>);
  fireEvent.click(screen.getByRole('button', { name: /选择 MCP 服务器/ }));
  fireEvent.click(screen.getByRole('button', { name: '确定 (0 个)' }));
  expect(change).toHaveBeenCalledWith([]);
@@ -35,11 +36,13 @@ it('B7 21.1: unknown default names are ignored', () => {
 
 it('B7 21.1: an explicit selection is not duplicated by the defaults', () => {
  const change = vi.fn(); render(
-   <McpSelector
-     value={[{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]}
-     onChange={change}
-     defaultSelectedNames={['github']}
-   />,
+   <TooltipProvider>
+     <McpSelector
+       value={[{ name: 'github', url: 'https://gateway/mcp-servers/github/mcp', transport: 'http' }]}
+       onChange={change}
+       defaultSelectedNames={['github']}
+     />
+   </TooltipProvider>,
  );
  // 已选 chips 只有一份 github，且它被排除出候选列表（filtered 按 value 排除），
  // 因此 defaultSelectedNames 的叠加路径无从触发重复。

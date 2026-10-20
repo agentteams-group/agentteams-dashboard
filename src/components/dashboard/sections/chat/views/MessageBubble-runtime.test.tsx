@@ -78,7 +78,7 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
     expect(screen.getByLabelText('识别置信度低')).toBeInTheDocument();
   });
 
-  it('shows the event id and revision count when a thinking card is expanded', () => {
+  it('keeps the event id behind the debug affordance with the full id and revision count', () => {
     renderBubble(
       makeMessage({
         content: 'Thinking:\n\n先拆解需求',
@@ -89,8 +89,10 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
-    expect(screen.getByTestId('event-chain-info')).toHaveTextContent('事件 $root-event-…7890');
-    expect(screen.getByTestId('event-chain-info')).toHaveTextContent('编辑 2 次');
+    expect(screen.queryByTestId('event-chain-info')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('event-debug-trigger'));
+    expect(screen.getByTestId('event-chain-info')).toHaveTextContent('$root-event-id-1234567890');
+    expect(screen.getByText('编辑 2 次')).toBeInTheDocument();
   });
 });
 

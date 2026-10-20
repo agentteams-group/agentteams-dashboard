@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChevronDown, ChevronRight, FileCode2, FileSearch, FolderTree, HelpCircle, Search, Terminal, Wrench } from 'lucide-react';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
+import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
 import type { ToolCallPayload } from './index';
 
 export interface ToolCallCardProps {
@@ -17,7 +18,7 @@ export interface ToolCallCardProps {
   detail?: unknown;
   /** Runtime that produced this tool call (drives the corner badge). */
   runtime?: string | null;
-  /** Root Matrix event id, shown when the card is expanded (AC-C7). */
+  /** Root Matrix event id, available via the debug affordance (AC-C7). */
   eventId?: string;
   /** Number of m.replace revisions merged into the message. */
   revisionCount?: number;
@@ -70,10 +71,6 @@ function errorSummaryOf(payload: ToolCallPayload): string | null {
   const firstLine = raw.split('\n').map((line) => line.trim()).find(Boolean);
   if (!firstLine) return null;
   return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
-}
-
-function truncateEventId(eventId: string): string {
-  return eventId.length > 18 ? `${eventId.slice(0, 12)}…${eventId.slice(-4)}` : eventId;
 }
 
 function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail, runtime, eventId, revisionCount }: ToolCallCardProps) {
@@ -142,12 +139,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
           {typeof payload.note === 'string' && payload.note && (
             <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">{payload.note}</p>
           )}
-          {eventId && (
-            <p className="text-[10px] text-muted-foreground/60 font-mono" data-testid="event-chain-info">
-              事件 {truncateEventId(eventId)}
-              {revisionCount ? ` · 编辑 ${revisionCount} 次` : ''}
-            </p>
-          )}
+          {eventId && <EventDebugInfo eventId={eventId} revisionCount={revisionCount} />}
         </div>
       )}
     </section>

@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { InfoTip } from '@/components/dashboard/info-tip';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
@@ -75,7 +76,14 @@ export function WorkerEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>运行时</Label>
+            <div className="flex items-center gap-1">
+              <Label>运行时</Label>
+              {isLegacyCopaw(value.runtime) && (
+                <InfoTip label="CoPaw 升级说明">
+                  将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据，并避免在任务执行中切换。
+                </InfoTip>
+              )}
+            </div>
             <Select
               value={value.runtime || ''}
               onValueChange={(v) => onChange({ ...value, runtime: v as WorkerRuntime })}
@@ -98,7 +106,7 @@ export function WorkerEditDialog({
             </Select>
             {isLegacyCopaw(value.runtime) && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                CoPaw 已停止新建。将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据，并避免在任务执行中切换。
+                CoPaw 已停止新建，保存后升级到 QwenPaw。
               </p>
             )}
           </div>
