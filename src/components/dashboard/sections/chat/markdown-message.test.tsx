@@ -94,6 +94,7 @@ describe('MarkdownMessage', () => {
     expect(table).toBeInTheDocument();
     expect(table?.className).toContain('border-collapse');
     expect(table?.className).toContain('border');
+    expect(table?.parentElement?.className).toContain('overflow-x-auto');
     
     // Check that the HTML content is rendered (not parsed as markdown)
     const htmlContent = table?.innerHTML || '';

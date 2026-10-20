@@ -305,6 +305,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
         .replace(
           /<td(?=[\s>])/g,
           '<td class="border border-border px-2 py-1"'
+        )
+        .replace(
+          /(<table[\s\S]*?<\/table>)/gi,
+          '<div class="my-2 max-w-full overflow-x-auto">$1</div>'
         );
 
       return (
