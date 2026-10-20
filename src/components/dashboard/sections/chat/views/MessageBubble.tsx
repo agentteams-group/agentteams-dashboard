@@ -210,6 +210,14 @@ export function MessageBubble({
     });
   }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
 
+  // Long-message attachments and inline HTML files need the full message
+  // column: a w-fit bubble collapses to the card header width, squeezing the
+  // preview into an unusably narrow viewport.
+  const hasWideContent =
+    parsedBlocks.some((block) => block.type === 'attachment') ||
+    (message.type === 'm.file' &&
+      (message.mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(message.content)));
+
   // Feed the Worker card vitals strip: count this message's tool_call blocks
   // once it is final (delta-guarded per event id, so revisions don't double
   // count). Best-effort — never blocks rendering.
@@ -285,7 +293,9 @@ export function MessageBubble({
   // 会话呈现对标主流（Codex/ChatGPT 风格 · 2026-10 反馈）：浅色轻气泡 +
   // 大留白，去阴影重装饰；自己的消息品牌浅底右对齐，Agent 消息中性浅底。
   const bubbleClasses = [
-    'w-fit max-w-[min(100%,46rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed',
+    hasWideContent
+      ? 'w-full max-w-[min(100%,56rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed'
+      : 'w-fit max-w-[min(100%,46rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed',
     'transition-colors duration-150',
     message.isMe
       ? 'bg-emerald-500/10 text-foreground border border-emerald-500/25 rounded-tr-md'
@@ -362,7 +372,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={`flex items-end gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex w-full items-end gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
             <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea

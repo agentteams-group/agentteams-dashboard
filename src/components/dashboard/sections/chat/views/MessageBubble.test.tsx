@@ -339,7 +339,7 @@ Type /approve to approve, or send any message to deny.`,
   });
 
   it('renders an attachment block for long-message metadata', () => {
-    renderWithProvider(
+    const { container } = renderWithProvider(
       <MessageBubble
         message={{
           id: '$attachment',
@@ -365,6 +365,36 @@ Type /approve to approve, or send any message to deny.`,
 
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+    // The row must stretch so the attachment wrapper's min(100%,56rem) can
+    // resolve against the whole column instead of the card header width.
+    const row = container.querySelector('.flex.items-end.gap-2');
+    expect(row?.className).toContain('w-full');
+  });
+
+  it('uses the full message column for inline HTML file attachments', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$html-file',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: 'index.html',
+          timestamp: 0,
+          type: 'm.file',
+          isMe: false,
+          mediaUrl: 'mxc://example.com/page1',
+          mediaInfo: { mimetype: 'text/html' },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    // w-fit collapsed the bubble to the card width and gave the sandboxed
+    // document a narrow viewport; the file message owns the full column.
+    const bubble = screen.getByText('index.html').closest('.rounded-2xl');
+    expect(bubble?.className).toContain('w-full');
+    expect(bubble?.className).toContain('max-w-[min(100%,56rem)]');
   });
 
   it('renders a loading placeholder for an in-progress a2ui marker while streaming', () => {
