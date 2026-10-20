@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FolderKanban, CircleAlert, Download, Loader2 } from 'lucide-react';
+import { FolderKanban, CircleAlert, Code2, Download, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
+import { HtmlPreview } from '@/components/dashboard/html-preview';
 
 // ── 产物预览（9/17 验收第六轮：任务看板产物点按=预览，行为对齐产物 tab）────
 // 此前 ArtifactLink 点按=直接下载；装验反馈「加上预览」→ 点按开预览对话框
@@ -34,6 +35,39 @@ interface ArtifactPreviewState {
   text?: string;
   error?: string;
   isImage?: boolean;
+  isHtml?: boolean;
+}
+
+function SourceView({
+  text,
+  anchorLine,
+  onAnchor,
+}: {
+  text: string;
+  anchorLine: number | null;
+  onAnchor: (_line: number | null) => void;
+}) {
+  return (
+    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+      {text.split('\n').map((lineText, i) => {
+        const lineNo = i + 1;
+        const anchored = anchorLine === lineNo;
+        return (
+          <span
+            key={lineNo}
+            className={`flex ${anchored ? 'bg-sky-500/15' : 'hover:bg-accent/40'} rounded cursor-pointer`}
+            onClick={() => onAnchor(anchored ? null : lineNo)}
+            title={`点击${anchored ? '取消' : '锚定'} L${lineNo} 评论`}
+          >
+            <span className="w-8 shrink-0 select-none text-right pr-2 text-muted-foreground/60">
+              {lineNo}
+            </span>
+            <span className="min-w-0 flex-1">{lineText || ' '}</span>
+          </span>
+        );
+      })}
+    </pre>
+  );
 }
 
 export function ArtifactLink({
@@ -52,8 +86,10 @@ export function ArtifactLink({
   const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<ArtifactPreviewState | null>(null);
   const [anchorLine, setAnchorLine] = useState<number | null>(null);
+  const [showSource, setShowSource] = useState(false);
   const openPreview = () => {
     setPreview({ status: 'loading' });
+    setShowSource(false);
     void (async () => {
       try {
         const res = await fetch(href, { cache: 'no-store' });
@@ -85,7 +121,9 @@ export function ArtifactLink({
           setPreview({ status: 'binary' });
           return;
         }
-        setPreview({ status: 'ready', text });
+        const isHtml =
+          ctype.includes('text/html') || ['html', 'htm'].includes(artifactExt(label));
+        setPreview({ status: 'ready', text, isHtml });
       } catch (err) {
         setPreview({ status: 'error', error: err instanceof Error ? err.message : '预览失败' });
       }
@@ -190,31 +228,45 @@ export function ArtifactLink({
                     alt={label}
                     className="max-w-full max-h-[60vh] rounded-md object-contain"
                   />
+                ) : preview.isHtml ? (
+                  <div className="space-y-2">
+                    <div className="flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setShowSource((v) => !v)}
+                      >
+                        {showSource ? (
+                          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                        ) : (
+                          <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        {showSource ? '预览' : '源码'}
+                      </Button>
+                    </div>
+                    {showSource ? (
+                      <SourceView
+                        text={preview.text ?? ''}
+                        anchorLine={anchorLine}
+                        onAnchor={setAnchorLine}
+                      />
+                    ) : (
+                      <HtmlPreview
+                        html={preview.text ?? ''}
+                        title={`${label} 预览`}
+                        baseHref={href}
+                      />
+                    )}
+                  </div>
                 ) : ['md', 'markdown'].includes(artifactExt(label)) ? (
                   <MarkdownMessage content={preview.text ?? ''} formattedContent={undefined} />
                 ) : (
-                  <div>
-                    {/* F6.2 行锚点：点击行号设置评论锚（高亮当前锚行） */}
-                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
-                      {(preview.text ?? '').split('\n').map((lineText, i) => {
-                        const lineNo = i + 1;
-                        const anchored = anchorLine === lineNo;
-                        return (
-                          <span
-                            key={lineNo}
-                            className={`flex ${anchored ? 'bg-sky-500/15' : 'hover:bg-accent/40'} rounded cursor-pointer`}
-                            onClick={() => setAnchorLine(anchored ? null : lineNo)}
-                            title={`点击${anchored ? '取消' : '锚定'} L${lineNo} 评论`}
-                          >
-                            <span className="w-8 shrink-0 select-none text-right pr-2 text-muted-foreground/60">
-                              {lineNo}
-                            </span>
-                            <span className="min-w-0 flex-1">{lineText || ' '}</span>
-                          </span>
-                        );
-                      })}
-                    </pre>
-                  </div>
+                  <SourceView
+                    text={preview.text ?? ''}
+                    anchorLine={anchorLine}
+                    onAnchor={setAnchorLine}
+                  />
                 ))}
             </div>
           )}

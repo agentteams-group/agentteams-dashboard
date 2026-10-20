@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { MarkdownMessage } from '../markdown-message';
 import { MermaidRenderer } from '../mermaid-renderer';
+import { HtmlPreview } from '@/components/dashboard/html-preview';
 
 // 敏感过滤共享定义（知识库 v2 server 侧同款，见 lib/sensitive-files）
 import { SENSITIVE_PATTERNS } from '@/lib/sensitive-files';
@@ -333,7 +334,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
 function FilePreview({ kind, ownerName, objectKey }: { kind: 'worker' | 'team'; ownerName: string; objectKey: string }) {
   const [expanded, setExpanded] = useState(false);
   const ext = objectKey.split('.').pop()?.toLowerCase();
-  const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
+  const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'htm', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
   const url = kind === 'worker'
     ? agentteamsApi.downloadWorkerFileUrl(ownerName, objectKey)
@@ -364,6 +365,8 @@ function FilePreview({ kind, ownerName, objectKey }: { kind: 'worker' | 'team'; 
     return (
       <iframe
         src={url}
+        sandbox=""
+        referrerPolicy="no-referrer"
         className="w-full h-[400px] border rounded"
         title={objectKey}
       />
@@ -433,8 +436,23 @@ function TextViewer({ kind, ownerName, objectKey, ext }: { kind: 'worker' | 'tea
     return <div className="p-4 text-sm text-muted-foreground">加载中...</div>;
   }
 
-  if (ext === 'md' || ext === 'markdown') {
+  if (ext === 'html' || ext === 'htm') {
+    const baseHref = kind === 'worker'
+      ? agentteamsApi.downloadWorkerFileUrl(ownerName, objectKey)
+      : agentteamsApi.downloadTeamFileUrl(ownerName, objectKey);
     return (
+      <div className="p-2">
+        <HtmlPreview
+          html={content}
+          title={objectKey}
+          baseHref={baseHref}
+          className="h-[560px] min-h-[320px] w-full rounded-md border bg-white"
+        />
+      </div>
+    );
+  }
+
+  if (ext === 'md' || ext === 'markdown') {    return (
       <div className="p-4 overflow-auto max-h-[500px]">
         <MarkdownMessage content={content} formattedContent={undefined} />
       </div>
