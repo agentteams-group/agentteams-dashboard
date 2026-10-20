@@ -579,6 +579,28 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
     expect(screen.queryByText(/2）底部快捷操作/)).not.toBeInTheDocument();
   });
 
+  it('提交干预卡时把消息发送者交给回写回调（Worker 房间用于 @）', () => {
+    const onSend = vi.fn();
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          sender: '@ceshi:matrix-local.agentteams.io:18080',
+          content: '选哪个？\n1. 甲\n2. 乙',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={onSend}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /甲/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(onSend).toHaveBeenCalledWith(
+      expect.stringContaining('甲'),
+      '@ceshi:matrix-local.agentteams.io:18080',
+    );
+  });
+
   it('有 formatted_body HTML 时仍按纯文本 body 升格', () => {
     renderWithProvider(
       <MessageBubble

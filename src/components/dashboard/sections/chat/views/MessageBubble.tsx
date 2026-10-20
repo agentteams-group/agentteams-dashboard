@@ -42,7 +42,7 @@ interface MessageBubbleProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string) => void;
   /** Opens the owning worker's files panel (team rooms: multi-worker source). */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   /**
@@ -223,13 +223,13 @@ export function MessageBubble({
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply);
-  }, [onSendConfirmation]);
+    onSendConfirmation(reply, message.sender);
+  }, [onSendConfirmation, message.sender]);
 
   const handleConfirmationReject = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply);
-  }, [onSendConfirmation]);
+    onSendConfirmation(reply, message.sender);
+  }, [onSendConfirmation, message.sender]);
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
@@ -429,7 +429,11 @@ export function MessageBubble({
                       <ReviewReportCard
                         payload={block.payload as unknown as import('@/lib/a2ui/protocol').RuntimeReviewReportBlock['payload']}
                         eventId={message.eventId}
-                        onSend={onSendConfirmation}
+                        onSend={
+                          onSendConfirmation
+                            ? (content) => onSendConfirmation(content, message.sender)
+                            : undefined
+                        }
                       />
                     </div>
                   );

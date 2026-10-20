@@ -148,7 +148,7 @@ interface MessageListProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string) => void;
   /** Opens the worker files panel for the message's owning worker. */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
