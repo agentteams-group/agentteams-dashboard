@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { useMcpServers } from '@/hooks/use-agentteams-mcps';
 import type { McpServerConfig } from '@/lib/agentteams-api';
+import { InfoTip } from '@/components/dashboard/info-tip';
 
 export interface SelectedMcpServer {
   name: string;
@@ -87,7 +88,18 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">这里只分配已登记的地址，不会创建网关服务或授予权限。请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。分配后请通过「已保存配置的网关验证」确认该 Worker 的 Consumer 已获授权。</p>
+      <div className="flex items-start gap-1 text-xs text-muted-foreground">
+        <span>仅分配已登记的 MCP 地址；授权与可用性需在 Worker 编辑页验证。</span>
+        <InfoTip label="MCP 分配与授权说明">
+          <span className="block">这里只分配已登记的地址，不会创建网关服务或授予权限。</span>
+          <span className="mt-1 block">
+            请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。
+          </span>
+          <span className="mt-1 block">
+            分配后请通过「已保存配置的网关验证」确认该 Worker 的 Consumer 已获授权。
+          </span>
+        </InfoTip>
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {value.length === 0 && (
           <span className="text-sm text-muted-foreground">暂未选择 MCP 服务器</span>

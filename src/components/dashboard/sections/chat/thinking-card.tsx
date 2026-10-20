@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, Brain, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
+import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 
 interface ThinkingCardProps {
@@ -12,14 +13,10 @@ interface ThinkingCardProps {
   isStreaming?: boolean;
   /** Runtime that produced this thinking block (drives the corner badge). */
   runtime?: string | null;
-  /** Root Matrix event id, shown when the card is expanded (AC-C7). */
+  /** Root Matrix event id, available via the debug affordance (AC-C7). */
   eventId?: string;
   /** Number of m.replace revisions merged into the message. */
   revisionCount?: number;
-}
-
-function truncateEventId(eventId: string): string {
-  return eventId.length > 18 ? `${eventId.slice(0, 12)}…${eventId.slice(-4)}` : eventId;
 }
 
 export function ThinkingCard({
@@ -69,10 +66,9 @@ export function ThinkingCard({
             {content || (isStreaming ? '正在思考...' : '')}
           </pre>
           {eventId && (
-            <p className="mt-2 text-[10px] text-muted-foreground/60 font-mono" data-testid="event-chain-info">
-              事件 {truncateEventId(eventId)}
-              {revisionCount ? ` · 编辑 ${revisionCount} 次` : ''}
-            </p>
+            <div className="mt-2">
+              <EventDebugInfo eventId={eventId} revisionCount={revisionCount} />
+            </div>
           )}
         </div>
       )}

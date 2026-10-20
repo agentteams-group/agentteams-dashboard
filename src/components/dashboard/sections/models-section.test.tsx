@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelsSection } from './models-section';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const mutations = {
   createProvider: vi.fn(),
@@ -99,7 +100,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('retains provider form input when immediate validation fails', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
 
     const name = screen.getAllByRole('textbox')[0];
@@ -112,7 +113,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('keeps invalid fallback JSON visible in the route form', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '添加路由' }));
 
     const fallback = screen.getByPlaceholderText(/maxRetries/);
@@ -125,7 +126,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('submits a valid route creation form', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '添加路由' }));
 
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'new-route' } });
@@ -139,7 +140,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('shows referenced routes before deleting a provider', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '删除 openai' }));
 
     expect(screen.getByText('以下路由仍引用该提供商：team-chat。删除后这些路由将失效。')).toBeTruthy();
@@ -148,7 +149,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('updates only the selected route Consumer allowlist and supports clearing it', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '编辑 team-chat' }));
     const consumers = screen.getByLabelText('授权 Consumer（逗号分隔）');
     fireEvent.change(consumers, { target: { value: 'worker-alice, worker-bob,worker-alice,' } });
@@ -164,7 +165,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('submits route edits and confirms route deletion', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '编辑 team-chat' }));
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
     expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({ name: 'team-chat' }), expect.any(Object));
@@ -176,7 +177,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('switches a route to a new provider while preserving route structure', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 提供商' }));
 
     fireEvent.change(screen.getByLabelText('目标提供商'), { target: { value: 'deepseek' } });
@@ -194,14 +195,14 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('binds an existing consumer to the AI route', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '绑定 web-crawler' }));
     expect(mutations.bindConsumer).toHaveBeenCalledWith('web-crawler');
   });
 
   it('auto-binds a newly created consumer', async () => {
     mutations.createConsumer.mockResolvedValue({ name: 'my-consumer' });
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
 
     const inputs = screen.getAllByRole('textbox');
@@ -216,7 +217,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     mutations.createConsumer.mockResolvedValue({ name: 'my-consumer', api_key: 'sk-live-abcdef123456' });
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '添加 Consumer' }));
 
     const inputs = screen.getAllByRole('textbox');
@@ -232,7 +233,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   });
 
   it('renders the current request-model binding', () => {
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
 
     expect(screen.getByText('请求模型别名绑定')).toBeTruthy();
     expect(screen.getByText('gpt-4.1')).toBeTruthy();
@@ -249,7 +250,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
       authConfig: { enabled: true },
     }];
 
-    render(<ModelsSection />);
+    render(<TooltipProvider><ModelsSection /></TooltipProvider>);
     fireEvent.click(screen.getByRole('button', { name: '编辑 legacy-route' }));
 
     expect(screen.getByText('启用认证')).toBeTruthy();
