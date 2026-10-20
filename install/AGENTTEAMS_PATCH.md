@@ -18,6 +18,11 @@ working copies and is pending an upstream PR. Rebase the changes onto the
 current `agentscope-ai/AgentTeams` `main` when submitting; there is no pinned
 source revision anymore.
 
+Working copy status (2026-10-20): rebased onto `agentscope-ai/AgentTeams`
+`main` at `6ede59771fc6`. The remaining installer delta is limited to the
+external adapter variables and Dashboard persistence fixes described here,
+which still need the upstream PR.
+
 ### Runtime Contract
 
 `AGENTTEAMS_AI_GATEWAY_URL` is the Gateway data-plane base URL. The Manager
