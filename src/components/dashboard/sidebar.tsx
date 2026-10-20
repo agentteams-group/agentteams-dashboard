@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import {
@@ -16,14 +16,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  navItems,
-  navGroups,
-  isNavItemVisible,
-  type NavItem,
-  type DeploymentMode,
-  type NavGroup,
-} from './nav-items';
+import type { NavItem, DeploymentMode } from './nav-items';
+import { useNavSections } from './use-nav-sections';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
 
@@ -76,7 +70,7 @@ function NavButton({
     >
       <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-emerald-500' : ''}`} />
       {!collapsed && (
-        <span className="truncate">{item.label}</span>
+        <span className="whitespace-nowrap">{item.label}</span>
       )}
       {!collapsed && count > 0 && (
         <Badge
@@ -120,12 +114,43 @@ function NavButton({
 // GroupHeader
 // ──────────────────────────────────────────
 
-function GroupHeader({ group }: { group: { id: NavGroup; label: string } }) {
-  if (!group.label) return null;
+function GroupHeader({ label }: { label: string }) {
   return (
     <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-      {group.label}
+      {label}
     </div>
+  );
+}
+
+/** Area header (工作台 / 控制台) — only rendered in Workbench mode.
+ *  角色自适应（PRD §5.3）：控制台区默认对观察者/协作者折叠，管理员展开；
+ *  点击区头切换（§5.2 可达性：命令面板仍可达全部 14 项）。 */
+function AreaHeader({
+  label,
+  collapsed,
+  areaCollapsed,
+  onToggle,
+}: {
+  label: string;
+  collapsed: boolean;
+  areaCollapsed: boolean;
+  onToggle: () => void;
+}) {
+  if (collapsed) {
+    return <div className="mx-3 my-2 border-t border-border" aria-label={label} />;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!areaCollapsed}
+      className="w-full px-4 pt-3 pb-1 text-xs font-bold text-foreground/80 flex items-center gap-1.5 hover:text-foreground transition-colors"
+    >
+      {label}
+      <span className={`ml-auto text-[10px] text-muted-foreground transition-transform ${areaCollapsed ? '' : 'rotate-90'}`} aria-hidden="true">
+        ▸
+      </span>
+    </button>
   );
 }
 
@@ -144,21 +169,22 @@ export function Sidebar({
 }: SidebarProps) {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
-  const visibleItems = useMemo(
-    () => navItems.filter((item) => isNavItemVisible(item, mode, taskBoardVisible, userLevel)),
-    [mode, taskBoardVisible, userLevel]
-  );
-
-  // Group items by their group field
-  const groupedItems = navGroups.map((group) => ({
-    group,
-    items: visibleItems.filter((item) => item.group === group.id),
-  })).filter(({ items }) => items.length > 0);
+  const classicNavigation = useAgentTeamsStore((s) => s.classicNavigation);
+  const areaSections = useNavSections(mode, taskBoardVisible, userLevel, classicNavigation);
+  // 角色自适应默认视图（§5.3）：控制台区非管理员默认折叠；用户手动切换后
+  // 以本会话态为准（不持久化，尊重默认口径）。userLevel 从 fail-open 默认
+  // 值变为真实等级时重置一次。
+  const [consoleCollapsed, setConsoleCollapsed] = useState(() => userLevel < 3);
+  useEffect(() => {
+    setConsoleCollapsed(userLevel < 3);
+  }, [userLevel]);
 
   return (
     <aside
-      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 ${
-        collapsed ? 'w-16' : 'w-56'
+      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-[width] duration-300 ${
+        // 宽度按菜单文案自适应（F4.6 反馈）：展开态由最宽项（图标+文字+
+        // 徽标）决定，夹在 168–256px 之间；折叠态固定图标条。
+        collapsed ? 'w-16' : 'w-auto min-w-[10.5rem] max-w-[16rem]'
       }`}
     >
       {/* Logo area */}
@@ -219,24 +245,41 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
-        {groupedItems.map(({ group, items }) => (
-          <div key={group.id}>
-            {!collapsed && <GroupHeader group={group} />}
-            {items.map((item) => (
-              <NavButton
-                key={item.id}
-                item={item}
-                isActive={activeSection === item.id}
-                count={countMap[item.id] ?? 0}
-                hasNotification={sectionsWithNotifications.has(item.id)}
-                collapsed={collapsed}
-                onNavClick={onNavClick}
-              />
-            ))}
-          </div>
-        ))}
+        {areaSections.map((area) => {
+          const areaCollapsed = area.key === 'console' && consoleCollapsed;
+          return (
+            <div key={area.key}>
+              {area.label && (
+                <AreaHeader
+                  label={area.label}
+                  collapsed={collapsed}
+                  areaCollapsed={areaCollapsed}
+                  onToggle={() => setConsoleCollapsed((v) => !v)}
+                />
+              )}
+              {!areaCollapsed &&
+                area.groups.map((group) => (
+                  <div key={group.key}>
+                    {!collapsed && <GroupHeader label={group.label} />}
+                    {group.items.map((item) => (
+                      <NavButton
+                        key={item.id}
+                        item={item}
+                        isActive={activeSection === item.id}
+                        count={countMap[item.id] ?? 0}
+                        hasNotification={sectionsWithNotifications.has(item.id)}
+                        collapsed={collapsed}
+                        onNavClick={onNavClick}
+                      />
+                    ))}
+                  </div>
+                ))}
+            </div>
+          );
+        })}
 
-        {/* Plugin-contributed menu items (extension point: sidebar-menu) */}
+        {/* Plugin-contributed menu items (extension point: sidebar-menu).
+            挂载点随控制台收敛迁移（PRD §9），仍追加在侧栏尾部。 */}
         <PluginNavItems
           activeSection={activeSection}
           collapsed={collapsed}

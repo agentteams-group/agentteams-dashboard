@@ -38,6 +38,7 @@ import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import type { FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
+import { buildConfirmationReply } from './confirmation-reply';
 import { TypingIndicator } from './typing-indicator';
 import { AgentActivityTrack } from './agent-activity-track';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
@@ -532,9 +533,10 @@ export function ChatRoom({
     });
   }, [localMessages, patchLocal, sendOutbound]);
 
-  const handleSendConfirmation = useCallback((content: string) => {
-    sendOutbound({ content });
-  }, [sendOutbound]);
+  const handleSendConfirmation = useCallback((content: string, sender?: string) => {
+    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
+    sendOutbound(reply);
+  }, [sendOutbound, workerMatrixUserIds]);
 
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
     removeLocal(message.id);
@@ -786,6 +788,7 @@ export function ChatRoom({
           roomId={roomId}
           rootMessage={activeThread}
           memberMap={memberMap}
+          workerMatrixUserIds={workerMatrixUserIds}
           onClose={() => setActiveThread(null)}
         />
       )}

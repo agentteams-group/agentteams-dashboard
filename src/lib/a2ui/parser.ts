@@ -23,6 +23,7 @@ import type { FileRef } from '../file-refs';
 import {
   normalizeConfirmationPayload,
   normalizeErrorPayload,
+  normalizeReviewReportPayload,
   normalizeToolCallPayload,
   resolveProtocolVersion,
   RUNTIME_BLOCK_PROTOCOL_VERSION,
@@ -32,7 +33,7 @@ import type { WorkflowPayload } from './workflow';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedA2uiBlock {
-  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment' | 'file_refs' | 'error';
+  type: 'a2ui' | 'thinking' | 'tool_call' | 'confirmation' | 'workflow' | 'card' | 'text' | 'attachment' | 'file_refs' | 'error' | 'review.report';
   /** Raw A2UI protocol messages (for 'a2ui' type) */
   messages?: A2uiMessage[];
   /** Content for thinking blocks */
@@ -65,6 +66,7 @@ export interface A2uiParseResult {
 
 const AGENT_RUN_BLOCK_TYPES = new Set<ParsedA2uiBlock['type']>([
   'a2ui', 'thinking', 'tool_call', 'confirmation', 'workflow', 'card', 'text', 'attachment', 'error',
+  'review.report',
 ]);
 
 /**
@@ -142,6 +144,13 @@ function parseV1RunBlocks(source: Record<string, unknown>, isStreaming: boolean)
         const normalised = normalizeErrorPayload(candidate);
         if (!normalised) continue;
         blocks.push({ type: 'error', payload: normalised.payload as unknown as Record<string, unknown> });
+        break;
+      }
+      case 'review.report': {
+        // v2 审查报告块（F3.1）：上游未发时恒缺省，文本启发式照常兜底。
+        const normalised = normalizeReviewReportPayload(candidate);
+        if (!normalised) continue;
+        blocks.push({ type: 'review.report', payload: normalised.payload as unknown as Record<string, unknown> });
         break;
       }
       default:

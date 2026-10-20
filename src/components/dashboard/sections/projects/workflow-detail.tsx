@@ -429,6 +429,7 @@ export function WorkflowDetail({
                 task={t}
                 projectId={wf.project_id}
                 teamId={mutationTeamId}
+                roomId={wf.source_room_id}
               />
             ))}
           </div>

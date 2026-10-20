@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { buildProjectDag, buildWorkflowDag, layoutProjectDag, type ProjectDag } from './project-dag';
+import { buildProjectDag, buildWorkflowDag, layoutProjectDag, criticalPathOf, type ProjectDag } from './project-dag';
 import type { BoardTask } from '@/hooks/use-task-board';
 
 function task(
@@ -256,5 +256,31 @@ describe('buildWorkflowDag', () => {
     );
     expect(dag.edges).toHaveLength(0); // ghost edge dropped from the graph
     expect(dag.externalDeps).toContain('ghost');
+  });
+});
+
+describe('criticalPathOf（F5.1 关键路径）', () => {
+  it('并行分支取最长链：架构 ∥ 视觉 → 实现 → 审查 的主线含 4 节点', () => {
+    const dag = buildWorkflowDag(
+      [
+        { id: 't1', name: '架构', status: 'completed' },
+        { id: 't2', name: '视觉', status: 'completed' },
+        { id: 't3', name: '实现', status: 'in-progress' },
+        { id: 't4', name: '审查', status: 'pending' },
+      ],
+      [
+        { source: 't1', target: 't3' },
+        { source: 't2', target: 't3' },
+        { source: 't3', target: 't4' },
+      ],
+    );
+    const path = criticalPathOf(dag);
+    expect(path.has('t3')).toBe(true);
+    expect(path.has('t4')).toBe(true);
+    expect(path.size).toBe(3); // t2（并行短分支）不在主线上
+  });
+
+  it('空图返回空集', () => {
+    expect(criticalPathOf({ nodes: [], edges: [], externalDeps: [] }).size).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
+import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
 
 export interface HitlConfirmation {
@@ -12,6 +13,8 @@ export interface HitlConfirmation {
   parameters?: string;
   approveReply: string;
   rejectReply: string;
+  /** v2 干预问题（F2.1）：存在 = 干预条目（非工具审批二态）。 */
+  question?: string;
   timestamp: number;
 }
 
@@ -46,6 +49,19 @@ export const useHitlInboxStore = create<HitlInboxState>()((set) => ({
 
   upsertConfirmation: (item) =>
     set((state) => {
+      const isNew = !(item.id in state.confirmations);
+      // hitl.request 审计（F2.4）：仅新条目上报一次（m.replace 修订
+      // 静默 upsert，不重复计审计）。
+      if (isNew) {
+        recordHitlAudit({
+          action: 'request',
+          confirmationId: item.id,
+          roomId: item.roomId,
+          toolName: item.toolName,
+          question: item.question,
+          actor: item.sender,
+        });
+      }
       const next = { ...state.confirmations, [item.id]: item };
       const ids = Object.keys(next);
       if (ids.length > MAX_CONFIRMATIONS) {
@@ -169,6 +185,11 @@ export function extractConfirmationFromEvent(
   const toolName = asString(payload.toolName) ?? asString(payload.tool_name) ?? '未知工具';
   const confirmationId = asString(payload.confirmation_id);
   const eventId = rootEventIdOf(event);
+  const question =
+    asString(payload.question) ??
+    (Array.isArray(payload.questions)
+      ? asString((payload.questions[0] as Record<string, unknown> | undefined)?.question)
+      : undefined);
 
   return {
     id: confirmationId ?? `${roomId}:${eventId}`,
@@ -180,6 +201,7 @@ export function extractConfirmationFromEvent(
     parameters: asString(payload.parameters),
     approveReply: asString(payload.approveReply) ?? '/approve',
     rejectReply: asString(payload.rejectReply) ?? '拒绝',
+    ...(question ? { question } : {}),
     timestamp: event.origin_server_ts,
   };
 }

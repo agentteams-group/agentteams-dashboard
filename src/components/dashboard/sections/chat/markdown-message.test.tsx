@@ -10,6 +10,7 @@ vi.mock('./mermaid-renderer', () => ({
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('MarkdownMessage', () => {
@@ -94,6 +95,7 @@ describe('MarkdownMessage', () => {
     expect(table).toBeInTheDocument();
     expect(table?.className).toContain('border-collapse');
     expect(table?.className).toContain('border');
+    expect(table?.parentElement?.className).toContain('overflow-x-auto');
     
     // Check that the HTML content is rendered (not parsed as markdown)
     const htmlContent = table?.innerHTML || '';
@@ -260,6 +262,37 @@ describe('MarkdownMessage', () => {
       '/api/matrix/media/v3/download/example.org/doc1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
     );
     expect(screen.getByText('(2.0 KB)')).toBeInTheDocument();
+  });
+
+  it('renders an HTML file message inline with a download link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '<html><body><h1>Hello</h1></body></html>',
+      })
+    );
+
+    render(
+      <MarkdownMessage
+        content="index.html"
+        msgType="m.file"
+        mediaUrl="mxc://example.org/page1"
+        mediaInfo={{ mimetype: 'text/html', size: 1234 }}
+        homeserver="https://hs.example.org"
+      />
+    );
+
+    const frame = await screen.findByTitle('index.html');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Hello</h1>');
+
+    const link = screen.getByRole('link', { name: /下载 index\.html/ });
+    expect(link.getAttribute('href')).toBe(
+      '/api/matrix/media/v3/download/example.org/page1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
+    );
   });
 
   it('linkifies bare mxc:// URIs in plain text bodies', () => {

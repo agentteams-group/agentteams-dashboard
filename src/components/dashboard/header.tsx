@@ -11,8 +11,6 @@ import {
   Crown,
   Zap,
   RefreshCw,
-  Wifi,
-  WifiOff,
   Sun,
   Moon,
   Contrast,
@@ -42,6 +40,7 @@ import { NotificationPopover } from './notification-popover';
 import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
+import { openChatRoom } from '@/lib/open-chat-room';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
 
 interface DashboardHeaderProps {
@@ -171,7 +170,7 @@ export function DashboardHeader({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
         <Input
           ref={searchInputRef}
-          placeholder="搜索 Workers、团队、Manager... (K)"
+          placeholder="搜索页面、房间、Workers、团队... (K)"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
           onFocus={() => setPaletteOpen(true)}
@@ -185,6 +184,9 @@ export function DashboardHeader({
           <CommandPalette
             results={searchResults}
             onSelect={(result: SearchResult) => {
+              if (result.roomId) {
+                openChatRoom(result.roomId);
+              }
               onNavClick(result.section);
               setDebouncedQuery('');
               setPaletteOpen(false);
@@ -196,19 +198,35 @@ export function DashboardHeader({
       </div>
 
       {isConnected && (
-        <div className="hidden lg:flex items-center gap-1.5">
-          <Badge variant="outline" className="text-[10px] h-6 gap-1 px-1.5">
-            <Bot className="w-3 h-3" />
-            {workerCount}
-          </Badge>
-          <Badge variant="outline" className="text-[10px] h-6 gap-1 px-1.5">
-            <Users className="w-3 h-3" />
-            {teamCount}
-          </Badge>
-          <Badge variant="outline" className="text-[10px] h-6 gap-1 px-1.5">
-            <Crown className="w-3 h-3" />
-            {managerCount}
-          </Badge>
+        <div className="hidden lg:flex items-center">
+          {/* 资源计数合并为一枚胶囊（优化反馈：三个独立徽章视觉噪音），
+              tooltip 分项说明 */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="text-[10px] h-6 gap-2 px-2 bg-background/40 text-muted-foreground"
+              >
+                <span className="flex items-center gap-1">
+                  <Bot className="w-3 h-3" />
+                  {workerCount}
+                </span>
+                <span className="h-3 w-px bg-border" aria-hidden="true" />
+                <span className="flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  {teamCount}
+                </span>
+                <span className="h-3 w-px bg-border" aria-hidden="true" />
+                <span className="flex items-center gap-1">
+                  <Crown className="w-3 h-3" />
+                  {managerCount}
+                </span>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              Workers {workerCount} · 团队 {teamCount} · Managers {managerCount}
+            </TooltipContent>
+          </Tooltip>
         </div>
       )}
 
@@ -257,27 +275,30 @@ export function DashboardHeader({
         {/* Plugin-contributed toolbar buttons (extension point: toolbar) */}
         <PluginToolbarButtons />
 
-        <Badge
-          className={`gap-1 text-xs ${
-            isConnected
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
-          }`}
-          variant="outline"
-        >
-          {isConnected ? (
-            <Wifi className="w-3 h-3" />
-          ) : (
-            <WifiOff className="w-3 h-3" />
-          )}
-          {isConnected ? '已连接' : '未连接'}
-        </Badge>
-
-        {versionString && (
-          <Badge variant="outline" className="text-xs hidden sm:flex">
-            v{versionString}
-          </Badge>
-        )}
+        {/* 连接状态 + 版本合并为单状态胶囊（优化反馈：减少独立徽章；
+            hover 显示版本与延迟详情） */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              className={`gap-1.5 text-xs cursor-default ${
+                isConnected
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+              }`}
+              variant="outline"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}
+                aria-hidden="true"
+              />
+              <span className="hidden sm:inline">{isConnected ? '在线' : '离线'}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isConnected ? 'Controller 已连接' : 'Controller 未连接'}
+            {versionString && <div className="text-[10px] opacity-80">版本 v{versionString}</div>}
+          </TooltipContent>
+        </Tooltip>
 
         <NotificationPopover />
 

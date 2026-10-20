@@ -28,6 +28,8 @@ export interface DagNode {
   ready: boolean;
   /** 0-based dependency depth; used for vertical layout. */
   layer: number;
+  /** 责任 Agent（F5.1：节点上显示"谁在做"）。 */
+  assignee?: string;
 }
 
 export interface DagEdge {
@@ -35,6 +37,8 @@ export interface DagEdge {
   source: string;
   /** The depending (downstream) node id. */
   target: string;
+  /** 条件边（workflow edge.conditional）：虚线渲染（F5.1 依赖边语义）。 */
+  conditional?: boolean;
 }
 
 export interface ProjectDag {
@@ -202,8 +206,8 @@ const WORKFLOW_STATUS_MAP: Record<string, TaskStatus> = {
  * completed), falling back to local derivation when `next` is not provided.
  */
 export function buildWorkflowDag(
-  nodes: Array<{ id: string; name?: string; status?: string }>,
-  edges: Array<{ source: string; target: string }>,
+  nodes: Array<{ id: string; name?: string; status?: string; assignee?: string }>,
+  edges: Array<{ source: string; target: string; conditional?: boolean }>,
   next?: string[],
 ): ProjectDag {
   const readySet = new Set(next ?? []);
@@ -225,12 +229,17 @@ export function buildWorkflowDag(
       status: WORKFLOW_STATUS_MAP[n.status ?? ''] ?? 'unknown',
       ready,
       layer: 0,
+      ...(n.assignee ? { assignee: n.assignee } : {}),
     };
   });
 
   const dagEdges: DagEdge[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ source: e.source, target: e.target }));
+    .map((e) => ({
+      source: e.source,
+      target: e.target,
+      ...(e.conditional === true ? { conditional: true } : {}),
+    }));
   const externalDeps = Array.from(
     new Set(
       edges
@@ -277,4 +286,63 @@ export function buildWorkflowDag(
   }
 
   return { nodes: dagNodes, edges: dagEdges, externalDeps };
+}
+
+/**
+ * 关键路径（F5.1）：从入度为 0 的起点到汇点的最长节点链（按层深计），
+ * 返回路径上的节点 id 集合 —— SVG 里对路径上的节点/边做高亮，
+ * "1 屏看懂谁卡在主线" 的"主线"即此链。环路由 layering 的 pass 上限
+ * 防护，同样以最长不重复链计算。
+ */
+export function criticalPathOf(dag: ProjectDag): Set<string> {
+  if (dag.nodes.length === 0) return new Set();
+  const downstream = new Map<string, string[]>();
+  for (const e of dag.edges) {
+    const list = downstream.get(e.source) ?? [];
+    list.push(e.target);
+    downstream.set(e.source, list);
+  }
+  // depth(node) = 该节点到汇点的最长剩余链长；记忆化遍历（pass 上限防环）。
+  const depth = new Map<string, number>();
+  const visit = (id: string, seen: Set<string>): number => {
+    const memo = depth.get(id);
+    if (memo !== undefined) return memo;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const children = downstream.get(id) ?? [];
+    let best = 0;
+    let bestId: string | null = null;
+    for (const child of children) {
+      const d = visit(child, seen);
+      if (d > best) {
+        best = d;
+        bestId = child;
+      }
+    }
+    seen.delete(id);
+    const total = best + 1;
+    depth.set(id, total);
+    if (bestId) depth.set(`${id}>next`, bestId as unknown as number);
+    return total;
+  };
+
+  let deepest = 0;
+  let startId: string | null = null;
+  for (const node of dag.nodes) {
+    const d = visit(node.id, new Set());
+    if (d > deepest) {
+      deepest = d;
+      startId = node.id;
+    }
+  }
+
+  const path = new Set<string>();
+  let cursor = startId;
+  const guard = dag.nodes.length + 1;
+  while (cursor && !path.has(cursor) && guard > path.size) {
+    path.add(cursor);
+    const next = depth.get(`${cursor}>next`);
+    cursor = (next as unknown as string) ?? null;
+  }
+  return path;
 }

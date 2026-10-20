@@ -14,15 +14,23 @@ import {
   type DisplayMessage,
 } from '@/hooks/use-matrix';
 import { MessageBubble } from '../views/MessageBubble';
+import { buildConfirmationReply } from '../confirmation-reply';
 
 interface ThreadPanelProps {
   roomId: string;
   rootMessage: DisplayMessage;
   memberMap?: Record<string, string>;
+  workerMatrixUserIds?: string[];
   onClose: () => void;
 }
 
-export function ThreadPanel({ roomId, rootMessage, memberMap, onClose }: ThreadPanelProps) {
+export function ThreadPanel({
+  roomId,
+  rootMessage,
+  memberMap,
+  workerMatrixUserIds,
+  onClose,
+}: ThreadPanelProps) {
   const { userId, isLoggedIn } = useMatrixStore();
   const [inputValue, setInputValue] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -75,14 +83,27 @@ export function ThreadPanel({ roomId, rootMessage, memberMap, onClose }: ThreadP
     setInputValue('');
   }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id]);
 
-  const handleSendConfirmation = useCallback((content: string) => {
+  const handleSendConfirmation = useCallback((content: string, sender?: string) => {
     if (!isLoggedIn || sendMutation.isPending) return;
+    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
+    let formattedBody: string | undefined;
+    if (reply.mentions?.length) {
+      formattedBody = reply.content;
+      for (const mention of reply.mentions) {
+        const link = `<a href="https://matrix.to/#/${encodeURIComponent(mention.userId)}">${mention.displayName}</a>`;
+        formattedBody = formattedBody.replaceAll(mention.placeholder, link);
+      }
+    }
     sendMutation.mutate({
       roomId,
-      body: content,
+      body: reply.content,
+      formattedBody,
+      mentions: reply.mentions?.length
+        ? { user_ids: reply.mentions.map((mention) => mention.userId) }
+        : undefined,
       relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
     });
-  }, [isLoggedIn, sendMutation, roomId, rootMessage.id]);
+  }, [isLoggedIn, sendMutation, roomId, rootMessage.id, workerMatrixUserIds]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

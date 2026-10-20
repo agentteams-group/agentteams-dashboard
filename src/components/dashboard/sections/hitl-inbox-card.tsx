@@ -129,14 +129,24 @@ export function HitlInboxCard() {
 }
 
 function ConfirmationRow({ item, roomLabel }: { item: HitlConfirmation; roomLabel: string }) {
+  // F2.1/F2.3：干预条目（带结构化提问）与工具审批二态分形态渲染；
+  // 点击都直达房间处理，收件箱与会话内卡片状态互通。
+  const isIntervention = Boolean(item.question);
   return (
     <button
       type="button"
       onClick={() => openChatRoom(item.roomId)}
-      className="w-full text-left rounded-lg border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-2 transition-colors"
+      className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+        isIntervention
+          ? 'border-sky-500/20 bg-sky-500/5 hover:bg-sky-500/10'
+          : 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10'
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium truncate">工具审批 · {item.toolName}</span>
+        <span className="text-sm font-medium truncate">
+          {isIntervention ? '执行中提问 · ' : '工具审批 · '}
+          {isIntervention ? item.question : item.toolName}
+        </span>
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(item.timestamp)}</span>
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">

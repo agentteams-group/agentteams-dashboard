@@ -74,6 +74,26 @@ describe('AttachmentCard', () => {
     expect(await screen.findByText('预览加载失败')).toBeInTheDocument();
   });
 
+  it('renders an HTML attachment inline with a download link', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<html><body><h1>Hello</h1></body></html>',
+    }) as unknown as typeof fetch;
+
+    render(
+      <AttachmentCard
+        payload={makePayload({ filename: 'index.html', mimetype: 'text/html' })}
+      />
+    );
+
+    const frame = await screen.findByTitle('index.html');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Hello</h1>');
+    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+  });
+
   it('does not offer preview for binary mime types', () => {
     render(<AttachmentCard payload={makePayload({ mimetype: 'application/zip' })} />);
 

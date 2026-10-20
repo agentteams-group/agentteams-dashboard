@@ -85,6 +85,30 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/"tool_name"/)).toBeNull();
   });
 
+  it('renders the intervention card once when the message has multiple text blocks', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$multi-block-choice',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content:
+            '请选择一种方案？\n1. 方案甲\n2. 方案乙\n```card\n{"type":"tool_call","tool_name":"read_file","status":"success"}\n```\n补充说明',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText('请选择一种方案？')).toHaveLength(1);
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.getAllByText('补充说明')).toHaveLength(1);
+  });
+
   it('uses the command renderer and safely displays invalid JSON arguments', () => {
     renderWithProvider(
       <MessageBubble
@@ -222,7 +246,7 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(92%,72ch)]');
+    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(100%,46rem)]');
     textMessage.unmount();
 
     renderWithProvider(
@@ -315,7 +339,7 @@ Type /approve to approve, or send any message to deny.`,
   });
 
   it('renders an attachment block for long-message metadata', () => {
-    renderWithProvider(
+    const { container } = renderWithProvider(
       <MessageBubble
         message={{
           id: '$attachment',
@@ -341,6 +365,36 @@ Type /approve to approve, or send any message to deny.`,
 
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+    // The row must stretch so the attachment wrapper's min(100%,56rem) can
+    // resolve against the whole column instead of the card header width.
+    const row = container.querySelector('.flex.items-end.gap-2');
+    expect(row?.className).toContain('w-full');
+  });
+
+  it('uses the full message column for inline HTML file attachments', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$html-file',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: 'index.html',
+          timestamp: 0,
+          type: 'm.file',
+          isMe: false,
+          mediaUrl: 'mxc://example.com/page1',
+          mediaInfo: { mimetype: 'text/html' },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    // w-fit collapsed the bubble to the card width and gave the sandboxed
+    // document a narrow viewport; the file message owns the full column.
+    const bubble = screen.getByText('index.html').closest('.rounded-2xl');
+    expect(bubble?.className).toContain('w-full');
+    expect(bubble?.className).toContain('max-w-[min(100%,56rem)]');
   });
 
   it('renders a loading placeholder for an in-progress a2ui marker while streaming', () => {
@@ -518,5 +572,138 @@ describe('MessageBubble — worker avatar → sessions (C / #1295)', () => {
     );
     const btn = screen.queryByLabelText('查看 worker-1 的会话');
     expect(btn).toBeNull();
+  });
+});
+
+describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）', () => {
+  const baseMessage = {
+    id: '$heuristic',
+    sender: '@manager:example.com',
+    senderShort: 'manager',
+    content: '',
+    timestamp: 0,
+    type: 'm.text',
+    isMe: false,
+  };
+
+  it('Agent 回复「问句 + 编号选项」→ 渲染干预卡（不再渲染原文本）', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '你希望先实现哪一种交互？\n1）消息内嵌卡片\n2）底部快捷操作\n3）独立详情面板',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    // 卡片标题（问题原句）
+    expect(screen.getByText('你希望先实现哪一种交互？')).toBeInTheDocument();
+    // 选项进入卡内（radio 形态）
+    expect(screen.getByRole('radio', { name: /消息内嵌卡片/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /底部快捷操作/ })).toBeInTheDocument();
+    // 提交按钮（Codex 风格文案）
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+    // 原始编号列表文本不再重复渲染
+    expect(screen.queryByText(/2）底部快捷操作/)).not.toBeInTheDocument();
+  });
+
+  it('提交干预卡时把消息发送者交给回写回调（Worker 房间用于 @）', () => {
+    const onSend = vi.fn();
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          sender: '@ceshi:matrix-local.agentteams.io:18080',
+          content: '选哪个？\n1. 甲\n2. 乙',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={onSend}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /甲/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(onSend).toHaveBeenCalledWith(
+      expect.stringContaining('甲'),
+      '@ceshi:matrix-local.agentteams.io:18080',
+    );
+  });
+
+  it('有 formatted_body HTML 时仍按纯文本 body 升格', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '页面类型：想要哪种？\nA. 落地页\nB. 3D 演示页\nC. 信息展示页',
+          formattedContent:
+            '<p><strong>页面类型</strong>：想要哪种？</p><p>A. 落地页</p><p>B. 3D 演示页</p><p>C. 信息展示页</p>',
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('页面类型：想要哪种？')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /落地页/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+  });
+
+  it('QwenPaw「1 = 选项」逐题追问也升格为干预卡', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: [
+            '收到，我换个方式——一次只问一个问题，尽量短。我们先定第一个：',
+            '**问题 1/6：你想要哪种页面？**',
+            '1 = 宣传落地页（滚动浏览，像特斯拉官网那种）',
+            '2 = 3D 互动页（中间一个飞行汽车模型，能拖动旋转）',
+            '3 = 简单图文介绍页',
+            '回一个数字（比如「1」）就行，我再问下一个。',
+          ].join('\n'),
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('问题 1/6：你想要哪种页面？')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /宣传落地页/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+  });
+
+  it('流式中的消息不升格（等定稿再渲染卡片）', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '选哪个？\n1）甲\n2）乙',
+          isStreaming: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('radio', { name: /甲/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/选哪个/)).toBeInTheDocument();
+  });
+
+  it('自己的消息与普通列表不升格', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: '步骤如下：\n1. 安装\n2. 启动',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
 });

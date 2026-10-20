@@ -8,6 +8,9 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
 import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { InterventionCard } from '../intervention-card';
+import { ReviewReportCard } from '../review-report-card';
+import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
@@ -15,11 +18,15 @@ import { RunEndingNote, type RunEndingPayload } from '../run-ending-note';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
+import {
+  heuristicToInterventionPayload,
+  parseInterventionHeuristic,
+} from '@/lib/a2ui/intervention-heuristic';
 import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, Loader2 } from 'lucide-react';
+import { Check, CheckCheck, Copy, Loader2 } from 'lucide-react';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
@@ -35,7 +42,7 @@ interface MessageBubbleProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string) => void;
   /** Opens the owning worker's files panel (team rooms: multi-worker source). */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   /**
@@ -122,10 +129,10 @@ function ActionIcon({ path, size = 12, label }: { path: string; size?: number; l
 
   const ICON_PATHS = {
   reply: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-  copy: 'M9 9h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
   thread: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   edit: 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z',
+  copy: 'M8 10a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2zM4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2',
   cancel: 'M6 6l12 12M18 6L6 18',
   resend: 'M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10',
   folder: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
@@ -134,10 +141,12 @@ function ActionIcon({ path, size = 12, label }: { path: string; size?: number; l
 function ActionButton({
   title,
   icon,
+  iconNode,
   onClick,
 }: {
   title: string;
-  icon: string;
+  icon?: string;
+  iconNode?: React.ReactNode;
   onClick: (_e: React.MouseEvent) => void;
 }) {
   return (
@@ -147,7 +156,7 @@ function ActionButton({
       title={title}
       aria-label={title}
     >
-      <ActionIcon path={icon} label={title} />
+      {iconNode ?? (icon ? <ActionIcon path={icon} label={title} /> : null)}
     </button>
   );
 }
@@ -201,6 +210,14 @@ export function MessageBubble({
     });
   }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
 
+  // Long-message attachments and inline HTML files need the full message
+  // column: a w-fit bubble collapses to the card header width, squeezing the
+  // preview into an unusably narrow viewport.
+  const hasWideContent =
+    parsedBlocks.some((block) => block.type === 'attachment') ||
+    (message.type === 'm.file' &&
+      (message.mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(message.content)));
+
   // Feed the Worker card vitals strip: count this message's tool_call blocks
   // once it is final (delta-guarded per event id, so revisions don't double
   // count). Best-effort — never blocks rendering.
@@ -216,13 +233,13 @@ export function MessageBubble({
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply);
-  }, [onSendConfirmation]);
+    onSendConfirmation(reply, message.sender);
+  }, [onSendConfirmation, message.sender]);
 
   const handleConfirmationReject = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply);
-  }, [onSendConfirmation]);
+    onSendConfirmation(reply, message.sender);
+  }, [onSendConfirmation, message.sender]);
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
@@ -273,12 +290,16 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
+  // 会话呈现对标主流（Codex/ChatGPT 风格 · 2026-10 反馈）：浅色轻气泡 +
+  // 大留白，去阴影重装饰；自己的消息品牌浅底右对齐，Agent 消息中性浅底。
   const bubbleClasses = [
-    'w-fit max-w-[min(92%,72ch)] px-3.5 py-2 rounded-2xl text-sm break-words leading-relaxed',
-    'shadow-sm hover:shadow-md transition-all duration-200',
+    hasWideContent
+      ? 'w-full max-w-[min(100%,56rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed'
+      : 'w-fit max-w-[min(100%,46rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed',
+    'transition-colors duration-150',
     message.isMe
-      ? 'bg-primary text-primary-foreground rounded-tr-sm'
-      : 'bg-muted/80 text-foreground rounded-tl-sm border border-border/50',
+      ? 'bg-emerald-500/10 text-foreground border border-emerald-500/25 rounded-tr-md'
+      : 'bg-muted/60 text-foreground border border-border/40 rounded-tl-md',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -351,7 +372,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={`flex items-end gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex w-full items-end gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
             <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea
@@ -390,12 +411,41 @@ export function MessageBubble({
               )}
               {parsedBlocks.map((block, idx) => {
                 if (block.type === 'confirmation' && onSendConfirmation) {
+                  // F2.1 分流：v2 结构化提问（question/options/questions）走
+                  // 选项式干预卡；v1 二态工具确认保持原卡（向后兼容）。
+                  if (isInterventionConfirmation(block)) {
+                    return (
+                      <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                        <InterventionCard
+                          payload={(block as RuntimeConfirmationBlock).payload}
+                          onAnswer={handleConfirmationApprove}
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={idx} className="w-[min(100%,56rem)] max-w-full">
                       <ConfirmationCard
                         payload={block.payload as unknown as ConfirmationCardPayload}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}
+                      />
+                    </div>
+                  );
+                }
+                if (block.type === 'review.report') {
+                  // F3.1 结构化审查报告卡；无结构时本分支不触发，
+                  // 消息照常走 Markdown 渲染（降级不丢内容）。
+                  return (
+                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <ReviewReportCard
+                        payload={block.payload as unknown as import('@/lib/a2ui/protocol').RuntimeReviewReportBlock['payload']}
+                        eventId={message.eventId}
+                        onSend={
+                          onSendConfirmation
+                            ? (content) => onSendConfirmation(content, message.sender)
+                            : undefined
+                        }
                       />
                     </div>
                   );
@@ -466,6 +516,53 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'text' && block.text) {
+                  // F2.1 降级完整形态：上游未发 v2 块时，Agent 文本回复中的
+                  // 「问句 + 编号选项」升格为选项式干预卡（提交转自然语言
+                  // 消息回房间）。发卡片能力在 Dashboard 侧，不依赖上游。
+                  // 按 text block 逐个判定：多块消息里每块各自渲染，避免
+                  // 整条消息判定后同一张卡在多个块上重复出现。block.text
+                  // 可能是 formatted_body 的 HTML 片段，解析器内部会先剥标签。
+                  const heuristic =
+                    !message.isMe && !message.isStreaming
+                      ? parseInterventionHeuristic(block.text)
+                      : null;
+                  if (heuristic && onSendConfirmation) {
+                    return (
+                      <div key={idx} className="w-[min(100%,42rem)] max-w-full space-y-1.5">
+                        {/* 引言（选项块之前）原样保留 */}
+                        {heuristic.before && (
+                          <div className={bubbleClasses}>
+                            <MarkdownMessage
+                              content={heuristic.before}
+                              msgType={message.type}
+                              mediaUrl={message.mediaUrl}
+                              mediaInfo={message.mediaInfo}
+                              memberMap={memberMap}
+                            />
+                          </div>
+                        )}
+                        <InterventionCard
+                          payload={heuristicToInterventionPayload(
+                            heuristic,
+                            `heuristic:${message.eventId ?? message.id}:${idx}`
+                          )}
+                          onAnswer={handleConfirmationApprove}
+                        />
+                        {/* 同一条消息里的其它问题（选项块之后）原样保留 */}
+                        {heuristic.after && (
+                          <div className={bubbleClasses}>
+                            <MarkdownMessage
+                              content={heuristic.after}
+                              msgType={message.type}
+                              mediaUrl={message.mediaUrl}
+                              mediaInfo={message.mediaInfo}
+                              memberMap={memberMap}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
                   return (
                     <div key={idx} className={bubbleClasses}>
                       <MarkdownMessage
@@ -547,7 +644,11 @@ export function MessageBubble({
               <ActionButton title="在线程中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && (
-              <ActionButton title="复制" icon={ICON_PATHS.copy} onClick={() => onCopy(message)} />
+              <ActionButton
+                title="复制"
+                iconNode={<Copy className="w-3 h-3" aria-hidden="true" />}
+                onClick={() => onCopy(message)}
+              />
             )}
             {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
               <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />

@@ -12,7 +12,7 @@ export async function PUT(
     const accessToken = getAccessToken(request);
 
     const body = await request.json();
-    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent, 'com.agentteams.long_message': longMessage, 'com.agentteams.file_refs': fileRefs } = body;
+    const { msgtype = 'm.text', body: messageBody, format, formatted_body: formattedBody, url: mediaUrl, info, 'm.mentions': mentions, 'm.relates_to': relatesTo, 'm.new_content': newContent, 'com.agentteams.long_message': longMessage, 'com.agentteams.file_refs': fileRefs, 'com.agentteams.artifact_comment': artifactComment } = body;
 
     if (!messageBody) {
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
@@ -58,6 +58,11 @@ export async function PUT(
     // message so the agent run can access them in context.
     if (fileRefs) {
       messageContent['com.agentteams.file_refs'] = fileRefs;
+    }
+    // 工件位置级评论（F6.2）：锚点元数据随消息携带（Stateless 安全），
+    // 消息正文同时进房间时间线（「成果沉淀对话流」）。
+    if (artifactComment && typeof artifactComment === 'object') {
+      messageContent['com.agentteams.artifact_comment'] = artifactComment;
     }
 
     const controller = new AbortController();

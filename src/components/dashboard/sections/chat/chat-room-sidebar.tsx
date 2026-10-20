@@ -244,17 +244,21 @@ export function ChatRoomSidebar({
   onCollapse: () => void;
 }) {
   const [filter, setFilter] = useState('');
-  // 12.15（装验反馈「加上像插件那样的分类」）：全部/群组/私聊——群组=成员>2
-  // （plugin 同款口径）；与排序模式正交。
-  const [kindFilter, setKindFilter] = useState<'all' | 'group' | 'dm'>('all');
+  // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
+  // （plugin 同款口径）；与排序模式正交。空间（F1.1）= 团队工作单元房间：
+  // 绑定任务上下文的一等协作单元，M1 先取 team 房间口径，空间状态事件
+  // （com.agentteams.space）落地后扩展为显式绑定模型。
+  const [kindFilter, setKindFilter] = useState<'all' | 'space' | 'group' | 'dm'>('all');
   const filtered = filterRooms(rooms, filter);
   const visible =
     kindFilter === 'all'
       ? filtered
       : filtered.filter((r) =>
-          kindFilter === 'group'
-            ? (r.memberCount ?? 0) > 2
-            : (r.memberCount ?? 0) <= 2,
+          kindFilter === 'space'
+            ? r.type === 'team'
+            : kindFilter === 'group'
+              ? (r.memberCount ?? 0) > 2
+              : (r.memberCount ?? 0) <= 2,
         );
   const groups = groupRoomsByType(visible);
   // 12.15（装验反馈「项目群被丢进『其他』、要和 Element/插件一样排序」）：
@@ -336,19 +340,19 @@ export function ChatRoomSidebar({
       />
       <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold tracking-wide">会话</span>
+          <span className="text-xs font-semibold tracking-wide">协作空间</span>
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-muted-foreground">{visible.length} 个房间</span>
             <div className="flex items-center rounded border border-border p-0.5" role="group" aria-label="房间分类">
-              {(['all', 'group', 'dm'] as const).map((k) => (
+              {(['all', 'space', 'group', 'dm'] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
                   className={`rounded px-1.5 py-0.5 text-[10px] ${kindFilter === k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   onClick={() => setKindFilter(k)}
-                  title={k === 'all' ? '全部房间' : k === 'group' ? '群组（成员 > 2）' : '私聊（成员 ≤ 2）'}
+                  title={k === 'all' ? '全部房间' : k === 'space' ? '空间（团队工作单元）' : k === 'group' ? '群组（成员 > 2）' : '私聊（成员 ≤ 2）'}
                 >
-                  {k === 'all' ? '全部' : k === 'group' ? '群组' : '私聊'}
+                  {k === 'all' ? '全部' : k === 'space' ? '空间' : k === 'group' ? '群组' : '私聊'}
                 </button>
               ))}
             </div>

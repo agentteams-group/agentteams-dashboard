@@ -1,16 +1,20 @@
 'use client';
 
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { Bot, Users, Crown, UserCheck, ArrowRight } from 'lucide-react';
+import { Bot, Users, Crown, UserCheck, ArrowRight, MessageSquare, Compass } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
+import { navItems, navAreas } from './nav-items';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 
 export interface SearchResult {
-  entity: 'worker' | 'team' | 'manager' | 'human';
+  entity: 'worker' | 'team' | 'manager' | 'human' | 'room' | 'section';
   name: string;
   subtitle: string;
   phase: string;
   section: string;
+  /** Set for room hits: the palette deep-links straight into the room. */
+  roomId?: string;
 }
 
 const ENTITY_ICONS = {
@@ -18,6 +22,8 @@ const ENTITY_ICONS = {
   team: Users,
   manager: Crown,
   human: UserCheck,
+  room: MessageSquare,
+  section: Compass,
 } as const;
 
 const ENTITY_COLORS = {
@@ -25,6 +31,8 @@ const ENTITY_COLORS = {
   team: 'text-emerald-500',
   manager: 'text-violet-500',
   human: 'text-cyan-500',
+  room: 'text-sky-500',
+  section: 'text-amber-500',
 } as const;
 
 const ENTITY_LABELS = {
@@ -32,7 +40,26 @@ const ENTITY_LABELS = {
   team: '团队',
   manager: 'Manager',
   human: '用户',
+  room: '房间',
+  section: '页面',
 } as const;
+
+/** 面板分组渲染顺序：人 → 房间 → 导航目的地。 */
+const PALETTE_ORDER = ['worker', 'team', 'manager', 'human', 'room', 'section'] as const;
+
+const AREA_LABELS = Object.fromEntries(navAreas.map((a) => [a.id, a.label]));
+
+/**
+ * Static navigation destinations (PRD §5.3 命令面板兜底): every nav item is
+ * reachable by typing its label, which also eases the Workbench IA migration.
+ */
+const SECTION_HITS: SearchResult[] = navItems.map((item) => ({
+  entity: 'section',
+  name: item.label,
+  subtitle: AREA_LABELS[item.area] ?? '',
+  phase: AREA_LABELS[item.area] ?? '',
+  section: item.id,
+}));
 
 export function useGlobalSearch(
   query: string,
@@ -41,11 +68,33 @@ export function useGlobalSearch(
   managers?: ManagerResponse[],
   humans?: HumanResponse[]
 ): SearchResult[] {
+  const roomMeta = useRoomMetaStore((s) => s.meta);
   return useMemo(() => {
     const q = query.toLowerCase().trim();
     if (!q || q.length < 2) return [];
 
     const results: SearchResult[] = [];
+
+    // Navigation destinations (label match only — static list)
+    SECTION_HITS.forEach((hit) => {
+      if (hit.name.toLowerCase().includes(q)) results.push(hit);
+    });
+
+    // Matrix rooms already known to the global sync loop (room meta is
+    // populated by useGlobalMatrixSync regardless of the active section).
+    Object.entries(roomMeta).forEach(([roomId, meta]) => {
+      const name = meta.roomName || roomId;
+      if (name.toLowerCase().includes(q)) {
+        results.push({
+          entity: 'room',
+          name,
+          subtitle: meta.lastMessagePreview || roomId,
+          phase: meta.unreadCount ? `${meta.unreadCount} 未读` : '房间',
+          section: 'chat',
+          roomId,
+        });
+      }
+    });
 
     // Search workers
     workers?.forEach((w) => {
@@ -126,7 +175,7 @@ export function useGlobalSearch(
     });
 
     return results.slice(0, 20);
-  }, [query, workers, teams, managers, humans]);
+  }, [query, workers, teams, managers, humans, roomMeta]);
 }
 
 export function CommandPalette({
@@ -194,7 +243,7 @@ export function CommandPalette({
   return (
     <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl max-h-80 overflow-y-auto custom-scrollbar z-50">
       <div ref={listRef} className="py-1">
-        {(['worker', 'team', 'manager', 'human'] as const).map((entityType) => {
+        {PALETTE_ORDER.map((entityType) => {
           const items = grouped[entityType];
           if (!items || items.length === 0) return null;
           const Icon = ENTITY_ICONS[entityType];

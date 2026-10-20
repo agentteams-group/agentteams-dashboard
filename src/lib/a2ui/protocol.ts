@@ -56,6 +56,26 @@ export interface RuntimeToolCallBlock {
   };
 }
 
+/**
+ * 选项式干预（PRD F2.1 / §7.3 org.agentteams.run v2 提案，消费侧先行）。
+ * 上游 runtime 未发布 v2 时这些字段恒缺省 → 块回落为 v1 工具确认卡，
+ * 前向兼容语义与既有未知字段处理一致（不丢消息、文本启发式兜底）。
+ */
+export interface RuntimeConfirmationOption {
+  id: string;
+  label: string;
+  description?: string;
+  /** Agent 标记的推荐项：置顶 + 默认选中（PRD F2.1）。 */
+  recommended?: boolean;
+}
+
+export interface RuntimeConfirmationQuestion {
+  id?: string;
+  question: string;
+  options?: RuntimeConfirmationOption[];
+  multi_select?: boolean;
+}
+
 export interface RuntimeConfirmationBlock {
   type: 'confirmation';
   payload: {
@@ -65,6 +85,18 @@ export interface RuntimeConfirmationBlock {
     /** Stable id used to correlate approve / deny replies. */
     confirmation_id: string;
     expires_at?: number;
+    /** v2 干预：问题文本（单问题形态）。 */
+    question?: string;
+    /** v2 干预：选项列表（与 question 配套）。 */
+    options?: RuntimeConfirmationOption[];
+    /** v2 干预：多选（默认单选）。 */
+    multi_select?: boolean;
+    /** v2 干预：多问题分页形态。 */
+    questions?: RuntimeConfirmationQuestion[];
+    /** v2 提案：答案回传 schema（上游消费约定，Dashboard 仅透传）。 */
+    answer_schema?: Record<string, unknown>;
+    /** v2 提案：被请求人 MXID；缺省 = 房间全员可答复（现状语义）。 */
+    requested_of?: string;
   };
 }
 
@@ -73,11 +105,47 @@ export interface RuntimeErrorBlock {
   payload: { kind: RuntimeRunEndingKind; title: string };
 }
 
+/** 问题分级（PRD F3.1：阻断 / 建议）。 */
+export type ReviewIssueSeverity = 'blocker' | 'suggestion';
+
+export interface RuntimeReviewIssue {
+  id: string;
+  severity: ReviewIssueSeverity;
+  /** 位置描述（文件/段落/锚点）。 */
+  anchor?: string;
+  /** 复现步骤。 */
+  repro?: string;
+  /** 责任节点（对应项目 workflow 节点 id/名）。 */
+  owner_node?: string;
+}
+
+export type ReviewVerdict = 'pass' | 'revision_needed' | 'blocked';
+
+/**
+ * 结构化审查报告块（PRD F3.1 / §7.3 v2 提案 `review.report`，消费侧先行）。
+ * 上游未发布前恒缺省 → 消息按普通 Markdown 渲染（Outcome 语义已由
+ * run-ending 卡覆盖），前向兼容不丢内容。
+ */
+export interface RuntimeReviewReportBlock {
+  type: 'review.report';
+  payload: {
+    /** 审查轮次（F3.2 修复往返标注「第 N 轮」）。 */
+    round: number;
+    verdict: ReviewVerdict;
+    title?: string;
+    summary?: string;
+    issues: RuntimeReviewIssue[];
+    /** 报告所属项目（跳转任务中心用）。 */
+    project_id?: string;
+  };
+}
+
 export type RuntimeBlock =
   | RuntimeTextBlock
   | RuntimeThinkingBlock
   | RuntimeToolCallBlock
   | RuntimeConfirmationBlock
+  | RuntimeReviewReportBlock
   | RuntimeErrorBlock;
 
 export interface RuntimeBlockEnvelope {
@@ -141,10 +209,65 @@ function normalizeToolCallStatus(value: unknown): RuntimeToolCallStatus {
   return 'running';
 }
 
+/** Loose normalizer for one v2 option entry: requires id + label. */
+function normalizeConfirmationOption(raw: unknown): RuntimeConfirmationOption | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.id !== 'string' || source.id.length === 0) return undefined;
+  if (typeof source.label !== 'string' || source.label.length === 0) return undefined;
+  const option: RuntimeConfirmationOption = { id: source.id, label: source.label };
+  if (typeof source.description === 'string' && source.description.length > 0) {
+    option.description = source.description;
+  }
+  if (source.recommended === true) option.recommended = true;
+  return option;
+}
+
+function normalizeConfirmationOptions(raw: unknown): RuntimeConfirmationOption[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const options = raw
+    .map(normalizeConfirmationOption)
+    .filter((o): o is RuntimeConfirmationOption => o !== undefined);
+  return options.length > 0 ? options : undefined;
+}
+
+function normalizeConfirmationQuestions(raw: unknown): RuntimeConfirmationQuestion[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const questions: RuntimeConfirmationQuestion[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const source = entry as Record<string, unknown>;
+    if (typeof source.question !== 'string' || source.question.length === 0) continue;
+    const question: RuntimeConfirmationQuestion = { question: source.question };
+    if (typeof source.id === 'string' && source.id.length > 0) question.id = source.id;
+    const options = normalizeConfirmationOptions(source.options);
+    if (options) question.options = options;
+    if (source.multi_select === true) question.multi_select = true;
+    questions.push(question);
+  }
+  return questions.length > 0 ? questions : undefined;
+}
+
+/**
+ * True when a confirmation block carries the v2 structured question shape
+ * (干预卡 F2.1). Without any question field the block renders as the legacy
+ * two-button tool approval card. Accepts both runtime blocks and the wider
+ * parsed-block union (ParsedA2uiBlock) so renderers can branch directly.
+ */
+export function isInterventionConfirmation(
+  block: { type: unknown; payload?: unknown }
+): boolean {
+  if (block.type !== 'confirmation') return false;
+  const payload = block.payload as RuntimeConfirmationBlock['payload'] | undefined;
+  return Boolean(payload?.question || payload?.options || payload?.questions);
+}
+
 /**
  * Normalise a v1 confirmation block. Requires confirmation_id; without it the
  * caller should fall back to the legacy text heuristic so the operator still
- * sees an approval card.
+ * sees an approval card. v2 intervention fields (question/options/questions…)
+ * are carried through when well-formed — they are additive and the card
+ * renderer decides which shape to draw.
  */
 export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationBlock | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -161,6 +284,25 @@ export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationB
   if (typeof source.parameters === 'string') payload.parameters = source.parameters;
   if (typeof source.external_files === 'string') payload.external_files = source.external_files;
   if (typeof source.expires_at === 'number') payload.expires_at = source.expires_at;
+  // ── v2 intervention fields (additive, forward compatible) ──
+  if (typeof source.question === 'string' && source.question.length > 0) {
+    payload.question = source.question;
+  }
+  const options = normalizeConfirmationOptions(source.options);
+  if (options) payload.options = options;
+  if (source.multi_select === true) payload.multi_select = true;
+  const questions = normalizeConfirmationQuestions(source.questions);
+  if (questions) payload.questions = questions;
+  if (
+    source.answer_schema &&
+    typeof source.answer_schema === 'object' &&
+    !Array.isArray(source.answer_schema)
+  ) {
+    payload.answer_schema = source.answer_schema as Record<string, unknown>;
+  }
+  if (typeof source.requested_of === 'string' && source.requested_of.length > 0) {
+    payload.requested_of = source.requested_of;
+  }
   return { type: 'confirmation', payload };
 }
 
@@ -175,4 +317,54 @@ export function normalizeErrorPayload(raw: unknown): RuntimeErrorBlock | undefin
   if (source.kind !== 'cancelled' && source.kind !== 'failed' && source.kind !== 'quiet') return undefined;
   if (typeof source.title !== 'string') return undefined;
   return { type: 'error', payload: { kind: source.kind, title: source.title } };
+}
+
+const REVIEW_VERDICTS: ReadonlySet<string> = new Set(['pass', 'revision_needed', 'blocked']);
+const REVIEW_SEVERITIES: ReadonlySet<string> = new Set(['blocker', 'suggestion']);
+
+function normalizeReviewIssues(raw: unknown): RuntimeReviewIssue[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const issues: RuntimeReviewIssue[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const source = entry as Record<string, unknown>;
+    if (typeof source.id !== 'string' || source.id.length === 0) continue;
+    if (typeof source.severity !== 'string' || !REVIEW_SEVERITIES.has(source.severity)) continue;
+    const issue: RuntimeReviewIssue = {
+      id: source.id,
+      severity: source.severity as ReviewIssueSeverity,
+    };
+    if (typeof source.anchor === 'string' && source.anchor.length > 0) issue.anchor = source.anchor;
+    if (typeof source.repro === 'string' && source.repro.length > 0) issue.repro = source.repro;
+    if (typeof source.owner_node === 'string' && source.owner_node.length > 0) {
+      issue.owner_node = source.owner_node;
+    }
+    issues.push(issue);
+  }
+  return issues.length > 0 ? issues : undefined;
+}
+
+/**
+ * Normalise a v2 `review.report` block (审查报告卡 F3.1). Requires a numeric
+ * round, a known verdict and at least one well-formed issue; anything else is
+ * rejected so the caller falls through to plain Markdown rendering.
+ */
+export function normalizeReviewReportPayload(raw: unknown): RuntimeReviewReportBlock | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.round !== 'number' || !Number.isFinite(source.round) || source.round < 1) return undefined;
+  if (typeof source.verdict !== 'string' || !REVIEW_VERDICTS.has(source.verdict)) return undefined;
+  const issues = normalizeReviewIssues(source.issues);
+  if (!issues) return undefined;
+  const payload: RuntimeReviewReportBlock['payload'] = {
+    round: source.round,
+    verdict: source.verdict as ReviewVerdict,
+    issues,
+  };
+  if (typeof source.title === 'string' && source.title.length > 0) payload.title = source.title;
+  if (typeof source.summary === 'string' && source.summary.length > 0) payload.summary = source.summary;
+  if (typeof source.project_id === 'string' && source.project_id.length > 0) {
+    payload.project_id = source.project_id;
+  }
+  return { type: 'review.report', payload };
 }

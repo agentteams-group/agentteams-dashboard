@@ -56,9 +56,10 @@ import { useProjectRoomTimestamps } from '@/hooks/use-project-room-ts';
 // Project governance panel (pause / resume / replan / cancel / artifacts /
 // timeline) — defined in the (now-merged) projects section; only the panel
 // crosses the module boundary.
-import { WorkflowDetail } from './projects-section';
+import { WorkflowDetail } from './projects/workflow-detail';
 import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { openChatRoom } from '@/lib/open-chat-room';
 import { buildProjectDag } from '@/lib/project-dag';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { isStaleProjectSelection } from './task-selectors';
@@ -325,10 +326,19 @@ function TaskCard({
           </span>
         </div>
         {task.roomId && (
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+          <button
+            type="button"
+            onClick={(e) => {
+              // 会话维度（F4.1）：来源空间可点直达，且不触发卡片自身的点击
+              e.stopPropagation();
+              openChatRoom(task.roomId);
+            }}
+            title="打开来源空间会话"
+            className="flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground transition-colors"
+          >
             <MessageSquare className="h-2.5 w-2.5" />
             <span className="font-mono truncate">{shortId(task.roomId, 24)}</span>
-          </div>
+          </button>
         )}
       </CardContent>
     </Card>
@@ -987,10 +997,17 @@ export function TasksSection() {
                       {selectedProject.runId}
                     </p>
                     {selectedProject.roomId && (
-                      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openChatRoom(selectedProject.roomId)}
+                        title="打开该项目的协作空间会话"
+                        className="text-[10px] text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+                      >
                         <MessageSquare className="h-3 w-3" />
-                        <span className="font-mono">{selectedProject.roomId}</span>
-                      </p>
+                        <span className="font-mono underline decoration-dotted underline-offset-2">
+                          {selectedProject.roomId}
+                        </span>
+                      </button>
                     )}
                   </div>
                   <div>

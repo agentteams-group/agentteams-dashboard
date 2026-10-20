@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Download, FileText, ChevronDown, ChevronRight, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { HtmlPreview } from '@/components/dashboard/html-preview';
 
 interface AttachmentCardProps {
   payload: { url: string; filename: string; mimetype: string };
@@ -34,7 +35,8 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
   const forcedDownloadUrl = downloadUrl
     ? `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}download=true`
     : undefined;
-  const [open, setOpen] = useState(false);
+  const isHtml = payload.mimetype === 'text/html' || /\.html?$/i.test(payload.filename);
+  const [open, setOpen] = useState(isHtml);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,13 +51,22 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
       const res = await fetch(downloadUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
+      if (isHtml && text.length > PREVIEW_LIMIT) {
+        setPreviewError('HTML 文件过大，请下载后查看');
+        return;
+      }
       setPreview(text.length > PREVIEW_LIMIT ? `${text.slice(0, PREVIEW_LIMIT)}…（内容已截断）` : text);
     } catch {
       setPreviewError('预览加载失败');
     } finally {
       setLoading(false);
     }
-  }, [downloadUrl]);
+  }, [downloadUrl, isHtml]);
+
+  useEffect(() => {
+    if (!isHtml || !open || preview || previewError || loading) return;
+    void loadPreview();
+  }, [isHtml, open, preview, previewError, loading, loadPreview]);
 
   return (
     <div className="my-2 rounded-lg border border-border/60 bg-muted/30 overflow-hidden max-w-full">
@@ -106,6 +117,10 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
             <div className="flex items-center gap-2 text-xs text-red-500 py-2">
               <AlertTriangle className="w-3 h-3" />
               {previewError}
+            </div>
+          ) : preview && isHtml ? (
+            <div className="mt-2">
+              <HtmlPreview html={preview} title={payload.filename} baseHref={downloadUrl} />
             </div>
           ) : preview ? (
             <pre className="mt-2 text-xs whitespace-pre-wrap break-all font-mono text-muted-foreground max-h-96 overflow-y-auto">
