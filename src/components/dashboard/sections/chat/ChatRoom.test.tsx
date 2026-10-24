@@ -12,6 +12,22 @@ const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
   const setReadMarkerMutate = vi.fn();
   const sendMutate = vi.fn();
+  const roomMessagesChunk: unknown[] = [
+    {
+      event_id: '$old',
+      sender: '@peer:test',
+      type: 'm.room.message',
+      origin_server_ts: 1000,
+      content: { msgtype: 'm.text', body: '第一条' },
+    },
+    {
+      event_id: '$new',
+      sender: '@peer:test',
+      type: 'm.room.message',
+      origin_server_ts: 2000,
+      content: { msgtype: 'm.text', body: '第二条' },
+    },
+  ];
   const virtuoso = {
     scrollToIndex: vi.fn(),
     props: null as Record<string, unknown> | null,
@@ -23,6 +39,7 @@ const mocks = vi.hoisted(() => {
     sendReceiptMutate,
     setReadMarkerMutate,
     sendMutate,
+    roomMessagesChunk,
     virtuoso,
     roomMembersChunk,
     getAgentStatusMap: () => agentStatusMap,
@@ -58,22 +75,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
       data: {
         pages: [
           {
-            chunk: [
-              {
-                event_id: '$old',
-                sender: '@peer:test',
-                type: 'm.room.message',
-                origin_server_ts: 1000,
-                content: { msgtype: 'm.text', body: '第一条' },
-              },
-              {
-                event_id: '$new',
-                sender: '@peer:test',
-                type: 'm.room.message',
-                origin_server_ts: 2000,
-                content: { msgtype: 'm.text', body: '第二条' },
-              },
-            ],
+            chunk: mocks.roomMessagesChunk,
           },
         ],
       },
@@ -127,6 +129,7 @@ describe('ChatRoom read-position dual-write', () => {
     cleanup();
     vi.clearAllMocks();
     mocks.roomMembersChunk.length = 0;
+    mocks.roomMessagesChunk.length = 2;
     mocks.setAgentStatusMap({});
   });
 
@@ -197,6 +200,20 @@ describe('ChatRoom read-position dual-write', () => {
     expect(screen.getByText('QwenPaw')).toBeInTheDocument();
   });
 
+  it('keeps members and files mutually exclusive and closes the mobile context drawer', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
+    renderChatRoom();
+
+    fireEvent.click(screen.getByTitle('显示成员'));
+    expect(screen.getByText('成员 (0)')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('显示工作目录'));
+    expect(screen.queryByText('成员 (0)')).toBeNull();
+    expect(screen.getByText('工作目录')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
+    expect(screen.queryByText('工作目录')).toBeNull();
+  });
+
   it('shows the session dot on worker avatars (and only workers) in the member list', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     mocks.setAgentStatusMap({ '@w1:test': { agentStatus: 'running' } });
@@ -244,5 +261,53 @@ describe('ChatRoom read-position dual-write', () => {
     // Stopped container phase overrides the stale running heartbeat → idle dot.
     expect(within(workerRow as HTMLElement).getByLabelText('空闲')).toBeInTheDocument();
     expect(within(workerRow as HTMLElement).queryByLabelText('运行中')).toBeNull();
+  });
+});
+
+describe('ChatRoom HITL reply correlation', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    mocks.roomMembersChunk.length = 0;
+    mocks.roomMessagesChunk.length = 2;
+    mocks.setAgentStatusMap({});
+  });
+
+  it('sends the intervention answer with an m.reference to its card event', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
+    mocks.roomMessagesChunk.push({
+      event_id: '$card',
+      sender: '@agent:test',
+      type: 'm.room.message',
+      origin_server_ts: 3000,
+      content: {
+        msgtype: 'm.text',
+        body: '请选择页面类型',
+        'org.agentteams.run': {
+          version: '1',
+          blocks: [
+            {
+              type: 'confirmation',
+              tool_name: 'ask_human',
+              confirmation_id: 'conf-card',
+              question: '请选择页面类型',
+              options: [{ id: 'landing', label: '落地页', recommended: true }],
+            },
+          ],
+        },
+      },
+    });
+
+    renderChatRoom();
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+
+    expect(mocks.sendMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId: '!room:test',
+        body: expect.stringContaining('【干预答复】'),
+        relatesTo: { rel_type: 'm.reference', event_id: '$card' },
+      }),
+      expect.anything(),
+    );
   });
 });

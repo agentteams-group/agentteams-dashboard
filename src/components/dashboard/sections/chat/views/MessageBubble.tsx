@@ -42,7 +42,7 @@ interface MessageBubbleProps {
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string) => void;
   /** Opens the owning worker's files panel (team rooms: multi-worker source). */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   /**
@@ -233,13 +233,13 @@ export function MessageBubble({
 
   const handleConfirmationApprove = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender);
-  }, [onSendConfirmation, message.sender]);
+    onSendConfirmation(reply, message.sender, message.eventId);
+  }, [onSendConfirmation, message.sender, message.eventId]);
 
   const handleConfirmationReject = useCallback((reply: string) => {
     if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender);
-  }, [onSendConfirmation, message.sender]);
+    onSendConfirmation(reply, message.sender, message.eventId);
+  }, [onSendConfirmation, message.sender, message.eventId]);
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
@@ -443,7 +443,7 @@ export function MessageBubble({
                         eventId={message.eventId}
                         onSend={
                           onSendConfirmation
-                            ? (content) => onSendConfirmation(content, message.sender)
+                            ? (content) => onSendConfirmation(content, message.sender, message.eventId)
                             : undefined
                         }
                       />

@@ -1,18 +1,28 @@
-import { ChatRoom } from './ChatRoom';
+import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 
+export type { ChatContextPanel } from './ChatRoom';
+
 interface ChatPanelProps {
   room: RoomInfo;
+  contextPanel: ChatContextPanel;
+  onContextPanelChange: (_panel: ChatContextPanel) => void;
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   className?: string;
 }
 
-export function ChatPanel({ room, canSend = true, onSendMessage, className = '' }: ChatPanelProps) {
+export function ChatPanel({
+  room,
+  contextPanel,
+  onContextPanelChange,
+  canSend = true,
+  onSendMessage,
+  className = '',
+}: ChatPanelProps) {
   return (
-    <div className={`flex h-full ${className}`}>
-      {/* Main Chat Area */}
+    <div className={`flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
           roomId={room.id}
@@ -23,6 +33,8 @@ export function ChatPanel({ room, canSend = true, onSendMessage, className = '' 
           roomPhase={room.phase}
           roomRuntime={room.runtime}
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
+          contextPanel={contextPanel}
+          onContextPanelChange={onContextPanelChange}
           canSend={canSend}
           onSendMessage={onSendMessage}
           className="h-full"

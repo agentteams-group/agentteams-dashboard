@@ -94,6 +94,10 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   const currentUserId = useMatrixStore((s) => s.userId);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const addNotification = useNotificationStore((s) => s.addNotification);
+  const requestTimestamp = useHitlInboxStore(
+    (s) => s.confirmations[payload.confirmation_id]?.timestamp
+  );
+  const resolution = useHitlInboxStore((s) => s.resolutions[payload.confirmation_id]);
 
   const questions: RuntimeConfirmationQuestion[] = useMemo(
     () => questionsFromPayload(payload),
@@ -102,17 +106,19 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
 
   const [answers, setAnswers] = useState<AnswerState>(() => initialAnswers(questions));
   const [page, setPage] = useState(0);
-  const [submitted, setSubmitted] = useState<{ by: string; at: number } | null>(null);
+  const submitted = useMemo(() => resolution?.status === 'answered'
+    ? { by: resolution.actor ?? '', at: resolution.timestamp }
+    : null, [resolution]);
   const [now, setNow] = useState(() => Date.now());
   // 挂载时刻（useState 惰性初始化，渲染期只读快照，符合 refs 规范）。
   const [mountedAt] = useState(() => Date.now());
   const expiredNotifiedRef = useRef(false);
 
-  // 超时判定（F2.2）：块级 expires_at 优先，缺省按全局 30 分钟（以卡片
-  // 挂载时刻起算，误差可接受且确定性可复现）。
+  // 超时判定（F2.2）：块级 expires_at 优先；缺省从共享请求时间起算，
+  // 仅在无收件箱条目时回退到卡片挂载时刻。
   const expiresAt =
-    effectiveExpiry(payload.expires_at) ?? mountedAt + INTERVENTION_TIMEOUT_MS;
-  const expired = submitted === null && now >= expiresAt;
+    effectiveExpiry(payload.expires_at) ?? (requestTimestamp ?? mountedAt) + INTERVENTION_TIMEOUT_MS;
+  const expired = resolution?.status === 'expired' || (submitted === null && now >= expiresAt);
 
   // ── 交互动作（先于引用它们的 effects 声明）──
 
@@ -164,22 +170,23 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   useEffect(() => {
     if (!expired || expiredNotifiedRef.current) return;
     expiredNotifiedRef.current = true;
+    if (resolution?.status === 'expired') return;
+    useHitlInboxStore.getState().expireConfirmation(payload.confirmation_id, currentUserId ?? undefined);
     addNotification({
       type: 'warning',
       title: '干预请求已超时',
       message: `「${questions[page]?.question ?? payload.tool_name}」在 30 分钟内未获答复，任务保持阻塞，请管理员关注。`,
       origin: 'system',
     });
-    const requestedAt = useHitlInboxStore.getState().confirmations[payload.confirmation_id]?.timestamp;
     recordHitlAudit({
       action: 'expire',
       confirmationId: payload.confirmation_id,
       toolName: payload.tool_name,
       question: questions[0]?.question,
-      ...(typeof requestedAt === 'number' ? { elapsedMs: Date.now() - requestedAt } : {}),
+      ...(typeof requestTimestamp === 'number' ? { elapsedMs: Date.now() - requestTimestamp } : {}),
       actor: currentUserId ?? undefined,
     });
-  }, [expired, questions, page, payload.tool_name, payload.confirmation_id, addNotification, currentUserId]);
+  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
   // 绑定在卡片根节点而非 window：多个干预卡同时可见时，按键只作用于
@@ -222,10 +229,8 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     if (!canSubmitPage || locked || forbidden) return;
     const text = composeAnswerText(questions, answers);
     onAnswer(text);
-    setSubmitted({ by: currentUserId ?? '', at: Date.now() });
-    // hitl.answer 审计（F2.4）：actor/问题/所选答案/耗时（先读请求时间戳，
-    // dropConfirmation 会把收件箱条目移除）。
-    const requestedAt = useHitlInboxStore.getState().confirmations[payload.confirmation_id]?.timestamp;
+    // hitl.answer 审计（F2.4）：actor/问题/所选答案/耗时。
+    const requestedAt = requestTimestamp;
     recordHitlAudit({
       action: 'answer',
       confirmationId: payload.confirmation_id,
@@ -235,8 +240,12 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       ...(typeof requestedAt === 'number' ? { elapsedMs: Date.now() - requestedAt } : {}),
       actor: currentUserId ?? undefined,
     });
-    // 收件箱互通（F2.3）：任一处处理，另一处同步消失。
-    useHitlInboxStore.getState().dropConfirmation(payload.confirmation_id);
+    // 收件箱互通（F2.3）：任一处处理，另一处同步消失并保留已答复状态。
+    useHitlInboxStore.getState().resolveConfirmation(
+      payload.confirmation_id,
+      currentUserId ?? undefined,
+      text
+    );
   };
 
   return (

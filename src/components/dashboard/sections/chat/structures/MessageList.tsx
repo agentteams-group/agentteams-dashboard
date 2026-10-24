@@ -24,7 +24,7 @@ export interface ChatSystemNotice {
   /** Rate limits: when an auto-retry is scheduled to fire. */
   retryAfterMs?: number;
   autoRetry: boolean;
-  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null };
+  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string };
 }
 
 function SystemNoticeItem({

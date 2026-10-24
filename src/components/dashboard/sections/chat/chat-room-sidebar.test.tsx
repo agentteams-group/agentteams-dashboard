@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ChatRoomSidebar } from './chat-room-sidebar';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import type { RoomInfo } from './room-info';
 
 afterEach(cleanup);
 beforeEach(() => {
+  useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
   try {
     localStorage.clear();
   } catch {
@@ -51,6 +53,23 @@ describe('ChatRoomSidebar', () => {
     expect(screen.getByText('Newest')).toBeInTheDocument();
     expect(screen.getByText('Unread Room')).toBeInTheDocument();
     expect(screen.getByLabelText('3 条未读')).toBeInTheDocument();
+  });
+
+  it('shows actionable HITL items per room and clears the badge when resolved', () => {
+    useHitlInboxStore.setState({
+      confirmations: {
+        iv1: {
+          id: 'iv1', roomId: '!new:test', eventId: '$1', sender: '@agent:test',
+          toolName: 'ask_human', question: '继续吗？', approveReply: '/approve',
+          rejectReply: '拒绝', timestamp: 1000,
+        },
+      },
+    });
+    renderSidebar();
+    expect(screen.getByLabelText('1 条待处理')).toBeInTheDocument();
+
+    act(() => useHitlInboxStore.getState().resolveConfirmation('iv1', '@user:test'));
+    expect(screen.queryByLabelText('1 条待处理')).toBeNull();
   });
 
   it('clears the unread badge on click while keeping the room in place', () => {

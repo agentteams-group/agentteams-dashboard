@@ -42,6 +42,20 @@ const basePayload: RuntimeConfirmationBlock['payload'] = {
   ],
 };
 
+function seedInbox(timestamp = Date.now()) {
+  useHitlInboxStore.getState().upsertConfirmation({
+    id: 'iv-test-1',
+    roomId: '!r:example.org',
+    eventId: '$e1',
+    sender: '@agent:example.org',
+    toolName: 'ask_human',
+    approveReply: '/approve',
+    rejectReply: '拒绝',
+    question: '你希望泳道按什么维度划分？',
+    timestamp,
+  });
+}
+
 describe('composeAnswerText（降级自然语言回写）', () => {
   it('选中项映射为 label，多问题 A1/A2 逐行', () => {
     const text = composeAnswerText(
@@ -68,7 +82,7 @@ describe('composeAnswerText（降级自然语言回写）', () => {
 describe('InterventionCard（F2.1 交互契约）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useHitlInboxStore.setState({ confirmations: {} });
+    useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
   });
 
   it('① 推荐项置顶 + 默认选中；序号随展示序', () => {
@@ -126,17 +140,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
   });
 
   it('⑤ 提交后：只读态显示提交人与时间、答案转自然语言经 onAnswer 发出、收件箱互通消失', () => {
-    useHitlInboxStore.getState().upsertConfirmation({
-      id: 'iv-test-1',
-      roomId: '!r:example.org',
-      eventId: '$e1',
-      sender: '@agent:example.org',
-      toolName: 'ask_human',
-      approveReply: '/approve',
-      rejectReply: '拒绝',
-      question: '你希望泳道按什么维度划分？',
-      timestamp: Date.now(),
-    });
+    seedInbox();
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
@@ -148,6 +152,21 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
     // F2.3 收件箱互通
     expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeUndefined();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toEqual(
+      expect.objectContaining({ status: 'answered', actor: '@me:example.org' }),
+    );
+  });
+
+  it('⑤b 重新挂载后从共享记录保留已答复状态', () => {
+    seedInbox();
+    const first = render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    first.unmount();
+
+    render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+    expect(screen.getByText(/已答复/)).toBeInTheDocument();
+    expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /提交选择/ })).not.toBeInTheDocument();
   });
 
   it('⑥ 超时（expires_at 已过）：置灰禁答 + 已超时徽标 + 升级通知一次', () => {
@@ -162,6 +181,32 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(screen.getByRole('radio', { name: /按角色/ })).toBeDisabled();
     expect(mockAddNotification).toHaveBeenCalledTimes(1);
     expect(mockAddNotification.mock.calls[0][0].title).toContain('超时');
+  });
+
+  it('⑥b 超时移除共享待办，重新挂载仍超时且不重复通知', () => {
+    seedInbox();
+    const first = render(
+      <InterventionCard
+        payload={{ ...basePayload, expires_at: Date.now() - 1000 }}
+        onAnswer={mockOnAnswer}
+      />,
+    );
+    expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeUndefined();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1']?.status).toBe('expired');
+    first.unmount();
+
+    render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+    expect(screen.getByText('已超时')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    expect(mockAddNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('⑥c 缺省超时从共享请求时间起算，而不是卡片挂载时间', () => {
+    seedInbox(Date.now() - 30 * 60 * 1000 - 1000);
+    render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+
+    expect(screen.getByText('已超时')).toBeInTheDocument();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1']?.status).toBe('expired');
   });
 
   it('⑦ requested_of 非本人且非管理员 → 不可操作提示；管理员可代答', () => {

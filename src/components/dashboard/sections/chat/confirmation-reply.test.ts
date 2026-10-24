@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isHitlResolutionReply } from '@/lib/hitl-inbox';
 import { buildConfirmationReply } from './confirmation-reply';
 
 const WORKER = '@ceshi:matrix-local.agentteams.io:18080';
@@ -32,5 +33,13 @@ describe('buildConfirmationReply', () => {
     expect(buildConfirmationReply('1A', '@manager:example.com', [])).toEqual({
       content: '1A',
     });
+  });
+
+  it('追加 @ 后的审批与干预答复仍可被收件箱识别', () => {
+    const approved = buildConfirmationReply('/approve', WORKER, [WORKER]);
+    expect(isHitlResolutionReply(approved.content)).toBe(true);
+
+    const answered = buildConfirmationReply('【干预答复】\nA1：落地页', WORKER, [WORKER]);
+    expect(isHitlResolutionReply(answered.content)).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ import {
   useRoomSessionState,
 } from '@/hooks/use-worker-session-state';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import type { RoomInfo } from './room-info';
 
@@ -81,6 +82,9 @@ export function RoomListItem({
     isTeamRoom ? room.id : undefined,
     isTeamRoom ? room.workerMatrixUserIds : undefined,
   );
+  const pendingCount = useHitlInboxStore((state) =>
+    Object.values(state.confirmations).filter((item) => item.roomId === room.id).length,
+  );
   return (
     <motion.button
       onClick={handleClick}
@@ -135,25 +139,37 @@ export function RoomListItem({
             </p>
           </div>
         </div>
-        {room.unreadCount !== undefined && room.unreadCount > 0 ? (
-          <span
-            className={`shrink-0 rounded-full ${
-              room.unreadHighlightCount
-                ? 'h-2.5 w-2.5 bg-red-500 ring-2 ring-red-500/30'
-                : 'h-2 w-2 bg-red-500'
-            }`}
-            aria-label={
-              room.unreadHighlightCount
-                ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
-                : `${room.unreadCount} 条未读`
-            }
-            title={
-              room.unreadHighlightCount
-                ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
-                : `${room.unreadCount} 条未读`
-            }
-          />
-        ) : null}
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {pendingCount > 0 && (
+            <Badge
+              variant="secondary"
+              className="h-4 px-1.5 text-[10px]"
+              aria-label={`${pendingCount} 条待处理`}
+              title={`${pendingCount} 条待处理`}
+            >
+              {pendingCount}
+            </Badge>
+          )}
+          {room.unreadCount !== undefined && room.unreadCount > 0 ? (
+            <span
+              className={`shrink-0 rounded-full ${
+                room.unreadHighlightCount
+                  ? 'h-2.5 w-2.5 bg-red-500 ring-2 ring-red-500/30'
+                  : 'h-2 w-2 bg-red-500'
+              }`}
+              aria-label={
+                room.unreadHighlightCount
+                  ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
+                  : `${room.unreadCount} 条未读`
+              }
+              title={
+                room.unreadHighlightCount
+                  ? `${room.unreadHighlightCount} 条 @提醒 · ${room.unreadCount} 条未读`
+                  : `${room.unreadCount} 条未读`
+              }
+            />
+          ) : null}
+        </div>
       </div>
     </motion.button>
   );
