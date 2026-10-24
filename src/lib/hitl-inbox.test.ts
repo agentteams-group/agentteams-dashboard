@@ -33,6 +33,30 @@ function msg(
   };
 }
 
+function interventionMsg(
+  eventId: string,
+  sender: string,
+  ts: number,
+  confirmationId: string,
+  question = '请选择页面类型',
+): MatrixEvent {
+  return msg(eventId, sender, ts, {
+    body: question,
+    'org.agentteams.run': {
+      version: '1',
+      blocks: [
+        {
+          type: 'confirmation',
+          tool_name: 'ask_human',
+          confirmation_id: confirmationId,
+          question,
+          options: [{ id: 'landing', label: '落地页' }],
+        },
+      ],
+    },
+  });
+}
+
 describe('isHitlResolutionReply', () => {
   it('recognises /approve and 拒绝', () => {
     expect(isHitlResolutionReply('/approve')).toBe(true);
@@ -52,6 +76,19 @@ describe('isHitlResolutionReply', () => {
     expect(isHitlResolutionReply('I approve this')).toBe(false);
     expect(isHitlResolutionReply('拒绝执行')).toBe(false);
     expect(isHitlResolutionReply('')).toBe(false);
+  });
+
+  it('recognises intervention answers beginning with the reply marker', () => {
+    expect(isHitlResolutionReply('【干预答复】\nA1：按模块')).toBe(true);
+    expect(isHitlResolutionReply('  【干预答复】\nA1：自定义')).toBe(true);
+    expect(isHitlResolutionReply('答复：【干预答复】\nA1：按模块')).toBe(false);
+  });
+
+  it('ignores the @mention prefix added in worker/team rooms', () => {
+    expect(isHitlResolutionReply('@worker:matrix-local.agentteams.io:18080 【干预答复】\nA1：按模块')).toBe(true);
+    expect(isHitlResolutionReply('@worker /approve')).toBe(true);
+    expect(isHitlResolutionReply('@质检员:test 拒绝')).toBe(true);
+    expect(isHitlResolutionReply('@worker 请批准这个方案')).toBe(false);
   });
 });
 
@@ -119,6 +156,7 @@ describe('useHitlInboxStore', () => {
   beforeEach(() => {
     useHitlInboxStore.setState({
       confirmations: {},
+      resolutions: {},
       pendingChatRoomId: null,
       pendingProjectKey: null,
     });
@@ -165,6 +203,145 @@ describe('useHitlInboxStore', () => {
     const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].eventId).toBe('$c2');
+  });
+
+  it('resolves a pending confirmation from a cross-client intervention reply', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [interventionMsg('$q1', '@agent:test', 1000, 'conf-1')],
+      '@user:test',
+    );
+    const answer = '@agent:test 【干预答复】\nA1：按模块';
+    ingestHitlTimelineEvents(
+      '!r1',
+      [msg('$reply', '@user:test', 2000, { body: answer })],
+      '@user:test',
+    );
+
+    const state = useHitlInboxStore.getState();
+    expect(state.confirmations).toEqual({});
+    expect(state.resolutions['conf-1']).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        actor: '@user:test',
+        answer,
+        timestamp: expect.any(Number),
+      }),
+    );
+  });
+
+  it('does not let an intervention answer resolve an older unrelated tool approval', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$guard', '@agent:test', 1000, { body: TOOL_GUARD_BODY }),
+        interventionMsg('$q1', '@agent:test', 2000, 'conf-1'),
+      ],
+      '@user:test',
+    );
+    ingestHitlTimelineEvents(
+      '!r1',
+      [msg('$reply', '@user:test', 3000, { body: '@agent:test 【干预答复】\nA1：落地页' })],
+      '@user:test',
+    );
+
+    const state = useHitlInboxStore.getState();
+    expect(Object.keys(state.confirmations)).toEqual(['!r1:$guard']);
+    expect(state.resolutions['conf-1']?.status).toBe('answered');
+    expect(state.resolutions['!r1:$guard']).toBeUndefined();
+  });
+
+  it('uses the m.reference relation to resolve the exact card among several pending', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        interventionMsg('$q1', '@agent:test', 1000, 'conf-1', '第一问'),
+        interventionMsg('$q2', '@agent:test', 2000, 'conf-2', '第二问'),
+      ],
+      '@user:test',
+    );
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$reply', '@user:test', 3000, {
+          body: '【干预答复】\nA1：落地页',
+          'm.relates_to': { rel_type: 'm.reference', event_id: '$q2' },
+        }),
+      ],
+      '@user:test',
+    );
+
+    const state = useHitlInboxStore.getState();
+    expect(Object.keys(state.confirmations)).toEqual(['conf-1']);
+    expect(state.resolutions['conf-2']?.status).toBe('answered');
+    expect(state.resolutions['conf-1']).toBeUndefined();
+  });
+
+  it('does not fall through to another card when the referenced card was already resolved locally', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        interventionMsg('$q1', '@agent:test', 1000, 'conf-1', '第一问'),
+        interventionMsg('$q2', '@agent:test', 2000, 'conf-2', '第二问'),
+      ],
+      '@user:test',
+    );
+    useHitlInboxStore.getState().resolveConfirmation('conf-2', '@user:test', '本地已答');
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$reply', '@user:test', 3000, {
+          body: '【干预答复】\nA1：落地页',
+          'm.relates_to': { rel_type: 'm.reference', event_id: '$q2' },
+        }),
+      ],
+      '@user:test',
+    );
+
+    const state = useHitlInboxStore.getState();
+    expect(Object.keys(state.confirmations)).toEqual(['conf-1']);
+    expect(state.resolutions['conf-1']).toBeUndefined();
+  });
+
+  it('uses the m.in_reply_to relation for a manual reply to a specific card', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$c1', '@agent:test', 1000, { body: TOOL_GUARD_BODY }),
+        msg('$c2', '@agent:test', 2000, {
+          body: TOOL_GUARD_BODY.replace('execute_shell_command', 'write_file'),
+        }),
+      ],
+      '@user:test',
+    );
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$reply', '@user:test', 3000, {
+          body: '/approve',
+          'm.relates_to': { 'm.in_reply_to': { event_id: '$c2' } },
+        }),
+      ],
+      '@user:test',
+    );
+
+    const remaining = Object.keys(useHitlInboxStore.getState().confirmations);
+    expect(remaining).toEqual(['!r1:$c1']);
+  });
+
+  it('does not resurrect a resolved request when its old event is reingested', () => {
+    const request = msg('$c1', '@agent:test', 1000, { body: TOOL_GUARD_BODY });
+    ingestHitlTimelineEvents('!r1', [request], '@user:test');
+    ingestHitlTimelineEvents(
+      '!r1',
+      [msg('$reply', '@user:test', 2000, { body: '/approve' })],
+      '@user:test',
+    );
+    ingestHitlTimelineEvents('!r1', [request], '@user:test');
+
+    const state = useHitlInboxStore.getState();
+    expect(state.confirmations).toEqual({});
+    expect(state.resolutions['!r1:$c1']?.status).toBe('answered');
   });
 
   it('drops a confirmation when m.replace replaces it with non-confirmation content', () => {

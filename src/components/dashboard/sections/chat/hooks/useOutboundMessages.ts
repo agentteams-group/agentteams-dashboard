@@ -67,9 +67,11 @@ export function useOutboundMessages({
     msgtype?: string;
     /** Workspace file references attached to this message (#87). */
     fileRefs?: FileRef[];
+    /** Card event this reply answers (HITL correlation via m.reference). */
+    referenceEventId?: string;
   }) => {
     if (!roomId || !isLoggedIn || !userId) return;
-    const { content, options, mentions, replyTo, clientId, msgtype, fileRefs } = params;
+    const { content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId } = params;
 
     // Only mentions that still appear in the final text are sent (the user may
     // have typed more after inserting them, or deleted the placeholder again).
@@ -120,7 +122,11 @@ export function useOutboundMessages({
           ...(msgtype ? { msgtype } : {}),
           ...(fileRefs && fileRefs.length > 0 ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
         },
-        relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : undefined,
+        relatesTo: replyTo
+          ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } }
+          : referenceEventId
+            ? { rel_type: 'm.reference', event_id: referenceEventId }
+            : undefined,
       },
       {
         onSuccess: (data) => {
@@ -130,7 +136,7 @@ export function useOutboundMessages({
         },
         onError: (err) => {
           patchLocal(cid, { status: 'error', error: err.message });
-          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo }, ++noticeCounterRef.current));
+          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo, referenceEventId }, ++noticeCounterRef.current));
         },
       }
     );
@@ -144,7 +150,7 @@ export function useOutboundMessages({
     const payload = notice.retryPayload;
     setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
     if (payload && roomId && isLoggedIn && userId) {
-      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo });
+      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo, referenceEventId: payload.referenceEventId });
     }
   }, [sendOutbound, roomId, isLoggedIn, userId]);
 
@@ -164,7 +170,7 @@ export function useOutboundMessages({
 
 function buildSystemNoticeFromError(
   err: unknown,
-  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null },
+  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string },
   id: number
 ): ChatSystemNotice {
   const retryAfterMs = getRateLimitRetryDelay(err);

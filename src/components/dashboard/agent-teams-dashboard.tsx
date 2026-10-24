@@ -41,6 +41,7 @@ import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useInviteStore } from '@/lib/matrix-invite-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { usePluginSystem } from '@/hooks/use-plugin-system';
 import { PluginRouteView } from '@/components/plugins/plugin-route-view';
 import { usePluginRoutes } from '@/lib/plugins/extension-store';
@@ -271,15 +272,23 @@ export function AgentTeamsDashboard() {
     () => Object.values(roomMeta).filter((m) => (m.unreadCount ?? 0) > 0).length,
     [roomMeta],
   );
+  const mentionRoomCount = useMemo(
+    () => Object.values(roomMeta).filter((m) => (m.unreadHighlightCount ?? 0) > 0).length,
+    [roomMeta],
+  );
   const invitePending = useInviteStore((s) => s.invites);
-  const chatCount = unreadRoomCount + Object.keys(invitePending).length;
+  const confirmations = useHitlInboxStore((s) => s.confirmations);
+  const inviteCount = Object.keys(invitePending).length;
+  const chatCount = unreadRoomCount + inviteCount;
+  const workbenchCount = Object.keys(confirmations).length + inviteCount + mentionRoomCount;
 
   const countMap: Record<string, number> = useMemo(() => ({
     workers: workerCount,
     teams: teamCount,
     managers: managerCount,
     chat: chatCount,
-  }), [workerCount, teamCount, managerCount, chatCount]);
+    'my-workbench': workbenchCount,
+  }), [workerCount, teamCount, managerCount, chatCount, workbenchCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();

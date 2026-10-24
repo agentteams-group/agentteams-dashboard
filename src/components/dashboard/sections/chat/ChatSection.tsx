@@ -23,7 +23,7 @@ import { ChatAuthBadge } from './chat-auth-badge';
 import { SyncStatusChip } from './sync-status-chip';
 import { ChatRoomSidebar } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
-import { ChatPanel } from './ChatPanel';
+import { ChatPanel, type ChatContextPanel } from './ChatPanel';
 import { HumanPanel } from './human-panel';
 import { RoomTopology } from './room-topology';
 import { MatrixStatusBanner } from './matrix-status-banner';
@@ -91,13 +91,11 @@ export function ChatSection() {
 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
-  const [showRightPanel, setShowRightPanel] = useState(false);
+  const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
+  const [mobileRoomListOpen, setMobileRoomListOpen] = useState(false);
 
-  // A11Y-03: on narrow viewports (< md) the resizable room list (≥176px)
-  // would squeeze the message area to near-zero — force it collapsed there
-  // (the expand rail stays hidden while narrow). useSyncExternalStore keeps
-  // SSR/hydration consistent without a setState-in-effect cascade.
+  // Keep SSR and the first client render consistent; narrow screens use a drawer.
   const narrowViewport = useSyncExternalStore(subscribeNarrowViewport, getNarrowViewport, () => false);
 
   // Publish the open room to the global sync loop (via the room-meta store)
@@ -106,6 +104,8 @@ export function ChatSection() {
   const handleSelectRoom = useCallback((roomId: string) => {
     useRoomMetaStore.getState().setActiveRoomId(roomId);
     setSelectedRoomId(roomId);
+    setContextPanel(null);
+    setMobileRoomListOpen(false);
   }, []);
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
@@ -194,8 +194,7 @@ export function ChatSection() {
     const pendingChatRoomId = useHitlInboxStore.getState().pendingChatRoomId;
     if (pendingChatRoomId && rooms.some((r) => r.id === pendingChatRoomId)) {
       useHitlInboxStore.getState().takePendingChatRoomId();
-      setSelectedRoomId(pendingChatRoomId);
-      useRoomMetaStore.getState().setActiveRoomId(pendingChatRoomId);
+      handleSelectRoom(pendingChatRoomId);
     }
   }
 
@@ -243,6 +242,16 @@ export function ChatSection() {
         {/* Compact header bar */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 md:hidden"
+              onClick={() => setMobileRoomListOpen(true)}
+              title="打开空间列表"
+              aria-label="打开空间列表"
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </Button>
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-sm">
               <MessageSquare className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
@@ -257,10 +266,10 @@ export function ChatSection() {
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0"
-              onClick={() => setShowRightPanel((v) => !v)}
-              title={showRightPanel ? '隐藏侧栏' : '显示侧栏'}
+              onClick={() => setContextPanel((panel) => panel === 'overview' ? null : 'overview')}
+              title={contextPanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
             >
-              {showRightPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
+              {contextPanel === 'overview' ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
             </Button>
             <ChatAuthBadge
               isLoggedIn={isLoggedIn}
@@ -295,12 +304,12 @@ export function ChatSection() {
         {/* Main content: 2 or 3 column flex */}
         <div className="flex-1 flex min-h-0">
           {/* Left: Room list */}
-          {(isRoomListCollapsed || narrowViewport) && (
+          {isRoomListCollapsed && !narrowViewport && (
             <div className="w-10 shrink-0 border-r border-border bg-muted/20 pt-2">
               <Button
                 variant="ghost"
                 size="sm"
-                className="mx-auto h-7 w-7 p-0 max-md:hidden"
+                className="mx-auto h-7 w-7 p-0"
                 onClick={() => setIsRoomListCollapsed(false)}
                 title="显示会话列表"
               >
@@ -321,13 +330,40 @@ export function ChatSection() {
 
           )}
 
+          {narrowViewport && mobileRoomListOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="关闭空间列表"
+                className="fixed inset-0 z-40 bg-background/70 md:hidden"
+                onClick={() => setMobileRoomListOpen(false)}
+              />
+              <div className="fixed inset-y-0 left-0 z-50 max-w-[88vw] shadow-xl md:hidden [&>div]:h-full">
+                <ChatRoomSidebar
+                  rooms={rooms}
+                  selectedRoomId={selectedRoomId}
+                  onSelectRoom={handleSelectRoom}
+                  isLoggedIn={isLoggedIn}
+                  userId={userId}
+                  isLoading={isLoading}
+                  onCollapse={() => setMobileRoomListOpen(false)}
+                />
+              </div>
+            </>
+          )}
+
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
             {selectedRoom ? (
               // key forces a fresh ChatRoom instance per room so input,
               // in-flight local messages and scroll state never leak across
               // rooms when switching conversations.
-              <ChatPanel key={selectedRoom.id} room={selectedRoom} />
+              <ChatPanel
+                key={selectedRoom.id}
+                room={selectedRoom}
+                contextPanel={contextPanel}
+                onContextPanelChange={setContextPanel}
+              />
             ) : (
               <ChatEmptyState
                 isLoggedIn={isLoggedIn}
@@ -336,15 +372,22 @@ export function ChatSection() {
             )}
           </div>
 
-          {/* Right: Members + Topology (toggleable); overlays on mobile */}
-          {showRightPanel && (
-            <div className="w-48 shrink-0 flex flex-col border-l border-border overflow-hidden
-              max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:shadow-xl max-md:bg-card">
-              <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
-                <RoomTopology rooms={rooms} selectedRoomId={selectedRoomId} members={roomMembers} />
-                <HumanPanel />
+          {contextPanel === 'overview' && (
+            <>
+              <button
+                type="button"
+                aria-label="关闭空间概览"
+                className="fixed inset-0 z-30 bg-background/70 md:hidden"
+                onClick={() => setContextPanel(null)}
+              />
+              <div className="w-56 shrink-0 flex flex-col border-l border-border overflow-hidden
+                max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl max-md:bg-card">
+                <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
+                  <RoomTopology rooms={rooms} selectedRoomId={selectedRoomId} members={roomMembers} />
+                  <HumanPanel />
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

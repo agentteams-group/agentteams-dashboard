@@ -15,7 +15,7 @@ interface MembersSidebarProps {
 
 export function MembersSidebar({ roomMembers, senderStatusMap, onClose }: MembersSidebarProps) {
   return (
-    <div className="w-52 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
+    <div className="w-52 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl">
       <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
         <h4 className="font-semibold text-xs">成员 ({roomMembers.length})</h4>
         <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={onClose}>
