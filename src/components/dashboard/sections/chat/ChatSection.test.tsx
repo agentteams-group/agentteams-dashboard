@@ -154,6 +154,33 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
   });
 });
 
+describe('ChatSection mobile room drawer', () => {
+  beforeEach(() => {
+    loaded();
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the existing room sidebar as a drawer and closes it from the backdrop', () => {
+    renderWithQueryClient();
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    expect(screen.getByTestId('sidebar-stub')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭空间列表' }));
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+  });
+});
+
 describe('ChatSection projection failure notices', () => {
   beforeEach(() => {
     vi.clearAllMocks();

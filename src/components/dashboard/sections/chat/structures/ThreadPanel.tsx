@@ -113,7 +113,7 @@ export function ThreadPanel({
   }, [handleSend]);
 
   return (
-    <div className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
+    <div className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:max-w-[85vw] max-md:shadow-xl">
       {/* Header: thread title + root summary + close */}
       <div className="px-3 py-2.5 border-b border-border shrink-0">
         <div className="flex items-center justify-between">

@@ -61,7 +61,7 @@ export function WorkersFilesSidebar({
       />
       <div
         className="shrink-0 border-l border-border bg-card overflow-hidden flex flex-col
-          max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:shadow-xl max-md:max-w-[85vw]"
+          max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:shadow-xl max-md:max-w-[85vw]"
         style={{ width: workerPaneWidth }}
       >
         <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">

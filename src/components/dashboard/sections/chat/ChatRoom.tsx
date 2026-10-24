@@ -57,6 +57,8 @@ import type { TeamResponse } from '@/lib/agentteams-api';
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
+export type ChatContextPanel = 'overview' | 'members' | 'files' | 'thread' | null;
+
 interface ChatRoomProps {
   roomId: string;
   roomName: string;
@@ -77,6 +79,8 @@ interface ChatRoomProps {
   members?: RoomMember[];
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
+  contextPanel?: ChatContextPanel;
+  onContextPanelChange?: (_panel: ChatContextPanel) => void;
   className?: string;
 }
 
@@ -93,12 +97,19 @@ export function ChatRoom({
   members: initialMembers = [],
   canSend = true,
   onSendMessage,
+  contextPanel: controlledContextPanel,
+  onContextPanelChange,
   className = '',
 }: ChatRoomProps) {
   const { setAutoScroll } = useChatStore();
   const [autoScroll, setAutoScrollLocal] = useState(true);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
-  const [showMembers, setShowMembers] = useState(false);
+  const [internalContextPanel, setInternalContextPanel] = useState<ChatContextPanel>(null);
+  const contextPanel = controlledContextPanel === undefined ? internalContextPanel : controlledContextPanel;
+  const setContextPanel = useCallback((panel: ChatContextPanel) => {
+    setInternalContextPanel(panel);
+    onContextPanelChange?.(panel);
+  }, [onContextPanelChange]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
@@ -106,7 +117,6 @@ export function ChatRoom({
   // Composer edit session (ArrowUp on empty input → edit my latest message)
   const [editSession, setEditSession] = useState<{ eventId: string; initialText: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showWorkers, setShowWorkers] = useState(false);
   // C (#1295): worker avatar click → read-only QwenPaw sessions dialog.
   const [chatsWorkerName, setChatsWorkerName] = useState<string | null>(null);
   const handleOpenWorkerChats = useCallback((name: string) => setChatsWorkerName(name), []);
@@ -533,9 +543,9 @@ export function ChatRoom({
     });
   }, [localMessages, patchLocal, sendOutbound]);
 
-  const handleSendConfirmation = useCallback((content: string, sender?: string) => {
+  const handleSendConfirmation = useCallback((content: string, sender?: string, eventId?: string) => {
     const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
-    sendOutbound(reply);
+    sendOutbound({ ...reply, referenceEventId: eventId });
   }, [sendOutbound, workerMatrixUserIds]);
 
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
@@ -569,25 +579,31 @@ export function ChatRoom({
     const workerName = message.workerName || runtimeMap[message.sender]?.workerName;
     if (!workerName) return;
     setSelectedWorker(workerName);
-    setShowMembers(false);
-    setShowWorkers(true);
-  }, [runtimeMap, setSelectedWorker]);
+    setActiveThread(null);
+    setContextPanel('files');
+  }, [runtimeMap, setSelectedWorker, setContextPanel]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
-    // A thread panel replaces the member list, element-web style.
-    setShowMembers(false);
+    setSelectedWorker(null);
     setActiveThread(message);
-  }, []);
+    setContextPanel('thread');
+  }, [setSelectedWorker, setContextPanel]);
 
   const handleToggleWorkersPanel = useCallback(() => {
-    if (showWorkers) {
-      setShowWorkers(false);
+    if (contextPanel === 'files') {
+      setContextPanel(null);
       setSelectedWorker(null);
     } else {
-      setShowWorkers(true);
-      setShowMembers(false);
+      setActiveThread(null);
+      setContextPanel('files');
     }
-  }, [showWorkers, setSelectedWorker]);
+  }, [contextPanel, setContextPanel, setSelectedWorker]);
+
+  const handleToggleMembersPanel = useCallback(() => {
+    setActiveThread(null);
+    setSelectedWorker(null);
+    setContextPanel(contextPanel === 'members' ? null : 'members');
+  }, [contextPanel, setContextPanel, setSelectedWorker]);
 
   return (
     <div
@@ -616,9 +632,9 @@ export function ChatRoom({
           workerMatrixUserIds={workerMatrixUserIds}
           sessionDot={sessionDot}
           memberCount={roomMembers.length}
-          showMembers={showMembers}
-          showWorkers={showWorkers}
-          onToggleMembers={() => setShowMembers(v => !v)}
+          showMembers={contextPanel === 'members'}
+          showWorkers={contextPanel === 'files'}
+          onToggleMembers={handleToggleMembersPanel}
           onToggleWorkers={handleToggleWorkersPanel}
         />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
@@ -748,7 +764,7 @@ export function ChatRoom({
             onFileUpload={handleFileUpload}
             isUploading={isUploading}
             onSlashCommand={(cmd) => {
-              if (cmd === 'members') setShowMembers(v => !v);
+              if (cmd === 'members') handleToggleMembersPanel();
             }}
             onMentionsChange={setMentions}
             editSession={editSession}
@@ -759,17 +775,28 @@ export function ChatRoom({
           </div>
         </div>
 
-      {/* Members sidebar */}
-      {showMembers && (
-        <MembersSidebar
-          roomMembers={roomMembers}
-          senderStatusMap={senderStatusMap}
-          onClose={() => setShowMembers(false)}
+      {contextPanel !== null && contextPanel !== 'overview' && (
+        <button
+          type="button"
+          aria-label="关闭上下文面板"
+          className="fixed inset-0 z-30 bg-background/70 md:hidden"
+          onClick={() => {
+            setActiveThread(null);
+            setSelectedWorker(null);
+            setContextPanel(null);
+          }}
         />
       )}
 
-      {/* Workers files sidebar */}
-      {showWorkers && (
+      {contextPanel === 'members' && (
+        <MembersSidebar
+          roomMembers={roomMembers}
+          senderStatusMap={senderStatusMap}
+          onClose={() => setContextPanel(null)}
+        />
+      )}
+
+      {contextPanel === 'files' && (
         <WorkersFilesSidebar
           team={team}
           workerOptions={workerOptions}
@@ -778,18 +805,17 @@ export function ChatRoom({
           workerPaneWidth={workerPaneWidth}
           onPaneWidthChange={setWorkerPaneWidth}
           onResizeStart={() => setIsResizingWorkerPane(true)}
-          onClose={() => { setShowWorkers(false); setSelectedWorker(null); }}
+          onClose={() => { setContextPanel(null); setSelectedWorker(null); }}
           onSelectWorker={setSelectedWorker}
         />
       )}
-      {/* Thread sidebar */}
-      {activeThread && (
+      {contextPanel === 'thread' && activeThread && (
         <ThreadPanel
           roomId={roomId}
           rootMessage={activeThread}
           memberMap={memberMap}
           workerMatrixUserIds={workerMatrixUserIds}
-          onClose={() => setActiveThread(null)}
+          onClose={() => { setActiveThread(null); setContextPanel(null); }}
         />
       )}
     </div>

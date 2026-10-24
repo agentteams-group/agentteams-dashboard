@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
 // WorkflowCard（v11 live overlay）内含 useQuery → 渲染需 QueryClientProvider。
 function renderWithProvider(ui: Parameters<typeof render>[0]) {
@@ -16,6 +17,9 @@ vi.mock('../markdown-message', () => ({
 }));
 
 afterEach(cleanup);
+beforeEach(() => {
+  useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
+});
 
 describe('MessageBubble', () => {
   it('passes isStreaming to the text block renderer while streaming', () => {
@@ -615,6 +619,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       <MessageBubble
         message={{
           ...baseMessage,
+          eventId: '$card',
           sender: '@ceshi:matrix-local.agentteams.io:18080',
           content: '选哪个？\n1. 甲\n2. 乙',
         }}
@@ -628,6 +633,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
     expect(onSend).toHaveBeenCalledWith(
       expect.stringContaining('甲'),
       '@ceshi:matrix-local.agentteams.io:18080',
+      '$card',
     );
   });
 

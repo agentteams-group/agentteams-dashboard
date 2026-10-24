@@ -373,7 +373,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="border-t border-border px-3 py-2 shrink-0 bg-card/20 relative">
+    <div className="border-t border-border px-2 sm:px-3 py-2 shrink-0 bg-card/20 relative">
       {/* Edit session bar (element-web style) */}
       {editSession && (
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
@@ -543,7 +543,7 @@ export function ChatComposer({
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
           disabled={disabled}
-          className="flex-1 resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50"
+          className="flex-1 min-w-0 resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
           onInput={autoResize}
@@ -575,7 +575,7 @@ export function ChatComposer({
         ) : (
           <span />
         )}
-        <p className="text-[10px] text-muted-foreground/60 shrink-0">
+        <p className="hidden sm:block text-[10px] text-muted-foreground/60 shrink-0">
           Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
         </p>
       </div>
