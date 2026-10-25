@@ -9,6 +9,7 @@
     "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "lint:tone": "node scripts/ai-tone-scan.mjs",
+    "upstream:watch": "node scripts/upstream-watch.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run src/__tests__/integration",

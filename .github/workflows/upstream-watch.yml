@@ -1,0 +1,39 @@
+name: Upstream Watch
+
+# E1: weekly digest for the repos the dashboard depends on (upstream core,
+# LUOSENGWA forks, the Workbench companion and Millforge). Read-only: the
+# script never writes to GitHub, it only renders a Markdown report.
+
+on:
+  schedule:
+    - cron: '41 4 * * 1' # 每周一 04:41 UTC，避开 installer drift 任务
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    name: Render multi-repo digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/upstream-watch.mjs --days 14 --out upstream-watch.md
+
+      - name: Publish job summary
+        if: always() && hashFiles('upstream-watch.md') != ''
+        run: cat upstream-watch.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload digest
+        if: always() && hashFiles('upstream-watch.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-watch
+          path: upstream-watch.md
+          if-no-files-found: ignore
