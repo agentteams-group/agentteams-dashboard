@@ -102,10 +102,10 @@ function senderPalette(sender: string) {
 function AvatarWithInitials({ sender, label, isMe }: { sender: string; label: string; isMe: boolean }) {
   const palette = senderPalette(sender);
   return (
-    <Avatar className="w-7 h-7 shrink-0">
+    <Avatar className="h-[30px] w-[30px] shrink-0 rounded-[9px]">
       <div
-        className={`w-full h-full rounded-full flex items-center justify-center text-xs font-semibold ${
-          isMe ? 'bg-primary/20 text-primary' : palette.avatar
+        className={`flex h-full w-full items-center justify-center rounded-[9px] border border-border text-[11px] font-semibold ${
+          isMe ? 'bg-primary/15 text-primary' : palette.avatar
         }`}
         title={label}
       >
@@ -152,7 +152,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className="opacity-0 group-hover/message:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-1"
+      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
       title={title}
       aria-label={title}
     >
@@ -209,14 +209,6 @@ export function MessageBubble({
       runtime: message.runtime ?? null,
     });
   }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
-
-  // Long-message attachments and inline HTML files need the full message
-  // column: a w-fit bubble collapses to the card header width, squeezing the
-  // preview into an unusably narrow viewport.
-  const hasWideContent =
-    parsedBlocks.some((block) => block.type === 'attachment') ||
-    (message.type === 'm.file' &&
-      (message.mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(message.content)));
 
   // Feed the Worker card vitals strip: count this message's tool_call blocks
   // once it is final (delta-guarded per event id, so revisions don't double
@@ -290,23 +282,28 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
-  // 会话呈现对标主流（Codex/ChatGPT 风格 · 2026-10 反馈）：浅色轻气泡 +
-  // 大留白，去阴影重装饰；自己的消息品牌浅底右对齐，Agent 消息中性浅底。
+  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。
+  // 配色沿用 2026-10 装验口径：自己=emerald 浅底，Agent=中性浅底，无阴影。
+  // 同组续接消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
+  const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
-    hasWideContent
-      ? 'w-full max-w-[min(100%,56rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed'
-      : 'w-fit max-w-[min(100%,46rem)] px-4 py-2.5 rounded-2xl text-sm break-words leading-relaxed',
-    'transition-colors duration-150',
-    message.isMe
-      ? 'bg-emerald-500/10 text-foreground border border-emerald-500/25 rounded-tr-md'
-      : 'bg-muted/60 text-foreground border border-border/40 rounded-tl-md',
+    'break-words text-[13.5px] leading-relaxed text-foreground',
+    isTextBubble
+      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
+      : 'w-full',
+    isTextBubble && !isContinuation ? 'rounded-tl-md' : '',
+    isTextBubble
+      ? message.isMe
+        ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
+        : 'bg-muted/60 text-foreground border-border/40'
+      : '',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
   return (
     <div
-      className={`flex gap-2 px-3 py-0.5 group/message ${!isContinuation ? 'mt-2' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
+      className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
@@ -314,11 +311,12 @@ export function MessageBubble({
         setShowActions(v => !v);
       }}
     >
-      {/* Avatar column: mirrors the bubble side (own messages on the right).
+      {/* Avatar column: the stream is left-aligned for every sender (design
+          prototype), so own messages sit on the same axis as agents.
           C (#1295): worker senders' avatars are clickable → read-only
           QwenPaw sessions of that worker ("补头": the headless worker's
           sessions, viewable from the room). */}
-      <div className="w-7 shrink-0">
+      <div className="w-[30px] shrink-0">
         {showAvatar && (
           <button
             type="button"
@@ -331,8 +329,8 @@ export function MessageBubble({
             aria-label={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
             className={
               message.workerName && onOpenWorkerChats
-                ? 'relative w-7 h-7 cursor-pointer rounded-full hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary/50'
-                : 'relative w-7 h-7'
+                ? 'relative h-[30px] w-[30px] cursor-pointer rounded-[9px] transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/50'
+                : 'relative h-[30px] w-[30px]'
             }
           >
             <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
@@ -341,10 +339,10 @@ export function MessageBubble({
         )}
       </div>
 
-      <div className={`flex-1 min-w-0 flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
+      <div className="flex min-w-0 flex-1 flex-col items-start">
         {showAvatar && (
-          <div className={`flex items-center gap-1.5 mb-0.5 flex-wrap ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-xs font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
+          <div className="mb-1 flex w-full min-w-0 flex-wrap items-center gap-2">
+            <span className={`text-[12.5px] font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
               {senderLabel}
             </span>
             {message.workerName && message.runtime && (
@@ -369,12 +367,29 @@ export function MessageBubble({
             {message.status === 'error' && (
               <span className="text-[10px] text-red-500 italic">发送失败</span>
             )}
+            {/* 设计稿把时间放在名字行最右侧；发送/已读标记跟随时间一起排。 */}
+            <span className="ml-auto flex shrink-0 items-center gap-1 pl-3">
+              <MessageTime timestamp={message.timestamp} />
+              {message.isMe && message.status === 'sending' && (
+                <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" aria-label="发送中" />
+              )}
+              {message.isMe && message.status === 'error' && (
+                <span className="text-red-500 font-medium" title="发送失败">!</span>
+              )}
+              {message.isMe && !message.status && (
+                isReadByOthers ? (
+                  <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+                ) : (
+                  <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
+                )
+              )}
+            </span>
           </div>
         )}
 
-        <div className={`flex w-full items-end gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div className="flex w-full items-start gap-2">
           {isEditing ? (
-            <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
+            <div className="w-full items-start flex flex-col gap-1.5">
               <textarea
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
@@ -402,10 +417,10 @@ export function MessageBubble({
               </div>
             </div>
           ) : (
-            <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
+            <div className="flex w-full min-w-0 flex-col gap-1.5 items-start">
               {/* Optimistic local sends carry refs directly (no event content yet). */}
               {message.fileRefs && message.fileRefs.length > 0 && (
-                <div className="w-[min(100%,56rem)] max-w-full">
+                <div className="w-full">
                   <FileRefChips refs={message.fileRefs} />
                 </div>
               )}
@@ -415,7 +430,7 @@ export function MessageBubble({
                   // 选项式干预卡；v1 二态工具确认保持原卡（向后兼容）。
                   if (isInterventionConfirmation(block)) {
                     return (
-                      <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                      <div key={idx} className="w-full">
                         <InterventionCard
                           payload={(block as RuntimeConfirmationBlock).payload}
                           onAnswer={handleConfirmationApprove}
@@ -424,7 +439,7 @@ export function MessageBubble({
                     );
                   }
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <ConfirmationCard
                         payload={block.payload as unknown as ConfirmationCardPayload}
                         onApprove={handleConfirmationApprove}
@@ -437,7 +452,7 @@ export function MessageBubble({
                   // F3.1 结构化审查报告卡；无结构时本分支不触发，
                   // 消息照常走 Markdown 渲染（降级不丢内容）。
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <ReviewReportCard
                         payload={block.payload as unknown as import('@/lib/a2ui/protocol').RuntimeReviewReportBlock['payload']}
                         eventId={message.eventId}
@@ -452,7 +467,7 @@ export function MessageBubble({
                 }
                 if (block.type === 'tool_call') {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <ToolCallView
                         payload={block.payload as ToolCallPayload}
                         runtime={block.runtimeHint}
@@ -467,7 +482,7 @@ export function MessageBubble({
                 }
                 if (block.type === 'thinking') {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <ThinkingCard
                         content={block.content || ''}
                         isStreaming={block.isStreaming ?? message.isStreaming}
@@ -480,17 +495,17 @@ export function MessageBubble({
                 }
                 if (block.type === 'error' && block.payload) {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <RunEndingNote payload={block.payload as unknown as RunEndingPayload} />
                     </div>
                   );
                 }
                 if (block.type === 'card') {
-                  return <div key={idx} className="w-[min(100%,56rem)] max-w-full"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
+                  return <div key={idx} className="w-full"><StreamingCard payload={block.payload as Record<string, unknown>} /></div>;
                 }
                 if (block.type === 'a2ui' && block.isStreaming) {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm">
+                    <div key={idx} className="w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm">
                       <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>正在生成交互内容...</span>
@@ -499,18 +514,18 @@ export function MessageBubble({
                   );
                 }
                 if (block.type === 'a2ui' && block.messages) {
-                  return <div key={idx} className="w-[min(100%,56rem)] max-w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
+                  return <div key={idx} className="w-full rounded-xl border border-border/60 bg-card/70 px-3 py-1 shadow-sm"><A2uiMessage messages={block.messages} /></div>;
                 }
                 if (block.type === 'attachment' && block.payload) {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <AttachmentCard payload={block.payload as unknown as AttachmentPayload} />
                     </div>
                   );
                 }
                 if (block.type === 'file_refs' && block.refs && block.refs.length > 0) {
                   return (
-                    <div key={idx} className="w-[min(100%,56rem)] max-w-full">
+                    <div key={idx} className="w-full">
                       <FileRefChips refs={block.refs} />
                     </div>
                   );
@@ -528,7 +543,7 @@ export function MessageBubble({
                       : null;
                   if (heuristic && onSendConfirmation) {
                     return (
-                      <div key={idx} className="w-[min(100%,42rem)] max-w-full space-y-1.5">
+                      <div key={idx} className="w-full space-y-1.5">
                         {/* 引言（选项块之前）原样保留 */}
                         {heuristic.before && (
                           <div className={bubbleClasses}>
@@ -582,6 +597,8 @@ export function MessageBubble({
             </div>
           )}
 
+          {/* 续接消息（同发送者分组）默认不占行：时间/回执在 hover 时显示在行尾。 */}
+          {!showAvatar && (
           <div className={`flex items-center gap-1 text-[10px] ${
             isContinuation && !isHovered && !showActions ? 'opacity-0 group-hover/message:opacity-100' : ''
           }`}>
@@ -601,6 +618,7 @@ export function MessageBubble({
               )
             )}
           </div>
+          )}
         </div>
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
@@ -609,7 +627,7 @@ export function MessageBubble({
               e.stopPropagation();
               onOpenThread(message);
             }}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-primary"
             title="在线程中查看回复"
           >
             <span>↩</span>
@@ -619,7 +637,7 @@ export function MessageBubble({
 
         {actionsVisible && (
           <div
-            className={`flex gap-1 mt-1 ${message.isMe ? 'justify-end' : 'justify-start'}`}
+            className={`z-10 mt-1 flex justify-start gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute md:right-1 ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (

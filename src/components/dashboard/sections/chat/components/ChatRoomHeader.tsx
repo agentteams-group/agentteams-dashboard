@@ -2,12 +2,21 @@
 
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, UserCheck, FolderTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  FolderTree,
+  ListTodo,
+  MessagesSquare,
+  PanelRightClose,
+  PanelRightOpen,
+  UserCheck,
+  Users,
+} from 'lucide-react';
 import { WorkerSessionDot } from '@/components/worker-session-dot';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
+import type { RoomContextTab } from './RoomContextPanel';
 
 interface ChatRoomHeaderProps {
   roomName: string;
@@ -25,10 +34,38 @@ interface ChatRoomHeaderProps {
   avatar?: string;
   sessionDot: { state: WorkerSessionState; runningOnly: boolean };
   memberCount: number;
-  showMembers: boolean;
-  showWorkers: boolean;
-  onToggleMembers: () => void;
-  onToggleWorkers: () => void;
+  threadCount: number;
+  activePanel: RoomContextTab | null;
+  onTogglePanel: (_panel: RoomContextTab) => void;
+}
+
+function ContextChip({
+  active,
+  icon: Icon,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  icon: typeof Users;
+  label: string;
+  count?: number;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant={active ? 'secondary' : 'outline'}
+      size="sm"
+      className="h-7 gap-1 px-2 text-[11px]"
+      onClick={onClick}
+      title={`${active ? '隐藏' : '显示'}${label}`}
+      aria-pressed={active}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      <span className="hidden lg:inline">{label}</span>
+      {typeof count === 'number' && count > 0 && <span className="font-mono">{count}</span>}
+    </Button>
+  );
 }
 
 export function ChatRoomHeader({
@@ -41,25 +78,25 @@ export function ChatRoomHeader({
   workerMatrixUserIds,
   sessionDot,
   memberCount,
-  showMembers,
-  showWorkers,
-  onToggleMembers,
-  onToggleWorkers,
+  threadCount,
+  activePanel,
+  onTogglePanel,
 }: ChatRoomHeaderProps) {
+  const teamName = team ? team.teamName || team.name : '';
   return (
-    <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b bg-card/70 backdrop-blur-sm">
+    <div className="flex h-14 shrink-0 items-center gap-3 overflow-hidden border-b border-border bg-card/70 px-4 backdrop-blur-sm sm:px-6">
       {avatar ? (
-        <Avatar className="w-8 h-8 shrink-0">
+        <Avatar className="w-9 h-9 shrink-0 rounded-[10px]">
           <img src={avatar} alt={roomName} />
         </Avatar>
       ) : (
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm">
-           <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
+        <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm shrink-0">
+          <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-sm truncate">{roomName}</h3>
+          <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>
           {workerMatrixUserIds && workerMatrixUserIds.length > 0
             ? sessionDot.runningOnly
               ? sessionDot.state === 'running'
@@ -80,49 +117,70 @@ export function ChatRoomHeader({
           )}
         </div>
         {team ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <Users className="w-3 h-3" />
-              {team.teamName || team.name}
-            </span>
-            {team.description && (
-              <span className="truncate" title={team.description}>{team.description}</span>
+          <div className="flex min-w-0 items-center gap-2 text-[11.5px] text-muted-foreground">
+            {teamName && teamName !== roomName && (
+              <span className="inline-flex min-w-0 shrink items-center gap-1" title={teamName}>
+                <Users className="w-3 h-3 shrink-0" />
+                <span className="truncate">{teamName}</span>
+              </span>
             )}
-            <span className="shrink-0 inline-flex items-center gap-1" title="就绪 Worker / 总 Worker">
+            <span className="inline-flex shrink-0 items-center gap-1" title="就绪 Worker / 总 Worker">
               <UserCheck className="w-3 h-3 text-emerald-500" />
-              {team.readyWorkers}/{team.totalWorkers}
+              {team.readyWorkers}/{team.totalWorkers} Worker
             </span>
             {team.leaderName && (
-              <span className="shrink-0">Leader: {team.leaderName}</span>
+              <>
+                <span aria-hidden="true" className="shrink-0 text-muted-foreground/60">·</span>
+                <span className="shrink-0 truncate text-muted-foreground">Leader {team.leaderName}</span>
+              </>
             )}
           </div>
         ) : (
           topic && (
-            <p className="text-xs text-muted-foreground truncate">{topic}</p>
+            <p className="text-[11.5px] text-muted-foreground truncate">{topic}</p>
           )
         )}
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 shrink-0"
-        onClick={onToggleMembers}
-        title={showMembers ? '隐藏成员' : '显示成员'}
-      >
-        <Badge variant="secondary" className="text-xs cursor-pointer hover:bg-primary/10">
-          <Users className="w-3 h-3 mr-1" />
-          {memberCount}
-        </Badge>
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0 shrink-0"
-        onClick={onToggleWorkers}
-        title={showWorkers ? '隐藏工作目录' : '显示工作目录'}
-      >
-        <FolderTree className="w-4 h-4" />
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <ContextChip
+          active={activePanel === 'tasks'}
+          icon={ListTodo}
+          label="任务"
+          onClick={() => onTogglePanel('tasks')}
+        />
+        <ContextChip
+          active={activePanel === 'members'}
+          icon={Users}
+          label="成员"
+          count={memberCount}
+          onClick={() => onTogglePanel('members')}
+        />
+        <ContextChip
+          active={activePanel === 'files'}
+          icon={FolderTree}
+          label="文件"
+          onClick={() => onTogglePanel('files')}
+        />
+        <ContextChip
+          active={activePanel === 'thread'}
+          icon={MessagesSquare}
+          label="线程"
+          count={threadCount}
+          onClick={() => onTogglePanel('thread')}
+        />
+        <Button
+          variant={activePanel === 'overview' ? 'secondary' : 'outline'}
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => onTogglePanel('overview')}
+          title={activePanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
+          aria-pressed={activePanel === 'overview'}
+        >
+          {activePanel === 'overview'
+            ? <PanelRightClose className="h-3.5 w-3.5" />
+            : <PanelRightOpen className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,10 +1,10 @@
 'use client';
 
 import { useSyncExternalStore, useState, useCallback, useEffect, useRef } from 'react';
-import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle } from 'lucide-react';
+import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle, Clock3, LayoutList, ListFilter } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
-const SIDEBAR_DEFAULT_W = 224;
+const SIDEBAR_DEFAULT_W = 264;
 const SIDEBAR_MIN_W = 176;
 const SIDEBAR_MAX_W = 448;
 const SIDEBAR_W_KEY = 'agentteams.chatSidebarWidth';
@@ -70,6 +70,13 @@ const SORT_KEY = 'chat-sidebar-sort';
 // 快照 'time'，随后切到持久化值——规避 react-hooks/set-state-in-effect，
 // 与页面既有宽度存储同思路）。
 type SortMode = 'time' | 'type';
+type KindFilter = 'all' | 'space' | 'group' | 'dm';
+const KIND_LABELS: Record<KindFilter, string> = {
+  all: '全部',
+  space: '空间',
+  group: '群组',
+  dm: '私聊',
+};
 function readSortStore(): SortMode {
   try {
     return localStorage.getItem(SORT_KEY) === 'type' ? 'type' : 'time';
@@ -248,7 +255,7 @@ export function ChatRoomSidebar({
   // （plugin 同款口径）；与排序模式正交。空间（F1.1）= 团队工作单元房间：
   // 绑定任务上下文的一等协作单元，M1 先取 team 房间口径，空间状态事件
   // （com.agentteams.space）落地后扩展为显式绑定模型。
-  const [kindFilter, setKindFilter] = useState<'all' | 'space' | 'group' | 'dm'>('all');
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const filtered = filterRooms(rooms, filter);
   const visible =
     kindFilter === 'all'
@@ -338,52 +345,49 @@ export function ChatRoomSidebar({
         }}
         className={`absolute top-0 right-[-2px] w-1 h-full cursor-col-resize z-10 transition-colors focus:bg-primary/60 focus:outline-none ${isResizing ? 'bg-primary/60' : 'bg-transparent hover:bg-primary/40'}`}
       />
-      <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold tracking-wide">协作空间</span>
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground">{visible.length} 个房间</span>
-            <div className="flex items-center rounded border border-border p-0.5" role="group" aria-label="房间分类">
-              {(['all', 'space', 'group', 'dm'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  className={`rounded px-1.5 py-0.5 text-[10px] ${kindFilter === k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setKindFilter(k)}
-                  title={k === 'all' ? '全部房间' : k === 'space' ? '空间（团队工作单元）' : k === 'group' ? '群组（成员 > 2）' : '私聊（成员 ≤ 2）'}
-                >
-                  {k === 'all' ? '全部' : k === 'space' ? '空间' : k === 'group' ? '群组' : '私聊'}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center rounded border border-border p-0.5" role="group" aria-label="房间排序">
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'time' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => changeSort('time')}
-                title="按最近消息时间排序（Element/插件同款）"
-              >
-                时间
-              </button>
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'type' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => changeSort('type')}
-                title="按房间类型分组（团队/Agent/Manager/房间）"
-              >
-                类型
-              </button>
-            </div>
-            <button
-              type="button"
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={onCollapse}
-              title="隐藏会话列表"
+      {/* 面板头固定 56px：标题 + 三个图标控件（分类/排序/收起）。分类与
+          搜索下沉到列表工具条，避免头部堆文字；分隔线与房间头水平对齐。 */}
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+        <span className="whitespace-nowrap text-xs font-semibold tracking-wide">协作空间</span>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="relative flex h-7 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+            <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
+            {width >= 220 && (
+              <span className="whitespace-nowrap text-[10px]">{KIND_LABELS[kindFilter]}</span>
+            )}
+            <select
+              aria-label="房间分类"
+              className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+              value={kindFilter}
+              onChange={(e) => setKindFilter(e.target.value as KindFilter)}
             >
-              <PanelLeftClose className="w-3 h-3" />
-            </button>
+              {(['all', 'space', 'group', 'dm'] as const).map((k) => (
+                <option key={k} value={k}>{KIND_LABELS[k]}</option>
+              ))}
+            </select>
           </div>
+          <button
+            type="button"
+            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => changeSort(sortMode === 'time' ? 'type' : 'time')}
+            title={sortMode === 'time' ? '按时间排序（点击按类型分组）' : '按类型分组（点击按时间排序）'}
+            aria-label={sortMode === 'time' ? '当前按时间排序，切换为按类型分组' : '当前按类型分组，切换为按时间排序'}
+          >
+            {sortMode === 'time'
+              ? <Clock3 className="h-3.5 w-3.5" />
+              : <LayoutList className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={onCollapse}
+            title="隐藏会话列表"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
         </div>
+      </div>
+      <div className="shrink-0 px-2 pt-2 pb-1.5">
         <div className="relative">
           <Search
             className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground"
@@ -393,7 +397,7 @@ export function ChatRoomSidebar({
             placeholder="搜索房间..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="h-8 pl-7 text-xs bg-background/70 rounded-lg"
+            className="h-7 pl-7 text-xs bg-background/70 rounded-md"
           />
         </div>
       </div>

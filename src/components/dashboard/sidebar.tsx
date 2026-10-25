@@ -182,9 +182,8 @@ export function Sidebar({
   return (
     <aside
       className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-[width] duration-300 ${
-        // 宽度按菜单文案自适应（F4.6 反馈）：展开态由最宽项（图标+文字+
-        // 徽标）决定，夹在 168–256px 之间；折叠态固定图标条。
-        collapsed ? 'w-16' : 'w-auto min-w-[10.5rem] max-w-[16rem]'
+        // 展开态固定 216px（与原型 rail 同宽），折叠态固定图标条。
+        collapsed ? 'w-16' : 'w-[216px]'
       }`}
     >
       {/* Logo area */}

@@ -250,7 +250,15 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByText('宽内容').parentElement).toHaveClass('max-w-[min(100%,46rem)]');
+    // Text messages render as content-hugging bubbles that never exceed the
+    // 780px reading column; file/media tiles keep the full column width.
+    const textBubble = screen.getByText('宽内容').parentElement;
+    expect(textBubble).toHaveClass('w-fit');
+    expect(textBubble).toHaveClass('max-w-full');
+    expect(textBubble).toHaveClass('rounded-2xl');
+    expect(textBubble).toHaveClass('bg-muted/60');
+    expect(textBubble).toHaveClass('border-border/40');
+    expect(textBubble).not.toHaveClass('shadow-sm');
     textMessage.unmount();
 
     renderWithProvider(
@@ -280,6 +288,29 @@ Type /approve to approve, or send any message to deny.`,
         element.classList.contains('w-[min(100%,56rem)]')
       )
     ).toBeInTheDocument();
+  });
+
+  it('tints own text bubbles emerald without a drop shadow', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$own-text',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: '我的消息',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const ownBubble = screen.getByText('我的消息').parentElement;
+    expect(ownBubble).toHaveClass('bg-emerald-500/10');
+    expect(ownBubble).toHaveClass('border-emerald-500/25');
+    expect(ownBubble).not.toHaveClass('shadow-sm');
   });
 
   it.each([
@@ -369,9 +400,9 @@ Type /approve to approve, or send any message to deny.`,
 
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
-    // The row must stretch so the attachment wrapper's min(100%,56rem) can
-    // resolve against the whole column instead of the card header width.
-    const row = container.querySelector('.flex.items-end.gap-2');
+    // The row must stretch so the attachment wrapper can resolve against the
+    // whole column instead of the card header width.
+    const row = container.querySelector('.flex.items-start.gap-2');
     expect(row?.className).toContain('w-full');
   });
 
@@ -396,9 +427,8 @@ Type /approve to approve, or send any message to deny.`,
 
     // w-fit collapsed the bubble to the card width and gave the sandboxed
     // document a narrow viewport; the file message owns the full column.
-    const bubble = screen.getByText('index.html').closest('.rounded-2xl');
+    const bubble = screen.getByText('index.html').closest('.break-words');
     expect(bubble?.className).toContain('w-full');
-    expect(bubble?.className).toContain('max-w-[min(100%,56rem)]');
   });
 
   it('renders a loading placeholder for an in-progress a2ui marker while streaming', () => {

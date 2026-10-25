@@ -117,17 +117,17 @@ describe('ChatRoomSidebar', () => {
         room({ id: '!d:test', name: 'DmRoom', type: 'worker', memberCount: 2, lastMessageTs: 20 }),
       ],
     });
-    fireEvent.click(screen.getByText('群组'));
+    fireEvent.change(screen.getByLabelText('房间分类'), { target: { value: 'group' } });
     expect(screen.getByText('GroupRoom')).toBeInTheDocument();
     expect(screen.queryByText('DmRoom')).toBeNull();
-    fireEvent.click(screen.getByText('私聊'));
+    fireEvent.change(screen.getByLabelText('房间分类'), { target: { value: 'dm' } });
     expect(screen.getByText('DmRoom')).toBeInTheDocument();
     expect(screen.queryByText('GroupRoom')).toBeNull();
   });
 
   it('switches to type-grouped view via the toggle', () => {
     renderSidebar();
-    fireEvent.click(screen.getByText('类型'));
+    fireEvent.click(screen.getByLabelText('当前按时间排序，切换为按类型分组'));
     expect(screen.getByText('团队')).toBeInTheDocument();
     expect(screen.getByText('Agent')).toBeInTheDocument();
   });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Send, X } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -21,15 +21,14 @@ interface ThreadPanelProps {
   rootMessage: DisplayMessage;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
-  onClose: () => void;
 }
 
+/** 线程 body（无面板外框）：根消息 + Matrix m.thread 回复 + 回复框。 */
 export function ThreadPanel({
   roomId,
   rootMessage,
   memberMap,
   workerMatrixUserIds,
-  onClose,
 }: ThreadPanelProps) {
   const { userId, isLoggedIn } = useMatrixStore();
   const [inputValue, setInputValue] = useState('');
@@ -113,16 +112,10 @@ export function ThreadPanel({
   }, [handleSend]);
 
   return (
-    <div className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:max-w-[85vw] max-md:shadow-xl">
-      {/* Header: thread title + root summary + close */}
-      <div className="px-3 py-2.5 border-b border-border shrink-0">
-        <div className="flex items-center justify-between">
-          <h4 className="font-semibold text-xs">线程</h4>
-          <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={onClose} title="关闭线程">
-            <X className="w-3 h-3" />
-          </Button>
-        </div>
-        <div className="mt-1.5 flex items-start gap-2 min-w-0">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {/* Root summary; the tab strip already carries the panel title. */}
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <div className="flex min-w-0 items-start gap-2">
           <Avatar className="w-5 h-5 shrink-0">
             <div className="w-full h-full rounded-full flex items-center justify-center text-[11px] font-medium bg-muted text-muted-foreground">
               {rootMessage.senderShort.slice(0, 2).toUpperCase()}

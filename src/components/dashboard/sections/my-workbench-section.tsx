@@ -65,6 +65,8 @@ export function MyWorkbenchSection() {
         visible={confirmations.length === 0 && mentionedRooms.length === 0 && Object.keys(invites).length === 0}
       />
 
+      {/* 三栏看板：待干预 / 待审批+邀请 / @我，宽屏并排，窄屏回落单列 */}
+      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
       {/* 待处理干预（优先级最高） */}
       <Card className="py-3 border-l-4 border-l-sky-500">
         <CardContent className="px-4 space-y-2">
@@ -166,6 +168,7 @@ export function MyWorkbenchSection() {
           ))}
         </CardContent>
       </Card>
+      </div>
 
       {pendingCount === 0 && mentionedRooms.length === 0 && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

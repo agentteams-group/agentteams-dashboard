@@ -206,7 +206,7 @@ describe('ChatRoom read-position dual-write', () => {
 
     fireEvent.click(screen.getByTitle('显示成员'));
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
-    fireEvent.click(screen.getByTitle('显示工作目录'));
+    fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
     expect(screen.getByText('工作目录')).toBeInTheDocument();
 

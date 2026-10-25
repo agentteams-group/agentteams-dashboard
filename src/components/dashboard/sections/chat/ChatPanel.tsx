@@ -6,6 +6,8 @@ export type { ChatContextPanel } from './ChatRoom';
 
 interface ChatPanelProps {
   room: RoomInfo;
+  /** All rooms in the workspace — powers the 概览 tab topology. */
+  rooms?: RoomInfo[];
   contextPanel: ChatContextPanel;
   onContextPanelChange: (_panel: ChatContextPanel) => void;
   canSend?: boolean;
@@ -15,6 +17,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({
   room,
+  rooms,
   contextPanel,
   onContextPanelChange,
   canSend = true,
@@ -33,6 +36,7 @@ export function ChatPanel({
           roomPhase={room.phase}
           roomRuntime={room.runtime}
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
+          rooms={rooms}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
           canSend={canSend}

@@ -7,15 +7,9 @@ import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
-import {
-  useMatrixRoomMembers,
-  useMatrixRoomState,
-  useRoomMetaStore,
-  type RoomMember,
-} from '@/hooks/use-matrix';
-import type { MatrixEvent } from '@/lib/matrix-api';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { AlertTriangle, MessageSquare, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { AlertTriangle, MessageSquare, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
@@ -24,8 +18,6 @@ import { SyncStatusChip } from './sync-status-chip';
 import { ChatRoomSidebar } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
 import { ChatPanel, type ChatContextPanel } from './ChatPanel';
-import { HumanPanel } from './human-panel';
-import { RoomTopology } from './room-topology';
 import { MatrixStatusBanner } from './matrix-status-banner';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ChatProvider } from './ChatStore';
@@ -208,29 +200,6 @@ export function ChatSection() {
     [rooms, selectedRoomId],
   );
 
-  // Fetch room members for topology display
-  const membersQuery = useMatrixRoomMembers(selectedRoomId);
-  const stateQuery = useMatrixRoomState(selectedRoomId);
-  const roomMembers: RoomMember[] = useMemo(() => {
-    if (membersQuery.data?.chunk) {
-      return membersQuery.data.chunk.map((e: MatrixEvent) => ({
-        userId: e.sender,
-        displayName: String(e.content.displayname || e.sender),
-        membership: e.content.membership || 'join',
-      }));
-    }
-    if (stateQuery.data) {
-      return stateQuery.data
-        .filter(e => e.type === 'm.room.member' && e.content.membership === 'join')
-        .map(e => ({
-          userId: e.sender || '',
-          displayName: String(e.content.displayname || e.sender || ''),
-          membership: 'join',
-        }));
-    }
-    return selectedRoom?.members?.map(m => ({ userId: m, displayName: m.split(':')[0].slice(1), membership: 'join' })) || [];
-  }, [membersQuery.data, stateQuery.data, selectedRoom]);
-
   if (hasError) {
     return <ApiErrorState />;
   }
@@ -238,7 +207,7 @@ export function ChatSection() {
   return (
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
-      <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Compact header bar */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
@@ -262,15 +231,6 @@ export function ChatSection() {
           </div>
           <div className="flex items-center gap-1.5">
             <SyncStatusChip />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => setContextPanel((panel) => panel === 'overview' ? null : 'overview')}
-              title={contextPanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
-            >
-              {contextPanel === 'overview' ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-            </Button>
             <ChatAuthBadge
               isLoggedIn={isLoggedIn}
               userId={userId}
@@ -361,6 +321,7 @@ export function ChatSection() {
               <ChatPanel
                 key={selectedRoom.id}
                 room={selectedRoom}
+                rooms={rooms}
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
               />
@@ -371,24 +332,6 @@ export function ChatSection() {
               />
             )}
           </div>
-
-          {contextPanel === 'overview' && (
-            <>
-              <button
-                type="button"
-                aria-label="关闭空间概览"
-                className="fixed inset-0 z-30 bg-background/70 md:hidden"
-                onClick={() => setContextPanel(null)}
-              />
-              <div className="w-56 shrink-0 flex flex-col border-l border-border overflow-hidden
-                max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl max-md:bg-card">
-                <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
-                  <RoomTopology rooms={rooms} selectedRoomId={selectedRoomId} members={roomMembers} />
-                  <HumanPanel />
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </div>
       </RuntimeMapProvider>
