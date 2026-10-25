@@ -282,19 +282,20 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
-  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。同组续接
-  // 消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
+  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。
+  // 配色沿用 2026-10 装验口径：自己=emerald 浅底，Agent=中性浅底，无阴影。
+  // 同组续接消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
   const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
     'break-words text-[13.5px] leading-relaxed text-foreground',
     isTextBubble
-      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2 shadow-sm'
+      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
       : 'w-full',
     isTextBubble && !isContinuation ? 'rounded-tl-md' : '',
     isTextBubble
       ? message.isMe
-        ? 'border-border/60 bg-muted/50'
-        : 'border-border/60 bg-card'
+        ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
+        : 'bg-muted/60 text-foreground border-border/40'
       : '',
     message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',

@@ -256,6 +256,9 @@ Type /approve to approve, or send any message to deny.`,
     expect(textBubble).toHaveClass('w-fit');
     expect(textBubble).toHaveClass('max-w-full');
     expect(textBubble).toHaveClass('rounded-2xl');
+    expect(textBubble).toHaveClass('bg-muted/60');
+    expect(textBubble).toHaveClass('border-border/40');
+    expect(textBubble).not.toHaveClass('shadow-sm');
     textMessage.unmount();
 
     renderWithProvider(
@@ -285,6 +288,29 @@ Type /approve to approve, or send any message to deny.`,
         element.classList.contains('w-[min(100%,56rem)]')
       )
     ).toBeInTheDocument();
+  });
+
+  it('tints own text bubbles emerald without a drop shadow', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$own-text',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: '我的消息',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const ownBubble = screen.getByText('我的消息').parentElement;
+    expect(ownBubble).toHaveClass('bg-emerald-500/10');
+    expect(ownBubble).toHaveClass('border-emerald-500/25');
+    expect(ownBubble).not.toHaveClass('shadow-sm');
   });
 
   it.each([
