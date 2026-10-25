@@ -226,8 +226,8 @@ export function ChatRoom({
     });
   }, [allEvents, currentUserId, runtimeMap]);
 
-  // 线程 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
-  // 「按 root event 查 relations」接口，没有房间级线程列表，所以这里
+  // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
+  // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里
   // 只展示当前已同步、确有回复的根消息，不另造索引。
   const threadRoots = useMemo(
     () => formattedMessages.filter((message) => (message.replyCount ?? 0) > 0),

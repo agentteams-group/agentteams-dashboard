@@ -5,6 +5,7 @@ import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
+import { CHAT_COLUMN_CLASS } from './layout';
 import { filterEmoji } from './composer-commands';
 import { FileRefPickerDialog } from './components/FileRefPickerDialog';
 import type { FileRef } from '@/lib/file-refs';
@@ -374,7 +375,7 @@ export function ChatComposer({
 
   return (
     <div className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
-      <div className="mx-auto w-full max-w-[780px]">
+      <div className={`mx-auto w-full ${CHAT_COLUMN_CLASS}`}>
       {/* Edit session bar (element-web style) */}
       {editSession && (
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">

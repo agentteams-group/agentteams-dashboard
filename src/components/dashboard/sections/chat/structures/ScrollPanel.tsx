@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { CHAT_COLUMN_CLASS } from '../layout';
 import type { GroupedMessage } from '../grouper/MainGrouper';
 
 export interface ScrollPanelHandle {
@@ -32,6 +33,21 @@ interface ScrollPanelProps {
 const BOTTOM_THRESHOLD = 100;
 
 /**
+ * Virtualized lists identify items by number, not by React key. When a page
+ * of older messages is prepended the numbers shift, so Virtuoso must be told
+ * through `firstItemIndex`; otherwise the viewport jumps to the top and the
+ * scroll position appears to "stick" or get lost.
+ */
+const FIRST_ITEM_INDEX = 1_000_000;
+
+function keyOf(item: GroupedMessage, index: number): string {
+  const timelineItem = item as unknown as { key?: string; gm?: GroupedMessage };
+  return String(
+    timelineItem.key ?? timelineItem.gm?.message.id ?? item.message?.id ?? index
+  );
+}
+
+/**
  * Virtualized timeline that preserves the chat behavior: a freshly opened room
  * lands on the latest message, appended messages follow only while pinned to
  * the bottom, and older messages load from the top edge.
@@ -55,6 +71,38 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   const initialMountRef = useRef(true);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const indexStateRef = useRef({ firstIndex: FIRST_ITEM_INDEX, keys: [] as string[] });
+
+  const firstItemIndex = useMemo(() => {
+    const keys = items.map(keyOf);
+    const state = indexStateRef.current;
+    let nextFirst = state.firstIndex;
+
+    // Anchor on the first item that also existed in the previous list so its
+    // absolute index (firstItemIndex + position) stays constant. Prepending a
+    // page moves the anchor right, lowering firstItemIndex; appending leaves
+    // it untouched.
+    if (state.keys.length > 0 && keys.length > 0) {
+      const previousPositions = new Map<string, number>();
+      state.keys.forEach((key, index) => previousPositions.set(key, index));
+      for (let index = 0; index < keys.length; index += 1) {
+        const previousIndex = previousPositions.get(keys[index]);
+        if (previousIndex !== undefined) {
+          nextFirst = state.firstIndex + previousIndex - index;
+          break;
+        }
+      }
+    }
+
+    const changed =
+      nextFirst !== state.firstIndex ||
+      state.keys.length !== keys.length ||
+      state.keys[0] !== keys[0] ||
+      state.keys[state.keys.length - 1] !== keys[keys.length - 1];
+    if (changed) indexStateRef.current = { firstIndex: nextFirst, keys };
+
+    return nextFirst;
+  }, [items]);
 
   const handleAtBottomChange = useCallback((atBottom: boolean) => {
     if (atBottomRef.current !== atBottom) {
@@ -129,7 +177,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     return (
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {Array.from({ length: 8 }).map((_e, i) => (
-          <div key={i} className="mx-auto flex w-full max-w-[780px] gap-3">
+          <div key={i} className={`mx-auto flex w-full ${CHAT_COLUMN_CLASS} gap-3`}>
             <div className="w-[30px] h-[30px] rounded-[9px] bg-muted animate-pulse shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-3 w-20 bg-muted rounded animate-pulse" />
@@ -161,25 +209,29 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
       </span>
       <Virtuoso
         ref={virtuosoRef}
-        className={`flex-1 custom-scrollbar ${className ?? ''}`}
+        className={`flex-1 min-h-0 overscroll-contain custom-scrollbar ${className ?? ''}`}
         data={items}
-        computeItemKey={(index, item) => {
-          const timelineItem = item as unknown as { key?: string; gm?: GroupedMessage };
-          return timelineItem.key ?? timelineItem.gm?.message.id ?? item.message?.id ?? index;
+        firstItemIndex={firstItemIndex}
+        computeItemKey={(index, item) => keyOf(item, index)}
+        itemContent={(index, item) => {
+          // Virtuoso reports offsets in the shifted space (data index +
+          // firstItemIndex), while scrollToIndex expects data indices.
+          const dataIndex = index >= firstItemIndex ? index - firstItemIndex : index;
+          return (
+            <div
+              data-timeline-index={dataIndex}
+              className={`mx-auto w-full ${CHAT_COLUMN_CLASS} px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
+                highlightedIndex === dataIndex ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
+              }`}
+            >
+              {itemContent(dataIndex, item)}
+            </div>
+          );
         }}
-        itemContent={(index, item) => (
-          <div
-            data-timeline-index={index}
-            className={`mx-auto w-full max-w-[812px] px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
-              highlightedIndex === index ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
-            }`}
-          >
-            {itemContent(index, item)}
-          </div>
-        )}
+        increaseViewportBy={{ top: 600, bottom: 600 }}
         atBottomThreshold={BOTTOM_THRESHOLD}
         atBottomStateChange={handleAtBottomChange}
-        followOutput={(isAtBottom) => (atBottomRef.current || isAtBottom ? 'auto' : false)}
+        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
         startReached={() => {
           if (hasNextPage && !isFetchingNextPage) onLoadMore();
         }}

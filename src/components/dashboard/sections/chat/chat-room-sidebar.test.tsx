@@ -110,17 +110,24 @@ describe('ChatRoomSidebar', () => {
     expect(screen.getByText('QwenPaw')).toBeInTheDocument();
   });
 
-  it('filters by kind: 群组 / 私聊 chips', () => {
+  it('filters by kind through the category menu', async () => {
     renderSidebar({
       rooms: [
         room({ id: '!g:test', name: 'GroupRoom', type: 'team', memberCount: 5, lastMessageTs: 10 }),
         room({ id: '!d:test', name: 'DmRoom', type: 'worker', memberCount: 2, lastMessageTs: 20 }),
       ],
     });
-    fireEvent.change(screen.getByLabelText('房间分类'), { target: { value: 'group' } });
+
+    // The category control must be the app's menu, never a native OS select.
+    expect(document.querySelector('select')).toBeNull();
+
+    fireEvent.pointerDown(screen.getByLabelText('房间分类'), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '群组' }));
     expect(screen.getByText('GroupRoom')).toBeInTheDocument();
     expect(screen.queryByText('DmRoom')).toBeNull();
-    fireEvent.change(screen.getByLabelText('房间分类'), { target: { value: 'dm' } });
+
+    fireEvent.pointerDown(screen.getByLabelText('房间分类'), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '私聊' }));
     expect(screen.getByText('DmRoom')).toBeInTheDocument();
     expect(screen.queryByText('GroupRoom')).toBeNull();
   });

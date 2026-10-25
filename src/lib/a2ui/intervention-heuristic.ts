@@ -49,6 +49,12 @@ const DIGIT_MARKER = String.raw`(?:[（(\[【]\s*(\d{1,2})\s*[）)\]】]|(?:选�
 const ALPHA_MARKER = String.raw`(?:[（(\[【]\s*([A-Fa-f])\s*[）)\]】]|(?:选项\s*)?([A-Fa-f])\s*${SEP_CLASS})`;
 const DIGIT_OPTION_RE = new RegExp(String.raw`^\s*${DIGIT_MARKER}\s*(.+?)\s*$`);
 const ALPHA_OPTION_RE = new RegExp(String.raw`^\s*${ALPHA_MARKER}\s*(.+?)\s*$`);
+// Online agents also write `- **A** 尾焰特效 + 更强加速感`: after stripping the
+// bullet and bold markers the separator is a plain space. Restrict this form
+// to uppercase letters so ordinary prose ("a quick ...") is not swallowed.
+const ALPHA_SPACE_OPTION_RE = /^\s*([A-F])\s+(\S.*?)\s*$/;
+// Inline options on the heading row (`**风格**：A 深色 ／ B 浅色 ／ C 赛博`).
+const INLINE_ALPHA_OPTION_RE = /(?:^|[／/|｜;；])\s*([A-F])\s+/g;
 const DIGIT_INLINE_RE = new RegExp(
   String.raw`(?:[（(\[【]\s*(\d{1,2})\s*[）)\]】]|(?:^|\s)(?:选项\s*)?(\d{1,2})\s*${SEP_CLASS})\s*`,
   'g'
@@ -208,6 +214,50 @@ interface OptionMatch {
   seq: number;
 }
 
+/**
+ * Options written on the heading row itself
+ * (`**风格**：A 深色科技风 ／ B 浅色极简 ／ C 赛博朋克`). Only an explicit
+ * colon separates the heading from the options, the whole option run must
+ * start at A / ① and stay consecutive — prose containing "A / B" is not
+ * promoted on its own.
+ */
+function parseInlineAlphaOptions(text: string): Array<{ id: string; label: string }> | null {
+  const matches = [...text.matchAll(INLINE_ALPHA_OPTION_RE)];
+  if (matches.length < 2 || matches[0].index !== 0) return null;
+  const items: Array<{ id: string; label: string }> = [];
+  for (let i = 0; i < matches.length; i += 1) {
+    const marker = matches[i][1];
+    if (marker !== ALPHA_INDEX[i]) return null;
+    const labelStart = (matches[i].index ?? 0) + matches[i][0].length;
+    const labelEnd = i + 1 < matches.length ? (matches[i + 1].index ?? text.length) : text.length;
+    const label = text.slice(labelStart, labelEnd).replace(/[／/|｜;；]\s*$/, '').trim();
+    if (!label) return null;
+    items.push({ id: `opt-${marker}`, label });
+  }
+  return items;
+}
+
+function parseInlineCircledOptions(text: string): Array<{ id: string; label: string }> | null {
+  const matches = [...text.matchAll(CIRCLED_RE)];
+  if (matches.length < 2 || matches[0].index !== 0) return null;
+  // Trailing references ("推荐 ①③⑤") reuse circled digits but break the
+  // ①→② sequence; they belong to the last option's label, not to new options.
+  let count = 0;
+  while (count < matches.length && CIRCLED_INDEX.indexOf(matches[count][0]) === count) {
+    count += 1;
+  }
+  if (count < 2) return null;
+  const items: Array<{ id: string; label: string }> = [];
+  for (let i = 0; i < count; i += 1) {
+    const labelStart = (matches[i].index ?? 0) + matches[i][0].length;
+    const labelEnd = i + 1 < count ? (matches[i + 1].index ?? text.length) : text.length;
+    const label = text.slice(labelStart, labelEnd).trim();
+    if (!label) return null;
+    items.push({ id: `opt-${matches[i][0]}`, label });
+  }
+  return items;
+}
+
 function matchOption(
   line: string,
   kind: 'digit' | 'alpha'
@@ -215,7 +265,16 @@ function matchOption(
   const text = stripInlineMarkdown(line);
   const re = kind === 'digit' ? DIGIT_OPTION_RE : ALPHA_OPTION_RE;
   const m = re.exec(text);
-  if (!m) return null;
+  if (!m) {
+    if (kind !== 'alpha') return null;
+    const space = ALPHA_SPACE_OPTION_RE.exec(text);
+    if (!space) return null;
+    return {
+      id: `opt-${space[1]}`,
+      label: space[2],
+      seq: ALPHA_INDEX.indexOf(space[1]) + 1,
+    };
+  }
   const raw = m[1] ?? m[2];
   if (!raw) return null;
   if (kind === 'digit') {
@@ -306,6 +365,41 @@ interface OptionGroup {
   multiSelect: boolean;
 }
 
+/** 「标签：A 甲 ／ B 乙」整行形态（线上多题消息常见）。 */
+function collectInlineGroups(lines: string[]): OptionGroup[] {
+  const groups: OptionGroup[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const text = stripInlineMarkdown(lines[i] ?? '');
+    if (!text) continue;
+    const colon = text.search(/[：:]/);
+    if (colon <= 0 || colon >= text.length - 1) continue;
+    const prefix = text.slice(0, colon + 1).trim();
+    const optionsText = text.slice(colon + 1).trim();
+    if (!optionsText) continue;
+
+    const heading = stripHeadingOrdinal(prefix);
+    if (!heading || heading.length > 40 || PROCEDURE_HINT_RE.test(heading)) continue;
+
+    const alphaOptions = parseInlineAlphaOptions(optionsText);
+    const circledOptions = alphaOptions ? null : parseInlineCircledOptions(optionsText);
+    const options = alphaOptions ?? circledOptions;
+    if (!options) continue;
+
+    const multiSelect = circledOptions
+      ? !/[（(][^）)]*单选[^）)]*[）)]/.test(`${prefix}${optionsText}`)
+      : /多选|可多选|多项选择/.test(prefix);
+    groups.push({
+      headingIndex: i,
+      start: i,
+      end: i + 1,
+      question: normalizeQuestion(heading),
+      options,
+      multiSelect,
+    });
+  }
+  return groups;
+}
+
 /** 扫出所有「标题 + 连续编号选项」组（数字/字母各扫一轮，圈号单行另扫）。 */
 function collectOptionGroups(lines: string[]): OptionGroup[] {
   const groups: OptionGroup[] = [];
@@ -390,6 +484,9 @@ function collectOptionGroups(lines: string[]): OptionGroup[] {
       multiSelect: heading.multiSelect || !/[（(][^）)]*单选[^）)]*[）)]/.test(heading.question),
     });
   }
+
+  // 选项直接挂在标题行上（`2. **风格**：A 深色 ／ B 浅色`）。
+  groups.push(...collectInlineGroups(lines));
 
   // 多组按出现顺序排列；重叠（标题落在前一组选项范围内）的丢弃，保持保守。
   groups.sort((a, b) => a.start - b.start);

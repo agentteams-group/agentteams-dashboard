@@ -60,7 +60,7 @@ interface ReviewReportCardProps {
  *   放行入口（同一轮次幂等）。
  */
 export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardProps) {
-  // 报告卡所在房间 = 当前活跃房间（聊天面板内渲染；线程面板同房间）。
+  // 报告卡所在房间 = 当前活跃房间（聊天面板内渲染；话题面板同房间）。
   const roomId = useRoomMetaStore((s) => s.activeRoomId) ?? undefined;
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const currentUserId = useMatrixStore((s) => s.userId);

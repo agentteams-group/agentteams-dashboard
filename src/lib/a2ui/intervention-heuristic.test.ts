@@ -272,6 +272,59 @@ describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
     expect(result?.after).not.toContain('A. 轻量');
   });
 
+  it('加粗字母 + 空格（线上 `- **A** 选项`）也能升格', () => {
+    const body = [
+      '我看不到图，先确认一下方向。现在就用这个格式重问：',
+      '',
+      '**第 1 个问题：飞机页面还想加点什么？**',
+      '',
+      '- **A** 尾焰特效 + 更强加速感',
+      '- **B** 夜间星空模式',
+      '- **C** 背景音效',
+      '- **D** 躲云朵小游戏',
+      '',
+      '也可以直接输入你的想法：',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.question).toBe('第 1 个问题：飞机页面还想加点什么？');
+    expect(result?.options.map((o) => o.id)).toEqual(['opt-A', 'opt-B', 'opt-C', 'opt-D']);
+    expect(result?.options[0].label).toBe('尾焰特效 + 更强加速感');
+    expect(result?.before).toContain('先确认一下方向');
+    expect(result?.after).toContain('也可以直接输入');
+  });
+
+  it('标题行内联选项（`风格：A 甲 ／ B 乙 ／ C 丙`）升格为多问题卡', () => {
+    const body = [
+      '接着问剩下几个，都有推荐项：',
+      '',
+      '2. **风格**：A 深色科技风（推荐）／ B 浅色极简 ／ C 赛博朋克',
+      '3. **页面板块**（多选）：① 首屏大标题 ② 产品参数 ③ 技术亮点 —— 推荐 ①③',
+      '4. **3D 方案**：A Three.js 真 3D 模型 ／ B 纯 CSS 伪 3D',
+      '5. **语言**：A 中文为主（推荐）／ B 中英双语 ／ C 全英文',
+      '',
+      '回复格式举例：`2A 3①③ 4A 5A`，或直接「按推荐」。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.questions?.map((q) => q.question)).toEqual([
+      '风格：',
+      '页面板块（多选）：',
+      '3D 方案：',
+      '语言：',
+    ]);
+    expect(result?.questions?.[0].options.map((o) => o.id)).toEqual(['opt-A', 'opt-B', 'opt-C']);
+    expect(result?.questions?.[0].options[1].label).toBe('浅色极简');
+    expect(result?.questions?.[1].multi_select).toBe(true);
+    expect(result?.questions?.[1].options.map((o) => o.id)).toEqual(['opt-①', 'opt-②', 'opt-③']);
+    expect(result?.questions?.[1].options[2].label).toBe('技术亮点 —— 推荐 ①③');
+    expect(result?.questions?.[3].options.map((o) => o.label)).toEqual([
+      '中文为主（推荐）',
+      '中英双语',
+      '全英文',
+    ]);
+    expect(result?.before).toContain('接着问剩下几个');
+    expect(result?.after).toContain('回复格式举例');
+  });
+
   it('等号分隔的 `1 = 选项` 升格（QwenPaw 逐题追问形态）', () => {
     const body = [
       '收到，我换个方式——一次只问一个问题，尽量短。我们先定第一个：',

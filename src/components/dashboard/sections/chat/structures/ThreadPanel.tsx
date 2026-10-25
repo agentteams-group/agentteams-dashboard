@@ -23,7 +23,7 @@ interface ThreadPanelProps {
   workerMatrixUserIds?: string[];
 }
 
-/** 线程 body（无面板外框）：根消息 + Matrix m.thread 回复 + 回复框。 */
+/** 话题 body（无面板外框）：根消息 + Matrix m.thread 回复 + 回复框。 */
 export function ThreadPanel({
   roomId,
   rootMessage,
@@ -143,10 +143,10 @@ export function ThreadPanel({
           memberMap={memberMap}
         />
         {threadQuery.isLoading ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">加载线程回复...</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">加载话题回复...</div>
         ) : threadQuery.isError ? (
           <div className="px-3 py-2 flex flex-col items-start gap-1.5">
-            <span className="text-xs text-red-500">线程加载失败</span>
+            <span className="text-xs text-red-500">话题加载失败</span>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => threadQuery.refetch()}>
               重试
             </Button>
@@ -182,7 +182,7 @@ export function ThreadPanel({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isLoggedIn ? '回复此线程... (Enter 发送, Shift+Enter 换行)' : '请先登录后再回复'}
+          placeholder={isLoggedIn ? '回复此话题... (Enter 发送, Shift+Enter 换行)' : '请先登录后再回复'}
           disabled={!isLoggedIn}
           rows={1}
           className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"

@@ -19,7 +19,7 @@ const TABS: Array<{ id: RoomContextTab; label: string }> = [
   { id: 'tasks', label: '任务' },
   { id: 'members', label: '成员' },
   { id: 'files', label: '文件' },
-  { id: 'thread', label: '线程' },
+  { id: 'thread', label: '话题' },
   { id: 'overview', label: '概览' },
 ];
 
@@ -44,7 +44,7 @@ interface RoomContextPanelProps {
 }
 
 /**
- * 房间右侧唯一的上下文面板（320px）：任务/成员/文件/线程/概览共用一条
+ * 房间右侧唯一的上下文面板（320px）：任务/成员/文件/话题/概览共用一条
  * tab 头与关闭按钮，数据全部来自 AgentTeams 底座（Matrix + Controller），
  * <lg 统一收成右侧抽屉 —— 不再出现宽度 208/320/256~600 三套侧栏。
  */
@@ -159,9 +159,9 @@ function ThreadList({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <MessagesSquare className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
-        <p className="text-xs font-medium">本空间暂无回复线程</p>
+        <p className="text-xs font-medium">本空间暂无回复话题</p>
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          在任意消息上使用「回复」开启线程，回复数来自 Matrix m.thread 关系。
+          在任意消息上使用「回复」开启话题，回复数来自 Matrix m.thread 关系。
         </p>
       </div>
     );

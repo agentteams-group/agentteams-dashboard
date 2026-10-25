@@ -11,6 +11,11 @@ import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-
 import { InterventionCard } from '../intervention-card';
 import { ReviewReportCard } from '../review-report-card';
 import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
+import {
+  isManagerSender,
+  parseWorkerLifecycleNotice,
+  type WorkerLifecycleNotice,
+} from '@/lib/chat-lifecycle-notice';
 import { StreamingCard } from '../streaming-card';
 import { ThinkingCard } from '../thinking-card';
 import { A2uiMessage } from '../a2ui-message';
@@ -26,7 +31,7 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, Copy, Loader2 } from 'lucide-react';
+import { Check, CheckCheck, Copy, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
@@ -71,6 +76,41 @@ function MessageTime({ timestamp }: { timestamp: number }) {
     <span className="text-[10px] text-muted-foreground/60 select-none">
       {time}
     </span>
+  );
+}
+
+/**
+ * Controller lifecycle announcements (worker container paused / resumed) are
+ * status, not conversation: show a compact centered notice instead of a
+ * sender bubble, while keeping the original text in the hover title.
+ */
+function LifecycleNoticeRow({
+  notice,
+  timestamp,
+}: {
+  notice: WorkerLifecycleNotice;
+  timestamp: number;
+}) {
+  const Icon = notice.kind === 'paused' ? PauseCircle : PlayCircle;
+  const label =
+    notice.kind === 'paused'
+      ? '已自动暂停，指派任务后将自动恢复'
+      : '已自动恢复';
+  return (
+    <div className="flex justify-center py-1" data-lifecycle-notice={notice.kind}>
+      <div
+        role="status"
+        title={notice.body}
+        className="flex max-w-[92%] items-start gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-[11px] leading-relaxed text-muted-foreground"
+      >
+        <Icon className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 break-words">
+          <span className="font-medium text-foreground/80">Worker {notice.worker}</span>{' '}
+          {label}
+        </span>
+        <MessageTime timestamp={timestamp} />
+      </div>
+    </div>
   );
 }
 
@@ -199,6 +239,16 @@ export function MessageBubble({
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
 
+  // The manager bot's container lifecycle lines are rendered as a status
+  // notice rather than a conversation bubble.
+  const lifecycleNotice = useMemo(() => {
+    if (message.isMe || message.isStreaming) return null;
+    const label = message.workerName || memberMap?.[message.sender] || senderLabel;
+    return isManagerSender(message.sender, label)
+      ? parseWorkerLifecycleNotice(message.content)
+      : null;
+  }, [message.isMe, message.isStreaming, message.workerName, message.sender, message.content, memberMap, senderLabel]);
+
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
     return normalizeToBlocks({
       body: message.content,
@@ -291,7 +341,7 @@ export function MessageBubble({
     isTextBubble
       ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
       : 'w-full',
-    isTextBubble && !isContinuation ? 'rounded-tl-md' : '',
+    isTextBubble && !isContinuation ? (message.isMe ? 'rounded-tr-md' : 'rounded-tl-md') : '',
     isTextBubble
       ? message.isMe
         ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
@@ -301,9 +351,13 @@ export function MessageBubble({
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
+  if (lifecycleNotice) {
+    return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
+  }
+
   return (
     <div
-      className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''}`}
+      className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
@@ -311,8 +365,7 @@ export function MessageBubble({
         setShowActions(v => !v);
       }}
     >
-      {/* Avatar column: the stream is left-aligned for every sender (design
-          prototype), so own messages sit on the same axis as agents.
+      {/* Avatar column: mirrors the bubble side (own messages on the right).
           C (#1295): worker senders' avatars are clickable → read-only
           QwenPaw sessions of that worker ("补头": the headless worker's
           sessions, viewable from the room). */}
@@ -339,9 +392,9 @@ export function MessageBubble({
         )}
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col items-start">
+      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
-          <div className="mb-1 flex w-full min-w-0 flex-wrap items-center gap-2">
+          <div className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
             <span className={`text-[12.5px] font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
               {senderLabel}
             </span>
@@ -368,7 +421,7 @@ export function MessageBubble({
               <span className="text-[10px] text-red-500 italic">发送失败</span>
             )}
             {/* 设计稿把时间放在名字行最右侧；发送/已读标记跟随时间一起排。 */}
-            <span className="ml-auto flex shrink-0 items-center gap-1 pl-3">
+            <span className={`flex shrink-0 items-center gap-1 ${message.isMe ? 'mr-auto pr-3' : 'ml-auto pl-3'}`}>
               <MessageTime timestamp={message.timestamp} />
               {message.isMe && message.status === 'sending' && (
                 <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" aria-label="发送中" />
@@ -387,9 +440,9 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className="flex w-full items-start gap-2">
+        <div className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
-            <div className="w-full items-start flex flex-col gap-1.5">
+            <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
@@ -417,7 +470,7 @@ export function MessageBubble({
               </div>
             </div>
           ) : (
-            <div className="flex w-full min-w-0 flex-col gap-1.5 items-start">
+            <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
               {/* Optimistic local sends carry refs directly (no event content yet). */}
               {message.fileRefs && message.fileRefs.length > 0 && (
                 <div className="w-full">
@@ -628,7 +681,7 @@ export function MessageBubble({
               onOpenThread(message);
             }}
             className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-primary"
-            title="在线程中查看回复"
+            title="在话题中查看回复"
           >
             <span>↩</span>
             {message.replyCount} 条回复
@@ -637,7 +690,7 @@ export function MessageBubble({
 
         {actionsVisible && (
           <div
-            className={`z-10 mt-1 flex justify-start gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute md:right-1 ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
+            className={`z-10 mt-1 flex gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute ${message.isMe ? 'justify-end md:left-1' : 'justify-start md:right-1'} ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (
@@ -659,7 +712,7 @@ export function MessageBubble({
               <ActionButton title="回复" icon={ICON_PATHS.reply} onClick={() => onReply(message)} />
             )}
             {onOpenThread && (
-              <ActionButton title="在线程中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
+              <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && (
               <ActionButton

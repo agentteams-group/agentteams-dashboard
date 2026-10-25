@@ -251,7 +251,7 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     // Text messages render as content-hugging bubbles that never exceed the
-    // 780px reading column; file/media tiles keep the full column width.
+    // shared reading column; file/media tiles keep the full column width.
     const textBubble = screen.getByText('宽内容').parentElement;
     expect(textBubble).toHaveClass('w-fit');
     expect(textBubble).toHaveClass('max-w-full');
@@ -371,6 +371,59 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     assertRendered();
+  });
+
+  it('renders manager container lifecycle lines as a compact notice', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$paused',
+          sender: '@manager:matrix-local.agentteams.io:18080',
+          senderShort: 'manager',
+          content:
+            'Worker ceshi container has been automatically paused due to idle timeout. It will be automatically resumed when a task is assigned.',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender
+        isContinuation={false}
+      />
+    );
+
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveAttribute(
+      'title',
+      expect.stringContaining('automatically paused'),
+    );
+    expect(notice).toHaveTextContent('Worker ceshi');
+    expect(notice).toHaveTextContent('已自动暂停');
+    expect(notice.className).toContain('text-[11px]');
+    // The sender avatar/name is replaced by the notice layout.
+    expect(screen.queryByText('manager')).toBeNull();
+    expect(screen.queryByText('MA')).toBeNull();
+  });
+
+  it('keeps lifecycle text as a normal message when a worker sends it', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$worker-paused-quote',
+          sender: '@ceshi:matrix-local.agentteams.io:18080',
+          senderShort: 'ceshi',
+          content:
+            'Worker ceshi container has been automatically paused due to idle timeout. It will be automatically resumed when a task is assigned.',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByText(/automatically paused/)).toBeInTheDocument();
   });
 
   it('renders an attachment block for long-message metadata', () => {
@@ -710,6 +763,33 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
 
+  it('线上 `- **A**` 加粗字母选项也升格为卡片', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          ...baseMessage,
+          content: [
+            '**第 1 个问题：飞机页面还想加点什么？**',
+            '',
+            '- **A** 尾焰特效 + 更强加速感',
+            '- **B** 夜间星空模式',
+            '- **C** 背景音效',
+            '',
+            '也可以直接输入你的想法：',
+          ].join('\n'),
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('第 1 个问题：飞机页面还想加点什么？')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /尾焰特效/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /夜间星空模式/ })).toBeInTheDocument();
+    expect(screen.getByText('也可以直接输入你的想法：')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
+  });
+
   it('流式中的消息不升格（等定稿再渲染卡片）', () => {
     renderWithProvider(
       <MessageBubble
@@ -741,5 +821,57 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       />,
     );
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+});
+
+describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）', () => {
+  it('自己的消息整行镜像：flex-row-reverse + items-end', () => {
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$align-mine',
+          sender: '@me:example.com',
+          senderShort: 'me',
+          content: '我发的',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: true,
+        }}
+        showSender
+        isContinuation={false}
+      />
+    );
+
+    const row = container.firstElementChild;
+    expect(row?.className).toContain('flex-row-reverse');
+    const column = screen.getByText('我发的').closest('.flex.flex-col');
+    expect(column?.className).toContain('items-end');
+    const bubble = screen.getByText('我发的').parentElement;
+    expect(bubble?.className).toContain('rounded-tr-md');
+  });
+
+  it('他人（Agent）的消息保持左侧：不镜像、items-start', () => {
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$align-agent',
+          sender: '@manager:example.com',
+          senderShort: 'manager',
+          content: 'Agent 回复',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+        }}
+        showSender
+        isContinuation={false}
+      />
+    );
+
+    const row = container.firstElementChild;
+    expect(row?.className).not.toContain('flex-row-reverse');
+    const column = screen.getByText('Agent 回复').closest('.flex.flex-col');
+    expect(column?.className).toContain('items-start');
+    const bubble = screen.getByText('Agent 回复').parentElement;
+    expect(bubble?.className).toContain('rounded-tl-md');
   });
 });

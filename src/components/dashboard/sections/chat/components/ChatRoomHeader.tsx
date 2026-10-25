@@ -164,7 +164,7 @@ export function ChatRoomHeader({
         <ContextChip
           active={activePanel === 'thread'}
           icon={MessagesSquare}
-          label="线程"
+          label="话题"
           count={threadCount}
           onClick={() => onTogglePanel('thread')}
         />

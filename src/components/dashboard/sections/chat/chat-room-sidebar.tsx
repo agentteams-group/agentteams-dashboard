@@ -57,6 +57,13 @@ function persistSidebarWidth(w: number): void {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { matrixApi } from '@/lib/matrix-api';
 import { useInviteStore, type Invite } from '@/lib/matrix-invite-store';
@@ -350,22 +357,33 @@ export function ChatRoomSidebar({
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="whitespace-nowrap text-xs font-semibold tracking-wide">协作空间</span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <div className="relative flex h-7 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
-            <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
-            {width >= 220 && (
-              <span className="whitespace-nowrap text-[10px]">{KIND_LABELS[kindFilter]}</span>
-            )}
-            <select
-              aria-label="房间分类"
-              className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
-              value={kindFilter}
-              onChange={(e) => setKindFilter(e.target.value as KindFilter)}
-            >
-              {(['all', 'space', 'group', 'dm'] as const).map((k) => (
-                <option key={k} value={k}>{KIND_LABELS[k]}</option>
-              ))}
-            </select>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="房间分类"
+                title={`房间分类：${KIND_LABELS[kindFilter]}`}
+                className="flex h-7 cursor-pointer items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+              >
+                <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
+                {width >= 220 && (
+                  <span className="whitespace-nowrap text-[10px]">{KIND_LABELS[kindFilter]}</span>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-32">
+              <DropdownMenuRadioGroup
+                value={kindFilter}
+                onValueChange={(value) => setKindFilter(value as KindFilter)}
+              >
+                {(['all', 'space', 'group', 'dm'] as const).map((k) => (
+                  <DropdownMenuRadioItem key={k} value={k} className="cursor-pointer text-xs">
+                    {KIND_LABELS[k]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
