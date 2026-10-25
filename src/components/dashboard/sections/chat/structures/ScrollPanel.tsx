@@ -129,8 +129,8 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     return (
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {Array.from({ length: 8 }).map((_e, i) => (
-          <div key={i} className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-muted animate-pulse shrink-0" />
+          <div key={i} className="mx-auto flex w-full max-w-[780px] gap-3">
+            <div className="w-[30px] h-[30px] rounded-[9px] bg-muted animate-pulse shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-3 w-20 bg-muted rounded animate-pulse" />
               <div className="h-16 w-3/4 bg-muted rounded-lg animate-pulse" />
@@ -170,7 +170,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
         itemContent={(index, item) => (
           <div
             data-timeline-index={index}
-            className={`px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
+            className={`mx-auto w-full max-w-[812px] px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
               highlightedIndex === index ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
             }`}
           >

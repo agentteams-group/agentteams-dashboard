@@ -30,7 +30,7 @@ export function TypingIndicator({ users }: TypingIndicatorProps) {
         initial={{ opacity: 0, height: 0 }}
         animate={{ opacity: 1, height: 'auto' }}
         exit={{ opacity: 0, height: 0 }}
-        className="px-4 py-1.5"
+        className="mx-auto w-full max-w-[812px] px-4 py-1.5"
       >
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="flex gap-0.5">

@@ -238,7 +238,7 @@ export function ChatSection() {
   return (
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
-      <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Compact header bar */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
           <div className="flex items-center gap-2">
@@ -377,11 +377,11 @@ export function ChatSection() {
               <button
                 type="button"
                 aria-label="关闭空间概览"
-                className="fixed inset-0 z-30 bg-background/70 md:hidden"
+                className="fixed inset-0 z-30 bg-background/70 lg:hidden"
                 onClick={() => setContextPanel(null)}
               />
-              <div className="w-56 shrink-0 flex flex-col border-l border-border overflow-hidden
-                max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl max-md:bg-card">
+              <div className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border
+                max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(20rem,85vw)] max-lg:bg-card max-lg:shadow-xl">
                 <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
                   <RoomTopology rooms={rooms} selectedRoomId={selectedRoomId} members={roomMembers} />
                   <HumanPanel />

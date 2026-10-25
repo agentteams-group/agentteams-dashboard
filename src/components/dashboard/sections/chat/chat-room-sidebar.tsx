@@ -4,7 +4,7 @@ import { useSyncExternalStore, useState, useCallback, useEffect, useRef } from '
 import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
-const SIDEBAR_DEFAULT_W = 224;
+const SIDEBAR_DEFAULT_W = 264;
 const SIDEBAR_MIN_W = 176;
 const SIDEBAR_MAX_W = 448;
 const SIDEBAR_W_KEY = 'agentteams.chatSidebarWidth';
@@ -338,28 +338,16 @@ export function ChatRoomSidebar({
         }}
         className={`absolute top-0 right-[-2px] w-1 h-full cursor-col-resize z-10 transition-colors focus:bg-primary/60 focus:outline-none ${isResizing ? 'bg-primary/60' : 'bg-transparent hover:bg-primary/40'}`}
       />
-      <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold tracking-wide">协作空间</span>
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground">{visible.length} 个房间</span>
-            <div className="flex items-center rounded border border-border p-0.5" role="group" aria-label="房间分类">
-              {(['all', 'space', 'group', 'dm'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  className={`rounded px-1.5 py-0.5 text-[10px] ${kindFilter === k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setKindFilter(k)}
-                  title={k === 'all' ? '全部房间' : k === 'space' ? '空间（团队工作单元）' : k === 'group' ? '群组（成员 > 2）' : '私聊（成员 ≤ 2）'}
-                >
-                  {k === 'all' ? '全部' : k === 'space' ? '空间' : k === 'group' ? '群组' : '私聊'}
-                </button>
-              ))}
-            </div>
+      <div className="px-3 pt-3 pb-2 border-b border-border shrink-0 space-y-2">
+        {/* 头部只放标题/排序/收起：分类与搜索各占一行。原先三类控件挤在
+            同一行（最小宽约 320px），224px 侧栏里会把中文压成逐字竖排。 */}
+        <div className="flex items-center gap-2">
+          <span className="whitespace-nowrap text-xs font-semibold tracking-wide">协作空间</span>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             <div className="flex items-center rounded border border-border p-0.5" role="group" aria-label="房间排序">
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'time' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'time' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => changeSort('time')}
                 title="按最近消息时间排序（Element/插件同款）"
               >
@@ -367,7 +355,7 @@ export function ChatRoomSidebar({
               </button>
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'type' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] ${sortMode === 'type' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => changeSort('type')}
                 title="按房间类型分组（团队/Agent/Manager/房间）"
               >
@@ -383,6 +371,19 @@ export function ChatRoomSidebar({
               <PanelLeftClose className="w-3 h-3" />
             </button>
           </div>
+        </div>
+        <div className="flex items-center rounded-lg border border-border p-0.5" role="group" aria-label="房间分类">
+          {(['all', 'space', 'group', 'dm'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`flex-1 whitespace-nowrap rounded-md px-1 py-1 text-[10px] ${kindFilter === k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setKindFilter(k)}
+              title={k === 'all' ? '全部房间' : k === 'space' ? '空间（团队工作单元）' : k === 'group' ? '群组（成员 > 2）' : '私聊（成员 ≤ 2）'}
+            >
+              {k === 'all' ? '全部' : k === 'space' ? '空间' : k === 'group' ? '群组' : '私聊'}
+            </button>
+          ))}
         </div>
         <div className="relative">
           <Search

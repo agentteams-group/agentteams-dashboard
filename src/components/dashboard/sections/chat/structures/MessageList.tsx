@@ -235,14 +235,14 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
   const header = useMemo(() => {
     if (isFetchingNextPage) {
       return (
-        <div className="flex justify-center py-2">
+        <div className="mx-auto flex w-full max-w-[812px] justify-center px-4 py-2">
           <span className="text-xs text-muted-foreground animate-pulse">正在加载更早的消息...</span>
         </div>
       );
     }
     if (hasNextPage) {
       return (
-        <div className="flex justify-center py-2">
+        <div className="mx-auto flex w-full max-w-[812px] justify-center px-4 py-2">
           <button
             onClick={onLoadMore}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -254,7 +254,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     }
     if (grouped.length > 0) {
       return (
-        <div className="flex justify-center py-2">
+        <div className="mx-auto flex w-full max-w-[812px] justify-center px-4 py-2">
           <span className="text-[10px] text-muted-foreground/60">已经到最早的消息了</span>
         </div>
       );
@@ -306,15 +306,16 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
       {localMessages.length > 0 && (
         <div className="shrink-0 border-t border-border/40 bg-background/40">
           {localMessages.map((local) => (
-            <EventTile
-              key={local.clientId}
-              _message={toLocalDisplayMessage(local)}
-              showSender
-              isContinuation={false}
-              onDelete={onDelete}
-              onResend={onResend}
-              onCancel={onCancel}
-            />
+            <div key={local.clientId} className="mx-auto w-full max-w-[812px] px-4">
+              <EventTile
+                _message={toLocalDisplayMessage(local)}
+                showSender
+                isContinuation={false}
+                onDelete={onDelete}
+                onResend={onResend}
+                onCancel={onCancel}
+              />
+            </div>
           ))}
         </div>
       )}

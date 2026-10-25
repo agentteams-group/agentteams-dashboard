@@ -373,7 +373,8 @@ export function ChatComposer({
   };
 
   return (
-    <div className="border-t border-border px-2 sm:px-3 py-2 shrink-0 bg-card/20 relative">
+    <div className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
+      <div className="mx-auto w-full max-w-[780px]">
       {/* Edit session bar (element-web style) */}
       {editSession && (
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
@@ -396,7 +397,7 @@ export function ChatComposer({
       {menuType && (
         <div
           ref={dropdownRef}
-          className="absolute bottom-full left-3 right-3 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto custom-scrollbar z-50"
+          className="absolute bottom-full left-1/2 z-50 mb-1 w-[min(calc(100%-1.5rem),780px)] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg max-h-48 custom-scrollbar"
         >
           {menuType === 'mention' &&
             filteredMembers.map((member, idx) => {
@@ -490,9 +491,9 @@ export function ChatComposer({
         </div>
       )}
 
-      {/* Input area */}
-      <div className="flex items-end gap-2">
-        {/* File upload button */}
+      {/* Input area: bordered rounded container with an inline toolbar, as in
+          the workbench prototype (text area on top, actions on the row below). */}
+      <div className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
         <input
           ref={fileInputRef}
           type="file"
@@ -501,34 +502,6 @@ export function ChatComposer({
           multiple
           accept="image/*,.pdf,.doc,.docx,.txt,.zip,.json,.csv"
         />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={handleFileClick}
-          disabled={disabled || isUploading}
-          title="上传文件（也可直接粘贴或拖拽）"
-        >
-          {isUploading ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
-          ) : (
-            <Paperclip className="w-4 h-4" />
-          )}
-        </Button>
-
-        {fileRefTarget && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-foreground"
-            onClick={() => setPickerOpen(true)}
-            disabled={disabled}
-            title="引用工作空间文件"
-          >
-            <FolderOpen className="w-4 h-4" />
-          </Button>
-        )}
-
         <textarea
           ref={inputRef}
           value={value}
@@ -543,41 +516,72 @@ export function ChatComposer({
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
           disabled={disabled}
-          className="flex-1 min-w-0 resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50"
+          className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground/50"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
           onInput={autoResize}
         />
-        {editSession ? (
+        <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
           <Button
+            variant="ghost"
             size="sm"
-            className="h-9 w-9 p-0 shrink-0"
-            onClick={() => value.trim() && onSubmitEdit?.(value)}
-            disabled={!value.trim() || isSending}
-            title="保存编辑 (Enter)"
+            className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={handleFileClick}
+            disabled={disabled || isUploading}
+            title="上传文件（也可直接粘贴或拖拽）"
           >
-            <Pencil className="w-4 h-4" />
+            {isUploading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Paperclip className="w-4 h-4" />
+            )}
           </Button>
-        ) : (
-          <Button
-            size="sm"
-            className="h-9 w-9 p-0 shrink-0"
-            onClick={handleSend}
-            disabled={(!value.trim() && fileRefs.length === 0) || isSending}
-          >
-            {isSending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </Button>
-        )}
+
+          {fileRefTarget && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setPickerOpen(true)}
+              disabled={disabled}
+              title="引用工作空间文件"
+            >
+              <FolderOpen className="w-4 h-4" />
+            </Button>
+          )}
+
+          <p className="ml-1 hidden min-w-0 truncate text-[10px] text-muted-foreground/60 sm:block">
+            Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
+          </p>
+
+          {editSession ? (
+            <Button
+              size="sm"
+              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+              onClick={() => value.trim() && onSubmitEdit?.(value)}
+              disabled={!value.trim() || isSending}
+              title="保存编辑 (Enter)"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">保存</span>
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+              onClick={handleSend}
+              disabled={(!value.trim() && fileRefs.length === 0) || isSending}
+              title="发送 (Enter)"
+            >
+              {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">发送</span>
+            </Button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center justify-between gap-3 mt-0.5 min-h-[14px]">
-        {sendError ? (
-          <p className="text-red-500 text-[10px] truncate">发送失败: {sendError}</p>
-        ) : (
-          <span />
-        )}
-        <p className="hidden sm:block text-[10px] text-muted-foreground/60 shrink-0">
-          Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
-        </p>
+      {sendError && (
+        <p className="mt-1 px-1 text-[10px] text-red-500 truncate">发送失败: {sendError}</p>
+      )}
       </div>
 
       {fileRefTarget && (
