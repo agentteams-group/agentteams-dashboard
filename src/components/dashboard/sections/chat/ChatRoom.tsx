@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from './ChatStore';
 import { MessageList } from './structures/MessageList';
-import { ThreadPanel } from './structures/ThreadPanel';
 import type { ScrollPanelHandle } from './structures/ScrollPanel';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
@@ -11,8 +10,7 @@ import { useFileDropZone } from './hooks/useFileDropZone';
 import { useOutboundMessages } from './hooks/useOutboundMessages';
 import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
-import { MembersSidebar } from './components/MembersSidebar';
-import { WorkersFilesSidebar } from './components/WorkersFilesSidebar';
+import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
@@ -53,11 +51,12 @@ import {
 } from '@/lib/worker-session-state';
 import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
+import type { RoomInfo } from './room-info';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
-export type ChatContextPanel = 'overview' | 'members' | 'files' | 'thread' | null;
+export type ChatContextPanel = RoomContextTab | null;
 
 interface ChatRoomProps {
   roomId: string;
@@ -76,6 +75,8 @@ interface ChatRoomProps {
   workerMatrixUserIds?: string[];
   topic?: string;
   avatar?: string;
+  /** All rooms in the workspace — powers the 概览 tab topology. */
+  rooms?: RoomInfo[];
   members?: RoomMember[];
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
@@ -94,6 +95,7 @@ export function ChatRoom({
   workerMatrixUserIds,
   topic,
   avatar,
+  rooms = [],
   members: initialMembers = [],
   canSend = true,
   onSendMessage,
@@ -120,8 +122,6 @@ export function ChatRoom({
   // C (#1295): worker avatar click → read-only QwenPaw sessions dialog.
   const [chatsWorkerName, setChatsWorkerName] = useState<string | null>(null);
   const handleOpenWorkerChats = useCallback((name: string) => setChatsWorkerName(name), []);
-  const [workerPaneWidth, setWorkerPaneWidth] = useState(320);
-  const [isResizingWorkerPane, setIsResizingWorkerPane] = useState(false);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
 
   const { userId, isLoggedIn } = useMatrixStore();
@@ -143,25 +143,6 @@ export function ChatRoom({
   const prevMsgLastIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
   const didInitialScrollRef = useRef(false);
-
-  useEffect(() => {
-    if (!isResizingWorkerPane) return;
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const layout = chatLayoutRef.current;
-      if (!layout) return;
-      const bounds = layout.getBoundingClientRect();
-      setWorkerPaneWidth(Math.min(600, Math.max(256, bounds.right - event.clientX)));
-    };
-    const stopResizing = () => setIsResizingWorkerPane(false);
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', stopResizing);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', stopResizing);
-    };
-  }, [isResizingWorkerPane]);
 
   const messagesQuery = useMatrixRoomMessages(roomId);
   const membersQuery = useMatrixRoomMembers(roomId);
@@ -244,6 +225,14 @@ export function ChatRoom({
       return owner ? { ...message, runtime: owner.runtime, workerName: owner.workerName } : message;
     });
   }, [allEvents, currentUserId, runtimeMap]);
+
+  // 线程 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
+  // 「按 root event 查 relations」接口，没有房间级线程列表，所以这里
+  // 只展示当前已同步、确有回复的根消息，不另造索引。
+  const threadRoots = useMemo(
+    () => formattedMessages.filter((message) => (message.replyCount ?? 0) > 0),
+    [formattedMessages],
+  );
 
   const loadMore = useCallback(async () => {
     if (!messagesQuery.hasNextPage || messagesQuery.isFetchingNextPage) return;
@@ -589,26 +578,14 @@ export function ChatRoom({
     setContextPanel('thread');
   }, [setSelectedWorker, setContextPanel]);
 
-  const handleToggleWorkersPanel = useCallback(() => {
-    if (contextPanel === 'files') {
-      setContextPanel(null);
-      setSelectedWorker(null);
-    } else {
-      setActiveThread(null);
-      setContextPanel('files');
-    }
-  }, [contextPanel, setContextPanel, setSelectedWorker]);
-
-  const handleToggleMembersPanel = useCallback(() => {
-    setActiveThread(null);
-    setSelectedWorker(null);
-    setContextPanel(contextPanel === 'members' ? null : 'members');
-  }, [contextPanel, setContextPanel, setSelectedWorker]);
+  const handleTogglePanel = useCallback((panel: RoomContextTab) => {
+    setContextPanel(contextPanel === panel ? null : panel);
+  }, [contextPanel, setContextPanel]);
 
   return (
     <div
       ref={chatLayoutRef}
-      className={`flex h-full relative ${isResizingWorkerPane ? 'select-none' : ''} ${className}`}
+      className={`flex h-full relative ${className}`}
       onDragEnter={dropZoneProps.onDragEnter}
       onDragOver={dropZoneProps.onDragOver}
       onDragLeave={dropZoneProps.onDragLeave}
@@ -632,10 +609,9 @@ export function ChatRoom({
           workerMatrixUserIds={workerMatrixUserIds}
           sessionDot={sessionDot}
           memberCount={roomMembers.length}
-          showMembers={contextPanel === 'members'}
-          showWorkers={contextPanel === 'files'}
-          onToggleMembers={handleToggleMembersPanel}
-          onToggleWorkers={handleToggleWorkersPanel}
+          threadCount={threadRoots.length}
+          activePanel={contextPanel}
+          onTogglePanel={handleTogglePanel}
         />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {showLoadErrorBanner && (
@@ -764,7 +740,7 @@ export function ChatRoom({
             onFileUpload={handleFileUpload}
             isUploading={isUploading}
             onSlashCommand={(cmd) => {
-              if (cmd === 'members') handleToggleMembersPanel();
+              if (cmd === 'members') handleTogglePanel('members');
             }}
             onMentionsChange={setMentions}
             editSession={editSession}
@@ -775,47 +751,37 @@ export function ChatRoom({
           </div>
         </div>
 
-      {contextPanel !== null && contextPanel !== 'overview' && (
+      {contextPanel !== null && (
         <button
           type="button"
-          aria-label="关闭上下文面板"
-          className="fixed inset-0 z-30 bg-background/70 md:hidden"
-          onClick={() => {
-            setActiveThread(null);
-            setSelectedWorker(null);
-            setContextPanel(null);
-          }}
+          aria-label="关闭上下文遮罩"
+          className="fixed inset-0 z-30 bg-background/70 lg:hidden"
+          onClick={() => setContextPanel(null)}
         />
       )}
 
-      {contextPanel === 'members' && (
-        <MembersSidebar
+      {contextPanel !== null && (
+        <RoomContextPanel
+          roomId={roomId}
+          team={team}
+          rooms={rooms}
+          activeTab={contextPanel}
+          onTabChange={setContextPanel}
+          onClose={() => setContextPanel(null)}
           roomMembers={roomMembers}
           senderStatusMap={senderStatusMap}
-          onClose={() => setContextPanel(null)}
-        />
-      )}
-
-      {contextPanel === 'files' && (
-        <WorkersFilesSidebar
-          team={team}
           workerOptions={workerOptions}
           effectiveSelectedWorker={effectiveSelectedWorker}
           selectedIsTeamShared={selectedIsTeamShared}
-          workerPaneWidth={workerPaneWidth}
-          onPaneWidthChange={setWorkerPaneWidth}
-          onResizeStart={() => setIsResizingWorkerPane(true)}
-          onClose={() => { setContextPanel(null); setSelectedWorker(null); }}
           onSelectWorker={setSelectedWorker}
-        />
-      )}
-      {contextPanel === 'thread' && activeThread && (
-        <ThreadPanel
-          roomId={roomId}
-          rootMessage={activeThread}
+          activeThread={activeThread}
+          threadRoots={threadRoots}
+          onOpenThread={(message) => {
+            setActiveThread(message);
+            setContextPanel('thread');
+          }}
           memberMap={memberMap}
           workerMatrixUserIds={workerMatrixUserIds}
-          onClose={() => { setActiveThread(null); setContextPanel(null); }}
         />
       )}
     </div>

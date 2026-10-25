@@ -1,28 +1,23 @@
 'use client';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { PanelRightClose } from 'lucide-react';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import type { RoomMember } from '@/hooks/use-matrix';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 
-interface MembersSidebarProps {
+interface MembersPanelProps {
   roomMembers: RoomMember[];
   senderStatusMap: Record<string, WorkerSessionState>;
-  onClose: () => void;
 }
 
-export function MembersSidebar({ roomMembers, senderStatusMap, onClose }: MembersSidebarProps) {
+/** 房间成员 body（无面板外框）：数据 = Matrix room members + Worker 心跳。 */
+export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps) {
   return (
-    <div className="w-52 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl">
-      <div className="px-3 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-        <h4 className="font-semibold text-xs">成员 ({roomMembers.length})</h4>
-        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={onClose}>
-          <PanelRightClose className="w-3 h-3" />
-        </Button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar">
+    <div className="flex h-full min-h-0 flex-col">
+      <p className="shrink-0 px-3 py-2 text-[10px] font-semibold tracking-wide text-muted-foreground">
+        成员 ({roomMembers.length})
+      </p>
+      <div className="flex-1 space-y-0.5 overflow-y-auto custom-scrollbar p-2 pt-0">
         {roomMembers.map((member) => {
           const color = member.userId.split(':').pop() === 'agentteams.io'
             ? 'text-emerald-600'
@@ -30,14 +25,14 @@ export function MembersSidebar({ roomMembers, senderStatusMap, onClose }: Member
           return (
             <div
               key={member.userId}
-              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer"
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-accent"
               onClick={() => {
                 navigator.clipboard.writeText(member.userId);
               }}
               title="点击复制用户ID"
             >
               <span className="relative inline-flex shrink-0">
-                <Avatar className="w-6 h-6 shrink-0">
+                <Avatar className="h-6 w-6 shrink-0">
                   <AvatarFallback className={`text-[10px] ${color}`}>
                     {member.displayName.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -49,8 +44,8 @@ export function MembersSidebar({ roomMembers, senderStatusMap, onClose }: Member
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium truncate">{member.displayName}</p>
-                <p className="text-[11px] text-muted-foreground font-mono truncate">
+                <p className="truncate text-xs font-medium">{member.displayName}</p>
+                <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {member.userId.split(':')[0].slice(1)}
                 </p>
               </div>

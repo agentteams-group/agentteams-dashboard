@@ -250,9 +250,12 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    // The reading column itself is capped (780px) by ScrollPanel, so message
-    // bodies simply fill it instead of carrying their own rem caps.
-    expect(screen.getByText('宽内容').parentElement).toHaveClass('w-full');
+    // Text messages render as content-hugging bubbles that never exceed the
+    // 780px reading column; file/media tiles keep the full column width.
+    const textBubble = screen.getByText('宽内容').parentElement;
+    expect(textBubble).toHaveClass('w-fit');
+    expect(textBubble).toHaveClass('max-w-full');
+    expect(textBubble).toHaveClass('rounded-2xl');
     textMessage.unmount();
 
     renderWithProvider(

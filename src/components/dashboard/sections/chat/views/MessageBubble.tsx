@@ -152,7 +152,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className="opacity-0 group-hover/message:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-1"
+      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
       title={title}
       aria-label={title}
     >
@@ -282,17 +282,27 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
-  // 会话流对齐工作台设计稿：单一左对齐消息流、无气泡底色，正文直接落在
-  // 780px 阅读列里；自己的消息与 Agent 消息同构，仅保留发送态/回执标记。
+  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。同组续接
+  // 消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
+  const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
-    'w-full break-words text-[13.5px] leading-relaxed text-foreground',
-    message.status === 'error' ? 'rounded-md px-2 py-1 ring-1 ring-red-400/70' : '',
+    'break-words text-[13.5px] leading-relaxed text-foreground',
+    isTextBubble
+      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2 shadow-sm'
+      : 'w-full',
+    isTextBubble && !isContinuation ? 'rounded-tl-md' : '',
+    isTextBubble
+      ? message.isMe
+        ? 'border-border/60 bg-muted/50'
+        : 'border-border/60 bg-card'
+      : '',
+    message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
   return (
     <div
-      className={`group/message flex gap-3 py-1 ${!isContinuation ? 'mt-2.5' : ''}`}
+      className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
@@ -616,7 +626,7 @@ export function MessageBubble({
               e.stopPropagation();
               onOpenThread(message);
             }}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-primary"
             title="在线程中查看回复"
           >
             <span>↩</span>
@@ -626,7 +636,7 @@ export function MessageBubble({
 
         {actionsVisible && (
           <div
-            className="flex gap-1 mt-1 justify-start"
+            className={`z-10 mt-1 flex justify-start gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute md:right-1 ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (
