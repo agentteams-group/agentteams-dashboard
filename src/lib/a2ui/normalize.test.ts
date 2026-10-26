@@ -152,25 +152,75 @@ describe('normalizeToBlocks rule 7: Thinking: prefix (qwenpaw)', () => {
 });
 
 describe('normalizeToBlocks rule 8: com.agentteams.long_message', () => {
-  it('maps long-message metadata to an attachment block', () => {
+  const LONG_MESSAGE = {
+    version: 1,
+    url: 'mxc://example.com/abc123',
+    filename: 'full-reply.txt',
+    mimetype: 'text/plain',
+  };
+
+  it('keeps the narration as text and appends the full-text attachment', () => {
     const input = makeInput({
       body: '正文被截断…',
-      content: {
-        'com.agentteams.long_message': {
-          version: 1,
-          url: 'mxc://example.com/abc123',
-          filename: 'full-reply.txt',
-          mimetype: 'text/plain',
-        },
-      },
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '正文被截断…' });
+    const payload = (blocks[1] as unknown as { payload: { url: string; filename: string } }).payload;
+    expect(payload.url).toBe('mxc://example.com/abc123');
+    expect(payload.filename).toBe('full-reply.txt');
+  });
+
+  it('strips the upstream truncation footer from the narration', () => {
+    const input = makeInput({
+      body: [
+        '第一段叙述',
+        '',
+        '<单条 Matrix 消息已按安全长度截断，完整内容已缓存为 Matrix 附件：full-reply.txt，附件地址：mxc://example.com/abc123。>',
+      ].join('\n'),
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '第一段叙述' });
+  });
+
+  it('renders tool syntax inside a long message as tool cards', () => {
+    const input = makeInput({
+      body: '调用工具：\n\n🔧 **web_search**\n```json\n{"query":"发布状态"}\n```',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'tool_call', 'attachment']);
+  });
+
+  it('keeps A2UI surfaces inside a long message', () => {
+    const input = makeInput({
+      body: '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s1"}}\n```\n\n补充说明',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['a2ui', 'text', 'attachment']);
+    expect(blocks[2]).toMatchObject({
+      type: 'attachment',
+      payload: { url: 'mxc://example.com/abc123' },
+    });
+  });
+
+  it('falls back to the attachment alone when the body is empty', () => {
+    const input = makeInput({
+      body: '',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
     });
 
     const blocks = normalizeToBlocks(input);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('attachment');
-    const payload = (blocks[0] as unknown as { payload: { url: string; filename: string } }).payload;
-    expect(payload.url).toBe('mxc://example.com/abc123');
-    expect(payload.filename).toBe('full-reply.txt');
   });
 
   it('ignores incomplete long-message metadata', () => {

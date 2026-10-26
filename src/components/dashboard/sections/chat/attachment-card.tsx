@@ -11,6 +11,8 @@ interface AttachmentCardProps {
   payload: { url: string; filename: string; mimetype: string };
   /** Optional homeserver override (used to resolve mxc:// to a download URL). */
   homeserver?: string;
+  /** One-line variant for a full-text link inside the process fold. */
+  compact?: boolean;
 }
 
 const TEXT_MIME = /^(text\/|application\/json|application\/xml|application\/x-|image\/svg)/;
@@ -26,7 +28,7 @@ function friendlyMimeType(mimetype: string): string {
   return mimetype || '附件';
 }
 
-export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
+export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardProps) {
   const { homeserver: storeHomeserver } = useMatrixStore();
   const base = homeserver || storeHomeserver;
   const downloadUrl = mxcToDownloadUrl(payload.url, base);
@@ -67,6 +69,29 @@ export function AttachmentCard({ payload, homeserver }: AttachmentCardProps) {
     if (!isHtml || !open || preview || previewError || loading) return;
     void loadPreview();
   }, [isHtml, open, preview, previewError, loading, loadPreview]);
+
+  if (compact) {
+    return (
+      <div className="flex max-w-full items-center gap-2 rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
+        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={payload.filename}>
+          全文附件 · {payload.filename}
+        </span>
+        {forcedDownloadUrl && (
+          <a
+            href={forcedDownloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-emerald-600 hover:underline"
+            title="下载全文"
+          >
+            <Download className="h-3 w-3" />
+            下载
+          </a>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="my-2 rounded-lg border border-border/60 bg-muted/30 overflow-hidden max-w-full">

@@ -235,11 +235,16 @@ describe('runtime matrix semantics', () => {
     });
   });
 
-  it('long message metadata becomes an attachment block on every runtime', () => {
+  it('long message narration stays text and carries the full-text attachment on every runtime', () => {
     for (const runtime of RUNTIMES) {
       const sender = `@w-${runtime}:server`;
       const output = runSequence(sequencesFor(runtime, sender).long_message, runtime);
       expect(output[0].blocks[0]).toMatchObject({
+        type: 'text',
+        text: '正文被截断…',
+        runtimeHint: runtime,
+      });
+      expect(output[0].blocks[1]).toMatchObject({
         type: 'attachment',
         payload: { url: 'mxc://server/media-id', filename: 'full-reply.txt' },
         runtimeHint: runtime,

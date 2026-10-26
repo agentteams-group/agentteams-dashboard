@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChevronDown, ChevronRight, FileCode2, FileSearch, FolderTree, HelpCircle, Search, Terminal, Wrench } from 'lucide-react';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
 import type { ToolCallPayload } from './index';
 
@@ -77,7 +76,7 @@ function errorSummaryOf(payload: ToolCallPayload): string | null {
   return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
 }
 
-function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail, runtime, eventId, revisionCount, embedded }: ToolCallCardProps) {
+function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail, eventId, revisionCount, embedded }: ToolCallCardProps) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? (isRunningStatus(payload.status) || payload.isStreaming);
   const args = parseArguments(payload);
@@ -93,7 +92,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
     <section
       className={
         embedded
-          ? `w-full overflow-hidden rounded-md border border-border/40 border-l-2 ${accent}`
+          ? `w-full overflow-hidden rounded-sm border-l-2 ${accent}`
           : `my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`
       }
     >
@@ -112,7 +111,6 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
             )}
           </span>
           <span className="truncate">{title}</span>
-          {runtime && <RuntimeBadge runtime={runtime} size="sm" withTooltip />}
           <Badge variant={isError ? 'destructive' : isRunning ? 'default' : 'secondary'}>
             {statusLabel(payload.status)}
           </Badge>

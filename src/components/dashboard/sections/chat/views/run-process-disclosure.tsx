@@ -2,8 +2,8 @@
 
 import { useId, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight, Loader2, TriangleAlert } from 'lucide-react';
-import type { ParsedA2uiBlock } from '@/lib/a2ui/parser';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
+import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
+import { AttachmentCard } from '../attachment-card';
 import { ThinkingCard } from '../thinking-card';
 import { StreamingCard } from '../streaming-card';
 import { MarkdownMessage } from '../markdown-message';
@@ -14,6 +14,8 @@ interface RunProcessDisclosureProps {
   blocks: ParsedA2uiBlock[];
   /** Message-level streaming flag, used when a block carries no own flag. */
   isStreaming?: boolean;
+  /** Turn is still open (pending/running): keep progress visible. */
+  active?: boolean;
   runtime?: string | null;
   eventId?: string;
   revisionCount?: number;
@@ -40,8 +42,10 @@ function toolPayloadOf(block: ParsedA2uiBlock): ToolCallPayload | null {
 export function isProcessBlock(block: ParsedA2uiBlock): boolean {
   // Narrated steps (ChatIR marks qwenpaw thread text / earlier answer steps as
   // inProcess) belong inside the fold. Attachments stay outside so a
-  // step-scoped file card remains visible next to its fold.
+  // step-scoped file card remains visible next to its fold, unless the step
+  // itself is a long-message narration (the attachment *is* its content).
   if (block.type === 'text') return block.inProcess === true;
+  if (block.type === 'attachment') return block.inProcess === true;
   return block.type === 'thinking' || block.type === 'tool_call' || toolPayloadOf(block) !== null;
 }
 
@@ -69,6 +73,7 @@ function isBlockFailed(block: ParsedA2uiBlock): boolean {
 export function RunProcessDisclosure({
   blocks,
   isStreaming,
+  active,
   runtime,
   eventId,
   revisionCount,
@@ -80,13 +85,17 @@ export function RunProcessDisclosure({
   const toolCount = blocks.filter((block) => toolPayloadOf(block) !== null).length;
   const failedCount = blocks.filter(isBlockFailed).length;
   const running = blocks.some((block) => isBlockRunning(block, isStreaming === true));
-  const open = userOpen ?? running;
+  // A live run that has only produced narration so far (qwenpaw answers by
+  // editing its root placeholder at the very end) has no running block and no
+  // answer. Without this it renders as a closed "过程" row and looks silent.
+  const live = running || active === true;
+  const open = userOpen ?? live;
 
   const parts: string[] = [];
   if (thinkingCount > 0) parts.push(`思考 ${thinkingCount}`);
   if (toolCount > 0) parts.push(`工具 ${toolCount}`);
   if (failedCount > 0) parts.push(`失败 ${failedCount}`);
-  const detail = running ? '正在处理' : parts.join(' · ');
+  const detail = live ? '正在处理' : parts.join(' · ');
 
   return (
     <section
@@ -100,9 +109,9 @@ export function RunProcessDisclosure({
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        onClick={() => setUserOpen((previous) => !(previous ?? running))}
+        onClick={() => setUserOpen((previous) => !(previous ?? live))}
       >
-        {running ? (
+        {live ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
         ) : (
           <Brain className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -112,7 +121,6 @@ export function RunProcessDisclosure({
         {failedCount > 0 && (
           <TriangleAlert className="h-3 w-3 shrink-0 text-red-500" aria-hidden="true" />
         )}
-        {runtime && <RuntimeBadge runtime={runtime} size="sm" />}
         {open ? (
           <ChevronDown className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />
         ) : (
@@ -157,8 +165,18 @@ export function RunProcessDisclosure({
             }
             if (block.type === 'text') {
               return (
-                <div key={`text-${idx}`} className="w-full px-1 py-0.5 text-xs">
+                <div
+                  key={`text-${idx}`}
+                  className="custom-scrollbar max-h-72 w-full overflow-y-auto px-1 py-0.5 text-[12.5px] leading-relaxed"
+                >
                   <MarkdownMessage content={block.text ?? ''} isStreaming={block.isStreaming ?? isStreaming} />
+                </div>
+              );
+            }
+            if (block.type === 'attachment' && block.payload) {
+              return (
+                <div key={`attachment-${idx}`} className="w-full">
+                  <AttachmentCard payload={block.payload as unknown as AttachmentPayload} compact />
                 </div>
               );
             }

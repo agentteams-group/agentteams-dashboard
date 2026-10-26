@@ -44,6 +44,12 @@ const FOLDABLE_BLOCK_TYPES: ReadonlySet<ParsedA2uiBlock['type']> = new Set([
   'thinking',
   'tool_call',
   'text',
+  // Long-message fallbacks (`com.agentteams.long_message`) keep their narration
+  // blocks plus one attachment link; both are process material of the run.
+  'attachment',
+  // A2UI surfaces emitted inside a run belong to its bubble; they render
+  // outside the process fold (interactive output must stay visible).
+  'a2ui',
 ]);
 
 export interface RuntimeOwner {
@@ -274,6 +280,28 @@ function attachmentsFor(
   return blocks;
 }
 
+/**
+ * A long-message event carries the same file twice: its own
+ * `com.agentteams.long_message` payload and the related `m.file` upload
+ * targeted at it. Rendering both produced two identical cards.
+ */
+function withoutOwnAttachments(
+  blocks: ParsedA2uiBlock[],
+  attachments: ParsedA2uiBlock[],
+): ParsedA2uiBlock[] {
+  const own = new Set(
+    blocks
+      .filter((block) => block.type === 'attachment')
+      .map((block) => (block.payload as unknown as AttachmentPayload | undefined)?.url)
+      .filter((url): url is string => Boolean(url)),
+  );
+  if (own.size === 0) return attachments;
+  return attachments.filter((block) => {
+    const url = (block.payload as unknown as AttachmentPayload | undefined)?.url;
+    return !url || !own.has(url);
+  });
+}
+
 interface Entry {
   message: DisplayMessage;
   blocks: ParsedA2uiBlock[];
@@ -281,6 +309,12 @@ interface Entry {
   text: string;
   /** Copaw agentscope repr dump: a process step, never the turn's answer. */
   repr: boolean;
+  /**
+   * Long-message process notice (`m.notice` + `com.agentteams.long_message`):
+   * upstream uploads over-long narration this way, so even a detached turn
+   * must not mistake it for the answer.
+   */
+  narration: boolean;
 }
 
 function entryOf(message: DisplayMessage, index: RawIndex): Entry {
@@ -288,10 +322,12 @@ function entryOf(message: DisplayMessage, index: RawIndex): Entry {
   return {
     message,
     blocks,
-    attachments: attachmentsFor(message, index),
+    attachments: withoutOwnAttachments(blocks, attachmentsFor(message, index)),
     text: textOfBlocks(blocks),
     repr: message.runtime === 'copaw'
       && parseEmbeddedAgentReprBlocks(typeof message.content === 'string' ? message.content : '') !== null,
+    narration: message.type === 'm.notice'
+      && parseLongMessage(message.rawContent?.['com.agentteams.long_message']) !== null,
   };
 }
 
@@ -300,7 +336,7 @@ function isAnswerEntry(
   entry: Entry,
   detached: boolean,
 ): boolean {
-  if (!entry.text || entry.repr) return false;
+  if (!entry.text || entry.repr || entry.narration) return false;
   if (detached) return true;
   if (profile === 'qwenpaw') {
     // QwenPaw answers by editing the root placeholder; thread text is the
@@ -367,18 +403,22 @@ function chooseAnswer(
 
   // Copaw's agentscope repr text is reasoning/tool output; a later plain text
   // step is the answer. Only fall back to repr text when nothing else exists.
-  const answerable = withText.filter((entry) => !entry.repr);
-  if (answerable.length === 0) return withText[withText.length - 1];
+  const answerable = withText.filter((entry) => !entry.repr && !entry.narration);
+  if (answerable.length === 0) {
+    return withText.filter((entry) => !entry.narration).at(-1) ?? null;
+  }
   const root = entries.find((entry) => !entry.message.isThreadReply) ?? null;
   if (profile === 'qwenpaw') {
-    return root && root.text ? root : null;
+    return root && root.text && !root.narration ? root : null;
   }
   if (profile === 'openclaw' || profile === 'manager') {
     return answerable[answerable.length - 1];
   }
   // An edited root is the runtime's in-place final answer; otherwise the last
   // text step is the best answer candidate.
-  if (root && root.text && !root.repr && (root.message.revisionCount ?? 0) > 0) return root;
+  if (root && root.text && !root.repr && !root.narration && (root.message.revisionCount ?? 0) > 0) {
+    return root;
+  }
   return answerable[answerable.length - 1];
 }
 
@@ -519,7 +559,8 @@ function enrichStandalone(
   message: DisplayMessage,
   index: RawIndex,
 ): DisplayMessage {
-  const attached = attachmentsFor(message, index);
+  const ownBlocks = message.precomputedBlocks ?? allBlocksOf(message);
+  const attached = withoutOwnAttachments(ownBlocks, attachmentsFor(message, index));
   let blocks = message.precomputedBlocks;
   if (attached.length > 0) {
     blocks = [...(blocks ?? allBlocksOf(message)), ...attached];
@@ -567,6 +608,10 @@ function projectTurn(
       if (block.type === 'text') {
         if (!block.text?.trim() || isAgentPlaceholderBody(block.text)) continue;
         if (entry === answer) continue;
+        processBlocks.push({ ...block, inProcess: true });
+        continue;
+      }
+      if (block.type === 'attachment') {
         processBlocks.push({ ...block, inProcess: true });
         continue;
       }

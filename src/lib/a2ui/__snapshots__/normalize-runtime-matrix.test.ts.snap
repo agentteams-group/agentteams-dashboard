@@ -44,6 +44,11 @@ exports[`runtime × sequence matrix (AC-C8) > copaw / long_message 1`] = `
   {
     "blocks": [
       {
+        "runtimeHint": "copaw",
+        "text": "正文被截断…",
+        "type": "text",
+      },
+      {
         "payload": {
           "filename": "full-reply.txt",
           "mimetype": "text/plain",
@@ -199,6 +204,11 @@ exports[`runtime × sequence matrix (AC-C8) > hermes / long_message 1`] = `
 [
   {
     "blocks": [
+      {
+        "runtimeHint": "hermes",
+        "text": "正文被截断…",
+        "type": "text",
+      },
       {
         "payload": {
           "filename": "full-reply.txt",
@@ -356,6 +366,11 @@ exports[`runtime × sequence matrix (AC-C8) > openclaw / long_message 1`] = `
   {
     "blocks": [
       {
+        "runtimeHint": "openclaw",
+        "text": "正文被截断…",
+        "type": "text",
+      },
+      {
         "payload": {
           "filename": "full-reply.txt",
           "mimetype": "text/plain",
@@ -509,6 +524,11 @@ exports[`runtime × sequence matrix (AC-C8) > openhuman / long_message 1`] = `
 [
   {
     "blocks": [
+      {
+        "runtimeHint": "openhuman",
+        "text": "正文被截断…",
+        "type": "text",
+      },
       {
         "payload": {
           "filename": "full-reply.txt",
@@ -666,6 +686,11 @@ exports[`runtime × sequence matrix (AC-C8) > qwenpaw / long_message 1`] = `
 [
   {
     "blocks": [
+      {
+        "runtimeHint": "qwenpaw",
+        "text": "正文被截断…",
+        "type": "text",
+      },
       {
         "payload": {
           "filename": "full-reply.txt",

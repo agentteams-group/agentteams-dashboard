@@ -245,6 +245,108 @@ describe('ChatIR turn assembly', () => {
     expect(turns[0]).toMatchObject({ turnId: 'missing-root', detached: true });
   });
 
+  it('folds a qwenpaw long-message narration into its run without duplicating the file', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '正文过长，已转为附件', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/full-log',
+          filename: 'long-message-17930026100436757.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+      ev('file', '@w:server', 'long-message-17930026100436757.txt', 1_010, {
+        msgtype: 'm.file',
+        url: 'mxc://server/full-log',
+        info: { mimetype: 'text/plain' },
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'long' },
+      }),
+      ev('answer', '@w:server', '* 完成', 2_000, replaceOf('root', '已完成')),
+    ];
+
+    const { messages, turns } = assemble(events, 'qwenpaw');
+
+    // The narration stays inside the run as rich text, its file link appears
+    // once, and the related upload does not add a second identical card.
+    expect(messages.map((message) => message.id)).toEqual(['root']);
+    expect(turns).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '已完成' });
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment', 'text']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '正文过长，已转为附件', inProcess: true });
+    expect(blocks[1]).toMatchObject({
+      type: 'attachment',
+      inProcess: true,
+      payload: { url: 'mxc://server/full-log' },
+    });
+  });
+
+  it('does not treat a long-message narration as the run answer', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '叙述正文', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/steps',
+          filename: 'steps.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('');
+    expect(messages[0].precomputedBlocks?.map((block) => block.type)).toEqual(['text', 'attachment']);
+  });
+
+  it('keeps a long-message notice readable when its thread root is missing', () => {
+    const events = [
+      notice('long', '@w:server', '一段很长的过程叙述', 1_000, {
+        ...threadOf('missing-root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/detached',
+          filename: 'detached.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    // A detached turn has no runtime answer to show, so the narration keeps its
+    // text instead of degrading into an attachment-only bubble.
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'detached', content: '一段很长的过程叙述' });
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['attachment', 'text']);
+    expect(blocks[0]).toMatchObject({ inProcess: true, payload: { url: 'mxc://server/detached' } });
+  });
+
+  it('pulls an A2UI surface inside a long message into its turn, outside the fold', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s1"}}\n```\n\n说明文字', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/surface',
+          filename: 'surface.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['a2ui', 'text', 'attachment']);
+    // Interactive surfaces are process output but must stay visible (unfolded).
+    expect(blocks[0].inProcess).toBeUndefined();
+  });
+
   it('is invariant to raw event arrival order', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),

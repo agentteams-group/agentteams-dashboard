@@ -46,6 +46,16 @@ describe('AttachmentCard', () => {
     expect(screen.queryByRole('link', { name: /下载/ })).toBeNull();
   });
 
+  it('renders a single-line full-text link in compact mode', () => {
+    const { container } = render(<AttachmentCard payload={makePayload()} compact />);
+
+    expect(screen.getByText('全文附件 · full-reply.txt')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+    // Compact mode is used inside the process fold: no preview affordance.
+    expect(screen.queryByRole('button', { name: /预览/ })).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+  });
+
   it('expands a text preview on demand and truncates above the limit', async () => {
     const longBody = 'x'.repeat(300 * 1024);
     global.fetch = vi.fn().mockResolvedValue({

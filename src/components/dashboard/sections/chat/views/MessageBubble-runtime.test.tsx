@@ -43,8 +43,8 @@ function expandProcess() {
   fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
 }
 
-describe('MessageBubble runtime badges (AC-C7)', () => {
-  it('badges a qwenpaw thinking card with the runtime and titles it', () => {
+describe('MessageBubble runtime chrome (AC-C7)', () => {
+  it('titles a qwenpaw thinking step without a runtime badge', () => {
     renderBubble(
       makeMessage({
         content: 'Thinking:\n\n先拆解需求',
@@ -54,9 +54,9 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
     );
     expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
     expandProcess();
-    expect(screen.getByText('QwenPaw · 思考过程')).toBeInTheDocument();
-    // One badge on the process header, one on the thinking step.
-    expect(screen.getAllByText('QwenPaw').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    // Runtime badges were removed from the chat timeline (visual noise).
+    expect(screen.queryByText('QwenPaw')).toBeNull();
   });
 
   it('keeps the plain title when runtime is unknown', () => {
@@ -66,7 +66,7 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
     expect(screen.queryByText('QwenPaw')).toBeNull();
   });
 
-  it('badges tool_call cards with the runtime', () => {
+  it('renders tool_call cards without a runtime badge', () => {
     renderBubble(
       makeMessage({
         content: '🔧 **web_search**\n```json\n{"query":"状态"}\n```',
@@ -74,7 +74,9 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
       }),
     );
     expandProcess();
-    expect(screen.getByRole('button', { name: /网页搜索/ })).toHaveTextContent('Hermes');
+    const card = screen.getByRole('button', { name: /网页搜索/ });
+    expect(card).toHaveTextContent('等待中');
+    expect(card).not.toHaveTextContent('Hermes');
   });
 
   it('marks keyword-heuristic tool calls as low confidence', () => {
@@ -106,6 +108,88 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
     fireEvent.click(screen.getByTestId('event-debug-trigger'));
     expect(screen.getByTestId('event-chain-info')).toHaveTextContent('$root-event-id-1234567890');
     expect(screen.getByText('编辑 2 次')).toBeInTheDocument();
+  });
+});
+
+describe('MessageBubble live run progress', () => {
+  it('opens the process fold while the turn is still pending', () => {
+    renderBubble(
+      makeMessage({
+        content: '',
+        runtime: 'qwenpaw',
+        turnState: 'pending',
+        precomputedBlocks: [
+          { type: 'thinking', content: '先拆解需求' },
+          { type: 'tool_call', payload: { tool_name: 'execute_shell_command' } },
+        ],
+      }),
+    );
+    const fold = screen.getByTestId('run-process');
+    expect(fold).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText('正在处理')).toBeInTheDocument();
+    expect(screen.getByText('先拆解需求')).toBeInTheDocument();
+  });
+
+  it('folds a long-message attachment into the process panel', () => {
+    renderBubble(
+      makeMessage({
+        runtime: 'qwenpaw',
+        turnState: 'finalized',
+        precomputedBlocks: [
+          { type: 'text', text: '长消息叙述', inProcess: true },
+          {
+            type: 'attachment',
+            inProcess: true,
+            payload: { url: 'mxc://server/log', filename: 'log.txt', mimetype: 'text/plain' },
+          },
+          { type: 'text', text: '已完成' },
+        ],
+      }),
+    );
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
+    expect(screen.getByText('长消息叙述')).toBeInTheDocument();
+    // Compact full-text link: one line, filename + download.
+    expect(screen.getByText(/全文附件 · log\.txt/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+  });
+
+  it('scrolls an over-long narration inside a bounded process panel', () => {
+    renderBubble(
+      makeMessage({
+        runtime: 'qwenpaw',
+        turnState: 'finalized',
+        precomputedBlocks: [
+          { type: 'text', text: '长'.repeat(2_000), inProcess: true },
+          { type: 'text', text: '已完成' },
+        ],
+      }),
+    );
+    expandProcess();
+    expect(screen.getByTestId('run-process').querySelector('.max-h-72')).not.toBeNull();
+  });
+
+  it('keeps the sender row free of runtime and status chips', () => {
+    render(
+      <TooltipProvider>
+        <MessageBubble
+          message={makeMessage({
+            senderShort: 'ceshi',
+            runtime: 'qwenpaw',
+            workerName: 'ceshi',
+            agentStatus: 'success',
+            isStreaming: true,
+            content: '结果',
+          })}
+          showSender
+          isContinuation={false}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText('ceshi')).toBeInTheDocument();
+    expect(screen.queryByText('QwenPaw')).toBeNull();
+    expect(screen.queryByText('streaming')).toBeNull();
+    expect(screen.queryByText('已完成')).toBeNull();
   });
 });
 

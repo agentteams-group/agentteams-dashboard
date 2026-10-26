@@ -3,15 +3,13 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Brain, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
 
 interface ThinkingCardProps {
   title?: string;
   content: string;
   isStreaming?: boolean;
-  /** Runtime that produced this thinking block (drives the corner badge). */
+  /** Runtime that produced this thinking block (kept for callers/tooling). */
   runtime?: string | null;
   /** Root Matrix event id, available via the debug affordance (AC-C7). */
   eventId?: string;
@@ -25,18 +23,17 @@ export function ThinkingCard({
   title,
   content,
   isStreaming,
-  runtime,
   eventId,
   revisionCount,
   embedded,
 }: ThinkingCardProps) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? Boolean(isStreaming);
-  const resolvedTitle = title ?? (runtime && RUNTIME_LABELS[runtime] ? `${RUNTIME_LABELS[runtime]} · 思考过程` : '思考过程');
+  const resolvedTitle = title ?? '思考过程';
 
   if (embedded) {
     return (
-      <div className="rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
+      <div className="px-1 py-0.5">
         <div className="flex min-w-0 items-center gap-2 text-[11px] font-medium text-muted-foreground">
           {isStreaming ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
@@ -44,7 +41,6 @@ export function ThinkingCard({
             <Brain className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           )}
           <span className="truncate">{resolvedTitle}</span>
-          {runtime && <RuntimeBadge runtime={runtime} size="sm" withTooltip />}
           {isStreaming && (
             <span className="text-[10px] text-emerald-500 animate-pulse">思考中...</span>
           )}
@@ -77,9 +73,6 @@ export function ThinkingCard({
             <Brain className="w-3.5 h-3.5" />
           )}
           <span className="truncate">{resolvedTitle}</span>
-          {runtime && (
-            <RuntimeBadge runtime={runtime} size="sm" withTooltip />
-          )}
           {isStreaming && (
             <span className="text-[10px] text-emerald-500 animate-pulse">思考中...</span>
           )}

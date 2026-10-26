@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
@@ -33,7 +32,6 @@ import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 
@@ -361,23 +359,6 @@ export function MessageBubble({
       ? isMessageReadByOthers(message, currentUserId, readReceipts)
       : false;
 
-  // Agent run status badge (org.agentteams.status). Only shown on other
-  // members' messages (agent runs), not for the user's own bubbles.
-  const agentStatusBadge = (() => {
-    if (message.isMe || !message.agentStatus) return null;
-    const status = message.agentStatus;
-    if (status === 'streaming' || status === 'in_progress' || status === 'running') {
-      return { label: '运行中', className: 'bg-sky-500/15 text-sky-600' };
-    }
-    if (status === 'success' || status === 'completed' || status === 'done') {
-      return { label: '已完成', className: 'bg-emerald-500/15 text-emerald-600' };
-    }
-    if (status === 'failed' || status === 'error') {
-      return { label: '失败', className: 'bg-red-500/15 text-red-600' };
-    }
-    return { label: status, className: 'bg-muted text-muted-foreground' };
-  })();
-
   const startEdit = useCallback(() => {
     setEditValue(message.content);
     setEditError(null);
@@ -468,19 +449,6 @@ export function MessageBubble({
             <span className={`text-[12.5px] font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
               {senderLabel}
             </span>
-            {message.workerName && message.runtime && (
-              <RuntimeBadge runtime={message.runtime} size="sm" />
-            )}
-            {message.isStreaming && (
-              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                <span className="animate-pulse">streaming</span>
-              </Badge>
-            )}
-            {agentStatusBadge && !message.isStreaming && (
-              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${agentStatusBadge.className}`}>
-                {agentStatusBadge.label}
-              </span>
-            )}
             {message.isEdited && (
               <span className="text-[10px] text-muted-foreground italic">(edited)</span>
             )}
@@ -555,6 +523,7 @@ export function MessageBubble({
                       <RunProcessDisclosure
                         blocks={processRun}
                         isStreaming={!!message.isStreaming}
+                        active={message.turnState === 'pending' || message.turnState === 'running'}
                         runtime={message.runtime ?? null}
                         eventId={message.eventId}
                         revisionCount={message.revisionCount}
