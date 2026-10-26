@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError } from '@/lib/api-error';
@@ -48,10 +48,12 @@ vi.mock('./ChatPanel', () => ({
 }));
 
 vi.mock('./chat-room-sidebar', () => ({
-  ChatRoomSidebar: () => <div data-testid="sidebar-stub" />,
+  ChatRoomSidebar: ({ footer }: { footer?: ReactNode }) => (
+    <div data-testid="sidebar-stub">{footer}</div>
+  ),
 }));
-vi.mock('./chat-auth-badge', () => ({ ChatAuthBadge: () => <div /> }));
-vi.mock('./sync-status-chip', () => ({ SyncStatusChip: () => <div /> }));
+vi.mock('./chat-auth-badge', () => ({ ChatAuthBadge: () => <div>MatrixAuth</div> }));
+vi.mock('./sync-status-chip', () => ({ SyncStatusChip: () => <div>SyncChip</div> }));
 vi.mock('./chat-empty-state', () => ({ ChatEmptyState: () => <div data-testid="empty-stub" /> }));
 vi.mock('./human-panel', () => ({ HumanPanel: () => <div /> }));
 vi.mock('./room-topology', () => ({ RoomTopology: () => <div /> }));
@@ -178,6 +180,27 @@ describe('ChatSection mobile room drawer', () => {
     expect(screen.getByTestId('sidebar-stub')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '关闭空间列表' }));
     expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+  });
+});
+
+describe('ChatSection merged section chrome', () => {
+  beforeEach(() => {
+    loaded();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('drops the standalone bar and parks the session cluster in the room list footer', () => {
+    renderWithQueryClient();
+
+    expect(screen.queryByText('Agent Chat')).toBeNull();
+    expect(screen.queryByText('实时通信与人机协同')).toBeNull();
+
+    const sidebar = screen.getByTestId('sidebar-stub');
+    expect(within(sidebar).getByText('SyncChip')).toBeTruthy();
+    expect(within(sidebar).getByText('MatrixAuth')).toBeTruthy();
   });
 });
 

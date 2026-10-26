@@ -155,4 +155,15 @@ describe('ChatRoomSidebar', () => {
     expect(sparseButton).not.toBeNull();
     expect(sparseButton?.querySelectorAll('span').length ?? 0).toBe(0);
   });
+
+  it('keeps the plain account line when the caller supplies no footer', () => {
+    renderSidebar();
+    expect(screen.getByText('已登录: user')).toBeInTheDocument();
+  });
+
+  it('replaces the account line with the caller session cluster', () => {
+    renderSidebar({ footer: <div data-testid="session-footer">实时</div> });
+    expect(screen.getByTestId('session-footer')).toBeInTheDocument();
+    expect(screen.queryByText('已登录: user')).toBeNull();
+  });
 });

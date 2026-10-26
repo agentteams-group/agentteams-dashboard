@@ -19,6 +19,7 @@ export function ChatAuthBadge({
   onLoginClick,
   showLoginDialog,
   onLoginDialogChange,
+  compact = false,
 }: {
   isLoggedIn: boolean;
   userId: string | null;
@@ -26,7 +27,36 @@ export function ChatAuthBadge({
   onLoginClick: () => void;
   showLoginDialog: boolean;
   onLoginDialogChange: (_open: boolean) => void;
+  /** One-line variant for the room sidebar footer. */
+  compact?: boolean;
 }) {
+  if (isLoggedIn && compact) {
+    const shortId = userId?.split(':')[0].slice(1);
+    return (
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Badge
+          variant="outline"
+          className="shrink-0 gap-1 border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
+        >
+          <Unlock className="w-3 h-3" aria-hidden="true" />
+          Matrix 已连接
+        </Badge>
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground" title={userId ?? ''}>
+          {shortId}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 shrink-0 p-0 text-muted-foreground"
+          onClick={onLogout}
+          title="登出 Matrix"
+          aria-label="登出 Matrix"
+        >
+          <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+    );
+  }
   if (isLoggedIn) {
     const shortId = userId?.split(':')[0].slice(1);
     return (

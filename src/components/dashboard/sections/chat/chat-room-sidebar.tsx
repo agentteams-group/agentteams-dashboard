@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore, useState, useCallback, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle, Clock3, LayoutList, ListFilter } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
@@ -248,6 +249,7 @@ export function ChatRoomSidebar({
   userId,
   isLoading,
   onCollapse,
+  footer,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -256,6 +258,8 @@ export function ChatRoomSidebar({
   userId: string | null;
   isLoading: boolean;
   onCollapse: () => void;
+  /** Replaces the account line with the caller's session cluster. */
+  footer?: ReactNode;
 }) {
   const [filter, setFilter] = useState('');
   // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
@@ -463,16 +467,15 @@ export function ChatRoomSidebar({
               ))
         )}
       </div>
-      <div className="p-3 border-t border-border shrink-0 bg-card/30">
-        {isLoggedIn ? (
+      <div className="shrink-0 border-t border-border bg-card/30 p-2">
+        {footer ?? (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <p className="text-[10px] text-muted-foreground truncate">已登录: {shortId}</p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500" />
-            <p className="text-[10px] text-muted-foreground">未登录 - 仅可查看房间列表</p>
+            <div className={`w-2 h-2 shrink-0 rounded-full ${isLoggedIn ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`} />
+            <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+              {isLoggedIn
+                ? `已登录: ${shortId}`
+                : '未登录 - 仅可查看房间列表'}
+            </p>
           </div>
         )}
       </div>

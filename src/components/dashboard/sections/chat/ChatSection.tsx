@@ -9,7 +9,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { AlertTriangle, MessageSquare, PanelLeftOpen } from 'lucide-react';
+import { AlertTriangle, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
@@ -204,44 +204,28 @@ export function ChatSection() {
     return <ApiErrorState />;
   }
 
+  // The section-level bar was merged into the room layout: sync health and the
+  // Matrix session now live at the foot of the room list, which is the only
+  // place they stay visible while the chat fills the panel.
+  const sessionFooter = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <SyncStatusChip />
+      <ChatAuthBadge
+        compact
+        isLoggedIn={isLoggedIn}
+        userId={userId}
+        onLogout={logout}
+        onLoginClick={() => setShowLoginDialog(true)}
+        showLoginDialog={showLoginDialog}
+        onLoginDialogChange={setShowLoginDialog}
+      />
+    </div>
+  );
+
   return (
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Compact header bar */}
-        <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between bg-card/40">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 md:hidden"
-              onClick={() => setMobileRoomListOpen(true)}
-              title="打开空间列表"
-              aria-label="打开空间列表"
-            >
-              <PanelLeftOpen className="w-4 h-4" />
-            </Button>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-sm">
-              <MessageSquare className="w-3.5 h-3.5 text-primary-foreground" />
-            </div>
-            <div className="leading-tight">
-              <h2 className="text-sm font-semibold">Agent Chat</h2>
-              <span className="text-[10px] text-muted-foreground hidden sm:inline">实时通信与人机协同</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <SyncStatusChip />
-            <ChatAuthBadge
-              isLoggedIn={isLoggedIn}
-              userId={userId}
-              onLogout={logout}
-              onLoginClick={() => setShowLoginDialog(true)}
-              showLoginDialog={showLoginDialog}
-              onLoginDialogChange={setShowLoginDialog}
-            />
-          </div>
-        </div>
-
         {projectionNotices.map((notice) => (
           <div
             key={notice.key}
@@ -275,6 +259,15 @@ export function ChatSection() {
               >
                 <PanelLeftOpen className="w-3.5 h-3.5" />
               </Button>
+              {/* Collapsed rail keeps the session signal the old bar carried. */}
+              <span
+                role="status"
+                aria-label={isLoggedIn ? 'Matrix 已连接' : 'Matrix 未连接'}
+                title={isLoggedIn ? 'Matrix 已连接' : 'Matrix 未连接'}
+                className={`mx-auto mt-2 block h-2 w-2 rounded-full ${
+                  isLoggedIn ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'
+                }`}
+              />
             </div>
           )}
           {!isRoomListCollapsed && !narrowViewport && (
@@ -286,6 +279,7 @@ export function ChatSection() {
               userId={userId}
               isLoading={isLoading}
               onCollapse={() => setIsRoomListCollapsed(true)}
+              footer={sessionFooter}
             />
 
           )}
@@ -307,6 +301,7 @@ export function ChatSection() {
                   userId={userId}
                   isLoading={isLoading}
                   onCollapse={() => setMobileRoomListOpen(false)}
+                  footer={sessionFooter}
                 />
               </div>
             </>
@@ -314,6 +309,23 @@ export function ChatSection() {
 
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            {/* Narrow viewports hide the room list behind a drawer, so the
+                trigger needs a row of its own above the conversation. */}
+            {narrowViewport && (
+              <div className="flex shrink-0 items-center border-b border-border bg-card/40 px-2 py-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setMobileRoomListOpen(true)}
+                  title="打开空间列表"
+                  aria-label="打开空间列表"
+                >
+                  <PanelLeftOpen className="w-4 h-4" aria-hidden="true" />
+                  空间列表
+                </Button>
+              </div>
+            )}
             {selectedRoom ? (
               // key forces a fresh ChatRoom instance per room so input,
               // in-flight local messages and scroll state never leak across
