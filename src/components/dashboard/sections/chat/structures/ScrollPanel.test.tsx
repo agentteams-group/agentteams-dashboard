@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createRef, forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef, ReactNode } from 'react';
@@ -167,6 +167,7 @@ describe('ScrollPanel', () => {
   });
 
   it('follows new messages only while the scroller is at the bottom', () => {
+
     render(
       <ScrollPanel
         items={[message('only')]}
@@ -183,5 +184,47 @@ describe('ScrollPanel', () => {
 
     expect(followOutput(true)).toBe('auto');
     expect(followOutput(false)).toBe(false);
+  });
+
+  it('hides the jump rail for a short conversation', () => {
+    render(
+      <ScrollPanel
+        items={[message('a'), message('b'), message('c')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    expect(screen.queryByTestId('timeline-rail')).toBeNull();
+  });
+
+  it('widens the rail dashes for the reported range and jumps on click', () => {
+    render(
+      <ScrollPanel
+        items={Array.from({ length: 8 }, (_e, i) => message(`$${i}`))}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    const firstItemIndex = (virtuosoMock.props as { firstItemIndex: number }).firstItemIndex;
+    const props = virtuosoMock.props as {
+      rangeChanged: (_range: { startIndex: number; endIndex: number }) => void;
+    };
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-1.5');
+
+    act(() => props.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 }));
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3');
+
+    fireEvent.click(screen.getByTestId('rail-tick-2'));
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: 2,
+      align: 'center',
+      behavior: 'smooth',
+    });
   });
 });
