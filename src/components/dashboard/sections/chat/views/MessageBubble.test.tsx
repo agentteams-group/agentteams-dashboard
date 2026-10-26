@@ -11,6 +11,11 @@ function renderWithProvider(ui: Parameters<typeof render>[0]) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
+/** Finished runs start folded; open the process disclosure before inner assertions. */
+function expandProcess() {
+  fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
+}
+
 const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
 vi.mock('../markdown-message', () => ({
   MarkdownMessage: (props: { content: string }) => markdownMock(props),
@@ -85,6 +90,7 @@ describe('MessageBubble', () => {
 
     expect(screen.getByText('准备执行')).toBeInTheDocument();
     expect(screen.getByText('执行完成')).toBeInTheDocument();
+    expandProcess();
     expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.queryByText(/"tool_name"/)).toBeNull();
   });
@@ -130,6 +136,7 @@ describe('MessageBubble', () => {
       />
     );
 
+    expandProcess();
     expect(screen.getByRole('button', { name: /执行命令/ })).toBeInTheDocument();
   });
 
@@ -347,7 +354,7 @@ Type /approve to approve, or send any message to deny.`,
       runtime: 'QwenPaw',
       content: "object='message' status='completed' error=None id='msg_qwen' type='reasoning' role='assistant' content=[TextContent(sequence_number=None, object='content', status=None, error=None, type='text', index=0, delta=None, msg_id='msg_qwen', text='正在推理')] code=None message=None usage=None metadata={}",
       assertRendered: () => {
-        fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+        expandProcess();
         expect(screen.getByText('正在推理')).toBeInTheDocument();
       },
     },
@@ -531,9 +538,86 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
+    // Tool step is running → the fold auto-opens so progress stays visible.
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText(/思考过程/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.getByText('最终答案')).toBeInTheDocument();
+  });
+
+  it('folds a finished run into one collapsed disclosure with a step summary', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$agent-run-done',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              blocks: [
+                { type: 'thinking', content: '正在分析请求', isStreaming: false },
+                { type: 'tool_call', payload: { tool_name: 'read_file', status: 'success' } },
+                { type: 'text', text: '最终答案' },
+              ],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const process = screen.getByTestId('run-process');
+    expect(process).toHaveAttribute('data-state', 'closed');
+    expect(process).toHaveTextContent('思考 1 · 工具 1');
+    // Nothing inside the fold leaks out; the result text stays visible.
+    expect(screen.queryByText('正在分析请求')).toBeNull();
+    expect(screen.queryByRole('button', { name: /读取文件/ })).toBeNull();
+    expect(screen.getByText('最终答案')).toBeInTheDocument();
+
+    expandProcess();
+    expect(process).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText('正在分析请求')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
+  });
+
+  it('surfaces failed steps in the collapsed process summary', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$agent-run-failed',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              blocks: [
+                {
+                  type: 'tool_call',
+                  payload: { tool_name: 'execute_command', status: 'failed', result: 'exit code 1' },
+                },
+                { type: 'text', text: '执行失败，换个方式' },
+              ],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const process = screen.getByTestId('run-process');
+    expect(process).toHaveAttribute('data-state', 'closed');
+    expect(process).toHaveTextContent('工具 1');
+    expect(process).toHaveTextContent('失败 1');
+    expect(screen.getByText('执行失败，换个方式')).toBeInTheDocument();
   });
 
   it('shows a single check for my message with no read receipts', () => {

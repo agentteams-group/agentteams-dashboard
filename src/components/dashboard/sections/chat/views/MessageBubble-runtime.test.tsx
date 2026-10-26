@@ -38,6 +38,11 @@ function renderBubble(message: DisplayMessage) {
   );
 }
 
+/** Finished runs start folded; open the process disclosure before inner assertions. */
+function expandProcess() {
+  fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
+}
+
 describe('MessageBubble runtime badges (AC-C7)', () => {
   it('badges a qwenpaw thinking card with the runtime and titles it', () => {
     renderBubble(
@@ -47,13 +52,17 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         rawContent: { msgtype: 'm.notice' },
       }),
     );
-    expect(screen.getByRole('button', { name: /QwenPaw · 思考过程/ })).toBeInTheDocument();
-    expect(screen.getByText('QwenPaw')).toBeInTheDocument();
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
+    expect(screen.getByText('QwenPaw · 思考过程')).toBeInTheDocument();
+    // One badge on the process header, one on the thinking step.
+    expect(screen.getAllByText('QwenPaw').length).toBeGreaterThanOrEqual(2);
   });
 
   it('keeps the plain title when runtime is unknown', () => {
     renderBubble(makeMessage({ content: 'Thinking:\n\n先拆解需求', rawContent: { msgtype: 'm.notice' } }));
-    expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
+    expandProcess();
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('QwenPaw')).toBeNull();
   });
 
@@ -64,7 +73,8 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         runtime: 'hermes',
       }),
     );
-    expect(screen.getByText('Hermes')).toBeInTheDocument();
+    expandProcess();
+    expect(screen.getByRole('button', { name: /网页搜索/ })).toHaveTextContent('Hermes');
   });
 
   it('marks keyword-heuristic tool calls as low confidence', () => {
@@ -75,6 +85,9 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         rawContent: { msgtype: 'm.notice' },
       }),
     );
+    // A heuristic `running` guess must not force the finished fold open.
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
     expect(screen.getByLabelText('识别置信度低')).toBeInTheDocument();
   });
 
@@ -88,7 +101,7 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         revisionCount: 2,
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+    expandProcess();
     expect(screen.queryByTestId('event-chain-info')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('event-debug-trigger'));
     expect(screen.getByTestId('event-chain-info')).toHaveTextContent('$root-event-id-1234567890');

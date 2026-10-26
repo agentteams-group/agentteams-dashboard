@@ -22,6 +22,7 @@ import { A2uiMessage } from '../a2ui-message';
 import { RunEndingNote, type RunEndingPayload } from '../run-ending-note';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
+import { RunProcessDisclosure, isProcessBlock } from './run-process-disclosure';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import {
   heuristicToInterventionPayload,
@@ -262,6 +263,32 @@ export function MessageBubble({
     });
   }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
 
+  // Worker messages fold their whole process (thinking + tool calls) into one
+  // disclosure per contiguous segment: the avatar anchors a compact summary
+  // and the result output stays visible below it. Own messages keep the raw
+  // rendering so an edited/echoed bubble never hides what the user typed.
+  const processSegments = useMemo(() => {
+    const runs = new Map<number, ParsedA2uiBlock[]>();
+    const folded = new Set<number>();
+    if (message.isMe) return { runs, folded };
+    let idx = 0;
+    while (idx < parsedBlocks.length) {
+      if (!isProcessBlock(parsedBlocks[idx])) {
+        idx += 1;
+        continue;
+      }
+      const start = idx;
+      const run: ParsedA2uiBlock[] = [];
+      while (idx < parsedBlocks.length && isProcessBlock(parsedBlocks[idx])) {
+        run.push(parsedBlocks[idx]);
+        folded.add(idx);
+        idx += 1;
+      }
+      runs.set(start, run);
+    }
+    return { runs, folded };
+  }, [parsedBlocks, message.isMe]);
+
   // Feed the Worker card vitals strip: count this message's tool_call blocks
   // once it is final (delta-guarded per event id, so revisions don't double
   // count). Best-effort — never blocks rendering.
@@ -480,6 +507,21 @@ export function MessageBubble({
                 </div>
               )}
               {parsedBlocks.map((block, idx) => {
+                const processRun = processSegments.runs.get(idx);
+                if (processRun) {
+                  return (
+                    <div key={idx} className="w-full">
+                      <RunProcessDisclosure
+                        blocks={processRun}
+                        isStreaming={!!message.isStreaming}
+                        runtime={message.runtime ?? null}
+                        eventId={message.eventId}
+                        revisionCount={message.revisionCount}
+                      />
+                    </div>
+                  );
+                }
+                if (processSegments.folded.has(idx)) return null;
                 if (block.type === 'confirmation' && onSendConfirmation) {
                   // F2.1 分流：v2 结构化提问（question/options/questions）走
                   // 选项式干预卡；v1 二态工具确认保持原卡（向后兼容）。
