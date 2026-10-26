@@ -61,6 +61,11 @@ const THINKING_PREFIX = /^Thinking:\s*\n+/;
 /** Agent placeholder bodies ("处理中...") stay text until the first revision lands. */
 const NOTICE_PLACEHOLDER = /^处理中[.。…]*$/;
 
+/** Whether a body is just the run placeholder (no real content yet). */
+export function isAgentPlaceholderBody(body: string | null | undefined): boolean {
+  return NOTICE_PLACEHOLDER.test((body ?? '').trim());
+}
+
 function stripThinkingPrefix(body: string): string {
   return body.replace(THINKING_PREFIX, '').trim();
 }
@@ -134,7 +139,7 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // placeholders) stay plain text.
   if (content.msgtype === 'm.notice' && !isMine) {
     const text = body.trim();
-    if (text && !NOTICE_PLACEHOLDER.test(text)) {
+    if (text && !isAgentPlaceholderBody(text)) {
       return [{ type: 'thinking', content: text, isStreaming }];
     }
   }

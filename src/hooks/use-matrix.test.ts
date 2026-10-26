@@ -349,6 +349,74 @@ describe('formatMatrixEvents', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('');
   });
+
+  it('folds an openclaw block-streamed tail into the edited answer', () => {
+    // openclaw streams the first block into the placeholder, then finalises
+    // the answer by editing it with only that block and sending the rest as a
+    // fresh message. Rendering both as-is breaks the answer in two bubbles.
+    const events = [
+      { ...message('user', '@openclaw 按第一个来', 100), sender: '@human:example.test' },
+      message('root', '好', 200, { 'org.matrix.msc4357.live': true }),
+      message('revision', '* 第一段', 300, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail-1', '第二段', 340),
+      message('tail-2', '第三段', 400),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['user', 'root']);
+    expect(messages[1]).toMatchObject({
+      id: 'root',
+      content: '第一段\n\n第二段\n\n第三段',
+      timestamp: 400,
+      isEdited: true,
+    });
+  });
+
+  it('does not fold a fresh agent message after an unedited answer', () => {
+    const events = [
+      message('first', '第一段', 100),
+      message('second', '第二段', 140),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['first', 'second']);
+  });
+
+  it('does not fold a fragment that arrives long after the answer was edited', () => {
+    const events = [
+      message('root', '处理中...', 100),
+      message('revision', '* 第一段', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail', '第二段', 10_201),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['root', 'tail']);
+  });
+
+  it('drops a tail that repeats the answer verbatim', () => {
+    const events = [
+      message('root', '处理中...', 100),
+      message('revision', '* 第一段', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail', '第一段', 240),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'root', content: '第一段', timestamp: 240 });
+  });
 });
 
 describe('isMessageReadByOthers', () => {

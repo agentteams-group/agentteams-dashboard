@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, forwardRef } from 'react';
 import { TimelinePanel } from './TimelinePanel';
 import type { ScrollPanelHandle } from './ScrollPanel';
 import { buildGroupedMessages, type GroupedMessage } from '../grouper/MainGrouper';
+import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
 import { EventTile } from '../views/EventTile';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { FileRef } from '@/lib/file-refs';
@@ -202,7 +203,12 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
   },
   ref
 ) {
-  const grouped = useMemo(() => buildGroupedMessages(messages), [messages]);
+  // Workers stream one turn as many Matrix events (placeholder, per-step
+  // notices, tool calls, final answer). Coalesce them first so the timeline
+  // shows one avatar + one process disclosure per turn instead of a strip of
+  // disconnected bubbles.
+  const displayMessages = useMemo(() => coalesceWorkerTurns(messages), [messages]);
+  const grouped = useMemo(() => buildGroupedMessages(displayMessages), [displayMessages]);
 
   const itemContent = useCallback((_index: number, gm: GroupedMessage) => {
     if (!gm) return null;

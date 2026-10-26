@@ -71,6 +71,32 @@ describe('MessageBubble', () => {
     const props = markdownMock.mock.calls[0][0] as { isStreaming?: boolean };
     expect(props.isStreaming).toBeFalsy();
   });
+  it('renders precomputed turn blocks as one folded run plus the text output', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$turn',
+          sender: '@ceshi:example.com',
+          senderShort: 'ceshi',
+          content: '全部对上了。',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          precomputedBlocks: [
+            { type: 'thinking', content: '第一步：检查渲染' },
+            { type: 'tool_call', payload: { tool_name: 'read_file', status: 'succeeded' } },
+            { type: 'text', text: '全部对上了。' },
+          ],
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getAllByRole('button', { name: /^过程/ })).toHaveLength(1);
+    expect(screen.getByText('全部对上了。')).toBeInTheDocument();
+  });
+
   it('renders mixed text and tool blocks without repeating the raw card payload', () => {
     renderWithProvider(
       <MessageBubble

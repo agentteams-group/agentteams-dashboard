@@ -25,7 +25,9 @@ export interface TimelinePanelProps {
 }
 
 function matchesReadEvent(gm: GroupedMessage, readEventId: string): boolean {
-  return gm.message.id === readEventId || gm.message.eventId === readEventId;
+  return gm.message.id === readEventId
+    || gm.message.eventId === readEventId
+    || (gm.message.sourceEventIds?.includes(readEventId) ?? false);
 }
 
 function buildTimelineItems(items: GroupedMessage[], readEventId: string | null | undefined): TimelineItem[] {

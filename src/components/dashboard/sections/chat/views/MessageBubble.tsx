@@ -251,6 +251,9 @@ export function MessageBubble({
   }, [message.isMe, message.isStreaming, message.workerName, message.sender, message.content, memberMap, senderLabel]);
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
+    // Turn-coalesced messages carry blocks already normalized from their
+    // constituent Matrix events (placeholder + process notices + answer).
+    if (message.precomputedBlocks) return message.precomputedBlocks;
     // Same guard as hitl-inbox: relation-only / structured-run events may
     // arrive without a string body (#1436).
     return normalizeToBlocks({
@@ -261,7 +264,7 @@ export function MessageBubble({
       isMine: message.isMe,
       runtime: message.runtime ?? null,
     });
-  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
+  }, [message.precomputedBlocks, message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
 
   // Worker messages fold their whole process (thinking + tool calls) into one
   // disclosure per contiguous segment: the avatar anchors a compact summary

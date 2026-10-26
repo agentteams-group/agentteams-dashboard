@@ -657,6 +657,14 @@ export interface DisplayMessage {
   workflow?: WorkflowPayload;
   /** Structured blocks for an Agent run, retained across streaming revisions. */
   agentBlocks?: ParsedA2uiBlock[];
+  /**
+   * Display-only blocks aggregated by the worker turn grouper. When present
+   * MessageBubble renders them directly instead of re-normalizing `content`
+   * (the turn spans several Matrix events).
+   */
+  precomputedBlocks?: ParsedA2uiBlock[];
+  /** Matrix event ids folded into this display message (read-marker lookup). */
+  sourceEventIds?: string[];
   /** Original event.content (after m.replace merge), for normalizeToBlocks. */
   rawContent?: Record<string, unknown>;
   /** Root event ID if this message is a reply in a thread. */
@@ -779,6 +787,82 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
 }
 
 /**
+ * Long answers can arrive as several messages: the first block is streamed
+ * into the placeholder via m.replace, then the remaining blocks are sent as
+ * fresh top-level messages. Without folding them back the answer visually
+ * breaks into disconnected bubbles the moment streaming ends. Each trailing
+ * fragment arrives right after the edited answer, so a short gap plus the
+ * edited-predecessor check separates it from a genuinely new agent turn.
+ */
+const ANSWER_FRAGMENT_MAX_GAP_MS = 10_000;
+
+function isPlainAgentText(message: DisplayMessage): boolean {
+  if (message.isMe || message.type !== 'm.text') return false;
+  if (message.mediaUrl || (message.fileRefs?.length ?? 0) > 0) return false;
+  if (message.workflow || (message.agentBlocks?.length ?? 0) > 0) return false;
+  const content = message.rawContent ?? {};
+  return !content['agentteams.workflow']
+    && !content['org.agentteams.run']
+    && !content['com.agentteams.long_message'];
+}
+
+function joinText(head: string, tail: string): string {
+  const a = head.trimEnd();
+  const b = tail.trimStart();
+  if (!a) return b;
+  if (!b) return a;
+  return `${a}\n\n${b}`;
+}
+
+function joinOptionalText(head: string | undefined, tail: string | undefined): string | undefined {
+  if (!head) return tail;
+  if (!tail) return head;
+  return joinText(head, tail);
+}
+
+function canAppendAnswerFragment(head: DisplayMessage, fragment: DisplayMessage): boolean {
+  // Only an already-edited answer (the streamed first block) absorbs tail
+  // blocks; a fresh message after a non-streamed answer is a new turn.
+  if ((head.revisionCount ?? 0) === 0) return false;
+  // A fragment that was itself revised is another streamed answer, not a tail.
+  if ((fragment.revisionCount ?? 0) > 0) return false;
+  if (head.sender !== fragment.sender) return false;
+  if (head.threadId !== fragment.threadId) return false;
+  if (fragment.timestamp - head.timestamp > ANSWER_FRAGMENT_MAX_GAP_MS) return false;
+  return isPlainAgentText(head) && isPlainAgentText(fragment);
+}
+
+function appendAnswerFragment(head: DisplayMessage, fragment: DisplayMessage): DisplayMessage {
+  const headText = head.content.trimEnd();
+  const tailText = fragment.content.trim();
+  const timestamp = Math.max(head.timestamp, fragment.timestamp);
+  // Some managers repeat the last block verbatim before finalising; keep the
+  // first copy instead of showing it twice.
+  if (tailText && headText.endsWith(tailText)) {
+    return { ...head, timestamp };
+  }
+  return {
+    ...head,
+    content: joinText(head.content, fragment.content),
+    formattedContent: joinOptionalText(head.formattedContent, fragment.formattedContent),
+    timestamp,
+  };
+}
+
+export function mergeAnswerFragments(messages: DisplayMessage[]): DisplayMessage[] {
+  const merged: DisplayMessage[] = [];
+  for (const message of messages) {
+    const head = merged[merged.length - 1];
+    if (head && canAppendAnswerFragment(head, message)) {
+      merged[merged.length - 1] = appendAnswerFragment(head, message);
+    } else {
+      merged.push(message);
+    }
+  }
+  return merged;
+}
+
+/**
  * Collapses Matrix message revisions into their root event. Agent revisions
  * are sorted by the edit time so the final answer lands after the run's
  * process messages; human edits keep the original position.
@@ -896,5 +980,5 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     if (count) message.replyCount = count;
   }
 
-  return result.sort((a, b) => a.timestamp - b.timestamp);
+  return mergeAnswerFragments(result.sort((a, b) => a.timestamp - b.timestamp));
 }
