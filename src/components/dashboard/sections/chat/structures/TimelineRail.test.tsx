@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupedMessage } from '../grouper/MainGrouper';
-import { TimelineRail, type TimelineRailHandle } from './TimelineRail';
+import { TimelineRail, tickLimitFor, type TimelineRailHandle } from './TimelineRail';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -66,12 +66,26 @@ describe('TimelineRail', () => {
     const ref = createRef<TimelineRailHandle>();
     render(<TimelineRail ref={ref} items={items(10)} onJump={() => {}} />);
 
-    expect(screen.getByTestId('rail-tick-4')).toHaveClass('w-1.5');
+    expect(screen.getByTestId('rail-tick-4')).toHaveClass('w-2');
     act(() => ref.current?.setRange(3, 5));
 
-    expect(screen.getByTestId('rail-tick-3')).toHaveClass('w-3');
-    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3');
-    expect(screen.getByTestId('rail-tick-6')).toHaveClass('w-1.5');
+    expect(screen.getByTestId('rail-tick-3')).toHaveClass('w-3.5');
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3.5');
+    expect(screen.getByTestId('rail-tick-6')).toHaveClass('w-2');
+  });
+
+  it('densifies the map once the rail reports its height', () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 250 });
+    try {
+      render(<TimelineRail items={items(500)} onJump={() => {}} />);
+      // floor((250 + 10) / 12) = 21 dashes → ceil(500 / 21) = 24 messages each.
+      expect(screen.getAllByTestId(/^rail-tick-/)).toHaveLength(21);
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', original);
+      }
+    }
   });
 
   it('marks the dash that holds the unread divider', () => {
@@ -82,5 +96,14 @@ describe('TimelineRail', () => {
     const unread = screen.getByTestId('rail-tick-2');
     expect(unread).toHaveAccessibleName('未读消息');
     expect(unread).toHaveClass('bg-primary/45');
+  });
+});
+
+describe('tickLimitFor', () => {
+  it('keeps a constant dash pitch and bounds the map', () => {
+    expect(tickLimitFor(0)).toBe(40); // unmeasured (SSR / first paint)
+    expect(tickLimitFor(100)).toBe(9);
+    expect(tickLimitFor(250)).toBe(21);
+    expect(tickLimitFor(2000)).toBe(120);
   });
 });

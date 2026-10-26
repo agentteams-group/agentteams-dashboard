@@ -215,10 +215,10 @@ describe('ScrollPanel', () => {
     const props = virtuosoMock.props as {
       rangeChanged: (_range: { startIndex: number; endIndex: number }) => void;
     };
-    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-1.5');
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-2');
 
     act(() => props.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 }));
-    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3');
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3.5');
 
     fireEvent.click(screen.getByTestId('rail-tick-2'));
     expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
