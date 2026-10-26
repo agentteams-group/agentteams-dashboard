@@ -337,6 +337,7 @@ function hasUnclosedA2uiMarker(content: string, isHtml: boolean): boolean {
 }
 
 export function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
+  if (typeof body !== 'string') return null;
   const blocks: ParsedA2uiBlock[] = [];
   let hasThinking = false;
   let hasToolCall = false;
@@ -561,6 +562,7 @@ export function parseLegacyContent(
  * recognition the timeline renders a raw bold line and a wide code fence.
  */
 export function parseHermesToolCalls(body: string): ParsedA2uiBlock[] | null {
+  if (typeof body !== 'string') return null;
   const pattern = /🔧\s*\*\*([^*\n]+)\*\*\s*\n```[^\n]*\n([\s\S]*?)\n```/g;
   const blocks: ParsedA2uiBlock[] = [];
   let lastEnd = 0;

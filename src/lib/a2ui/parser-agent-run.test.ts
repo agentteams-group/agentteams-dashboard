@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAgentRunBlocks } from './parser';
+import { parseAgentRunBlocks, parseEmbeddedAgentReprBlocks, parseHermesToolCalls } from './parser';
 
 describe('parseAgentRunBlocks v1', () => {
   it('parses a v1 envelope with text + thinking blocks', () => {
@@ -126,3 +126,14 @@ describe('parseAgentRunBlocks legacy (v0 / unspecified)', () => {
     expect(blocks?.[0]).toMatchObject({ type: 'text', text: 'legacy' });
   });
 });
+
+describe('parser matchAll guards (#1436)', () => {
+  it('parseEmbeddedAgentReprBlocks returns null for a missing body', () => {
+    expect(parseEmbeddedAgentReprBlocks(undefined as unknown as string)).toBeNull();
+  });
+
+  it('parseHermesToolCalls returns null for a missing body', () => {
+    expect(parseHermesToolCalls(undefined as unknown as string)).toBeNull();
+  });
+});
+

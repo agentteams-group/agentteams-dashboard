@@ -145,7 +145,12 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
 }
 
 export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
-  const blocks = selectBlocks(input);
+  // Matrix events with m.relates_to (replies / replaces) or structured
+  // org.agentteams.run payloads may omit `body`. Callers historically passed
+  // that through, and parser matchAll then crashed the chat timeline (#1436).
+  const body = typeof input.body === 'string' ? input.body : '';
+  const formattedBody = typeof input.formattedBody === 'string' ? input.formattedBody : undefined;
+  const blocks = selectBlocks({ ...input, body, formattedBody });
   // Chat file references (#87) ride alongside the body text instead of
   // replacing it: the composer may attach files to any message, so the refs
   // are appended as an extra block (ref-only messages render chips alone

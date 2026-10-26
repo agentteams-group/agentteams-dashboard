@@ -472,3 +472,25 @@ describe('normalizeToBlocks file references (com.agentteams.file_refs)', () => {
     expect(blocks.map((b) => b.type)).toEqual(['text']);
   });
 });
+
+describe('normalizeToBlocks missing body (#1436)', () => {
+  it('does not throw when body is undefined', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: undefined as unknown as string }));
+    expect(blocks).toEqual([{ type: 'text', text: '' }]);
+  });
+
+  it('still renders v1 confirmation blocks when body is missing', () => {
+    const blocks = normalizeToBlocks(makeInput({
+      body: undefined as unknown as string,
+      content: {
+        'org.agentteams.run': {
+          version: '1',
+          blocks: [{ type: 'confirmation', tool_name: 'bash', confirmation_id: 'cfm-1' }],
+        },
+      },
+    }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('confirmation');
+  });
+});
+

@@ -875,3 +875,55 @@ describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）'
     expect(bubble?.className).toContain('rounded-tl-md');
   });
 });
+
+describe('MessageBubble missing body (#1436)', () => {
+  it('does not crash when content is undefined', () => {
+    expect(() => {
+      renderWithProvider(
+        <MessageBubble
+          message={{
+            id: '$nobody',
+            sender: '@agent:example.com',
+            senderShort: 'agent',
+            content: undefined as unknown as string,
+            timestamp: 0,
+            type: 'm.text',
+            isMe: false,
+            rawContent: {
+              'm.relates_to': { 'm.in_reply_to': { event_id: '$card' } },
+            },
+          }}
+          showSender={false}
+          isContinuation={false}
+        />,
+      );
+    }).not.toThrow();
+  });
+
+  it('still renders a v1 confirmation card when body is missing', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$cfm',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: undefined as unknown as string,
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              version: '1',
+              blocks: [{ type: 'confirmation', tool_name: 'bash', confirmation_id: 'cfm-1' }],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+  });
+});
+

@@ -250,9 +250,11 @@ export function MessageBubble({
   }, [message.isMe, message.isStreaming, message.workerName, message.sender, message.content, memberMap, senderLabel]);
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
+    // Same guard as hitl-inbox: relation-only / structured-run events may
+    // arrive without a string body (#1436).
     return normalizeToBlocks({
-      body: message.content,
-      formattedBody: message.formattedContent || undefined,
+      body: typeof message.content === 'string' ? message.content : '',
+      formattedBody: typeof message.formattedContent === 'string' ? message.formattedContent : undefined,
       content: message.rawContent ?? {},
       isStreaming: !!message.isStreaming,
       isMine: message.isMe,

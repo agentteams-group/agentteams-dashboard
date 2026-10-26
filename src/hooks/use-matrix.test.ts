@@ -334,6 +334,21 @@ describe('formatMatrixEvents', () => {
 
     expect(messages[0].workflow).toEqual(workflow);
   });
+
+  it('keeps a body-less m.room.message that only carries m.relates_to (#1436)', () => {
+    const events: MatrixEvent[] = [{
+      event_id: 'rel',
+      sender: '@human:example.test',
+      type: 'm.room.message',
+      origin_server_ts: 100,
+      content: {
+        'm.relates_to': { 'm.in_reply_to': { event_id: 'root' } },
+      } as MatrixEvent['content'],
+    }];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('');
+  });
 });
 
 describe('isMessageReadByOthers', () => {
