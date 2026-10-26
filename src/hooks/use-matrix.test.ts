@@ -183,6 +183,36 @@ describe('formatMatrixEvents', () => {
     expect(messages[1]).toMatchObject({ id: 'other' });
   });
 
+  it('keeps thread replies whose root is outside the loaded window as a detached turn', () => {
+    // Pagination can cut off the root of a thread. Dropping the replies made
+    // the turn's only answer disappear; it must stay visible, anchored on the
+    // missing root id so the thread panel can still try to load it.
+    const events = [
+      message('other', '无关消息', 50),
+      message('reply-1', '第一段答案', 100, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' },
+      }),
+      message('reply-2', '第二段答案', 200, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      id: 'missing-root',
+      canonicalEventId: 'missing-root',
+      latestEventId: 'reply-2',
+      detached: true,
+      replyCount: 2,
+      content: '第一段答案\n\n第二段答案',
+    });
+    expect(messages[1].sourceEventIds).toEqual(
+      expect.arrayContaining(['missing-root', 'reply-1', 'reply-2']),
+    );
+  });
+
   it('keeps self-thread-replies in the main timeline (agent continuing its own response)', () => {
     // When an agent sends a thread reply to its own root (e.g. Hermes
     // delivering the main answer), keep it inline so it's visible.
@@ -311,6 +341,18 @@ describe('formatMatrixEvents', () => {
 
     expect(messages[0].agentStatus).toBe('in_progress');
     expect(messages[0].isStreaming).toBe(true);
+  });
+
+  it('treats the MSC4357 live marker as streaming until the final revision drops it', () => {
+    const events = [
+      message('live', '正在生成', 100, { 'org.matrix.msc4357.live': {} }),
+      message('final', '已生成', 200, { 'org.matrix.msc4357.live': undefined }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0]).toMatchObject({ id: 'live', isStreaming: true });
+    expect(messages[1]).toMatchObject({ id: 'final', isStreaming: false });
   });
 
   it('leaves agentStatus undefined when no status is present', () => {

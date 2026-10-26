@@ -6,6 +6,7 @@ import type { ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { ThinkingCard } from '../thinking-card';
 import { StreamingCard } from '../streaming-card';
+import { MarkdownMessage } from '../markdown-message';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
 
 interface RunProcessDisclosureProps {
@@ -37,6 +38,10 @@ function toolPayloadOf(block: ParsedA2uiBlock): ToolCallPayload | null {
  * collapsed process never hides something the human must act on.
  */
 export function isProcessBlock(block: ParsedA2uiBlock): boolean {
+  // Narrated steps (ChatIR marks qwenpaw thread text / earlier answer steps as
+  // inProcess) belong inside the fold. Attachments stay outside so a
+  // step-scoped file card remains visible next to its fold.
+  if (block.type === 'text') return block.inProcess === true;
   return block.type === 'thinking' || block.type === 'tool_call' || toolPayloadOf(block) !== null;
 }
 
@@ -147,6 +152,13 @@ export function RunProcessDisclosure({
               return (
                 <div key={`card-${idx}`} className="w-full [&>div]:my-0">
                   <StreamingCard payload={block.payload as Record<string, unknown>} />
+                </div>
+              );
+            }
+            if (block.type === 'text') {
+              return (
+                <div key={`text-${idx}`} className="w-full px-1 py-0.5 text-xs">
+                  <MarkdownMessage content={block.text ?? ''} isStreaming={block.isStreaming ?? isStreaming} />
                 </div>
               );
             }

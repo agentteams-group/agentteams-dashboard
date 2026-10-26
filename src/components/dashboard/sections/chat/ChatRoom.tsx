@@ -28,6 +28,7 @@ import {
   type RoomMember,
 } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
+import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker-chats-panel';
@@ -216,22 +217,35 @@ export function ChatRoom({
     return map;
   }, [agentStatusMap, typingUsers, allEvents, sessionTick]);
 
-  const formattedMessages = useMemo<DisplayMessage[]>(() => {
-    const formatted = formatMatrixEvents(allEvents, currentUserId);
-    // Stamp each message with its sender's runtime / worker name (MXID →
-    // Worker lookup from ChatSection) so bubbles can badge the runtime.
-    return formatted.map((message) => {
-      const owner = runtimeMap[message.sender];
-      return owner ? { ...message, runtime: owner.runtime, workerName: owner.workerName } : message;
-    });
-  }, [allEvents, currentUserId, runtimeMap]);
+  // ChatIR: format raw Matrix events once, then assemble runtime turns. The
+  // assembly adds turn ids, canonical/latest event ids (receipts), runtime
+  // states and attachment placement on top of the formatted timeline.
+  const chatIr = useMemo(
+    () => assembleChatTimeline(
+      formatMatrixEvents(allEvents, currentUserId),
+      allEvents,
+      { currentUserId, runtimeMap },
+    ),
+    [allEvents, currentUserId, runtimeMap],
+  );
+  const formattedMessages = chatIr.messages;
 
   // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
   // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里
   // 只展示当前已同步、确有回复的根消息，不另造索引。
+  //
+  // Pure worker-run threads (every participant is a worker MXID) are runs,
+  // not conversations: they stay in the timeline and out of the topic list.
+  // Detached roots are always listed so their replies remain reachable.
   const threadRoots = useMemo(
-    () => formattedMessages.filter((message) => (message.replyCount ?? 0) > 0),
-    [formattedMessages],
+    () => formattedMessages.filter((message) => {
+      if (message.detached) return true;
+      if ((message.replyCount ?? 0) === 0) return false;
+      const participants = chatIr.threadParticipants[message.id] ?? [];
+      if (participants.length === 0) return true;
+      return participants.some((sender) => !runtimeMap[sender]);
+    }),
+    [formattedMessages, chatIr.threadParticipants, runtimeMap],
   );
 
   const loadMore = useCallback(async () => {
@@ -274,22 +288,25 @@ export function ChatRoom({
   // position. Both are best-effort — the sidebar badge is cleared optimistically
   // and UNREAD_GRACE_MS suppresses stale counters until the server confirms.
   const markAllRead = useCallback((targetOverride?: string) => {
-    const last = formattedMessages[formattedMessages.length - 1];
-    const fallback = last ? (last.eventId || last.id) : null;
-    const target = targetOverride || fallback;
-    if (!target || target === readEventId || setReadMarkerMutation.isPending) return;
+    // m.fully_read follows the latest raw event (including edit revisions);
+    // m.read must stay on a top-level event so the homeserver clears the
+    // room's unread counter. Folded turns no longer collapse these targets.
+    const latest = targetOverride || chatIr.latestEventId;
+    if (!latest) return;
+    const receiptTarget = targetOverride || chatIr.latestTopLevelEventId || latest;
+    if (latest === readEventId || setReadMarkerMutation.isPending) return;
     // Optimistically clear the sidebar badge so the UI feels snappy;
     // the next /sync cycle will confirm the server-side reset.
     useRoomMetaStore.getState().clearUnread(roomId);
-    sendReceiptMutation.mutate({ roomId, eventId: target });
-    setReadMarkerMutation.mutate({ roomId, eventId: target }, {
+    sendReceiptMutation.mutate({ roomId, eventId: receiptTarget });
+    setReadMarkerMutation.mutate({ roomId, eventId: latest }, {
       onError: (err) => {
         // m.fully_read may not be supported by all homeservers; silently ignore
         const code = (err as { errcode?: string })?.errcode;
         if (code !== 'M_BAD_JSON') console.warn('Failed to set read marker:', err);
       },
     });
-  }, [formattedMessages, readEventId, setReadMarkerMutation, sendReceiptMutation, roomId]);
+  }, [chatIr.latestEventId, chatIr.latestTopLevelEventId, readEventId, setReadMarkerMutation, sendReceiptMutation, roomId]);
 
   // Single watcher for newly appended messages: scroll down when pinned to
   // the bottom, otherwise accumulate a "new messages" counter for the badge.
@@ -325,15 +342,14 @@ export function ChatRoom({
     if (!readMarkerQuery.isSuccess && !readMarkerQuery.isError) return;
     if (didInitialScrollRef.current) return;
     didInitialScrollRef.current = true;
-    const last = formattedMessages[formattedMessages.length - 1];
-    const lastId = last ? (last.eventId || last.id) : null;
+    const lastId = chatIr.latestEventId;
     const hasUnreadDivider = Boolean(readEventId && lastId && readEventId !== lastId);
     if (hasUnreadDivider) {
       scrollRef.current?.scrollToItem(`read-marker-${readEventId}`);
     } else {
       scrollRef.current?.scrollToBottom({ smooth: false });
     }
-  }, [messagesQuery.isSuccess, formattedMessages, readEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError]);
+  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError]);
 
   // Outbound message cluster (optimistic bubbles + system notices + send),
   // extracted verbatim; markAllRead is injected because sending a message

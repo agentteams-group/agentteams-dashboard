@@ -46,6 +46,12 @@ export interface ParsedA2uiBlock {
   text?: string;
   /** Whether this block is still streaming (incomplete) */
   isStreaming?: boolean;
+  /**
+   * Narration text ChatIR moved into the run's process fold (qwenpaw thread
+   * commentary, earlier steps of a multi-step answer). Rendered inside the
+   * "过程" disclosure instead of the answer bubble.
+   */
+  inProcess?: boolean;
   /** Runtime the block was attributed to (drives corner badges in Chat). */
   runtimeHint?: string;
 }

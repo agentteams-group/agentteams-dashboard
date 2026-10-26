@@ -162,6 +162,33 @@ describe('coalesceWorkerTurns', () => {
     expect(turns.map((turn) => turn.id)).toEqual(['first', 'second']);
   });
 
+  it('does not absorb the next run placeholder into the previous answer', () => {
+    // QwenPaw opens every run with a top-level "处理中..." root and later edits
+    // it into the answer. The next run's placeholder is a different top-level
+    // event; appending it as output glued adjacent turns together.
+    const messages: DisplayMessage[] = [
+      workerMessage({ id: 'root-1', content: '第一轮答案', timestamp: 1_000, revisionCount: 1 }),
+      notice('root-2', '处理中...', 2_000),
+    ];
+
+    const turns = coalesceWorkerTurns(messages);
+
+    expect(turns.map((turn) => turn.id)).toEqual(['root-1', 'root-2']);
+    expect(turns[0].content).toBe('第一轮答案');
+    expect(turns[1].content).toBe('处理中...');
+  });
+
+  it('does not merge two unedited placeholders from adjacent runs', () => {
+    const messages: DisplayMessage[] = [
+      notice('root-1', '处理中...', 1_000),
+      notice('root-2', '处理中...', 2_000),
+    ];
+
+    const turns = coalesceWorkerTurns(messages);
+
+    expect(turns.map((turn) => turn.id)).toEqual(['root-1', 'root-2']);
+  });
+
   it('splits a turn when the next step arrives after a long quiet period', () => {
     const messages: DisplayMessage[] = [
       notice('root-1', '处理中...', 1_000),

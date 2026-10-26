@@ -43,10 +43,23 @@ function sameConversationLane(anchor: DisplayMessage, candidate: DisplayMessage)
   // placeholder (qwenpaw m.replace): the run starts with the root's thread
   // replies and ends with the root itself.
   if (anchor.threadId && candidate.id === anchor.threadId) return true;
+  if (!anchor.isThreadReply && !anchor.threadId && candidate.id !== anchor.id) {
+    // Hermes/openhuman stream process notices as top-level events, so a fresh
+    // top-level message can still belong to the current run. Two shapes end it:
+    if (isAgentPlaceholderBody(candidate.content)) return false;
+    // The anchor already delivered its answer (qwenpaw edits the placeholder
+    // root). A different top-level event is the next run, not more output.
+    if ((anchor.revisionCount ?? 0) > 0) return false;
+    return true;
+  }
   return !anchor.isThreadReply && candidate.threadId === anchor.threadId;
 }
 
 function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
+  // ChatIR already assembled this turn; folding it again would nest the
+  // precomputed blocks and re-split a finished answer.
+  if (message.turnId) return null;
+  if (message.precomputedBlocks) return null;
   if (message.isMe || !message.workerName) return null;
   if (message.workflow) return null;
   if (message.mediaUrl) return null;

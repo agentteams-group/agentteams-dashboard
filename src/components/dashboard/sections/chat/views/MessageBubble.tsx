@@ -32,7 +32,7 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, Copy, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
+import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
@@ -66,6 +66,44 @@ interface MessageBubbleProps {
    * status dot on the avatar). Undefined for humans / unknown senders.
    */
   senderStatus?: WorkerSessionState | null;
+}
+
+/**
+ * ChatIR turn states that need a visible explanation: a detached thread, a
+ * run that never produced an answer, and a run that just opened.
+ */
+function TurnStateNote({
+  state,
+  hasBlocks,
+}: {
+  state: DisplayMessage['turnState'];
+  hasBlocks: boolean;
+}) {
+  if (state === 'detached') {
+    return (
+      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70" data-turn-state="detached">
+        <Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+        原消息不在当前加载范围，以下为该话题中的回复
+      </p>
+    );
+  }
+  if (state === 'interrupted') {
+    return (
+      <p className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400" data-turn-state="interrupted">
+        <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
+        本轮未生成最终答复
+      </p>
+    );
+  }
+  if (state === 'pending' && !hasBlocks) {
+    return (
+      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground" data-turn-state="pending">
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+        等待回复…
+      </p>
+    );
+  }
+  return null;
 }
 
 function MessageTime({ timestamp }: { timestamp: number }) {
@@ -696,6 +734,8 @@ export function MessageBubble({
               })}
             </div>
           )}
+
+          <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />
 
           {/* 续接消息（同发送者分组）默认不占行：时间/回执在 hover 时显示在行尾。 */}
           {!showAvatar && (
