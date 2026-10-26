@@ -82,6 +82,60 @@ describe('ScrollPanel', () => {
     expect(screen.getByText('second').parentElement).not.toHaveClass('bg-primary/10');
   });
 
+  it('keeps an in-flight jump from being re-pinned to the latest message', () => {
+    vi.useFakeTimers();
+    const onAtBottomChange = vi.fn();
+    const ref = createRef<ScrollPanelHandle>();
+    render(
+      <ScrollPanel
+        ref={ref}
+        items={[message('first'), message('second')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+        onAtBottomChange={onAtBottomChange}
+      />
+    );
+
+    const props = virtuosoMock.props as {
+      followOutput: (_atBottom: boolean) => 'auto' | false;
+    };
+    expect(props.followOutput(true)).toBe('auto');
+
+    act(() => ref.current?.scrollToIndex(0));
+
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(props.followOutput(true)).toBe(false);
+
+    act(() => vi.advanceTimersByTime(900));
+    expect(props.followOutput(true)).toBe('auto');
+  });
+
+  it('resumes bottom following as soon as the user returns to the latest message', () => {
+    vi.useFakeTimers();
+    const ref = createRef<ScrollPanelHandle>();
+    render(
+      <ScrollPanel
+        ref={ref}
+        items={[message('first'), message('second')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    const props = virtuosoMock.props as {
+      followOutput: (_atBottom: boolean) => 'auto' | false;
+    };
+    act(() => ref.current?.scrollToIndex(0));
+    expect(props.followOutput(true)).toBe(false);
+
+    act(() => ref.current?.scrollToBottom({ smooth: false }));
+    expect(props.followOutput(true)).toBe('auto');
+  });
+
   it('requests older messages from the top edge and reports bottom state changes', () => {
     const onLoadMore = vi.fn();
     const onAtBottomChange = vi.fn();

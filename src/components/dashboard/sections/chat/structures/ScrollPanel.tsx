@@ -41,6 +41,14 @@ const BOTTOM_THRESHOLD = 100;
  */
 const FIRST_ITEM_INDEX = 1_000_000;
 
+/**
+ * A programmatic jump (rail dash, reply anchor, unread divider) animates for a
+ * few hundred milliseconds. Until it lands, the list still reports "at bottom",
+ * so an appended message would re-pin the view to the latest message and drag
+ * the user back down. Bottom-follow stays suppressed for this window after a jump.
+ */
+const JUMP_FOLLOW_WINDOW_MS = 900;
+
 function keyOf(item: GroupedMessage, index: number): string {
   const timelineItem = item as unknown as { key?: string; gm?: GroupedMessage };
   return String(
@@ -72,6 +80,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   const atBottomRef = useRef(true);
   const initialMountRef = useRef(true);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jumpWindowUntilRef = useRef(0);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const indexStateRef = useRef({ firstIndex: FIRST_ITEM_INDEX, keys: [] as string[] });
 
@@ -163,10 +172,14 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   const jumpToIndex = useCallback(
     (index: number) => {
       if (index < 0 || index >= items.length) return;
+      // Leaving the bottom is an explicit user intent: report it before the
+      // animation starts, while the list still measures itself at the bottom.
+      handleAtBottomChange(false);
+      jumpWindowUntilRef.current = Date.now() + JUMP_FOLLOW_WINDOW_MS;
       virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
       highlightIndex(index);
     },
-    [highlightIndex, items.length]
+    [handleAtBottomChange, highlightIndex, items.length]
   );
 
   useImperativeHandle(ref, () => ({
@@ -178,6 +191,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
         behavior: _options.smooth ? 'smooth' : 'auto',
       });
       atBottomRef.current = true;
+      jumpWindowUntilRef.current = 0;
       onAtBottomChange?.(true);
     },
     scrollToIndex: jumpToIndex,
@@ -253,7 +267,9 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
         atBottomThreshold={BOTTOM_THRESHOLD}
         atBottomStateChange={handleAtBottomChange}
         rangeChanged={handleRangeChanged}
-        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+        followOutput={(isAtBottom) =>
+          isAtBottom && Date.now() >= jumpWindowUntilRef.current ? 'auto' : false
+        }
         startReached={() => {
           if (hasNextPage && !isFetchingNextPage) onLoadMore();
         }}
