@@ -42,10 +42,14 @@ describe('ArtifactLink 图片坐标锚点（E-1）', () => {
   it('点击图片后按相对坐标锚定，并把锚点传给评论面板', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(new Blob(['png-bytes']), {
-        status: 200,
-        headers: { 'content-type': 'image/png' },
-      })),
+      // jsdom Blob 没有 stream()；Response(Blob) 会抛 object.stream is not a function。
+      // 图片预览只读 content-type，字符串 body 即可。
+      vi.fn(async () =>
+        new Response('png-bytes', {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        }),
+      ),
     );
 
     renderWithClient(<ArtifactLink href="/artifacts/shot.png" label="shot.png" roomId="!r:server" />);
