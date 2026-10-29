@@ -87,7 +87,7 @@ export function ReleaseControls({
     <span className="inline-flex items-center gap-1.5 flex-wrap">
       <ArtifactStateBadge info={info} />
       {released && (
-        <Badge variant="outline" className="text-[10px] shrink-0" title={`放行人 ${latest?.actor ?? ''}`}>
+        <Badge variant="outline" className="text-xs shrink-0" title={`放行人 ${latest?.actor ?? ''}`}>
           <CircleCheck className="h-2.5 w-2.5" aria-hidden="true" />
           v{records.filter((r) => r.action === 'release').length}
         </Badge>
@@ -97,7 +97,7 @@ export function ReleaseControls({
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+            className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => void act('revoke')}
             title="撤销放行（生成新记录，历史不覆盖）"
           >
@@ -108,7 +108,7 @@ export function ReleaseControls({
           <Button
             variant="outline"
             size="sm"
-            className="h-5 px-1.5 text-[10px] border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+            className="h-5 px-1.5 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
             onClick={() => void act('release')}
             title="人工放行（写入房间状态事件并落审计）"
           >
@@ -118,12 +118,12 @@ export function ReleaseControls({
         )
       )}
       {actionError && (
-        <span role="alert" className="text-[10px] text-red-600 dark:text-red-400">
+        <span role="alert" className="text-xs text-red-600 dark:text-red-400">
           {actionError}
         </span>
       )}
       {!compact && !roomId && info.state === 'released' && (
-        <span className="text-[10px] text-muted-foreground" title={info.note}>
+        <span className="text-xs text-muted-foreground" title={info.note}>
           （完成态推导）
         </span>
       )}

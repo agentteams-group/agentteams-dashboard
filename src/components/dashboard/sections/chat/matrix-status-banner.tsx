@@ -26,7 +26,7 @@ export function MatrixStatusBanner({
       <Button
         variant="outline"
         size="sm"
-        className="h-6 text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400"
+        className="h-6 text-xs border-amber-500/30 text-amber-600 dark:text-amber-400"
         onClick={onLoginClick}
       >
         <LogIn className="w-3 h-3 mr-1" />

@@ -14,7 +14,7 @@ interface MembersPanelProps {
 export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <p className="shrink-0 px-3 py-2 text-[10px] font-semibold tracking-wide text-muted-foreground">
+      <p className="shrink-0 px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground">
         成员 ({roomMembers.length})
       </p>
       <div className="flex-1 space-y-0.5 overflow-y-auto custom-scrollbar p-2 pt-0">
@@ -33,7 +33,7 @@ export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps
             >
               <span className="relative inline-flex shrink-0">
                 <Avatar className="h-6 w-6 shrink-0">
-                  <AvatarFallback className={`text-[10px] ${color}`}>
+                  <AvatarFallback className={`text-xs ${color}`}>
                     {member.displayName.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -45,7 +45,7 @@ export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">{member.displayName}</p>
-                <p className="truncate font-mono text-[11px] text-muted-foreground">
+                <p className="truncate font-mono text-xs text-muted-foreground">
                   {member.userId.split(':')[0].slice(1)}
                 </p>
               </div>

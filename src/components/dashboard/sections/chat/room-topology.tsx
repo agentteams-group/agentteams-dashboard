@@ -58,31 +58,31 @@ export function RoomTopology({
             <div className="flex items-center gap-2 mb-2">
               <Hash className="w-3 h-3 text-emerald-500" />
               <span className="font-medium text-xs truncate">{topology.currentRoom.name}</span>
-              <Badge variant="outline" className="text-[10px] ml-auto">
+              <Badge variant="outline" className="text-xs ml-auto">
                 {topology.currentRoom.type}
               </Badge>
             </div>
-            <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground font-mono truncate">
+            <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground font-mono truncate">
               <span>{topology.currentRoom.id}</span>
             </div>
             {topology.currentRoom.parentTeam && (
-              <div className="flex items-center gap-1 mt-1 text-[10px]">
+              <div className="flex items-center gap-1 mt-1 text-xs">
                 <Users className="w-3 h-3 text-muted-foreground" />
                 <span>团队: {topology.currentRoom.parentTeam}</span>
               </div>
             )}
             {topology.teamMembers.length > 0 && (
               <div className="mt-2 pt-2 border-t">
-                <p className="text-[10px] text-muted-foreground mb-1">当前成员 ({topology.teamMembers.length})</p>
+                <p className="text-xs text-muted-foreground mb-1">当前成员 ({topology.teamMembers.length})</p>
                 <div className="space-y-1">
                   {topology.teamMembers.map((m) => (
                     <div key={m.userId} className="flex items-center gap-1.5">
-                      <Avatar className="w-4 h-4">
-                        <AvatarFallback className="text-[7px] bg-muted text-muted-foreground">
+                      <Avatar className="w-5 h-5">
+                        <AvatarFallback className="text-xs bg-muted text-muted-foreground">
                           {m.displayName.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-[10px] truncate flex-1">{m.displayName}</span>
+                      <span className="text-xs truncate flex-1">{m.displayName}</span>
                     </div>
                   ))}
                 </div>
@@ -90,10 +90,10 @@ export function RoomTopology({
             )}
             {topology.relatedRooms.length > 0 && (
               <div className="mt-2 pt-2 border-t">
-                <p className="text-[10px] text-muted-foreground mb-1">同团队房间</p>
+                <p className="text-xs text-muted-foreground mb-1">同团队房间</p>
                 <div className="space-y-1">
                   {topology.relatedRooms.slice(0, 3).map(r => (
-                    <div key={r.id} className="flex items-center gap-1 text-[10px]">
+                    <div key={r.id} className="flex items-center gap-1 text-xs">
                       <Hash className="w-3 h-3 text-muted-foreground" />
                       <span className="truncate">{r.name}</span>
                     </div>
@@ -122,13 +122,13 @@ export function RoomTopology({
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-3 h-3 text-emerald-500" />
               <span className="font-medium text-xs">{team.parentTeam}</span>
-              <Badge variant="outline" className="text-[10px] ml-auto">
+              <Badge variant="outline" className="text-xs ml-auto">
                 {teamWorkers.length + teamManagers.length}
               </Badge>
             </div>
             <div className="space-y-1.5 ml-5">
               {teamManagers.map((mgr) => (
-                <div key={mgr.id} className="flex items-center gap-1.5 text-[10px]">
+                <div key={mgr.id} className="flex items-center gap-1.5 text-xs">
                   <Crown className="w-3 h-3 text-violet-500" />
                   <span className="font-medium">{mgr.name}</span>
                   <span className="text-muted-foreground">↔</span>
@@ -136,7 +136,7 @@ export function RoomTopology({
                 </div>
               ))}
               {teamWorkers.map((wr) => (
-                <div key={wr.id} className="flex items-center gap-1.5 text-[10px]">
+                <div key={wr.id} className="flex items-center gap-1.5 text-xs">
                   <Bot className="w-3 h-3 text-emerald-500" />
                   <span className="font-medium">{wr.name}</span>
                   <span className="text-muted-foreground">↔</span>
@@ -144,7 +144,7 @@ export function RoomTopology({
                 </div>
               ))}
               {teamWorkers.length === 0 && teamManagers.length === 0 && (
-                <p className="text-[10px] text-muted-foreground">暂无成员</p>
+                <p className="text-xs text-muted-foreground">暂无成员</p>
               )}
             </div>
           </CardContent>

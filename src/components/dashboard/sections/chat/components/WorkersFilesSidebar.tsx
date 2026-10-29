@@ -28,12 +28,12 @@ export function FilesPanel({
 }: FilesPanelProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <p className="shrink-0 px-3 pt-2 text-[10px] font-semibold tracking-wide text-muted-foreground">
+      <p className="shrink-0 px-3 pt-2 text-xs font-semibold tracking-wide text-muted-foreground">
         工作目录
       </p>
       {team && (
         <div className="shrink-0 border-b border-border px-3 pb-2 pt-1">
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             当前任务文件存放在「{team.teamName} 的团队共享空间」(teams/{team.name}/shared/)
           </p>
         </div>

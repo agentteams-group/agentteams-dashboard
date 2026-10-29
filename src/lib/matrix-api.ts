@@ -2,6 +2,12 @@
 // All requests go through Next.js API proxy routes to the Matrix homeserver
 
 import { apiUrl } from '@/lib/api-base';
+import {
+  detectSearchUnsupported,
+  parseRoomSearchResponse,
+  searchErrorMessage,
+  type RoomSearchResult,
+} from '@/lib/matrix-search';
 
 export interface MatrixLoginResponse {
   access_token: string;
@@ -29,6 +35,11 @@ export interface MatrixEvent {
   } & Record<string, unknown>;
   type: string;
   origin_server_ts: number;
+  /**
+   * 只有 `/search` 返回的事件（和服务端推送）带这个字段；时间线接口不返，因为房间
+   * 已经在请求路径里了。跨房间检索要靠它把命中定位回具体会话。
+   */
+  room_id?: string;
   state_key?: string;
   unsigned?: Record<string, unknown>;
 }
@@ -253,6 +264,47 @@ export const matrixApi = {
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
     await throwIfNotOk(res, 'Failed to get messages');
     return res.json();
+  },
+
+  /**
+   * 房间内容全文检索（方案 v3 B-1）。走 `/api/matrix/search` 代理到上游
+   * `/_matrix/client/v3/search`。
+   *
+   * 与同文件其它方法不同，这里**不**对 4xx 抛错：Synapse 的搜索索引可以被运营者
+   * 关掉，那是一种能力缺失而不是调用失败，返回 `unsupported: true` 让 UI 显示降级
+   * 提示并退回本地匹配。登录失效（401/403）与上游故障仍照常抛错，不能伪装成降级。
+   */
+  searchRoomMessages: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string | null,
+    term: string,
+    options: { limit?: number; from?: string } = {}
+  ): Promise<RoomSearchResult> => {
+    // filter JSON 由 /api/matrix/search 代理按白名单参数拼装（见 buildRoomSearchFilter），
+    // 客户端这边不碰上游查询语法。roomId 为 null 就是不限制房间（跨房间检索）。
+    const url = buildMatrixUrl('/api/matrix/search', {
+      homeserver,
+      room_id: roomId ?? undefined,
+      search_term: term,
+      limit: options.limit ?? 50,
+      next_batch: options.from,
+    });
+    const res = await fetch(url, { headers: buildHeaders(accessToken) });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+
+    if (detectSearchUnsupported(res.status, body)) {
+      return { hits: [], unsupported: true, reason: searchErrorMessage(body) };
+    }
+    if (!res.ok) {
+      throw new Error(`Room search failed (${res.status})`);
+    }
+    return parseRoomSearchResponse(body);
   },
 
   getRoomRelations: async (

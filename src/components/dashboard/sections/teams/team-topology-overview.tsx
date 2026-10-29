@@ -14,7 +14,7 @@ export function TopologyOverview() {
               <Crown className="w-4 h-4 text-purple-500" aria-hidden="true" />
               <span className="text-sm">Manager</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">协调调度</p>
+            <p className="text-xs text-muted-foreground mt-1">协调调度</p>
           </div>
           <svg width="40" height="24" viewBox="0 0 40 24" className="shrink-0">
             <line x1="0" y1="12" x2="32" y2="12" stroke="currentColor" strokeWidth="1.5" className="text-purple-500/40" />
@@ -25,7 +25,7 @@ export function TopologyOverview() {
               <Users className="w-4 h-4 text-emerald-500" aria-hidden="true" />
               <span className="text-sm">Teams</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">团队房间</p>
+            <p className="text-xs text-muted-foreground mt-1">团队房间</p>
           </div>
           <svg width="40" height="24" viewBox="0 0 40 24" className="shrink-0">
             <line x1="0" y1="12" x2="32" y2="12" stroke="currentColor" strokeWidth="1.5" className="text-emerald-500/40" />
@@ -36,7 +36,7 @@ export function TopologyOverview() {
               <Bot className="w-4 h-4 text-emerald-500" aria-hidden="true" />
               <span className="text-sm">Workers</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">执行任务</p>
+            <p className="text-xs text-muted-foreground mt-1">执行任务</p>
           </div>
         </div>
       </CardContent>

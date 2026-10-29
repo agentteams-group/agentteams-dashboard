@@ -56,7 +56,7 @@ function ContextChip({
     <Button
       variant={active ? 'secondary' : 'outline'}
       size="sm"
-      className="h-7 gap-1 px-2 text-[11px]"
+      className="h-7 gap-1 px-2 text-xs"
       onClick={onClick}
       title={`${active ? '隐藏' : '显示'}${label}`}
       aria-pressed={active}
@@ -106,18 +106,18 @@ export function ChatRoomHeader({
             : null}
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
           {roomPhase && (
-            <Badge variant="outline" className="text-[11px] px-1 py-0 h-4 shrink-0">
+            <Badge variant="outline" className="text-xs px-1 py-0 h-4 shrink-0">
               {roomPhase}
             </Badge>
           )}
           {roomRuntime && (
-            <Badge variant="secondary" className="text-[11px] px-1 py-0 h-4 shrink-0">
+            <Badge variant="secondary" className="text-xs px-1 py-0 h-4 shrink-0">
               {RUNTIME_LABELS[roomRuntime] || roomRuntime}
             </Badge>
           )}
         </div>
         {team ? (
-          <div className="flex min-w-0 items-center gap-2 text-[11.5px] text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {teamName && teamName !== roomName && (
               <span className="inline-flex min-w-0 shrink items-center gap-1" title={teamName}>
                 <Users className="w-3 h-3 shrink-0" />
@@ -137,7 +137,7 @@ export function ChatRoomHeader({
           </div>
         ) : (
           topic && (
-            <p className="text-[11.5px] text-muted-foreground truncate">{topic}</p>
+            <p className="text-xs text-muted-foreground truncate">{topic}</p>
           )
         )}
       </div>

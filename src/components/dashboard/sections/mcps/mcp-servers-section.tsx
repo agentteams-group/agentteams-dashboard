@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search, Plus, Edit, Trash2, RefreshCw, TestTube, Wifi, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -117,13 +118,25 @@ export function McpServersSection() {
 
       {filteredServers.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center">
-            <Wifi className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">
-              {servers.length === 0
-                ? '暂无 MCP 服务器配置。点击"登记 MCP 地址"创建新的 MCP 服务器。'
-                : '没有匹配的 MCP 服务器'}
-            </p>
+          <CardContent className="p-0">
+            <SectionEmptyState
+              icon={Wifi}
+              title={servers.length === 0 ? '暂无 MCP 服务器配置' : '没有匹配的 MCP 服务器'}
+              description={
+                servers.length === 0 ? '登记一条网关上的 MCP 地址，Worker 才能引用它' : undefined
+              }
+              action={
+                servers.length === 0
+                  ? {
+                      label: '登记 MCP 地址',
+                      onClick: () => {
+                        setEditingServer(undefined);
+                        setDialogOpen(true);
+                      },
+                    }
+                  : undefined
+              }
+            />
           </CardContent>
         </Card>
       ) : (
@@ -139,9 +152,9 @@ export function McpServersSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm">{server.name}</span>
-                        <Badge variant="outline" className="text-[10px]">{server.transport}</Badge>
+                        <Badge variant="outline" className="text-xs">{server.transport}</Badge>
                         {server.type && (
-                          <Badge variant="secondary" className="text-[10px]">{server.type}</Badge>
+                          <Badge variant="secondary" className="text-xs">{server.type}</Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground font-mono truncate max-w-[400px]" title={server.url}>
@@ -154,9 +167,9 @@ export function McpServersSection() {
                       )}
                       {!catalog.off && (catalog.workersByServer.get(server.name) ?? []).length > 0 && (
                         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-muted-foreground shrink-0">已配置 Worker（未验证）：</span>
+                          <span className="text-xs text-muted-foreground shrink-0">已配置 Worker（未验证）：</span>
                           {(catalog.workersByServer.get(server.name) ?? []).map((w, wi) => (
-                            <Badge key={`${server.name}-w-${w.name}-${w.team ?? ''}-${wi}`} variant="secondary" className="text-[10px]">
+                            <Badge key={`${server.name}-w-${w.name}-${w.team ?? ''}-${wi}`} variant="secondary" className="text-xs">
                               {w.name}{w.team ? ` · ${w.team}` : ''}
                             </Badge>
                           ))}

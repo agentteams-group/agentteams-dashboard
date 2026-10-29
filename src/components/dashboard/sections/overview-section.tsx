@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -44,6 +45,8 @@ import type { DeploymentMode } from '@/components/dashboard/nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { WORKER_PHASE_COLORS } from '@/lib/phase-colors';
+import { PHASE_STATUS_TOKEN } from '@/lib/status-tokens';
+import { useStatusColors } from '@/hooks/use-status-colors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useCounter } from '@/hooks/use-counter';
@@ -167,7 +170,7 @@ function ActivityFeedItem({ notification }: { notification: ReturnType<typeof us
         <p className="text-sm font-medium truncate">{notification.title}</p>
         <p className="text-xs text-muted-foreground truncate">{notification.message}</p>
       </div>
-      <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">{timeStr}</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">{timeStr}</span>
     </div>
   );
 }
@@ -186,7 +189,7 @@ function HealthCard({ name, healthy, icon: Icon, detail }: { name: string; healt
           <span className="text-xs font-medium">{name}</span>
           <Badge
             variant="outline"
-            className={`text-[10px] h-4 px-1.5 ${
+            className={`text-xs h-4 px-1.5 ${
               isHealthy
                 ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : isUnknown
@@ -198,7 +201,7 @@ function HealthCard({ name, healthy, icon: Icon, detail }: { name: string; healt
           </Badge>
         </div>
         <Progress value={pct} className="h-1.5" />
-        {detail && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{detail}</p>}
+        {detail && <p className="text-xs text-muted-foreground mt-0.5 truncate">{detail}</p>}
       </div>
     </div>
   );
@@ -289,11 +292,12 @@ function ActiveWorkPanel({ projects, tasks, isLoading }: {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
-            <ListTodo className="w-7 h-7 mb-1.5 opacity-30" />
-            <p className="text-sm">暂无进行中的项目</p>
-            <p className="text-xs">在聊天中向团队下达目标后，项目将在此跟踪</p>
-          </div>
+          <SectionEmptyState
+            icon={ListTodo}
+            title="暂无进行中的项目"
+            description="在聊天中向团队下达目标后，项目将在此跟踪"
+            className="py-4"
+          />
         ) : (
           <div className="space-y-2.5">
             {rows.map(({ project, stat }) => {
@@ -308,14 +312,14 @@ function ActiveWorkPanel({ projects, tasks, isLoading }: {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">{project.name}</span>
-                      <Badge variant="outline" className={`h-4 px-1.5 text-[10px] shrink-0 ${meta.className}`}>
+                      <Badge variant="outline" className={`h-4 px-1.5 text-xs shrink-0 ${meta.className}`}>
                         {meta.label}
                       </Badge>
                     </div>
                     {stat.total > 0 && (
                       <div className="flex items-center gap-2 mt-1.5">
                         <Progress value={pct} className="h-1.5 flex-1" />
-                        <span className="text-[10px] text-muted-foreground shrink-0">{stat.done}/{stat.total} 任务</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{stat.done}/{stat.total} 任务</span>
                       </div>
                     )}
                   </div>
@@ -385,6 +389,10 @@ export function OverviewSection() {
     : null;
 
   // Worker Phase Distribution for PieChart
+  // Recharts 的 fill 是 SVG 属性，属性里不认 var()，所以先按当前主题
+  // 把语义 token 解成真色（A-2 单轨：颜色仍然只来自 globals.css 的六个 token）。
+  const statusColors = useStatusColors();
+
   const phaseData = useMemo(() => {
     if (!workers) return [];
     const phases: Record<string, number> = {};
@@ -477,7 +485,7 @@ export function OverviewSection() {
               workers && workers.length > 0 ? (
                 <div className="space-y-0.5">
                   <PhaseMiniBar workers={workers} />
-                  <div className="flex gap-2 text-[10px] text-muted-foreground">
+                  <div className="flex gap-2 text-xs text-muted-foreground">
                     <span className="text-emerald-500">运行 {phaseBreakdown.Running}</span>
                     <span className="text-green-500">就绪 {phaseBreakdown.Ready}</span>
                     <span className="text-blue-500">休眠 {phaseBreakdown.Sleeping}</span>
@@ -499,7 +507,7 @@ export function OverviewSection() {
               totalTeams > 0 ? (
                 <div className="flex items-center gap-2">
                   <Progress value={readinessPct} className="h-1.5 flex-1" />
-                  <span className="text-[10px] text-muted-foreground">{readinessPct}%</span>
+                  <span className="text-xs text-muted-foreground">{readinessPct}%</span>
                 </div>
               ) : undefined
             }
@@ -514,7 +522,7 @@ export function OverviewSection() {
             color="text-violet-500"
             sub={
               totalTasks > 0 ? (
-                <div className="flex gap-2 text-[10px] text-muted-foreground">
+                <div className="flex gap-2 text-xs text-muted-foreground">
                   <span className="text-emerald-500">完成 {completedTasks}/{totalTasks}</span>
                   <span className="text-violet-500">活跃项目 {activeProjects}</span>
                 </div>
@@ -579,7 +587,7 @@ export function OverviewSection() {
                         label={({ name, value }) => `${name}: ${value}`}
                       >
                         {phaseData.map((entry) => (
-                          <Cell key={entry.name} fill={WORKER_PHASE_COLORS[entry.name] || '#6b7280'} />
+                          <Cell key={entry.name} fill={statusColors[PHASE_STATUS_TOKEN[entry.name] ?? 'info']} />
                         ))}
                       </Pie>
                       <RechartsTooltip />
@@ -644,11 +652,12 @@ export function OverviewSection() {
                   ))}
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-                  <Activity className="w-8 h-8 mb-2 opacity-30" />
-                  <p className="text-sm">暂无操作动态</p>
-                  <p className="text-xs">执行操作后将在此显示</p>
-                </div>
+                <SectionEmptyState
+                  icon={Activity}
+                  title="暂无操作动态"
+                  description="执行操作后将在此显示"
+                  className="flex-1"
+                />
               )}
             </CardContent>
           </Card>
@@ -810,7 +819,7 @@ function InsightBadge({ insight }: { insight: Insight }) {
       <TooltipTrigger asChild>
         <Badge
           variant="outline"
-          className={`gap-1.5 text-[10px] whitespace-nowrap cursor-default ${colorClass}`}
+          className={`gap-1.5 text-xs whitespace-nowrap cursor-default ${colorClass}`}
         >
           <Icon className="w-3 h-3 shrink-0" />
           {insight.message}

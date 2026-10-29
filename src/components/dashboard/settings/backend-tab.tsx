@@ -302,7 +302,7 @@ export function BackendTab() {
               <Server className="w-3.5 h-3.5 text-muted-foreground" />
               <Label className="text-sm">{BACKEND_LABELS[name]}</Label>
               {missingRequired && (
-                <Badge variant="destructive" className="text-[10px] h-4 px-1.5">
+                <Badge variant="destructive" className="text-xs h-4 px-1.5">
                   无可用地址（影响登录/数据面）
                 </Badge>
               )}
@@ -335,7 +335,7 @@ export function BackendTab() {
                     spellCheck={false}
                   />
                   {prefilled && (
-                    <Badge variant="secondary" className="shrink-0 text-[10px] h-4 px-1.5">
+                    <Badge variant="secondary" className="shrink-0 text-xs h-4 px-1.5">
                       嵌入式探测
                     </Badge>
                   )}
@@ -343,7 +343,7 @@ export function BackendTab() {
               );
             })}
             {rows[name]?.map((row) => (
-              <div key={row.url} className="flex items-center gap-1.5 pl-5 text-[11px]">
+              <div key={row.url} className="flex items-center gap-1.5 pl-5 text-xs">
                 <RowIcon row={row} />
                 <span className="text-muted-foreground shrink-0">
                   {row.ok && row.httpOk && row.ms != null ? `${row.ms}ms · ` : ''}
@@ -353,14 +353,14 @@ export function BackendTab() {
                   {row.url}
                 </span>
                 {effective[name] === row.url && (
-                  <Badge variant="secondary" className="text-[11px] h-4 px-1 shrink-0">
+                  <Badge variant="secondary" className="text-xs h-4 px-1 shrink-0">
                     在生效
                   </Badge>
                 )}
               </div>
             ))}
             {candidates.length > 0 && (
-              <p className="pl-5 text-[10px] text-muted-foreground truncate">
+              <p className="pl-5 text-xs text-muted-foreground truncate">
                 当前候选顺序：{candidates.join(' → ')}
                 {effective[name] ? ` · 生效：${effective[name]}` : ''}
               </p>

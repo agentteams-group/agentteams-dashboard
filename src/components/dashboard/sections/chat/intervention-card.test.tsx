@@ -1,7 +1,7 @@
 /**
  * 选项式干预卡（F2.1/F2.2）单测：推荐置顶默认选中、自由输入互斥、
  * 序号快捷键、提交禁用规则、降级回写文本、提交后只读 + 收件箱互通、
- * 超时置灰 + 升级通知、requested_of 权限门。
+ * 超时置灰 + 升级通知、requested_of 权限门；回写结果决定卡片状态（C-3）。
  */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -13,9 +13,11 @@ afterEach(cleanup);
 import { InterventionCard, composeAnswerText } from './intervention-card';
 import type { RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import type { ConfirmationAnswerField } from './confirmation-reply';
 
 const mockAddNotification = vi.fn();
-const mockOnAnswer = vi.fn();
+// 默认回报「已写入房间」：C-3 后卡片只在拿到 true 时才翻成已答复。
+const mockOnAnswer = vi.fn<(_text: string, _answer?: ConfirmationAnswerField) => boolean>(() => true);
 
 vi.mock('@/lib/matrix-store', () => ({
   useMatrixStore: (selector: (_s: { userId: string | null }) => unknown) =>
@@ -139,7 +141,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(submit).toBeEnabled();
   });
 
-  it('⑤ 提交后：只读态显示提交人与时间、答案转自然语言经 onAnswer 发出、收件箱互通消失', () => {
+  it('⑤ 提交后：只读态显示提交人与时间、答案转自然语言经 onAnswer 发出、收件箱互通消失', async () => {
     seedInbox();
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
@@ -147,9 +149,18 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(mockOnAnswer).toHaveBeenCalledTimes(1);
     expect(mockOnAnswer.mock.calls[0][0]).toContain('【干预答复】');
     expect(mockOnAnswer.mock.calls[0][0]).toContain('A1：按模块');
+    // C-3：除了自然语言正文，还要带得上确认 id / 答案 / 提交人，才能追踪到那张卡。
+    expect(mockOnAnswer.mock.calls[0][1]).toEqual({
+      confirmation_id: 'iv-test-1',
+      answer: expect.stringContaining('【干预答复】'),
+      tool_name: 'ask_human',
+      actor: '@me:example.org',
+    });
     // 只读态 + 提交人
-    expect(screen.getByText(/已答复/)).toBeInTheDocument();
+    expect(await screen.findByText(/已答复/)).toBeInTheDocument();
     expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    // 降级可见：进了房间不等于回了运行时，卡上得标出来。
+    expect(screen.getByText('本次选择未回写运行时')).toBeInTheDocument();
     // F2.3 收件箱互通
     expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeUndefined();
     expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toEqual(
@@ -157,10 +168,39 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     );
   });
 
-  it('⑤b 重新挂载后从共享记录保留已答复状态', () => {
+  it('⑤c 未写入房间（回写回报 false）：不翻成已答复、给出重试提示、收件箱仍留这条待办', async () => {
+    seedInbox();
+    mockOnAnswer.mockImplementationOnce(() => false);
+    render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+    fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('答复未写入房间');
+    expect(screen.queryByText(/已答复/)).not.toBeInTheDocument();
+    expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeDefined();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toBeUndefined();
+    // 卡片保持可再次提交
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeEnabled();
+  });
+
+  it('⑤d 启发式卡不附结构化字段：那个 id 是本机造的，写进房间只会对不上号', async () => {
+    render(
+      <InterventionCard
+        payload={{ ...basePayload, confirmation_id: 'heuristic:$e1:0' }}
+        onAnswer={mockOnAnswer}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(await screen.findByText(/已答复/)).toBeInTheDocument();
+    expect(mockOnAnswer.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it('⑤b 重新挂载后从共享记录保留已答复状态', async () => {
     seedInbox();
     const first = render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    // 回写结果在下一个微任务里才回到卡片，等它落定再卸载。
+    expect(await screen.findByText(/提交人 @me:example\.org/)).toBeInTheDocument();
     first.unmount();
 
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);

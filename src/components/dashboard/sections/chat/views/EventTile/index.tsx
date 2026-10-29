@@ -4,19 +4,20 @@ import { MessageBubble } from '../MessageBubble';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { ReadReceiptEntry } from '@/hooks/use-matrix';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../../confirmation-reply';
 
 interface EventTileProps {
   _message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   readReceipts?: Record<string, ReadReceiptEntry>;

@@ -48,7 +48,7 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
               className="h-9 text-sm bg-background/50"
             />
             {infrastructure?.matrix?.homeserver && (
-              <p className="text-[10px] text-muted-foreground mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 从基础设施自动获取: {infrastructure.matrix.homeserver}
               </p>
             )}
@@ -100,7 +100,7 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
         </div>
 
         <div className="mt-4 p-3 rounded-lg bg-muted/50">
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             提示: AgentTeams 的 Human 用户可以作为 Matrix 账号登录。用户名即 Human 名称，初始密码由 Controller 创建时生成。
           </p>
         </div>

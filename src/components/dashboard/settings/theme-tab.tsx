@@ -324,7 +324,7 @@ export function ThemeTab() {
           >
             {themeIcon(t.id, t.base)}
             <span className="flex-1 truncate">{t.nameZh || t.name}</span>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               {t.base === 'dark' ? '暗色底' : '亮色底'}
             </Badge>
             {theme === t.id && (
@@ -391,7 +391,7 @@ function ThemeCard({
       {badges.length > 0 && (
         <span className="flex gap-1">
           {badges.map((b) => (
-            <Badge key={b} variant="secondary" className="text-[11px] px-1 h-4">
+            <Badge key={b} variant="secondary" className="text-xs px-1 h-4">
               {b}
             </Badge>
           ))}

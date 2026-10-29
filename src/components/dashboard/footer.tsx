@@ -27,7 +27,7 @@ export function DashboardFooter({
   matrixSyncing,
 }: DashboardFooterProps) {
   return (
-    <footer className="h-7 border-t border-border bg-card/80 backdrop-blur-sm flex items-center px-3 gap-3 text-[11px] text-muted-foreground flex-shrink-0">
+    <footer className="h-7 border-t border-border bg-card/80 backdrop-blur-sm flex items-center px-3 gap-3 text-xs text-muted-foreground flex-shrink-0">
       <div className="flex items-center gap-1.5">
         {isConnected ? (
           <Wifi className="w-3 h-3 text-emerald-500" />

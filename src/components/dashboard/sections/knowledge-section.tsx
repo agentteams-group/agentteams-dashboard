@@ -536,7 +536,7 @@ export function KnowledgeSection() {
                 ))}
               </select>
             )}
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {graphMode === 'merged'
                 ? `聚合 ${mergedScopeCount} 个 Worker`
                 : effectiveWorker || '—'}
@@ -549,7 +549,7 @@ export function KnowledgeSection() {
               <div className="mb-2 flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                 <span className="text-xs font-medium">知识文件</span>
-                <span className="ml-auto truncate text-[10px] text-muted-foreground">{effectiveWorker || '—'}</span>
+                <span className="ml-auto truncate text-xs text-muted-foreground">{effectiveWorker || '—'}</span>
               </div>
               <div className="space-y-0.5">
                 {groups === null ? (
@@ -564,7 +564,7 @@ export function KnowledgeSection() {
                       <FileRow key={e.path} entry={e} onFile={(p) => void openPreview(p)} />
                     ))}
                     {groups.archive.length === 0 && (
-                      <p className="px-4 py-0.5 text-[10px] text-muted-foreground/70">（无顶层 md）</p>
+                      <p className="px-4 py-0.5 text-xs text-muted-foreground/70">（无顶层 md）</p>
                     )}
                     <GroupLabel text="文件" />
                     {groups.files.map((e) => (
@@ -574,7 +574,7 @@ export function KnowledgeSection() {
                       <DirRowReadOnly key={e.path} entry={e} />
                     ))}
                     {groups.files.length === 0 && groups.topDirs.length === 0 && (
-                      <p className="px-4 py-0.5 text-[10px] text-muted-foreground/70">（无）</p>
+                      <p className="px-4 py-0.5 text-xs text-muted-foreground/70">（无）</p>
                     )}
                     {(['memory', 'digest'] as const).map((d) => {
                       const root = d === 'memory' ? groups.memory : groups.digest;
@@ -619,21 +619,21 @@ export function KnowledgeSection() {
                   <Network className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                   <span className="text-xs font-medium">知识图谱（wikilink 引用网络）</span>
                   {currentGraph && (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {currentGraph.nodes.length} 节点 · {currentGraph.edges.length} 边
                     </span>
                   )}
                   {agentLegend ? (
                     <span className="flex items-center gap-2">
                       {agentLegend.map((l) => (
-                        <span key={l.name} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span key={l.name} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <span className="inline-block h-2 w-2 rounded-full" style={{ background: l.color }} />
                           {l.name}
                         </span>
                       ))}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground">→ 引用方向</span>
+                    <span className="text-xs text-muted-foreground">→ 引用方向</span>
                   )}
                   <div className="ml-auto flex items-center gap-1">
                     <div className="flex gap-0.5 rounded-md border border-border/60 p-0.5">
@@ -691,10 +691,10 @@ export function KnowledgeSection() {
                           height={480}
                         />
                         {sel3d && (
-                          <div className="mt-1 px-1 text-[11px] text-muted-foreground">
+                          <div className="mt-1 px-1 text-xs text-muted-foreground">
                             选中：<span className="font-medium text-foreground">{sel3d.node.label}</span>
                             {sel3d.node.agent && (
-                              <span className="ml-1 font-mono text-[10px]">{sel3d.node.agent}</span>
+                              <span className="ml-1 font-mono text-xs">{sel3d.node.agent}</span>
                             )}
                             <span className="ml-2">出链 {sel3d.out} · 入链 {sel3d.inn}</span>
                             <span className="ml-2">点节点打开预览 · 点空白取消选中</span>
@@ -733,7 +733,7 @@ export function KnowledgeSection() {
                   <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="truncate text-xs font-medium">{preview ? preview.path : '预览'}</span>
                   {preview && preview.worker !== effectiveWorker && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {preview.worker}
                     </span>
                   )}

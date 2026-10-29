@@ -14,7 +14,7 @@ import {
   type DisplayMessage,
 } from '@/hooks/use-matrix';
 import { MessageBubble } from '../views/MessageBubble';
-import { buildConfirmationReply } from '../confirmation-reply';
+import { buildAnswerContent, buildConfirmationReply, type ConfirmationAnswerField } from '../confirmation-reply';
 
 interface ThreadPanelProps {
   roomId: string;
@@ -82,8 +82,8 @@ export function ThreadPanel({
     setInputValue('');
   }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id]);
 
-  const handleSendConfirmation = useCallback((content: string, sender?: string) => {
-    if (!isLoggedIn || sendMutation.isPending) return;
+  const handleSendConfirmation = useCallback((content: string, sender?: string, _eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
+    if (!isLoggedIn || sendMutation.isPending) return Promise.resolve(false);
     const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
     let formattedBody: string | undefined;
     if (reply.mentions?.length) {
@@ -93,14 +93,20 @@ export function ThreadPanel({
         formattedBody = formattedBody.replaceAll(mention.placeholder, link);
       }
     }
-    sendMutation.mutate({
-      roomId,
-      body: reply.content,
-      formattedBody,
-      mentions: reply.mentions?.length
-        ? { user_ids: reply.mentions.map((mention) => mention.userId) }
-        : undefined,
-      relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
+    return new Promise<boolean>((resolve) => {
+      sendMutation.mutate({
+        roomId,
+        body: reply.content,
+        formattedBody,
+        extra: buildAnswerContent(answer),
+        mentions: reply.mentions?.length
+          ? { user_ids: reply.mentions.map((mention) => mention.userId) }
+          : undefined,
+        relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
+      }, {
+        onSuccess: () => resolve(true),
+        onError: () => resolve(false),
+      });
     });
   }, [isLoggedIn, sendMutation, roomId, rootMessage.id, workerMatrixUserIds]);
 
@@ -117,7 +123,7 @@ export function ThreadPanel({
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="flex min-w-0 items-start gap-2">
           <Avatar className="w-5 h-5 shrink-0">
-            <div className="w-full h-full rounded-full flex items-center justify-center text-[11px] font-medium bg-muted text-muted-foreground">
+            <div className="w-full h-full rounded-full flex items-center justify-center text-xs font-medium bg-muted text-muted-foreground">
               {rootMessage.senderShort.slice(0, 2).toUpperCase()}
             </div>
           </Avatar>
@@ -131,7 +137,7 @@ export function ThreadPanel({
       {/* Messages: root + thread replies */}
       <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
         {actionError && (
-          <div className="px-3 py-1.5 text-[10px] text-red-500">{actionError}</div>
+          <div className="px-3 py-1.5 text-xs text-red-500">{actionError}</div>
         )}
         <MessageBubble
           message={rootMessage}
@@ -172,7 +178,7 @@ export function ThreadPanel({
           })
         )}
         {sendMutation.isError && (
-          <div className="px-3 py-1.5 text-[10px] text-red-500">发送失败: {sendMutation.error?.message}</div>
+          <div className="px-3 py-1.5 text-xs text-red-500">发送失败: {sendMutation.error?.message}</div>
         )}
       </div>
 
@@ -188,7 +194,7 @@ export function ThreadPanel({
           className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"
         />
         <div className="flex items-center justify-between mt-1.5">
-          <span className="text-[10px] text-muted-foreground">{replies.length} 条回复</span>
+          <span className="text-xs text-muted-foreground">{replies.length} 条回复</span>
           <Button
             size="sm"
             className="h-7 px-2.5"

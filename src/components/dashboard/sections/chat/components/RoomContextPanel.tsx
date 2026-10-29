@@ -82,14 +82,14 @@ export function RoomContextPanel({
               type="button"
               aria-pressed={active}
               onClick={() => onTabChange(tab.id)}
-              className={`shrink-0 rounded-md px-2 py-1 text-[11px] transition-colors ${
+              className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
                 active
                   ? 'border border-border bg-background font-medium text-foreground shadow-sm'
                   : 'border border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab.label}
-              {count > 0 && <span className="ml-0.5 font-mono text-[10px]">{count}</span>}
+              {count > 0 && <span className="ml-0.5 font-mono text-xs">{count}</span>}
             </button>
           );
         })}
@@ -160,7 +160,7 @@ function ThreadList({
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <MessagesSquare className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
         <p className="text-xs font-medium">本空间暂无回复话题</p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           在任意消息上使用「回复」开启话题，回复数来自 Matrix m.thread 关系。
         </p>
       </div>
@@ -177,14 +177,14 @@ function ThreadList({
           className="w-full rounded-lg border border-border/60 px-2.5 py-2 text-left transition-colors hover:bg-accent/50"
         >
           <span className="flex items-center justify-between gap-2">
-            <span className="truncate text-[11px] font-medium">
+            <span className="truncate text-xs font-medium">
               {memberMap?.[root.sender] ?? root.senderShort}
             </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
               {root.replyCount} 条回复
             </span>
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {root.content.slice(0, 80)}
           </span>
         </button>

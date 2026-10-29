@@ -4,6 +4,8 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { exportMatrixMessages } from '../../debug-log/matrix';
 import { readServerIdentity } from '@/lib/server-auth';
+import { listAuditEvents, type AuditEventRecord } from '@/lib/audit-log';
+import { parseAuditRef } from '@/lib/replay/audit-ref';
 
 /**
  * D3 replay export: turns a Matrix room's message history into a sanitized,
@@ -15,7 +17,14 @@ import { readServerIdentity } from '@/lib/server-auth';
 const REPLAY_ID_PATTERN = /^[a-f0-9]{32}$/;
 
 export function replayDir(): string {
-  return process.env.AGENTTEAMS_REPLAY_DIR || '/data/agentteams-dashboard/replays';
+  if (process.env.AGENTTEAMS_REPLAY_DIR) {
+    return process.env.AGENTTEAMS_REPLAY_DIR;
+  }
+  // Windows 开发环境没有 /data/agentteams-dashboard/replays 根目录，回退到系统临时目录或工作区
+  if (process.platform === 'win32') {
+    return path.join(process.cwd(), '.data', 'replays');
+  }
+  return '/data/agentteams-dashboard/replays';
 }
 
 export function isReplayId(id: string): boolean {
@@ -67,6 +76,24 @@ export async function POST(request: NextRequest) {
   const replayId = crypto.randomBytes(16).toString('hex');
   const dir = replayDir();
   await fs.mkdir(dir, { recursive: true });
+
+  // 收集该房间相关的 hitl.* / release.* 等审计事件快照存入回放包（D-2）
+  let auditEvents: AuditEventRecord[] = [];
+  try {
+    const allAudit = await listAuditEvents({ limit: 500 });
+    auditEvents = allAudit.filter((ev) => {
+      const ref = parseAuditRef(ev);
+      return (
+        ref.roomId === room ||
+        ev.entity_name === room ||
+        (ev.action.startsWith('hitl.') && ref.roomId === room) ||
+        (ev.action.startsWith('release.') && (ref.roomId === room || ev.entity_name === room))
+      );
+    });
+  } catch {
+    // 降级：日志获取失败时不阻塞回放生成
+  }
+
   const bundle = {
     replayId,
     createdAt: new Date().toISOString(),
@@ -74,6 +101,7 @@ export async function POST(request: NextRequest) {
     exportedBy: identity.name,
     messages: result.messages,
     files: result.files,
+    auditEvents,
   };
   await fs.writeFile(path.join(dir, `${replayId}.json`), JSON.stringify(bundle), 'utf8');
 
@@ -87,6 +115,47 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id') || '';
+  const room = url.searchParams.get('room') || '';
+
+  // 1. 如果传入 room 参数，扫描 replayDir 返回该房间最新的一条回放包引用（用于审计互查深链）
+  if (room) {
+    try {
+      const dir = replayDir();
+      const files = await fs.readdir(dir);
+      let latestReplayId: string | null = null;
+      let latestTime = 0;
+
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        try {
+          const raw = await fs.readFile(path.join(dir, file), 'utf8');
+          const data = JSON.parse(raw) as { replayId?: string; room?: string; createdAt?: string };
+          if (data.room === room && data.replayId) {
+            const time = data.createdAt ? new Date(data.createdAt).getTime() : 0;
+            if (time >= latestTime) {
+              latestTime = time;
+              latestReplayId = data.replayId;
+            }
+          }
+        } catch {
+          // ignore corrupted files
+        }
+      }
+
+      if (latestReplayId) {
+        return NextResponse.json({
+          found: true,
+          replayId: latestReplayId,
+          url: `/replay/${latestReplayId}`,
+        });
+      }
+      return NextResponse.json({ found: false, room }, { status: 404 });
+    } catch {
+      return NextResponse.json({ found: false, room }, { status: 404 });
+    }
+  }
+
+  // 2. 按 id 查询具体回放详情
   if (!isReplayId(id)) {
     return NextResponse.json({ error: 'invalid replay id' }, { status: 400 });
   }

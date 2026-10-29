@@ -93,7 +93,11 @@ export function DashboardHeader({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const searchResults = useGlobalSearch(debouncedQuery, workers, teams, managers, humans);
+  // 只在命令面板真的打开时才拉四类新实体（方案 v3 C-2）：
+  // 顶栏不输字的时候不该多带两份后台请求。
+  const searchResults = useGlobalSearch(debouncedQuery, workers, teams, managers, humans, {
+    enabled: paletteOpen,
+  });
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
 
@@ -187,7 +191,15 @@ export function DashboardHeader({
               if (result.roomId) {
                 openChatRoom(result.roomId);
               }
-              onNavClick(result.section);
+              // 单一导航路径（C-1 定的规矩）：生产者只写 hash，由
+              // use-active-section 的 hashchange 监听器解析。带深链参数的命中
+              // （?project= / ?loop= / ?entity=）必须走这条路，否则 onNavClick
+              // 写的规范 hash 会把它覆盖掉，参数就丢了。
+              if (result.hash) {
+                window.location.hash = result.hash;
+              } else {
+                onNavClick(result.section);
+              }
               setDebouncedQuery('');
               setPaletteOpen(false);
               searchInputRef.current?.blur();
@@ -205,7 +217,7 @@ export function DashboardHeader({
             <TooltipTrigger asChild>
               <Badge
                 variant="outline"
-                className="text-[10px] h-6 gap-2 px-2 bg-background/40 text-muted-foreground"
+                className="text-xs h-6 gap-2 px-2 bg-background/40 text-muted-foreground"
               >
                 <span className="flex items-center gap-1">
                   <Bot className="w-3 h-3" />
@@ -296,7 +308,7 @@ export function DashboardHeader({
           </TooltipTrigger>
           <TooltipContent>
             {isConnected ? 'Controller 已连接' : 'Controller 未连接'}
-            {versionString && <div className="text-[10px] opacity-80">版本 v{versionString}</div>}
+            {versionString && <div className="text-xs opacity-80">版本 v{versionString}</div>}
           </TooltipContent>
         </Tooltip>
 
@@ -310,7 +322,7 @@ export function DashboardHeader({
                 <span className="max-w-[120px] truncate">{sessionUser}</span>
                 <Badge
                   variant="secondary"
-                  className={`text-[10px] ${
+                  className={`text-xs ${
                     userLevel === 3
                       ? 'bg-red-500/10 text-red-600 dark:text-red-400'
                       : userLevel === 2

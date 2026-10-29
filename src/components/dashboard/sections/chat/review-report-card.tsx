@@ -148,12 +148,12 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
           <CardTitle className="flex items-center gap-2 text-sm">
             <ClipboardCheck className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
             {payload.title || '审查报告'}
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               第 {payload.round} 轮
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-1.5">
-            <Badge variant="outline" className={`text-[10px] ${verdict.className}`}>
+            <Badge variant="outline" className={`text-xs ${verdict.className}`}>
               {verdict.label}
             </Badge>
             <button
@@ -168,7 +168,7 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
           </div>
         </div>
         {/* 摘要行（折叠态可见） */}
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {blockers.length} 阻断 · {suggestions.length} 建议
           {payload.summary ? ` · ${payload.summary}` : ''}
         </p>
@@ -194,16 +194,16 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
                 />
                 <span className="min-w-0 flex-1 space-y-0.5">
                   <span className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="outline" className={`text-[10px] shrink-0 ${SEVERITY_STYLES[issue.severity]}`}>
+                    <Badge variant="outline" className={`text-xs shrink-0 ${SEVERITY_STYLES[issue.severity]}`}>
                       {SEVERITY_LABELS[issue.severity]}
                     </Badge>
                     <span className="font-medium">{issue.anchor ?? issue.id}</span>
                   </span>
                   {issue.repro && (
-                    <span className="block text-[10px] text-muted-foreground">复现：{issue.repro}</span>
+                    <span className="block text-xs text-muted-foreground">复现：{issue.repro}</span>
                   )}
                   {issue.owner_node && (
-                    <span className="block text-[10px] text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground">
                       责任节点：<span className="font-mono">{issue.owner_node}</span>
                     </span>
                   )}
@@ -227,7 +227,7 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
 
             {roomId && userLevel >= 2 && (
               releasedThisRound ? (
-                <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
+                <Badge variant="outline" className="text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
                   本轮已放行
                 </Badge>
               ) : (
@@ -247,7 +247,7 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
             )}
 
             {roomId && userLevel >= 3 && (
-              <span className="ml-auto flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Zap className="h-3 w-3" aria-hidden="true" />
                 自动放行
                 <Switch
@@ -261,13 +261,13 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
           </div>
 
           {writeState.isError && (
-            <p role="alert" className="text-[10px] text-red-600 dark:text-red-400">
+            <p role="alert" className="text-xs text-red-600 dark:text-red-400">
               {writeState.error instanceof Error ? writeState.error.message : '写入失败'}
             </p>
           )}
 
           {autoReleaseHint && userLevel >= 2 && (
-            <p className="rounded bg-emerald-500/10 px-2 py-1.5 text-[10px] text-emerald-700 dark:text-emerald-400">
+            <p className="rounded bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-700 dark:text-emerald-400">
               自动放行已开启且本轮审查通过 —— 点击上方「放行」确认（同一轮次幂等，不会重复放行）。
             </p>
           )}

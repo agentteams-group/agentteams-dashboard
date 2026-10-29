@@ -28,7 +28,7 @@ import type { WorkerResponse } from '@/lib/agentteams-api';
 function VitalCell({ label, value, fullValue }: { label: string; value: string; fullValue?: string }) {
   return (
     <div className="min-w-0" title={fullValue && fullValue !== value ? fullValue : undefined}>
-      <p className="text-[10px] leading-4 text-muted-foreground">{label}</p>
+      <p className="text-xs leading-4 text-muted-foreground">{label}</p>
       <p className="truncate text-xs leading-5">{value}</p>
     </div>
   );
@@ -143,7 +143,7 @@ export function WorkerCard({
                     <p className="text-xs font-medium">
                       {healthTierLabel(health.overall, worker.phase)}（{health.overall} 分）
                     </p>
-                    <p className="text-[10px] text-muted-foreground">可用性 {health.availability} · 稳定性 {health.stability} · 就绪度 {health.readiness}</p>
+                    <p className="text-xs text-muted-foreground">可用性 {health.availability} · 稳定性 {health.stability} · 就绪度 {health.readiness}</p>
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -165,7 +165,7 @@ export function WorkerCard({
           </p>
 
           {/* Runtime capability strip */}
-          <div className="mb-3 flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="runtime-feature">
+          <div className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="runtime-feature">
             <RuntimeIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="shrink-0 font-medium">{RUNTIME_LABELS[worker.runtime] || worker.runtime}</span>
             <span className="truncate" title={runtimeMeta?.description}>

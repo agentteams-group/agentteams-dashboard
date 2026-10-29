@@ -47,7 +47,14 @@ vi.mock('sonner', () => ({
 import { WorkersSection } from '@/components/dashboard/sections/workers-section';
 import { ChatSection } from '@/components/dashboard/sections/chat/ChatSection';
 import { ThemeTab } from '@/components/dashboard/settings/theme-tab';
+import { TasksSection } from '@/components/dashboard/sections/tasks-section';
+import { MyWorkbenchSection } from '@/components/dashboard/sections/my-workbench-section';
+import { ReplayTimeline } from '@/app/replay/[id]/replay-timeline';
+import { TopologyOverview } from '@/components/dashboard/sections/teams/team-topology-overview';
 import { SearchProvider } from '@/lib/search-context';
+import { contrastRatio } from '@/lib/theme/contrast.test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -142,5 +149,72 @@ describe('axe-core critical sweep (task 9.5)', () => {
       { wrapper: makeWrapper() },
     );
     await expectNoCritical(container);
+  });
+
+  it('tasks section has no critical/serious violations (A-6)', async () => {
+    const { container } = render(<TasksSection />, { wrapper: makeWrapper() });
+    await expectNoCritical(container);
+  });
+
+  it('my-workbench section has no critical/serious violations (A-6)', async () => {
+    const { container } = render(<MyWorkbenchSection />, { wrapper: makeWrapper() });
+    await expectNoCritical(container);
+  });
+
+  it('replay timeline has no critical/serious violations (A-6)', async () => {
+    const sampleEvent = {
+      event_id: '$e1',
+      type: 'm.room.message',
+      sender: '@architect:local',
+      origin_server_ts: 1730000000000,
+      content: { msgtype: 'm.text', body: '回放时间线可访问性核验' },
+    };
+    const { container } = render(<ReplayTimeline events={[sampleEvent]} />, {
+      wrapper: makeWrapper(),
+    });
+    await expectNoCritical(container);
+  });
+
+  it('topology overview has no critical/serious violations (A-6)', async () => {
+    const { container } = render(<TopologyOverview />, { wrapper: makeWrapper() });
+    await expectNoCritical(container);
+  });
+});
+
+describe('A-6 语义状态色对比度显式断言 (三套主题 ≥4.5:1)', () => {
+  const css = readFileSync(resolve(__dirname, '../../app/globals.css'), 'utf8');
+
+  function getSectionVars(selector: string): Record<string, string> {
+    const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([\\s\\S]*?)\\}`);
+    const m = css.match(re);
+    if (!m) throw new Error(`section ${selector} not found`);
+    const vars: Record<string, string> = {};
+    for (const vm of m[1].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+      vars[vm[1]] = vm[2].trim();
+    }
+    return vars;
+  }
+
+  const STATUS_TOKENS = [
+    '--status-running',
+    '--status-waiting',
+    '--status-blocked',
+    '--status-done',
+    '--status-failed',
+    '--status-info',
+  ];
+
+  it.each([
+    ['light', ':root', 4.5],
+    ['dark', '.dark', 4.5],
+    ['high-contrast', '.high-contrast', 7.0],
+  ] as const)('%s 主题下 6 个状态 token 与 --card 对比度达标', (_, selector, minRatio) => {
+    const vars = getSectionVars(selector);
+    for (const token of STATUS_TOKENS) {
+      const value = vars[token];
+      expect(value, `${selector} 缺少状态色 ${token}`).toBeDefined();
+      const ratio = contrastRatio(value, vars['--card']);
+      expect(ratio, `${token} on --card in ${selector} ratio ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(minRatio);
+    }
   });
 });

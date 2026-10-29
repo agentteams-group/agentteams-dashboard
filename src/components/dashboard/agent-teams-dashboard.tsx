@@ -27,6 +27,7 @@ import { SectionErrorBoundary } from './section-error-boundary';
 import { SectionSkeleton } from './section-skeleton';
 import { Sidebar } from './sidebar';
 import { MobileSidebar } from './mobile-sidebar';
+import { MobileQuickBar } from './mobile-quick-bar';
 import { DashboardHeader } from './header';
 import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
@@ -41,7 +42,7 @@ import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useInviteStore } from '@/lib/matrix-invite-store';
-import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { usePendingTally } from '@/hooks/use-pending-tally';
 import { usePluginSystem } from '@/hooks/use-plugin-system';
 import { PluginRouteView } from '@/components/plugins/plugin-route-view';
 import { usePluginRoutes } from '@/lib/plugins/extension-store';
@@ -272,15 +273,11 @@ export function AgentTeamsDashboard() {
     () => Object.values(roomMeta).filter((m) => (m.unreadCount ?? 0) > 0).length,
     [roomMeta],
   );
-  const mentionRoomCount = useMemo(
-    () => Object.values(roomMeta).filter((m) => (m.unreadHighlightCount ?? 0) > 0).length,
-    [roomMeta],
-  );
   const invitePending = useInviteStore((s) => s.invites);
-  const confirmations = useHitlInboxStore((s) => s.confirmations);
   const inviteCount = Object.keys(invitePending).length;
   const chatCount = unreadRoomCount + inviteCount;
-  const workbenchCount = Object.keys(confirmations).length + inviteCount + mentionRoomCount;
+  // 「等我」徽标走统一口径（C-1），与待办横幅、我的工作台同一个数。
+  const workbenchCount = usePendingTally().total;
 
   const countMap: Record<string, number> = useMemo(() => ({
     workers: workerCount,
@@ -373,7 +370,11 @@ export function AgentTeamsDashboard() {
             mode={mode}
           />
 
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* 窄屏底部常驻栏（C-6）：抽屉仍是完整导航，这里只放三个主路径入口。
+              搜索项复用已有机制——聚焦顶栏搜索框即打开命令面板（与 ⌘/Ctrl+K 同路）。 */}
+          <MobileQuickBar onSearch={() => searchInputRef.current?.focus()} />
+
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
             <DashboardHeader
               isConnected={isConnected}
               workerCount={workerCount}

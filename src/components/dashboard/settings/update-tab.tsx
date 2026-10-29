@@ -32,10 +32,10 @@ export function UpdateTab() {
       <div className="space-y-1.5">
         <p className="text-sm font-medium">当前版本</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="font-mono text-[10px]">
+          <Badge variant="outline" className="font-mono text-xs">
             v{pageVersion}
           </Badge>
-          <Badge variant="outline" className="font-mono text-[10px]">
+          <Badge variant="outline" className="font-mono text-xs">
             {pageBuildId.slice(0, 16)}
           </Badge>
           {pageBuiltAt && (

@@ -207,6 +207,16 @@ function formatFileSize(size?: number): string {
   return `(${(size / 1024).toFixed(1)} KB)`;
 }
 
+/**
+ * 引用块（回复时带进来的原消息）在气泡内的唯一一套版式（方案 v3 B-4）。
+ *
+ * 原来两处各写一份 `border-l-4 border-emerald-500/50 pl-4 italic`（一份在流式
+ * 渲染的 [&_blockquote] 变体里，一份在 react-markdown 的 components 里），
+ * 颜色写死绿色不跟随主题，缩进也比消息里其它次级信息宽一档。引用是「别人的
+ * 话」而不是正文，统一成细左边线 + 12px 缩进 + 次要色。
+ */
+const QUOTE_CLASS = 'my-2 border-l-2 border-border pl-3 italic text-muted-foreground';
+
 export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
   // Prop takes precedence; fall back to the logged-in homeserver from the
   // store so media URLs resolve even when the caller omits the prop.
@@ -404,7 +414,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
               [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
               [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
               [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
-              [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
+              [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground"
           />
         </div>
       );
@@ -503,7 +513,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
           },
           blockquote({ children }) {
             return (
-              <blockquote className="border-l-4 border-emerald-500/50 pl-4 italic my-2">
+              <blockquote className={QUOTE_CLASS}>
                 {children}
               </blockquote>
             );

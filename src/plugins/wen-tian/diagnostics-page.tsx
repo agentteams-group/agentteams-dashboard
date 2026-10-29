@@ -441,7 +441,7 @@ export function createDiagnosticsPage(api: DashboardPluginApi) {
               <Sparkles className="w-4 h-4 text-primary" />
               AI 日志分析诊断
               {diagRunning && (
-                <Badge variant="outline" className="text-[10px] ml-auto animate-pulse">{diagProgress.pct}%</Badge>
+                <Badge variant="outline" className="text-xs ml-auto animate-pulse">{diagProgress.pct}%</Badge>
               )}
             </CardTitle>
           </CardHeader>
@@ -505,13 +505,13 @@ export function createDiagnosticsPage(api: DashboardPluginApi) {
                     <ShieldCheck className="w-3.5 h-3.5" />
                     PII 脱敏
                   </Label>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     自动屏蔽手机号、邮箱、API Key、Token 等敏感信息（建议保持开启）
                   </p>
                 </div>
                 <Switch checked={redact} onCheckedChange={setRedact} disabled={diagRunning} />
               </div>
-              <div className="flex items-center gap-2 text-[11px] rounded-md border bg-muted/50 px-2 py-1.5">
+              <div className="flex items-center gap-2 text-xs rounded-md border bg-muted/50 px-2 py-1.5">
                 <MessageSquareText className="w-3.5 h-3.5 shrink-0" />
                 {matrixReady ? (
                   <span>已登录 Matrix，诊断与日志包将包含房间消息。</span>
@@ -614,7 +614,7 @@ function SummaryStat({
         <div>
           <div className={`${textMode ? 'text-base' : 'text-2xl'} font-bold leading-tight`}>{value}</div>
           <div className="text-xs text-muted-foreground">{label}</div>
-          {sub && <div className="text-[10px] text-muted-foreground/70">{sub}</div>}
+          {sub && <div className="text-xs text-muted-foreground/70">{sub}</div>}
         </div>
       </CardContent>
     </Card>

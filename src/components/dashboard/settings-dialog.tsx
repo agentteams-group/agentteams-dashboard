@@ -345,7 +345,7 @@ export function SettingsDialog() {
                       </span>
                       <span className="truncate flex-1">{attempt.url}</span>
                       {attempt.latency !== null && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">
+                        <Badge variant="outline" className="text-xs shrink-0">
                           {attempt.latency}ms
                         </Badge>
                       )}
@@ -434,7 +434,7 @@ export function SettingsDialog() {
           {testResult.error && (
             <p className="text-xs text-destructive">{testResult.error}</p>
           )}
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             测试地址: {tempUrl} · {new Date(testResult.timestamp).toLocaleTimeString('zh-CN')}
           </p>
         </div>

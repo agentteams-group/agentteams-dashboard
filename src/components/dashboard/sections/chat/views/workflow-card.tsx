@@ -124,7 +124,7 @@ function RelayStepRow({
       {(step.dependsOn?.length || (expandable && expanded)) && (
         <div className="ml-5 space-y-0.5">
           {step.dependsOn && step.dependsOn.length > 0 && (
-            <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
               <CornerDownRight className="h-3 w-3 shrink-0" aria-hidden="true" />
               依赖：{step.dependsOn.join('、')}
             </p>
@@ -132,11 +132,11 @@ function RelayStepRow({
           {expandable && expanded && (
             <div className="rounded bg-muted/50 px-2 py-1.5 space-y-1.5">
               {step.summary && (
-                <p className="text-[11px] leading-relaxed text-foreground/80">{step.summary}</p>
+                <p className="text-xs leading-relaxed text-foreground/80">{step.summary}</p>
               )}
               {(step.deliverableCount || step.resultPath) && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] text-muted-foreground shrink-0">工件：</span>
+                  <span className="text-xs text-muted-foreground shrink-0">工件：</span>
                   {projectId && step.id && sourceRoomId ? (
                     <ReleaseControls
                       roomId={sourceRoomId}
@@ -153,13 +153,13 @@ function RelayStepRow({
                       href={getTaskArtifactUrl(projectId, step.id, step.resultPath)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[10px] text-violet-600 dark:text-violet-400 underline decoration-dotted underline-offset-2"
+                      className="text-xs text-violet-600 dark:text-violet-400 underline decoration-dotted underline-offset-2"
                     >
                       {step.resultPath.split('/').pop() || step.resultPath}
                     </a>
                   )}
                   {!projectId && step.deliverableCount ? (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {step.deliverableCount} 个交付物
                     </span>
                   ) : null}
@@ -223,7 +223,7 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
             {/* LIVE 徽标：正源接通且 overlay 生效才显示（快照兜底无噪音）。 */}
             {liveReady && (
               <span
-                className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
                 title={`controller 正源 15s 轮询 · 最近更新 ${liveStamp}`}
               >
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />
@@ -236,7 +236,7 @@ export function WorkflowCard({ payload }: { payload: WorkflowPayload }) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-6 gap-1 px-2 text-[11px]"
+                className="h-6 gap-1 px-2 text-xs"
                 onClick={openProjectDetail}
               >
                 <ExternalLink className="h-3 w-3" aria-hidden="true" />

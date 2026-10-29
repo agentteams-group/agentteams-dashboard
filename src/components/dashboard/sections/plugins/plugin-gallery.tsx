@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { Puzzle, Route, LayoutDashboard, Menu, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BUNDLED_PLUGINS } from '@/plugins';
@@ -89,7 +90,7 @@ export function PluginGallery() {
                 <Puzzle className="h-4 w-4 text-primary shrink-0" />
                 <span className="truncate">{card.name}</span>
                 {card.version && (
-                  <Badge variant="outline" className="text-[10px] shrink-0">v{card.version}</Badge>
+                  <Badge variant="outline" className="text-xs shrink-0">v{card.version}</Badge>
                 )}
               </CardTitle>
             </CardHeader>
@@ -97,18 +98,18 @@ export function PluginGallery() {
               {card.description && (
                 <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>
               )}
-              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 {card.extensionPoints.map((point) => (
-                  <Badge key={point} variant="secondary" className="text-[10px]">{point}</Badge>
+                  <Badge key={point} variant="secondary" className="text-xs">{point}</Badge>
                 ))}
                 {card.contributionCount > 0 && (
-                  <Badge variant="outline" className="text-[10px]">{card.contributionCount} 项贡献</Badge>
+                  <Badge variant="outline" className="text-xs">{card.contributionCount} 项贡献</Badge>
                 )}
                 {card.contributionCount === 0 && (
-                  <Badge variant="outline" className="text-[10px]">未激活</Badge>
+                  <Badge variant="outline" className="text-xs">未激活</Badge>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+              <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
                 {card.firstRouteId && (
                   <span className="inline-flex items-center gap-1">
                     <Route className="h-3 w-3" /> 路由 {card.firstRouteId}
@@ -141,7 +142,7 @@ export function PluginGallery() {
         ))}
       </div>
       {cards.length === 0 && (
-        <p className="py-8 text-center text-sm text-muted-foreground">暂无已注册插件</p>
+        <SectionEmptyState icon={Puzzle} title="暂无已注册插件" className="py-8" />
       )}
     </div>
   );

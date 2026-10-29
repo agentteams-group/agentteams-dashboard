@@ -75,13 +75,13 @@ function NavButton({
       {!collapsed && count > 0 && (
         <Badge
           variant="secondary"
-          className="ml-auto text-[10px] h-5 min-w-[20px] px-1.5 flex items-center justify-center"
+          className="ml-auto text-xs h-5 min-w-[20px] px-1.5 flex items-center justify-center"
         >
           {count}
         </Badge>
       )}
       {collapsed && count > 0 && (
-        <span className="absolute top-1 right-1 h-4 min-w-[16px] px-1 rounded-full bg-primary text-primary-foreground text-[11px] flex items-center justify-center">
+        <span className="absolute top-1 right-1 h-4 min-w-[16px] px-1 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
           {count > 99 ? '99+' : count}
         </span>
       )}
@@ -116,7 +116,7 @@ function NavButton({
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+    <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
       {label}
     </div>
   );
@@ -147,7 +147,7 @@ function AreaHeader({
       className="w-full px-4 pt-3 pb-1 text-xs font-bold text-foreground/80 flex items-center gap-1.5 hover:text-foreground transition-colors"
     >
       {label}
-      <span className={`ml-auto text-[10px] text-muted-foreground transition-transform ${areaCollapsed ? '' : 'rotate-90'}`} aria-hidden="true">
+      <span className={`ml-auto text-xs text-muted-foreground transition-transform ${areaCollapsed ? '' : 'rotate-90'}`} aria-hidden="true">
         ▸
       </span>
     </button>
@@ -204,7 +204,7 @@ export function Sidebar({
             <span className="font-bold text-lg leading-tight">AgentTeams</span>
             {mode && (
               <span
-                className={`inline-flex items-center gap-1 text-[10px] font-medium leading-tight ${
+                className={`inline-flex items-center gap-1 text-xs font-medium leading-tight ${
                   mode === 'embedded'
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : 'text-blue-600 dark:text-blue-400'

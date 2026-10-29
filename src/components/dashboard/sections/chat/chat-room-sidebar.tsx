@@ -187,12 +187,12 @@ function InviteInbox() {
 
   return (
     <div className="mx-1.5 mb-1.5 rounded-md border border-sky-500/30 bg-sky-500/5 p-1.5">
-      <p className="flex items-center gap-1 px-1 py-1 text-[10px] font-semibold tracking-wide text-sky-600 dark:text-sky-400">
+      <p className="flex items-center gap-1 px-1 py-1 text-xs font-semibold tracking-wide text-sky-600 dark:text-sky-400">
         <InboxIcon className="w-3 h-3" />
         待接受的邀请 {list.length}
       </p>
       {list.length === 0 ? (
-        <p className="px-2 py-1 text-[10px] text-muted-foreground">没有待处理的邀请</p>
+        <p className="px-2 py-1 text-xs text-muted-foreground">没有待处理的邀请</p>
       ) : (
         list.map((inv) => {
           const err = errors[inv.roomId];
@@ -202,11 +202,11 @@ function InviteInbox() {
               <div className="text-xs font-medium truncate" title={inv.roomId}>
                 {inv.roomName || inv.roomId}
               </div>
-              <div className="text-[10px] text-muted-foreground truncate">
+              <div className="text-xs text-muted-foreground truncate">
                 来自 {shortUserId(inv.sender) || inv.sender}
               </div>
               {err && (
-                <div className="mt-1 flex items-start gap-1 text-[10px] text-destructive">
+                <div className="mt-1 flex items-start gap-1 text-xs text-destructive">
                   <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
                   <span className="break-all">{err}</span>
                 </div>
@@ -215,7 +215,7 @@ function InviteInbox() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-6 px-1.5 text-[10px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={!!busy}
                   onClick={() => void callJoin(inv)}
                 >
@@ -225,7 +225,7 @@ function InviteInbox() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[10px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={!!busy}
                   onClick={() => void callLeave(inv)}
                 >
@@ -371,7 +371,7 @@ export function ChatRoomSidebar({
               >
                 <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
                 {width >= 220 && (
-                  <span className="whitespace-nowrap text-[10px]">{KIND_LABELS[kindFilter]}</span>
+                  <span className="whitespace-nowrap text-xs">{KIND_LABELS[kindFilter]}</span>
                 )}
               </button>
             </DropdownMenuTrigger>
@@ -433,7 +433,7 @@ export function ChatRoomSidebar({
           <div className="text-center py-8">
             <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
             <p className="text-xs text-muted-foreground">暂无聊天房间</p>
-            <p className="text-[10px] text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {isLoggedIn
                 ? '创建 Worker 或 Team 后会自动生成 Matrix 房间'
                 : '创建 Worker 或 Team 后会自动生成 Matrix 房间；登录 Matrix 后还将加载项目群等其他房间'}
@@ -451,7 +451,7 @@ export function ChatRoomSidebar({
               ))
             : groups.map((group) => (
                 <div key={group.type} className="mb-1.5">
-                  <p className="px-2 py-1 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                  <p className="px-2 py-1 text-xs font-semibold tracking-wide text-muted-foreground">
                     {group.label}
                     <span className="ml-1 font-normal">{group.rooms.length}</span>
                   </p>
@@ -471,7 +471,7 @@ export function ChatRoomSidebar({
         {footer ?? (
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 shrink-0 rounded-full ${isLoggedIn ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`} />
-            <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {isLoggedIn
                 ? `已登录: ${shortId}`
                 : '未登录 - 仅可查看房间列表'}

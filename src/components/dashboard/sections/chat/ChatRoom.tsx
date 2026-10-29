@@ -37,9 +37,12 @@ import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import type { FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
-import { buildConfirmationReply } from './confirmation-reply';
+import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
+import { buildConfirmationReply, type ConfirmationAnswerField } from './confirmation-reply';
 import { TypingIndicator } from './typing-indicator';
 import { AgentActivityTrack } from './agent-activity-track';
+import { RoomSearchBar } from './room-search-bar';
+import { currentHashParams, hashForSection } from '@/lib/nav-hash';
 import { useMatrixTypingUsers, useTypingNotification, useMatrixUploadMedia } from '@/hooks/use-matrix';
 import {
   useChatRoomSessionState,
@@ -58,6 +61,43 @@ import type { RoomInfo } from './room-info';
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
 export type ChatContextPanel = RoomContextTab | null;
+
+/**
+ * 命令面板命中跳房间消息时写的是 `#workbench/space/<roomId>?q=<词>`（方案 v3 B-1 延伸），
+ * 下面两个变量就是那个 `q` 的一次性消费记录。
+ */
+
+/** 已消费过的深链 hash。 */
+let consumedRoomSearchHash: string | null = null;
+
+/**
+ * 取当前 hash 上的房间检索深链词；同一个 hash 只交出去一次，拿不到则返回 null。
+ *
+ * 为什么「消费过」记在模块级而不是组件 state：ChatRoom 按房间 key 重挂载（见
+ * ChatSection），state 会跟着每次换房重来一遍，地址里残留的 `?q=` 就会把搜索条
+ * 在另一个房间里再开一次；而 shell 的 hash 同步会在切 section 时把路径后面的查询
+ * 参数抹掉（只留下规范 hash），所以「这个深链已经用过了」必须活得比组件久。
+ */
+export function takeRoomSearchDeepLink(): string | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash;
+  if (hash === consumedRoomSearchHash) return null;
+  // 只在会话页的路径上认领这个词：别的深链（?project= / ?loop=）也可能带 q。
+  // 面板给的消息命中带 roomId（#workbench/space/!room?q=…），同房间再次检索时
+  // 路径又是收敛的 #workbench/space，两种写法都得认。
+  const path = hash.replace(/^#/, '').split('?')[0];
+  const chatPath = hashForSection('chat');
+  if (path !== chatPath && !path.startsWith(`${chatPath}/`)) return null;
+  const term = currentHashParams()?.get('q');
+  if (!term) return null;
+  consumedRoomSearchHash = hash;
+  return term;
+}
+
+/** 测试出口：清掉「已消费」记录，让每个用例从干净状态开始。 */
+export function resetRoomSearchDeepLinkForTests(): void {
+  consumedRoomSearchHash = null;
+}
 
 interface ChatRoomProps {
   roomId: string;
@@ -505,8 +545,64 @@ export function ChatRoom({
     }
   }, [formattedMessages]);
 
-  const handleCopy = useCallback((message: DisplayMessage) => {
-    navigator.clipboard.writeText(message.content);
+  const { copy: copyToClipboard } = useCopyToClipboard({ resetMs: 1600 });
+
+  // 写入走 @/lib/use-copy-to-clipboard：内网 http 部署没有 navigator.clipboard，
+  // 那边留了 execCommand 兜底，并把成没成如实回到气泡上的按钮（方案 v3 B-4）。
+  const handleCopy = useCallback(
+    (message: DisplayMessage) => copyToClipboard(message.content),
+    [copyToClipboard],
+  );
+
+  // ── 房间内容搜索（方案 v3 B-1）─────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  // 深链带进来的检索词（从命令面板的消息命中跳进来才有）。
+  const [deepLinkTerm, setDeepLinkTerm] = useState<string | null>(null);
+
+  // 深链消费：除了挂载读一次，还听 hashchange——已经在同一个房间里再次从面板点
+  // 命中时组件不会重挂载，只改地址。读法与 tasks-section 的 `?project=` 一致。
+  useEffect(() => {
+    const apply = () => {
+      const term = takeRoomSearchDeepLink();
+      if (!term) return;
+      setDeepLinkTerm(term);
+      setSearchOpen(true);
+    };
+    apply();
+    window.addEventListener('hashchange', apply);
+    return () => window.removeEventListener('hashchange', apply);
+  }, []);
+
+  // Ctrl/⌘+F 开房间搜索，同时拦掉浏览器自己的「在本页查找」：不拦的话用户按习惯
+  // 按下的是另一个东西，而它只能看到已渲染的虚拟列表。
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, []);
+
+  // 搜索条会 await 加载更旧一页之后再回头定位，那一刻它手里的下标表必须是新的，
+  // 所以用 ref 而不是闭包里的 formattedMessages（跨 await 会读到旧数组）。
+  const messageIndexRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const map = new Map<string, number>();
+    formattedMessages.forEach((m, i) => {
+      const key = m.eventId || m.id;
+      if (!map.has(key)) map.set(key, i);
+    });
+    messageIndexRef.current = map;
+  }, [formattedMessages]);
+
+  const handleRevealEvent = useCallback((eventId: string) => {
+    const idx = messageIndexRef.current.get(eventId);
+    if (idx === undefined) return false;
+    scrollRef.current?.scrollToIndex(idx);
+    return true;
   }, []);
 
   const handleEditSubmit = useCallback(async (message: DisplayMessage, newContent: string) => {
@@ -548,9 +644,11 @@ export function ChatRoom({
     });
   }, [localMessages, patchLocal, sendOutbound]);
 
-  const handleSendConfirmation = useCallback((content: string, sender?: string, eventId?: string) => {
+  const handleSendConfirmation = useCallback((content: string, sender?: string, eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
-    sendOutbound({ ...reply, referenceEventId: eventId });
+    // answer 为空时只发自然语言（v1 工具确认 / 启发式卡），非空时额外带
+    // com.agentteams.answer，让运行时能按 confirmation_id 对上本次选择。
+    return sendOutbound({ ...reply, referenceEventId: eventId, answer });
   }, [sendOutbound, workerMatrixUserIds]);
 
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
@@ -667,18 +765,35 @@ export function ChatRoom({
             </div>
           )}
           {replyTo && (
-            <div className="flex items-center gap-2 px-4 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-400 shrink-0">
+            <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/60 border-b border-border text-xs text-muted-foreground shrink-0">
               <span>回复 {replyTo.senderShort}:</span>
               <span className="truncate flex-1">{replyTo.content.slice(0, 80)}</span>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-5 w-5 p-0 shrink-0 text-emerald-600 hover:text-emerald-700"
+                className="h-5 w-5 p-0 shrink-0 text-muted-foreground hover:text-foreground"
                 onClick={() => setReplyTo(null)}
               >
                 <PanelRightClose className="w-3 h-3" />
               </Button>
             </div>
+          )}
+          {searchOpen && (
+            <RoomSearchBar
+              // 换一次深链就重挂载搜索条：预填词是它的初始值，不追打外部变化；
+              // 关掉搜索条时清掉深链词，手动 Ctrl/⌘+F 重新开出来的是空条。
+              key={deepLinkTerm ?? 'manual'}
+              initialTerm={deepLinkTerm ?? undefined}
+              roomId={roomId}
+              loadedEvents={allEvents}
+              memberMap={memberMap}
+              onReveal={handleRevealEvent}
+              onLoadEarlier={loadMore}
+              onClose={() => {
+                setSearchOpen(false);
+                setDeepLinkTerm(null);
+              }}
+            />
           )}
           <MessageList
             ref={scrollRef}

@@ -1,21 +1,29 @@
 // Shared status/outcome badge palettes (UI-01): single source for the
 // project views so projects-section and tasks-section cannot drift.
-// All text colors are dual-mode (light-theme 700 / dark-theme 300) to
-// keep WCAG-readable contrast on the /15 tinted badge backgrounds.
+//
+// 颜色单轨（方案 v3 A-1/A-2）：这里只写语义状态 token 的名字，不写具体颜色。
+// 六个 token（--status-running/-waiting/-blocked/-done/-failed/-info）在
+// `src/app/globals.css` 的 :root、.dark、.high-contrast 各定义一次，所以三套主题
+// 自动同色，高对比主题不再被组件里写死的 `dark:` 分支绕过。
+//
+// 本文件必须保持纯数据（不含 hooks）：它被服务端组件 import，Next 不允许这条链上
+// 出现 React hooks。要真色（图表 / canvas）用 `@/hooks/use-status-colors`。
 import type { ProjectStatus } from '@/lib/agentteams-projects-api';
 import type { BoardTask } from '@/hooks/use-task-board';
+import { statusBadgeClass } from '@/lib/status-tokens';
 
 export const PROJECT_STATUS_COLOR: Record<ProjectStatus, string> = {
-  planning: 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30',
-  active: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30',
-  paused: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
-  completed: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+  planning: statusBadgeClass('info'),
+  active: statusBadgeClass('running'),
+  paused: statusBadgeClass('waiting'),
+  completed: statusBadgeClass('done'),
+  // 未知状态不给颜色，给中性：它不是六种语义里的任何一种。
   unknown: 'bg-muted text-muted-foreground border-border',
 };
 
 export const OUTCOME_COLOR: Record<NonNullable<BoardTask['outcome']>, string> = {
-  SUCCESS: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
-  SUCCESS_WITH_NOTES: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400 border-cyan-500/30',
-  REVISION_NEEDED: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
-  BLOCKED: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30',
+  SUCCESS: statusBadgeClass('done'),
+  SUCCESS_WITH_NOTES: statusBadgeClass('info'),
+  REVISION_NEEDED: statusBadgeClass('waiting'),
+  BLOCKED: statusBadgeClass('blocked'),
 };

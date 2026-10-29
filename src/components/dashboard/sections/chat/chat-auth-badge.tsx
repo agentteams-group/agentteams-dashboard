@@ -36,12 +36,12 @@ export function ChatAuthBadge({
       <div className="flex min-w-0 items-center gap-1.5">
         <Badge
           variant="outline"
-          className="shrink-0 gap-1 border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
+          className="shrink-0 gap-1 border-emerald-500/30 text-xs text-emerald-600 dark:text-emerald-400"
         >
           <Unlock className="w-3 h-3" aria-hidden="true" />
           Matrix 已连接
         </Badge>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground" title={userId ?? ''}>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={userId ?? ''}>
           {shortId}
         </span>
         <Button
@@ -63,12 +63,12 @@ export function ChatAuthBadge({
       <div className="flex items-center gap-2">
         <Badge
           variant="outline"
-          className="text-[10px] gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+          className="text-xs gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
         >
           <Unlock className="w-3 h-3" aria-hidden="true" />
           Matrix 已连接
         </Badge>
-        <Badge variant="outline" className="text-[10px] font-mono max-w-[120px] truncate">
+        <Badge variant="outline" className="text-xs font-mono max-w-[120px] truncate">
           {shortId}
         </Badge>
         <Button

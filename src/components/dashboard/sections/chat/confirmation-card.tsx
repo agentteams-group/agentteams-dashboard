@@ -63,13 +63,13 @@ export function ConfirmationCard({ payload, onApprove, onReject }: ConfirmationC
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           {payload.triggeredBy && (
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               <span className="font-medium text-foreground/70">触发来源：</span>
               {payload.triggeredBy}
             </div>
           )}
           {payload.parameters && (
-            <pre className="text-[11px] bg-muted/50 rounded p-2 overflow-x-auto text-muted-foreground max-h-32 overflow-y-auto whitespace-pre-wrap">
+            <pre className="text-xs bg-muted/50 rounded p-2 overflow-x-auto text-muted-foreground max-h-32 overflow-y-auto whitespace-pre-wrap">
               {payload.parameters}
             </pre>
           )}

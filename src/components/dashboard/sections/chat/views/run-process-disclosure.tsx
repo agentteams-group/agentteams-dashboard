@@ -167,7 +167,7 @@ export function RunProcessDisclosure({
               return (
                 <div
                   key={`text-${idx}`}
-                  className="custom-scrollbar max-h-72 w-full overflow-y-auto px-1 py-0.5 text-[12.5px] leading-relaxed"
+                  className="custom-scrollbar max-h-72 w-full overflow-y-auto px-1 py-0.5 text-sm leading-relaxed"
                 >
                   <MarkdownMessage content={block.text ?? ''} isStreaming={block.isStreaming ?? isStreaming} />
                 </div>

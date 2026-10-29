@@ -1,13 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('./matrix-write', () => ({
+  matrixProxyFetch: vi.fn(async () => new Response(null, { status: 200 })),
+}));
+
+import { matrixProxyFetch } from './matrix-write';
 import {
+  COMMENT_DISPATCH_CONTENT_KEY,
+  commentAnchorLabel,
+  groupCommentsByArtifact,
   parseArtifactComments,
   resolveCommentThreads,
+  sendArtifactComment,
+  sendCommentDispatch,
 } from './artifact-comment';
 
 function msg(overrides: {
   body: string;
   artifact: string;
   line?: number;
+  coordinate?: { x: number; y: number };
   ts: number;
   sender?: string;
   action?: 'resolve';
@@ -25,6 +37,7 @@ function msg(overrides: {
         artifact: overrides.artifact,
         author: overrides.sender ?? '@alice:example.org',
         ...(overrides.line !== undefined ? { line: overrides.line } : {}),
+        ...(overrides.coordinate ? { coordinate: overrides.coordinate } : {}),
         ...(overrides.action ? { action: overrides.action, resolves_ts: overrides.resolvesTs } : {}),
       },
     },
@@ -78,5 +91,129 @@ describe('resolveCommentThreads（F6.2 解决状态回溯）', () => {
       parseArtifactComments({ chunk: [msg({ body: '待办', artifact: 'a.md', ts: 5 })] }),
     );
     expect(threads[0].resolvedBy).toBeUndefined();
+  });
+});
+
+describe('图片坐标锚点（E-1）', () => {
+  it('解析 0–1 坐标；越界与非数字丢弃，不编假锚点', () => {
+    const comments = parseArtifactComments({
+      chunk: [
+        msg({ body: '按钮偏了', artifact: 'shot.png', coordinate: { x: 0.42, y: 0.65 }, ts: 100 }),
+        msg({ body: '越界', artifact: 'shot.png', coordinate: { x: 1.4, y: 0.2 }, ts: 200 }),
+        msg({
+          body: '非数字',
+          artifact: 'shot.png',
+          coordinate: { x: NaN, y: 0.2 } as unknown as { x: number; y: number },
+          ts: 300,
+        }),
+      ],
+    });
+    expect(comments[0].coordinate).toEqual({ x: 0.42, y: 0.65 });
+    expect(comments[1].coordinate).toBeUndefined();
+    expect(comments[2].coordinate).toBeUndefined();
+  });
+
+  it('commentAnchorLabel 区分行 / 坐标 / 全文', () => {
+    expect(commentAnchorLabel({ line: 3 })).toBe('L3');
+    expect(commentAnchorLabel({ coordinate: { x: 0.42, y: 0.65 } })).toBe('(42%, 65%)');
+    expect(commentAnchorLabel({})).toBe('全文');
+  });
+
+  it('发送坐标评论时元数据与可读正文同时带锚点', async () => {
+    vi.mocked(matrixProxyFetch).mockClear();
+    await sendArtifactComment({
+      roomId: '!r:server',
+      artifact: 'shot.png',
+      body: '这里按钮偏了',
+      author: '@alice:server',
+      coordinate: { x: 0.42, y: 0.65 },
+    });
+    const [, init] = vi.mocked(matrixProxyFetch).mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as {
+      body: string;
+      'com.agentteams.artifact_comment': Record<string, unknown>;
+    };
+    expect(payload['com.agentteams.artifact_comment'].coordinate).toEqual({ x: 0.42, y: 0.65 });
+    expect(payload.body).toContain('(42%, 65%)');
+  });
+});
+
+describe('工件侧聚合（E-1）', () => {
+  it('按工件分组，并各自归并解决状态', () => {
+    const comments = parseArtifactComments({
+      chunk: [
+        msg({ body: 'A 的行问题', artifact: 'a.md', line: 2, ts: 100 }),
+        msg({ body: 'B 的坐标问题', artifact: 'b.png', coordinate: { x: 0.1, y: 0.2 }, ts: 150 }),
+        msg({
+          body: '已解决 a.md',
+          artifact: 'a.md',
+          ts: 200,
+          sender: '@bob:server',
+          action: 'resolve',
+          resolvesTs: 100,
+        }),
+      ],
+    });
+    const groups = groupCommentsByArtifact(comments);
+    expect([...groups.keys()].sort()).toEqual(['a.md', 'b.png']);
+    expect(groups.get('a.md')?.[0].resolvedBy).toBe('@bob:server');
+    expect(groups.get('b.png')?.[0].resolvedBy).toBeUndefined();
+  });
+});
+
+describe('结构化派发（E-2）', () => {
+  it('正文可读且携带 comment_dispatch 结构化载荷', async () => {
+    vi.mocked(matrixProxyFetch).mockClear();
+    await sendCommentDispatch({
+      roomId: '!r:server',
+      artifact: 'shot.png',
+      assignee: 'dev-bot',
+      dispatchedBy: '@alice:server',
+      comments: [
+        { artifact: 'shot.png', body: '按钮偏了', author: '@alice:server', ts: 100, coordinate: { x: 0.42, y: 0.65 } },
+        { artifact: 'shot.png', body: '文案太长', author: '@bob:server', ts: 200, line: 7 },
+      ],
+    });
+    const [path, init] = vi.mocked(matrixProxyFetch).mock.calls[0] as [string, RequestInit];
+    expect(path).toContain('/send');
+    const payload = JSON.parse(String(init.body)) as {
+      body: string;
+      [COMMENT_DISPATCH_CONTENT_KEY]: {
+        assignee: string;
+        artifact: string;
+        comments: Array<Record<string, unknown>>;
+      };
+    };
+    const dispatch = payload[COMMENT_DISPATCH_CONTENT_KEY];
+    expect(dispatch.assignee).toBe('dev-bot');
+    expect(dispatch.artifact).toBe('shot.png');
+    expect(dispatch.comments).toHaveLength(2);
+    expect(dispatch.comments[0].coordinate).toEqual({ x: 0.42, y: 0.65 });
+    expect(payload.body).toContain('@dev-bot');
+    expect(payload.body).toContain('(42%, 65%)');
+    expect(payload.body).toContain('L7');
+  });
+
+  it('空指派或空选择直接抛错，不发请求', async () => {
+    vi.mocked(matrixProxyFetch).mockClear();
+    await expect(
+      sendCommentDispatch({
+        roomId: '!r:server',
+        artifact: 'a.md',
+        assignee: '  ',
+        dispatchedBy: '@alice:server',
+        comments: [{ artifact: 'a.md', body: 'x', author: '@a:server', ts: 1 }],
+      }),
+    ).rejects.toThrow('指派对象不能为空');
+    await expect(
+      sendCommentDispatch({
+        roomId: '!r:server',
+        artifact: 'a.md',
+        assignee: 'dev-bot',
+        dispatchedBy: '@alice:server',
+        comments: [],
+      }),
+    ).rejects.toThrow('请至少选择一条评论');
+    expect(matrixProxyFetch).not.toHaveBeenCalled();
   });
 });

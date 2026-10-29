@@ -52,7 +52,7 @@ export function HealthRing({
       </svg>
       {/* Score text centered over the ring */}
       <span
-        className="absolute text-[10px] font-bold"
+        className="absolute text-xs font-bold"
         style={{
           width: size,
           height: size,
@@ -66,7 +66,7 @@ export function HealthRing({
         {score}
       </span>
       {label && (
-        <span className="text-[11px] text-muted-foreground leading-none">{label}</span>
+        <span className="text-xs text-muted-foreground leading-none">{label}</span>
       )}
     </div>
   );
@@ -113,7 +113,7 @@ export function HealthRingCompact({
         />
       </svg>
       <span
-        className="absolute text-[10px] font-bold"
+        className="absolute text-xs font-bold"
         style={{ color: strokeColor }}
       >
         {score}

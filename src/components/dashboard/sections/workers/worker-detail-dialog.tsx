@@ -430,7 +430,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           <ApprovalLevelIcon lv="AUTO" size={15} color={APPROVAL_COLOR.AUTO} />
           工具执行安全
         </span>
-        <span className="flex-basis-full text-[11px] text-blue-500">
+        <span className="flex-basis-full text-xs text-blue-500">
           ℹ️ 配置工具调用的审批策略，控制 Agent 执行工具时的安全级别
         </span>
       </div>
@@ -440,7 +440,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           加载工具执行安全...
         </div>
       ) : l2Hint ? (
-        <p className="py-2 text-[11.5px] text-amber-600">{l2HintText ?? '工具执行安全级别当前不可读（Controller 升级后自动开放）'}</p>
+        <p className="py-2 text-xs text-amber-600">{l2HintText ?? '工具执行安全级别当前不可读（Controller 升级后自动开放）'}</p>
       ) : level ? (
         <>
           <div className="grid grid-cols-2 gap-1.5">
@@ -461,7 +461,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
                   <div className="mt-0.5">
                     <ApprovalLevelIcon lv={lv} size={17} color={APPROVAL_COLOR[lv]} />
                   </div>
-                  <div className="min-w-0 text-[11.5px] leading-snug">
+                  <div className="min-w-0 text-xs leading-snug">
                     <div className="text-xs font-bold">{APPROVAL_CARD_LABEL[lv]}</div>
                     <div className="text-muted-foreground">{APPROVAL_DESC[lv]}</div>
                   </div>
@@ -470,7 +470,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
             })}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="text-[11px]" style={{ color: APPROVAL_COLOR[level] }}>
+            <Badge variant="secondary" className="text-xs" style={{ color: APPROVAL_COLOR[level] }}>
               当前模式: {APPROVAL_LEVEL_LABELS[level]}（{level}）
             </Badge>
             {changed && effective ? (
@@ -486,7 +486,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
                 应用: {APPROVAL_CARD_LABEL[effective]}
               </Button>
             ) : (
-              <span className="text-[11px] text-muted-foreground/60">无变更</span>
+              <span className="text-xs text-muted-foreground/60">无变更</span>
             )}
             <Button size="sm" variant="ghost" className="h-6 px-2" onClick={reload}>
               <RotateCcw className="h-3 w-3" />
@@ -494,7 +494,7 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           </div>
         </>
       ) : (
-        <p className="py-2 text-[11.5px] text-destructive">⚠ {error ?? '该 Worker 未读到工具执行安全级别'}</p>
+        <p className="py-2 text-xs text-destructive">⚠ {error ?? '该 Worker 未读到工具执行安全级别'}</p>
       )}
       {error && level && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
@@ -505,14 +505,14 @@ function HealthBar({ label, value }: { label: string; value: number }) {
   const color = value >= 80 ? 'bg-emerald-500' : value >= 60 ? 'bg-green-500' : value >= 40 ? 'bg-amber-500' : 'bg-red-500';
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[10px] text-muted-foreground w-10">{label}</span>
+      <span className="text-xs text-muted-foreground w-10">{label}</span>
       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${color}`}
           style={{ width: `${value}%` }}
         />
       </div>
-      <span className="text-[10px] font-mono w-6 text-right">{value}</span>
+      <span className="text-xs font-mono w-6 text-right">{value}</span>
     </div>
   );
 }

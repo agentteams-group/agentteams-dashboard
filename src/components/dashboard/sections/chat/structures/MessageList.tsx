@@ -10,6 +10,7 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { FileRef } from '@/lib/file-refs';
 import { MessageSquare, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import type { MentionEntry } from '../chat-composer';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { CHAT_COLUMN_CLASS } from '../layout';
 
@@ -26,7 +27,7 @@ export interface ChatSystemNotice {
   /** Rate limits: when an auto-retry is scheduled to fire. */
   retryAfterMs?: number;
   autoRetry: boolean;
-  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string };
+  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField };
 }
 
 function SystemNoticeItem({
@@ -144,13 +145,13 @@ interface MessageListProps {
   _canSend: boolean;
   _onSend: (_content: string, _options?: { html?: boolean }, _mentions?: import('../chat-composer').MentionEntry[]) => void;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
   /** Opens the worker files panel for the message's owning worker. */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
@@ -262,7 +263,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     if (grouped.length > 0) {
       return (
         <div className={`mx-auto flex w-full ${CHAT_COLUMN_CLASS} justify-center px-4 py-2`}>
-          <span className="text-[10px] text-muted-foreground/60">已经到最早的消息了</span>
+          <span className="text-xs text-muted-foreground/60">已经到最早的消息了</span>
         </div>
       );
     }

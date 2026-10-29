@@ -30,7 +30,7 @@ function StatusPill({ status }: { status?: string }) {
     : ERROR_STATUSES.has(status ?? '')
       ? 'bg-red-500/15 text-red-700 dark:text-red-400'
       : 'bg-violet-500/15 text-violet-700 dark:text-violet-400';
-  return <Badge className={`${className} shrink-0 text-[10px]`}>{statusLabel(status)}</Badge>;
+  return <Badge className={`${className} shrink-0 text-xs`}>{statusLabel(status)}</Badge>;
 }
 
 function StepGlyph({ status }: { status?: string }) {
@@ -83,7 +83,7 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold" title={title}>{title}</p>
-          <p className="truncate font-mono text-[10px] text-muted-foreground" title={task.runId}>
+          <p className="truncate font-mono text-xs text-muted-foreground" title={task.runId}>
             {task.runId}
           </p>
         </div>
@@ -93,23 +93,23 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
       {steps.length > 0 ? (
         <ul className="space-y-1" aria-label="任务节点">
           {steps.map((step, index) => (
-            <li key={step.id || `${task.runId}-${index}`} className="flex items-center gap-1.5 text-[11px]">
+            <li key={step.id || `${task.runId}-${index}`} className="flex items-center gap-1.5 text-xs">
               <StepGlyph status={step.status} />
               <span className="min-w-0 flex-1 truncate" title={stepLabel(step, index)}>
                 {stepLabel(step, index)}
               </span>
               {step.assignedTo && (
-                <span className="shrink-0 text-[10px] text-muted-foreground">@{step.assignedTo}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">@{step.assignedTo}</span>
               )}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-[11px] text-muted-foreground">尚未同步到任务节点，等待 Agent 回执。</p>
+        <p className="text-xs text-muted-foreground">尚未同步到任务节点，等待 Agent 回执。</p>
       )}
 
       <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-1.5">
-        <span className="min-w-0 truncate text-[10px] text-muted-foreground">
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
           {steps.length > 0 ? `${completed}/${steps.length} 完成` : statusLabel(status)}
           {data && <span className="ml-1 text-emerald-600 dark:text-emerald-400">live</span>}
           {snapshotOnly && <span className="ml-1 text-amber-600 dark:text-amber-400">快照</span>}
@@ -117,7 +117,7 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+          className="h-6 shrink-0 gap-1 px-2 text-xs"
           onClick={openProjectDetail}
         >
           <ExternalLink className="h-3 w-3" aria-hidden="true" />
@@ -142,7 +142,7 @@ export function RoomTasksPanel({ roomId }: { roomId: string }) {
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <ListTodo className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
         <p className="text-xs font-medium">本空间还没有任务消息</p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Agent 在空间内发布工作流后，任务节点会按空间聚合在这里；状态来自 Controller 项目正源。
         </p>
       </div>

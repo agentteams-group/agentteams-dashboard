@@ -436,14 +436,14 @@ export function WorkerChannelsPanel({ workerName }: { workerName: string }) {
                   {isEditing ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : <ChevronRight className="h-3 w-3" aria-hidden="true" />}
                   <span className="font-medium">{schema?.label || ch}</span>
                 </button>
-                <span className="text-[10px] text-muted-foreground">{ch}</span>
+                <span className="text-xs text-muted-foreground">{ch}</span>
                 <HealthDot info={h} enabled={cfg.enabled === true} />
                 <div className="ml-auto flex items-center gap-1">
                   {QR_CHANNELS.has(ch) && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-1.5 text-[11px]"
+                      className="h-6 px-1.5 text-xs"
                       onClick={() => void handleQrcode(ch)}
                     >
                       <QrCode className="mr-1 h-3 w-3" aria-hidden="true" />
@@ -453,7 +453,7 @@ export function WorkerChannelsPanel({ workerName }: { workerName: string }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 px-1.5 text-[11px]"
+                    className="h-6 px-1.5 text-xs"
                     onClick={() => void handleRestart(ch)}
                   >
                     <RotateCw className="mr-1 h-3 w-3" aria-hidden="true" />
@@ -465,17 +465,17 @@ export function WorkerChannelsPanel({ workerName }: { workerName: string }) {
                 <div className="space-y-2 border-t border-border/60 p-2">
                   {fields.map((f) => (
                     <label key={f.name} className="block space-y-0.5">
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {localize(f.label) || f.name}
                         {f.required ? ' *' : ''}
                       </span>
                       <FieldControl field={f} value={draft[f.name]} onChange={(v) => setField(f.name, v)} />
-                      {f.help ? <span className="block text-[10px] text-muted-foreground">{localize(f.help)}</span> : null}
+                      {f.help ? <span className="block text-xs text-muted-foreground">{localize(f.help)}</span> : null}
                     </label>
                   ))}
                   {conflictPrompt && conflictPrompt.channel === ch && (
                     <div className="space-y-1.5 rounded-md border border-red-300 bg-red-50 p-2 dark:border-red-800 dark:bg-red-950/40">
-                      <p className="text-[11px] text-red-700 dark:text-red-300">
+                      <p className="text-xs text-red-700 dark:text-red-300">
                         Bot 冲突：
                         {conflictPrompt.agents
                           .map((a) => (a.agent_name && a.agent_name !== a.agent_id ? `${a.agent_name} (${a.agent_id})` : a.agent_id))
@@ -511,7 +511,7 @@ export function WorkerChannelsPanel({ workerName }: { workerName: string }) {
                     alt={`扫码登录 ${ch}`}
                     className="h-40 w-40"
                   />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {qr.status === 'waiting' && '等待扫码…'}
                     {qr.status === 'success' && '扫码成功，可回写凭证。'}
                     {qr.status === 'fail' && '扫码失败，请重试。'}
@@ -538,7 +538,7 @@ export function WorkerChannelsPanel({ workerName }: { workerName: string }) {
 }
 
 function HealthDot({ info, enabled }: { info?: HealthInfo; enabled: boolean }) {
-  if (!enabled) return <span className="text-[10px] text-muted-foreground">未启用</span>;
+  if (!enabled) return <span className="text-xs text-muted-foreground">未启用</span>;
   const cls =
     info?.status === 'healthy'
       ? 'bg-emerald-500'
@@ -559,7 +559,7 @@ function HealthDot({ info, enabled }: { info?: HealthInfo; enabled: boolean }) {
 function MsgLine({ msg }: { msg: { kind: 'ok' | 'err'; text: string } }) {
   return (
     <p
-      className={`flex items-start gap-1 text-[11px] ${
+      className={`flex items-start gap-1 text-xs ${
         msg.kind === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
       }`}
     >

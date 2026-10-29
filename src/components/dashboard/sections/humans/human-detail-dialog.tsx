@@ -51,7 +51,7 @@ function DetailRow({
 function RoomBadge({ room }: { room: string }) {
   const display = room.length > 20 ? `${room.slice(0, 10)}...${room.slice(-4)}` : room;
   return (
-    <Badge key={room} variant="secondary" className="text-[10px] font-mono">
+    <Badge key={room} variant="secondary" className="text-xs font-mono">
       {display}
     </Badge>
   );
@@ -111,7 +111,7 @@ export function HumanDetailDialog({
                 <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
                   <Badge
                     variant="outline"
-                    className="text-[10px] gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0"
+                    className="text-xs gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0"
                   >
                     <Lock className="w-2.5 h-2.5" aria-hidden="true" />
                     敏感
@@ -207,17 +207,17 @@ function RBACSummary({ human }: { human: HumanResponse }) {
       <div className="flex items-center gap-2">
         <Shield className="w-4 h-4 text-violet-500" />
         <span className="text-xs font-medium">权限摘要</span>
-        <Badge variant="outline" className="text-[10px]">{summary.level}</Badge>
+        <Badge variant="outline" className="text-xs">{summary.level}</Badge>
       </div>
       <div className="flex flex-wrap gap-1">
         {summary.permissions.map((perm) => (
-          <Badge key={perm} variant="secondary" className="text-[10px] gap-1">
+          <Badge key={perm} variant="secondary" className="text-xs gap-1">
             {PERM_ICONS[perm]}
             {PERM_LABELS[perm] || perm}
           </Badge>
         ))}
       </div>
-      <div className="text-[10px] text-muted-foreground space-y-0.5">
+      <div className="text-xs text-muted-foreground space-y-0.5">
         <p>团队范围: {summary.teamScope}</p>
         <p>Worker 范围: {summary.workerScope}</p>
       </div>

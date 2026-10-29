@@ -35,19 +35,19 @@ export function AgentActivityTrack({ roomId }: { roomId: string }) {
       {pending ? (
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="text-[11px] text-amber-700 dark:text-amber-400 truncate">
+          <span className="text-xs text-amber-700 dark:text-amber-400 truncate">
             待确认 {pending.toolName}
             {pending.triggeredBy ? ` · ${pending.triggeredBy}` : ''}
           </span>
-          <Badge variant="outline" className="text-[11px] h-4 px-1 border-amber-500/40 text-amber-600 shrink-0">
+          <Badge variant="outline" className="text-xs h-4 px-1 border-amber-500/40 text-amber-600 shrink-0">
             HITL
           </Badge>
         </div>
       ) : activeTask ? (
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <Activity className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-          <span className="text-[11px] text-muted-foreground truncate">{taskLabel(activeTask)}</span>
-          <Badge variant="outline" className="text-[11px] h-4 px-1 shrink-0">
+          <span className="text-xs text-muted-foreground truncate">{taskLabel(activeTask)}</span>
+          <Badge variant="outline" className="text-xs h-4 px-1 shrink-0">
             {activeTask.status}
           </Badge>
         </div>

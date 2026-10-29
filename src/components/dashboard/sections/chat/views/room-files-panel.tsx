@@ -181,13 +181,13 @@ export function RoomFilesPanel({ roomId }: { roomId: string }) {
         <div className="flex items-center gap-2 min-w-0">
           <Folder className="h-4 w-4 text-emerald-500 shrink-0" />
           <span className="font-semibold text-xs truncate">房间文件</span>
-          <Badge variant="secondary" className="text-[10px] shrink-0">
+          <Badge variant="secondary" className="text-xs shrink-0">
             {safeFiles.length} 个文件
           </Badge>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {lastSyncTime && (
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+            <span className="text-xs text-muted-foreground hidden sm:inline">
               同步于 {lastSyncTime.toLocaleTimeString('zh-CN')}
             </span>
           )}
@@ -264,7 +264,7 @@ export function RoomFilesPanel({ roomId }: { roomId: string }) {
                         <span className="flex-1 text-left truncate font-mono text-xs">
                           {file.filename}
                         </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {formatSize(file.size)}
                         </span>
                       </button>

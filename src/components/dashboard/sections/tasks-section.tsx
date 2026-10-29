@@ -26,6 +26,7 @@ import {
   Database,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { currentHashParams } from '@/lib/nav-hash';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
 import { useManagers } from '@/hooks/use-agentteams-managers';
@@ -68,6 +70,7 @@ import { ProjectDagSvg, type DagNodeColor } from '@/components/dashboard/project
 // ----- Status config -----
 
 import { PROJECT_STATUS_COLOR, OUTCOME_COLOR } from '@/lib/status-colors';
+import { INTERACTIVE_CARD_CLASS, handleActivate } from '@/lib/interaction-states';
 
 const TASK_STATUS_COLUMNS: Array<{
   key: TaskStatus;
@@ -200,11 +203,11 @@ function findWorkerByName(
 function StatusBadge({ status }: { status: TaskStatus }) {
   const cfg = TASK_STATUS_COLUMNS.find((c) => c.key === status);
   if (!cfg) {
-    return <Badge variant="outline" className="text-[10px]">未知</Badge>;
+    return <Badge variant="outline" className="text-xs">未知</Badge>;
   }
   const Icon = cfg.icon;
   return (
-    <Badge className={`text-[10px] gap-1 border ${cfg.color}`}>
+    <Badge className={`text-xs gap-1 border ${cfg.color}`}>
       <Icon className={`h-2.5 w-2.5 ${status === 'in_progress' ? 'animate-spin' : ''}`} />
       {cfg.label}
     </Badge>
@@ -213,7 +216,7 @@ function StatusBadge({ status }: { status: TaskStatus }) {
 
 function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
-    <Badge className={`text-[10px] border ${PROJECT_STATUS_COLOR[status]}`}>
+    <Badge className={`text-xs border ${PROJECT_STATUS_COLOR[status]}`}>
       {PROJECT_STATUS_LABEL[status]}
     </Badge>
   );
@@ -222,7 +225,7 @@ function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
 function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
   if (!outcome) return null;
   return (
-    <Badge className={`text-[10px] border ${OUTCOME_COLOR[outcome]}`}>
+    <Badge className={`text-xs border ${OUTCOME_COLOR[outcome]}`}>
       {OUTCOME_LABEL[outcome]}
     </Badge>
   );
@@ -277,8 +280,16 @@ function TaskCard({
   const expanded = highlightProjectId === task.projectId;
   return (
     <Card
-      onClick={onClick}
-      className={`glass-card hover-lift cursor-pointer transition-all ${
+      {...(onClick
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            'aria-pressed': expanded,
+            onClick,
+            onKeyDown: handleActivate(onClick),
+          }
+        : {})}
+      className={`glass-card ${onClick ? INTERACTIVE_CARD_CLASS : 'hover-lift'} ${
         expanded ? 'border-violet-500/40' : ''
       }`}
     >
@@ -289,7 +300,7 @@ function TaskCard({
           {task.dependsOn.length > 0 && (
             <Badge
               variant="outline"
-              className="text-[10px] gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400"
+              className="text-xs gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400"
               title={`依赖 ${task.dependsOn.length} 个前置任务`}
             >
               <Layers className="h-2.5 w-2.5" />
@@ -299,11 +310,11 @@ function TaskCard({
         </div>
         <div>
           <p className="text-sm font-medium leading-snug">{task.title}</p>
-          <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+          <p className="text-xs text-muted-foreground font-mono mt-0.5">
             {shortId(task.runId, 22)}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           {task.assignedTo && (
             <span className="flex items-center gap-1">
               {managerName ? (
@@ -334,7 +345,7 @@ function TaskCard({
               openChatRoom(task.roomId);
             }}
             title="打开来源空间会话"
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
           >
             <MessageSquare className="h-2.5 w-2.5" />
             <span className="font-mono truncate">{shortId(task.roomId, 24)}</span>
@@ -365,31 +376,35 @@ function ProjectCard({
 
   return (
     <Card
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
       onClick={() => onSelect(project.runId)}
-      className={`glass-card hover-lift cursor-pointer transition-all ${
+      onKeyDown={handleActivate(() => onSelect(project.runId))}
+      className={`glass-card ${INTERACTIVE_CARD_CLASS} ${
         selected ? 'border-violet-500/50 ring-1 ring-violet-500/30' : ''
       }`}
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start gap-2 flex-wrap">
           <ProjectStatusBadge status={project.status} />
-          <Badge variant="outline" className="text-[10px] gap-1">
+          <Badge variant="outline" className="text-xs gap-1">
             <Layers className="h-2.5 w-2.5" />
             {project.phases.length} 阶段
           </Badge>
-          <Badge variant="outline" className="text-[10px] gap-1">
+          <Badge variant="outline" className="text-xs gap-1">
             <ListTodo className="h-2.5 w-2.5" />
             {taskCount} 任务
           </Badge>
         </div>
         <div>
           <p className="text-sm font-semibold">{project.name}</p>
-          <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+          <p className="text-xs text-muted-foreground font-mono mt-0.5">
             {project.runId}
           </p>
         </div>
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>plan 进度</span>
             <span>
               {done}/{total} · {progressPct}%
@@ -397,7 +412,7 @@ function ProjectCard({
           </div>
           <Progress value={progressPct} className="h-1.5" />
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           {project.leader && (
             <span className="flex items-center gap-1">
               <Crown className="h-3 w-3 text-violet-500" />
@@ -444,13 +459,13 @@ function ProjectPlanPreview({ project }: { project: BoardProject }) {
           <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5">
             <Layers className="h-3 w-3" />
             {phase.heading}
-            <span className="text-[10px] text-muted-foreground/70 font-normal">
+            <span className="text-xs text-muted-foreground/70 font-normal">
               {phase.items.filter((i) => i.done).length}/{phase.items.length}
             </span>
           </p>
           <div className="space-y-1">
             {phase.items.length === 0 ? (
-              <p className="text-[10px] text-muted-foreground italic">无子任务</p>
+              <p className="text-xs text-muted-foreground italic">无子任务</p>
             ) : (
               phase.items.map((item, j) => (
                 <PlanItemRow key={`${i}-${j}-${item.taskId ?? item.text}`} item={item} />
@@ -502,7 +517,7 @@ function ProjectDagView({ project, tasks }: { project: BoardProject; tasks: Boar
       <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
         <GitBranch className="h-3 w-3" />
         依赖图
-        <span className="text-[10px] text-muted-foreground/70 font-normal">
+        <span className="text-xs text-muted-foreground/70 font-normal">
           {dag.nodes.length} 任务 · {dag.edges.length} 依赖
           {dag.externalDeps.length > 0 && ` · ${dag.externalDeps.length} 外部依赖`}
         </span>
@@ -653,6 +668,25 @@ export function TasksSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 深链消费（方案 v3 C-2）：命令面板命中任务/项目后写的是
+  // `#workbench/tasks?project=<runId>`；导航只走 hash（C-1 定的单一路径），
+  // 所以参数得在本视图读回选中态。除了挂载，还听 hashchange：否则从面板
+  // 第两次点不同项目只会改地址、不切项目。只在当前 hash 就是看板路径时
+  // 应用，避开别的路径上残留的查询参数。
+  useEffect(() => {
+    const applyProjectParam = () => {
+      const path = window.location.hash.replace(/^#/, '').split('?')[0];
+      if (path !== 'workbench/tasks') return;
+      const projectId = currentHashParams()?.get('project');
+      if (!projectId) return;
+      setView('projects');
+      setSelectedProjectId(projectId);
+    };
+    applyProjectParam();
+    window.addEventListener('hashchange', applyProjectParam);
+    return () => window.removeEventListener('hashchange', applyProjectParam);
+  }, [setView, setSelectedProjectId]);
+
   const handleReload = useCallback(() => {
     clearTasks();
     setReloadKey((k) => k + 1);
@@ -737,7 +771,7 @@ export function TasksSection() {
         actions={
           <div className="flex items-center gap-2">
             <span
-              className="text-[10px] text-muted-foreground hidden sm:inline"
+              className="text-xs text-muted-foreground hidden sm:inline"
               title="持久 / 实时 / 项目"
             >
               持久 {board.tasks.length - liveCount} · 实时 {liveCount} · 项目 {board.projects.length}
@@ -881,12 +915,12 @@ export function TasksSection() {
                 <div className="flex items-center gap-1.5 pb-1 border-b border-current/10">
                   <Icon className={`h-3.5 w-3.5 ${col.key === 'in_progress' ? 'animate-spin' : ''}`} />
                   <p className="text-xs font-semibold">{col.label}</p>
-                  <span className="ml-auto text-[10px] font-mono opacity-70">{list.length}</span>
+                  <span className="ml-auto text-xs font-mono opacity-70">{list.length}</span>
                 </div>
                 <div className="space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
                   <AnimatePresence initial={false}>
                     {list.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground italic text-center py-4">
+                      <p className="text-xs text-muted-foreground italic text-center py-4">
                         无
                       </p>
                     ) : (
@@ -933,13 +967,12 @@ export function TasksSection() {
           <div className="lg:col-span-1 space-y-3 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             {board.projects.length === 0 ? (
               <Card className="glass-card">
-                <CardContent className="p-8 text-center">
-                  <FolderTree className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm font-medium">暂无项目</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Manager 创建项目后会写入{' '}
-                    <code className="font-mono">shared/projects/&#123;id&#125;/meta.json</code>
-                  </p>
+                <CardContent className="p-0">
+                  <SectionEmptyState
+                    icon={FolderTree}
+                    title="暂无项目"
+                    description="Manager 创建项目后会写入 shared/projects/{id}/meta.json"
+                  />
                 </CardContent>
               </Card>
             ) : (
@@ -993,7 +1026,7 @@ export function TasksSection() {
                       <h3 className="text-base font-semibold">{selectedProject.name}</h3>
                       <ProjectStatusBadge status={selectedProject.status} />
                     </div>
-                    <p className="text-[10px] text-muted-foreground font-mono">
+                    <p className="text-xs text-muted-foreground font-mono">
                       {selectedProject.runId}
                     </p>
                     {selectedProject.roomId && (
@@ -1001,7 +1034,7 @@ export function TasksSection() {
                         type="button"
                         onClick={() => openChatRoom(selectedProject.roomId)}
                         title="打开该项目的协作空间会话"
-                        className="text-[10px] text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+                        className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
                       >
                         <MessageSquare className="h-3 w-3" />
                         <span className="font-mono underline decoration-dotted underline-offset-2">

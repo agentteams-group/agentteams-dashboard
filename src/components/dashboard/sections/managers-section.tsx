@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Crown, Plus, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Crown, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -84,17 +85,13 @@ function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact'
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <Crown className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的 Manager' : '暂无 Manager'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个 Manager
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={Crown}
+          title={hasQuery ? '没有匹配的 Manager' : '暂无 Manager'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个 Manager', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );

@@ -561,7 +561,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       {readOnly && (
-        <p className="text-[11px] text-amber-700 dark:text-amber-300">当前角色仅可查看，不能修改编码 CLI。</p>
+        <p className="text-xs text-amber-700 dark:text-amber-300">当前角色仅可查看，不能修改编码 CLI。</p>
       )}
 
       <div className="space-y-1.5">
@@ -588,16 +588,16 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               >
                 {CLI_LABEL[cli.id]}
               </button>
-              <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+              <Badge variant="secondary" className="h-4 px-1 text-xs">
                 {cli.installed ? cli.version || '已安装' : '未安装'}
               </Badge>
               {cli.auth_configured && (
-                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                <Badge variant="secondary" className="h-4 px-1 text-xs">
                   鉴权已配置
                 </Badge>
               )}
               {cli.auth_configured && !cli.installed && (
-                <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                <span className="text-xs text-amber-700 dark:text-amber-300">
                   容器重建后需重新安装；已保存的鉴权可保留
                 </span>
               )}
@@ -644,7 +644,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground">安装版本（可选）</span>
+        <span className="text-xs text-muted-foreground">安装版本（可选）</span>
         <Input
           value={versionTag}
           onChange={(e) => setVersionTag(e.target.value)}
@@ -655,13 +655,13 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       {settingsOpen && !settings && (
-        <p className="text-[11px] text-muted-foreground">加载 settings…</p>
+        <p className="text-xs text-muted-foreground">加载 settings…</p>
       )}
 
       {settingsOpen && settings && (
         <div className="space-y-1.5 rounded-md border border-border/60 p-2">
-          <p className="text-[11px] text-muted-foreground">{CLI_LABEL[selected]} settings</p>
-          <label className="block text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">{CLI_LABEL[selected]} settings</p>
+          <label className="block text-xs text-muted-foreground">
             模型名
             <Input
               value={modelName}
@@ -673,7 +673,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
           {redacted.map((field) => {
             const key = field.path.join('.');
             return (
-              <label key={key} className="block text-[11px] text-muted-foreground">
+              <label key={key} className="block text-xs text-muted-foreground">
                 {key}
                 {field.has_value ? '（已保存，留空保留）' : ''}
                 <Input
@@ -687,14 +687,14 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               </label>
             );
           })}
-          <p className="text-[11px] text-muted-foreground">当前配置（只读）</p>
+          <p className="text-xs text-muted-foreground">当前配置（只读）</p>
           <pre
-            className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px]"
+            className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-xs"
             aria-label="当前配置只读预览"
           >
             {previewJson(settings)}
           </pre>
-          <label className="block text-[11px] text-muted-foreground">
+          <label className="block text-xs text-muted-foreground">
             可选 JSON 补丁（同键以补丁为准）
             <Textarea
               value={jsonPatch}
@@ -716,11 +716,11 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       )}
 
       <div className="space-y-1">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           场景模板（只写模型名，工具链/MCP 需确认）· 当前 CLI：{CLI_LABEL[selected]}
         </p>
         {!selectedInstalled && (
-          <p className="text-[11px] text-muted-foreground">先安装当前 CLI，再套用场景模板</p>
+          <p className="text-xs text-muted-foreground">先安装当前 CLI，再套用场景模板</p>
         )}
         <div className="flex flex-wrap gap-1">
           {CODING_CLI_PRESETS.map((preset) => (
@@ -739,7 +739,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       {suggestion && (
-        <div className="space-y-1 rounded-md border border-border/60 p-2 text-[11px]">
+        <div className="space-y-1 rounded-md border border-border/60 p-2 text-xs">
           <p className="text-muted-foreground">建议清单（需人工确认，未写入 Worker CR）</p>
           {suggestion.toolchain.shared_volume && (
             <p>共享卷：{suggestion.toolchain.shared_volume}</p>
@@ -765,7 +765,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
 
       {msg && (
         <span
-          className={`flex items-center gap-1 text-[11px] ${
+          className={`flex items-center gap-1 text-xs ${
             msg.kind === 'ok'
               ? 'text-emerald-600 dark:text-emerald-400'
               : 'text-red-600 dark:text-red-400'

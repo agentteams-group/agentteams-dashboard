@@ -145,7 +145,7 @@ export function WorkerSkillAssign({
         <p className="text-xs text-muted-foreground">
           技能目录为空——先在「资源中心 → 技能」上传技能包，或直接在上方上传。
         </p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           此处改动不影响上方「已分发技能（磁盘文件）」列表。
         </p>
       </div>
@@ -175,7 +175,7 @@ export function WorkerSkillAssign({
           </Button>
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground mb-2">
+      <p className="text-xs text-muted-foreground mb-2">
         勾选要分配给该 Worker 的技能；取消勾选即移除。保存将按勾选全集覆盖
         spec.skills 并重启 Worker——期间由其他入口（上传/分发）写入的技能会被覆盖。
         此处改动不影响上方「已分发技能（磁盘文件）」列表。
@@ -199,7 +199,7 @@ export function WorkerSkillAssign({
             />
             <span className="font-mono">{s.name}</span>
             {s.source === 'nacos' && (
-              <Badge variant="secondary" className="text-[10px] px-1 h-4">
+              <Badge variant="secondary" className="text-xs px-1 h-4">
                 nacos
               </Badge>
             )}
@@ -222,7 +222,7 @@ export function WorkerSkillAssign({
               onChange={() => toggle(s)}
             />
             <span className="font-mono">{s}</span>
-            <Badge variant="outline" className="text-[10px] px-1 h-4 text-amber-600 dark:text-amber-400">
+            <Badge variant="outline" className="text-xs px-1 h-4 text-amber-600 dark:text-amber-400">
               不在目录
             </Badge>
           </label>

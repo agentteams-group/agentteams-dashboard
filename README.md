@@ -66,6 +66,8 @@ The chat workspace renders Matrix rooms with virtualized history, unread-aware s
 
 Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates.
 
+The Dashboard does not implement or claim end-to-end encryption: chat content passes through the server-side proxy in plaintext, and encrypted rooms render as empty. Which layer can read what, and what operators must confirm for their deployment, is documented in [docs/trust-boundary.md](docs/trust-boundary.md).
+
 ## 🎨 Theming
 
 The Dashboard ships three built-in themes (light, dark, high-contrast), follows the system preference, and persists the choice across reloads. A theme editor in *Settings → Appearance* exposes 30+ visual parameters (colors, radius, font size) with live preview and JSON import/export. Operators can roll out an enterprise theme via `theme.config.json` or environment variables. See [docs/theme-customization.md](docs/theme-customization.md) (English) and [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md) (中文).
@@ -149,7 +151,7 @@ Non-interactive install example:
 
 ```bash
 AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.3.1 \
-  bash agentteams-install.sh --non-interactive
+  AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 
 See [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md) for detailed integration notes (patch contents, Makefile targets, verification, and roadmap).

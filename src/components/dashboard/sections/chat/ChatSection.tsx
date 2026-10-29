@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
 import { ChatAuthBadge } from './chat-auth-badge';
 import { SyncStatusChip } from './sync-status-chip';
+import { ServerCapabilityPopover } from './server-capability-popover';
 import { ChatRoomSidebar } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
 import { ChatPanel, type ChatContextPanel } from './ChatPanel';
@@ -210,6 +211,8 @@ export function ChatSection() {
   const sessionFooter = (
     <div className="flex flex-wrap items-center gap-1.5">
       <SyncStatusChip />
+      {/* B-6：连接好不好与能力有没有是 two questions，后者需要一个能展开看原因的入口。 */}
+      <ServerCapabilityPopover />
       <ChatAuthBadge
         compact
         isLoggedIn={isLoggedIn}
@@ -234,7 +237,7 @@ export function ChatSection() {
           >
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <p className="flex-1">{notice.message}</p>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={notice.retry}>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={notice.retry}>
               重试
             </Button>
           </div>

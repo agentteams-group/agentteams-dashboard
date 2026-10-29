@@ -73,9 +73,9 @@ function definitionToFlow(def: LoopDefinition): { nodes: Node[]; edges: Edge[] }
       data: {
         label: (
           <div className="text-left">
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <span
-                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[9px] font-bold text-white"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-xs font-bold text-white"
                 style={{ backgroundColor: style.border }}
               >
                 {style.badge}
@@ -83,7 +83,7 @@ function definitionToFlow(def: LoopDefinition): { nodes: Node[]; edges: Edge[] }
               {NODE_TYPE_LABELS[n.type]}
             </div>
             <div className="text-xs font-medium">{n.label}</div>
-            {n.assignee && <div className="text-[10px] text-muted-foreground">@{n.assignee}</div>}
+            {n.assignee && <div className="text-xs text-muted-foreground">@{n.assignee}</div>}
           </div>
         ),
       },

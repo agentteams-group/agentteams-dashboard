@@ -47,7 +47,10 @@ export interface AuditEventsResponse {
  * 403 for non-admin sessions — surfaced via `error` rather than thrown so
  * the UI can render an inline notice instead of crashing.
  */
-export function useAuditEvents(query: AuditQuery = {}) {
+export function useAuditEvents(
+  query: AuditQuery = {},
+  options: { enabled?: boolean; refetchInterval?: number | false } = {},
+) {
   return useQuery<AuditEventsResponse>({
     queryKey: ['audit-events', query],
     queryFn: async () => {
@@ -76,7 +79,10 @@ export function useAuditEvents(query: AuditQuery = {}) {
       }
       return (await res.json()) as AuditEventsResponse;
     },
-    refetchInterval: 15_000,
+    // 默认给审计页的 15s 轮询；命令面板这类「只在打开时读一眼」的调用方
+    // 需要把 enabled 关掉、同轮询也关掉，否则顶栏会常驻一个后台拉取。
+    refetchInterval: options.refetchInterval ?? 15_000,
     staleTime: 10_000,
+    enabled: options.enabled ?? true,
   });
 }
