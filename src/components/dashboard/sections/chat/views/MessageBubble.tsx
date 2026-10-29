@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
@@ -33,20 +33,22 @@ import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
+import { AgentPresenceCard } from '../agent-presence-card';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
   /** Opens the owning worker's files panel (team rooms: multi-worker source). */
   onOpenWorkerFiles?: (_message: DisplayMessage) => void;
   /**
@@ -79,7 +81,7 @@ function TurnStateNote({
 }) {
   if (state === 'detached') {
     return (
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70" data-turn-state="detached">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground/70" data-turn-state="detached">
         <Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />
         原消息不在当前加载范围，以下为该话题中的回复
       </p>
@@ -87,7 +89,7 @@ function TurnStateNote({
   }
   if (state === 'interrupted') {
     return (
-      <p className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400" data-turn-state="interrupted">
+      <p className="flex items-center gap-1.5 text-xs text-status-waiting" data-turn-state="interrupted">
         <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
         本轮未生成最终答复
       </p>
@@ -95,7 +97,7 @@ function TurnStateNote({
   }
   if (state === 'pending' && !hasBlocks) {
     return (
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground" data-turn-state="pending">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-turn-state="pending">
         <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
         等待回复…
       </p>
@@ -110,7 +112,7 @@ function MessageTime({ timestamp }: { timestamp: number }) {
     minute: '2-digit',
   });
   return (
-    <span className="text-[10px] text-muted-foreground/60 select-none">
+    <span className="text-xs text-muted-foreground/60 select-none">
       {time}
     </span>
   );
@@ -138,7 +140,7 @@ function LifecycleNoticeRow({
       <div
         role="status"
         title={notice.body}
-        className="flex max-w-[92%] items-start gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-[11px] leading-relaxed text-muted-foreground"
+        className="flex max-w-[92%] items-start gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-xs leading-relaxed text-muted-foreground"
       >
         <Icon className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
         <span className="min-w-0 break-words">
@@ -181,7 +183,7 @@ function AvatarWithInitials({ sender, label, isMe }: { sender: string; label: st
   return (
     <Avatar className="h-[30px] w-[30px] shrink-0 rounded-[9px]">
       <div
-        className={`flex h-full w-full items-center justify-center rounded-[9px] border border-border text-[11px] font-semibold ${
+        className={`flex h-full w-full items-center justify-center rounded-[9px] border border-border text-xs font-semibold ${
           isMe ? 'bg-primary/15 text-primary' : palette.avatar
         }`}
         title={label}
@@ -219,22 +221,79 @@ function ActionButton({
   title,
   icon,
   iconNode,
+  tone,
   onClick,
 }: {
   title: string;
   icon?: string;
   iconNode?: React.ReactNode;
+  /** 追加到按钮上的色类（复制失败时标红），不传就走默认的 muted。 */
+  tone?: string;
   onClick: (_e: React.MouseEvent) => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+      className={`p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
       title={title}
       aria-label={title}
     >
       {iconNode ?? (icon ? <ActionIcon path={icon} label={title} /> : null)}
     </button>
+  );
+}
+
+/**
+ * 消息操作行上的复制按钮（方案 v3 B-4）。
+ *
+ * 复制这种操作「点了就该有回执」：原来只调一次 onCopy，不告诉用户成没成，
+ * 而内网 http 部署下 navigator.clipboard 直接不存在，点了其实是没复制上的。
+ * 这里等调用结果：成功 1.6 秒内把图标换成对勾，失败就明说失败（写入已经过了
+ * `@/lib/use-copy-to-clipboard` 的 execCommand 兜底，两条路都不通才报失败），
+ * 让用户改用手动选中复制。
+ *
+ * 不叫 CopyButton 是因为 `@/components/dashboard/copy-button.tsx` 已有一个通用
+ * 复制按钮：那个是 Button 壳、只负责写一段文本；消息操作行要贴齐同排的
+ * ActionButton 小图标样式，还要能报失败，所以只共用它底下的写入路径。
+ */
+function MessageCopyAction({
+  message,
+  onCopy,
+}: {
+  message: DisplayMessage;
+  onCopy: NonNullable<MessageBubbleProps['onCopy']>;
+}) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const label =
+    state === 'copied' ? '已复制到剪贴板' : state === 'failed' ? '复制失败，请手动选中文字复制' : '复制';
+
+  return (
+    <ActionButton
+      title={label}
+      tone={state === 'failed' ? 'text-status-failed' : undefined}
+      iconNode={
+        state === 'copied' ? (
+          <Check className="w-3 h-3 text-status-done" aria-hidden="true" />
+        ) : (
+          <Copy className="w-3 h-3" aria-hidden="true" />
+        )
+      }
+      onClick={() => {
+        void (async () => {
+          const result = await onCopy(message);
+          // 调用方没返回值（旧的 void 型调用点）时不猜失败，按已复制处理。
+          setState(result === false ? 'failed' : 'copied');
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => setState('idle'), 1600);
+        })();
+      }}
+    />
   );
 }
 
@@ -341,9 +400,11 @@ export function MessageBubble({
     }
   }, [message.workerName, message.eventId, toolCallBlockCount, message.isStreaming]);
 
-  const handleConfirmationApprove = useCallback((reply: string) => {
-    if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender, message.eventId);
+  // 干预卡答复：额外把结构化回写字段（confirmation_id / answer / actor）递上去，
+  // 并把「是否真的写进了房间」回传给卡片（方案 v3 C-3）。
+  const handleConfirmationApprove = useCallback((reply: string, answer?: ConfirmationAnswerField): AnswerSendResult => {
+    if (!onSendConfirmation) return false;
+    return onSendConfirmation(reply, message.sender, message.eventId, answer);
   }, [onSendConfirmation, message.sender, message.eventId]);
 
   const handleConfirmationReject = useCallback((reply: string) => {
@@ -388,7 +449,7 @@ export function MessageBubble({
   // 同组续接消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
   const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
-    'break-words text-[13.5px] leading-relaxed text-foreground',
+    'break-words text-sm leading-relaxed text-foreground',
     isTextBubble
       ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
       : 'w-full',
@@ -398,7 +459,7 @@ export function MessageBubble({
         ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
         : 'bg-muted/60 text-foreground border-border/40'
       : '',
-    message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
+    message.status === 'error' ? 'ring-1 ring-status-failed/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
@@ -419,44 +480,63 @@ export function MessageBubble({
       {/* Avatar column: mirrors the bubble side (own messages on the right).
           C (#1295): worker senders' avatars are clickable → read-only
           QwenPaw sessions of that worker ("补头": the headless worker's
-          sessions, viewable from the room). */}
+          sessions, viewable from the room).
+          C-5: AgentPresenceCard 只在这一处包一层 hover/焦点悬浮卡。它包的是
+          按钮外面（不是替按钮做 trigger），所以上面那句“可点”与 disabled
+          规则一点没动；没 workerName 的人类发送者由卡片自己原样透出 children。 */}
       <div className="w-[30px] shrink-0">
         {showAvatar && (
-          <button
-            type="button"
-            disabled={!message.workerName || !onOpenWorkerChats}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (message.workerName && onOpenWorkerChats) onOpenWorkerChats(message.workerName);
-            }}
-            title={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
-            aria-label={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
-            className={
-              message.workerName && onOpenWorkerChats
-                ? 'relative h-[30px] w-[30px] cursor-pointer rounded-[9px] transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/50'
-                : 'relative h-[30px] w-[30px]'
-            }
+          <AgentPresenceCard
+            sender={message.sender}
+            workerName={message.workerName}
+            senderLabel={senderLabel}
+            senderStatus={senderStatus}
           >
-            <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
-            {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
-          </button>
+            <button
+              type="button"
+              disabled={!message.workerName || !onOpenWorkerChats}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (message.workerName && onOpenWorkerChats) onOpenWorkerChats(message.workerName);
+              }}
+              title={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
+              aria-label={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
+              className={
+                message.workerName && onOpenWorkerChats
+                  ? 'relative h-[30px] w-[30px] cursor-pointer rounded-[9px] transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/50'
+                  : 'relative h-[30px] w-[30px]'
+              }
+            >
+              <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
+              {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
+            </button>
+          </AgentPresenceCard>
         )}
       </div>
 
       <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
           <div className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-[12.5px] font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
+            <span className={`text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
               {senderLabel}
             </span>
             {message.isEdited && (
-              <span className="text-[10px] text-muted-foreground italic">(edited)</span>
+              <span
+                className="text-xs text-muted-foreground italic"
+                title={
+                  message.revisionCount
+                    ? `已编辑 ${message.revisionCount} 次`
+                    : '已编辑（服务端未回报编辑次数）'
+                }
+              >
+                已编辑
+              </span>
             )}
             {message.status === 'sending' && (
-              <span className="text-[10px] text-muted-foreground italic">发送中...</span>
+              <span className="text-xs text-muted-foreground italic">发送中...</span>
             )}
             {message.status === 'error' && (
-              <span className="text-[10px] text-red-500 italic">发送失败</span>
+              <span className="text-xs text-status-failed italic">发送失败</span>
             )}
             {/* 设计稿把时间放在名字行最右侧；发送/已读标记跟随时间一起排。 */}
             <span className={`flex shrink-0 items-center gap-1 ${message.isMe ? 'mr-auto pr-3' : 'ml-auto pl-3'}`}>
@@ -496,7 +576,7 @@ export function MessageBubble({
                 className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
               />
               {editError && (
-                <span className="text-[10px] text-red-500">{editError}</span>
+                <span className="text-xs text-red-500">{editError}</span>
               )}
               <div className="flex items-center gap-1.5">
                 <Button size="sm" className="h-6 px-2 text-xs" onClick={submitEdit}>
@@ -708,7 +788,7 @@ export function MessageBubble({
 
           {/* 续接消息（同发送者分组）默认不占行：时间/回执在 hover 时显示在行尾。 */}
           {!showAvatar && (
-          <div className={`flex items-center gap-1 text-[10px] ${
+          <div className={`flex items-center gap-1 text-xs ${
             isContinuation && !isHovered && !showActions ? 'opacity-0 group-hover/message:opacity-100' : ''
           }`}>
             <MessageTime timestamp={message.timestamp} />
@@ -736,7 +816,7 @@ export function MessageBubble({
               e.stopPropagation();
               onOpenThread(message);
             }}
-            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-primary"
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-primary"
             title="在话题中查看回复"
           >
             <span>↩</span>
@@ -770,13 +850,7 @@ export function MessageBubble({
             {onOpenThread && (
               <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
-            {onCopy && (
-              <ActionButton
-                title="复制"
-                iconNode={<Copy className="w-3 h-3" aria-hidden="true" />}
-                onClick={() => onCopy(message)}
-              />
-            )}
+            {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
             {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
               <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
             )}

@@ -134,3 +134,39 @@ describe.each([
     }
   });
 });
+
+// ── 语义状态色（方案 v3 A-1/A-2）─────────────────────────────────────────────
+// 徽章文本直接落在卡片上，所以按 --card 断言；底/边是同一色的淡染，只会更高。
+// 三套主题必须各有一条：高对比主题不是「更淡的暗色」，它要过 AAA。
+const STATUS_TOKENS = [
+  '--status-running',
+  '--status-waiting',
+  '--status-blocked',
+  '--status-done',
+  '--status-failed',
+  '--status-info',
+];
+
+describe.each([
+  ['light', ':root', 4.5],
+  ['dark', '.dark', 4.5],
+  ['high-contrast', '.high-contrast', 7],
+] as const)('%s theme status tokens (A-2)', (_, selector, minRatio) => {
+  const vars = section(selector);
+
+  it.each(STATUS_TOKENS)(`%s on --card ≥ ${minRatio}:1`, (token) => {
+    const value = vars[token];
+    if (!value) throw new Error(`${selector} 缺 ${token}（三套主题必须同集）`);
+    const ratio = contrastRatio(value, vars['--card']);
+    if (ratio < minRatio) {
+      throw new Error(`${token} (${value}) on --card (${vars['--card']}) = ${ratio.toFixed(2)}:1`);
+    }
+  });
+});
+
+it('语义状态色已映射成 Tailwind 颜色，组件侧才有单轨可走（A-1）', () => {
+  const themeInline = section('@theme inline');
+  for (const token of STATUS_TOKENS) {
+    expect(themeInline[token.replace(/^--/, '--color-')]).toBe(`var(${token})`);
+  }
+});

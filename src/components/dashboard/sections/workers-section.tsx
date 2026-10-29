@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import {
   Select,
   SelectContent,
@@ -116,17 +117,13 @@ function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' 
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的 Worker' : '暂无 Worker'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个 Worker
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={Bot}
+          title={hasQuery ? '没有匹配的 Worker' : '暂无 Worker'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个 Worker', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );

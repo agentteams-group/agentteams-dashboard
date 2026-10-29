@@ -154,11 +154,11 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-medium truncate max-w-[180px]">{skill.name}</span>
                         {skill.source === 'nacos' ? (
-                          <Badge variant="outline" className="text-[10px] shrink-0">
+                          <Badge variant="outline" className="text-xs shrink-0">
                             Nacos
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                          <Badge variant="secondary" className="text-xs shrink-0">
                             自定义
                           </Badge>
                         )}

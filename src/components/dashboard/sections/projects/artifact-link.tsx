@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { FolderKanban, CircleAlert, Code2, Download, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -48,7 +48,7 @@ function SourceView({
   onAnchor: (_line: number | null) => void;
 }) {
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
       {text.split('\n').map((lineText, i) => {
         const lineNo = i + 1;
         const anchored = anchorLine === lineNo;
@@ -86,10 +86,13 @@ export function ArtifactLink({
   const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<ArtifactPreviewState | null>(null);
   const [anchorLine, setAnchorLine] = useState<number | null>(null);
+  const [anchorCoordinate, setAnchorCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [showSource, setShowSource] = useState(false);
   const openPreview = () => {
     setPreview({ status: 'loading' });
     setShowSource(false);
+    setAnchorLine(null);
+    setAnchorCoordinate(null);
     void (async () => {
       try {
         const res = await fetch(href, { cache: 'no-store' });
@@ -128,6 +131,22 @@ export function ArtifactLink({
         setPreview({ status: 'error', error: err instanceof Error ? err.message : '预览失败' });
       }
     })();
+  };
+  const handleImageAnchor = (event: ReactMouseEvent<HTMLImageElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+    // 再点同一处（±1%）视为取消，避免只能靠关窗口清锚点。
+    setAnchorCoordinate((prev) =>
+      prev && Math.abs(prev.x - x) < 0.01 && Math.abs(prev.y - y) < 0.01 ? null : { x, y },
+    );
+    setAnchorLine(null);
+  };
+  const closePreview = () => {
+    setPreview(null);
+    setAnchorLine(null);
+    setAnchorCoordinate(null);
   };
   const handleDownload = async () => {
     setDownloading(true);
@@ -172,7 +191,7 @@ export function ArtifactLink({
         <button
           type="button"
           onClick={openPreview}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] hover:bg-amber-500/15"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs hover:bg-amber-500/15"
           title={`预览：${href}`}
         >
           <FolderKanban className="h-3 w-3" />
@@ -192,7 +211,7 @@ export function ArtifactLink({
           )}
         </button>
       </span>
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog open={!!preview} onOpenChange={(open) => !open && closePreview()}>
         {/* 9/17 装验第 7 轮：对话框 90vh 封顶 + 自身可滚——内容再高也不
             超出窗口（此前超高内容把对话框顶破视口）。 */}
         <DialogContent className="sm:max-w-5xl max-w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -223,11 +242,34 @@ export function ArtifactLink({
               )}
               {preview.status === 'ready' &&
                 (preview.isImage ? (
-                  <img
-                    src={href}
-                    alt={label}
-                    className="max-w-full max-h-[60vh] rounded-md object-contain"
-                  />
+                  <div className="space-y-1">
+                    <div className="relative inline-block max-w-full">
+                      <img
+                        src={href}
+                        alt={label}
+                        onClick={handleImageAnchor}
+                        className="max-w-full max-h-[60vh] rounded-md object-contain cursor-crosshair"
+                        title="点击图片任意位置锚定坐标评论（再点同一处取消）"
+                      />
+                      {anchorCoordinate && (
+                        <span
+                          className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-sky-500 shadow"
+                          style={{
+                            left: `${anchorCoordinate.x * 100}%`,
+                            top: `${anchorCoordinate.y * 100}%`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    {roomId && (
+                      <p className="text-xs text-muted-foreground">
+                        {anchorCoordinate
+                          ? `已锚定 (${Math.round(anchorCoordinate.x * 100)}%, ${Math.round(anchorCoordinate.y * 100)}%)，再点同一处取消`
+                          : '点击图片任意位置锚定坐标评论'}
+                      </p>
+                    )}
+                  </div>
                 ) : preview.isHtml ? (
                   <div className="space-y-2">
                     <div className="flex justify-end gap-1">
@@ -290,6 +332,7 @@ export function ArtifactLink({
               roomId={roomId}
               artifact={label}
               anchorLine={anchorLine}
+              anchorCoordinate={anchorCoordinate}
               defaultAssignee={assignee}
             />
           )}

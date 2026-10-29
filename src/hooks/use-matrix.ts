@@ -10,6 +10,7 @@ import type { WorkerRuntime } from '@/lib/agentteams-api';
 import type { ChatTurnState } from '@/lib/chat-ir/types';
 import { create } from 'zustand';
 import { consumeBufferedEvents } from '@/lib/matrix-sync-buffer';
+import { recordSearchProbe } from '@/lib/matrix-capabilities';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -264,6 +265,78 @@ export function mergeRawEventsInto(
   // reverse the batch before prepending.
   if (newEvents.length > 0) chunk.unshift(...newEvents.reverse());
   return chunk;
+}
+
+/**
+ * 房间内容全文检索（方案 v3 B-1）。
+ *
+ * 与消息分页不共用 queryKey：检索词变了不能把已加载的时间线刷掉。
+ * `limit` 取 100 是给「命中很多但只想跳过去」的场景一次性多拿一些；再多靠 nextBatch。
+ * 最少 2 个字符才发请求：单字在中文房间里几乎必然命中几十条，既慢又没用。
+ */
+export function useMatrixRoomSearch(
+  roomId: string | null,
+  term: string,
+  options: { enabled?: boolean } = {},
+) {
+  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+  const trimmed = term.trim();
+
+  return useQuery({
+    queryKey: ['matrix-room-search', roomId, trimmed],
+    queryFn: async () => {
+      if (!homeserver || !accessToken || !roomId) return { hits: [], unsupported: false };
+      const result = await matrixApi.searchRoomMessages(homeserver, accessToken, roomId, trimmed, {
+        limit: 100,
+      });
+      // /search 关掉索引时返回的是错误码而不是空结果，所以只有真发过一次请求
+      // 才拿得到确定答案；记下来给能力弹层（B-6）显示「已实测」。
+      recordSearchProbe(result.unsupported, result.reason);
+      return result;
+    },
+    enabled:
+      options.enabled !== false &&
+      isLoggedIn &&
+      !!roomId &&
+      !!homeserver &&
+      !!accessToken &&
+      trimmed.length >= 2,
+    // 搜索是边打字边触发的，同一个房间同一个词短期内不再打上游。
+    staleTime: 30000,
+  });
+}
+
+/**
+ * 跨房间消息检索（方案 v3 B-1 的延伸：命令面板里的 `message` 实体）。
+ *
+ * 与 useMatrixRoomSearch 的差别只有一处：不带房间约束，服务端在该用户已加入的
+ * 全部房间里搜。命中项的房间从 `hit.event.room_id` 上取——`/search` 返回的事件
+ * 自带这个字段，所以不需要为每条命中再发一次请求。
+ */
+export function useMatrixMessageSearch(term: string, options: { enabled?: boolean } = {}) {
+  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+  const trimmed = term.trim();
+
+  return useQuery({
+    queryKey: ['matrix-message-search', trimmed],
+    queryFn: () =>
+      matrixApi
+        .searchRoomMessages(homeserver ?? '', accessToken ?? '', null, trimmed, {
+          limit: 20,
+        })
+        // 与房间内检索同一个口径：跑过一次就记下实测结论（B-6）。
+        .then((result) => {
+          recordSearchProbe(result.unsupported, result.reason);
+          return result;
+        }),
+    enabled:
+      options.enabled !== false &&
+      isLoggedIn &&
+      !!homeserver &&
+      !!accessToken &&
+      trimmed.length >= 2,
+    staleTime: 30000,
+  });
 }
 
 export function useMatrixRoomMessages(roomId: string | null) {

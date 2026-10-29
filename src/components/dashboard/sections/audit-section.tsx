@@ -1,15 +1,17 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Filter,
   RefreshCw,
   AlertTriangle,
   ShieldAlert,
   ShieldCheck,
+  ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,8 +23,66 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { currentHashParams } from '@/lib/nav-hash';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuditEvents, type AuditEvent, type AuditQuery } from '@/hooks/use-audit-events';
+import { parseAuditRef, type ParsedAuditRef } from '@/lib/replay/audit-ref';
+
+function AuditReplayLink({ auditRef }: { auditRef: ParsedAuditRef }) {
+  const [opening, setOpening] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  if (!auditRef.roomId && !auditRef.replayId) return null;
+
+  const handleOpen = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (auditRef.replayId) {
+      const url = `/replay/${auditRef.replayId}${auditRef.eventId ? `?eventId=${encodeURIComponent(auditRef.eventId)}` : ''}`;
+      window.open(url, '_blank');
+      return;
+    }
+    if (auditRef.roomId) {
+      setOpening(true);
+      setNotice(null);
+      try {
+        const res = await fetch(`/api/agentteams/replay/export?room=${encodeURIComponent(auditRef.roomId)}`);
+        if (res.ok) {
+          const data = (await res.json()) as { found?: boolean; replayId?: string };
+          if (data.replayId) {
+            const url = `/replay/${data.replayId}${auditRef.eventId ? `?eventId=${encodeURIComponent(auditRef.eventId)}` : ''}`;
+            window.open(url, '_blank');
+            setOpening(false);
+            return;
+          }
+        }
+        // 未找到已导出的静态回放包时引导至空间对应房间
+        setNotice('已指引至协作空间');
+        setTimeout(() => {
+          window.location.hash = `#workbench/space/${encodeURIComponent(auditRef.roomId!)}`;
+        }, 600);
+      } catch {
+        setNotice('查询回放失败');
+      } finally {
+        setOpening(false);
+      }
+    }
+  };
+
+  return (
+    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+      <button
+        onClick={handleOpen}
+        disabled={opening}
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline hover:text-primary/80 transition-colors disabled:opacity-50"
+        title="在会话回放或空间中打开对应的消息上下文"
+      >
+        <ExternalLink className="h-3 w-3" />
+        <span>{opening ? '定位中...' : '在回放中打开'}</span>
+      </button>
+      {notice && <span className="text-xs text-muted-foreground">{notice}</span>}
+    </div>
+  );
+}
 
 type EntityFilter = AuditEvent['entity_type'] | 'all';
 
@@ -73,6 +133,23 @@ export function AuditSection() {
   }, [entityType]);
 
   const { data, isLoading, isFetching, refetch } = useAuditEvents(query);
+
+  // 深链消费（方案 v3 C-2）：命令面板命中审计事件后写的是
+  // `#console/governance/audit?entity=<type>`，本视图把它读回筛选维度。
+  // 只接受 ENTITY_OPTIONS 里已有的值：hash 是用户能手改的输入，乱值会把筛选
+  // 卡成一个既不匹配选项又查不出东西的状态。
+  useEffect(() => {
+    const applyEntityParam = () => {
+      const path = window.location.hash.replace(/^#/, '').split('?')[0];
+      if (path !== 'console/governance/audit') return;
+      const raw = currentHashParams()?.get('entity');
+      if (!raw) return;
+      if (ENTITY_OPTIONS.some((option) => option.id === raw)) setEntityType(raw as EntityFilter);
+    };
+    applyEntityParam();
+    window.addEventListener('hashchange', applyEntityParam);
+    return () => window.removeEventListener('hashchange', applyEntityParam);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -156,12 +233,12 @@ export function AuditSection() {
               ))}
             </div>
           ) : !data?.events?.length ? (
-            <div className="space-y-2 py-6 text-center text-sm text-muted-foreground">
-              <p>暂无审计事件</p>
-              {data?.scope === 'self' ? (
-                <p className="text-xs">视图已限定为你本人执行的治理操作</p>
-              ) : null}
-            </div>
+            <SectionEmptyState
+              title="暂无审计事件"
+              description={
+                data?.scope === 'self' ? '视图已限定为你本人执行的治理操作' : undefined
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -207,7 +284,8 @@ export function AuditSection() {
                         </span>
                       </TableCell>
                       <TableCell className="px-2 py-2 max-w-md break-words text-xs text-muted-foreground">
-                        {event.details ?? '—'}
+                        <div>{event.details ?? '—'}</div>
+                        <AuditReplayLink auditRef={parseAuditRef(event)} />
                       </TableCell>
                     </TableRow>
                   );

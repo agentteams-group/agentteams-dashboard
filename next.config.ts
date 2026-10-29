@@ -11,6 +11,17 @@ const devOrigins = process.env.ALLOWED_DEV_ORIGINS
 // monkeycode-ai.online preview domain pattern
 devOrigins.push(".monkeycode-ai.online");
 
+// Loopback aliases. The dev server serves from `localhost`, but the page is
+// routinely opened through `127.0.0.1` / `[::1]` (IDE preview, port proxies).
+// Next 16 blocks cross-origin access to dev resources by default, so the HMR
+// socket request to /_next/hmr is answered with a bare 400 and the WebSocket
+// handshake fails in the console (net::ERR_INVALID_HTTP_RESPONSE) — hot
+// reload silently dies. `localhost` needs no entry; only the aliases do.
+// Dev-only setting (allowedDevOrigins has no effect on `next start`).
+for (const alias of ["127.0.0.1", "[::1]"]) {
+  if (!devOrigins.includes(alias)) devOrigins.push(alias);
+}
+
 // Base path for embedding AgentTeams-Dashboard as a sub-application (e.g. /dashboard).
 // When empty/unset, AgentTeams-Dashboard runs at the root as a standalone app.
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";

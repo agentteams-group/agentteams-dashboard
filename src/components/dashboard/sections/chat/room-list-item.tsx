@@ -11,17 +11,9 @@ import {
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { PHASE_STATUS_TOKEN, statusDotClass, statusTextClass } from '@/lib/status-tokens';
+import { INTERACTIVE_STATES_CLASS, SELECTED_SURFACE_CLASS } from '@/lib/interaction-states';
 import type { RoomInfo } from './room-info';
-
-const PHASE_COLOR: Record<string, string> = {
-  Running: 'text-emerald-500',
-  Active: 'text-emerald-500',
-  Ready: 'text-emerald-500',
-  Sleeping: 'text-amber-500',
-  Pending: 'text-amber-500',
-  Failed: 'text-red-500',
-  Stopped: 'text-gray-500',
-};
 
 function roomTypeIcon(type: RoomInfo['type']) {
   switch (type) {
@@ -37,14 +29,6 @@ function roomTypeIcon(type: RoomInfo['type']) {
       // 12.15：通用房间用对话气泡（原先 Hash '#' 像是频道符——装验反馈）。
       return <MessageSquare className="w-4 h-4 text-muted-foreground" />;
   }
-}
-
-function statusDot(phase: string | undefined): string {
-  if (!phase) return 'bg-gray-400';
-  if (phase === 'Running' || phase === 'Active' || phase === 'Ready') return 'bg-emerald-500';
-  if (phase === 'Sleeping' || phase === 'Pending') return 'bg-amber-500';
-  if (phase === 'Failed') return 'bg-red-500';
-  return 'bg-gray-400';
 }
 
 export function RoomListItem({
@@ -85,22 +69,23 @@ export function RoomListItem({
   const pendingCount = useHitlInboxStore((state) =>
     Object.values(state.confirmations).filter((item) => item.roomId === room.id).length,
   );
+  // 阶段名 → 语义色只走 PHASE_STATUS_TOKEN 一处（方案 v3 A-2）；认不出的阶段
+  // （旧服务端可能回别的词）给中性色，不替它编一个运行状态。
+  const phaseToken = room.phase ? PHASE_STATUS_TOKEN[room.phase] : undefined;
   return (
     <motion.button
       onClick={handleClick}
-      className={`w-full text-left p-3 rounded-lg transition-colors ${
-        isSelected
-          ? 'bg-emerald-500/10 border border-emerald-500/30'
-          : 'hover:bg-accent border border-transparent'
+      className={`w-full border text-left p-3 rounded-lg ${INTERACTIVE_STATES_CLASS} ${
+        isSelected ? SELECTED_SURFACE_CLASS : 'border-transparent hover:bg-accent'
       }`}
       whileTap={{ scale: 0.99 }}
     >
       <div className="flex items-center gap-2.5">
         <div className="relative">
           {roomTypeIcon(room.type)}
-          {room.phase && PHASE_COLOR[room.phase] && (
+          {phaseToken && (
             <div
-              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${statusDot(room.phase)}`}
+              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${statusDotClass(phaseToken)}`}
             />
           )}
         </div>
@@ -116,7 +101,7 @@ export function RoomListItem({
             {room.phase ? (
               <Badge
                 variant="outline"
-                className={`text-[10px] px-1 py-0 h-3.5 shrink-0 ${PHASE_COLOR[room.phase] || ''}`}
+                className={`text-xs px-1 py-0 shrink-0 ${phaseToken ? statusTextClass(phaseToken) : ''}`}
               >
                 {room.phase}
               </Badge>
@@ -128,13 +113,13 @@ export function RoomListItem({
             {room.runtime ? (
               <Badge
                 variant="outline"
-                className="text-[10px] px-1 py-0 h-3.5 shrink-0"
+                className="text-xs px-1 py-0 shrink-0"
                 title={room.runtime}
               >
                 {RUNTIME_LABELS[room.runtime] || room.runtime}
               </Badge>
             ) : null}
-            <p className="text-[10px] text-muted-foreground truncate min-w-0">
+            <p className="text-xs text-muted-foreground truncate min-w-0">
               {room.lastMessagePreview || room.parentTeam || room.id}
             </p>
           </div>
@@ -143,7 +128,7 @@ export function RoomListItem({
           {pendingCount > 0 && (
             <Badge
               variant="secondary"
-              className="h-4 px-1.5 text-[10px]"
+              className="h-4 px-1.5 text-xs"
               aria-label={`${pendingCount} 条待处理`}
               title={`${pendingCount} 条待处理`}
             >

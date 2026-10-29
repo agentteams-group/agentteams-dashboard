@@ -416,13 +416,13 @@ export function ChatComposer({
                   onMouseEnter={() => setMenuSelectedIdx(idx)}
                 >
                   <Avatar className="w-5 h-5 shrink-0">
-                    <AvatarFallback className={`text-[10px] ${color}`}>
+                    <AvatarFallback className={`text-xs ${color}`}>
                       {member.displayName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-xs font-medium truncate">{member.displayName}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono truncate">{member.userId}</p>
+                    <p className="text-xs text-muted-foreground font-mono truncate">{member.userId}</p>
                   </div>
                 </button>
               );
@@ -443,7 +443,7 @@ export function ChatComposer({
                 <span className="text-base leading-none shrink-0 w-6 text-center">{entry.char}</span>
                 <div className="min-w-0">
                   <p className="text-xs font-mono truncate">:{entry.name}:</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{entry.keywords}</p>
+                  <p className="text-xs text-muted-foreground truncate">{entry.keywords}</p>
                 </div>
               </button>
             ))}
@@ -463,7 +463,7 @@ export function ChatComposer({
                 <span className="text-muted-foreground shrink-0">{cmd.icon}</span>
                 <div className="min-w-0">
                   <p className="text-xs font-medium">{cmd.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{cmd.description}</p>
+                  <p className="text-xs text-muted-foreground">{cmd.description}</p>
                 </div>
               </button>
             ))}
@@ -551,7 +551,7 @@ export function ChatComposer({
             </Button>
           )}
 
-          <p className="ml-1 hidden min-w-0 truncate text-[10px] text-muted-foreground/60 sm:block">
+          <p className="ml-1 hidden min-w-0 truncate text-xs text-muted-foreground/60 sm:block">
             Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
           </p>
 
@@ -581,7 +581,7 @@ export function ChatComposer({
         </div>
       </div>
       {sendError && (
-        <p className="mt-1 px-1 text-[10px] text-red-500 truncate">发送失败: {sendError}</p>
+        <p className="mt-1 px-1 text-xs text-red-500 truncate">发送失败: {sendError}</p>
       )}
       </div>
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
@@ -57,7 +58,15 @@ interface HitlInboxState {
   clearConfirmations: () => void;
 }
 
-const MAX_CONFIRMATIONS = 50;
+/**
+ * 已裁决记录的上限。`resolutions` 只用来「这个 id 我已经处理过了」的去重，
+ * 旧条目掉出去不会让用户丢东西，所以它保留上限。
+ *
+ * 待办（`confirmations`）**不再截断**（方案 v3 C-4）：以前超出 50 条会按
+ * timestamp 静默删最旧的，刷新后没人知道少了几条；一条干预被删就等于任务
+ * 永远卡在阻塞态。量大的困扰交给 UI 折叠（「另有 N 条更早待处理」）。
+ */
+const MAX_RESOLUTIONS = 50;
 
 function applyResolution(
   state: Pick<HitlInboxState, 'confirmations' | 'resolutions'>,
@@ -71,16 +80,18 @@ function applyResolution(
 
   const resolutions = { ...state.resolutions, [resolution.id]: resolution };
   const ids = Object.keys(resolutions);
-  if (ids.length > MAX_CONFIRMATIONS) {
+  if (ids.length > MAX_RESOLUTIONS) {
     const sorted = ids.sort((a, b) => resolutions[a].timestamp - resolutions[b].timestamp);
-    for (const id of sorted.slice(0, ids.length - MAX_CONFIRMATIONS)) {
+    for (const id of sorted.slice(0, ids.length - MAX_RESOLUTIONS)) {
       delete resolutions[id];
     }
   }
   return { confirmations, resolutions };
 }
 
-export const useHitlInboxStore = create<HitlInboxState>()((set, get) => ({
+export const useHitlInboxStore = create<HitlInboxState>()(
+  persist(
+    (set, get) => ({
   confirmations: {},
   resolutions: {},
   pendingChatRoomId: null,
@@ -103,13 +114,7 @@ export const useHitlInboxStore = create<HitlInboxState>()((set, get) => ({
         });
       }
       const next = { ...state.confirmations, [item.id]: item };
-      const ids = Object.keys(next);
-      if (ids.length > MAX_CONFIRMATIONS) {
-        const sorted = ids.sort((a, b) => next[a].timestamp - next[b].timestamp);
-        for (const id of sorted.slice(0, ids.length - MAX_CONFIRMATIONS)) {
-          delete next[id];
-        }
-      }
+      // 故意不截断：待办只能被答复或过期弄出去，不能因为列表长而被静默丢掉（C-4）。
       return { confirmations: next };
     }),
 
@@ -192,12 +197,68 @@ export const useHitlInboxStore = create<HitlInboxState>()((set, get) => ({
     return current;
   },
   clearConfirmations: () => set({ confirmations: {}, resolutions: {} }),
-}));
+    }),
+    {
+      name: 'agentteams-hitl-inbox',
+      version: 1,
+      // 只存待办与已裁决集合。两个深链指针（pendingChatRoomId /
+      // pendingProjectKey）是一次性的导航指令，刷新后重新应用会把用户弹回
+      // 上一个房间；房间本身由 Matrix 侧重建，无需 here 冷启动。
+      // 副作用（recordHitlAudit）也不会在 rehydrate 时重复跑，因为它在
+      // upsertConfirmation 里，而 rehydrate 不经过 action。
+      partialize: (state) => ({
+        confirmations: state.confirmations,
+        resolutions: state.resolutions,
+      }),
+    },
+  ),
+);
 
 export function selectConfirmationList(
   confirmations: Record<string, HitlConfirmation>,
 ): HitlConfirmation[] {
   return Object.values(confirmations).sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/** 「等我」事项的统一口径（C-1）：分项相加即 total，任何展示总数的地方都用它。 */
+export interface PendingTally {
+  /** 带 question 的干预请求。 */
+  interventions: number;
+  /** 工具审批（无 question 的确认）。 */
+  approvals: number;
+  /** 待接受的 Matrix 邀请。 */
+  invites: number;
+  /** 有 @我 未读的房间数。 */
+  mentionRooms: number;
+  total: number;
+}
+
+/**
+ * 纯函数版「等我」计数：输入三个 store 的原始 map，输出分项与总数。
+ * 组件侧请用 `usePendingTally()`（`src/hooks/use-pending-tally.ts`）。
+ */
+export function selectPendingTally(
+  confirmations: Record<string, HitlConfirmation>,
+  invites: Record<string, unknown>,
+  roomMeta: Record<string, { unreadHighlightCount?: number }>,
+): PendingTally {
+  let interventions = 0;
+  let approvals = 0;
+  for (const item of Object.values(confirmations)) {
+    if (item.question) interventions += 1;
+    else approvals += 1;
+  }
+  const inviteCount = Object.keys(invites).length;
+  const mentionRooms = Object.values(roomMeta).filter(
+    (m) => (m.unreadHighlightCount ?? 0) > 0,
+  ).length;
+  return {
+    interventions,
+    approvals,
+    invites: inviteCount,
+    mentionRooms,
+    total: interventions + approvals + inviteCount + mentionRooms,
+  };
 }
 
 /** 多语言审批/拒绝关键词（大小写不敏感；见 FUNC-07）。 */

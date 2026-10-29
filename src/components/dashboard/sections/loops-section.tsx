@@ -2,7 +2,7 @@
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleAlert, Download, Library, ListChecks, Save, Send, Upload } from 'lucide-react';
+import { CircleAlert, Download, Library, ListChecks, Play, RotateCcw, Save, Send, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import {
   LOOP_STATE_EVENT,
   LOOP_TEMPLATES,
   canPublish,
+  canRollback,
   isValidLoopDefinition,
   templateToDraft,
   type LoopDefinition,
@@ -27,19 +28,22 @@ import { useCapabilityStore, capabilityNote } from '@/lib/capability-probe';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { currentHashParams } from '@/lib/nav-hash';
+import { LoopDryRunDialog } from './loops/loop-dry-run-dialog';
 
 // 画布按需分包（§8.4）：主 bundle 零画布字节（@xyflow/react ~100KB+）。
 const LoopCanvas = lazy(() => import('./loops/loop-canvas'));
 
 const DRAFTS_STORAGE_KEY = 'agentteams-loop-drafts';
 
-interface StoredLoopDraft {
+export interface StoredLoopDraft {
   id: string;
   name: string;
   definition: LoopDefinition;
 }
 
-function readDrafts(): StoredLoopDraft[] {
+/** 导给命令面板：全局搜索要能命中循环，而循环只存在本地草案里。 */
+export function readDrafts(): StoredLoopDraft[] {
   try {
     const raw = localStorage.getItem(DRAFTS_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as StoredLoopDraft[]) : [];
@@ -94,6 +98,20 @@ export function LoopsSection() {
   useEffect(() => {
     setDrafts(readDrafts());
   }, []);
+
+  // 命令面板深链（`#workbench/loop?loop=<id>`）：草案从 localStorage 异步载入，
+  // 所以目标要在 drafts 到位后才能对得上；已在循环页里再次搜索时靠 hashchange
+  // 重跑一遗。
+  useEffect(() => {
+    const apply = () => {
+      const target = currentHashParams()?.get('loop');
+      if (!target) return;
+      if (drafts.some((d) => d.id === target)) setSelectedId(target);
+    };
+    apply();
+    window.addEventListener('hashchange', apply);
+    return () => window.removeEventListener('hashchange', apply);
+  }, [drafts]);
 
   const roomOptions = useMemo(
     () =>
@@ -165,6 +183,35 @@ export function LoopsSection() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '发布失败');
     }
+  };
+
+  const [dryRunOpen, setDryRunOpen] = useState(false);
+
+  const rollback = async () => {
+    if (!editing || !selected) return;
+    if (userLevel < 3) {
+      toast.error('发布/回滚仅管理员可操作（PRD §7.2）');
+      return;
+    }
+    const check = canRollback(editing);
+    if (!check.ok) {
+      toast.error(check.reason ?? '无法回滚');
+      return;
+    }
+    const nextVersion = editing.version + 1;
+    const rolledBackDef: LoopDefinition = {
+      ...editing,
+      version: nextVersion,
+      status: 'rolled_back',
+      updatedAt: Date.now(),
+      updatedBy: currentUserId ?? 'unknown',
+    };
+    const next = drafts.map((d) =>
+      d.id === selected.id ? { ...d, name: rolledBackDef.name, definition: rolledBackDef } : d,
+    );
+    persistDrafts(next);
+    setEditing(rolledBackDef);
+    toast.success(`已回滚至版本 v${nextVersion}（状态已标记为已回滚）`);
   };
 
   const exportJson = () => {
@@ -290,7 +337,7 @@ export function LoopsSection() {
                   className="w-full text-left rounded-md border border-border/60 hover:border-sky-500/40 hover:bg-accent/50 px-2.5 py-1.5 transition-colors"
                 >
                   <span className="block text-xs font-medium">{tpl.name}</span>
-                  <span className="block text-[10px] text-muted-foreground truncate">{tpl.description}</span>
+                  <span className="block text-xs text-muted-foreground truncate">{tpl.description}</span>
                 </button>
               ))}
             </CardContent>
@@ -300,7 +347,7 @@ export function LoopsSection() {
             <CardContent className="px-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted-foreground">我的循环（{drafts.length}）</p>
-                <label className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1">
+                <label className="cursor-pointer text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
                   <Upload className="h-3 w-3" aria-hidden="true" />
                   导入
                   <input
@@ -326,14 +373,14 @@ export function LoopsSection() {
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium truncate">{d.name}</span>
-                    <Badge variant="outline" className="text-[9px] shrink-0">
+                    <Badge variant="outline" className="text-xs shrink-0">
                       v{d.definition.version} · {d.definition.status === 'published' ? '已发布' : '草稿'}
                     </Badge>
                   </span>
                 </button>
               ))}
               {drafts.length === 0 && (
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   从模板一键实例化，或导入 JSON 定义。
                 </p>
               )}
@@ -352,18 +399,18 @@ export function LoopsSection() {
                   <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
                   运行实例
                 </span>
-                <span className="text-[10px]">{showRuns ? '收起' : '展开'}</span>
+                <span className="text-xs">{showRuns ? '收起' : '展开'}</span>
               </button>
               {showRuns && (
                 <div className="space-y-1">
                   {projectsQuery.isLoading && (
-                    <p className="text-[10px] text-muted-foreground">加载运行…</p>
+                    <p className="text-xs text-muted-foreground">加载运行…</p>
                   )}
                   {projectsQuery.data?.projects.slice(0, 10).map((p) => (
                     <div key={p.project_id} className="rounded-md border border-border/60 px-2 py-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium truncate">{p.title}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0">
+                        <Badge variant="outline" className="text-xs shrink-0">
                           {p.status}
                         </Badge>
                       </div>
@@ -371,7 +418,7 @@ export function LoopsSection() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-5 px-1.5 text-[10px]"
+                          className="h-5 px-1.5 text-xs"
                           onClick={() => openRunInTaskCenter(p.project_id, p.team_id)}
                         >
                           详情
@@ -379,7 +426,7 @@ export function LoopsSection() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-5 px-1.5 text-[10px]"
+                          className="h-5 px-1.5 text-xs"
                           onClick={() => void saveRunAsLoop(p.project_id, p.team_id)}
                         >
                           另存为循环
@@ -388,7 +435,7 @@ export function LoopsSection() {
                     </div>
                   ))}
                   {projectsQuery.data?.projects.length === 0 && (
-                    <p className="text-[10px] text-muted-foreground">暂无运行中的项目。</p>
+                    <p className="text-xs text-muted-foreground">暂无运行中的项目。</p>
                   )}
                 </div>
               )}
@@ -412,10 +459,25 @@ export function LoopsSection() {
                     className="h-8 w-56 text-sm"
                     aria-label="循环名称"
                   />
-                  <Badge variant="outline" className="text-[10px]">
-                    v{editing.version} · {editing.status === 'published' ? '已发布' : '草稿'}
+                  <Badge variant="outline" className="text-xs">
+                    v{editing.version} ·{' '}
+                    {editing.status === 'published'
+                      ? '已发布'
+                      : editing.status === 'rolled_back'
+                        ? '已回滚'
+                        : '草稿'}
                   </Badge>
                   <span className="ml-auto flex items-center gap-1.5 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs"
+                      onClick={() => setDryRunOpen(true)}
+                      title="推演拓扑流转与步骤仿真"
+                    >
+                      <Play className="h-3 w-3" aria-hidden="true" />
+                      预演
+                    </Button>
                     <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={saveDraft}>
                       <Save className="h-3 w-3" aria-hidden="true" />
                       存草稿
@@ -444,6 +506,19 @@ export function LoopsSection() {
                       <Send className="h-3 w-3" aria-hidden="true" />
                       发布
                     </Button>
+                    {editing.status === 'published' && editing.version > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400"
+                        onClick={() => void rollback()}
+                        disabled={userLevel < 3}
+                        title="回滚到上一个稳定版本并生成新版本记号"
+                      >
+                        <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                        回滚
+                      </Button>
+                    )}
                     <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={exportJson}>
                       <Download className="h-3 w-3" aria-hidden="true" />
                       导出 JSON
@@ -465,10 +540,16 @@ export function LoopsSection() {
                   />
                 </Suspense>
 
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   节点：蓝色 A=Agent · 黄 人=人工 · 紫 审=审查 · 虚线动画连线=条件退回路由；
                   拖动节点微调布局（自动保存在 definition.layout）。发布后版本不可变，修改请从模板重新实例化。
                 </p>
+
+                <LoopDryRunDialog
+                  definition={editing}
+                  open={dryRunOpen}
+                  onOpenChange={setDryRunOpen}
+                />
               </>
             )}
           </CardContent>

@@ -251,7 +251,7 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
             </Badge>
           )}
           {chatStatus === 'idle' && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" className="text-xs">
               idle
             </Badge>
           )}
@@ -267,7 +267,7 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
           </Button>
         </div>
 
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
           Agent 上下文视图——可能含压缩历史与未发送的工具调用/输出，与实发房间消息不同。
         </div>
 
@@ -286,7 +286,7 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
         {detailState === 'ready' && (
           <div className="max-h-[60vh] space-y-1.5 overflow-y-auto pr-1">
             {msgs.length === 0 && (
-              <p className="px-2 py-1 text-[11px] text-muted-foreground">该会话暂无消息。</p>
+              <p className="px-2 py-1 text-xs text-muted-foreground">该会话暂无消息。</p>
             )}
             {msgs.map((m, i) => {
               const blocks = Array.isArray(m.content)
@@ -295,7 +295,7 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
               return (
                 <div key={m.id ?? i} className="rounded-md border border-border/60 px-2 py-1.5">
                   <div className="mb-0.5 flex items-center gap-1.5">
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                    <span className="text-xs font-medium uppercase text-muted-foreground">
                       {m.role || m.type || 'message'}
                     </span>
                   </div>
@@ -337,7 +337,7 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
       </div>
       <div className="space-y-1">
         {chats.length === 0 && (
-          <p className="px-2 py-1 text-[11px] text-muted-foreground">
+          <p className="px-2 py-1 text-xs text-muted-foreground">
             当前账号在此 Worker 的可见范围内没有会话（L2 仅自己所在房间）。
           </p>
         )}
@@ -354,14 +354,14 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
                 <span className="truncate text-xs font-medium">
                   {c.name || c.id.slice(0, 8)}
                 </span>
-                {c.pinned && <Badge variant="secondary" className="h-4 px-1 text-[10px]">置顶</Badge>}
+                {c.pinned && <Badge variant="secondary" className="h-4 px-1 text-xs">置顶</Badge>}
                 {c.archived && (
-                  <Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">
+                  <Badge variant="outline" className="h-4 px-1 text-xs text-muted-foreground">
                     已归档
                   </Badge>
                 )}
               </div>
-              <p className="truncate font-mono text-[10px] text-muted-foreground">
+              <p className="truncate font-mono text-xs text-muted-foreground">
                 {c.id}
                 {c.channel ? ` · ${c.channel}` : ''}
                 {c.updated_at ? ` · ${formatTs(c.updated_at)}` : ''}

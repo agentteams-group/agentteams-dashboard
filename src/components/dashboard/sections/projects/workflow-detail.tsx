@@ -312,7 +312,7 @@ export function WorkflowDetail({
                 {it.description && <span className="font-normal opacity-75">— {it.description}</span>}
               </p>
               {it.action_request && (
-                <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                <p className="text-xs text-muted-foreground mt-1 font-mono">
                   action: {it.action_request.action}
                   {it.config?.allow_accept ? ' · 可接受(恢复)' : ''}
                 </p>
@@ -355,7 +355,7 @@ export function WorkflowDetail({
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {wf.loop.current_iteration}/{wf.loop.max_iterations}
                 </span>
               </div>
@@ -365,11 +365,11 @@ export function WorkflowDetail({
             <div className="pt-2 space-y-1">
               {wf.loop.tasks.map((t) => (
                 <div key={t.task_id} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono text-[10px] text-muted-foreground">{t.task_id}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{t.task_id}</span>
                   <span className="truncate">{t.title}</span>
-                  {t.assigned_to && <span className="text-[10px] text-muted-foreground">{t.assigned_to}</span>}
+                  {t.assigned_to && <span className="text-xs text-muted-foreground">{t.assigned_to}</span>}
                   {t.status && (
-                    <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[normalizeNodeStatus(t.status)]}`}>
+                    <Badge className={`text-xs border ${NODE_STATUS_COLOR[normalizeNodeStatus(t.status)]}`}>
                       {NODE_STATUS_LABEL[normalizeNodeStatus(t.status)]}
                     </Badge>
                   )}
@@ -392,7 +392,7 @@ export function WorkflowDetail({
               return (
                 <Badge
                   key={taskId}
-                  className="text-[10px] border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                  className="text-xs border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                 >
                   {node?.name ?? taskId}
                 </Badge>
@@ -408,7 +408,7 @@ export function WorkflowDetail({
           <p className="text-xs font-semibold text-muted-foreground mb-1.5">任务分布</p>
           <div className="flex flex-wrap gap-1.5">
             {statuses.map(([status, count]) => (
-              <Badge key={status} className={`text-[10px] border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
+              <Badge key={status} className={`text-xs border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
                 {NODE_STATUS_LABEL[status as WorkflowNodeStatus] ?? status}: {count}
               </Badge>
             ))}
@@ -452,11 +452,11 @@ export function WorkflowDetail({
             <div key={n.id} className="rounded-lg border bg-background/40 p-2 text-xs flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate font-medium">{n.name}</p>
-                <p className="text-[10px] text-muted-foreground font-mono truncate">{n.id}</p>
+                <p className="text-xs text-muted-foreground font-mono truncate">{n.id}</p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {n.assignee && <span className="text-[10px] text-muted-foreground">{n.assignee}</span>}
-                <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[n.status] ?? ''}`}>
+                {n.assignee && <span className="text-xs text-muted-foreground">{n.assignee}</span>}
+                <Badge className={`text-xs border ${NODE_STATUS_COLOR[n.status] ?? ''}`}>
                   {NODE_STATUS_LABEL[n.status] ?? n.status}
                 </Badge>
               </div>

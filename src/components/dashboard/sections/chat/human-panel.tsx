@@ -32,24 +32,24 @@ export function HumanPanel() {
               <CardContent className="p-3">
                 <div className="flex items-center gap-2">
                   <Avatar className="w-6 h-6">
-                    <AvatarFallback className={`text-[10px] ${color}`}>
+                    <AvatarFallback className={`text-xs ${color}`}>
                       {(human.displayName || human.name).slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium truncate">{human.displayName}</p>
-                    <p className="text-[11px] text-muted-foreground font-mono">@{human.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">@{human.name}</p>
                   </div>
                   <Badge
                     variant={human.phase === 'Active' ? 'default' : 'secondary'}
-                    className="text-[11px]"
+                    className="text-xs"
                   >
                     {human.phase}
                   </Badge>
                 </div>
                 {human.matrixUserID && (
                   <div className="flex items-center gap-1 mt-2">
-                    <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">
+                    <p className="text-xs text-muted-foreground font-mono truncate flex-1">
                       {human.matrixUserID}
                     </p>
                     <CopyButton text={human.matrixUserID} className="h-5 w-5" />
@@ -58,23 +58,23 @@ export function HumanPanel() {
                 {human.initialPassword && (
                   <div className="flex items-center gap-1 mt-1">
                     <Lock className="w-3 h-3 text-amber-500" />
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400">初始密码已生成</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">初始密码已生成</p>
                     <CopyButton text={human.initialPassword} className="h-5 w-5" />
                   </div>
                 )}
                 {human.rooms && human.rooms.length > 0 && (
                   <div className="mt-2">
-                    <p className="text-[11px] text-muted-foreground mb-1">
+                    <p className="text-xs text-muted-foreground mb-1">
                       所在房间 ({human.rooms.length})
                     </p>
                     <div className="flex flex-wrap gap-1">
                       {human.rooms.slice(0, 2).map((roomId) => (
-                        <Badge key={roomId} variant="outline" className="text-[10px]">
+                        <Badge key={roomId} variant="outline" className="text-xs">
                           {roomId.slice(0, 15)}...
                         </Badge>
                       ))}
                       {human.rooms.length > 2 && (
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-xs">
                           +{human.rooms.length - 2}
                         </Badge>
                       )}

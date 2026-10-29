@@ -47,7 +47,7 @@ function TeamWorkersList({
             <StatusDot phase={w.phase} />
             <Bot className="w-4 h-4 text-emerald-500" aria-hidden="true" />
             <span className="text-xs font-medium">{w.name}</span>
-            <PhaseBadge kind="worker" phase={w.phase} className="text-[10px] ml-auto" />
+            <PhaseBadge kind="worker" phase={w.phase} className="text-xs ml-auto" />
           </div>
         ))}
       </div>

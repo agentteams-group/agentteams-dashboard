@@ -40,6 +40,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import {
   agentteamsApi,
   type CodingRun,
@@ -110,10 +111,7 @@ export function CodingRunsSection() {
           {error instanceof Error ? error.message : '加载失败'}
         </div>
       ) : !runs || runs.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-md border border-border/60 p-4 text-sm text-muted-foreground">
-          <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
-          暂无编码执行记录。
-        </div>
+        <SectionEmptyState icon={FileText} title="暂无编码执行记录。" />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>

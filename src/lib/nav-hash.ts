@@ -82,21 +82,88 @@ export function hashForSection(sectionId: string): string {
 }
 
 /**
+ * Deep link for a resource tab, with the leading '#' (`#console/resources/workers`).
+ * Producers that want a notification or CTA to land on a specific tab build
+ * its target here instead of hand-writing a hash literal.
+ */
+export function resourceHash(tab: ResourceTabId): string {
+  return `#${SECTION_TO_HASH.resources}/${tab}`;
+}
+
+/**
+ * Deep link for a Matrix room, with the leading '#'
+ * (`#workbench/space/!abc:hs.example`).
+ *
+ * Matrix room ids are `!localpart:server` with the localpart already
+ * percent-escaped at creation, so they survive a hash fragment untouched.
+ */
+export function roomHash(roomId: string): string {
+  return `#${SECTION_TO_HASH.chat}/${roomId}`;
+}
+
+/**
+ * 深链：任务看板并选中某个项目（`#workbench/tasks?project=<runId>`）。
+ * 项目就是看板上的选中单元，所以参数名与 `TasksSection` 读的保持一致。
+ */
+export function tasksHash(projectRunId?: string): string {
+  const base = `#${SECTION_TO_HASH.tasks}`;
+  return projectRunId ? `${base}?project=${encodeURIComponent(projectRunId)}` : base;
+}
+
+/** 深链：循环页并选中某个循环草案（`#workbench/loop?loop=<id>`）。 */
+export function loopHash(loopId?: string): string {
+  const base = `#${SECTION_TO_HASH.loops}`;
+  return loopId ? `${base}?loop=${encodeURIComponent(loopId)}` : base;
+}
+
+/** 深链：审计页并按实体类型筛选（`#console/governance/audit?entity=worker`）。 */
+export function auditHash(entityType?: string): string {
+  const base = `#${SECTION_TO_HASH.audit}`;
+  return entityType ? `${base}?entity=${encodeURIComponent(entityType)}` : base;
+}
+
+/**
+ * 当前 hash 上的深链查询参数。
+ *
+ * 消费端唯一的读取入口：section 组件自己 `split('?')` 会和这里的分层解析
+ * 漂移（旧的扁平 hash、`#workbench/space/<roomId>` 都各有写法），所以参数
+ * 一律经 `resolveLayeredHash` 解析一次再交出去。
+ */
+export function currentHashParams(): URLSearchParams | null {
+  if (typeof window === 'undefined') return null;
+  return resolveLayeredHash(window.location.hash.replace(/^#/, ''))?.params ?? null;
+}
+
+/**
  * Canonical hash for an active section while preserving a valid
- * `#console/resources/<tab>` deep link.
+ * `#console/resources/<tab>` deep link and the deep-link query of the page
+ * we are staying on.
  *
  * `hashForSection('resources')` collapses to `console/resources`, which would
  * silently reset the tab on mount. The third segment is reserved for resource
  * tabs, so keep it when it names a known tab.
+ *
+ * The query segment is kept only when the current hash already sits under the
+ * target section (`workbench/tasks?project=…`, `workbench/space/!room?q=…`):
+ * the shell rewrites the hash on every section change, and dropping a query
+ * that belongs to the page we land on is what killed the C-2 / B-1 deep links
+ * on reload. A query from a different section is dropped instead of drifting
+ * onto an unrelated surface.
  */
 export function hashForActiveSection(sectionId: string, currentHash: string): string {
   const canonical = hashForSection(sectionId);
-  if (sectionId !== 'resources') return canonical;
-  const path = currentHash.replace(/^#/, '').split('?')[0];
+  const raw = currentHash.replace(/^#/, '');
+  const sep = raw.indexOf('?');
+  const path = sep === -1 ? raw : raw.slice(0, sep);
+  const query = sep === -1 ? '' : raw.slice(sep);
+  const keep = query && (path === canonical || path.startsWith(`${canonical}/`)) ? query : '';
+
+  if (sectionId !== 'resources') return canonical + keep;
+
   const match = /^console\/resources\/([^/]+)$/.exec(path);
   return match && (RESOURCE_TABS as readonly string[]).includes(match[1])
-    ? path
-    : canonical;
+    ? path + keep
+    : canonical + keep;
 }
 
 /**

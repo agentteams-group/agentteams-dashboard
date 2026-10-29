@@ -211,7 +211,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
 
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1">
-          <span className="text-[11px] text-muted-foreground">max_iters（最大迭代）</span>
+          <span className="text-xs text-muted-foreground">max_iters（最大迭代）</span>
           <Input
             type="number"
             className="h-8 text-xs font-mono"
@@ -221,7 +221,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
           />
         </label>
         <label className="space-y-1">
-          <span className="text-[11px] text-muted-foreground">max_input_tokens</span>
+          <span className="text-xs text-muted-foreground">max_input_tokens</span>
           <Input
             type="number"
             className="h-8 text-xs font-mono"
@@ -231,7 +231,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
           />
         </label>
         <label className="col-span-2 space-y-1">
-          <span className="text-[11px] text-muted-foreground">compaction_threshold（0-1）</span>
+          <span className="text-xs text-muted-foreground">compaction_threshold（0-1）</span>
           <Input
             type="number"
             className="h-8 text-xs font-mono"
@@ -248,7 +248,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
       <div className="rounded-md border border-border/60">
         <button
           type="button"
-          className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/50"
+          className="flex w-full items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/50"
           onClick={() => setLoopOpen((v) => !v)}
         >
           {loopOpen ? (
@@ -261,14 +261,14 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
         {loopOpen && (
           <div className="border-t border-border/60 p-2">
             <textarea
-              className="w-full rounded-md border bg-muted/20 p-2 font-mono text-[11px] min-h-[80px]"
+              className="w-full rounded-md border bg-muted/20 p-2 font-mono text-xs min-h-[80px]"
               value={
                 loopText ?? JSON.stringify(config.loop_config ?? {}, null, 2)
               }
               onChange={(e) => setLoopText(e.target.value)}
               spellCheck={false}
             />
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               loop 字段（max_iters / loop_config）改动将通知团队 Leader
             </p>
           </div>
@@ -276,7 +276,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
       </div>
 
       {invalid && (
-        <p className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400">
+        <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
           {invalid}
         </p>
@@ -292,7 +292,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
         </Button>
         {saveMsg && (
           <span
-            className={`flex items-center gap-1 text-[11px] ${
+            className={`flex items-center gap-1 text-xs ${
               saveMsg.kind === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
             }`}
           >

@@ -28,10 +28,10 @@ export function ProjectCard({
         <span className="font-semibold truncate">{project.title}</span>
         <ProjectStatusBadge status={project.status} />
       </div>
-      <p className="text-[10px] text-muted-foreground font-mono mt-1 truncate">
+      <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
         {project.project_id}
       </p>
-      <p className="text-[10px] text-muted-foreground mt-1">
+      <p className="text-xs text-muted-foreground mt-1">
         {project.team_id ? `团队 ${project.team_id} · ` : ''}
         {project.plan_type ?? 'dag'} · {project.mode ?? 'project'}
       </p>

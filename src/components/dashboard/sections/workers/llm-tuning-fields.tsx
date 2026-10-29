@@ -30,7 +30,7 @@ export function LlmTuningFields({
     <div className="space-y-3">
       {GROUP_ORDER.map((group) => (
         <div key={group} className="space-y-1.5">
-          <p className="text-[11px] font-medium text-muted-foreground">
+          <p className="text-xs font-medium text-muted-foreground">
             {LLM_TUNING_GROUP_LABELS[group]}
           </p>
           <div className="grid grid-cols-2 gap-2">
@@ -39,7 +39,7 @@ export function LlmTuningFields({
               const invalid = validateLlmTuningValue(value) !== null;
               return (
                 <label key={field.key} className="space-y-1">
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {field.label}
                     {field.unit ? `（${field.unit}）` : ''}
                   </span>

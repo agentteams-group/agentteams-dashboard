@@ -131,7 +131,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
       </Button>
       {isError && errorSummary && !open && (
         <p
-          className={`max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 text-[11px] text-red-600 ${embedded ? 'px-2.5 py-1.5' : 'px-3 py-1.5'}`}
+          className={`max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 text-xs text-red-600 ${embedded ? 'px-2.5 py-1.5' : 'px-3 py-1.5'}`}
           data-testid="tool-error-summary"
         >
           {errorSummary}
@@ -145,7 +145,7 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
           {hasArguments && <ToolValue label="参数" value={args} kind="in" />}
           {hasResult && <ToolValue label="结果" value={payload.result} kind={isError ? 'out-error' : 'out'} />}
           {typeof payload.note === 'string' && payload.note && (
-            <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">{payload.note}</p>
+            <p className="text-xs text-muted-foreground whitespace-pre-wrap">{payload.note}</p>
           )}
           {eventId && <EventDebugInfo eventId={eventId} revisionCount={revisionCount} />}
         </div>
@@ -165,11 +165,11 @@ function ToolValue({ label, value, kind }: { label: string; value: unknown; kind
     <div className="rounded-lg bg-muted/40 border border-border/30">
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/20">
         {kind === 'in' || kind === 'out' || kind === 'out-error' ? (
-          <Badge variant="outline" className={`h-4 px-1.5 text-[11px] font-semibold leading-none ${badge}`}>
+          <Badge variant="outline" className={`h-4 px-1.5 text-xs font-semibold leading-none ${badge}`}>
             {kind === 'in' ? 'IN' : 'OUT'}
           </Badge>
         ) : null}
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
       </div>
       <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-foreground">{displayValue(value)}</pre>
     </div>

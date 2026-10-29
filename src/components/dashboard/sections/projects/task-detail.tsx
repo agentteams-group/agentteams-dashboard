@@ -63,7 +63,7 @@ function CancelTaskButton({
         type="button"
         onClick={() => setOpen(true)}
         disabled={cancelMutation.isPending}
-        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-50"
         title="取消任务"
       >
         <Ban className="h-3 w-3" />
@@ -130,17 +130,17 @@ export function TaskDetailRow({
   return (
     <div className="rounded-lg border bg-background/40 p-2 text-xs">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-mono text-[10px] text-muted-foreground">{task.task_id}</span>
+        <span className="font-mono text-xs text-muted-foreground">{task.task_id}</span>
         {task.status && (
-          <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[normalizeNodeStatus(task.status)]}`}>
+          <Badge className={`text-xs border ${NODE_STATUS_COLOR[normalizeNodeStatus(task.status)]}`}>
             {NODE_STATUS_LABEL[normalizeNodeStatus(task.status)]}
           </Badge>
         )}
         {task.assigned_to && (
-          <span className="text-[10px] text-muted-foreground">{task.assigned_to}</span>
+          <span className="text-xs text-muted-foreground">{task.assigned_to}</span>
         )}
         {task.result_status && (
-          <span className="text-[10px] text-muted-foreground">验收：{task.result_status}</span>
+          <span className="text-xs text-muted-foreground">验收：{task.result_status}</span>
         )}
         {task.summary && (
           <span className="text-muted-foreground truncate max-w-[300px]" title={task.summary}>
@@ -165,7 +165,7 @@ export function TaskDetailRow({
         <div className="pt-1.5 mt-1.5 border-t space-y-1.5">
           {task.spec_path ? (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground shrink-0">规格：</span>
+              <span className="text-xs text-muted-foreground shrink-0">规格：</span>
               <ArtifactLink
                 href={getTaskArtifactUrl(projectId, task.task_id, task.spec_path)}
                 label={task.spec_path.split('/').pop() || task.spec_path}
@@ -174,12 +174,12 @@ export function TaskDetailRow({
           ) : null}
           {history.length > 0 && (
             <div>
-              <p className="text-[10px] text-muted-foreground mb-1">
+              <p className="text-xs text-muted-foreground mb-1">
                 状态转换（{history.length}，新→旧）
               </p>
               <div className="space-y-0.5 max-h-40 overflow-y-auto">
                 {[...history].reverse().map((h, i) => (
-                  <div key={h.seq ?? i} className="flex gap-1.5 items-baseline font-mono text-[10px]">
+                  <div key={h.seq ?? i} className="flex gap-1.5 items-baseline font-mono text-xs">
                     <span className="text-muted-foreground shrink-0">
                       {String(h.ts).replace('T', ' ').slice(5, 16)}
                     </span>
@@ -203,14 +203,14 @@ export function TaskDetailRow({
               </div>
             </div>
           )}
-          <p className="text-[10px] font-mono text-muted-foreground/80 break-all">
+          <p className="text-xs font-mono text-muted-foreground/80 break-all">
             tracing 过滤：agentteams.project.id={projectId} · agentteams.task.id={task.task_id}
           </p>
         </div>
       )}
       {(task.result_path || deliverables.length > 0) && (
         <div className="flex items-center gap-2 flex-wrap pt-1">
-          <span className="text-[10px] text-muted-foreground shrink-0">产物：</span>
+          <span className="text-xs text-muted-foreground shrink-0">产物：</span>
           {/* 工件三态 + 放行控制（F1.3/F3.3）：有放行历史以最新记录为准，
               否则由任务状态推导（15s 正源轮询即时反映） */}
           <ReleaseControls

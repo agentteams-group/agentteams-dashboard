@@ -73,6 +73,17 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* 语义状态色（方案 v3 A-1）：全站只允许这一套「进行中 / 等待 / 阻塞 / 完成 /
+     失败 / 信息」。值在 :root、.dark、.high-contrast 各定义一次，组件只写名字
+     （`text-status-waiting`、`bg-status-done/15`），不准再写 `text-amber-500` 这
+     类具体颜色——这是「三套主题同色」的唯一办法。 */
+  --color-status-running: var(--status-running);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-blocked: var(--status-blocked);
+  --color-status-done: var(--status-done);
+  --color-status-failed: var(--status-failed);
+  --color-status-info: var(--status-info);
+  --shadow-card: var(--elevation-card);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -113,6 +124,18 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* 语义状态色·亮色。文本直接落在白底 / --card 上，按 ≥4.5:1 取亮度（oklch L 取
+     0.45–0.50，换算对比度约 4.6–5.2:1）；徽章底色是同一色的 15% 淡染，只会更高。
+     逐色对比度由 src/lib/theme/contrast.test.ts 从本文件反向解析后断言。 */
+  --status-running: oklch(0.49 0.11 185);
+  --status-waiting: oklch(0.47 0.11 68);
+  --status-blocked: oklch(0.47 0.14 42);
+  --status-done: oklch(0.46 0.14 152);
+  --status-failed: oklch(0.47 0.19 26);
+  --status-info: oklch(0.46 0.15 255);
+  --elevation-card: 0 1px 2px oklch(0 0 0 / 0.06), 0 10px 30px -18px oklch(0 0 0 / 0.28);
+  /* 毛玻璃卡片底：--card 的部分透明，跟着主题走，所以只定一次。 */
+  --card-glass: color-mix(in oklab, var(--card) 72%, transparent);
 }
 
 .dark {
@@ -147,6 +170,14 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  /* 语义状态色·深色：落在 oklch(0.205) 的卡片上，亮度抬到 0.72–0.85。 */
+  --status-running: oklch(0.8 0.11 185);
+  --status-waiting: oklch(0.85 0.13 80);
+  --status-blocked: oklch(0.8 0.15 45);
+  --status-done: oklch(0.81 0.15 152);
+  --status-failed: oklch(0.72 0.19 22);
+  --status-info: oklch(0.79 0.13 250);
+  --elevation-card: 0 1px 2px oklch(0 0 0 / 0.45), 0 12px 32px -20px oklch(0 0 0 / 0.65);
 }
 
 /*
@@ -187,6 +218,15 @@
   --sidebar-accent-foreground: #ffd60a;
   --sidebar-border: #ffffff;
   --sidebar-ring: #ffd60a;
+  /* 语义状态色·高对比度：在黑底上全部取高亮度实色（最差的一档也 ≥7:1），
+     不再依赖透淡染，避免低视力用户看不出徒章和背景的边界。 */
+  --status-running: #00e5ff;
+  --status-waiting: #ffd60a;
+  --status-blocked: #ff9f43;
+  --status-done: #7cff6b;
+  --status-failed: #ff6b6b;
+  --status-info: #7cc4ff;
+  --elevation-card: 0 0 0 1px #ffffff;
 }
 
 .high-contrast *:focus-visible {
@@ -194,18 +234,47 @@
   outline-offset: 2px;
 }
 
-/* Glassmorphism */
+/*
+ * 卡片质感（方案 v3 A-1）。原来 `.glass-card` 写死了 `bg-white/50 dark:bg-slate-800/50`、
+ * `border-white/20` 和 `shadow-lg`，`.hover-lift` 写死 `shadow-xl`：三套主题各自长出
+ * 不同的底、边和影（高对比度主题本该是纯黑底 + 白边，这里却依旧叠白雾）。
+ * 现在只从语义 token 取值：底 = --card-glass（--card 的透射），边 = --border，
+ * 影 = --elevation-card。新代码请用 `<Card variant="glass" />`（同一套值）；
+ * 这两个类只给还没迁完的存量调用点用，迁完即删。
+ * 原 `.mesh-gradient`（一条 emerald→sky 写死的渐变）全仓无调用点，已删。
+ */
 .glass-card {
-  @apply bg-white/50 dark:bg-slate-800/50 backdrop-blur-xl border border-white/20 dark:border-slate-700/30 rounded-xl shadow-lg;
+  background: var(--card-glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--elevation-card);
+  color: var(--card-foreground);
 }
 .glass {
-  @apply bg-white/30 dark:bg-slate-800/30 backdrop-blur-md;
-}
-.mesh-gradient {
-  background: linear-gradient(135deg, #059669 0%, #10b981 25%, #14b8a6 50%, #06b6d4 75%, #0ea5e9 100%);
+  background: color-mix(in oklab, var(--card) 55%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 .hover-lift {
-  @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-xl;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elevation-card);
+}
+/* 设了「减少动效」的人不该被这张卡抬起来推一把（方案 v3 A-5，动效预算见 A-7）；
+   抬起只是提示可点，去掉它不影响任何信息。 */
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift {
+    transition: none;
+  }
+  .hover-lift:hover {
+    transform: none;
+  }
 }
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;

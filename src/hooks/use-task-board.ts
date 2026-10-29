@@ -90,7 +90,7 @@ const QUERY_KEY = ['team-tasks'] as const;
  * workflow events collected by `useTaskStore` so the board still shows
  * recent activity.
  */
-export function useTaskBoard(options: { refetchInterval?: number; enabled?: boolean } = {}) {
+export function useTaskBoard(options: { refetchInterval?: number | false; enabled?: boolean } = {}) {
   return useQuery<TeamTasksResponse>({
     queryKey: QUERY_KEY,
     queryFn: async () => {
@@ -162,7 +162,7 @@ export function boardTaskToEntry(task: BoardTask): TaskEntry {
  * the controller's canonical state.
  */
 export function useMergedTaskBoard(options: {
-  refetchInterval?: number;
+  refetchInterval?: number | false;
   enabled?: boolean;
 } = {}) {
   const board = useTaskBoard(options);

@@ -65,6 +65,8 @@ AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeam
 
 运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。
 
+本控制台不实现也不承诺端到端加密：聊天正文经服务端代理明文转发，开启加密的房间在这里会显示为没有新消息。哪几跳是明文、凭据在谁手里、运营者需要确认什么，见 [docs/trust-boundary.md](docs/trust-boundary.md)。
+
 ## 🎨 主题自定义
 
 Dashboard 内置三套主题（亮色、暗色、高对比度），支持跟随系统偏好，并在刷新后保留选择。「设置 → 外观」中的主题编辑器提供 30+ 项视觉参数（颜色、圆角、字号、间距、字体风格）实时预览，并支持 JSON 导入/导出。运维可通过 `theme.config.json` 或环境变量下发企业主题。详见 [docs/theme-customization.zh-CN.md](docs/theme-customization.zh-CN.md)（中文）与 [docs/theme-customization.md](docs/theme-customization.md)（英文）。
@@ -143,7 +145,7 @@ bash install/agentteams-dashboard.sh uninstall
 
 ```bash
 AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.3.1 \
-  bash agentteams-install.sh --non-interactive
+  AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 
 详细集成说明见 [`install/AGENTTEAMS_PATCH.md`](install/AGENTTEAMS_PATCH.md)（含补丁内容、Makefile 目标、验证方法和路线图）。

@@ -7,8 +7,10 @@
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 系统整体架构与数据流
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - 开发者入门指南
 - [INTERFACES.md](INTERFACES.md) - API 接口与契约
+- [A2UI_CATALOG.md](A2UI_CATALOG.md) - 8 类 A2UI 与运行时块目录、降级行为与新增块流程（F-1）
 - [AI_GATEWAY_GUIDE.md](AI_GATEWAY_GUIDE.md) - AI 网关多服务商路由配置
 - [runtime-capabilities.md](runtime-capabilities.md) - Worker 运行时能力对照表（流式协议 / 模型接入 / 知识库数据面）
+- [trust-boundary.md](trust-boundary.md) - 信任边界与端到端加密决断：哪几跳是明文、凭据在谁手里、加密房间为什么在本控制台读不出来、运营者要确认什么
 - [external-runtime-integration-assessment.md](external-runtime-integration-assessment.md) - 外部 coding agent runtime 接入评估（B6）
 
 ## 主题文档

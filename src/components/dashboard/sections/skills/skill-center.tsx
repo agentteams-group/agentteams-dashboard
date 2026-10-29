@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle, Send } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -130,10 +131,20 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
 
       {!isError && filteredSkills.length === 0 && filteredMcp.length === 0 && (
         <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              {skills.length === 0 && mcpServers.length === 0 ? '暂无技能，点击"上传技能"添加' : '没有匹配的技能'}
-            </p>
+          <CardContent className="p-0">
+            <SectionEmptyState
+              title={skills.length === 0 && mcpServers.length === 0 ? '暂无技能' : '没有匹配的技能'}
+              description={
+                skills.length === 0 && mcpServers.length === 0
+                  ? '技能可以从本地包上传，也可以下发给 Worker'
+                  : undefined
+              }
+              action={
+                skills.length === 0 && mcpServers.length === 0
+                  ? { label: '上传技能', onClick: () => setUploadOpen(true) }
+                  : undefined
+              }
+            />
           </CardContent>
         </Card>
       )}

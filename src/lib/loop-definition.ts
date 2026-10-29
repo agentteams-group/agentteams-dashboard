@@ -41,7 +41,7 @@ export interface LoopDefinition {
   name: string;
   description?: string;
   version: number;
-  status: 'draft' | 'published' | 'archived';
+  status: 'draft' | 'published' | 'archived' | 'rolled_back';
   nodes: LoopNode[];
   edges: LoopEdge[];
   /** 画布位置快照（F5.2 手动微调持久化；缺省用自动初排）。 */
@@ -219,4 +219,102 @@ export function canPublish(def: LoopDefinition): { ok: boolean; reason?: string 
   }
   if (!seen.has('end')) return { ok: false, reason: 'start 无法到达 end，请检查连线' };
   return { ok: true };
+}
+
+/** 回滚前置校验（F-3）：已发布且版本 > 1 允许回滚至上一稳定版本。 */
+export function canRollback(def: LoopDefinition): { ok: boolean; reason?: string } {
+  if (def.status !== 'published') {
+    return { ok: false, reason: '仅已发布版本可执行回滚' };
+  }
+  if (def.version <= 1) {
+    return { ok: false, reason: '当前为初始版本 (v1)，无更早版本可回滚' };
+  }
+  return { ok: true };
+}
+
+export interface DryRunStep {
+  stepNumber: number;
+  nodeId: string;
+  nodeLabel: string;
+  nodeType: LoopNodeType;
+  assignee?: string;
+  isConditional?: boolean;
+}
+
+export interface DryRunResult {
+  reachable: boolean;
+  steps: DryRunStep[];
+  warnings: string[];
+}
+
+interface DryRunEdge {
+  target: string;
+  conditional?: boolean;
+  label?: string;
+}
+
+/**
+ * 循环预演执行路径拓扑模拟（F-3 预演）：
+ * 从 start 节点出发，遍历主干分支推演模拟流转序列；识别孤立节点与条件分流，
+ * 让循环作者在正式发布前预先审视拓扑闭环。
+ */
+export function simulateLoopDryRun(def: LoopDefinition): DryRunResult {
+  const warnings: string[] = [];
+  const nodeMap = new Map(def.nodes.map((n) => [n.id, n]));
+  const adjacency = new Map<string, DryRunEdge[]>();
+
+  for (const e of def.edges) {
+    const list = adjacency.get(e.source) ?? [];
+    list.push({ target: e.target, conditional: e.conditional, label: e.label });
+    adjacency.set(e.source, list);
+  }
+
+  const steps: DryRunStep[] = [];
+  const visited = new Set<string>();
+  let currentId: string | null = 'start';
+  let stepCount = 0;
+
+  while (currentId && stepCount < 50) {
+    const node = nodeMap.get(currentId);
+    if (!node) {
+      warnings.push(`拓扑包含不存在的节点引用：${currentId}`);
+      break;
+    }
+
+    stepCount++;
+    steps.push({
+      stepNumber: stepCount,
+      nodeId: node.id,
+      nodeLabel: node.label,
+      nodeType: node.type,
+      assignee: node.assignee,
+    });
+
+    visited.add(currentId);
+    if (node.type === 'end') break;
+
+    const outgoing: DryRunEdge[] = adjacency.get(currentId) ?? [];
+    if (outgoing.length === 0) {
+      warnings.push(`节点 [${node.label}] 无任何出度连线，无法到达终点`);
+      break;
+    }
+
+    // 优先选择主干（非条件退回边）
+    const primary: DryRunEdge | undefined =
+      outgoing.find((candidate) => !candidate.conditional) ?? outgoing[0];
+    if (!primary) break;
+    if (outgoing.some((candidate) => candidate.conditional)) {
+      warnings.push(`节点 [${node.label}] 包含条件退回分流，预演遵循主干前进`);
+    }
+
+    if (visited.has(primary.target)) {
+      warnings.push(`检测到环路回退路由：${currentId} -> ${primary.target}`);
+      break;
+    }
+
+    currentId = primary.target;
+  }
+
+  const reachable = steps.some((s) => s.nodeType === 'end');
+  return { reachable, steps, warnings };
 }

@@ -206,13 +206,13 @@ export function WorkerToolsPanel({ workerName }: { workerName: string }) {
               <div className="flex items-center gap-1.5">
                 <span className="truncate font-mono text-xs">{t.name}</span>
                 {t.requiresConfig && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  <Badge variant="secondary" className="h-4 px-1 text-xs">
                     需配置
                   </Badge>
                 )}
               </div>
               {t.description && (
-                <p className="truncate text-[10px] text-muted-foreground" title={t.description}>
+                <p className="truncate text-xs text-muted-foreground" title={t.description}>
                   {t.description}
                 </p>
               )}
@@ -221,7 +221,7 @@ export function WorkerToolsPanel({ workerName }: { workerName: string }) {
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
             )}
             <div className="flex shrink-0 items-center gap-3">
-              <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 启用
                 <Switch
                   checked={t.enabled}
@@ -230,7 +230,7 @@ export function WorkerToolsPanel({ workerName }: { workerName: string }) {
                   aria-label={`启用 ${t.name}`}
                 />
               </label>
-              <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 异步
                 <Switch
                   checked={t.asyncExecution ?? false}
@@ -243,13 +243,13 @@ export function WorkerToolsPanel({ workerName }: { workerName: string }) {
           </div>
         ))}
         {tools.length === 0 && (
-          <p className="px-2 py-1 text-[11px] text-muted-foreground">该 Worker 未返回工具列表。</p>
+          <p className="px-2 py-1 text-xs text-muted-foreground">该 Worker 未返回工具列表。</p>
         )}
       </div>
 
       {patchMsg && (
         <span
-          className={`flex items-center gap-1 text-[11px] ${
+          className={`flex items-center gap-1 text-xs ${
             patchMsg.kind === 'ok'
               ? 'text-emerald-600 dark:text-emerald-400'
               : 'text-red-600 dark:text-red-400'

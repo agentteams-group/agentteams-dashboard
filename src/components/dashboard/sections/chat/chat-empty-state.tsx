@@ -24,7 +24,7 @@ export function ChatEmptyState({
           </div>
         </div>
 
-        <p className="text-[11px] uppercase tracking-[0.2em] text-primary/80 mb-2">Agent Workspace</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-primary/80 mb-2">Agent Workspace</p>
         <h3 className="font-semibold text-xl mb-2">选择一个会话开始协作</h3>
         <p className="text-sm text-muted-foreground">
           从左侧房间列表中选择一个 Matrix 房间，即可查看消息记录和发送消息。

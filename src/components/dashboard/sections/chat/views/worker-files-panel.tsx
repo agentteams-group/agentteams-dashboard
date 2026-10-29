@@ -181,7 +181,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {lastSyncTime && (
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+            <span className="text-xs text-muted-foreground hidden sm:inline">
               同步于 {lastSyncTime.toLocaleTimeString('zh-CN')}
             </span>
           )}
@@ -277,7 +277,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
                         <span className="flex-1 text-left truncate font-mono text-xs">
                           {obj.key.split('/').pop() || obj.key}
                         </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {formatSize(obj.size)}
                         </span>
                       </button>

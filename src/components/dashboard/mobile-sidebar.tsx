@@ -22,7 +22,7 @@ interface MobileSidebarProps {
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+    <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
       {label}
     </div>
   );
@@ -119,7 +119,7 @@ export function MobileSidebar({
                             {count > 0 && (
                               <Badge
                                 variant="secondary"
-                                className="ml-auto text-[10px] h-5 min-w-[20px] px-1.5"
+                                className="ml-auto text-xs h-5 min-w-[20px] px-1.5"
                               >
                                 {count}
                               </Badge>

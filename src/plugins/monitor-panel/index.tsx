@@ -217,7 +217,7 @@ function createHealthWidget(api: DashboardPluginApi) {
           <CardTitle className="text-sm flex items-center gap-1.5">
             <Activity className="w-4 h-4 text-primary" />
             集群健康概览
-            <Badge variant="outline" className="text-[10px] ml-auto">
+            <Badge variant="outline" className="text-xs ml-auto">
               插件
             </Badge>
           </CardTitle>

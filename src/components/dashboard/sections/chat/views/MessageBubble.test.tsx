@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
@@ -24,6 +24,72 @@ vi.mock('../markdown-message', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
+});
+
+describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
+  const base = {
+    sender: '@me:example.com',
+    senderShort: 'me',
+    timestamp: 0,
+    type: 'm.text' as const,
+    isMe: true,
+  };
+
+  it('复制成功后按钮改成「已复制到剪贴板」', async () => {
+    const onCopy = vi.fn().mockResolvedValue(true);
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$copy-ok', content: '要复制的文本' }}
+        showSender
+        isContinuation={false}
+        onCopy={onCopy}
+      />
+    );
+    // 操作行平时不在 DOM 里（桌面 hover、移动点一下），先把气泡置成 hover。
+    fireEvent.mouseEnter(container.firstElementChild as Element);
+    const button = screen.getByRole('button', { name: '复制' });
+    fireEvent.click(button);
+    expect(onCopy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(button).toHaveAccessibleName('已复制到剪贴板'));
+  });
+
+  it('写入没成功时明说失败，不假装已复制', async () => {
+    const onCopy = vi.fn().mockResolvedValue(false);
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$copy-fail', content: '要复制的文本' }}
+        showSender
+        isContinuation={false}
+        onCopy={onCopy}
+      />
+    );
+    fireEvent.mouseEnter(container.firstElementChild as Element);
+    const button = screen.getByRole('button', { name: '复制' });
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toHaveAccessibleName('复制失败，请手动选中文字复制'));
+  });
+
+  it('已编辑徽标用中文，并在 title 里给出编辑次数', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$edited', content: '改过的文本', isEdited: true, revisionCount: 3 }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    expect(screen.getByText('已编辑')).toHaveAttribute('title', '已编辑 3 次');
+  });
+
+  it('服务端没回报次数时不编数字，title 说明未回报', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$edited-unknown', content: '改过的文本', isEdited: true }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    expect(screen.getByText('已编辑')).toHaveAttribute('title', '已编辑（服务端未回报编辑次数）');
+  });
 });
 
 describe('MessageBubble', () => {
@@ -431,7 +497,7 @@ Type /approve to approve, or send any message to deny.`,
     );
     expect(notice).toHaveTextContent('Worker ceshi');
     expect(notice).toHaveTextContent('已自动暂停');
-    expect(notice.className).toContain('text-[11px]');
+    expect(notice.className).toContain('text-xs');
     // The sender avatar/name is replaced by the notice layout.
     expect(screen.queryByText('manager')).toBeNull();
     expect(screen.queryByText('MA')).toBeNull();
@@ -827,6 +893,9 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       expect.stringContaining('甲'),
       '@ceshi:matrix-local.agentteams.io:18080',
       '$card',
+      // 这张卡是从正文猜出来的（heuristic: 前缀），运行时没有对应 id，
+      // 所以第四参是空的（方案 v3 C-3）；真卡会带上 com.agentteams.answer 字段。
+      undefined,
     );
   });
 

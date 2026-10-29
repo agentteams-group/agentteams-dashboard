@@ -2,12 +2,30 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+type CardVariant = "default" | "elevated" | "glass"
+
+interface CardProps extends React.ComponentProps<"div"> {
+  variant?: CardVariant
+}
+
+// 卡片质感单轨（方案 v3 A-1）：三种变体只组合语义 token——底 --card（玻璃底是它的
+// 透射 --card-glass）、边 --border、影 --shadow-card（值由 globals.css 按主题给）。
+// globals.css 里剩下的 `.glass-card` / `.hover-lift` 是给存量调用点的同类实现，
+// 新代码一律用这里的 variant。
+const CARD_VARIANTS: Record<CardVariant, string> = {
+  default: "bg-card shadow-card",
+  elevated: "bg-card shadow-card ring-1 ring-border",
+  glass: "bg-[var(--card-glass)] shadow-card backdrop-blur-xl",
+}
+
+function Card({ className, variant = "default", ...props }: CardProps) {
   return (
     <div
       data-slot="card"
+      data-variant={variant}
       className={cn(
-        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        "text-card-foreground flex flex-col gap-6 rounded-xl border py-6",
+        CARD_VARIANTS[variant],
         className
       )}
       {...props}

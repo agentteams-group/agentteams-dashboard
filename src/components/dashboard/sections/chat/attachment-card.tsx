@@ -74,7 +74,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
     return (
       <div className="flex max-w-full items-center gap-2 rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={payload.filename}>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={payload.filename}>
           全文附件 · {payload.filename}
         </span>
         {forcedDownloadUrl && (
@@ -82,7 +82,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
             href={forcedDownloadUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-emerald-600 hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 text-xs text-emerald-600 hover:underline"
             title="下载全文"
           >
             <Download className="h-3 w-3" />
@@ -99,7 +99,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
         <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium truncate">{payload.filename}</p>
-          <p className="text-[10px] text-muted-foreground">{friendlyMimeType(payload.mimetype)} · 全文附件</p>
+          <p className="text-xs text-muted-foreground">{friendlyMimeType(payload.mimetype)} · 全文附件</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {canPreview && (

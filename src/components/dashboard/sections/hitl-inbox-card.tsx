@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { ShieldAlert, PauseCircle, MessageSquare, GitBranch } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ShieldAlert, PauseCircle, MessageSquare, GitBranch, ChevronDown, ChevronRight, TimerReset } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useProjects } from '@/hooks/use-projects';
@@ -17,6 +17,13 @@ import {
   type PendingProjectKey,
 } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
+import {
+  INTERVENTION_TIMEOUT_PRESETS,
+  formatInterventionTimeout,
+  partitionByAge,
+  setInterventionTimeoutMs,
+  useInterventionTimeoutMs,
+} from '@/lib/intervention-timeout';
 import type { ProjectSummary } from '@/lib/agentteams-projects-api';
 
 function formatRelativeTime(timestamp: number): string {
@@ -39,6 +46,14 @@ export function HitlInboxCard() {
   const confirmations = useMemo(
     () => selectConfirmationList(confirmationsMap),
     [confirmationsMap],
+  );
+  // C-4：待办不再静默截断后，列表可以长起来。超过等待窗口的项收到「更早待处理」
+  // 分组里，默认折叠 —— 不删、不丢，展开就能看到，计数仍包含它们。
+  const timeoutMs = useInterventionTimeoutMs();
+  const [showAged, setShowAged] = useState(false);
+  const { fresh, aged } = useMemo(
+    () => partitionByAge(confirmations, timeoutMs),
+    [confirmations, timeoutMs],
   );
   const { data: projectList } = useProjects();
   const { data: workers } = useWorkers();
@@ -79,18 +94,21 @@ export function HitlInboxCard() {
   return (
     <Card className="glass-card border-amber-500/20">
       <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-amber-500" />
           待决策
-          <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400">
+          <Badge variant="outline" className="text-xs h-4 px-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400">
             {confirmations.length + pausedProjects.length}
           </Badge>
           {pendingInvites.length > 0 && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-sky-500/30 text-sky-600 dark:text-sky-400">
+            <Badge variant="outline" className="text-xs h-4 px-1.5 border-sky-500/30 text-sky-600 dark:text-sky-400">
               待接受的 Matrix 邀请 {pendingInvites.length}
             </Badge>
           )}
         </CardTitle>
+        <TimeoutPicker timeoutMs={timeoutMs} />
+        </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-1.5">
         {pendingInvites.length > 0 && (
@@ -108,23 +126,73 @@ export function HitlInboxCard() {
             <div className="text-sm font-medium">
               {pendingInvites.length} 个房间邀请未处理
             </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 text-xs text-muted-foreground">
               打开聊天面板查看
             </div>
           </button>
         )}
-        {confirmations.map((item) => (
+        {fresh.map((item) => (
           <ConfirmationRow
             key={item.id}
             item={item}
             roomLabel={roomLabels[item.roomId] ?? item.roomId}
           />
         ))}
+        {aged.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowAged((v) => !v)}
+              aria-expanded={showAged}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              {showAged ? (
+                <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+              )}
+              另有 {aged.length} 条更早待处理（超过 {formatInterventionTimeout(timeoutMs)}）
+            </button>
+            {showAged &&
+              aged.map((item) => (
+                <ConfirmationRow
+                  key={item.id}
+                  item={item}
+                  roomLabel={roomLabels[item.roomId] ?? item.roomId}
+                />
+              ))}
+          </>
+        )}
         {pausedProjects.map((project) => (
           <PausedProjectRow key={`${project.team_id ?? ''}:${project.project_id}`} project={project} />
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 等待窗口档位选择（F2.2 / C-4）：只给预置档位不给自由输入，因为它同时
+ * 是干预卡倒计时的阈值和列表折叠的阈值，一个说不清的数会让两边对不上。
+ * 存到 localStorage 后全应用同步（见 `@/lib/intervention-timeout`）。
+ */
+function TimeoutPicker({ timeoutMs }: { timeoutMs: number }) {
+  return (
+    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+      <TimerReset className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>干预等待窗口</span>
+      <select
+        value={timeoutMs}
+        onChange={(e) => setInterventionTimeoutMs(Number(e.target.value))}
+        className="h-5 rounded-md border border-border/60 bg-background px-1 text-xs text-foreground"
+      >
+        {INTERVENTION_TIMEOUT_PRESETS.map((preset) => (
+          <option key={preset.ms} value={preset.ms}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -147,9 +215,9 @@ function ConfirmationRow({ item, roomLabel }: { item: HitlConfirmation; roomLabe
           {isIntervention ? '执行中提问 · ' : '工具审批 · '}
           {isIntervention ? item.question : item.toolName}
         </span>
-        <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(item.timestamp)}</span>
+        <span className="text-xs text-muted-foreground whitespace-nowrap">{formatRelativeTime(item.timestamp)}</span>
       </div>
-      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
         <MessageSquare className="w-3 h-3 shrink-0" />
         <span className="truncate">{roomLabel}</span>
         {item.triggeredBy && <span className="truncate">· {item.triggeredBy}</span>}
@@ -170,11 +238,11 @@ function PausedProjectRow({ project }: { project: ProjectSummary }) {
           <PauseCircle className="w-3.5 h-3.5 text-violet-500 shrink-0" />
           {project.title}
         </span>
-        <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400">
+        <Badge variant="outline" className="text-xs h-4 px-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400">
           已暂停
         </Badge>
       </div>
-      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
         <GitBranch className="w-3 h-3 shrink-0" />
         <span className="truncate font-mono">{project.project_id}</span>
         {project.team_id && <span className="truncate">· {project.team_id}</span>}

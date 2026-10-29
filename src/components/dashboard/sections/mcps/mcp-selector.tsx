@@ -158,7 +158,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{srv.name}</span>
-                        <Badge variant="outline" className="text-[10px] shrink-0">{srv.transport}</Badge>
+                        <Badge variant="outline" className="text-xs shrink-0">{srv.transport}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground truncate" title={srv.url}>
                         {srv.url}
@@ -181,7 +181,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                 <span className="text-xs text-muted-foreground">已选择 ({draft.length}):</span>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {draft.map((srv) => (
-                    <Badge key={srv.name} variant="secondary" className="text-[10px]">{srv.name}</Badge>
+                    <Badge key={srv.name} variant="secondary" className="text-xs">{srv.name}</Badge>
                   ))}
                 </div>
               </div>

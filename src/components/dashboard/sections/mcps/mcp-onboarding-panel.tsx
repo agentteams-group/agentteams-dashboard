@@ -24,7 +24,7 @@ export function McpOnboardingPanel() {
         {open ? <ChevronDown className="size-3.5 ml-auto" /> : <ChevronRight className="size-3.5 ml-auto" />}
       </button>
       {open && (
-        <div className="px-4 pb-3 text-[11px] text-muted-foreground space-y-2">
+        <div className="px-4 pb-3 text-xs text-muted-foreground space-y-2">
           <ol className="space-y-1 list-decimal list-inside">
             <li>
               <span className="font-medium text-foreground">网关接入</span>

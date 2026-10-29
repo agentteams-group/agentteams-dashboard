@@ -2,9 +2,14 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import '@testing-library/jest-dom/vitest';
 import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatProvider } from './ChatStore';
-import { ChatRoom } from './ChatRoom';
+import {
+  ChatRoom,
+  resetRoomSearchDeepLinkForTests,
+  takeRoomSearchDeepLink,
+} from './ChatRoom';
+import { roomHash } from '@/lib/nav-hash';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
 
@@ -309,5 +314,30 @@ describe('ChatRoom HITL reply correlation', () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe('takeRoomSearchDeepLink（B-1：面板命中带回的检索词）', () => {
+  // replaceState 不触发 hashchange，正好用来单独验解析这一段。
+  const setHash = (hash: string) => window.history.replaceState(null, '', `#${hash}`);
+
+  beforeEach(() => resetRoomSearchDeepLinkForTests());
+  afterEach(() => setHash('workbench/space'));
+
+  it('认得面板写的 #workbench/space/<roomId>?q=…，并且同一个 hash 只交一次', () => {
+    setHash(`${roomHash('!room:test').slice(1)}?q=${encodeURIComponent('缓存')}`);
+    expect(takeRoomSearchDeepLink()).toBe('缓存');
+    // ChatRoom 按房间 key 重挂载；交第二次的话，地址里残留的 ?q= 会把搜索条反复弹开。
+    expect(takeRoomSearchDeepLink()).toBeNull();
+  });
+
+  it('路径不是会话页就不认：这个词在别的界面上没有意义', () => {
+    setHash(`workbench/tasks?q=${encodeURIComponent('缓存')}`);
+    expect(takeRoomSearchDeepLink()).toBeNull();
+  });
+
+  it('会话页上没有 q 时返回 null（普通进房不该弹搜索条）', () => {
+    setHash('workbench/space');
+    expect(takeRoomSearchDeepLink()).toBeNull();
   });
 });

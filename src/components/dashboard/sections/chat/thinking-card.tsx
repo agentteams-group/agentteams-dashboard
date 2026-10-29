@@ -34,7 +34,7 @@ export function ThinkingCard({
   if (embedded) {
     return (
       <div className="px-1 py-0.5">
-        <div className="flex min-w-0 items-center gap-2 text-[11px] font-medium text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
           {isStreaming ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
           ) : (
@@ -42,7 +42,7 @@ export function ThinkingCard({
           )}
           <span className="truncate">{resolvedTitle}</span>
           {isStreaming && (
-            <span className="text-[10px] text-emerald-500 animate-pulse">思考中...</span>
+            <span className="text-xs text-emerald-500 animate-pulse">思考中...</span>
           )}
         </div>
         <pre className={`mt-1 max-h-56 overflow-y-auto custom-scrollbar whitespace-pre-wrap font-mono text-xs text-muted-foreground ${isStreaming ? 'animate-pulse' : ''}`}>
@@ -74,7 +74,7 @@ export function ThinkingCard({
           )}
           <span className="truncate">{resolvedTitle}</span>
           {isStreaming && (
-            <span className="text-[10px] text-emerald-500 animate-pulse">思考中...</span>
+            <span className="text-xs text-emerald-500 animate-pulse">思考中...</span>
           )}
         </span>
         {open ? (

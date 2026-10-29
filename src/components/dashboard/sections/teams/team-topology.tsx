@@ -25,7 +25,7 @@ export function TeamTopologyDiagram({
         <StatusDot phase={leaderManager?.phase || 'Pending'} />
         <Crown className="w-4 h-4 text-purple-500" aria-hidden="true" />
         <span className="text-sm font-medium">{team.leaderName || '未指定'}</span>
-        <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600 dark:text-purple-400">
+        <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-600 dark:text-purple-400">
           Manager
         </Badge>
       </div>

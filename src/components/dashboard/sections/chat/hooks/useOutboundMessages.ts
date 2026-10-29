@@ -7,6 +7,7 @@ import {
 } from '@/hooks/use-matrix';
 import { MatrixRequestError, getRateLimitRetryDelay } from '@/lib/matrix-api';
 import { FILE_REFS_CONTENT_KEY, type FileRef } from '@/lib/file-refs';
+import { buildAnswerContent, type ConfirmationAnswerField } from '../confirmation-reply';
 import { type LocalOutboundMessage, type ChatSystemNotice } from '../structures/MessageList';
 import type { MentionEntry } from '../chat-composer';
 
@@ -69,9 +70,15 @@ export function useOutboundMessages({
     fileRefs?: FileRef[];
     /** Card event this reply answers (HITL correlation via m.reference). */
     referenceEventId?: string;
-  }) => {
-    if (!roomId || !isLoggedIn || !userId) return;
-    const { content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId } = params;
+    /** 干预卡的结构化答复（方案 v3 C-3），并进 content 的自定义字段。 */
+    answer?: ConfirmationAnswerField;
+  }): Promise<boolean> => {
+    // 返回值 = 「这条消息是否真的进了房间」。干预卡靠它决定该不该翻成已答复，
+    // 所以未登录 / 没有房间时也必须是明确的 false，而不是 undefined。
+    if (!roomId || !isLoggedIn || !userId) return Promise.resolve(false);
+    const {
+      content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId, answer,
+    } = params;
 
     // Only mentions that still appear in the final text are sent (the user may
     // have typed more after inserting them, or deleted the placeholder again).
@@ -112,6 +119,7 @@ export function useOutboundMessages({
       }]);
     }
 
+    return new Promise<boolean>((resolve) => {
     sendMutation.mutate(
       {
         roomId,
@@ -121,6 +129,7 @@ export function useOutboundMessages({
           ...mentionData,
           ...(msgtype ? { msgtype } : {}),
           ...(fileRefs && fileRefs.length > 0 ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
+          ...buildAnswerContent(answer),
         },
         relatesTo: replyTo
           ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } }
@@ -133,13 +142,18 @@ export function useOutboundMessages({
           removeLocal(cid);
           // Sending a message advances the read position to the sent event.
           markAllRead(data?.event_id);
+          resolve(true);
         },
         onError: (err) => {
           patchLocal(cid, { status: 'error', error: err.message });
-          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo, referenceEventId }, ++noticeCounterRef.current));
+          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo, referenceEventId, answer }, ++noticeCounterRef.current));
+          // 失败不 reject：调用方都是 fire-and-forget，reject 会变成未处理的
+          // Promise rejection；用 false 让干预卡能显示「未写入房间」并允许重试。
+          resolve(false);
         },
       }
     );
+    });
   }, [roomId, isLoggedIn, userId, sendMutation, removeLocal, patchLocal, pushSystemNotice, markAllRead]);
 
   const removeSystemNotice = useCallback((notice: ChatSystemNotice) => {
@@ -150,7 +164,7 @@ export function useOutboundMessages({
     const payload = notice.retryPayload;
     setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
     if (payload && roomId && isLoggedIn && userId) {
-      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo, referenceEventId: payload.referenceEventId });
+      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo, referenceEventId: payload.referenceEventId, answer: payload.answer });
     }
   }, [sendOutbound, roomId, isLoggedIn, userId]);
 
@@ -170,7 +184,7 @@ export function useOutboundMessages({
 
 function buildSystemNoticeFromError(
   err: unknown,
-  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string },
+  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField },
   id: number
 ): ChatSystemNotice {
   const retryAfterMs = getRateLimitRetryDelay(err);

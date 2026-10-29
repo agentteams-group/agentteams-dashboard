@@ -59,7 +59,7 @@ export interface RuntimeBadgeProps {
 export function RuntimeBadge({ runtime, className, size = 'default', withTooltip = false }: RuntimeBadgeProps) {
   const meta = getRuntimeMeta(runtime);
   const label = RUNTIME_LABELS[runtime] || runtime;
-  const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0 gap-0.5' : 'text-xs';
+  const sizeClass = size === 'sm' ? 'text-xs px-1.5 py-0 gap-0.5' : 'text-xs';
   const Icon = meta?.icon;
 
   const badge = (

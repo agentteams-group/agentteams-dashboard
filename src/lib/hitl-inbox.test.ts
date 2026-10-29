@@ -6,6 +6,7 @@ import {
   isHitlResolutionReply,
   selectConfirmationList,
   useHitlInboxStore,
+  type HitlConfirmation,
 } from '@/lib/hitl-inbox';
 
 const TOOL_GUARD_BODY = `⏳ Waiting for approval / 等待审批
@@ -375,5 +376,63 @@ describe('useHitlInboxStore', () => {
       '@user:test',
     );
     expect(useHitlInboxStore.getState().confirmations).toEqual({});
+  });
+});
+
+/**
+ * 方案 v3 C-4：待办既不能在刷新后丢，也不能被列表上限静默吃掉 ——
+ * 一条被删掉的干预等于任务永远卡在 blocked 且没人知道。
+ */
+describe('待办不截断与持久化（C-4）', () => {
+  beforeEach(() => {
+    useHitlInboxStore.setState({
+      confirmations: {},
+      resolutions: {},
+      pendingChatRoomId: null,
+      pendingProjectKey: null,
+    });
+  });
+
+  function pendingAt(index: number): HitlConfirmation {
+    return {
+      id: `$card${index}`,
+      roomId: '!r1',
+      eventId: `$e${index}`,
+      sender: '@agent:test',
+      toolName: 'execute_shell_command',
+      approveReply: '/approve',
+      rejectReply: '拒绝',
+      timestamp: 1000 + index * 1000,
+    };
+  }
+
+  it('超出旧上限的待办全部保留，最旧的那条不再被静默丢弃', () => {
+    for (let i = 0; i < 60; i += 1) {
+      useHitlInboxStore.getState().upsertConfirmation(pendingAt(i));
+    }
+    const list = selectConfirmationList(useHitlInboxStore.getState().confirmations);
+    expect(list).toHaveLength(60);
+    expect(list.map((c) => c.id)).toContain('$card0');
+  });
+
+  it('已裁决记录仍按上限收敛（它只用于去重，掉出去不丢待办）', () => {
+    for (let i = 0; i < 60; i += 1) {
+      useHitlInboxStore.getState().upsertConfirmation(pendingAt(i));
+      useHitlInboxStore.getState().resolveConfirmation(`$card${i}`, '@user:test');
+    }
+    expect(Object.keys(useHitlInboxStore.getState().resolutions)).toHaveLength(50);
+    expect(useHitlInboxStore.getState().confirmations).toEqual({});
+  });
+
+  it('持久化只存待办与已裁决，一次性深链指针不落盘', () => {
+    useHitlInboxStore.getState().setPendingChatRoomId('!r1');
+    useHitlInboxStore.getState().setPendingProjectKey({ id: 'p1', team: 't1' });
+    useHitlInboxStore.getState().upsertConfirmation(pendingAt(0));
+
+    const options = useHitlInboxStore.persist.getOptions();
+    expect(options.name).toBe('agentteams-hitl-inbox');
+    const partial = options.partialize?.(useHitlInboxStore.getState()) as Record<string, unknown>;
+    expect(Object.keys(partial).sort()).toEqual(['confirmations', 'resolutions']);
+    expect(Object.keys(partial.confirmations as Record<string, unknown>)).toEqual(['$card0']);
   });
 });

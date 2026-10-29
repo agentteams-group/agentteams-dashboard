@@ -11,16 +11,25 @@ import {
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useNotificationStore } from '@/lib/notification-store';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { recordHitlAudit } from '@/lib/hitl-audit';
-
-/** 干预超时默认（PRD F2.2 / Q3：全局 30 分钟，按空间覆盖待上游契约）。 */
-export const INTERVENTION_TIMEOUT_MS = 30 * 60 * 1000;
+import { statusBadgeClass } from '@/lib/status-tokens';
+import {
+  type AnswerSendResult,
+  type ConfirmationAnswerField,
+} from './confirmation-reply';
+import { formatInterventionTimeout, useInterventionTimeoutMs } from '@/lib/intervention-timeout';
 
 interface InterventionCardProps {
   payload: RuntimeConfirmationBlock['payload'];
-  /** 降级回写通道：答案转一条自然语言消息发回房间（上游 v2 answer 契约就绪前）。 */
-  onAnswer: (_text: string) => void;
+  /**
+   * 回写通道（方案 v3 C-3）：正文仍是一条房间消息，同时带上
+   * `com.agentteams.answer`（confirmation_id + answer + actor），不再只留自然语言。
+   * 启发式卡的 id 是本机造出来的，不传字段。
+   * 返回值 = 这条答复是否真的进了房间；未进房间不得显示成已答复。
+   */
+  onAnswer: (_text: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
 }
 
 interface AnswerState {
@@ -88,7 +97,7 @@ function orderedOptions(question: RuntimeConfirmationQuestion) {
  *
  * 交互规格：推荐项置顶 + 默认选中；序号快捷键 1-9（展示序）；自由输入
  * 与选项互斥；多问题分页逐题作答、末页提交；提交后卡片只读并显示提交人
- * 与时间；超时（expires_at 或默认 30 分钟）置灰禁答并升级通知。
+ * 与时间；超时（expires_at 或可配置等待窗口，默认 30 分钟）置灰禁答并升级通知。
  */
 export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   const currentUserId = useMatrixStore((s) => s.userId);
@@ -106,6 +115,9 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
 
   const [answers, setAnswers] = useState<AnswerState>(() => initialAnswers(questions));
   const [page, setPage] = useState(0);
+  // 发送中 / 未写入房间：两者一起撑起 C-3 的诚实反馈，避免「点了就算已答复」。
+  const [submitting, setSubmitting] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
   const submitted = useMemo(() => resolution?.status === 'answered'
     ? { by: resolution.actor ?? '', at: resolution.timestamp }
     : null, [resolution]);
@@ -113,11 +125,13 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   // 挂载时刻（useState 惰性初始化，渲染期只读快照，符合 refs 规范）。
   const [mountedAt] = useState(() => Date.now());
   const expiredNotifiedRef = useRef(false);
+  // 等待窗口是用户可调的偏好（C-4）：与收件箱折叠、倒计时读同一个值。
+  const timeoutMs = useInterventionTimeoutMs();
 
   // 超时判定（F2.2）：块级 expires_at 优先；缺省从共享请求时间起算，
   // 仅在无收件箱条目时回退到卡片挂载时刻。
   const expiresAt =
-    effectiveExpiry(payload.expires_at) ?? (requestTimestamp ?? mountedAt) + INTERVENTION_TIMEOUT_MS;
+    effectiveExpiry(payload.expires_at) ?? (requestTimestamp ?? mountedAt) + timeoutMs;
   const expired = resolution?.status === 'expired' || (submitted === null && now >= expiresAt);
 
   // ── 交互动作（先于引用它们的 effects 声明）──
@@ -172,11 +186,15 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     expiredNotifiedRef.current = true;
     if (resolution?.status === 'expired') return;
     useHitlInboxStore.getState().expireConfirmation(payload.confirmation_id, currentUserId ?? undefined);
+    // 房间定位：本卡只在当前打开的房间的消息流里挂载（切房间时卸载），所以
+    // activeRoomId 就是发出这条干预的房间；通知点击后能直接回到它。
+    const timeoutRoomId = useRoomMetaStore.getState().activeRoomId;
     addNotification({
       type: 'warning',
       title: '干预请求已超时',
-      message: `「${questions[page]?.question ?? payload.tool_name}」在 30 分钟内未获答复，任务保持阻塞，请管理员关注。`,
+      message: `「${questions[page]?.question ?? payload.tool_name}」在 ${formatInterventionTimeout(timeoutMs)}内未获答复，任务保持阻塞，请管理员关注。`,
       origin: 'system',
+      ...(timeoutRoomId ? { roomId: timeoutRoomId } : {}),
     });
     recordHitlAudit({
       action: 'expire',
@@ -186,7 +204,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       ...(typeof requestTimestamp === 'number' ? { elapsedMs: Date.now() - requestTimestamp } : {}),
       actor: currentUserId ?? undefined,
     });
-  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId]);
+  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId, timeoutMs]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
   // 绑定在卡片根节点而非 window：多个干预卡同时可见时，按键只作用于
@@ -205,14 +223,23 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
 
   if (submitted) {
     return (
-      <div className="my-2 rounded-lg border border-l-4 border-l-sky-500 border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs">
-        <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400">
-          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+      <div className={`my-2 rounded-lg border px-3 py-2 text-xs ${statusBadgeClass('done')}`}>
+        <div className="flex items-center gap-2">
+          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           已答复 — {payload.tool_name}
         </div>
-        <p className="mt-1 text-[10px] text-muted-foreground">
+        <p className="mt-1 text-xs text-muted-foreground">
           提交人 {submitted.by || '我'} · {new Date(submitted.at).toLocaleString('zh-CN', { hour12: false })}
         </p>
+        {/* 降级可见（方案 v3 C-3）：答复进的是房间，而运行时至今没有确认通道，
+            所以「已答复」不等于「任务已按所选继续跑」——这一条得写在卡上。 */}
+        <Badge
+          variant="outline"
+          className={`mt-2 ${statusBadgeClass('waiting')}`}
+          title="答案已写入房间，但没有运行时确认收到；任务是否按此继续请看 Agent 侧状态"
+        >
+          本次选择未回写运行时
+        </Badge>
       </div>
     );
   }
@@ -225,11 +252,32 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   const canSubmitPage = selected.length > 0 || freeText.length > 0;
   const isLastPage = page === questions.length - 1;
 
-  const submit = () => {
-    if (!canSubmitPage || locked || forbidden) return;
+  const submit = async () => {
+    if (!canSubmitPage || locked || forbidden || submitting) return;
     const text = composeAnswerText(questions, answers);
-    onAnswer(text);
-    // hitl.answer 审计（F2.4）：actor/问题/所选答案/耗时。
+    // 启发式卡的 confirmation_id 是本机拼的（heuristic:<eventId>:<idx>），运行时并
+    // 没有这张卡；写进房间只会造一个对不上号的关联 id，所以不附结构化字段。
+    const answer: ConfirmationAnswerField | undefined = payload.confirmation_id.startsWith('heuristic:')
+      ? undefined
+      : {
+          confirmation_id: payload.confirmation_id,
+          answer: text,
+          tool_name: payload.tool_name,
+          ...(currentUserId ? { actor: currentUserId } : {}),
+        };
+    setSubmitting(true);
+    setSendFailed(false);
+    // `=== true` 而不是只看“没报错”：未登录 / 发送失败 / 调用方不回报结果
+    // 都算未写入房间，卡片得留在可重交的状态。
+    let delivered = false;
+    try {
+      delivered = (await Promise.resolve(onAnswer(text, answer))) === true;
+    } catch {
+      delivered = false;
+    }
+    setSubmitting(false);
+    // hitl.answer 审计（F2.4）：actor/问题/所选答案/耗时。发送失败也记一笔：
+    // 用户确实做了这个决定，只是它没能送到房间。
     const requestedAt = requestTimestamp;
     recordHitlAudit({
       action: 'answer',
@@ -240,6 +288,10 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       ...(typeof requestedAt === 'number' ? { elapsedMs: Date.now() - requestedAt } : {}),
       actor: currentUserId ?? undefined,
     });
+    if (!delivered) {
+      setSendFailed(true);
+      return;
+    }
     // 收件箱互通（F2.3）：任一处处理，另一处同步消失并保留已答复状态。
     useHitlInboxStore.getState().resolveConfirmation(
       payload.confirmation_id,
@@ -262,10 +314,10 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       }`}
     >
       <div className="px-5 pt-4 pb-1 flex items-start justify-between gap-3">
-        <h3 className="text-[15px] font-semibold leading-snug">{question.question}</h3>
+        <h3 className="text-sm font-semibold leading-snug">{question.question}</h3>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           {expired && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-red-500/40 text-red-600 dark:text-red-400">
+            <Badge variant="outline" className="text-xs gap-1 border-red-500/40 text-red-600 dark:text-red-400">
               <AlertTriangle className="h-2.5 w-2.5" aria-hidden="true" />
               已超时
             </Badge>
@@ -315,7 +367,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                 </span>
                 {/* 序号快捷键提示（Codex 同款右侧方块） */}
                 <span
-                  className="hidden sm:flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] text-muted-foreground"
+                  className="hidden sm:flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-xs text-muted-foreground"
                   aria-hidden="true"
                 >
                   {index + 1}
@@ -339,13 +391,13 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         </div>
 
         {forbidden ? (
-          <p className="text-[11px] text-muted-foreground">该提问指定由 {payload.requested_of} 答复（管理员可代答）。</p>
+          <p className="text-xs text-muted-foreground">该提问指定由 {payload.requested_of} 答复（管理员可代答）。</p>
         ) : null}
 
         {expired && (
-          <p className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400" role="alert">
+          <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400" role="alert">
             <Clock className="h-3 w-3" aria-hidden="true" />
-            超过 30 分钟未答复：卡片已置灰，任务保持 blocked，已升级通知。
+            超过 {formatInterventionTimeout(timeoutMs)}未答复：卡片已置灰，任务保持 blocked，已升级通知。
           </p>
         )}
 
@@ -374,16 +426,22 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
               size="sm"
               className="h-8 px-4 text-xs bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               onClick={submit}
-              disabled={locked || forbidden || !canSubmitPage}
+              disabled={locked || forbidden || !canSubmitPage || submitting}
               title={canSubmitPage ? '答案将以一条消息发回房间' : '请先选择选项或输入答复'}
             >
-              提交选择 ⏎
+              {submitting ? '提交中…' : '提交选择 ⏎'}
             </Button>
           )}
         </div>
 
         {/* 能力徽标（§7.4 降级可见）：降级说明收进页脚小字，保持卡面干净 */}
-        <p className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+        {sendFailed && (
+          <p className="flex items-center gap-1 text-xs text-status-failed" role="alert">
+            <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+            答复未写入房间，请重试（发送失败详见房间底部提示）
+          </p>
+        )}
+        <p className="flex items-center gap-1 text-xs text-muted-foreground/70">
           <Info className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
           答复将以一条消息发回房间（{payload.tool_name}）· 本次选择未回写运行时状态
         </p>

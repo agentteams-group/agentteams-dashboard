@@ -135,7 +135,7 @@ export function DiagnosisModelSelect({
                 <SelectItem key={option.alias} value={option.alias}>
                   <span className="flex items-center gap-1.5">
                     <span className="font-mono">{option.alias}</span>
-                    <Badge variant="secondary" className="text-[9px]">内置</Badge>
+                    <Badge variant="secondary" className="text-xs">内置</Badge>
                   </span>
                 </SelectItem>
               ))}

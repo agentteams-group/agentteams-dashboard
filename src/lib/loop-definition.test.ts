@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   LOOP_TEMPLATES,
   canPublish,
+  canRollback,
   isValidLoopDefinition,
+  simulateLoopDryRun,
   templateToDraft,
 } from './loop-definition';
 
@@ -44,5 +46,26 @@ describe('loop-definition（F5.2/F5.3/F5.5 模型）', () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('end');
     expect(canPublish(broken).ok).toBe(true); // 原 start→…→review→end 主链保留
+  });
+
+  it('canRollback：仅已发布的 v2+ 循环允许执行回滚', () => {
+    const draft = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    expect(canRollback(draft).ok).toBe(false); // 草稿不可回滚
+
+    const publishedV1 = { ...draft, status: 'published' as const, version: 1 };
+    expect(canRollback(publishedV1).ok).toBe(false); // v1 无更早版本
+
+    const publishedV2 = { ...draft, status: 'published' as const, version: 2 };
+    expect(canRollback(publishedV2).ok).toBe(true);
+  });
+
+  it('simulateLoopDryRun：推演主干步骤序列并标出分支警告', () => {
+    const draft = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    const result = simulateLoopDryRun(draft);
+
+    expect(result.reachable).toBe(true);
+    expect(result.steps.length).toBeGreaterThan(2);
+    expect(result.steps[0].nodeId).toBe('start');
+    expect(result.steps[result.steps.length - 1].nodeType).toBe('end');
   });
 });
