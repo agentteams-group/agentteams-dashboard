@@ -102,6 +102,10 @@ export interface WorkflowLoop {
   current_iteration?: number;
   max_iterations?: number;
   status?: string;
+  /** Additive pause gate (#1402/#1431). Non-empty while any source ("user"
+   * or "project") holds the loop paused; the worker-side dispatcher reads
+   * this exact key. Absent on old Controllers. */
+  pause_sources?: string[];
   tasks?: WorkflowLoopTask[];
   history?: unknown[];
 }
@@ -432,6 +436,141 @@ export async function getProjectEvents(
   const qs = params.toString();
   return requestJson<ProjectEventsResponse>(
     `${PROJECTS_URL}/${encodeURIComponent(projectId)}/events${qs ? `?${qs}` : ''}`,
+    options.signal,
+  );
+}
+
+// ----- project signal-event feed (upstream #1433) -----
+
+/**
+ * One signal event (`signalEvent` in signal_events.go). The 11-field
+ * contract has no project_id — the controller attributes the event to the
+ * project by `ref` (project-level) or by the task meta's project_id.
+ */
+export interface ProjectSignalEvent {
+  event_id: string;
+  /** Empty string for project-level events. */
+  task_id: string;
+  loop_id?: string | null;
+  event_type: string;
+  is_signal: boolean;
+  source_event: { origin: string; request_id?: string | null };
+  ref?: string;
+  fingerprint?: string;
+  iteration_index?: number | null;
+  payload?: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface ProjectSignalEventsResponse {
+  project_id: string;
+  /** Page of events, oldest first. */
+  events: ProjectSignalEvent[];
+  count: number;
+  /** Present only when more events remain. */
+  next_cursor?: string;
+}
+
+/**
+ * Page the signal-event read surface for one project.
+ *
+ * - `types` becomes one or more `type` query params (controller accepts
+ *   repeatable and comma-separated values).
+ * - `since` is an RFC3339 lower bound (inclusive).
+ * - `cursor` is opaque (`base64url(occurred_at\0event_id)`) — pass
+ *   `next_cursor` back verbatim.
+ * - `teamId` disambiguates cross-team duplicate project ids (409
+ *   otherwise), same contract as workflow/history/events.
+ *
+ * 404 passes through as ApiError when the Controller predates #1433 — the
+ * panel renders the "active after Controller upgrade" placeholder.
+ */
+export async function getProjectSignalEvents(
+  projectId: string,
+  teamId?: string,
+  options: {
+    types?: string[];
+    taskId?: string;
+    since?: string;
+    limit?: number;
+    cursor?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<ProjectSignalEventsResponse> {
+  const params = new URLSearchParams();
+  if (teamId) params.set('team', teamId);
+  for (const type of options.types ?? []) {
+    if (type) params.append('type', type);
+  }
+  if (options.taskId) params.set('task', options.taskId);
+  if (options.since) params.set('since', options.since);
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  const qs = params.toString();
+  return requestJson<ProjectSignalEventsResponse>(
+    `${PROJECTS_URL}/${encodeURIComponent(projectId)}/signal-events${qs ? `?${qs}` : ''}`,
+    options.signal,
+  );
+}
+
+// ----- project attention aggregate (upstream #1434) -----
+
+export interface ProjectAttentionOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * One in-flight human attention request aggregated from a task meta's
+ * `attention` list (`attentionItem` in attention_read.go). Read-only: the
+ * answer still goes to the task's Matrix room.
+ */
+export interface ProjectAttentionItem {
+  task_id: string;
+  task_title: string;
+  task_status: string;
+  /** Task-level Matrix room binding — where the ping and the answer live. */
+  room_id?: string;
+  kind: string;
+  question: string;
+  attempt: number;
+  requested_at: string;
+  resolved: boolean;
+  event_id?: string;
+  options?: ProjectAttentionOption[];
+  suggested?: string;
+  /** S0 deadline (TeamHarness writes `timeoutAt`; design alias `expiresAt`). */
+  expires_at?: string;
+}
+
+export interface ProjectAttentionResponse {
+  project_id: string;
+  items: ProjectAttentionItem[];
+  count: number;
+}
+
+/**
+ * Fetch the unresolved attention requests across a project's graph tasks.
+ *
+ * - `includeResolved` also returns resolved records (controller `1` flag).
+ * - `limit` clamped 1..500 by the controller (default 200).
+ * - `teamId` disambiguates cross-team duplicate project ids (409 otherwise).
+ *
+ * 404 passes through as ApiError when the Controller predates #1434 — the
+ * panel renders the "active after Controller upgrade" placeholder.
+ */
+export async function getProjectAttention(
+  projectId: string,
+  teamId?: string,
+  options: { includeResolved?: boolean; limit?: number; signal?: AbortSignal } = {},
+): Promise<ProjectAttentionResponse> {
+  const params = new URLSearchParams();
+  if (teamId) params.set('team', teamId);
+  if (options.includeResolved) params.set('include_resolved', '1');
+  if (options.limit) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  return requestJson<ProjectAttentionResponse>(
+    `${PROJECTS_URL}/${encodeURIComponent(projectId)}/attention${qs ? `?${qs}` : ''}`,
     options.signal,
   );
 }
