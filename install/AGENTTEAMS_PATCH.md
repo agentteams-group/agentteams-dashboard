@@ -14,14 +14,21 @@ This document describes how agentteams-dashboard integrates with the AgentTeams 
 
 The external Higress adapter reference implementation lives in this
 repository's `install/agentteams-install.sh` and `install/agentteams-dashboard.sh`
-working copies and is pending an upstream PR. Rebase the changes onto the
-current `agentscope-ai/AgentTeams` `main` when submitting; there is no pinned
-source revision anymore.
+working copies. Adapter env, Console-host allowlist merge, volume
+export/chown, and Controller Console URL forwarding now live upstream.
+Rebase this tree onto current `agentscope-ai/AgentTeams` `main` when the
+weekly drift check fires; there is no pinned source revision.
 
-Working copy status (2026-10-20): rebased onto `agentscope-ai/AgentTeams`
-`main` at `6ede59771fc6`. The remaining installer delta is limited to the
-external adapter variables and Dashboard persistence fixes described here,
-which still need the upstream PR.
+Working copy status (2026-11-04): rebased onto `agentscope-ai/AgentTeams`
+`main` at `c69037acb24c`. `install/agentteams-install.sh` matches upstream
+main (diff 0). Upstream now includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
+`AGENTTEAMS_AI_GATEWAY_URL`, `_dashboard_merge_console_host` on every
+`step_dashboard` return path, Dashboard volume export/chown,
+`AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY`, and
+`_controller_admin_url_env_args`. Standalone
+`install/agentteams-dashboard.sh` now uses the same Console-host merge
+and volume export/chown path as upstream `_start_dashboard`. It remains
+outside the weekly drift check (upstream has no standalone dashboard.sh).
 
 ### Runtime Contract
 
@@ -56,7 +63,7 @@ separately from this wire-contract migration.
 3. In external adapter mode, neither Controller reconciliation nor Worker configuration generation replaces the configured data-plane URL with a Console URL or `aigw-local.agentteams.io`.
 4. A Higress AI Route and model mapping resolving `team-chat` accepts the Manager and Worker request model value.
 
-### Reference Implementation (pending upstream PR)
+### Reference Implementation (installer-side now upstream)
 
 The external Higress adapter persists
 `AGENTTEAMS_HIGRESS_ADAPTER_MODE` and `AGENTTEAMS_AI_GATEWAY_URL`, passes the

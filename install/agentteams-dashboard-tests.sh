@@ -130,7 +130,8 @@ section "Test 3: Explicit AGENTTEAMS_AI_GATEWAY_ADMIN_URL priority"
 # Look for the pattern in _start_dashboard: explicit URL branch comes
 # before auto-detection (wget) branch.
 start_line=$(grep -n '_start_dashboard()' "${INSTALL_SCRIPT}" | head -1 | cut -d: -f1)
-end_line=$((start_line + 200))
+# Function grew after Console-host merge + volume export/chown landed upstream.
+end_line=$((start_line + 450))
 section_text=$(sed -n "${start_line},${end_line}p" "${INSTALL_SCRIPT}")
 
 explicit_line=$(echo "${section_text}" | grep -n '\-n.*AGENTTEAMS_AI_GATEWAY_ADMIN_URL' | head -1 | cut -d: -f1)
@@ -250,7 +251,7 @@ fi
 section "Test 10: Non-interactive mode"
 
 # Verify step_dashboard handles non-interactive mode
-if grep -A 60 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
+if grep -A 120 'step_dashboard()' "${INSTALL_SCRIPT}" | grep -q 'AGENTTEAMS_NON_INTERACTIVE'; then
     pass "step_dashboard handles non-interactive mode"
 else
     fail "step_dashboard missing non-interactive handling"
@@ -314,6 +315,20 @@ if grep -A 2 "case.*_gw_norm\|case.*AGENTTEAMS_AI_GATEWAY_ADMIN_URL" "${INSTALL_
     pass "URL normalization uses correct case/esac pattern"
 else
     fail "URL normalization pattern not verified"
+fi
+
+# Quickstart / non-interactive / keep-all used to skip allowlist union.
+if grep -q '_dashboard_merge_console_host()' "${INSTALL_SCRIPT}"; then
+    pass "_dashboard_merge_console_host helper is defined"
+else
+    fail "_dashboard_merge_console_host helper not found"
+fi
+
+merge_hits=$(grep -c '_dashboard_merge_console_host' "${INSTALL_SCRIPT}" || echo 0)
+if [ "${merge_hits}" -ge 5 ]; then
+    pass "Console-host merge is invoked on multiple paths (${merge_hits} hits)"
+else
+    fail "Console-host merge under-invoked (${merge_hits} hits, expected at least 5)"
 fi
 
 # ---------- Test 13: CLI token polling details ----------
@@ -844,7 +859,25 @@ else
     fi
 fi
 
-# ---------- Test N: Storage credential detection chain (FS -> MINIO -> RUSTFS) ----------
+section "Test S: Standalone dashboard.sh matches upstream start path"
+
+if grep -q '_dashboard_merge_console_host()' "${DASHBOARD_SCRIPT}"; then
+    pass "standalone script defines _dashboard_merge_console_host"
+else
+    fail "standalone script missing _dashboard_merge_console_host"
+fi
+
+if grep -q '_dashboard_export_dir()' "${DASHBOARD_SCRIPT}" && grep -q '_dashboard_image_ids()' "${DASHBOARD_SCRIPT}"; then
+    pass "standalone script exports writable layer and chowns volume"
+else
+    fail "standalone script missing volume export/chown helpers"
+fi
+
+if grep -q 'DATA_VOLUME}:/app/db' "${DASHBOARD_SCRIPT}"; then
+    fail "standalone script still dual-mounts DATA_VOLUME at /app/db"
+else
+    pass "standalone script uses export/import instead of /app/db dual-mount"
+fi
 
 section "Test N: Storage credential detection chain (FS -> MINIO -> RUSTFS)"
 
