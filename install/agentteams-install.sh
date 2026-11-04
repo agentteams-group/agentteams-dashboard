@@ -34,6 +34,8 @@
 #   AGENTTEAMS_VERSION            Image tag            (default: latest)
 #   AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION DeepSeek Harness runtime image tag (default: v0.1.0; independent of AGENTTEAMS_VERSION)
 #   AGENTTEAMS_REGISTRY           Image registry       (default: auto-detected by timezone)
+#   AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY
+#                                      WASM plugins (default: cn-hangzhou primary)
 #   AGENTTEAMS_INSTALL_MANAGER_IMAGE       Override manager image (e.g., local build)
 #   AGENTTEAMS_INSTALL_MANAGER_QWENPAW_IMAGE Override QwenPaw manager image (e.g., local build)
 #   AGENTTEAMS_INSTALL_MANAGER_COPAW_IMAGE  Override legacy CoPaw manager image (e.g., local build)
@@ -135,6 +137,17 @@ _controller_env_prefix() {
         printf '%s%s' 'HIC' 'LAW_'
     else
         printf '%s' 'AGENTTEAMS_'
+    fi
+}
+
+_controller_admin_url_env_args() {
+    # Console (management plane) URL for the Controller's Higress client.
+    # External Gateway mode configures AGENTTEAMS_AI_GATEWAY_ADMIN_URL and the
+    # Controller must provision/login against that Console instead of its
+    # in-container default. Empty output in default direct mode leaves the
+    # Controller default (http://127.0.0.1:8001) untouched.
+    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+        printf '%s' "${1}AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}"
     fi
 }
 
@@ -1539,6 +1552,7 @@ load_current_params_from_env() {
         [ -z "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:+x}" ] && AGENTTEAMS_HIGRESS_ADAPTER_MODE="$(grep '^AGENTTEAMS_HIGRESS_ADAPTER_MODE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_AI_GATEWAY_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_DATA_DIR:+x}" ] && AGENTTEAMS_DATA_DIR="$(grep '^AGENTTEAMS_DATA_DIR=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY:+x}" ] && AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY="$(grep '^AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         return 0
     fi
 }
@@ -2798,10 +2812,41 @@ step_dashboard() {
         AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
     fi
 
+    # Normalize the Console URL and union its host into the SSRF allowlist.
+    # Must run on every return path: quickstart / non-interactive / keep-all
+    # previously exported an empty allowlist before this logic ran.
+    # Union, never replace: operator-supplied hosts are kept.
+    _dashboard_merge_console_host() {
+        if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
+            return 0
+        fi
+        case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
+            http://*|https://*) ;;
+            *) AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ;;
+        esac
+        local _gw_host
+        _gw_host="$(printf '%s' "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | sed -E 's#^https?://##; s#/.*$##; s#:\[([0-9a-fA-F:]+)\]$#:\1#; s#:[0-9]+$##')"
+        if [ -z "${_gw_host}" ]; then
+            return 0
+        fi
+        case ",${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS}," in
+            *,${_gw_host},*) ;;
+            *)
+                if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS}" ]; then
+                    AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS},${_gw_host}"
+                else
+                    AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${_gw_host}"
+                fi
+                log "  Console host '${_gw_host}' added to AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS (required by the Dashboard login allowlist)"
+                ;;
+        esac
+    }
+
     # Quick Start: accept all defaults without prompting. The dashboard is
     # installed by default (AGENTTEAMS_DASHBOARD=1); set AGENTTEAMS_DASHBOARD=0
     # to opt out.
     if [ "${AGENTTEAMS_QUICKSTART:-0}" = "1" ]; then
+        _dashboard_merge_console_host
         if [ "${AGENTTEAMS_DASHBOARD}" = "1" ]; then
             log "$(msg dash.summary "${AGENTTEAMS_PORT_DASHBOARD}" "${AGENTTEAMS_DASHBOARD_IMAGE}") (quick start)"
         else
@@ -2812,6 +2857,7 @@ step_dashboard() {
     fi
 
     if [ "${AGENTTEAMS_NON_INTERACTIVE}" = "1" ]; then
+        _dashboard_merge_console_host
         AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
         if [ "${AGENTTEAMS_DASHBOARD}" = "1" ]; then
             log "$(msg dash.summary "${AGENTTEAMS_PORT_DASHBOARD}" "${AGENTTEAMS_DASHBOARD_IMAGE}") (non-interactive)"
@@ -2823,6 +2869,7 @@ step_dashboard() {
     fi
 
     if [ "${AGENTTEAMS_UPGRADE}" = "1" ] && [ "${AGENTTEAMS_UPGRADE_KEEP_ALL}" = "1" ]; then
+        _dashboard_merge_console_host
         log "$(msg prompt.upgrade_keep "" "${AGENTTEAMS_DASHBOARD}") dashboard=${AGENTTEAMS_DASHBOARD} version=${AGENTTEAMS_DASHBOARD_VERSION} port=${AGENTTEAMS_PORT_DASHBOARD}"
         export AGENTTEAMS_DASHBOARD AGENTTEAMS_DASHBOARD_VERSION AGENTTEAMS_PORT_DASHBOARD AGENTTEAMS_DASHBOARD_IMAGE AGENTTEAMS_HIGRESS_ADAPTER_MODE AGENTTEAMS_AI_GATEWAY_URL AGENTTEAMS_AI_GATEWAY_ADMIN_URL AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS
         return 0
@@ -2885,37 +2932,8 @@ step_dashboard() {
     read -p "$(msg dash.gateway_prompt) [${_higress_url:-<auto>}]: " _input
     AGENTTEAMS_AI_GATEWAY_ADMIN_URL="${_input:-${_higress_url}}"
 
-    # Normalize URL: add http:// prefix if missing
-    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
-        case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
-            http://*|https://*) ;;
-            *) AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ;;
-        esac
-    fi
-
-    # Merge the Console host into the admin allowlist. The Dashboard validates
-    # the Console host against AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS
-    # (SSRF guard); a custom host typed above (container name / IP / Service
-    # name) would otherwise be rejected at login time ("Console host ... is
-    # not allowed") because the built-in allowlist only covers embedded
-    # deployments. Union, never replace: operator-provided entries are kept.
-    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
-        local _gw_host
-        _gw_host="$(printf '%s' "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | sed -E 's#^https?://##; s#/.*$##; s#:\[([0-9a-fA-F:]+)\]$#:\1#; s#:[0-9]+$##')"
-        if [ -n "${_gw_host}" ]; then
-            case ",${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS}," in
-                *,${_gw_host},*) ;;
-                *)
-                    if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS}" ]; then
-                        AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS},${_gw_host}"
-                    else
-                        AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${_gw_host}"
-                    fi
-                    log "  Console host '${_gw_host}' added to AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS (required by the Dashboard login allowlist)"
-                    ;;
-            esac
-        fi
-    fi
+    # Same host derivation as the early-return paths above.
+    _dashboard_merge_console_host
 
     # Verify the Higress Console URL is reachable (best-effort warning only)
     if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ]; then
@@ -3409,15 +3427,48 @@ _start_dashboard() {
     # dashboard, so the process can probe internal addresses on first boot.
     AGENTTEAMS_DEPLOYMENT_MODE="${AGENTTEAMS_DEPLOYMENT_MODE:-embedded}"
 
+    # Standalone dashboard starts (e.g. the `dashboard` subcommand) bypass
+    # step_dashboard, so apply the same Console URL normalization and
+    # allowlist union here before env_args is built. Union, never replace:
+    # operator-supplied hosts are kept.
+    _dashboard_merge_console_host() {
+        if [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" ]; then
+            return 0
+        fi
+        case "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" in
+            http://*|https://*) ;;
+            *) AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" ;;
+        esac
+        local _gw_host
+        _gw_host="$(printf '%s' "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL}" | sed -E 's#^https?://##; s#/.*$##; s#:\[([0-9a-fA-F:]+)\]$#:\1#; s#:[0-9]+$##')"
+        if [ -z "${_gw_host}" ]; then
+            return 0
+        fi
+        case ",${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}," in
+            *,${_gw_host},*) ;;
+            *)
+                if [ -n "${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}" ]; then
+                    AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS},${_gw_host}"
+                else
+                    AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="${_gw_host}"
+                fi
+                log "  Console host '${_gw_host}' added to AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS (required by the Dashboard login allowlist)"
+                ;;
+        esac
+    }
+    _dashboard_merge_console_host
+
     log ""
     log "Starting agentteams-dashboard..."
 
     local BIND_ADDR="127.0.0.1"
     [ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "0" ] && BIND_ADDR="0.0.0.0"
 
-    # Remove existing container
+    # Remember whether an old container exists so we can export its writable
+    # /data/agentteams-dashboard layer before removal. Do not rm yet.
+    local _old_dashboard_present=0
     if ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -qx "${DASHBOARD_CONTAINER}"; then
-        ${DOCKER_CMD} rm -f "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
+        _old_dashboard_present=1
     fi
 
     # Pull or use local image
@@ -3589,18 +3640,172 @@ _start_dashboard() {
     # /data/agentteams-dashboard — must match configFilePath() in
     # src/lib/backend-config.ts.
     ${DOCKER_CMD} volume create agentteams-dashboard-data >/dev/null 2>&1 || true
-
-    # Migration: legacy installs wrote into /app/db inside the same volume.
-    # Detect /app/db contents (any file under it) and bind that mount once so
-    # existing files survive this cycle. Next upgrade drops the legacy bind.
     local _vol_args=()
     _vol_args+=(-v "agentteams-dashboard-data:/data/agentteams-dashboard")
-    if ${DOCKER_CMD} volume inspect agentteams-dashboard-data >/dev/null 2>&1; then
-        local _legacy_entries
-        _legacy_entries=$(${DOCKER_CMD} run --rm -v agentteams-dashboard-data:/probe alpine:latest sh -c 'ls -1A /probe/app 2>/dev/null' 2>/dev/null || true)
-        if [ -n "${_legacy_entries}" ]; then
-            log "WARNING: dashboard data volume has files under /app/db (legacy path); mounting it once so this upgrade does not lose them. Next upgrade will drop the legacy bind."
-            _vol_args+=(-v "agentteams-dashboard-data:/app/db")
+    local DASHBOARD_VOLUME="agentteams-dashboard-data"
+
+    # Dashboard image runs as uid 1001 (Dockerfile USER nextjs). A brand-new
+    # volume is root-owned, so the process cannot write config/session/setup
+    # state unless we chown. Resolve uid:gid from the image, falling back to
+    # the known Dockerfile ids.
+    _dashboard_image_ids() {
+        local _user
+        _user=$(${DOCKER_CMD} image inspect "${AGENTTEAMS_DASHBOARD_IMAGE}" --format '{{.Config.User}}' 2>/dev/null || true)
+        _user=$(printf '%s' "${_user}" | tr -d '\r')
+        case "${_user}" in
+            ""|nextjs|nextjs:nodejs) echo "1001:1001"; return 0 ;;
+            [0-9]*:[0-9]*) echo "${_user}"; return 0 ;;
+            [0-9]*) echo "${_user}:${_user}"; return 0 ;;
+        esac
+        local _uid _gid
+        _uid=$(${DOCKER_CMD} run --rm --entrypoint id "${AGENTTEAMS_DASHBOARD_IMAGE}" -u 2>/dev/null || true)
+        _gid=$(${DOCKER_CMD} run --rm --entrypoint id "${AGENTTEAMS_DASHBOARD_IMAGE}" -g 2>/dev/null || true)
+        _uid=$(printf '%s' "${_uid}" | tr -d '[:space:]')
+        _gid=$(printf '%s' "${_gid}" | tr -d '[:space:]')
+        if [ -n "${_uid}" ] && [ -n "${_gid}" ]; then
+            echo "${_uid}:${_gid}"
+            return 0
+        fi
+        echo "1001:1001"
+    }
+
+    # Copy src_dir from a (possibly stopped) container onto the host.
+    # Sets the 4th flag file only after every required copy succeeded, so the
+    # caller never mistakes a partial export for a complete one. Returns 0 when
+    # the files are staged, 1 when the export definitely failed.
+    _dashboard_export_dir() {
+        local _container="$1" _src="$2" _dest="$3" _exists_flag="$4"
+        rm -f "${_exists_flag}" 2>/dev/null || true
+        mkdir -p "${_dest}" || return 1
+        if ${DOCKER_CMD} cp "${_container}:${_src}/." "${_dest}/" >/dev/null 2>&1; then
+            : > "${_exists_flag}"
+            return 0
+        fi
+        local _parent
+        _parent=$(mktemp -d "${TMPDIR:-/tmp}/agentteams-dashboard-cp.XXXXXX") || return 1
+        local _rc=1
+        if ${DOCKER_CMD} cp "${_container}:${_src}" "${_parent}/" >/dev/null 2>&1; then
+            local _copied
+            _copied=$(ls -A "${_parent}" 2>/dev/null | head -1)
+            if [ -n "${_copied}" ] && [ -d "${_parent}/${_copied}" ]; then
+                if cp -a "${_parent}/${_copied}/." "${_dest}/" 2>/dev/null; then
+                    : > "${_exists_flag}"
+                    _rc=0
+                fi
+            fi
+        fi
+        rm -rf "${_parent}" 2>/dev/null || true
+        return "${_rc}"
+    }
+
+    local _dash_ids
+    _dash_ids=$(_dashboard_image_ids)
+
+    # Presence state of a path inside the stopped container.
+    # Exit 0 = confirmed present (diff or mount list shows it),
+    # exit 1 = confirmed absent (both queries answered and neither shows it),
+    # exit 2 = unknown (a query failed, so absence cannot be trusted).
+    # A mount covering the queried path (equal to it or a parent directory,
+    # e.g. /data covering /data/agentteams-dashboard) counts as present:
+    # writes inside such a volume never show up in the writable-layer diff.
+    _dashboard_path_present() {
+        local _container="$1" _src="$2"
+        local _diff_ok=0 _mount_ok=0
+        local _diff_out _mount_out
+        if _diff_out=$(${DOCKER_CMD} diff "${_container}" 2>/dev/null); then
+            _diff_ok=1
+            if printf '%s\n' "${_diff_out}" | grep -F "${_src}" >/dev/null; then
+                return 0
+            fi
+        fi
+        if _mount_out=$(${DOCKER_CMD} inspect "${_container}" --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' 2>/dev/null); then
+            _mount_ok=1
+            local _dest
+            while IFS= read -r _dest; do
+                [ -z "${_dest}" ] && continue
+                case "${_src}/" in
+                    "${_dest}/"*) return 0 ;;
+                esac
+            done < <(printf '%s\n' "${_mount_out}")
+        fi
+        if [ "${_diff_ok}" = "1" ] && [ "${_mount_ok}" = "1" ]; then
+            return 1
+        fi
+        return 2
+    }
+
+    # Export overlay config from the old container before removing it.
+    # Checking a volume at /probe/app or dual-mounting the same volume is not
+    # an export of the container writable layer.
+    local _export_dir=""
+    if [ "${_old_dashboard_present}" = "1" ]; then
+        ${DOCKER_CMD} stop "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
+        _export_dir=$(mktemp -d "${TMPDIR:-/tmp}/agentteams-dashboard-export.XXXXXX")
+        local _overlay_dir="${_export_dir}/overlay"
+        local _legacy_dir="${_export_dir}/legacy"
+        local _overlay_exists="${_export_dir}/overlay.exists"
+        local _legacy_exists="${_export_dir}/legacy.exists"
+        # Failures are reported through the exists flag plus
+        # _dashboard_path_present below; keep set -e from aborting here so the
+        # old container can be restarted and left in place.
+        _dashboard_export_dir "${DASHBOARD_CONTAINER}" "/data/agentteams-dashboard" "${_overlay_dir}" "${_overlay_exists}" || true
+        _dashboard_export_dir "${DASHBOARD_CONTAINER}" "/app/db" "${_legacy_dir}" "${_legacy_exists}" || true
+
+        local _keep_old=0
+        local _keep_where=""
+        # Only skip the old container when its state is confirmed absent.
+        # Present or unqueryable (diff/inspect failed) both keep it, because an
+        # unverified export must never lead to data loss.
+        if [ ! -f "${_overlay_exists}" ]; then
+            local _overlay_state=0
+            _dashboard_path_present "${DASHBOARD_CONTAINER}" "/data/agentteams-dashboard" || _overlay_state=$?
+            if [ "${_overlay_state}" != "1" ]; then
+                _keep_old=1
+                _keep_where="/data/agentteams-dashboard"
+            fi
+        fi
+        if [ "${_keep_old}" = "0" ] && [ ! -f "${_legacy_exists}" ]; then
+            local _legacy_state=0
+            _dashboard_path_present "${DASHBOARD_CONTAINER}" "/app/db" || _legacy_state=$?
+            if [ "${_legacy_state}" != "1" ]; then
+                _keep_old=1
+                _keep_where="/app/db"
+            fi
+        fi
+        if [ "${_keep_old}" = "1" ]; then
+            log "WARNING: existing Dashboard config under ${_keep_where} could not be exported; leaving the old container in place"
+            ${DOCKER_CMD} start "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
+            rm -rf "${_export_dir}" 2>/dev/null || true
+            return 0
+        fi
+
+        local _import_vols=()
+        _import_vols+=(-v "${DASHBOARD_VOLUME}:/dest")
+        if [ -f "${_overlay_exists}" ] && [ -n "$(ls -A "${_overlay_dir}" 2>/dev/null)" ]; then
+            _import_vols+=(-v "${_overlay_dir}:/overlay:ro")
+        fi
+        if [ -f "${_legacy_exists}" ] && [ -n "$(ls -A "${_legacy_dir}" 2>/dev/null)" ]; then
+            _import_vols+=(-v "${_legacy_dir}:/legacy:ro")
+        fi
+        # Legacy first, overlay second so writable-layer files win on conflicts.
+        # sh -c returns the last command's status, so a failed cp followed by a
+        # successful chown would look like a successful import. Fail each copy
+        # explicitly; do not rely on && chaining into a later chown.
+        local _import_script="mkdir -p /dest || exit 1; if [ -d /legacy ]; then cp -a /legacy/. /dest/ || exit 1; fi; if [ -d /overlay ]; then cp -a /overlay/. /dest/ || exit 1; fi; chown -R ${_dash_ids} /dest || exit 1"
+
+        if ! ${DOCKER_CMD} run --rm "${_import_vols[@]}" alpine:latest sh -c "${_import_script}" >/dev/null 2>&1; then
+            log "WARNING: failed to import exported Dashboard configuration into ${DASHBOARD_VOLUME}; leaving the old container in place"
+            ${DOCKER_CMD} start "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
+            rm -rf "${_export_dir}" 2>/dev/null || true
+            return 0
+        fi
+
+        ${DOCKER_CMD} rm -f "${DASHBOARD_CONTAINER}" >/dev/null 2>&1 || true
+        rm -rf "${_export_dir}" 2>/dev/null || true
+    else
+        # Brand-new volume: ensure the Dashboard image UID can write state.
+        if ! ${DOCKER_CMD} run --rm -v "${DASHBOARD_VOLUME}:/dest" alpine:latest sh -c "mkdir -p /dest && chown -R ${_dash_ids} /dest" >/dev/null 2>&1; then
+            log "WARNING: could not chown ${DASHBOARD_VOLUME} to ${_dash_ids}; Dashboard may be unable to write config/session/setup state"
         fi
     fi
 
@@ -3825,6 +4030,7 @@ install_manager() {
     fi
 
     # Write .env file
+    AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY="${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY:-higress-registry.cn-hangzhou.cr.aliyuncs.com}"
     ENV_FILE="${AGENTTEAMS_ENV_FILE:-${HOME}/agentteams-manager.env}"
     cat > "${ENV_FILE}" << EOF
 # AgentTeams Manager Configuration
@@ -3936,8 +4142,9 @@ AGENTTEAMS_PODMAN_AUTOSTART=${AGENTTEAMS_PODMAN_AUTOSTART:-0}
 # JVM Args for Higress Console (fixes SIGILL on Apple Silicon)
 JVM_ARGS=${JVM_ARGS:-}
 
-# Higress WASM plugin image registry (auto-selected by timezone)
-HIGRESS_ADMIN_WASM_PLUGIN_IMAGE_REGISTRY=${AGENTTEAMS_REGISTRY}
+# Higress WASM plugins are independent of the regional AgentTeams images.
+AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY=${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY}
+HIGRESS_ADMIN_WASM_PLUGIN_IMAGE_REGISTRY=${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY}
 
 # Data persistence
 AGENTTEAMS_DATA_DIR=${AGENTTEAMS_DATA_DIR:-agentteams-data}
@@ -4320,6 +4527,7 @@ CREDEOF
             -e "${_ctrl_env_prefix}MATRIX_URL=http://127.0.0.1:6167"
             -e "${_ctrl_env_prefix}MATRIX_E2EE=${AGENTTEAMS_MATRIX_E2EE:-0}"
             -e "${_ctrl_env_prefix}HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}"
+            -e "HIGRESS_ADMIN_WASM_PLUGIN_IMAGE_REGISTRY=${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY}"
             -e "${_ctrl_env_prefix}MINIO_ENDPOINT=http://127.0.0.1:9000"
             -e "${_ctrl_env_prefix}MINIO_BUCKET=agentteams-storage"
             -e "${_ctrl_env_prefix}STORAGE_PREFIX=${_storage_prefix}"
@@ -4332,6 +4540,14 @@ CREDEOF
             -e "${_ctrl_env_prefix}MANAGER_ENABLED=true"
             -e "${_ctrl_env_prefix}PORT_MANAGER_CONSOLE=${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}"
         )
+        # Forward the configured Console URL to the Controller (management
+        # plane); see _controller_admin_url_env_args. Default direct mode
+        # keeps the Controller's internal Console default.
+        local _admin_url_env
+        _admin_url_env="$(_controller_admin_url_env_args "${_ctrl_env_prefix}")"
+        if [ -n "${_admin_url_env}" ]; then
+            _ctrl_env_args+=(-e "${_admin_url_env}")
+        fi
         if _use_legacy_image_env "${AGENTTEAMS_VERSION}"; then
             _ctrl_env_args+=(
                 -e "${_ctrl_env_prefix}FS_BUCKET=agentteams-storage"
