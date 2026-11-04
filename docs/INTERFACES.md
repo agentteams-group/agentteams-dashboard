@@ -173,6 +173,14 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 | 请求模型别名 | Manager/Worker 的 `model` 字段语义 = 请求模型别名（经 AI 网关路由），非 Higress Provider 名；存量非空值原样重提交 | `install/AGENTTEAMS_PATCH.md`「Request Model Alias Migration」 | `external-model-binding-guard` 路由守卫 |
 | 安装器 dashboard 集成 | 本仓 `install/agentteams-install.sh` 为上游 `install/agentteams-install.sh` 的工作副本（PR #1075 已并入上游，后续 #1081/#1118/#1162/#1195） | `agentscope-ai/AgentTeams` main | weekly drift cron + `install/AGENTTEAMS_PATCH.md` |
 
+### 项目 attention / signal-events / pause_sources（2026-11-01 后上游合入）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 项目待决策聚合（只读） | `GET /api/agentteams/projects/{id}/attention` 透传 `include_resolved`（`1`=含已处理）、`limit`（1..500，默认 200）、`team`；响应 `{project_id, items[], count}`，项为任务 meta `attention` 列表投影（`task_id/task_title/task_status/room_id/kind/question/attempt/requested_at/resolved/event_id/options/suggested/expires_at`）。写端（回答问题）仍走任务 Matrix 房间 | `GET /api/v1/projects/{id}/attention`，上游 #1434（`internal/server/attention_read.go`）；读端只读，无写路径 | `src/app/api/agentteams/projects/[id]/attention/route.ts` + `project-attention-panel.tsx` |
+| 协议信号流（只读） | `GET /api/agentteams/projects/{id}/signal-events` 透传 `type`（可重复/逗号分隔）、`task`（别名 `taskId`）、`since`（RFC3339）、`limit`（1..200，默认 50）、`cursor`、`team`；响应 `{project_id, events[], count, next_cursor?}`，事件 11 字段无 `project_id`，由服务端按 `ref` / 任务 meta 归属项目 | `GET /api/v1/projects/{id}/signal-events`，上游 #1433（`internal/server/signal_events_read.go`）；cursor = base64url(`<occurred_at>\0<event_id>`)，无权限返回 404 | `src/app/api/agentteams/projects/[id]/signal-events/route.ts` + `project-signal-events-panel.tsx` |
+| Loop 暂停来源 | workflow 响应 `loop.pause_sources: string[]`（`user` / `project`）；非空即执行派发仍暂停，恢复只清一个来源（其余保留） | 上游 #1402/#1431（`project_handler.go` loopMeta；`loop_handler.go` 写端；Loop CRD 不再被 patch） | `WorkflowLoop.pause_sources` + `workflow-detail.tsx` Loop 卡片 |
+
 ### Coding CLI（Dashboard 消费上游 #1360）
 
 | 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |

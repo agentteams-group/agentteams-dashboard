@@ -24,6 +24,9 @@ import { ApiError } from '@/lib/api-error';
 import type { WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 import { ProjectTimelinePanel } from '../project-timeline-panel';
 import { ProjectEventsPanel } from '../project-events-panel';
+import { ProjectAttentionPanel } from '../project-attention-panel';
+import { ProjectSignalEventsPanel } from '../project-signal-events-panel';
+import { useNowTick } from '@/hooks/use-now-tick';
 import {
   NODE_STATUS_COLOR,
   NODE_STATUS_LABEL,
@@ -61,6 +64,9 @@ export function WorkflowDetail({
   const [replanText, setReplanText] = useState('');
 
   const mutationTeamId = teamId ?? wf?.team_id;
+  // Shared ticking clock for the attention panel's overdue highlight; the
+  // server-resolved expires_at is authoritative, this only re-renders it.
+  const now = useNowTick(30_000);
 
   const handlePause = () => {
     pauseMutation.mutate(
@@ -344,6 +350,16 @@ export function WorkflowDetail({
             Loop 进度
             {wf.loop.status && <span className="ml-2 font-normal opacity-75">{wf.loop.status}</span>}
           </p>
+          {wf.loop.pause_sources && wf.loop.pause_sources.length > 0 && (
+            // Additive pause gate (#1402/#1431): dispatch stays paused while
+            // any source remains. Resuming one source leaves the others.
+            <p className="text-amber-700 dark:text-amber-400">
+              暂停来源：
+              {wf.loop.pause_sources
+                .map((source) => (source === 'user' ? '人工' : source === 'project' ? '项目' : source))
+                .join('、')}
+            </p>
+          )}
           {typeof wf.loop.current_iteration === 'number' &&
             typeof wf.loop.max_iterations === 'number' && (
               <div className="flex items-center gap-2">
@@ -436,11 +452,17 @@ export function WorkflowDetail({
         </div>
       )}
 
+      {/* Attention aggregate (controller /attention, upstream #1434) */}
+      <ProjectAttentionPanel projectId={wf.project_id} teamId={mutationTeamId} now={now} />
+
       {/* Intervention timeline (controller history endpoint) */}
       <ProjectTimelinePanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Task-transition event stream (controller /events, upstream #1233) */}
       <ProjectEventsPanel projectId={wf.project_id} teamId={mutationTeamId} />
+
+      {/* Protocol signal feed (controller /signal-events, upstream #1433) */}
+      <ProjectSignalEventsPanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Nodes */}
       <div>
