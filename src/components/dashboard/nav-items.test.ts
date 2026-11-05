@@ -31,6 +31,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       'models',
       'knowledge',
       'audit',
+      'tracing',
       'overview',
     ]);
     expect(ids).toContain('tasks'); // 13 项零删减基线
@@ -77,6 +78,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(byId.get('models')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('knowledge')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('audit')).toMatchObject({ area: 'console', group: 'governance' });
+    expect(byId.get('tracing')).toMatchObject({ area: 'console', group: 'governance', minLevel: 3 });
     expect(byId.get('overview')).toMatchObject({ area: 'console', group: 'system' });
   });
 
@@ -102,6 +104,7 @@ describe('UI level gate (M19 dual track)', () => {
       .map((item) => item.id);
     expect(ids).not.toContain('managers');
     expect(ids).not.toContain('humans');
+    expect(ids).not.toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
     expect(ids).toContain('workers');
     expect(ids).toContain('teams');
