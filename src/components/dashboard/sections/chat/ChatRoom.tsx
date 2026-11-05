@@ -100,6 +100,7 @@ export function resetRoomSearchDeepLinkForTests(): void {
 }
 
 interface ChatRoomProps {
+  agentRole?: RoomInfo['agentRole'];
   roomId: string;
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
@@ -127,6 +128,7 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({
+  agentRole,
   roomId,
   roomName,
   team,
@@ -714,6 +716,7 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          agentRole={agentRole}
           roomName={roomName}
           team={team}
           topic={topic}
@@ -864,7 +867,7 @@ export function ChatRoom({
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
-            placeholder={replyTo ? `回复 ${replyTo.senderShort}... (Enter 发送)` : `发送消息到 ${roomName}... (Enter 发送, Shift+Enter 换行)`}
+            placeholder={replyTo ? `回复 ${replyTo.senderShort}…` : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
             disabled={!canSend || !isLoggedIn}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
             fileRefTarget={fileRefTarget}

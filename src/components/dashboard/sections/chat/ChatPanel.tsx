@@ -1,6 +1,7 @@
 import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
+import styles from './agent-conversation.module.css';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -25,11 +26,12 @@ export function ChatPanel({
   className = '',
 }: ChatPanelProps) {
   return (
-    <div className={`flex h-full min-w-0 ${className}`}>
+    <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
           roomId={room.id}
-          roomName={room.name}
+          roomName={room.agentRole === 'operations' ? '平台助手' : room.name}
+          agentRole={room.agentRole}
           team={room.team}
           defaultWorkerName={room.workerName}
           workerMatrixUserIds={room.workerMatrixUserIds}

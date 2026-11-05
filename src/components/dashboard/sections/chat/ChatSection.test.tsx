@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError } from '@/lib/api-error';
@@ -12,6 +13,7 @@ const hooksMock = vi.hoisted(() => ({
   useManagers: vi.fn(),
   useHumans: vi.fn(),
 }));
+const sessionMock = vi.hoisted(() => ({ userLevel: 3 }));
 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: hooksMock.useWorkers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams }));
@@ -20,7 +22,7 @@ vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({
-  useAgentTeamsStore: () => ({ isConnected: true }),
+  useAgentTeamsStore: () => ({ isConnected: true, userLevel: sessionMock.userLevel }),
 }));
 
 vi.mock('@/lib/matrix-store', () => ({
@@ -156,6 +158,38 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
   });
 });
 
+describe('role-based assistant landing', () => {
+  beforeEach(() => {
+    loaded();
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    useRoomMetaStore.setState({ meta: {}, activeRoomId: null });
+  });
+  afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
+
+  it('opens the platform assistant for an admin', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test', matrixUserID: '@manager:test' }], isLoading: false });
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+    expect(useRoomMetaStore.getState().activeRoomId).toBe('!ops:test');
+  });
+
+  it('opens the accessible leader DM for a team user without loading global managers', () => {
+    sessionMock.userLevel = 2;
+    hooksMock.useManagers.mockReturnValue({ data: undefined, isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', teamName: '设计团队', leaderName: 'leader', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
+    expect(useRoomMetaStore.getState().activeRoomId).toBe('!leader:test');
+  });
+
+  it('keeps an explicit worker deep link instead of replacing it with the default assistant', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    useHitlInboxStore.getState().setPendingChatRoomId(WORKER.roomID);
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
+  });
+});
+
 describe('ChatSection mobile room drawer', () => {
   beforeEach(() => {
     loaded();
@@ -198,6 +232,8 @@ describe('ChatSection merged section chrome', () => {
     expect(screen.queryByText('Agent Chat')).toBeNull();
     expect(screen.queryByText('实时通信与人机协同')).toBeNull();
 
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
     const sidebar = screen.getByTestId('sidebar-stub');
     expect(within(sidebar).getByText('SyncChip')).toBeTruthy();
     expect(within(sidebar).getByText('MatrixAuth')).toBeTruthy();
@@ -229,6 +265,7 @@ describe('ChatSection projection failure notices', () => {
     expect(screen.getByText(/Managers 投影失败（403）/)).toBeTruthy();
     // The chat section must stay mounted (sidebar + empty state), not be
     // replaced by a full-page ApiErrorState.
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
     expect(screen.getAllByTestId('sidebar-stub').length).toBe(1);
     expect(screen.getByTestId('empty-stub')).toBeTruthy();
   });

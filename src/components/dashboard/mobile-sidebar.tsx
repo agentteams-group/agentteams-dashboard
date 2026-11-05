@@ -9,8 +9,11 @@ import type { DeploymentMode } from './nav-items';
 import { useNavSections } from './use-nav-sections';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
+import { WorkspaceAgentLinks } from './workspace-agent-links';
+import type { RoomInfo } from './sections/chat/room-info';
 
 interface MobileSidebarProps {
+  agentRooms?: RoomInfo[];
   open: boolean;
   activeSection: string;
   countMap: Record<string, number>;
@@ -37,6 +40,7 @@ function AreaHeader({ label }: { label: string }) {
 }
 
 export function MobileSidebar({
+  agentRooms,
   open,
   activeSection,
   countMap,
@@ -87,6 +91,7 @@ export function MobileSidebar({
 
             {/* Scrollable nav */}
             <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">
+              <WorkspaceAgentLinks rooms={agentRooms} activeSection={activeSection} onNavigate={onNavClick} />
               {areaSections.map((area) => (
                 <div key={area.key}>
                   {area.label && <AreaHeader label={area.label} />}

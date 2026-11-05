@@ -110,7 +110,7 @@ export function DashboardHeader({
     });
   };
 
-  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? 'L2' : '观察者';
+  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? '团队成员' : '观察者';
 
   const visibleActions = useMemo(
     () => actions.filter((action) => isCreateActionVisible(action, mode, undefined, userLevel)),
@@ -159,7 +159,7 @@ export function DashboardHeader({
   }, [searchInputRef]);
 
   return (
-    <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center gap-3 px-4 sticky top-0 z-30">
+    <header className="h-16 shrink-0 border-b border-border/40 bg-background flex items-center gap-1 px-3 sm:gap-3 sm:px-6 sticky top-0 z-30">
       <Button
         variant="ghost"
         size="icon"
@@ -170,11 +170,12 @@ export function DashboardHeader({
         <Menu className="w-5 h-5" aria-hidden="true" />
       </Button>
 
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+      <div className={`${paletteOpen ? 'absolute inset-x-3 top-3 z-40 sm:relative sm:inset-auto' : 'relative'} min-w-0 flex-1 max-w-md`}>
+        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${paletteOpen ? 'block' : 'hidden sm:block'} w-4 h-4 text-muted-foreground z-10`} />
         <Input
           ref={searchInputRef}
-          placeholder="搜索页面、房间、Workers、团队... (K)"
+          placeholder="搜索 Agent、任务和工具…"
+          aria-label="搜索工作区"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
           onFocus={() => setPaletteOpen(true)}
@@ -182,7 +183,7 @@ export function DashboardHeader({
             // Delay closing so click events on results can fire
             setTimeout(() => setPaletteOpen(false), 200);
           }}
-          className="pl-9 h-9 bg-background/50"
+          className={`${paletteOpen ? '' : 'sr-only sm:not-sr-only'} pl-9 h-9 border-transparent bg-muted/45 shadow-none focus-visible:bg-background`}
         />
         {paletteOpen && searchResults.length > 0 && (
           <CommandPalette
@@ -244,9 +245,9 @@ export function DashboardHeader({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs">
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" aria-label="创建">
             <Zap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">快速操作</span>
+            <span className="hidden sm:inline">创建</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
@@ -268,7 +269,7 @@ export function DashboardHeader({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -277,6 +278,7 @@ export function DashboardHeader({
               className="h-9 w-9"
               onClick={onRefreshAll}
               disabled={isRefreshingAll}
+              aria-label="刷新所有数据"
             >
               <RefreshCw className={`h-4 w-4 ${isRefreshingAll ? 'animate-spin' : ''}`} />
             </Button>
@@ -292,7 +294,7 @@ export function DashboardHeader({
         <Tooltip>
           <TooltipTrigger asChild>
             <Badge
-              className={`gap-1.5 text-xs cursor-default ${
+              className={`hidden sm:inline-flex gap-1.5 text-xs cursor-default ${
                 isConnected
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                   : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
@@ -307,7 +309,7 @@ export function DashboardHeader({
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
-            {isConnected ? 'Controller 已连接' : 'Controller 未连接'}
+            {isConnected ? '平台服务已连接' : '平台服务未连接'}
             {versionString && <div className="text-xs opacity-80">版本 v{versionString}</div>}
           </TooltipContent>
         </Tooltip>
@@ -317,18 +319,12 @@ export function DashboardHeader({
         {sessionUser && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-xs">
+              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-xs" aria-label={sessionUser}>
                 <UserCircle className="h-4 w-4" />
-                <span className="max-w-[120px] truncate">{sessionUser}</span>
+                <span className="hidden sm:inline max-w-[120px] truncate">{sessionUser}</span>
                 <Badge
                   variant="secondary"
-                  className={`text-xs ${
-                    userLevel === 3
-                      ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-                      : userLevel === 2
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                        : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
-                  }`}
+                  className="hidden text-xs bg-primary/10 text-primary xl:inline-flex"
                 >
                   {levelLabel}
                 </Badge>

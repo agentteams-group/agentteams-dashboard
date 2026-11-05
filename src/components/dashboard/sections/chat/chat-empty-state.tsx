@@ -25,15 +25,16 @@ export function ChatEmptyState({
         </div>
 
         <p className="text-xs uppercase tracking-[0.2em] text-primary/80 mb-2">Agent Workspace</p>
-        <h3 className="font-semibold text-xl mb-2">选择一个会话开始协作</h3>
+        <h3 className="font-semibold text-xl mb-2">和你的 Agent，一起推进工作</h3>
         <p className="text-sm text-muted-foreground">
-          从左侧房间列表中选择一个 Matrix 房间，即可查看消息记录和发送消息。
-          {isLoggedIn ? '' : ' 请先登录 Matrix 账号以发送消息。'}
+          在左侧选择平台助手或团队助手，直接描述你的目标。
+          也可以通过上方「切换对话」查看全部协作记录。
+          {isLoggedIn ? '' : ' 连接账号后即可继续对话。'}
         </p>
         {!isLoggedIn && (
           <Button variant="outline" className="mt-4" onClick={onLoginClick}>
             <LogIn className="w-4 h-4 mr-2" aria-hidden="true" />
-            登录 Matrix
+            连接对话
           </Button>
         )}
         {isLoggedIn && (

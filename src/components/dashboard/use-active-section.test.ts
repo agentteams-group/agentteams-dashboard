@@ -75,11 +75,11 @@ describe('useActiveSection', () => {
       expect(result.current.activeSection).toBe('chat');
     });
 
-    it('falls back to localStorage when hash is empty', () => {
+    it('opens the assistant at the product root even after visiting a tool page', () => {
       setHash('');
       localStorage.setItem(STORAGE_KEY, 'teams');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('teams');
+      expect(result.current.activeSection).toBe('chat');
     });
 
     it('falls back to chat when hash is invalid', () => {

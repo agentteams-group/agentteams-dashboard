@@ -374,7 +374,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
+    <div data-chat-composer className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
       <div className={`mx-auto w-full ${CHAT_COLUMN_CLASS}`}>
       {/* Edit session bar (element-web style) */}
       {editSession && (
@@ -494,7 +494,7 @@ export function ChatComposer({
 
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
-      <div className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
+      <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
         <input
           ref={fileInputRef}
           type="file"
@@ -516,6 +516,7 @@ export function ChatComposer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
+          aria-label="消息"
           disabled={disabled}
           className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground/50"
           rows={1}
@@ -569,6 +570,8 @@ export function ChatComposer({
           ) : (
             <Button
               size="sm"
+              data-chat-send
+              aria-label="发送消息"
               className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
               onClick={handleSend}
               disabled={(!value.trim() && fileRefs.length === 0) || isSending}

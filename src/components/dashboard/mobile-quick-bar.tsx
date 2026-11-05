@@ -103,7 +103,7 @@ export function MobileQuickBar({ onSearch }: MobileQuickBarProps) {
       <ul className="flex items-stretch">
         <li className="flex-1">
           <BarButton
-            label="等我"
+            label="待处理"
             Icon={Inbox}
             active={activeSection === 'my-workbench'}
             count={pendingCount}
@@ -112,7 +112,7 @@ export function MobileQuickBar({ onSearch }: MobileQuickBarProps) {
         </li>
         <li className="flex-1">
           <BarButton
-            label="空间"
+            label="Agent"
             Icon={MessageSquare}
             active={activeSection === 'chat'}
             onClick={() => goTo('chat')}

@@ -52,6 +52,8 @@ import {
   parsePluginSectionId,
 } from '@/lib/plugins/types';
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
+import { buildRooms } from './sections/chat/room-builders';
+import styles from './workspace.module.css';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -125,6 +127,7 @@ export function AgentTeamsDashboard() {
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
   const { data: humans } = useHumans();
+  const agentRooms = useMemo(() => buildRooms([], teams, managers).filter((room) => room.agentRole && (userLevel >= 3 || room.agentRole !== 'operations')), [teams, managers, userLevel]);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Plugin system: discover + activate plugins once per session.
@@ -348,9 +351,10 @@ export function AgentTeamsDashboard() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="h-dvh overflow-hidden flex flex-col bg-background">
+      <div className={`${styles.workspace} h-dvh overflow-hidden flex flex-col bg-muted/30`}>
         <div className="flex flex-1 min-h-0">
           <Sidebar
+            agentRooms={agentRooms}
             activeSection={activeSection}
             countMap={countMap}
             sectionsWithNotifications={sectionsWithNotifications}
@@ -361,6 +365,7 @@ export function AgentTeamsDashboard() {
           />
 
           <MobileSidebar
+            agentRooms={agentRooms}
             open={mobileMenuOpen}
             activeSection={activeSection}
             countMap={countMap}
@@ -374,7 +379,7 @@ export function AgentTeamsDashboard() {
               搜索项复用已有机制——聚焦顶栏搜索框即打开命令面板（与 ⌘/Ctrl+K 同路）。 */}
           <MobileQuickBar onSearch={() => searchInputRef.current?.focus()} />
 
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:my-3 md:mr-3 md:rounded-2xl md:border md:border-border/60 md:pb-0">
             <DashboardHeader
               isConnected={isConnected}
               workerCount={workerCount}
@@ -416,7 +421,7 @@ export function AgentTeamsDashboard() {
               className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'border-b border-border/50 bg-background/50'}`}
             >
               {activeSection !== 'chat' && (
-                <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
+                <div className="px-5 md:px-8 py-3 bg-background">
                   <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Home className="w-3.5 h-3.5" />
                     <ChevronSep className="w-3 h-3" />
@@ -436,7 +441,7 @@ export function AgentTeamsDashboard() {
                   </SectionErrorBoundary>
                 </div>
               ) : (
-                <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
+                <main className="flex-1 overflow-y-auto custom-scrollbar p-5 md:px-8 md:pb-8 md:pt-3">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeSection}

@@ -20,12 +20,15 @@ import type { NavItem, DeploymentMode } from './nav-items';
 import { useNavSections } from './use-nav-sections';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { PluginNavItems } from '@/components/plugins/plugin-nav-items';
+import { WorkspaceAgentLinks } from './workspace-agent-links';
+import type { RoomInfo } from './sections/chat/room-info';
 
 // ──────────────────────────────────────────
 // Props
 // ──────────────────────────────────────────
 
 interface SidebarProps {
+  agentRooms?: RoomInfo[];
   activeSection: string;
   countMap: Record<string, number>;
   sectionsWithNotifications: Set<string>;
@@ -61,14 +64,15 @@ function NavButton({
     <button
       onClick={() => onNavClick(item.id)}
       data-nav-section={item.id}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 relative ${
+      aria-current={isActive ? 'page' : undefined}
+      className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors relative ${
         isActive
-        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border-r-2 border-emerald-500'
+        ? 'bg-primary/10 text-primary font-medium'
         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
       }`}
       title={collapsed ? item.label : undefined}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-emerald-500' : ''}`} />
+      <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
       {!collapsed && (
         <span className="whitespace-nowrap">{item.label}</span>
       )}
@@ -116,7 +120,7 @@ function NavButton({
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
+    <div className="px-3 pb-1 pt-4 text-xs font-medium text-muted-foreground">
       {label}
     </div>
   );
@@ -159,6 +163,7 @@ function AreaHeader({
 // ──────────────────────────────────────────
 
 export function Sidebar({
+  agentRooms,
   activeSection,
   countMap,
   sectionsWithNotifications,
@@ -181,13 +186,14 @@ export function Sidebar({
 
   return (
     <aside
-      className={`hidden md:flex min-h-0 flex-col border-r border-border bg-card/50 backdrop-blur-sm transition-[width] duration-300 ${
-        // 展开态固定 216px（与原型 rail 同宽），折叠态固定图标条。
-        collapsed ? 'w-16' : 'w-[216px]'
+      aria-label="主导航"
+      className={`hidden md:flex min-h-0 shrink-0 flex-col bg-muted/30 ${
+        // 展开态展示 Agent 和工具，折叠态保留图标导航。
+        collapsed ? 'w-[76px]' : 'w-[248px]'
       }`}
     >
       {/* Logo area */}
-      <div className="flex items-center gap-2 px-4 h-14 border-b border-border">
+      <div className="flex items-center gap-2.5 px-5 h-20 shrink-0">
         <Image
           src="/agentteams-logo.svg"
           alt="AgentTeams"
@@ -201,7 +207,7 @@ export function Sidebar({
             animate={{ opacity: 1 }}
             className="flex flex-col min-w-0"
           >
-            <span className="font-bold text-lg leading-tight">AgentTeams</span>
+            <span className="font-semibold text-base tracking-tight leading-tight">AgentTeams</span>
             {mode && (
               <span
                 className={`inline-flex items-center gap-1 text-xs font-medium leading-tight ${
@@ -215,7 +221,7 @@ export function Sidebar({
                 ) : (
                   <Cloud className="w-2.5 h-2.5" />
                 )}
-                {mode === 'embedded' ? '嵌入模式' : 'K8s 模式'}
+                {userLevel >= 3 ? '管理工作区' : '团队工作区'}
               </span>
             )}
           </motion.div>
@@ -244,27 +250,30 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
+        <WorkspaceAgentLinks rooms={agentRooms} collapsed={collapsed} activeSection={activeSection} onNavigate={onNavClick} />
         {areaSections.map((area) => {
           const areaCollapsed = area.key === 'console' && consoleCollapsed;
           return (
-            <div key={area.key}>
-              {area.label && (
+            <div key={area.key} className="px-2">
+              {area.label && area.key === 'console' ? (
                 <AreaHeader
                   label={area.label}
                   collapsed={collapsed}
                   areaCollapsed={areaCollapsed}
                   onToggle={() => setConsoleCollapsed((v) => !v)}
                 />
+              ) : area.label && !collapsed && (
+                <GroupHeader label={area.label} />
               )}
               {!areaCollapsed &&
                 area.groups.map((group) => (
                   <div key={group.key}>
-                    {!collapsed && <GroupHeader label={group.label} />}
+                    {!collapsed && area.key !== 'workbench' && <GroupHeader label={group.label} />}
                     {group.items.map((item) => (
                       <NavButton
                         key={item.id}
                         item={item}
-                        isActive={activeSection === item.id}
+                        isActive={activeSection === item.id && item.id !== 'chat'}
                         count={countMap[item.id] ?? 0}
                         hasNotification={sectionsWithNotifications.has(item.id)}
                         collapsed={collapsed}
@@ -287,18 +296,20 @@ export function Sidebar({
       </nav>
 
       {/* Collapse toggle */}
-      <div className="p-2 border-t border-border">
+      <div className="p-3">
         <Button
           variant="ghost"
           size="sm"
           className="w-full justify-center"
           onClick={onToggleCollapse}
+          aria-label={collapsed ? '展开导航' : '收起导航'}
         >
           {collapsed ? (
             <ChevronRight className="w-4 h-4" />
           ) : (
             <ChevronLeft className="w-4 h-4" />
           )}
+          {!collapsed && <span className="text-xs text-muted-foreground">收起导航</span>}
         </Button>
       </div>
     </aside>

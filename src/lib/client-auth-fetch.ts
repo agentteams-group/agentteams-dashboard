@@ -22,6 +22,7 @@
  */
 
 import { useMatrixStore } from './matrix-store';
+import { useAgentTeamsStore } from './agentteams-store';
 import { loadClientConfig } from './client-config-store';
 
 let installed = false;
@@ -101,12 +102,14 @@ export function installClientAuthFetch(): void {
       }
     }
 
+    const authenticatedRequest = headers.has('authorization') || Boolean(useAgentTeamsStore.getState().sessionUser);
     const response = await originalFetch(input, { ...init, headers });
 
     if (
       dataUrl &&
       response.status === 401 &&
       url.startsWith('/api/agentteams/') &&
+      authenticatedRequest &&
       !redirecting
     ) {
       redirecting = true;

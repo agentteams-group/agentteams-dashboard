@@ -79,6 +79,26 @@ export function buildRooms(
     workerMxidByTeam.get(worker.team)!.set(worker.name, worker.matrixUserID);
   });
   teams?.forEach((team) => {
+    if (team.leaderDMRoomID) {
+      const leader = workers?.find((worker) => worker.name === team.leaderName)
+        ?? managers?.find((manager) => manager.name === team.leaderName);
+      pushRoom({
+        id: team.leaderDMRoomID,
+        name: `${team.teamName || team.name}助手`,
+        type: 'manager',
+        agentRole: 'leader',
+        members: leader?.matrixUserID ? [leader.matrixUserID] : [],
+        matrixUserId: leader?.matrixUserID,
+        workerMatrixUserIds: leader?.matrixUserID ? [leader.matrixUserID] : [],
+        parentTeam: team.name,
+        workerName: team.leaderName,
+        runtime: leader?.runtime,
+        phase: team.leaderReady ? 'Running' : team.phase,
+        team,
+        memberCount: 2,
+        ...enrich(team.leaderDMRoomID),
+      });
+    }
     if (team.teamRoomID) {
       const teamWorkers = workerMxidByTeam.get(team.name);
       pushRoom({
@@ -122,6 +142,7 @@ export function buildRooms(
         id: chatRoomId,
         name: managerDisplayName(manager, chatRoomId, lookup),
         type: 'manager',
+        agentRole: leadingTeam ? undefined : 'operations',
         members: [manager.matrixUserID].filter(Boolean),
         matrixUserId: manager.matrixUserID,
         parentTeam: leadingTeam?.name,

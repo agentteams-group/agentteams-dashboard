@@ -161,7 +161,7 @@ function ThreadList({
         <MessagesSquare className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
         <p className="text-xs font-medium">本空间暂无回复话题</p>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          在任意消息上使用「回复」开启话题，回复数来自 Matrix m.thread 关系。
+          在任意消息上使用「回复」开启话题，集中讨论同一项工作。
         </p>
       </div>
     );

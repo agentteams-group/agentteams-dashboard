@@ -5,6 +5,7 @@ import {
   __resetClientAuthFetchForTests,
 } from './client-auth-fetch';
 import { useMatrixStore } from './matrix-store';
+import { useAgentTeamsStore } from './agentteams-store';
 import { saveClientConfig, clearClientConfig } from './client-config-store';
 
 function mockLocation(search = '') {
@@ -67,6 +68,7 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
 
   beforeEach(() => {
     __resetClientAuthFetchForTests();
+    useAgentTeamsStore.setState({ sessionUser: null });
     mockLocation();
     clearClientConfig();
     useMatrixStore.getState().setMatrixAuth({
@@ -123,5 +125,31 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
     await window.fetch('/api/auth/login', { method: 'POST' });
     expect(replace).not.toHaveBeenCalled();
     expect(useMatrixStore.getState().isLoggedIn).toBe(true);
+  });
+
+  it('does not reload the login form when the anonymous reconnect probe receives 401', async () => {
+    useMatrixStore.getState().logout();
+    network.mockImplementation(async () => new Response('unauthorized', { status: 401 }));
+    const replace = (window.location as unknown as { replace: ReturnType<typeof vi.fn> }).replace;
+    await window.fetch('/api/agentteams/healthz/');
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('still redirects an expired stateful session without a browser bearer token', async () => {
+    useMatrixStore.getState().logout();
+    useAgentTeamsStore.setState({ sessionUser: 'admin' });
+    network.mockImplementation(async () => new Response('unauthorized', { status: 401 }));
+    await window.fetch('/api/agentteams/teams');
+    expect(window.location.replace).toHaveBeenCalledWith('/?reason=unauthorized');
+  });
+
+  it('does not let an anonymous in-flight probe log out a newly authenticated user', async () => {
+    useMatrixStore.getState().logout();
+    network.mockImplementation(async () => {
+      useAgentTeamsStore.setState({ sessionUser: 'admin' });
+      return new Response('unauthorized', { status: 401 });
+    });
+    await window.fetch('/api/agentteams/healthz/');
+    expect(window.location.replace).not.toHaveBeenCalled();
   });
 });

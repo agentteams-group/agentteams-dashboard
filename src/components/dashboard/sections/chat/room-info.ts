@@ -4,6 +4,8 @@ export interface RoomInfo {
   id: string;
   name: string;
   type: 'worker' | 'team' | 'manager' | 'human' | 'unknown';
+  /** Product role of a direct assistant conversation. */
+  agentRole?: 'operations' | 'leader';
   members: string[];
   parentTeam?: string;
   matrixUserId?: string;

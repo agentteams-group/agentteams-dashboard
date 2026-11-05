@@ -74,9 +74,9 @@ export function DashboardFooter({
         <span>
           {matrixLoggedIn
             ? matrixSyncing
-              ? 'Matrix 同步中'
-              : 'Matrix 已连接'
-            : 'Matrix 未连接'}
+              ? '消息同步中'
+              : '对话已连接'
+            : '对话未连接'}
         </span>
         {matrixLoggedIn && (
           <span className={`w-1.5 h-1.5 rounded-full ${matrixSyncing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />

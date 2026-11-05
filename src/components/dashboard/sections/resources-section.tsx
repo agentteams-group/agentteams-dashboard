@@ -74,7 +74,7 @@ export function ResourcesSection() {
     <div className="space-y-4">
       <SectionHeader
         title="Agent 目录"
-        description="人机资源一览 —— Workers、团队、Humans 与 Managers（收敛视图，能力与原页面一致）"
+        description="管理团队的 Agent、成员与运行配置"
       />
 
       {/* 二级导航（F7.1） */}
