@@ -40,6 +40,8 @@ RUN npm config set registry "${NPM_REGISTRY}" && \
 # the build falls back to git sha, unavailable in the docker context.
 ARG DASHBOARD_BUILD_ID=
 ENV DASHBOARD_BUILD_ID=${DASHBOARD_BUILD_ID}
+ARG SPEECH_MODEL_DOWNLOAD_BASE_URL=
+ENV SPEECH_MODEL_DOWNLOAD_BASE_URL=${SPEECH_MODEL_DOWNLOAD_BASE_URL}
 COPY . .
 RUN npm run build
 

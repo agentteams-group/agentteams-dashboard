@@ -17,6 +17,8 @@
 
 ---
 
+Chat voice input: click the microphone, review the transcription in your draft, then send. Local recognition is free by default; optional paid DashScope ASR uses a server-side API key. See [voice input setup](docs/voice-input.md).
+
 <!-- TODO(record): replace the three placeholders below with real captures —
      see docs/images/README.md for the recording checklist (overview topology,
      task-board HITL intervention, chat replay). -->
