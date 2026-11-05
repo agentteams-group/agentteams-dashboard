@@ -91,6 +91,64 @@ function Invoke-Docker($cmd) {
     return $result
 }
 
+# f8-3(c): export a directory out of the (possibly stopped) old container.
+# PowerShell equivalent of bash _dashboard_export_dir: try `docker cp src/.`
+# first, fall back to copying the directory itself and flattening. The flag
+# file marks a successful export (bash's _exists_flag).
+function Export-ContainerDir {
+    param([string]$Container, [string]$Src, [string]$Dest, [string]$FlagFile)
+    if (Test-Path $FlagFile) { Remove-Item $FlagFile -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    & $DockerCmd cp "${Container}:${Src}/." "$Dest/" *> $null
+    if ($LASTEXITCODE -eq 0) {
+        New-Item -ItemType File -Path $FlagFile -Force | Out-Null
+        return $true
+    }
+    # Fallback: copy the directory itself into a scratch dir, then flatten.
+    $parent = Join-Path ([System.IO.Path]::GetTempPath()) ("agentteams-dashboard-cp-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    $ok = $false
+    & $DockerCmd cp "${Container}:${Src}" "$parent/" *> $null
+    if ($LASTEXITCODE -eq 0) {
+        $copied = Get-ChildItem $parent -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($copied) {
+            Copy-Item -Path (Join-Path $copied.FullName '*') -Destination $Dest -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path $Dest) {
+                New-Item -ItemType File -Path $FlagFile -Force | Out-Null
+                $ok = $true
+            }
+        }
+    }
+    Remove-Item $parent -Recurse -Force -ErrorAction SilentlyContinue
+    return $ok
+}
+
+# f8-3(c): can we PROVE the path holds no data? Returns 0 = present,
+# 1 = proven absent (docker diff + mounts both readable, no hit), 2 =
+# indeterminate (either probe failed). PowerShell equivalent of bash
+# _dashboard_path_present.
+function Get-ContainerPathState {
+    param([string]$Container, [string]$Src)
+    $diffOk = $false
+    $mountOk = $false
+    $diffOut = & $DockerCmd diff $Container 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $diffOk = $true
+        if ($diffOut | Select-String -SimpleMatch $Src) { return 0 }
+    }
+    $mountOut = & $DockerCmd inspect $Container --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $mountOk = $true
+        foreach ($dest in $mountOut) {
+            if (-not $dest) { continue }
+            # bash: mount destination at or above the source path.
+            if ("$Src/".StartsWith("$dest/")) { return 0 }
+        }
+    }
+    if ($diffOk -and $mountOk) { return 1 }
+    return 2
+}
+
 # ---------- uninstall ----------
 function Do-Uninstall {
     $script:DockerCmd = Detect-Docker
@@ -126,6 +184,10 @@ function Build-EnvArgs {
         "-e", "AGENTTEAMS_HIGRESS_ADAPTER_MODE=$HigressAdapterMode",
         "-e", "AGENTTEAMS_AI_GATEWAY_URL=$AiGatewayUrl",
         "-e", "AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=$AiGatewayAdminAllowedHosts",
+        # f8-3(b): pass the operator's session secret through (empty stays empty —
+        # after the volume chown the app can self-generate one and persist it next
+        # to $ConfigFile). Mirrors bash installer's DASHBOARD_SESSION_SECRET line.
+        "-e", "DASHBOARD_SESSION_SECRET=$env:DASHBOARD_SESSION_SECRET",
         "-e", "DASHBOARD_CONFIG_FILE=$ConfigFile",
         "-e", "AGENTTEAMS_DEPLOYMENT_MODE=$script:DeploymentMode",
         "-e", "MATRIX_HOMESERVER_ALLOWLIST=agentteams-controller,matrix-local.agentteams.io,matrix.org"
@@ -252,10 +314,14 @@ function Do-Install {
         $portInput = Read-Host "Dashboard port [$Port]"
         if ($portInput) { $Port = [int]$portInput }
 
-        # Derive default image from version
+        # f8-2: show the RESOLVED image as the default — $Image has already
+        # absorbed the -Image parameter and AGENTTEAMS_DASHBOARD_IMAGE at the
+        # top of the script. Empty input keeps it; only an empty $Image (which
+        # cannot normally happen after the top-of-script derivation) falls
+        # back to the version-derived default.
         $defaultImage = "$DefaultRegistry/agentteams/agentteams-dashboard:$DashboardVersion"
-        $imgInput = Read-Host "Dashboard image [$defaultImage]"
-        if ($imgInput) { $Image = $imgInput } else { $Image = $defaultImage }
+        $imgInput = Read-Host "Dashboard image [$Image]"
+        if ($imgInput) { $Image = $imgInput } elseif (-not $Image) { $Image = $defaultImage }
 
         # Higress Console URL prompt
         $higressDefault = ""
@@ -271,11 +337,51 @@ function Do-Install {
         if ($higressInput) { $AiGatewayAdminUrl = $higressInput } elseif ($higressDefault) { $AiGatewayAdminUrl = $higressDefault }
     }
 
-    # Remove existing container
-    $existing = & $DockerCmd ps -a --format '{{.Names}}' 2>$null | Select-String "^$ContainerName$"
-    if ($existing) {
-        Write-Info "Removing existing $ContainerName..."
-        & $DockerCmd rm -f $ContainerName *> $null
+    # f8-3(c): remember whether an old container exists and export its
+    # writable layer ($DataMount overlay + legacy /app/db) into host temp dirs
+    # BEFORE removal (bash :593-600). The old container is only removed after
+    # a successful import below; otherwise it is kept running (bash :621/:638
+    # degradation) instead of risking data loss. docker cp works on stopped
+    # containers, so stopping is enough.
+    $oldPresent = (& $DockerCmd ps -a --format '{{.Names}}' 2>$null | Select-String "^$ContainerName$") -ne $null
+    $exportRoot = $null
+    $overlayDir = $null
+    $legacyDir = $null
+    $overlayFlag = $null
+    $legacyFlag = $null
+    if ($oldPresent) {
+        Write-Info "Stopping existing $ContainerName for config export..."
+        & $DockerCmd stop $ContainerName *> $null
+
+        $exportRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("agentteams-dashboard-export-" + [guid]::NewGuid().ToString("N"))
+        $overlayDir = Join-Path $exportRoot "overlay"
+        $legacyDir = Join-Path $exportRoot "legacy"
+        $overlayFlag = Join-Path $exportRoot "overlay.exists"
+        $legacyFlag = Join-Path $exportRoot "legacy.exists"
+        New-Item -ItemType Directory -Path $overlayDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $legacyDir -Force | Out-Null
+
+        Export-ContainerDir -Container $ContainerName -Src $DataMount -Dest $overlayDir -FlagFile $overlayFlag
+        Export-ContainerDir -Container $ContainerName -Src "/app/db" -Dest $legacyDir -FlagFile $legacyFlag
+
+        # bash :602-620: when a path could not be exported but also cannot be
+        # proven empty, keep the old container instead of dropping its data.
+        $keepOld = $false
+        $keepWhere = ""
+        if (-not (Test-Path $overlayFlag)) {
+            $state = Get-ContainerPathState -Container $ContainerName -Src $DataMount
+            if ($state -ne 1) { $keepOld = $true; $keepWhere = $DataMount }
+        }
+        if (-not $keepOld -and -not (Test-Path $legacyFlag)) {
+            $state = Get-ContainerPathState -Container $ContainerName -Src "/app/db"
+            if ($state -ne 1) { $keepOld = $true; $keepWhere = "/app/db" }
+        }
+        if ($keepOld) {
+            Write-Warn "existing Dashboard config under $keepWhere could not be exported; leaving the old container in place"
+            & $DockerCmd start $ContainerName *> $null
+            Remove-Item $exportRoot -Recurse -Force -ErrorAction SilentlyContinue
+            return
+        }
     }
 
     # Pull image if needed
@@ -316,22 +422,46 @@ function Do-Install {
     if (-not $LocalOnly -and $env:AGENTTEAMS_LOCAL_ONLY -ne "1") {
         $portBind = "{0}:3000" -f $Port
     }
-
-    $portArg = "{0}:3000" -f $portBind
+    # f8-1: $portBind is already "<host>:<port>:3000" — formatting it again
+    # produced a four-segment -p (127.0.0.1:13000:3000:3000) that docker run
+    # rejects outright.
 
     # Persistent data volume (F-1): the dashboard writes config.json and its
     # session secret under /data/agentteams-dashboard (must match
     # configFilePath() in src/lib/backend-config.ts).
     & $DockerCmd volume create $DataVolume *> $null
+    # f8-3(a): the dashboard image runs as uid 1001 (Dockerfile adduser --uid
+    # 1001 nextjs). chown the fresh volume so first-install writes of
+    # config.json / .session-secret succeed (bash :647-648); warn-only.
+    & $DockerCmd run --rm -v "${DataVolume}:${DataMount}" alpine:latest chown -R 1001:1001 $DataMount
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "could not chown $DataMount to 1001:1001; Dashboard may be unable to write config/session/setup state"
+    }
     $volumeArgs = @("-v", "${DataVolume}:${DataMount}")
 
-    # Migration: legacy installs wrote into /app/db inside the same volume.
-    # Detect /app/db contents and bind that mount once so existing files survive
-    # this cycle. Next upgrade drops the legacy bind.
-    $legacyEntries = & $DockerCmd run --rm -v "${DataVolume}:/probe" alpine:latest sh -c 'ls -1A /probe/app 2>/dev/null' 2>$null
-    if ($legacyEntries) {
-        Write-Warn "dashboard data volume has files under /app/db (legacy path); mounting it once so this upgrade does not lose them. Next upgrade will drop the legacy bind."
-        $volumeArgs += @("-v", "${DataVolume}:/app/db")
+    # f8-3(c): import the exported overlay ($DataMount) and legacy /app/db
+    # content into the fresh volume — legacy first, overlay second so newer
+    # files win (bash :634-636) — then chown to the image uid. Only after a
+    # successful import is the old container removed; the
+    # `${DataVolume}:/app/db` double-mount of the previous release is gone.
+    if ($oldPresent) {
+        $importVols = @("-v", "${DataVolume}:/dest")
+        if ((Test-Path $overlayFlag) -and ((Get-ChildItem $overlayDir -Force -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)) {
+            $importVols += @("-v", "$overlayDir:/overlay:ro")
+        }
+        if ((Test-Path $legacyFlag) -and ((Get-ChildItem $legacyDir -Force -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)) {
+            $importVols += @("-v", "$legacyDir:/legacy:ro")
+        }
+        $importScript = 'mkdir -p /dest || exit 1; if [ -d /legacy ]; then cp -a /legacy/. /dest/ || exit 1; fi; if [ -d /overlay ]; then cp -a /overlay/. /dest/ || exit 1; fi; chown -R 1001:1001 /dest || exit 1'
+        & $DockerCmd run --rm @importVols alpine:latest sh -c $importScript *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "failed to import exported Dashboard configuration into $DataMount; leaving the old container in place"
+            & $DockerCmd start $ContainerName *> $null
+            Remove-Item $exportRoot -Recurse -Force -ErrorAction SilentlyContinue
+            return
+        }
+        & $DockerCmd rm -f $ContainerName *> $null
+        Remove-Item $exportRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Write-Info "Starting $ContainerName..."
@@ -339,7 +469,7 @@ function Do-Install {
         --name $ContainerName `
         --restart unless-stopped `
         --network $NetworkName `
-        -p $portArg `
+        -p $portBind `
         @volumeArgs `
         @envArgs `
         $Image

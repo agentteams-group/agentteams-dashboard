@@ -28,12 +28,21 @@ export function assembleReplayTimeline(events: MatrixEvent[]): DisplayMessage[] 
   const rawMessages = formatMatrixEvents(sorted, currentUserId);
 
   // 2. 识别所有 worker sender，构建 runtimeMap 使得思考/工具调用能够正确折叠
+  //    （f3-4：与在线渲染一致——ChatSection.tsx 只对 workers 建 map；人类
+  //    sender 不进 map → stampOwners 不盖 workerName → turnBlocksOf 的
+  //    !message.workerName 门使其保持独立气泡，也不会被 chooseAnswer 选为
+  //    回合答案）。
+  //    局限：回放包不含 worker 注册表，此处只能用子串启发式（sender 含
+  //    worker/agent/bot）判定，可能误判（如人名恰好含 'bot'）；根治需在
+  //    导出时把 worker 清单写入回放包（设计改动，不在本轮）。
   const runtimeMap: Record<string, { runtime: string; workerName: string }> = {};
   for (const ev of sorted) {
-    if (ev.sender && !runtimeMap[ev.sender]) {
-      const isAgent = ev.sender.includes('worker') || ev.sender.includes('agent') || ev.sender.includes('bot');
+    const isAgent =
+      ev.sender.includes('worker') || ev.sender.includes('agent') || ev.sender.includes('bot');
+    if (!isAgent) continue;
+    if (!runtimeMap[ev.sender]) {
       runtimeMap[ev.sender] = {
-        runtime: isAgent ? 'qwenpaw' : 'human',
+        runtime: 'qwenpaw',
         workerName: ev.sender.split(':')[0]?.replace('@', '') ?? ev.sender,
       };
     }

@@ -153,33 +153,67 @@ _dashboard_path_present() {
 
 save_env() {
   # Write to temp file first, then atomically rename, and enforce owner-only permissions.
+  #
+  # f8-4: every value is written as a single-quoted literal (inner ' escaped as
+  # '\'') so the `source`-based load_env can never break on spaces, $, backticks
+  # or quotes: a bare value like `p@ss word $x` used to expand during sourcing
+  # and abort update under set -euo pipefail ("command not found").
   local _tmp
+  local _v_port _v_dashboard_version _v_dashboard_image _v_controller_url _v_matrix_url \
+        _v_adapter_mode _v_gateway_url _v_gateway_admin_url _v_gateway_hosts _v_local_only \
+        _v_fs_endpoint _v_fs_access _v_fs_secret _v_fs_bucket _v_llm_provider _v_llm_key \
+        _v_llm_base _v_llm_model _v_auth_token _v_admin_user _v_admin_pw _v_session_secret \
+        _v_config_file _v_deployment_mode
   _tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
+  _v_port=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_PORT_DASHBOARD:-}" | sed "s/'/'\\\\''/g")")
+  _v_dashboard_version=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_DASHBOARD_VERSION:-}" | sed "s/'/'\\\\''/g")")
+  _v_dashboard_image=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_DASHBOARD_IMAGE:-}" | sed "s/'/'\\\\''/g")")
+  _v_controller_url=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_CONTROLLER_URL:-}" | sed "s/'/'\\\\''/g")")
+  _v_matrix_url=$(printf "'%s'" "$(printf "%s" "${NEXT_PUBLIC_MATRIX_API_URL:-}" | sed "s/'/'\\\\''/g")")
+  _v_adapter_mode=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}" | sed "s/'/'\\\\''/g")")
+  _v_gateway_url=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_AI_GATEWAY_URL:-}" | sed "s/'/'\\\\''/g")")
+  _v_gateway_admin_url=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}" | sed "s/'/'\\\\''/g")")
+  _v_gateway_hosts=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}" | sed "s/'/'\\\\''/g")")
+  _v_local_only=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_LOCAL_ONLY:-1}" | sed "s/'/'\\\\''/g")")
+  _v_fs_endpoint=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_FS_ENDPOINT:-}" | sed "s/'/'\\\\''/g")")
+  _v_fs_access=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_FS_ACCESS_KEY:-}" | sed "s/'/'\\\\''/g")")
+  _v_fs_secret=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_FS_SECRET_KEY:-}" | sed "s/'/'\\\\''/g")")
+  _v_fs_bucket=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_FS_BUCKET:-}" | sed "s/'/'\\\\''/g")")
+  _v_llm_provider=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_LLM_PROVIDER:-}" | sed "s/'/'\\\\''/g")")
+  _v_llm_key=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_LLM_API_KEY:-}" | sed "s/'/'\\\\''/g")")
+  _v_llm_base=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_OPENAI_BASE_URL:-}" | sed "s/'/'\\\\''/g")")
+  _v_llm_model=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_DEFAULT_MODEL:-}" | sed "s/'/'\\\\''/g")")
+  _v_auth_token=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_AUTH_TOKEN:-}" | sed "s/'/'\\\\''/g")")
+  _v_admin_user=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_ADMIN_USER:-}" | sed "s/'/'\\\\''/g")")
+  _v_admin_pw=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_ADMIN_PASSWORD:-}" | sed "s/'/'\\\\''/g")")
+  _v_session_secret=$(printf "'%s'" "$(printf "%s" "${DASHBOARD_SESSION_SECRET:-}" | sed "s/'/'\\\\''/g")")
+  _v_config_file=$(printf "'%s'" "$(printf "%s" "${DASHBOARD_CONFIG_FILE:-${CONFIG_FILE}}" | sed "s/'/'\\\\''/g")")
+  _v_deployment_mode=$(printf "'%s'" "$(printf "%s" "${AGENTTEAMS_DEPLOYMENT_MODE:-}" | sed "s/'/'\\\\''/g")")
   cat > "${_tmp}" <<EOF
-AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD}
-AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION}
-AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE}
-AGENTTEAMS_CONTROLLER_URL=${AGENTTEAMS_CONTROLLER_URL}
-NEXT_PUBLIC_MATRIX_API_URL=${NEXT_PUBLIC_MATRIX_API_URL}
-AGENTTEAMS_HIGRESS_ADAPTER_MODE=${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}
-AGENTTEAMS_AI_GATEWAY_URL=${AGENTTEAMS_AI_GATEWAY_URL:-}
-AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-}
-AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:-}
-AGENTTEAMS_LOCAL_ONLY=${AGENTTEAMS_LOCAL_ONLY:-1}
-AGENTTEAMS_FS_ENDPOINT=${AGENTTEAMS_FS_ENDPOINT:-}
-AGENTTEAMS_FS_ACCESS_KEY=${AGENTTEAMS_FS_ACCESS_KEY:-}
-AGENTTEAMS_FS_SECRET_KEY=${AGENTTEAMS_FS_SECRET_KEY:-}
-AGENTTEAMS_FS_BUCKET=${AGENTTEAMS_FS_BUCKET:-}
-AGENTTEAMS_LLM_PROVIDER=${AGENTTEAMS_LLM_PROVIDER:-}
-AGENTTEAMS_LLM_API_KEY=${AGENTTEAMS_LLM_API_KEY:-}
-AGENTTEAMS_OPENAI_BASE_URL=${AGENTTEAMS_OPENAI_BASE_URL:-}
-AGENTTEAMS_DEFAULT_MODEL=${AGENTTEAMS_DEFAULT_MODEL:-}
-AGENTTEAMS_AUTH_TOKEN=${AGENTTEAMS_AUTH_TOKEN:-}
-AGENTTEAMS_ADMIN_USER=${AGENTTEAMS_ADMIN_USER:-}
-AGENTTEAMS_ADMIN_PASSWORD=${AGENTTEAMS_ADMIN_PASSWORD:-}
-DASHBOARD_SESSION_SECRET=${DASHBOARD_SESSION_SECRET:-}
-DASHBOARD_CONFIG_FILE=${DASHBOARD_CONFIG_FILE:-${CONFIG_FILE}}
-AGENTTEAMS_DEPLOYMENT_MODE=${AGENTTEAMS_DEPLOYMENT_MODE:-}
+AGENTTEAMS_PORT_DASHBOARD=${_v_port}
+AGENTTEAMS_DASHBOARD_VERSION=${_v_dashboard_version}
+AGENTTEAMS_DASHBOARD_IMAGE=${_v_dashboard_image}
+AGENTTEAMS_CONTROLLER_URL=${_v_controller_url}
+NEXT_PUBLIC_MATRIX_API_URL=${_v_matrix_url}
+AGENTTEAMS_HIGRESS_ADAPTER_MODE=${_v_adapter_mode}
+AGENTTEAMS_AI_GATEWAY_URL=${_v_gateway_url}
+AGENTTEAMS_AI_GATEWAY_ADMIN_URL=${_v_gateway_admin_url}
+AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=${_v_gateway_hosts}
+AGENTTEAMS_LOCAL_ONLY=${_v_local_only}
+AGENTTEAMS_FS_ENDPOINT=${_v_fs_endpoint}
+AGENTTEAMS_FS_ACCESS_KEY=${_v_fs_access}
+AGENTTEAMS_FS_SECRET_KEY=${_v_fs_secret}
+AGENTTEAMS_FS_BUCKET=${_v_fs_bucket}
+AGENTTEAMS_LLM_PROVIDER=${_v_llm_provider}
+AGENTTEAMS_LLM_API_KEY=${_v_llm_key}
+AGENTTEAMS_OPENAI_BASE_URL=${_v_llm_base}
+AGENTTEAMS_DEFAULT_MODEL=${_v_llm_model}
+AGENTTEAMS_AUTH_TOKEN=${_v_auth_token}
+AGENTTEAMS_ADMIN_USER=${_v_admin_user}
+AGENTTEAMS_ADMIN_PASSWORD=${_v_admin_pw}
+DASHBOARD_SESSION_SECRET=${_v_session_secret}
+DASHBOARD_CONFIG_FILE=${_v_config_file}
+AGENTTEAMS_DEPLOYMENT_MODE=${_v_deployment_mode}
 EOF
   chmod 600 "${_tmp}"
   mv -f "${_tmp}" "${ENV_FILE}"
@@ -369,7 +403,9 @@ wizard() {
 # ---------- local-only binding ----------
 resolve_port_prefix() {
   _port_prefix=""
-  if [ "${AGENTTEAMS_LOCAL_ONLY:-0}" = "1" ]; then
+  # f8-5: LOCAL_ONLY defaults to 1 (localhost-only), matching save_env/load_env
+  # and the upstream installer (_start_dashboard, agentteams-install.sh).
+  if [ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "1" ]; then
     _port_prefix="127.0.0.1:"
   fi
 }
@@ -684,10 +720,13 @@ print_success() {
   echo -e "${GREEN}========================================${NC}"
   echo ""
   local bind_host="0.0.0.0"
-  [ "${AGENTTEAMS_LOCAL_ONLY:-0}" = "1" ] && bind_host="127.0.0.1"
+  # f8-5: LOCAL_ONLY defaults to 1 (localhost-only), matching save_env/load_env
+  # and the upstream installer (_start_dashboard, agentteams-install.sh).
+  [ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "1" ] && bind_host="127.0.0.1"
   echo -e "  Access: ${CYAN}http://${bind_host}:${AGENTTEAMS_PORT_DASHBOARD}/${NC}"
   echo -e "  Logs:   ${DOCKER_CMD} logs -f ${CONTAINER_NAME}"
   echo -e "  Stop:   ${DOCKER_CMD} stop ${CONTAINER_NAME}"
+  echo -e "  LAN:    disabled by default (127.0.0.1 only) — export AGENTTEAMS_LOCAL_ONLY=0 before install/update to expose 0.0.0.0"
   echo ""
 }
 
@@ -706,7 +745,7 @@ do_install() {
   info "  Higress:     ${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:-<not configured>}"
   info "  MinIO:       ${AGENTTEAMS_FS_ENDPOINT:-<not configured>} (bucket: ${AGENTTEAMS_FS_BUCKET:-<unknown>})"
   info "  LLM:         ${AGENTTEAMS_LLM_PROVIDER:-<unknown>} / ${AGENTTEAMS_DEFAULT_MODEL:-<unknown>}"
-  info "  LAN access:  $([ "${AGENTTEAMS_LOCAL_ONLY:-0}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
+  info "  LAN access:  $([ "${AGENTTEAMS_LOCAL_ONLY:-1}" = "1" ] && echo 'disabled (127.0.0.1 only)' || echo 'enabled (0.0.0.0)')"
   echo ""
 
   save_env

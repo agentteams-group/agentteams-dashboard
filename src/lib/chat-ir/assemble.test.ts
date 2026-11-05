@@ -367,6 +367,47 @@ describe('ChatIR turn assembly', () => {
     expect(snapshot(shuffled)).toEqual(snapshot(forward));
   });
 
+  it('f3-3：同一事件集倒序分页输入与时间序输入的 paused 结果一致（恢复 t2 在暂停 t1 之后不得误记 interrupted）', () => {
+    // 时间序：t2 恢复晚于 t1 暂停 → 最终已恢复 → turnState pending。
+    // ChatRoom dir:'b' 分页把 chunk 最新在前传进来，倒序输入此前会被误判。
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '还在处理', 1_000, threadOf('root')),
+      notice('paused', '@manager:server', 'Worker w container has been automatically paused due to idle timeout', 2_000),
+      notice('resumed', '@manager:server', 'Worker w container has been automatically resumed', 3_000),
+    ];
+    const rootOf = (result: ReturnType<typeof assemble>) =>
+      result.messages.find((message) => message.id === 'root');
+
+    const forward = assemble(events, 'qwenpaw', '@w:server', BASE_TS + 4_000);
+    const reversed = assemble([...events].reverse(), 'qwenpaw', '@w:server', BASE_TS + 4_000);
+
+    expect(rootOf(forward)).toMatchObject({ turnState: 'pending' });
+    expect(rootOf(reversed)).toMatchObject({ turnState: 'pending' });
+    expect(reversed.messages.map((message) => message.turnState)).toEqual(
+      forward.messages.map((message) => message.turnState),
+    );
+  });
+
+  it('f3-3：恢复在前(t1)暂停在后(t2)的倒序输入不得漏报 interrupted', () => {
+    // 时间序：暂停(t3s)是最新的生命周期事件 → worker 处于 paused → interrupted。
+    // 倒序输入（恢复先出现在数组里）若按到达序处理会漏掉暂停态。
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '还在处理', 1_000, threadOf('root')),
+      notice('resumed', '@manager:server', 'Worker w container has been automatically resumed', 2_000),
+      notice('paused', '@manager:server', 'Worker w container has been automatically paused due to idle timeout', 3_000),
+    ];
+    const rootOf = (result: ReturnType<typeof assemble>) =>
+      result.messages.find((message) => message.id === 'root');
+
+    const forward = assemble(events, 'qwenpaw', '@w:server', BASE_TS + 4_000);
+    const reversed = assemble([...events].reverse(), 'qwenpaw', '@w:server', BASE_TS + 4_000);
+
+    expect(rootOf(forward)).toMatchObject({ turnState: 'interrupted' });
+    expect(rootOf(reversed)).toMatchObject({ turnState: 'interrupted' });
+  });
+
   it('attaches an attachment relation to its exact target step', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),

@@ -18,11 +18,14 @@ var resolved=themeId;
 if(themeId==='system'){resolved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}
 var root=document.documentElement;
 root.setAttribute('data-theme',resolved);
-root.classList.toggle('dark',resolved!=='light');
-root.classList.toggle('high-contrast',resolved==='high-contrast');
-root.style.colorScheme=(resolved==='light')?'light':'dark';
+// f6-2: 自定义主题按 base 判定 dark——内置主题 id 与 base 恰好一致
+// （themes.ts），行为不变；base:'light' 的自定义主题首帧不再渲染成暗色。
 var theme=null;
 for(var i=0;i<customs.length;i++){if(customs[i].id===themeId){theme=customs[i];break;}}
+var isDark=theme?(theme.base==='dark'):(resolved!=='light');
+root.classList.toggle('dark',isDark);
+root.classList.toggle('high-contrast',resolved==='high-contrast');
+root.style.colorScheme=isDark?'dark':'light';
 if(theme){
 var vars=theme.variables||{};
 for(var k in vars){if(k.indexOf('--')===0)root.style.setProperty(k,vars[k]);}

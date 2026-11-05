@@ -148,14 +148,16 @@ describe('enforceLevelOnlyRbac', () => {
     expect(content).toContain('"severity":"warning"');
   });
 });
-// ── F7 stateless mode: the dashboard pre-write RBAC defers to the
-// Controller's native per-token RBAC (the true boundary, always in the
-// loop in stateless mode) — both enforce* functions must no-op. ─────────
-describe('F7 stateless mode: RBAC pre-checks defer to the Controller', () => {
+// ── F7 stateless mode：dashboard 等级门与 Controller 原生 per-token RBAC
+// 并行生效（纵深防御）。stateless 下 middleware 仍按 token 解析身份并注入
+// 可信头（resolveStaticIdentity → level 3/2/1），等级检查照常执行；
+// storage/*、packages、skills 直连 MinIO，没有 Controller 兜底。 ────────
+describe('F7 stateless mode: dashboard level gate runs in parallel with the Controller', () => {
   let tmpDir: string;
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rbac-static-'));
     setAuditLogPathForTests(path.join(tmpDir, 'audit.log.jsonl'));
+    // mock isStatelessAuthMode() === true（逐调用读取该 env，见 static-mode.ts）。
     vi.stubEnv('DASHBOARD_STATELESS', '1');
   });
 
@@ -165,15 +167,31 @@ describe('F7 stateless mode: RBAC pre-checks defer to the Controller', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('enforceServerSideRbac allows any action in stateless mode (Controller decides)', async () => {
-    // level-1 observer attempting a delete: stateful = 403 here, stateless =
-    // pass through to the Controller (which will 403 the proxied call).
+  it('enforceServerSideRbac denies L1 delete with 403 even in stateless mode', async () => {
     const res = await enforceServerSideRbac(makeRequest('observer', 1), 'delete', 'worker', 'w1');
+    expect(res).not.toBeNull();
+    expect(res?.status).toBe(403);
+    const body = await res?.json();
+    expect(body).toMatchObject({ success: false, action: 'delete', resourceType: 'worker', resourceName: 'w1' });
+    // fire-and-forget 审计写入刷盘后再清理 tmpDir（见本文件既有 deny 用例）。
+    await new Promise((r) => setTimeout(r, 20));
+  });
+
+  it('enforceServerSideRbac lets L3 through in stateless mode', async () => {
+    const res = await enforceServerSideRbac(makeRequest('admin', 3), 'delete', 'worker', 'w1');
     expect(res).toBeNull();
   });
 
-  it('enforceLevelOnlyRbac allows any action in stateless mode (Controller decides)', async () => {
+  it('enforceLevelOnlyRbac denies L1 delete with 403 even in stateless mode', async () => {
     const res = await enforceLevelOnlyRbac(makeRequest('observer', 1), 'delete', 'storage.bucket', 'foo');
+    expect(res).not.toBeNull();
+    expect(res?.status).toBe(403);
+    const body = await res?.json();
+    expect(body).toMatchObject({ success: false, action: 'delete', resourceType: 'storage.bucket', resourceName: 'foo' });
+  });
+
+  it('enforceLevelOnlyRbac lets L3 through in stateless mode', async () => {
+    const res = await enforceLevelOnlyRbac(makeRequest('admin', 3), 'delete', 'storage.bucket', 'foo');
     expect(res).toBeNull();
   });
 

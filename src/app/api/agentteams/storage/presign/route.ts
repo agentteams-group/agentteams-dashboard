@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await enforceLevelOnlyRbac(request, 'view', 'storage', 'presign');
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'storage', 'presign');
   if (denied) return denied;
   let body: { bucket?: string; key?: string; contentType?: string } = {};
   try {
@@ -46,15 +46,23 @@ export async function POST(request: NextRequest) {
   }
 
   const { bucket, key, contentType } = body;
-  if (!bucket || !key) {
-    return NextResponse.json({ error: 'bucket and key are required' }, { status: 400 });
-  }
 
   try {
+    const bucketName = decodeURIComponent(bucket ?? '');
+    if (!bucketName || !key) {
+      return NextResponse.json({ error: 'bucket and key are required' }, { status: 400 });
+    }
+
+    // 敏感文件不签发预签名 URL（与 GET 分支同语义，统一 404）。
+    const objectName = decodeURIComponent(key);
+    if (isSensitiveObjectKey(objectName)) {
+      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+    }
+
     const client = createMinioClient();
     const url = await client.presignedPutObject(
-      decodeURIComponent(bucket),
-      decodeURIComponent(key),
+      bucketName,
+      objectName,
       PRESIGN_EXPIRY_SECONDS
     );
     return NextResponse.json({ url, fields: contentType ? { 'Content-Type': contentType } : {} });

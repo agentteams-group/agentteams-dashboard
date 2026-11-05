@@ -343,6 +343,40 @@ describe('POST /api/agentteams/audit', () => {
     expect(res.status).toBe(403);
   });
 
+  it('returns 403 for a level-1 caller (manage 门 L3-only)', async () => {
+    const res = await POST(
+      makeRequest('/api/agentteams/audit', { method: 'POST', body: '{}', actor: 'observer', level: 1 }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(String(body.error)).toContain('manage');
+  });
+
+  it('returns 403 for a level-2 caller', async () => {
+    const res = await POST(
+      makeRequest('/api/agentteams/audit', { method: 'POST', body: '{}', actor: 'operator', level: 2 }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 400 when severity is not in the enum', async () => {
+    const res = await POST(
+      makeRequest('/api/agentteams/audit', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity_type: 'worker',
+          entity_name: 'w1',
+          action: 'create',
+          severity: 'catastrophic-not-in-enum',
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(String(body.error)).toContain('severity');
+  });
+
   it('returns 400 when the payload is missing required fields', async () => {
     const res = await POST(makeRequest('/api/agentteams/audit', { method: 'POST', body: '{}' }));
     expect(res.status).toBe(400);
