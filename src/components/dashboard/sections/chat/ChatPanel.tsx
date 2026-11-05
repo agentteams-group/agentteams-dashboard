@@ -2,6 +2,7 @@ import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 import styles from './agent-conversation.module.css';
+import { AssistantTaskNote } from './components/AssistantTaskNote';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -46,6 +47,7 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
+      {room.agentRole && <AssistantTaskNote room={room} rooms={rooms ?? [room]} contextOpen={contextPanel !== null} onOpen={() => onContextPanelChange(null)} />}
     </div>
   );
 }
