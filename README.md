@@ -96,6 +96,8 @@ MCP servers get a governance surface, not just a list:
 
 One-click install from the skill/MCP catalog and the governance story above make the Dashboard the control point for what every agent can reach. See [docs/INTERFACES.md](docs/INTERFACES.md) for the wire contracts.
 
+Worker polling supports slim list projections and private ETag revalidation, with full-detail reads before editing and a fallback for older Controllers. See [Worker list compatibility](docs/worker-list-compatibility.md) for the supported combinations and cache boundaries.
+
 ## 📦 Quick Start
 
 ### Install as an AgentTeams component (recommended)
