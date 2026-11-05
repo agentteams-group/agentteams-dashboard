@@ -33,3 +33,29 @@ it('queries server filters, opens a trace, and shows the selected span content',
   expect(screen.getByRole('link', { name: /Langfuse/ }).getAttribute('href')).toContain(id);
   view.unmount(); client.clear();
 });
+
+it('exports every page and trace in a session, independently of the visible page', async () => {
+  const first = 'a'.repeat(32);
+  const second = 'b'.repeat(32);
+  const summary = (id: string) => ({ id, name: id, sessionId: 'worker-session', timestamp: '2026-11-06T00:00:00Z', tags: [], metadata: {} });
+  const fetcher = vi.fn().mockImplementation((url: string) => {
+    if (url.includes(`/${first}`) || url.includes(`/${second}`)) {
+      return Promise.resolve(Response.json({ ...summary(url.includes(first) ? first : second), observations: [] }));
+    }
+    return Promise.resolve(Response.json({ data: [summary(url.includes('page=2') ? second : first)],
+      meta: { page: url.includes('page=2') ? 2 : 1, totalPages: 2, totalItems: 2 } }));
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const create = vi.fn().mockReturnValue('blob:session-export');
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = vi.fn(); });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(first) }));
+  fireEvent.click(await screen.findByRole('button', { name: '导出会话 JSON' }));
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  expect(fetcher.mock.calls.some(([url]) => url.includes('session=worker-session') && url.includes('page=2'))).toBe(true);
+  expect(fetcher.mock.calls.some(([url]) => url.includes(`/${second}`))).toBe(true);
+  expect(click).toHaveBeenCalledOnce();
+  click.mockRestore(); view.unmount(); client.clear();
+});

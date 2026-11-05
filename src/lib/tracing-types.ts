@@ -39,6 +39,19 @@ export interface TraceList {
   meta: { page: number; totalPages: number; totalItems: number };
 }
 
+export function diagnoseTrace(observations: TraceObservation[]) {
+  const tools = observations.filter((o) => o.type === 'TOOL' || o.metadata?.['gen_ai.operation.name'] === 'execute_tool');
+  const identities = tools.map((o) => JSON.stringify([o.name, o.input]));
+  const sorted = traceRows(observations).sort((a, b) => b.duration - a.duration);
+  return {
+    errors: observations.filter((o) => o.level === 'ERROR').length,
+    tools: tools.length,
+    failedRequests: observations.filter((o) => Number(o.metadata?.['http.response.status_code']) >= 400).length,
+    repeatedTools: identities.length - new Set(identities).size,
+    slowest: sorted.find((o) => o.observation.parentObservationId)?.observation.name ?? null,
+  };
+}
+
 export function traceRows(observations: TraceObservation[]) {
   const ids = new Map(observations.map((observation) => [observation.id, observation]));
   function depth(observation: TraceObservation): number {

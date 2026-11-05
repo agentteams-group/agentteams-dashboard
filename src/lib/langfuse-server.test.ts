@@ -38,4 +38,14 @@ describe('Langfuse query boundary', () => {
     vi.stubEnv('LANGFUSE_SECRET_KEY', '');
     await expect(listTraces(new URLSearchParams())).rejects.toMatchObject({ status: 503 });
   });
+
+  it('queries a complete session without silently restricting its age', async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ data: [], meta: { page: 1 } }));
+    vi.stubGlobal('fetch', fetcher);
+    await listTraces(new URLSearchParams('session=worker%3Asession&team=t&room=r&project=p'));
+    const url = new URL(fetcher.mock.calls[0][0]);
+    expect(url.searchParams.get('sessionId')).toBe('worker:session');
+    expect(url.searchParams.has('fromTimestamp')).toBe(false);
+    expect(url.searchParams.getAll('tags')).toEqual(expect.arrayContaining(['team:t', 'room:r', 'project:p']));
+  });
 });

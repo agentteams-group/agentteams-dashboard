@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { apiUrl } from '@/lib/api-base';
-import { traceRows, type TraceDetail, type TraceList, type TraceObservation } from '@/lib/tracing-types';
+import { diagnoseTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation } from '@/lib/tracing-types';
 
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(apiUrl(`/api/agentteams/traces${path}`), { signal });
@@ -25,11 +25,16 @@ export function TracingSection() {
   const [worker, setWorker] = useState('');
   const [runtime, setRuntime] = useState('');
   const [task, setTask] = useState('');
+  const [session, setSession] = useState('');
+  const [team, setTeam] = useState('');
+  const [room, setRoom] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const [hours, setHours] = useState('24');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState('');
   const [observationId, setObservationId] = useState('');
-  const [filters, setFilters] = useState({ worker: '', runtime: '', task: '', hours: '24' });
+  const [filters, setFilters] = useState({ worker: '', runtime: '', task: '', hours: '24', session: '', team: '', room: '' });
   const list = useQuery({
     queryKey: ['traces', filters, page],
     queryFn: ({ signal }) => read<TraceList>(`?${new URLSearchParams({ ...filters, page: String(page) })}`, signal),
@@ -51,6 +56,38 @@ export function TracingSection() {
     o.usageDetails ? Object.keys(o.usageDetails).length > 0 : o.usage?.total != null);
   const costComplete = generations.length > 0 && generations.every((o) =>
     o.calculatedTotalCost != null && Object.keys(o.costDetails ?? {}).length > 0);
+  const diagnosis = diagnoseTrace(detail.data?.observations ?? []);
+  const upstream = detail.data?.metadata?.['agentteams.upstream.trace_id'];
+
+  function openSession(id: string) {
+    setSession(id);
+    setFilters({ worker: '', runtime: '', task: '', hours, session: id, team: '', room: '' });
+    setPage(1);
+  }
+
+  async function exportSession(id: string) {
+    setExporting(true); setExportError('');
+    try {
+      const traces: TraceDetail[] = [];
+      let current = 1;
+      let pages = 1;
+      do {
+        const result = await read<TraceList>(`?${new URLSearchParams({ session: id, page: String(current) })}`, new AbortController().signal);
+        // Bound request concurrency while retaining every page of the session.
+        for (let offset = 0; offset < result.data.length; offset += 4) {
+          traces.push(...await Promise.all(result.data.slice(offset, offset + 4).map((t) =>
+            read<TraceDetail>(`/${t.id}`, new AbortController().signal))));
+        }
+        pages = result.meta.totalPages; current++;
+      } while (current <= pages);
+      const url = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 1, sessionId: id,
+        exportedAt: new Date().toISOString(), traces: traces.sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+      }, null, 2)], { type: 'application/json' }));
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'worker-session-traces.json'; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) { setExportError(error instanceof Error ? error.message : '导出失败'); }
+    finally { setExporting(false); }
+  }
 
   return <div className="space-y-5">
     <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
@@ -58,16 +95,20 @@ export function TracingSection() {
     } />
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → Langfuse<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
-      e.preventDefault(); setFilters({ worker, runtime, task, hours }); setPage(1); setSelected(''); setObservationId('');
+      e.preventDefault(); setFilters({ worker, runtime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<Input aria-label="Worker" placeholder="全部 Worker" value={worker} onChange={(e) => setWorker(e.target.value)} /></label>
       <label className="space-y-1 text-xs">运行时<select aria-label="运行时" className="block h-9 rounded-md border bg-background px-3" value={runtime} onChange={(e) => setRuntime(e.target.value)}>
         <option value="">全部运行时</option>{['qwenpaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <option key={r}>{r}</option>)}
       </select></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Session ID<Input aria-label="Session ID" placeholder="查询会话的全部轮次" value={session} onChange={(e) => setSession(e.target.value)} /></label>
+      <label className="min-w-32 flex-1 space-y-1 text-xs">Team ID<Input aria-label="Team ID" value={team} onChange={(e) => setTeam(e.target.value)} /></label>
+      <label className="min-w-32 flex-1 space-y-1 text-xs">Room ID<Input aria-label="Room ID" value={room} onChange={(e) => setRoom(e.target.value)} /></label>
       <label className="space-y-1 text-xs">时间<select aria-label="时间" className="block h-9 rounded-md border bg-background px-3" value={hours} onChange={(e) => setHours(e.target.value)}><option value="1">最近 1 小时</option><option value="24">最近 24 小时</option><option value="168">最近 7 天</option></select></label>
       <Button type="submit" size="sm">查询</Button>
     </form>
+    {filters.session ? <p className="break-all text-xs text-muted-foreground">会话：{filters.session} · 展示全部时间范围内的执行轮次</p> : null}
     {list.error ? <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{list.error.message}</p> : null}
     <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.6fr)]">
       <div className="min-w-0 overflow-hidden rounded-xl border bg-card">
@@ -76,7 +117,7 @@ export function TracingSection() {
         {!list.isLoading && !list.error && !list.data?.data.length ? <p className="p-6 text-sm text-muted-foreground">暂无 Trace。运行 Worker 后刷新查看，入库可能需要数秒。</p> : null}
         <div className="max-h-[650px] overflow-y-auto">{list.data?.data.map((trace) => <button type="button" key={trace.id} onClick={() => { setSelected(trace.id); setObservationId(''); }} className={`block w-full border-b p-4 text-left transition-colors hover:bg-muted/60 ${selected === trace.id ? 'bg-muted' : ''}`}>
           <div className="truncate text-sm font-medium">{trace.name ?? trace.id}</div>
-          <div className="mt-2 flex flex-wrap gap-1">{trace.tags.filter((tag) => tag !== 'agentteams').map((tag) => <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>)}</div>
+          <div className="mt-2 flex flex-wrap gap-1">{trace.tags.filter((tag) => !['agentteams', 'worker-turn'].includes(tag)).map((tag) => <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>)}</div>
           <div className="mt-2 flex justify-between gap-2 text-xs text-muted-foreground"><span>{trace.userId ?? '未知 Worker'}</span><span>{trace.latency == null ? '—' : `${(trace.latency * 1000).toFixed(0)} ms`}</span></div>
           <div className="mt-1 text-xs text-muted-foreground">{new Date(trace.timestamp).toLocaleString()}</div>
         </button>)}</div>
@@ -87,17 +128,22 @@ export function TracingSection() {
         {detail.isFetching ? <p className="text-sm text-muted-foreground">正在读取 Trace…</p> : null}
         {detail.error ? <p role="alert" className="text-sm text-destructive">{detail.error.message}</p> : null}
         {detail.data ? <>
-          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-medium">{detail.data.name}</h2><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{selected}</p></div>{detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.langfuseUrl} target="_blank" rel="noreferrer">Langfuse<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-medium">{detail.data.name}</h2><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selected}</p></div>{detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.langfuseUrl} target="_blank" rel="noreferrer">Langfuse<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
+          {detail.data.sessionId ? <div className="flex flex-wrap items-center gap-2 text-xs"><span className="break-all text-muted-foreground">Session: {detail.data.sessionId}</span><Button size="sm" variant="outline" onClick={() => openSession(detail.data!.sessionId!)}>查看整个会话</Button><Button size="sm" variant="outline" disabled={exporting} onClick={() => void exportSession(detail.data!.sessionId!)}>{exporting ? '正在导出…' : '导出会话 JSON'}</Button></div> : null}
+          {exportError ? <p role="alert" className="text-xs text-destructive">{exportError}</p> : null}
+          {typeof upstream === 'string' && /^[a-f0-9]{32}$/i.test(upstream) ? <Button size="sm" variant="outline" onClick={() => { setSelected(upstream); setObservationId(''); }}>查看上游 Worker Trace</Button> : null}
+          <div className="rounded-lg border p-3 text-xs leading-6"><p>错误 {diagnosis.errors} · 工具调用 {diagnosis.tools} · HTTP 失败 {diagnosis.failedRequests} · 重复工具参数 {diagnosis.repeatedTools}</p>{diagnosis.slowest ? <p className="text-muted-foreground">最长子步骤：{diagnosis.slowest}</p> : null}<p className="text-muted-foreground">重复调用仅为排查线索；结合输入输出判断是否存在无效循环。</p></div>
           <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/40 p-3">{[['Spans', rows.length], ['Tokens', usageComplete ? tokens : tokens ? `${tokens}（部分）` : '未上报'], ['Cost', costComplete && detail.data.totalCost != null ? `$${detail.data.totalCost.toFixed(6)}` : '未计价']].map(([label, value]) => <div key={label}><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg">{value}</div></div>)}</div>
           <div className="overflow-x-auto"><div className="min-w-[460px]">
             <div className="grid grid-cols-[minmax(200px,1fr)_1fr_65px] border-b pb-2 text-xs text-muted-foreground"><span>Span / 父子关系</span><span>时间线</span><span className="text-right">耗时</span></div>
             {rows.map(({ observation: o, depth, duration, left, width }) => <button type="button" key={o.id} onClick={() => setObservationId(o.id)} className={`grid w-full grid-cols-[minmax(200px,1fr)_1fr_65px] items-center gap-2 border-b py-3 text-left hover:bg-muted/40 ${observationId === o.id ? 'bg-muted/60' : ''}`}>
-              <div className="min-w-0" style={{ paddingLeft: Math.min(depth, 6) * 12 }}><p className="truncate text-xs font-medium">{depth ? '↳ ' : ''}{o.name}</p><span className={`text-[10px] ${o.level === 'ERROR' ? 'text-destructive' : 'text-muted-foreground'}`}>{o.type}{o.level === 'ERROR' ? ' · ERROR' : ''}{o.model ? ` · ${o.model}` : ''}</span></div>
+              <div className="min-w-0" style={{ paddingLeft: Math.min(depth, 6) * 12 }}><p className="truncate text-xs font-medium">{depth ? '↳ ' : ''}{o.name}</p><span className={`text-xs ${o.level === 'ERROR' ? 'text-destructive' : 'text-muted-foreground'}`}>{o.type}{o.level === 'ERROR' ? ' · ERROR' : ''}{o.model ? ` · ${o.model}` : ''}</span></div>
               <div className="relative h-5 rounded bg-muted/30"><div className={`absolute top-1 h-3 min-w-1 rounded ${o.level === 'ERROR' ? 'bg-destructive' : o.type === 'GENERATION' ? 'bg-violet-500' : 'bg-sky-500'}`} style={{ left: `${left}%`, width: `${Math.max(0.5, Math.min(width, 100 - left))}%` }} /></div>
-              <span className="text-right font-mono text-[11px] text-muted-foreground">{duration.toFixed(0)} ms</span>
+              <span className="text-right font-mono text-xs text-muted-foreground">{duration.toFixed(0)} ms</span>
             </button>)}
           </div></div>
           {observation ? <div className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">{observation.name}</h3>{observation.statusMessage ? <p className="text-xs text-destructive">{observation.statusMessage}</p> : null}<div className="grid gap-3 md:grid-cols-2"><div><p className="mb-2 text-xs text-muted-foreground">Input</p><JsonView value={observation.input} /></div><div><p className="mb-2 text-xs text-muted-foreground">Output</p><JsonView value={observation.output} /></div></div><details><summary className="cursor-pointer text-xs text-muted-foreground">属性与用量</summary><JsonView value={{ metadata: observation.metadata, usage: observation.usageDetails ?? observation.usage }} /></details></div> : <p className="text-xs text-muted-foreground">点击 Span 查看输入、输出和属性；内容采集由 Worker 配置控制。</p>}
+          <details><summary className="cursor-pointer text-xs text-muted-foreground">会话关联与采集覆盖</summary><JsonView value={detail.data.metadata} /></details>
         </> : null}
       </div>
     </div>

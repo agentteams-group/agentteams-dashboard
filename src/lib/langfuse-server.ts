@@ -44,15 +44,22 @@ export async function listTraces(search: URLSearchParams): Promise<TraceList> {
   const page = search.get('page') ?? '1';
   if (!/^[1-9]\d{0,4}$/.test(page)) throw new TracingError(400, '无效页码');
   const params = new URLSearchParams({ page, limit: '20', orderBy: 'timestamp.desc', tags: 'agentteams' });
+  params.append('tags', 'worker-turn');
   const worker = search.get('worker');
   if (worker) params.set('userId', worker);
   const runtime = search.get('runtime');
   if (runtime) params.append('tags', runtime);
   const task = search.get('task');
   if (task) params.append('tags', `task:${task}`);
+  for (const label of ['team', 'room', 'project']) {
+    const value = search.get(label);
+    if (value) params.append('tags', `${label}:${value}`);
+  }
+  const session = search.get('session');
+  if (session) params.set('sessionId', session);
   const hours = Number(search.get('hours') ?? '24');
   if (![1, 24, 168].includes(hours)) throw new TracingError(400, '无效时间范围');
-  params.set('fromTimestamp', new Date(Date.now() - hours * 3600000).toISOString());
+  if (!session) params.set('fromTimestamp', new Date(Date.now() - hours * 3600000).toISOString());
   const result = await query<TraceList>(`traces?${params}`);
   // Keep input/output out of the list; load content only on explicit selection.
   return { meta: result.meta, data: result.data.map((t) => ({
@@ -71,5 +78,11 @@ export async function getTrace(id: string): Promise<TraceDetail> {
   if (publicBase && project && /^https?:\/\//.test(publicBase)) {
     langfuseUrl = `${publicBase.replace(/\/$/, '')}/project/${encodeURIComponent(project)}/traces/${id}`;
   }
-  return { ...result, langfuseUrl };
+  return { ...result, observations: result.observations.map((observation) => {
+    const attributes = observation.metadata?.attributes;
+    return { ...observation, metadata: {
+      ...(attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {}),
+      ...observation.metadata,
+    } };
+  }), langfuseUrl };
 }
