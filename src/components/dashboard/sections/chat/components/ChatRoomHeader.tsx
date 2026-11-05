@@ -88,7 +88,7 @@ export function ChatRoomHeader({
 }: ChatRoomHeaderProps) {
   const teamName = team ? team.teamName || team.name : '';
   return (
-    <div data-chat-room-header className="flex h-16 shrink-0 items-center gap-3 overflow-hidden px-5 sm:px-8">
+    <div data-chat-room-header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden px-5 py-3 sm:h-16 sm:flex-nowrap sm:px-8 sm:py-0">
       {avatar ? (
         <Avatar className="w-9 h-9 shrink-0 rounded-[10px]">
           <img src={avatar} alt={roomName} />
@@ -147,7 +147,7 @@ export function ChatRoomHeader({
           )
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto">
         <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
