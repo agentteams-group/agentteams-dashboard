@@ -23,6 +23,7 @@ export interface TraceObservation {
   usage?: { input?: number; output?: number; total?: number };
   usageDetails?: Record<string, number>;
   calculatedTotalCost?: number | null;
+  costDetails?: Record<string, number>;
   metadata?: Record<string, unknown>;
   input?: unknown;
   output?: unknown;

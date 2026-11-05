@@ -49,7 +49,8 @@ export function TracingSection() {
     ((o.usageDetails?.input ?? o.usage?.input ?? 0) + (o.usageDetails?.output ?? o.usage?.output ?? 0))), 0);
   const usageComplete = generations.length > 0 && generations.every((o) =>
     o.usageDetails ? Object.keys(o.usageDetails).length > 0 : o.usage?.total != null);
-  const costComplete = generations.length > 0 && generations.every((o) => o.calculatedTotalCost != null);
+  const costComplete = generations.length > 0 && generations.every((o) =>
+    o.calculatedTotalCost != null && Object.keys(o.costDetails ?? {}).length > 0);
 
   return <div className="space-y-5">
     <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
