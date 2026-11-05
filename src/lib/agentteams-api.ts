@@ -3,6 +3,7 @@
 
 import { ApiError, NetworkError } from '@/lib/api-error';
 import { apiUrl } from '@/lib/api-base';
+import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
 
 // ============ Response Types ============
@@ -397,9 +398,10 @@ async function proxyRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const requestScope = currentReadScope();
   let res: Response;
   try {
-    res = await fetch(apiUrl(`/api/agentteams${path}`), {
+    res = await conditionalFetch(apiUrl(`/api/agentteams${path}`), {
       ...options,
       headers: {
         ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
@@ -407,6 +409,7 @@ async function proxyRequest<T>(
       },
     });
   } catch (err) {
+    if (err instanceof ApiError) throw err;
     throw new NetworkError(path, err);
   }
 
@@ -434,8 +437,11 @@ async function proxyRequest<T>(
   }
 
   try {
-    return await res.json();
+    const data = await res.json();
+    if (currentReadScope() !== requestScope) throw new ApiError('账号或连接已切换，请重新读取', 409, path);
+    return data;
   } catch (err) {
+    if (err instanceof ApiError) throw err;
     const message = err instanceof Error ? err.message : 'unknown';
     throw new ApiError(
       `Failed to parse API JSON response: ${message}`,
@@ -569,6 +575,33 @@ export const agentteamsApi = {
     const result = await proxyRequest<WorkerResponse[] | { workers: WorkerResponse[]; total: number }>('/workers');
     if (!result || typeof result !== 'object') return [];
     return Array.isArray(result) ? result : (result.workers ?? []);
+  },
+
+  // Poll projections only; full configuration stays on listWorkers/getWorker.
+  listWorkerSummaries: async (): Promise<WorkerResponse[]> => {
+    type Rows = WorkerResponse[] | { workers: WorkerResponse[] };
+    const rows = (result: Rows) => Array.isArray(result) ? result : result.workers ?? [];
+    try {
+      const [spec, status] = await Promise.all([
+        proxyRequest<Rows>('/workers?fields=spec'),
+        proxyRequest<Rows>('/workers?fields=status'),
+      ]);
+      let byName = new Map(rows(spec).map((worker) => [worker.name, worker]));
+      const live = rows(status);
+      if (live.some((worker) => !byName.has(worker.name))) {
+        const fresh = await proxyRequest<Rows>('/workers?fields=spec', { cache: 'reload' });
+        byName = new Map(rows(fresh).map((worker) => [worker.name, worker]));
+        if (live.some((worker) => !byName.has(worker.name))) {
+          return rows(await proxyRequest<Rows>('/workers?fields=spec,status'));
+        }
+      }
+      // Status is authoritative for membership: removed Workers must disappear.
+      return live.map((worker) => ({ ...byName.get(worker.name), ...worker }));
+    } catch (error) {
+      // Old Controllers either ignore fields (already compatible above) or reject it.
+      if (error instanceof ApiError && error.status === 400) return agentteamsApi.listWorkers();
+      throw error;
+    }
   },
 
   getWorker: (name: string) => proxyRequest<WorkerResponse>(`/workers/${encodeURIComponent(name)}`),
