@@ -59,7 +59,9 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "@typescript-eslint/no-explicit-any": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**"]
+  // .zcode/** = local dynamic-workflow runtime artifacts (drafts/run scripts,
+  // git-ignored); they are not repo source and must not gate `eslint .`.
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**", ".zcode/**"]
 }];
 
 export default eslintConfig;
