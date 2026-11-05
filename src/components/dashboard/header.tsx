@@ -183,7 +183,7 @@ export function DashboardHeader({
             // Delay closing so click events on results can fire
             setTimeout(() => setPaletteOpen(false), 200);
           }}
-          className={`${paletteOpen ? '' : 'sr-only sm:not-sr-only'} pl-9 h-9 border-transparent bg-muted/45 shadow-none focus-visible:bg-background`}
+          className={`${paletteOpen ? '' : 'max-sm:sr-only'} pl-9 h-9 border-transparent bg-muted/45 shadow-none focus-visible:bg-background`}
         />
         {paletteOpen && searchResults.length > 0 && (
           <CommandPalette

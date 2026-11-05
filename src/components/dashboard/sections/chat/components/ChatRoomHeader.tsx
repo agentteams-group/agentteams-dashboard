@@ -61,6 +61,7 @@ function ContextChip({
       className="h-7 gap-1 px-2 text-xs"
       onClick={onClick}
       title={`${active ? '隐藏' : '显示'}${label}`}
+      aria-label={`${active ? '隐藏' : '显示'}${label}`}
       aria-pressed={active}
     >
       <Icon className="h-3.5 w-3.5" />

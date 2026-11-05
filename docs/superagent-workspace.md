@@ -10,6 +10,7 @@
 - Team Leader 的身份与运行时优先由现有 Worker 数据补全，兼容 Manager 作为 Leader 的数据。
 - 非管理员不请求全局 Managers、Humans，平台助手也不会作为团队用户的默认入口。
 - 所有操作继续使用原有登录、服务端权限校验和 Controller 凭据。
+- Leader DM 的实际访问仍由房间成员权限决定：当前 Controller 为 Team Admin 与 Leader 建立私聊，旧团队回退为平台 Admin 与 Leader；团队资源可见不等于已加入该私聊。
 
 ## 界面结构
 
