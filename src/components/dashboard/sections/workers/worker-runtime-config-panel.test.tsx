@@ -10,9 +10,9 @@ const CONFIG = {
   loop_config: { loop_detection: { enabled: true } },
 };
 
-type FetchResult = { status: number; body: unknown };
+type FetchResult = { status: number; body: unknown; headers?: Record<string, string> };
 let results: FetchResult[] = [];
-let calls: Array<{ url: string; method: string; body?: string }> = [];
+let calls: Array<{ url: string; method: string; body?: string; ifMatch: string | null }> = [];
 
 function mockFetch(results_: FetchResult[]) {
   results = results_;
@@ -20,13 +20,14 @@ function mockFetch(results_: FetchResult[]) {
     const idx = calls.length;
     const method = (init?.method ?? 'GET').toUpperCase();
     const body = typeof init?.body === 'string' ? init.body : undefined;
-    calls.push({ url, method, body });
+    calls.push({ url, method, body, ifMatch: new Headers(init?.headers).get('If-Match') });
     const r = results[idx] ?? results[0];
     const status = r ? r.status : 200;
     const payload = r ? r.body : CONFIG;
     return {
       ok: status < 400,
       status,
+      headers: new Headers(r?.headers),
       json: async () => payload,
     } as Response;
   });
@@ -153,5 +154,40 @@ describe('B5 WorkerRuntimeConfigPanel（#1231 消费）', () => {
     fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '0' } });
     expect(screen.getByText('max_iters 须为正整数')).toBeInTheDocument();
     expect((screen.getByRole('button', { name: /保存改动/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('uses the read version and updates it after saving', async () => {
+    mockFetch([
+      { status: 200, body: CONFIG, headers: { ETag: '"v1"' } },
+      { status: 200, body: {}, headers: { ETag: '"v2"' } },
+      { status: 200, body: {}, headers: { ETag: '"v3"' } },
+    ]);
+    await renderLoadedPanel();
+    fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
+    await screen.findByText(/已保存/);
+    await act(async () => {});
+    fireEvent.change(screen.getByDisplayValue('25'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
+    expect(calls.filter((c) => c.method === 'PUT').map((c) => c.ifMatch)).toEqual(['"v1"', '"v2"']);
+  });
+
+  it.each([409, 412, 428])('keeps edits on a version conflict (%s) and requires an explicit reload', async (status) => {
+    mockFetch([
+      { status: 200, body: CONFIG, headers: { ETag: '"v1"' } },
+      { status, body: { code: 'conflict' } },
+      { status: 200, body: { ...CONFIG, max_iters: 35 }, headers: { ETag: '"v2"' } },
+    ]);
+    await renderLoadedPanel();
+    fireEvent.change(screen.getByDisplayValue('20'), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
+    await screen.findByText(/配置已被其他操作修改/);
+    expect(screen.getByDisplayValue('25')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /保存改动/ })).toBeDisabled();
+    expect(calls).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /重新加载配置/ }));
+    await screen.findByDisplayValue('35');
+    expect(screen.queryByText(/配置已被其他操作修改/)).not.toBeInTheDocument();
   });
 });

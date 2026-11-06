@@ -9,6 +9,7 @@ import { CHAT_COLUMN_CLASS } from './layout';
 import { filterEmoji } from './composer-commands';
 import { FileRefPickerDialog } from './components/FileRefPickerDialog';
 import type { FileRef } from '@/lib/file-refs';
+import { VoiceInput } from './voice-input';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -46,6 +47,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 interface ChatComposerProps {
+  roomId?: string;
   value: string;
   onChange: (_value: string) => void;
   /** Sends the message; receives the currently attached file references (#87). */
@@ -71,6 +73,7 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  roomId,
   value,
   onChange,
   onSend,
@@ -89,6 +92,7 @@ export function ChatComposer({
   onCancelEdit,
   onRequestEditLast,
 }: ChatComposerProps) {
+  const [voiceBusy, setVoiceBusy] = useState(false);
   // Track @mentions that were inserted
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   // Expose mentions to parent whenever they change
@@ -202,7 +206,7 @@ export function ChatComposer({
   }, [menuType]);
 
   const handleSend = () => {
-    if (isSending) return;
+    if (isSending || voiceBusy) return;
     if (!value.trim() && fileRefs.length === 0) return;
     onSend(fileRefs);
     // The parent owns `value` and clears it through onChange; refs are local
@@ -211,6 +215,10 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (voiceBusy && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      return;
+    }
     // Menu navigation
     if (menuType) {
       if (e.key === 'ArrowDown') {
@@ -352,11 +360,13 @@ export function ChatComposer({
     [onChange, onSlashCommand]
   );
 
-  const autoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
-    const target = e.currentTarget;
+  useEffect(() => {
+    const target = inputRef.current;
+    if (!target) return;
     target.style.height = 'auto';
     target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-  };
+    target.style.overflowY = target.scrollHeight > 120 ? 'auto' : 'hidden';
+  }, [value]);
 
   const handleFileClick = () => {
     fileInputRef.current?.click();
@@ -516,11 +526,10 @@ export function ChatComposer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
-          disabled={disabled}
+          disabled={disabled || voiceBusy}
           className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground/50"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
-          onInput={autoResize}
         />
         <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
           <Button
@@ -551,6 +560,20 @@ export function ChatComposer({
             </Button>
           )}
 
+          <VoiceInput
+            key={`${roomId ?? ''}:${editSession?.eventId ?? 'draft'}`}
+            disabled={disabled || isSending || Boolean(editSession)}
+            onBusyChange={setVoiceBusy}
+            onTranscript={text => {
+              onChange(`${value}${value && !/\s$/.test(value) ? ' ' : ''}${text}`);
+              requestAnimationFrame(() => {
+                const input = inputRef.current;
+                input?.focus();
+                input?.setSelectionRange(input.value.length, input.value.length);
+              });
+            }}
+          />
+
           <p className="ml-1 hidden min-w-0 truncate text-xs text-muted-foreground/60 sm:block">
             Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
           </p>
@@ -571,7 +594,7 @@ export function ChatComposer({
               size="sm"
               className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
               onClick={handleSend}
-              disabled={(!value.trim() && fileRefs.length === 0) || isSending}
+              disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
               title="发送 (Enter)"
             >
               {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}

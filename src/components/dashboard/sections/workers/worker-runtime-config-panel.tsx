@@ -34,6 +34,8 @@ function isThreshold(v: string): boolean {
 export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string }) {
   const [state, setState] = useState<LoadState>('loading');
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
+  const [etag, setEtag] = useState<string | null>(null);
+  const [needsReload, setNeedsReload] = useState(false);
   const [loadError, setLoadError] = useState('');
   // 编辑值（字符串=输入中；null=未编辑）
   const [maxIters, setMaxIters] = useState<string | null>(null);
@@ -70,6 +72,9 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
         return;
       }
       const json = (await res.json()) as RuntimeConfig;
+      setEtag(res.headers.get('ETag'));
+      setNeedsReload(false);
+      setSaveMsg(null);
       setConfig(json);
       setState('ready');
     } catch (err) {
@@ -130,16 +135,27 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
   const involvesLoop = 'max_iters' in diff || 'loop_config' in diff;
 
   const handleSave = useCallback(async () => {
-    if (!hasChanges || saving) return;
+    if (!hasChanges || saving || needsReload) return;
     setSaving(true);
     setSaveMsg(null);
     try {
       const res = await fetch(url, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(etag ? { 'If-Match': etag } : {}) },
         body: JSON.stringify(diff),
       });
-      if (res.status === 409) {
+      if (res.status === 409 || res.status === 412 || res.status === 428) {
+        let code = '';
+        try {
+          code = ((await res.json()) as { code?: string }).code ?? '';
+        } catch {
+          // Older Controllers may return a non-JSON lock response.
+        }
+        if (res.status !== 409 || code === 'conflict') {
+          setNeedsReload(true);
+          setSaveMsg({ kind: 'err', text: '配置已被其他操作修改，请重新加载后再保存。' });
+          return;
+        }
         setSaveMsg({ kind: 'err', text: '配置被锁定（409），稍后重试' });
         return;
       }
@@ -156,6 +172,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
         return;
       }
       // 本地落值（= 服务端合并后的结果）
+      setEtag(res.headers.get('ETag'));
       setConfig((prev) => (prev ? { ...prev, ...diff } : prev));
       setMaxIters(null);
       setMaxInputTokens(null);
@@ -170,7 +187,7 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
     } finally {
       setSaving(false);
     }
-  }, [diff, hasChanges, involvesLoop, saving, url]);
+  }, [diff, etag, hasChanges, involvesLoop, needsReload, saving, url]);
 
   if (state === 'loading') {
     return (
@@ -283,12 +300,12 @@ export function WorkerRuntimeConfigPanel({ workerName }: { workerName: string })
       )}
 
       <div className="flex items-center gap-2">
-        <Button size="sm" className="h-7 text-xs" disabled={!hasChanges || !!invalid || saving} onClick={() => void handleSave()}>
+        <Button size="sm" className="h-7 text-xs" disabled={!hasChanges || !!invalid || saving || needsReload} onClick={() => void handleSave()}>
           {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden="true" /> : <Check className="mr-1 h-3 w-3" aria-hidden="true" />}
           保存改动
         </Button>
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => void load()}>
-          刷新
+          {needsReload ? '重新加载配置' : '刷新'}
         </Button>
         {saveMsg && (
           <span

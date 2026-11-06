@@ -181,29 +181,33 @@ Entries discovered by the Agent while performing [specific task description] sho
 - Context: Discovered by Agent while fixing #138 license and #139 installer drift
 - Category: Workflow & Collaboration | Testing Methods
 - Instructions:
-  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-04 已对齐上游 main `c69037acb24c`，与上游 diff 0。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
+  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-06 已对齐上游 main `9322b04`（PR #192），与上游 diff 0（含 #1501 `AGENTTEAMS_FS_PUBLIC_ENDPOINT`、#1526 embedded 模式 `CONTROLLER_URL` 注入）。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
   - 对齐方法：直接用上游 main 的 `install/agentteams-install.sh` 覆盖本仓副本，再把 `_dashboard_merge_console_host` / volume export/chown 同步到 standalone `install/agentteams-dashboard.sh`。weekly drift 只扫 `agentteams-install.sh`（上游没有独立 dashboard.sh）
   - 安装器验证命令（无需 Docker）：`bash -n install/agentteams-install.sh`、`bash scripts/check-docs-consistency.sh`、`bash install/agentteams-dashboard-tests.sh`（62 用例）
   - 本仓根目录原本缺 `LICENSE`；许可证采用 Apache-2.0（Copyright 2026 AgentTeams Contributors，与上游一致），`package.json` 亦补 `license` 字段
 
 [Project Knowledge Summary]
 - Date: 2026-10-18
-- Context: Workbench 重构（PRD v1.1）M1 骨架实施，分支 261018-feat-workbench-refactor-m1
+- Context: Workbench 重构（PRD v1.1，归档 .monkeycode/specs/workbench-refactor/prd.md）
 - Category: Workflow & Collaboration | Build Methods | Environment Configuration
 - Instructions:
-  - Workbench 重构 PRD 归档在 .monkeycode/specs/workbench-refactor/prd.md（v1.1 终稿，14 周 4 里程碑）
-  - M1 骨架已全部落地（分支 261018-feat-workbench-refactor-m1）：混合 IA、分层 hash、经典导航开关、孤儿清理、版本统一、命令面板扩展、F1.1 空间切片、F1.2 接力卡（依赖/责任/摘要/展开/跳转）、F1.3 工件三态（任务维度，released 带 M1 降级说明）、F1.5 切片（@name 直达会话）、F4.1 切片（roomId 直达空间）
-  - F1.3 注意：消息流工件卡与 pending_review 态的事实源（放行记录 com.agentteams.release / 审查请求块）待 M2 F2/F3 落地，M1 只在任务详情与接力卡展开区呈现三态
-  - M2 进度：F2.1 干预卡（v2 协议消费侧 + 全交互规格 + 消息回写降级徽标）、F2.2 超时置灰与升级通知（审计 hitl.expire 待 BFF 落点）、F2.3 收件箱互通已完成；F2.4 回写审计、F3 审查闭环（F3.1-F3.4）未开始
-  - 干预协议约定：isInterventionConfirmation 按 question/options/questions 字段存在判定，v1 工具确认不受影响；答案回写上游 v2 answer 契约就绪前一律走「自然语言消息发回房间」降级，UI 徽标常显
-  - F3 审查闭环已落地：review.report v2 块（协议/parser/报告卡）、放行记录走 com.agentteams.release 房间状态事件（新 BFF state-event 仅放行 com.agentteams.* 前缀，session 归因 + release.* 审计）、自动放行走 com.agentteams.space 事件（默认关）；放行记录独立 stateKey 写入历史不覆盖；artifact-state 放行历史优先于任务状态推导
-  - M2 全部落地：F2.4 hitl.* 审计经 POST /api/agentteams/hitl/audit（白名单校验 + session 归因）；F5.1 拓扑强化（assignee/条件边/关键路径 criticalPathOf/卡住节点点击直达会话）。M2 出口「旅程 B/D 端到端」待上游联调
-  - M3 全部落地（F8.3 示例空间/循环除外——依赖演示运行时）。M4 进度：F4.2 我的工作台（第 15 项导航 my-workbench，聚合干预/审批/@我）、F4.3 PendingBanner 顶栏待办横幅、F8.2 三步引导（welcome-steps，localStorage 跳过）、侧栏控制台区角色自适应折叠（userLevel<3 默认收起）已落地
-  - M4 进度：F4.2/F4.3 横幅/引导/角色折叠 + F7.1 资源收敛（ResourcesSection 容器 + mergedInto 机制：Workbench 侧栏隐藏旧项，经典导航/sectionMap/旧深链保留，功能零删减）已落地
-  - 重构整体状态：PRD P0 全部交付，P1 除 F4.3 SSE 化（P2 口径）与 F8.3 示例空间（依赖演示运行时）外全部落地。残余事项：F7.1 的「Agent 目录产品化」增强（头像/技能标签/加到空间——现有 workers-section 已有卡片基础）、性能验收（Lighthouse CI）、v2.0 灰度发版（docs/RELEASE.md 流程）
-  - 干预卡可用性关键认知（2026-10 装验）：发 v2 卡片的能力在上游 runtime（G4），Agent 侧只会回纯文本——Dashboard 已落「干预启发式」（intervention-heuristic.ts）：问句/引导行 + 连续编号选项（1） 1. 1、 1)）自动升格为 InterventionCard，防误伤护栏=代码块不参与/无疑问语义不升格/流式与自己的消息不升格；提交走 composeAnswerText 回房间，上游零改动闭环。装验时引导 Agent「用编号列表列选项」即可触发卡片
-  - 装验视觉口径（2026-10 反馈已落）：会话气泡浅色轻装饰（自己=emerald 浅底/Agent=中性浅底，46rem 宽）；标签卡（thinking/toolcall/streaming）统一 rounded-lg 无阴影；顶栏资源计数与连接状态合并为两枚胶囊；侧栏宽度 w-auto 自适应（168-256px）
-  - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
-  - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
+  - PRD P0 全部交付，P1 除 F4.3 SSE 化（P2 口径）与 F8.3 示例空间（依赖演示运行时）外全部落地。残余：Agent 目录产品化增强、Lighthouse 性能验收、v2.0 灰度发版（docs/RELEASE.md）
+  - 干预卡：上游 runtime 只会回纯文本，Dashboard 用 intervention-heuristic.ts 把「问句/引导行 + 连续编号选项」升格为 InterventionCard；护栏=代码块不参与/无疑问语义不升格/流式与自己消息不升格。提交走 composeAnswerText 回房间；装验时引导 Agent 用编号列表列选项即可触发
+  - 干预协议：isInterventionConfirmation 按 question/options/questions 字段存在判定，v1 工具确认不受影响；上游 v2 answer 契约就绪前回写一律降级为自然语言消息，UI 徽标常显
+  - 审查闭环：review.report v2 块；放行记录走 com.agentteams.release 房间状态事件（BFF state-event 仅放行 com.agentteams.* 前缀）；自动放行走 com.agentteams.space（默认关）；artifact-state 放行历史优先
+  - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（store persist v4）；侧栏分组统一走 use-nav-sections.ts
+  - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
+  - 装验视觉口径：会话气泡浅色轻装饰（自己 emerald 浅底/Agent 中性浅底，46rem 宽）；标签卡统一 rounded-lg 无阴影；顶栏资源计数与连接状态合并为胶囊；侧栏宽度 w-auto 自适应 168-256px
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
-  - 全量 vitest 基线：244 文件 / 2281 测试（孤儿清理后），全量跑约 3.5-4 分钟；孤儿 section（architecture/security/quickstart/runtime/docs/projects 共 7 文件）已于 M1 删除
+  - `npm install` 若非必要会改动 `package-lock.json` 的 `dev`/`devOptional` 标记，提交前用 `git checkout -- package-lock.json` 还原这类非语义 churn
+  - 全量 vitest 基线：311 文件 / 2825 用例，全量约 4.5-5 分钟；`@huggingface/transformers`、`opencc-js` 已声明，缺装会挂 speech/voice 相关 4 个文件
+
+[Project Knowledge Summary]
+- Date: 2026-11-06
+- Context: Discovered by Agent while landing Worker tracing (#1531 / upstream #1532)
+- Category: Operations & Deployment | Environment Configuration
+- Instructions:
+  - 可观测配置落 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`（0600 原子 rename，目录 0700），不写 Controller；未建文件时回退 `LANGFUSE_*` env，`revision` 固定为 `environment`
+  - 下发给 Worker 的 env 仅：`AGENTTEAMS_OTEL_ENABLED`、`AGENTTEAMS_OTEL_CAPTURE_CONTENT`、`AGENTTEAMS_OTEL_CONFIG_REVISION`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`、`OTEL_EXPORTER_OTLP_PROTOCOL`（http/protobuf）、`OTEL_EXPORTER_OTLP_HEADERS`、`OTEL_EXPORTER_OTLP_TRACES_HEADERS`；Langfuse 项目密钥只留 Dashboard 服务端
+  - 关闭采集同样要执行一次 apply；apply 前必须 `revision` 匹配最新保存值，否则 409
+  - `AGENTTEAMS_TRACING_DEMO=true` 仅用于无 Controller 的隔离演示，需同时 `AGENTTEAMS_AUTH_DISABLED=true` 且 `AGENTTEAMS_TRACING_DEMO_SCOPE` 提供合法 JSON scope

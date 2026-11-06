@@ -17,6 +17,8 @@
 
 ---
 
+聊天语音输入：点击麦克风录音，转写填入草稿后可编辑再发送。默认本地免费识别，可配置服务端 API Key 启用百炼付费识别。详见[语音输入配置](docs/voice-input.md)。
+
 <!-- TODO(录制)：以下三张占位图替换为真实截图/动图——录制清单见
      docs/images/README.md（overview 拓扑 / 任务看板 HITL 干预 / Chat 回放）。 -->
 
@@ -243,6 +245,16 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SHARED_MODE` | `1` = 多用户共享本实例（配置保存仅 L1、写操作审计） | 未设（一人一实例） |
 | `DASHBOARD_ALLOWED_HOSTS` | setup「测试连接」探针的严格白名单（探针已 token/会话门控；metadata 哨兵 169.254.169.254 全模式拒绝） | 未设（对 session/token 持有者放行） |
 | `NEXT_PUBLIC_BASE_PATH` | URL 基础路径（嵌入部署时用） | `/dashboard` |
+
+### 可选的 Worker 链路追踪
+
+AT 与 Dashboard 不依赖 Langfuse 也能启动。管理员在「控制台 → 治理 → Tracing」打开「可观测配置」，填写 Langfuse 项目查询凭据与已有的 OTLP/HTTP Collector 地址，测试连接、保存并应用到选定的托管 Worker。Collector 需已把数据导出到同一个 Langfuse 项目，且 Worker 能访问它。Collector 侧请使用仅具备写入权限的凭据，项目查询凭据只留在 Dashboard 服务端。
+
+保存后无需重启 Dashboard。配置以 `0600` 权限原子写入 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`，该目录需挂载持久卷。密钥字段只写不读，留空表示保留已保存的值。`LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_URL`、`LANGFUSE_PROJECT_ID`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 仍可作为读取存量 Trace 的服务端默认值。
+
+采集默认关闭。应用时只通过 Controller 既有的 Worker API 合并遥测相关环境变量；运行中的托管 Worker 会重建，休眠中的 Worker 在下次启动时生效。这要求 QwenPaw 或 Hermes 镜像已支持遥测，且 Controller 允许编辑 Worker 环境变量。关闭采集同样需要执行一次「应用」，已入库的 Trace 仍可查询。连接测试或配置写入成功都不代表 Worker 已就绪或已开始上报：请实际运行一个任务并查看对应的 Trace。
+
+Team/Worker 过滤、Trace 列表/详情/会话导出都按当前账号在 Controller 的权限执行。选中 Worker 会同时锁定其运行时。每个 Controller 部署或组织应使用独立的 Langfuse 项目；跨组织复用 Worker 名称不构成租户隔离。Trace 详情包含瀑布图、会话跳转/导出、耗时、Token 总量与用量分布。实现面向 Langfuse v3 写入与 v1 查询 API。
 
 ## 🏗 核心设计
 

@@ -61,7 +61,8 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
 }, {
   // .zcode/** = local dynamic-workflow runtime artifacts (drafts/run scripts,
   // git-ignored); they are not repo source and must not gate `eslint .`.
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**", ".zcode/**"]
+  // public/speech/** = build-time downloaded Whisper WASM assets (#181).
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "public/speech/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**", ".zcode/**"]
 }];
 
 export default eslintConfig;

@@ -40,6 +40,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   models: 'console/resources/models',
   knowledge: 'console/resources/knowledge',
   audit: 'console/governance/audit',
+  tracing: 'console/governance/tracing',
   overview: 'console/system/overview',
 };
 
@@ -63,6 +64,7 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   models: 'models',
   knowledge: 'knowledge',
   audit: 'audit',
+  tracing: 'tracing',
   // The standalone projects section was merged into the task board; the
   // alias predates the Workbench IA and keeps resolving.
   projects: 'tasks',
@@ -230,6 +232,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       'resources/models': 'models',
       'resources/knowledge': 'knowledge',
       'governance/audit': 'audit',
+      'governance/tracing': 'tracing',
       'system/overview': 'overview',
     };
     const sub = segments.slice(1).join('/');

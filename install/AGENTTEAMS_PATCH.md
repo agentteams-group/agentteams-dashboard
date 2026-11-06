@@ -19,16 +19,29 @@ export/chown, and Controller Console URL forwarding now live upstream.
 Rebase this tree onto current `agentscope-ai/AgentTeams` `main` when the
 weekly drift check fires; there is no pinned source revision.
 
-Working copy status (2026-11-04): rebased onto `agentscope-ai/AgentTeams`
-`main` at `c69037acb24c`. `install/agentteams-install.sh` matches upstream
+Working copy status (2026-11-06): rebased onto `agentscope-ai/AgentTeams`
+`main` at `9322b04`. `install/agentteams-install.sh` matches upstream
 main (diff 0). Upstream now includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
 `AGENTTEAMS_AI_GATEWAY_URL`, `_dashboard_merge_console_host` on every
 `step_dashboard` return path, Dashboard volume export/chown,
-`AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY`, and
-`_controller_admin_url_env_args`. Standalone
-`install/agentteams-dashboard.sh` now uses the same Console-host merge
-and volume export/chown path as upstream `_start_dashboard`. It remains
-outside the weekly drift check (upstream has no standalone dashboard.sh).
+`AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY`,
+`_controller_admin_url_env_args`, `AGENTTEAMS_FS_PUBLIC_ENDPOINT`
+(presigned download origin, upstream #1501), and the embedded-mode
+`CONTROLLER_URL=http://agentteams-controller:8090` injection (upstream
+#1526: the Controller advertises its in-network URL to the Manager and
+Workers it provisions instead of the image-default `127.0.0.1`).
+Standalone `install/agentteams-dashboard.sh` now uses the same
+Console-host merge and volume export/chown path as upstream
+`_start_dashboard`. It remains outside the weekly drift check (upstream
+has no standalone dashboard.sh).
+
+`AGENTTEAMS_FS_PUBLIC_ENDPOINT` is a Controller variable, so the
+standalone installer does not forward it: the Controller mints the
+presigned URL, and the Dashboard only talks to the object store through
+`AGENTTEAMS_FS_ENDPOINT`. Embedded installs must leave
+`AGENTTEAMS_FS_PUBLIC_ENDPOINT` unset unless the operator supplies a
+browser-reachable origin; otherwise the Controller answers presign
+requests with `501`.
 
 ### Runtime Contract
 

@@ -187,6 +187,8 @@ export async function proxyToAgentTeams(
      * 'content-disposition' for binary download routes). Only these are
      * forwarded; everything else is filtered. */
     passthroughHeaders?: string[];
+    /** Version read by a caller editing a conditional-write endpoint. */
+    ifMatch?: string | null;
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
@@ -198,6 +200,9 @@ export async function proxyToAgentTeams(
     method,
     headers: {},
   };
+  if (options.ifMatch) {
+    (fetchOptions.headers as Record<string, string>)['If-Match'] = options.ifMatch;
+  }
 
   // Per-session Controller credential (M19 dual-track):
   // - L2 session → the user's own Matrix access token, held in the

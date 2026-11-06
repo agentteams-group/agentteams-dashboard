@@ -17,6 +17,8 @@
 
 ---
 
+Chat voice input: click the microphone, review the transcription in your draft, then send. Local recognition is free by default; optional paid DashScope ASR uses a server-side API key. See [voice input setup](docs/voice-input.md).
+
 <!-- TODO(record): replace the three placeholders below with real captures —
      see docs/images/README.md for the recording checklist (overview topology,
      task-board HITL intervention, chat replay). -->
@@ -263,6 +265,16 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SHARED_MODE` | `1` = multiple users share this instance (L1-only config save, audited writes) | unset (one user per instance) |
 | `DASHBOARD_ALLOWED_HOSTS` | Strict allowlist for the setup "test connection" probe (it is token/session-gated; the metadata sentinel 169.254.169.254 is denied in all modes) | unset (allow for session/token holders) |
 | `NEXT_PUBLIC_BASE_PATH` | URL base path (embedded deployment) | `/dashboard` |
+
+### Optional Worker tracing
+
+AT and Dashboard can start without Langfuse. In **Console → Governance → Tracing**, an administrator can open **可观测配置**, enter the Langfuse project query credentials and an existing OTLP/HTTP Collector endpoint, test the connection, save, and apply to selected managed Workers. The Collector must already export to the same Langfuse project and be reachable from the Workers. Use ingestion-only Collector credentials; project query credentials stay on the Dashboard server.
+
+Saving takes effect without a Dashboard restart. Settings are stored atomically in `observability.json` beside `DASHBOARD_CONFIG_FILE` (mode `0600`); persist that directory in a volume. Secret fields are write-only, and blank secret inputs retain saved values. `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_URL`, `LANGFUSE_PROJECT_ID`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` remain optional server-side defaults for reading existing traces.
+
+Collection defaults to off. Applying merges only telemetry environment variables through the Controller's existing Worker API. Running managed Workers are recreated; sleeping Workers use the settings on their next start. This requires telemetry-enabled QwenPaw or Hermes images and a Controller exposing editable Worker environments. Turning collection off also requires applying the saved settings; existing traces remain queryable. A successful connection test or configuration write does not prove Worker readiness or ingestion: run a task and inspect its trace.
+
+Team/Worker filters and trace list/detail/session export use the current account's Controller permissions. Selecting a Worker also selects its configured runtime. Each Controller deployment/organization needs its own Langfuse project; reusing Worker names across organizations is not a tenant boundary. Trace details include the waterfall, session navigation/export, duration, token totals and usage breakdown. The implementation targets Langfuse v3 ingestion and v1 query APIs.
 
 ### Stateless deployment mode (`DASHBOARD_STATELESS=1`)
 
