@@ -24,6 +24,7 @@ export async function GET(
   return proxyToAgentTeams(request, controllerUrl, pathFor(name), {
     forwardBody: false,
     method: 'GET',
+    passthroughHeaders: ['etag'],
   });
 }
 
@@ -41,5 +42,7 @@ export async function PUT(
   return proxyToAgentTeams(request, controllerUrl, pathFor(name), {
     forwardBody: true,
     method: 'PUT',
+    ifMatch: request.headers.get('If-Match'),
+    passthroughHeaders: ['etag'],
   });
 }
