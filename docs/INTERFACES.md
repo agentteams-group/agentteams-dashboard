@@ -200,6 +200,21 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 | Worker LLM 调优 | `PUT /api/v1/workers/{name}` 请求体可含 10 个 `Llm*` 字段（8 启动期 + 2 流超时） | `api/v1beta1/types.go` WorkerSpec（~195-224）；registry 默认 3/1/10/10/600/5/1/300 | `src/lib/llm-tuning.ts` + `worker-llm-tuning-panel.tsx` |
 | 团队 LLM 默认 | `PUT /api/v1/teams/{name}` 请求体可含同 10 字段（团队默认，被 Worker 覆盖） | `api/v1beta1/types.go` TeamSpec（~511-531）；流超时需 QwenPaw >= 2.2.1 | `team-edit-dialog.tsx` + `llm-tuning-fields.tsx` |
 
+### Worker 链路追踪（#1531 / 上游 PR #1532）
+
+Dashboard 只负责配置与查询，采集由 Worker 内的 OpenTelemetry SDK 完成后经 OTLP Collector 送入 Langfuse。上游 PR #1532 提供 QwenPaw/Hermes 原生适配；Dashboard 侧不解析 span，只消费 Langfuse v1 查询 API。
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 可观测配置读写 | `GET/PUT /api/agentteams/observability`（仅 `level=3`，其余 401/403）；`PUT` 体为 `{enabled, captureContent, mode:'collector', langfuseUrl, publicUrl, projectId, publicKey, secretKey, collectorEndpoint, collectorHeaders}`；响应为脱敏投影（`secretKey`/`collectorHeaders` 只写，改回 `*Configured: boolean`）；`POST {action:'test'}` 验证 Langfuse 项目认证 + `POST <collector>/v1/traces`；`POST {action:'apply', workers, revision}` 下发到 Worker | 配置为 Dashboard 自持，落在 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`（`0600` 原子 rename，目录 `0700`），**不**写 Controller；未建文件时回退 `LANGFUSE_*` env 且 `revision='environment'` | `src/app/api/agentteams/observability/route.ts` + `src/lib/observability-config.ts` |
+| 应用配置到 Worker | `POST /api/agentteams/observability` 的 `apply` 分支逐 Worker `GET /api/v1/workers/{name}` 校验 `runtime ∈ {qwenpaw, hermes}`、`containerManaged`、`envEditable`，再 `PUT /api/v1/workers/{name}` 合并 `env`；单批 1..50 个且须在调用方 Controller 可见范围内；`revision` 不匹配或为 `environment` 时返回 409（陈旧应用） | 复用 v1.2.4 起 Worker env 编辑契约（`PUT` 体含 `env`），无需新 Controller 端点；托管容器重建后生效，休眠 Worker 下次启动生效 | `route.ts` `POST` + `src/lib/observability-config.ts` `workerObservabilityEnv` |
+| Worker 侧 env 契约 | Dashboard 只写下列键，并先删除同名旧值再写入：`AGENTTEAMS_OTEL_ENABLED`（`true`/`false` 显式下发，关闭也需 apply）、`AGENTTEAMS_OTEL_CAPTURE_CONTENT`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`（`<endpoint>/v1/traces`）、`OTEL_EXPORTER_OTLP_PROTOCOL`（固定 `http/protobuf`）、`OTEL_EXPORTER_OTLP_HEADERS` 与 `OTEL_EXPORTER_OTLP_TRACES_HEADERS`（Collector 侧凭据，非 Langfuse 项目密钥）；另写 `AGENTTEAMS_OTEL_CONFIG_REVISION` 便于核对是否已应用 | 上游 #1532 Worker 适配读取上述 env；项目查询凭据（`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`）只留在 Dashboard 服务端 | `src/lib/observability-config.ts` + `docs/INTERFACES.md` 本节 |
+| Trace 列表 | `GET /api/agentteams/traces` → `{data: TraceSummary[], meta:{page,totalPages,totalItems}}`；透传 `worker`、`team`、`runtime`、`task`、`session`、`room`、`project`、`hours`（`1`/`24`/`168`，其余 400）、`page`（`/^[1-9]\d{0,4}$/`）；`?options=resources` 返回 `{teams, workers, canConfigure}` | Langfuse v1 `GET /api/public/traces`，固定 `tags=agentteams` + `worker-turn`、`orderBy=timestamp.desc`，Basic auth `publicKey:secretKey`，10s 超时；404 透传、其余上游错误统一 502 | `src/app/api/agentteams/traces/route.ts` + `src/lib/langfuse-server.ts` `listTraces` |
+| Trace 详情 | `GET /api/agentteams/traces/{traceId}` → `TraceDetail`（含 `observations[]`、`langfuseUrl`）；`traceId` 须 32 位 hex；`langfuseUrl` 仅 `level≥3` 返回 | 同 Langfuse v1 `traces/{id}`；观测属性与 `metadata` 浅合并 | `src/app/api/agentteams/traces/[traceId]/route.ts` + `getTrace` |
+| 访问范围（scope） | 用调用方凭据并行 `GET /api/v1/workers` + `/teams` 得出可读 Worker/Team 集；`controllerUrl` 参数一律剥除，固定部署 Controller；非 admin 且无 matrix 会话时 401（避免 SA token 越权），stateless 模式直接使用浏览器 bearer | Controller 原生 RBAC；`traceInScope` 再按 trace 的 `userId`、`agentteams.worker.name`、team tag/metadata 做二次过滤，Worker 换队后不暴露旧 Team 数据 | `src/lib/tracing-access.ts` + `traceInScope` |
+
+`AGENTTEAMS_TRACING_DEMO=true` 只用于无 Controller 的隔离演示：需同时 `AGENTTEAMS_AUTH_DISABLED=true` 且 `AGENTTEAMS_TRACING_DEMO_SCOPE` 提供合法 scope，才会跳过 Controller 查询；默认关闭。
+
 ## 安全边界
 
 - Controller API 使用 Dashboard 服务端代理与授权令牌。
