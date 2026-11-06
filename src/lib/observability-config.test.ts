@@ -6,8 +6,8 @@ import { mergeObservabilityConfig, parseOtlpHeaders, publicObservabilityConfig, 
 
 let directory: string;
 const connected: ObservabilityConfig = {
-  enabled: true, captureContent: true, mode: 'direct', langfuseUrl: 'http://langfuse.local', publicUrl: 'http://localhost:13100',
-  projectId: 'project-a', publicKey: 'pk-a', secretKey: 'sk-private', collectorEndpoint: '', collectorHeaders: '', revision: 'one',
+  enabled: true, captureContent: true, mode: 'collector', langfuseUrl: 'http://langfuse.local', publicUrl: 'http://localhost:13100',
+  projectId: 'project-a', publicKey: 'pk-a', secretKey: 'sk-private', collectorEndpoint: 'http://collector:4318', collectorHeaders: '', revision: 'one',
 };
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'at-observability-'));
@@ -28,10 +28,11 @@ it('is disabled without configuration and persists secrets privately across fres
   expect(mergeObservabilityConfig(saved, { ...view, secretKey: '' }).secretKey).toBe('sk-private');
 });
 
-it('builds standard direct OTLP config, preserves unrelated env and removes stale overrides on disable', () => {
+it('builds standard Collector OTLP config, preserves unrelated env and removes stale overrides on disable', () => {
   const env = workerObservabilityEnv(connected, { USER_SETTING: 'keep', OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://stale', OTEL_EXPORTER_OTLP_TRACES_HEADERS: 'stale' });
-  expect(env).toMatchObject({ USER_SETTING: 'keep', AGENTTEAMS_OTEL_ENABLED: 'true', OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://langfuse.local/api/public/otel/v1/traces' });
-  expect(parseOtlpHeaders(env.OTEL_EXPORTER_OTLP_HEADERS).Authorization).toBe('Basic ' + Buffer.from('pk-a:sk-private').toString('base64'));
+  expect(env).toMatchObject({ USER_SETTING: 'keep', AGENTTEAMS_OTEL_ENABLED: 'true', OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://collector:4318/v1/traces' });
+  expect(JSON.stringify(env)).not.toContain('sk-private');
+  expect(parseOtlpHeaders(env.OTEL_EXPORTER_OTLP_HEADERS)).toEqual({});
   expect(env.OTEL_EXPORTER_OTLP_TRACES_HEADERS).toBe(env.OTEL_EXPORTER_OTLP_HEADERS);
   const disabled = workerObservabilityEnv({ ...connected, enabled: false }, env);
   expect(disabled).toEqual({ USER_SETTING: 'keep', AGENTTEAMS_OTEL_ENABLED: 'false', AGENTTEAMS_OTEL_CONFIG_REVISION: 'one' });
@@ -50,6 +51,7 @@ it('rejects credential-bearing URLs, metadata targets and header injection', () 
     expect(() => mergeObservabilityConfig(connected, { ...connected, langfuseUrl })).toThrow();
   }
   expect(() => mergeObservabilityConfig(connected, { ...connected, secretKey: 'bad\nvalue' })).toThrow();
+  expect(() => mergeObservabilityConfig(connected, { ...connected, mode: 'direct' })).toThrow();
   expect(() => parseOtlpHeaders('Authorization=value%0D%0AInjected%3Asecret')).toThrow();
 });
 
@@ -57,7 +59,8 @@ it('tests project authentication and OTLP without creating fake trace spans or f
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ data: [{ id: 'project-a', name: 'A' }] })).mockResolvedValueOnce(Response.json({}));
   vi.stubGlobal('fetch', fetcher);
   expect(await testObservabilityConnection(connected)).toMatchObject({ projectId: 'project-a', source: 'dashboard' });
-  expect(fetcher.mock.calls[1][0]).toBe('http://langfuse.local/api/public/otel/v1/traces');
+  expect(fetcher.mock.calls[1][0]).toBe('http://collector:4318/v1/traces');
+  expect(fetcher.mock.calls[1][1].headers).not.toHaveProperty('Authorization');
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ resourceSpans: [] });
   expect(fetcher.mock.calls.every(([, options]) => options.redirect === 'error')).toBe(true);
 });

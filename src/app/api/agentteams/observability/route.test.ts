@@ -12,7 +12,7 @@ import { readObservabilityConfig } from '@/lib/observability-config';
 import { GET, POST, PUT } from './route';
 
 let directory: string;
-const settings = { enabled: true, captureContent: true, mode: 'direct', langfuseUrl: 'http://langfuse.local', publicUrl: '', projectId: 'p', publicKey: 'pk', secretKey: 'super-secret', collectorEndpoint: '', collectorHeaders: '' };
+const settings = { enabled: true, captureContent: true, mode: 'collector', langfuseUrl: 'http://langfuse.local', publicUrl: '', projectId: 'p', publicKey: 'pk', secretKey: 'super-secret', collectorEndpoint: 'http://collector:4318', collectorHeaders: '' };
 function request(method: string, body?: unknown, level = '3') {
   return new NextRequest('http://localhost/api/agentteams/observability?controllerUrl=http://wrong', { method, headers: {
     'x-agentteams-user': 'alice', 'x-agentteams-user-level': level, 'Content-Type': 'application/json',

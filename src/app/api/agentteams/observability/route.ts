@@ -20,6 +20,12 @@ function failure(error: unknown) {
     { status: error instanceof TracingError ? error.status : 502 });
 }
 
+async function readBody(request: NextRequest) {
+  const body = await request.json().catch(() => { throw new TracingError(400, '请求须为 JSON 对象'); });
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new TracingError(400, '请求须为 JSON 对象');
+  return body;
+}
+
 export async function GET(request: NextRequest) {
   try { requireAdmin(request); return NextResponse.json(publicObservabilityConfig(await readObservabilityConfig())); }
   catch (error) { return failure(error); }
@@ -28,7 +34,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const identity = requireAdmin(request);
-    const config = mergeObservabilityConfig(await readObservabilityConfig(), await request.json());
+    const config = mergeObservabilityConfig(await readObservabilityConfig(), await readBody(request));
     const saved = await saveObservabilityConfig(config);
     void appendAuditEvent({ actor: identity.name, actor_level: identity.level, entity_type: 'system', entity_name: 'observability',
       action: 'observability.configure', details: `enabled=${saved.enabled}; mode=${saved.mode}; revision=${saved.revision}`, severity: 'info' });
@@ -39,7 +45,7 @@ export async function PUT(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     requireAdmin(request);
-    const body = await request.json();
+    const body = await readBody(request);
     const saved = await readObservabilityConfig();
     if (body.action === 'test') return NextResponse.json(await testObservabilityConnection(mergeObservabilityConfig(saved, body.settings)));
     if (body.action !== 'apply' || !Array.isArray(body.workers) || body.workers.length < 1 || body.workers.length > 50 ||

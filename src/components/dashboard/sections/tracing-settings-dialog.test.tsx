@@ -6,7 +6,7 @@ import { TracingSettingsDialog } from './tracing-settings-dialog';
 afterEach(() => vi.unstubAllGlobals());
 
 it('saves late configuration, clears the secret field and applies only the selected Worker revision', async () => {
-  const initial = { enabled: false, captureContent: true, mode: 'direct', langfuseUrl: '', publicUrl: '', projectId: '', publicKey: '',
+  const initial = { enabled: false, captureContent: true, mode: 'collector', langfuseUrl: '', publicUrl: '', projectId: '', publicKey: '',
     secretKeyConfigured: false, collectorHeadersConfigured: false, collectorEndpoint: '', revision: 'environment' };
   const fetcher = vi.fn().mockImplementation((_url: string, options: RequestInit) => {
     const body = options.body ? JSON.parse(String(options.body)) : null;
@@ -23,12 +23,13 @@ it('saves late configuration, clears the secret field and applies only the selec
   fireEvent.change(screen.getByLabelText('Langfuse 服务端地址'), { target: { value: 'http://langfuse.local' } });
   fireEvent.change(screen.getByLabelText('Public Key'), { target: { value: 'pk-project' } });
   fireEvent.change(screen.getByLabelText('Secret Key'), { target: { value: 'private-project-secret' } });
+  fireEvent.change(screen.getByLabelText('Collector OTLP/HTTP 地址'), { target: { value: 'http://collector:4318' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存');
   expect((screen.getByLabelText('Secret Key') as HTMLInputElement).value).toBe('');
   expect(screen.getByLabelText('Secret Key').getAttribute('placeholder')).toBe('已配置，留空保留');
   fireEvent.click(screen.getByRole('checkbox', { name: 'qwen' }));
-  fireEvent.click(screen.getByRole('button', { name: '应用配置并重建所选 Worker' }));
+  fireEvent.click(screen.getByRole('button', { name: '应用到所选 Worker（重建生效）' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options.method === 'POST' && JSON.stringify(JSON.parse(String(options.body))) === JSON.stringify({ action: 'apply', workers: ['qwen'], revision: 'saved-one' }))).toBe(true));
   expect(await screen.findByText('qwen：配置已下发，等待重建')).toBeTruthy();
   view.unmount(); client.clear();

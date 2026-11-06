@@ -7,7 +7,7 @@ import { TracingError } from './tracing-error';
 export interface ObservabilityConfig {
   enabled: boolean;
   captureContent: boolean;
-  mode: 'direct' | 'collector';
+  mode: 'collector';
   langfuseUrl: string;
   publicUrl: string;
   projectId: string;
@@ -31,7 +31,7 @@ export async function readObservabilityConfig(): Promise<ObservabilityConfig> {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new TracingError(503, '可观测配置无法读取');
   }
   return {
-    enabled: false, captureContent: true, mode: 'direct',
+    enabled: false, captureContent: true, mode: 'collector',
     langfuseUrl: process.env.LANGFUSE_BASE_URL ?? '', publicUrl: process.env.LANGFUSE_PUBLIC_URL ?? '',
     projectId: process.env.LANGFUSE_PROJECT_ID ?? '', publicKey: process.env.LANGFUSE_PUBLIC_KEY ?? '',
     secretKey: process.env.LANGFUSE_SECRET_KEY ?? '', collectorEndpoint: '', collectorHeaders: '', revision: 'environment',
@@ -60,7 +60,7 @@ export function mergeObservabilityConfig(previous: ObservabilityConfig, input: u
     if (typeof body[key] !== 'boolean') throw new TracingError(400, '采集开关格式无效');
     config[key] = body[key];
   }
-  if (body.mode !== 'direct' && body.mode !== 'collector') throw new TracingError(400, '接入方式无效');
+  if (body.mode !== 'collector') throw new TracingError(400, '请使用 OTLP Collector，项目查询密钥不得下发到 Worker');
   config.mode = body.mode;
   for (const key of ['langfuseUrl', 'publicUrl', 'projectId', 'publicKey', 'secretKey', 'collectorEndpoint', 'collectorHeaders'] as const) {
     if (body[key] == null) continue;
@@ -73,7 +73,8 @@ export function mergeObservabilityConfig(previous: ObservabilityConfig, input: u
     if (config[key]) config[key] = observabilityUrl(config[key], label);
   }
   if (config.enabled && (!config.langfuseUrl || !config.publicKey || !config.secretKey)) throw new TracingError(400, '请填写 Langfuse 地址和项目密钥');
-  if (config.enabled && config.mode === 'collector' && !config.collectorEndpoint) throw new TracingError(400, '请填写 Collector OTLP/HTTP 地址');
+  if (config.enabled && !config.collectorEndpoint) throw new TracingError(400, '请填写 Collector OTLP/HTTP 地址');
+  if (config.collectorHeaders) parseOtlpHeaders(config.collectorHeaders);
   if (config.projectId && !/^[a-zA-Z0-9_-]+$/.test(config.projectId)) throw new TracingError(400, 'Langfuse Project ID 无效');
   return config;
 }
@@ -114,10 +115,8 @@ export function workerObservabilityEnv(config: ObservabilityConfig, previous: Re
   env.AGENTTEAMS_OTEL_ENABLED = String(config.enabled);
   env.AGENTTEAMS_OTEL_CONFIG_REVISION = config.revision;
   if (config.enabled) {
-    const endpoint = config.mode === 'direct' ? `${observabilityUrl(config.langfuseUrl, 'Langfuse')}/api/public/otel` : observabilityUrl(config.collectorEndpoint, 'Collector');
-    const headers = config.mode === 'direct'
-      ? `Authorization=${encodeURIComponent('Basic ' + Buffer.from(`${config.publicKey}:${config.secretKey}`).toString('base64'))},x-langfuse-ingestion-version=4`
-      : config.collectorHeaders;
+    const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
+    const headers = config.collectorHeaders;
     parseOtlpHeaders(headers);
     Object.assign(env, { AGENTTEAMS_OTEL_CAPTURE_CONTENT: String(config.captureContent),
       OTEL_EXPORTER_OTLP_ENDPOINT: endpoint, OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: `${endpoint}/v1/traces`,
@@ -138,9 +137,9 @@ export async function testObservabilityConnection(config: ObservabilityConfig) {
   const data = await projects.json() as { data?: { id: string; name: string }[] };
   const project = data.data?.find((p) => !config.projectId || p.id === config.projectId);
   if (!project) throw new TracingError(400, '项目密钥与 Project ID 不匹配');
-  const endpoint = config.mode === 'direct' ? `${base}/api/public/otel` : observabilityUrl(config.collectorEndpoint, 'Collector');
+  const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
   const response = await request(`${endpoint}/v1/traces`, { method: 'POST', headers: {
-    'Content-Type': 'application/json', ...(config.mode === 'direct' ? { Authorization: authorization, 'x-langfuse-ingestion-version': '4' } : parseOtlpHeaders(config.collectorHeaders)),
+    'Content-Type': 'application/json', ...parseOtlpHeaders(config.collectorHeaders),
   }, body: JSON.stringify({ resourceSpans: [] }) });
   if (!response.ok) throw new TracingError(502, `OTLP 接收端测试失败（HTTP ${response.status}）`);
   return { projectId: project.id, projectName: project.name, source: 'dashboard', message: '项目认证和 OTLP 接收端可达；Worker 网络与实际采集需在应用后验证。' };

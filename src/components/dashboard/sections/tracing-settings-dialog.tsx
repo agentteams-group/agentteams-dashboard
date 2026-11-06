@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 async function configuration<T>(method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(apiUrl('/api/agentteams/observability'), { method,
@@ -73,19 +72,18 @@ function ConfigurationForm({ value, scope, onSave }: { value: ObservabilityView;
       <label className="space-y-1 text-xs">Public Key<Input aria-label="Public Key" autoComplete="off" value={draft.publicKey} onChange={(e) => update({ publicKey: e.target.value })} /></label>
       <label className="space-y-1 text-xs">Secret Key<Input aria-label="Secret Key" type="password" autoComplete="new-password" placeholder={value.secretKeyConfigured ? '已配置，留空保留' : 'sk-lf-…'} value={draft.secretKey} onChange={(e) => update({ secretKey: e.target.value })} /></label>
       <label className="space-y-1 text-xs">Project ID<Input aria-label="Project ID" placeholder="可通过测试连接自动获取" value={draft.projectId} onChange={(e) => update({ projectId: e.target.value })} /></label>
-      <label className="space-y-1 text-xs">接入方式<Select value={draft.mode} onValueChange={(mode: 'direct' | 'collector') => update({ mode })}><SelectTrigger aria-label="接入方式" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="direct">OTLP 直连 Langfuse</SelectItem><SelectItem value="collector">已有 OTLP Collector</SelectItem></SelectContent></Select></label>
     </div>
-    {draft.mode === 'collector' ? <div className="space-y-3">
+    <div className="space-y-3">
       <label className="block space-y-1 text-xs">Collector OTLP/HTTP 地址<Input aria-label="Collector OTLP/HTTP 地址" placeholder="http://otel-collector:4318" value={draft.collectorEndpoint} onChange={(e) => update({ collectorEndpoint: e.target.value })} /></label>
       <label className="block space-y-1 text-xs">Collector Headers<Input aria-label="Collector Headers" type="password" autoComplete="new-password" placeholder={value.collectorHeadersConfigured ? '已配置，留空保留' : '可选：key=value，多项用逗号分隔'} value={draft.collectorHeaders} onChange={(e) => update({ collectorHeaders: e.target.value })} /></label>
-      <p className="text-xs text-muted-foreground">使用已配置 Langfuse 出口的 Collector。地址需从 Worker 网络可达。</p>
-    </div> : <p className="text-xs text-muted-foreground">通过标准 OTLP/HTTP 上报，无需部署 Collector。应用时项目认证信息会下发到所选 Worker 的服务端环境。</p>}
+      <p className="text-xs text-muted-foreground">需预先部署已配置 Langfuse 出口的 Collector，地址需从 Worker 网络可达。Collector Headers 仅填写采集凭证；Langfuse 查询密钥保留在 Dashboard 服务端。</p>
+    </div>
     <label className="flex items-center justify-between gap-3 text-sm">采集模型和工具的输入输出<Switch aria-label="采集模型和工具的输入输出" checked={draft.captureContent} onCheckedChange={(captureContent) => update({ captureContent })} /></label>
     <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => void perform('test')}>测试连接</Button><Button disabled={busy} onClick={() => void perform('save')}>保存配置</Button><span className="self-center text-xs text-muted-foreground">{dirty ? '有未保存的修改' : value.revision === 'environment' ? '尚未保存配置' : '配置已保存'}</span></div>
     {notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}
-    <div className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">应用到 Worker</h3><p className="text-xs text-muted-foreground">应用会更新环境变量并触发托管容器重建，可能中断当前任务。仅支持已包含采集适配器的 QwenPaw、Hermes 镜像。</p>
+    <div className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">应用到 Worker</h3><p className="text-xs text-muted-foreground">应用会更新环境变量；运行中的托管容器将重建，可能中断当前任务，休眠中的 Worker 下次启动生效。仅支持已包含采集适配器的 QwenPaw、Hermes 镜像。</p>
       <div className="flex flex-wrap gap-3">{scope.workers.filter((w) => ['qwenpaw', 'hermes'].includes(w.runtime ?? '')).map((worker) => <label key={worker.name} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(worker.name)} onChange={(e) => setSelected(e.target.checked ? [...selected, worker.name] : selected.filter((name) => name !== worker.name))} />{worker.name}</label>)}</div>
-      <Button variant="outline" disabled={busy || dirty || value.revision === 'environment' || !selected.length} onClick={() => void perform('apply')}>应用配置并重建所选 Worker</Button>
+      <Button variant="outline" disabled={busy || dirty || value.revision === 'environment' || !selected.length} onClick={() => void perform('apply')}>应用到所选 Worker（重建生效）</Button>
       {results.map((result) => <p key={result.name} role={result.success ? 'status' : 'alert'} className={`text-xs ${result.success ? 'text-muted-foreground' : 'text-destructive'}`}>{result.name}：{result.message}</p>)}
     </div>
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
