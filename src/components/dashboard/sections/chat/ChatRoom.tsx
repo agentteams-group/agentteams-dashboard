@@ -859,6 +859,7 @@ export function ChatRoom({
           <TypingIndicator users={typingUsers} />
           <AgentActivityTrack roomId={roomId} />
           <ChatComposer
+            roomId={roomId}
             value={inputValue}
             onChange={handleInputChange}
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}

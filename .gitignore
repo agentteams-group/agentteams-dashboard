@@ -23,6 +23,9 @@ node_modules
 # production
 /build
 
+# Downloaded speech model and matching WASM runtime (npm run prepare:speech)
+/public/speech/
+
 # misc
 .DS_Store
 *.pem
