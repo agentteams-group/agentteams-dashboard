@@ -23,10 +23,10 @@ function callGET(name: string) {
   return GET(req, { params: Promise.resolve({ name }) });
 }
 
-function callPUT(name: string, body?: string) {
+function callPUT(name: string, body?: string, ifMatch?: string) {
   const req = new NextRequest(
     `http://localhost/api/agentteams/workers/${encodeURIComponent(name)}/runtime-config`,
-    { method: 'PUT', body, headers: { 'content-type': 'application/json' } },
+    { method: 'PUT', body, headers: { 'content-type': 'application/json', ...(ifMatch ? { 'If-Match': ifMatch } : {}) } },
   );
   return PUT(req, { params: Promise.resolve({ name }) });
 }
@@ -51,7 +51,7 @@ describe('B5 /workers/[name]/runtime-config（#1231 消费）', () => {
       expect.any(NextRequest),
       'http://agentteams-controller:8090',
       '/api/v1/workers/worker-1/runtime-config',
-      { forwardBody: false, method: 'GET' },
+      { forwardBody: false, method: 'GET', passthroughHeaders: ['etag'] },
     );
   });
 
@@ -71,8 +71,19 @@ describe('B5 /workers/[name]/runtime-config（#1231 消费）', () => {
       expect.any(NextRequest),
       'http://agentteams-controller:8090',
       '/api/v1/workers/worker-1/runtime-config',
-      { forwardBody: true, method: 'PUT' },
+      { forwardBody: true, method: 'PUT', ifMatch: null, passthroughHeaders: ['etag'] },
     );
+  });
+
+  it('PUT forwards the version read by the client without changing the body', async () => {
+    proxyToAgentTeams.mockResolvedValue(NextResponse.json({ ok: true }));
+    const body = '{"max_iters":30}';
+    await callPUT('worker-1', body, '"revision-1"');
+    const [request, , , options] = proxyToAgentTeams.mock.calls[0];
+    expect(await request.text()).toBe(body);
+    expect(options).toEqual({
+      forwardBody: true, method: 'PUT', ifMatch: '"revision-1"', passthroughHeaders: ['etag'],
+    });
   });
 
   it('409（path lock）原样透传给前端', async () => {
