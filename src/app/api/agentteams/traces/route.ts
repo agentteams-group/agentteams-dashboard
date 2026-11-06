@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listTraces, TracingError } from '@/lib/langfuse-server';
+import { listTraces, TracingError } from '@/lib/tracing-server';
 import { readServerIdentity } from '@/lib/server-auth';
 import { getTraceScope } from '@/lib/tracing-access';
 

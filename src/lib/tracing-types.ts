@@ -30,6 +30,8 @@ export interface TraceObservation {
 }
 
 export interface TraceDetail extends TraceSummary {
+  backend?: 'langfuse' | 'agentloop';
+  backendUrl?: string | null;
   observations: TraceObservation[];
   langfuseUrl: string | null;
 }

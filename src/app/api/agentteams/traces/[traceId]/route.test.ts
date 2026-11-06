@@ -12,10 +12,10 @@ it('checks direct trace links against the current account scope and hides projec
   const id = 'a'.repeat(32);
   const scope = { teams: [], workers: [{ name: 'own', team: '' }] };
   vi.mocked(getTraceScope).mockResolvedValue(scope);
-  vi.mocked(getTrace).mockResolvedValue({ id, langfuseUrl: 'http://langfuse/project' } as TraceDetail);
+  vi.mocked(getTrace).mockResolvedValue({ id, backendUrl: 'https://agentloop.console.aliyun.com/', langfuseUrl: 'http://langfuse/project' } as TraceDetail);
   const request = new NextRequest('http://localhost/api/agentteams/traces/' + id, { headers: { 'x-agentteams-user': 'alice', 'x-agentteams-user-level': '1' } });
   const context = { params: Promise.resolve({ traceId: id }) };
-  expect(await (await GET(request, context)).json()).toEqual({ id, langfuseUrl: null });
+  expect(await (await GET(request, context)).json()).toEqual({ id, backendUrl: null, langfuseUrl: null });
   expect(getTrace).toHaveBeenCalledWith(id, scope);
   vi.mocked(getTrace).mockRejectedValue(new TracingError(404, 'internal detail'));
   const denied = await GET(request, context);
