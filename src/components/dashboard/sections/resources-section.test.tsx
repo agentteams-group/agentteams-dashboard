@@ -31,21 +31,31 @@ describe('ResourcesSection deep-link tabs', () => {
     const push = vi.spyOn(window.history, 'pushState');
     render(<ResourcesSection />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /Humans/ }));
+    fireEvent.click(screen.getByRole('tab', { name: '用户' }));
 
     expect(push).toHaveBeenCalledWith(null, '', '#console/resources/humans');
-    expect(screen.getByRole('tab', { name: /Humans/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('follows browser back/forward hash changes', () => {
     render(<ResourcesSection />);
-    fireEvent.click(screen.getByRole('tab', { name: /Humans/ }));
+    fireEvent.click(screen.getByRole('tab', { name: '用户' }));
 
     act(() => {
       setHash('#console/resources/workers');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
 
-    expect(screen.getByRole('tab', { name: /Workers/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps user and Manager administration hidden from a Team account', async () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    setHash('#console/resources/humans');
+    render(<ResourcesSection />);
+    expect(screen.queryByRole('tab', { name: '用户' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Managers' })).toBeNull();
+    expect(await screen.findByText('workers-view')).toBeInTheDocument();
+    expect(screen.queryByText('humans-view')).toBeNull();
   });
 });

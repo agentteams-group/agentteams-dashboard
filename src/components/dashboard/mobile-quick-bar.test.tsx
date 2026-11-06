@@ -37,7 +37,7 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
     expect(screen.getByRole('navigation', { name: '快捷导航' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '待处理' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '助手' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
   });
 
@@ -69,7 +69,7 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
 
   it('点「空间」只写 hash：#workbench/space', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Agent' }));
+    fireEvent.click(screen.getByRole('button', { name: '助手' }));
     expect(window.location.hash).toBe('#workbench/space');
   });
 
@@ -80,7 +80,7 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
       'aria-current',
       'page'
     );
-    expect(screen.getByRole('button', { name: 'Agent' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '助手' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: '搜索' })).not.toHaveAttribute('aria-current');
   });
 

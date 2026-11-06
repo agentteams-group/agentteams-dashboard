@@ -29,6 +29,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       'humans',
       'skills',
       'models',
+      'tools',
       'knowledge',
       'audit',
       'overview',

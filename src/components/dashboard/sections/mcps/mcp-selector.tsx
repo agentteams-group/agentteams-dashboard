@@ -138,7 +138,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
             <div className="max-h-[240px] overflow-y-auto space-y-1">
               {filtered.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-6">
-                  {search ? '没有匹配的 MCP 服务器' : '暂无已登记的 MCP 地址，请先到资源中心 → MCP 服务器登记'}
+                  {search ? '没有匹配的 MCP 服务器' : '暂无已登记的 MCP 地址，请先到资产中心 → 工具登记'}
                 </p>
               )}
               {filtered.map((srv) => {

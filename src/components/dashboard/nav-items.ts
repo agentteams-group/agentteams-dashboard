@@ -93,7 +93,7 @@ export const navItems: NavItem[] = [
   // ── 控制台（二级：资源与治理合并） ──
   // 资源：Agent 目录（F7.1 资源收敛容器：Workers/团队/Humans/Managers
   // 以二级 tab 呈现）+ 市场 + 模型 + 知识库。
-  { id: 'resources', label: 'Agent 目录', icon: Bot, area: 'console', group: 'resources' },
+  { id: 'resources', label: '成员与团队', icon: Users, area: 'console', group: 'resources' },
   { id: 'workers', label: 'Workers', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
@@ -101,8 +101,9 @@ export const navItems: NavItem[] = [
   { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
   { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
   { id: 'humans', label: 'Humans', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
-  { id: 'skills', label: '市场', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
+  { id: 'skills', label: '技能', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },
+  { id: 'tools', label: '工具', icon: Wrench, area: 'console', group: 'resources', legacyGroup: 'resource' },
   // 知识库（#1208 workspace-files 消费：MEMORY.md/memory/**/digest/** 只读 +
   // wikilink 2D 图谱）。图标=手绘 SVG 摊书（lucide 同款规格）。
   { id: 'knowledge', label: '知识库', icon: KnowledgeBookIcon, area: 'console', group: 'resources', legacyGroup: 'resource' },

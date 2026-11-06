@@ -28,7 +28,7 @@ interface PluginCardData {
  * (manifest metadata); URL-loaded external plugins appear from their
  * extension-store contributions even without a bundled manifest.
  */
-export function PluginGallery() {
+export function PluginGallery({ onNavigate }: { onNavigate?: (_section: string) => void }) {
   const menuItems = useExtensionStore((s) => s.menuItems);
   const routes = useExtensionStore((s) => s.routes);
   const widgets = useExtensionStore((s) => s.widgets);
@@ -74,7 +74,9 @@ export function PluginGallery() {
   }, [menuItems, routes, widgets]);
 
   const openRoute = (pluginId: string, routeId: string) => {
-    useSectionStore.getState().setActiveSection(pluginSectionId(pluginId, routeId));
+    const section = pluginSectionId(pluginId, routeId);
+    if (onNavigate) onNavigate(section);
+    else useSectionStore.getState().setActiveSection(section);
   };
 
   return (

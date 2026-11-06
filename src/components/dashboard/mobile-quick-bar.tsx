@@ -112,7 +112,7 @@ export function MobileQuickBar({ onSearch }: MobileQuickBarProps) {
         </li>
         <li className="flex-1">
           <BarButton
-            label="Agent"
+            label="助手"
             Icon={MessageSquare}
             active={activeSection === 'chat'}
             onClick={() => goTo('chat')}

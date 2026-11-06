@@ -54,6 +54,7 @@ import {
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
 import { buildRooms } from './sections/chat/room-builders';
 import styles from './workspace.module.css';
+import { WorkspaceSectionNav, workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -72,6 +73,7 @@ const MyWorkbenchSection = lazy(() => import('./sections/my-workbench-section').
 const ResourcesSection = lazy(() => import('./sections/resources-section').then(m => ({ default: m.ResourcesSection })));
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
+const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
 export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -87,6 +89,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   managers: ManagersSection,
   humans: HumansSection,
   models: ModelsSection,
+  tools: McpServersSection,
   knowledge: KnowledgeSection,
   audit: AuditSection,
   chat: ChatSection,
@@ -210,12 +213,12 @@ export function AgentTeamsDashboard() {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (isCmdOrCtrl) {
-        // Ctrl+1..8: activate each navigation item.
-        if (e.key >= '1' && e.key <= '8') {
+        // Ctrl+1..4 follows the four primary destinations.
+        if (e.key >= '1' && e.key <= '4') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
-          if (index < visibleNavItems.length) {
-            setActiveSection(visibleNavItems[index].id);
+          if (index < workspaceMenus.length) {
+            setActiveSection(workspaceMenus[index].id);
             setMobileMenuOpen(false);
           }
         }
@@ -230,20 +233,19 @@ export function AgentTeamsDashboard() {
 
       if (e.key === 'Enter' && focusedSection) {
         e.preventDefault();
-        setActiveSection(focusedSection);
-        setMobileMenuOpen(false);
+        focusedElement.click();
         return;
       }
 
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 
-      const currentIndex = visibleNavItems.findIndex((item) => item.id === focusedSection);
+      const currentIndex = workspaceMenus.findIndex((item) => item.id === focusedSection);
       const nextIndex = currentIndex + (e.key === 'ArrowDown' ? 1 : -1);
-      if (nextIndex < 0 || nextIndex >= visibleNavItems.length) return;
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= workspaceMenus.length) return;
 
       const target = focusedElement
         .closest('aside')
-        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${visibleNavItems[nextIndex].id}"]`);
+        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${workspaceMenus[nextIndex].id}"]`);
       if (target) {
         e.preventDefault();
         target.focus();
@@ -251,7 +253,7 @@ export function AgentTeamsDashboard() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveSection, visibleNavItems]);
+  }, [setActiveSection]);
 
   const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
@@ -267,6 +269,7 @@ export function AgentTeamsDashboard() {
   const activeLabel = isPluginSection
     ? activePluginRoute?.contribution.title ?? '插件页面'
     : activeItem?.label || '总览';
+  const activeMenu = workspaceMenuFor(activeSection);
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -427,10 +430,13 @@ export function AgentTeamsDashboard() {
                     <ChevronSep className="w-3 h-3" />
                     <span className="font-medium text-foreground">AgentTeams</span>
                     <ChevronSep className="w-3 h-3" />
+                    {activeMenu && activeMenu.label !== activeLabel && <><span>{activeMenu.label}</span><ChevronSep className="w-3 h-3" /></>}
                     <span>{activeLabel}</span>
                   </nav>
                 </div>
               )}
+
+              <WorkspaceSectionNav activeSection={activeSection} mode={mode} onNavClick={handleNavClick} />
 
               {activeSection === 'chat' ? (
                 <div className="flex-1 flex flex-col min-h-0">

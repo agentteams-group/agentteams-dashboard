@@ -22,9 +22,9 @@ interface ResourceTabDef {
 }
 
 const TABS: ResourceTabDef[] = [
-  { id: 'workers', label: 'Workers', icon: Bot },
+  { id: 'workers', label: 'Agent', icon: Bot },
   { id: 'teams', label: '团队', icon: Users },
-  { id: 'humans', label: 'Humans', icon: UserCheck, minLevel: 3 },
+  { id: 'humans', label: '用户', icon: UserCheck, minLevel: 3 },
   { id: 'managers', label: 'Managers', icon: Crown, minLevel: 3 },
 ];
 
@@ -73,12 +73,12 @@ export function ResourcesSection() {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="Agent 目录"
+        title="成员与团队"
         description="管理团队的 Agent、成员与运行配置"
       />
 
       {/* 二级导航（F7.1） */}
-      <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/20 p-1 w-fit" role="tablist" aria-label="资源分类">
+      <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-muted/20 p-1" role="tablist" aria-label="成员与团队分类">
         {visibleTabs.map((t) => {
           const Icon = t.icon;
           const active = t.id === activeTab;
@@ -90,7 +90,7 @@ export function ResourcesSection() {
               aria-selected={active}
               onClick={() => selectTab(t.id)}
               data-resource-tab={t.id}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
                 active
                   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'

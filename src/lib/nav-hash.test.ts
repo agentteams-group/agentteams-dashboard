@@ -14,7 +14,7 @@ import {
 const allSections = new Set([
   'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
   'resources', 'workers', 'managers', 'teams', 'humans', 'skills', 'models',
-  'knowledge', 'audit',
+  'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
 
@@ -31,6 +31,12 @@ describe('isLayeredHash', () => {
 });
 
 describe('hashForSection', () => {
+  it('round-trips the tool page while retaining the old model, skill and knowledge routes', () => {
+    for (const section of ['tools', 'models', 'skills', 'knowledge']) {
+      expect(resolveHash(hashForSection(section), isKnown)?.section).toBe(section);
+      expect(resolveHash(section, isKnown)?.section).toBe(section);
+    }
+  });
   it('returns the canonical layered hash for each section (附录 A)', () => {
     expect(hashForSection('chat')).toBe('workbench/space');
     expect(hashForSection('tasks')).toBe('workbench/tasks');

@@ -38,6 +38,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   managers: 'console/resources/managers',
   skills: 'console/resources/skills',
   models: 'console/resources/models',
+  tools: 'console/resources/tools',
   knowledge: 'console/resources/knowledge',
   audit: 'console/governance/audit',
   overview: 'console/system/overview',
@@ -61,6 +62,7 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   managers: 'managers',
   skills: 'skills',
   models: 'models',
+  tools: 'tools',
   knowledge: 'knowledge',
   audit: 'audit',
   // The standalone projects section was merged into the task board; the
@@ -228,6 +230,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       'resources/managers': 'resources',
       'resources/skills': 'skills',
       'resources/models': 'models',
+      'resources/tools': 'tools',
       'resources/knowledge': 'knowledge',
       'governance/audit': 'audit',
       'system/overview': 'overview',
