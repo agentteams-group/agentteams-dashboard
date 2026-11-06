@@ -1,8 +1,15 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TracingSection } from './tracing-section';
 
+// jsdom has no layout scrolling; Radix uses this when focusing menu options.
+const scrollDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+beforeAll(() => Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() }));
+afterAll(() => {
+  if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollDescriptor);
+  else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+});
 afterEach(() => { vi.unstubAllGlobals(); });
 
 function traceResponse(url: string, data: unknown) {
@@ -27,9 +34,11 @@ it('queries server filters, opens a trace, and shows the selected span content',
   vi.stubGlobal('fetch', fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
-  await screen.findByRole('option', { name: 'hermes-demo' });
-  fireEvent.change(screen.getByLabelText('运行时'), { target: { value: 'hermes' } });
-  fireEvent.change(screen.getByLabelText('Worker'), { target: { value: 'hermes-demo' } });
+  await screen.findByRole('button', { name: /hermes \/ worker.turn/ });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: '运行时' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes' }));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-demo' }));
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('runtime=hermes') && url.includes('worker=hermes-demo'))).toBe(true));
   fireEvent.click(await screen.findByRole('button', { name: /hermes \/ worker.turn/ }));
@@ -40,10 +49,13 @@ it('queries server filters, opens a trace, and shows the selected span content',
   expect(within(screen.getByLabelText('Trace 概览')).getByText('500 ms')).toBeTruthy();
   expect(screen.getByText('未计价')).toBeTruthy();
   expect(screen.getByRole('link', { name: /Langfuse/ }).getAttribute('href')).toContain(id);
-  fireEvent.change(screen.getByLabelText('Team'), { target: { value: 'b' } });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Team' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: 'Team B (b)' }));
+  expect(screen.getByRole('combobox', { name: 'Worker' }).textContent).toBe('全部可访问 Worker');
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
   expect(screen.queryByRole('option', { name: 'hermes-demo' })).toBeNull();
   expect(screen.getByRole('option', { name: 'qwen-demo' })).toBeTruthy();
-  expect((screen.getByLabelText('Worker') as HTMLSelectElement).value).toBe('');
+  fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('team=b') && url.includes('worker=&'))).toBe(true));
   view.unmount(); client.clear();

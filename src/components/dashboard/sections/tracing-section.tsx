@@ -6,6 +6,7 @@ import { Activity, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { apiUrl } from '@/lib/api-base';
 import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation, type TraceScope } from '@/lib/tracing-types';
@@ -104,22 +105,36 @@ export function TracingSection() {
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
       e.preventDefault(); setFilters({ worker, runtime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
-      <label className="min-w-40 flex-1 space-y-1 text-xs">Team<select aria-label="Team" className="block h-9 w-full rounded-md border bg-background px-3" value={team} onChange={(e) => {
-        const next = e.target.value; setTeam(next);
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Team<Select value={team || '__all__'} onValueChange={(value) => {
+        const next = value === '__all__' ? '' : value; setTeam(next);
         if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) setWorker('');
       }}>
-        <option value="">全部可访问 Team</option>{resources.data?.teams.map((t) => <option key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</option>)}
-      </select></label>
-      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<select aria-label="Worker" className="block h-9 w-full rounded-md border bg-background px-3" value={worker} onChange={(e) => setWorker(e.target.value)}>
-        <option value="">全部可访问 Worker</option>{workerOptions.map((w) => <option key={w.name} value={w.name}>{w.name}</option>)}
-      </select></label>
-      <label className="space-y-1 text-xs">运行时<select aria-label="运行时" className="block h-9 rounded-md border bg-background px-3" value={runtime} onChange={(e) => setRuntime(e.target.value)}>
-        <option value="">全部运行时</option>{['qwenpaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <option key={r}>{r}</option>)}
-      </select></label>
+        <SelectTrigger aria-label="Team" className="w-full bg-background"><SelectValue /></SelectTrigger>
+        <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部可访问 Team</SelectItem>{resources.data?.teams.map((t) => <SelectItem className="cursor-pointer rounded-lg py-2" key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</SelectItem>)}
+        </SelectContent>
+      </Select></label>
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<Select value={worker || '__all__'} onValueChange={(value) => setWorker(value === '__all__' ? '' : value)}>
+        <SelectTrigger aria-label="Worker" className="w-full bg-background"><SelectValue /></SelectTrigger>
+        <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部可访问 Worker</SelectItem>{workerOptions.map((w) => <SelectItem className="cursor-pointer rounded-lg py-2" key={w.name} value={w.name}>{w.name}</SelectItem>)}
+        </SelectContent>
+      </Select></label>
+      <label className="space-y-1 text-xs">运行时<Select value={runtime || '__all__'} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
+        <SelectTrigger aria-label="运行时" className="min-w-36 bg-background"><SelectValue /></SelectTrigger>
+        <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
+        </SelectContent>
+      </Select></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Session ID<Input aria-label="Session ID" placeholder="查询会话的全部轮次" value={session} onChange={(e) => setSession(e.target.value)} /></label>
       <label className="min-w-32 flex-1 space-y-1 text-xs">Room ID<Input aria-label="Room ID" value={room} onChange={(e) => setRoom(e.target.value)} /></label>
-      <label className="space-y-1 text-xs">时间<select aria-label="时间" className="block h-9 rounded-md border bg-background px-3" value={hours} onChange={(e) => setHours(e.target.value)}><option value="1">最近 1 小时</option><option value="24">最近 24 小时</option><option value="168">最近 7 天</option></select></label>
+      <label className="space-y-1 text-xs">时间<Select value={hours} onValueChange={setHours}>
+        <SelectTrigger aria-label="时间" className="min-w-36 bg-background"><SelectValue /></SelectTrigger>
+        <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="1">最近 1 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="24">最近 24 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="168">最近 7 天</SelectItem>
+        </SelectContent>
+      </Select></label>
       <Button type="submit" size="sm">查询</Button>
     </form>
     {resources.isLoading ? <p className="text-xs text-muted-foreground">正在读取当前账号的资源访问范围…</p> : null}
