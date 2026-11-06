@@ -181,7 +181,7 @@ Entries discovered by the Agent while performing [specific task description] sho
 - Context: Discovered by Agent while fixing #138 license and #139 installer drift
 - Category: Workflow & Collaboration | Testing Methods
 - Instructions:
-  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-06 已对齐上游 main `a64757c`，与上游 diff 0（含 #1501 `AGENTTEAMS_FS_PUBLIC_ENDPOINT`）。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
+  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-06 已对齐上游 main `9322b04`（PR #192），与上游 diff 0（含 #1501 `AGENTTEAMS_FS_PUBLIC_ENDPOINT`、#1526 embedded 模式 `CONTROLLER_URL` 注入）。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
   - 对齐方法：直接用上游 main 的 `install/agentteams-install.sh` 覆盖本仓副本，再把 `_dashboard_merge_console_host` / volume export/chown 同步到 standalone `install/agentteams-dashboard.sh`。weekly drift 只扫 `agentteams-install.sh`（上游没有独立 dashboard.sh）
   - 安装器验证命令（无需 Docker）：`bash -n install/agentteams-install.sh`、`bash scripts/check-docs-consistency.sh`、`bash install/agentteams-dashboard-tests.sh`（62 用例）
   - 本仓根目录原本缺 `LICENSE`；许可证采用 Apache-2.0（Copyright 2026 AgentTeams Contributors，与上游一致），`package.json` 亦补 `license` 字段
