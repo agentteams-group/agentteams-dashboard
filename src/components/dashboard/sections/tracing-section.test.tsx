@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TracingSection } from './tracing-section';
 
@@ -29,8 +29,38 @@ it('queries server filters, opens a trace, and shows the selected span content',
   expect(screen.getByText(/test prompt/)).toBeTruthy();
   expect(screen.getByText(/test response/)).toBeTruthy();
   expect(screen.getByText('66')).toBeTruthy();
+  expect(within(screen.getByLabelText('Trace 概览')).getByText('500 ms')).toBeTruthy();
   expect(screen.getByText('未计价')).toBeTruthy();
   expect(screen.getByRole('link', { name: /Langfuse/ }).getAttribute('href')).toContain(id);
+  view.unmount(); client.clear();
+});
+
+it('shows token totals, input share, model shares and opens the largest call', async () => {
+  const id = 'c'.repeat(32);
+  const trace = { id, name: 'token-breakdown', timestamp: '2026-11-06T00:00:00Z', tags: [], metadata: {} };
+  const observation = (spanId: string, start: number, end: number) => ({ id: spanId, parentObservationId: 'root',
+    name: spanId, type: 'GENERATION', level: 'DEFAULT', startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() });
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(Response.json(
+    url.includes(`/${id}`) ? { ...trace, observations: [
+      { ...observation('root', 0, 2000), parentObservationId: null, type: 'AGENT' },
+      { ...observation('first', 100, 1500), model: 'model-a', usage: { input: 70, output: 30 } },
+      { ...observation('second', 200, 1800), model: 'model-b', usageDetails: { input: 110, output: 40, total: 150 }, input: 'largest prompt', output: 'largest result' },
+      { ...observation('matrix.send', 2000, 2400), type: 'SPAN' },
+    ] } : { data: [trace], meta: { page: 1, totalPages: 1, totalItems: 1 } },
+  ))));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: /token-breakdown/ }));
+  await screen.findByText('Token 消耗分布');
+  const overview = within(screen.getByLabelText('Trace 概览'));
+  expect(overview.getByText('250')).toBeTruthy();
+  expect(overview.getByText('2.40 s')).toBeTruthy();
+  expect(screen.getByText(/输入占 72.0%/)).toBeTruthy();
+  const largest = screen.getByRole('button', { name: '定位第 2 次模型调用' });
+  expect(largest.textContent).toContain('150 Token · 60.0%');
+  fireEvent.click(largest);
+  expect(screen.getByText(/largest prompt/)).toBeTruthy();
+  expect(screen.getByText(/largest result/)).toBeTruthy();
   view.unmount(); client.clear();
 });
 

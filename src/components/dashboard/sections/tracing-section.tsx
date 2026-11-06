@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { apiUrl } from '@/lib/api-base';
-import { diagnoseTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation } from '@/lib/tracing-types';
+import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation } from '@/lib/tracing-types';
 
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(apiUrl(`/api/agentteams/traces${path}`), { signal });
@@ -49,12 +49,10 @@ export function TracingSection() {
   });
   const rows = traceRows(detail.data?.observations ?? []);
   const observation: TraceObservation | undefined = detail.data?.observations.find((o) => o.id === observationId);
-  const generations = detail.data?.observations.filter((o) => o.type === 'GENERATION') ?? [];
-  const tokens = generations.reduce((sum, o) => sum + (o.usageDetails?.total ?? o.usage?.total ??
-    ((o.usageDetails?.input ?? o.usage?.input ?? 0) + (o.usageDetails?.output ?? o.usage?.output ?? 0))), 0);
-  const usageComplete = generations.length > 0 && generations.every((o) =>
-    o.usageDetails ? Object.keys(o.usageDetails).length > 0 : o.usage?.total != null);
-  const costComplete = generations.length > 0 && generations.every((o) =>
+  const summary = summarizeTrace(detail.data?.observations ?? []);
+  const usageComplete = summary.calls.length > 0 && summary.completeCalls === summary.calls.length;
+  const breakdownComplete = summary.calls.length > 0 && summary.breakdownCalls === summary.calls.length;
+  const costComplete = summary.calls.length > 0 && summary.calls.every(({ observation: o }) =>
     o.calculatedTotalCost != null && Object.keys(o.costDetails ?? {}).length > 0);
   const diagnosis = diagnoseTrace(detail.data?.observations ?? []);
   const upstream = detail.data?.metadata?.['agentteams.upstream.trace_id'];
@@ -133,7 +131,29 @@ export function TracingSection() {
           {exportError ? <p role="alert" className="text-xs text-destructive">{exportError}</p> : null}
           {typeof upstream === 'string' && /^[a-f0-9]{32}$/i.test(upstream) ? <Button size="sm" variant="outline" onClick={() => { setSelected(upstream); setObservationId(''); }}>查看上游 Worker Trace</Button> : null}
           <div className="rounded-lg border p-3 text-xs leading-6"><p>错误 {diagnosis.errors} · 工具调用 {diagnosis.tools} · HTTP 失败 {diagnosis.failedRequests} · 重复工具参数 {diagnosis.repeatedTools}</p>{diagnosis.slowest ? <p className="text-muted-foreground">最长子步骤：{diagnosis.slowest}</p> : null}<p className="text-muted-foreground">重复调用仅为排查线索；结合输入输出判断是否存在无效循环。</p></div>
-          <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/40 p-3">{[['Spans', rows.length], ['Tokens', usageComplete ? tokens : tokens ? `${tokens}（部分）` : '未上报'], ['Cost', costComplete && detail.data.totalCost != null ? `$${detail.data.totalCost.toFixed(6)}` : '未计价']].map(([label, value]) => <div key={label}><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg">{value}</div></div>)}</div>
+          <div aria-label="Trace 概览" className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 sm:grid-cols-4">{[
+            ['总 Token', summary.reportedCalls ? `${summary.tokens.toLocaleString()}${usageComplete ? '' : '（部分）'}` : '未上报'],
+            ['总耗时', summary.durationMs == null ? '未上报' : `${summary.durationMs >= 1000 ? `${(summary.durationMs / 1000).toFixed(2)} s` : `${summary.durationMs.toFixed(0)} ms`}${summary.durationComplete ? '' : '（部分）'}`],
+            ['Spans', rows.length], ['Cost', costComplete && detail.data.totalCost != null ? `$${detail.data.totalCost.toFixed(6)}` : '未计价'],
+          ].map(([label, value]) => <div key={label}><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 break-words font-mono text-lg">{value}</div></div>)}</div>
+          {summary.calls.length ? <div className="space-y-3 rounded-lg border p-3 text-xs">
+            <h3 className="font-medium">Token 消耗分布</h3>
+            <p className="text-muted-foreground">模型调用 {summary.calls.length} 次 · 完整用量 {summary.completeCalls}/{summary.calls.length} 次</p>
+            <p>{breakdownComplete ? '输入' : '已知输入'} {summary.input.toLocaleString()} · {breakdownComplete ? '输出' : '已知输出'} {summary.output.toLocaleString()}{breakdownComplete && summary.tokens > 0 ? ` · 输入占 ${(100 * summary.input / summary.tokens).toFixed(1)}%` : ''}{breakdownComplete ? '' : '（输入/输出明细不完整）'}</p>
+            {summary.reportedCalls ? <>
+              <p className="text-muted-foreground">按模型汇总 · {usageComplete ? '总' : '已上报'} Token 占比</p>
+              {summary.models.map((model) => <div key={model.model} className="space-y-1">
+                <div className="flex flex-wrap justify-between gap-2"><span>{model.model} · {model.calls} 次</span><span className="font-mono">{model.tokens.toLocaleString()} Token{model.complete ? '' : '（部分）'} · {summary.tokens ? (100 * model.tokens / summary.tokens).toFixed(1) : '0.0'}%</span></div>
+                <div className="h-1.5 rounded bg-muted"><div className="h-full rounded bg-violet-500" style={{ width: `${summary.tokens ? 100 * model.tokens / summary.tokens : 0}%` }} /></div>
+              </div>)}
+              <p className="pt-1 text-muted-foreground">消耗最高的模型调用 · Top 3 · 点击查看输入输出</p>
+              {summary.calls.filter((call) => call.reported).slice(0, 3).map((call) => <button key={call.observation.id} type="button" aria-label={`定位第 ${call.index} 次模型调用`} onClick={() => setObservationId(call.observation.id)} className={`block w-full space-y-1 rounded border p-2 text-left hover:bg-muted/40 ${observationId === call.observation.id ? 'bg-muted/60' : ''}`}>
+                <div className="flex flex-wrap justify-between gap-2"><span>第 {call.index} 次 · {call.observation.model ?? call.observation.name ?? '未知模型'}</span><span className="font-mono">{call.tokens.toLocaleString()} Token{call.complete ? '' : '（部分）'} · {summary.tokens ? (100 * call.tokens / summary.tokens).toFixed(1) : '0.0'}%</span></div>
+                <p className="text-muted-foreground">输入 {call.input?.toLocaleString() ?? '未上报'} · 输出 {call.output?.toLocaleString() ?? '未上报'}</p>
+              </button>)}
+            </> : <p className="text-muted-foreground">模型未上报 Token 用量。</p>}
+            <p className="text-muted-foreground">仅汇总模型调用上报的用量；Token 大头可定位到调用，具体原因需结合输入输出判断。</p>
+          </div> : null}
           <div className="overflow-x-auto"><div className="min-w-[460px]">
             <div className="grid grid-cols-[minmax(200px,1fr)_1fr_65px] border-b pb-2 text-xs text-muted-foreground"><span>Span / 父子关系</span><span>时间线</span><span className="text-right">耗时</span></div>
             {rows.map(({ observation: o, depth, duration, left, width }) => <button type="button" key={o.id} onClick={() => setObservationId(o.id)} className={`grid w-full grid-cols-[minmax(200px,1fr)_1fr_65px] items-center gap-2 border-b py-3 text-left hover:bg-muted/40 ${observationId === o.id ? 'bg-muted/60' : ''}`}>

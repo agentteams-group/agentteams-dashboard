@@ -39,6 +39,43 @@ export interface TraceList {
   meta: { page: number; totalPages: number; totalItems: number };
 }
 
+export function summarizeTrace(observations: TraceObservation[]) {
+  const calls = observations.filter((o) => o.type === 'GENERATION')
+    .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime))
+    .map((observation, index) => {
+      const input = observation.usageDetails?.input ?? observation.usage?.input;
+      const output = observation.usageDetails?.output ?? observation.usage?.output;
+      const total = observation.usageDetails?.total ?? observation.usage?.total;
+      return { observation, index: index + 1, input, output,
+        tokens: total ?? ((input ?? 0) + (output ?? 0)),
+        reported: total != null || input != null || output != null,
+        complete: total != null || (input != null && output != null),
+      };
+    });
+  const models = new Map<string, { model: string; calls: number; tokens: number; complete: boolean }>();
+  for (const call of calls) {
+    const model = call.observation.model ?? '未知模型';
+    const group = models.get(model) ?? { model, calls: 0, tokens: 0, complete: true };
+    group.calls++; group.tokens += call.tokens; group.complete &&= call.complete;
+    models.set(model, group);
+  }
+  // Measure the full timeline, rather than summing overlapping parent/child durations.
+  const start = Math.min(...observations.map((o) => Date.parse(o.startTime)));
+  const end = Math.max(...observations.map((o) => Date.parse(o.endTime ?? o.startTime)));
+  return {
+    tokens: calls.reduce((sum, c) => sum + c.tokens, 0),
+    input: calls.reduce((sum, c) => sum + (c.input ?? 0), 0),
+    output: calls.reduce((sum, c) => sum + (c.output ?? 0), 0),
+    reportedCalls: calls.filter((c) => c.reported).length,
+    completeCalls: calls.filter((c) => c.complete).length,
+    breakdownCalls: calls.filter((c) => c.input != null && c.output != null).length,
+    durationMs: observations.length ? Math.max(0, end - start) : null,
+    durationComplete: observations.every((o) => o.endTime != null),
+    calls: calls.sort((a, b) => b.tokens - a.tokens),
+    models: [...models.values()].sort((a, b) => b.tokens - a.tokens),
+  };
+}
+
 export function diagnoseTrace(observations: TraceObservation[]) {
   const tools = observations.filter((o) => o.type === 'TOOL' || o.metadata?.['gen_ai.operation.name'] === 'execute_tool');
   const identities = tools.map((o) => JSON.stringify([o.name, o.input]));
