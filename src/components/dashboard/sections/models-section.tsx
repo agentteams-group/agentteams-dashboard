@@ -568,20 +568,20 @@ function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) 
     ? console_.endpoint
     : '未配置';
 
+  const summary = higress.mode === 'external'
+    ? gateway?.state === 'reachable'
+      ? `Manager/Worker 经 Higress Gateway 访问模型：${gatewayLabel}`
+      : '外部适配模式尚未配置可用的 Gateway 数据平面地址'
+    : gateway?.state === 'reachable'
+      ? `嵌入模式经 Gateway 访问：${gatewayLabel}`
+      : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）';
+
   return <div className="space-y-3">
     <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-4">
       <Zap className={`size-4 shrink-0 ${higress.healthy ? 'text-emerald-500' : 'text-amber-500'}`} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">运行时模型访问方式</p>
-        <p className="mt-0.5 break-all text-xs text-muted-foreground">
-          {higress.mode === 'external'
-            ? gateway?.state === 'reachable'
-              ? `Manager/Worker 经 Higress Gateway 访问模型：${gatewayLabel}`
-              : '外部适配模式尚未配置可用的 Gateway 数据平面地址'
-            : gateway?.state === 'reachable'
-              ? `嵌入模式经 Gateway 访问：${gatewayLabel}`
-              : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）'}
-        </p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={summary}>{summary}</p>
       </div>
       <Badge variant="secondary" className="shrink-0 text-xs">{modeLabel}</Badge>
       <button className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? '收起详情' : '展开详情'}>
