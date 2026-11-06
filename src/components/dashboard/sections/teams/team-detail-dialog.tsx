@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { TeamHealthPanel } from './team-health-panel';
+import { TeamAttentionPanel } from './team-attention-panel';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { getWorkersForTeam } from './team-selectors';
 
@@ -98,6 +99,7 @@ export function TeamDetailDialog({
               </div>
             )}
             <TeamWorkersList teamName={team.name} workers={workers} />
+            <TeamAttentionPanel teamName={team.name} />
           </div>
         )}
       </DialogContent>
