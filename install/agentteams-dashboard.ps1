@@ -447,10 +447,10 @@ function Do-Install {
     if ($oldPresent) {
         $importVols = @("-v", "${DataVolume}:/dest")
         if ((Test-Path $overlayFlag) -and ((Get-ChildItem $overlayDir -Force -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)) {
-            $importVols += @("-v", "$overlayDir:/overlay:ro")
+            $importVols += @("-v", "${overlayDir}:/overlay:ro")
         }
         if ((Test-Path $legacyFlag) -and ((Get-ChildItem $legacyDir -Force -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)) {
-            $importVols += @("-v", "$legacyDir:/legacy:ro")
+            $importVols += @("-v", "${legacyDir}:/legacy:ro")
         }
         $importScript = 'mkdir -p /dest || exit 1; if [ -d /legacy ]; then cp -a /legacy/. /dest/ || exit 1; fi; if [ -d /overlay ]; then cp -a /overlay/. /dest/ || exit 1; fi; chown -R 1001:1001 /dest || exit 1'
         & $DockerCmd run --rm @importVols alpine:latest sh -c $importScript *> $null
