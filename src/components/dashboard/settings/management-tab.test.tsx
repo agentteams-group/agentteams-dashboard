@@ -27,3 +27,10 @@ it('keeps plugin pages reachable after moving them out of the sidebar', () => {
   expect(useSectionStore.getState().activeSection).toBe('plugin-route:monitor/home');
   expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
 });
+
+it('keeps the upstream tracing page reachable from settings', () => {
+  render(<ManagementTab />);
+  fireEvent.click(screen.getByRole('button', { name: 'Tracing' }));
+  expect(useSectionStore.getState().activeSection).toBe('tracing');
+  expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
+});
