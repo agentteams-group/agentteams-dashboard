@@ -105,6 +105,33 @@ describe('formatMatrixEvents', () => {
     expect(messages[0]).toMatchObject({ id: 'missing-root', eventId: 'missing-root', content: '更新内容', isStreaming: true, isEdited: true });
   });
 
+  it('keeps the final edited answer when its placeholder is missing but process thread replies arrived', () => {
+    const events = [
+      message('thinking', '正在检查连接', 200, { 'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' } }),
+      message('final', '* BROWSER_OK', 300, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'missing-root' },
+        'm.new_content': { msgtype: 'm.text', body: 'BROWSER_OK' },
+      }),
+    ];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: 'thinking', isThreadReply: true, threadId: 'missing-root' });
+    expect(messages[1]).toMatchObject({ id: 'missing-root', content: 'BROWSER_OK', latestEventId: 'final', isEdited: true });
+    expect(messages[1].detached).toBeFalsy();
+    expect(messages[1].replyCount).toBeFalsy();
+  });
+
+  it('keeps other-user replies in their thread after recovering the edited root', () => {
+    const events = [
+      { ...message('reply', '我补充一条', 200, { 'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' } }), sender: '@other:example.test' },
+      message('final', '* 最终汇报', 300, { 'm.relates_to': { rel_type: 'm.replace', event_id: 'missing-root' }, 'm.new_content': { msgtype: 'm.text', body: '最终汇报' } }),
+    ];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'missing-root', content: '最终汇报', replyCount: 1 });
+    expect(messages[0].detached).toBeFalsy();
+  });
+
   it('extracts text from structured message body parts', () => {
     const events = [
       message('structured', [
