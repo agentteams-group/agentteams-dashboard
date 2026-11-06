@@ -30,7 +30,12 @@ function matchesReadEvent(gm: GroupedMessage, readEventId: string): boolean {
     || (gm.message.sourceEventIds?.includes(readEventId) ?? false);
 }
 
-function buildTimelineItems(items: GroupedMessage[], readEventId: string | null | undefined): TimelineItem[] {
+/**
+ * 纯函数：消息序列 + 未读锚点 → 渲染项序列（未读分割线 splice 是消息索引与
+ * 时间线索引之间唯一的 +1 偏差来源，见 :51）。导出供 MessageList 在自身
+ * imperative handle 里以同输入复算同一索引空间（f5-1）。
+ */
+export function buildTimelineItems(items: GroupedMessage[], readEventId: string | null | undefined): TimelineItem[] {
   const entries: TimelineItem[] = items.map((gm) => ({ kind: 'message' as const, gm }));
 
   if (!readEventId) return entries;

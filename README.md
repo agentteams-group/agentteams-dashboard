@@ -17,6 +17,8 @@
 
 ---
 
+Chat voice input: click the microphone, review the transcription in your draft, then send. Local recognition is free by default; optional paid DashScope ASR uses a server-side API key. See [voice input setup](docs/voice-input.md).
+
 <!-- TODO(record): replace the three placeholders below with real captures —
      see docs/images/README.md for the recording checklist (overview topology,
      task-board HITL intervention, chat replay). -->
@@ -95,6 +97,8 @@ MCP servers get a governance surface, not just a list:
 - **Credential hygiene** — upstream secrets (e.g. `Authorization` headers) are never echoed back to the browser; the selector projects transport names only.
 
 One-click install from the skill/MCP catalog and the governance story above make the Dashboard the control point for what every agent can reach. See [docs/INTERFACES.md](docs/INTERFACES.md) for the wire contracts.
+
+Worker polling supports slim list projections and private ETag revalidation, with full-detail reads before editing and a fallback for older Controllers. See [Worker list compatibility](docs/worker-list-compatibility.md) for the supported combinations and cache boundaries.
 
 ## 📦 Quick Start
 
@@ -261,6 +265,28 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SHARED_MODE` | `1` = multiple users share this instance (L1-only config save, audited writes) | unset (one user per instance) |
 | `DASHBOARD_ALLOWED_HOSTS` | Strict allowlist for the setup "test connection" probe (it is token/session-gated; the metadata sentinel 169.254.169.254 is denied in all modes) | unset (allow for session/token holders) |
 | `NEXT_PUBLIC_BASE_PATH` | URL base path (embedded deployment) | `/dashboard` |
+
+### Optional Worker tracing
+
+AT and Dashboard can start without Langfuse. In **Console → Governance → Tracing**, an administrator can open **可观测配置**, enter the Langfuse project query credentials and an existing OTLP/HTTP Collector endpoint, test the connection, save, and apply to selected managed Workers. The Collector must already export to the same Langfuse project and be reachable from the Workers. Use ingestion-only Collector credentials; project query credentials stay on the Dashboard server.
+
+Saving takes effect without a Dashboard restart. Settings are stored atomically in `observability.json` beside `DASHBOARD_CONFIG_FILE` (mode `0600`); persist that directory in a volume. Secret fields are write-only, and blank secret inputs retain saved values. `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_URL`, `LANGFUSE_PROJECT_ID`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` remain optional server-side defaults for reading existing traces.
+
+Collection defaults to off. Applying merges only telemetry environment variables through the Controller's existing Worker API. Running managed Workers are recreated; sleeping Workers use the settings on their next start. This requires telemetry-enabled QwenPaw or Hermes images and a Controller exposing editable Worker environments. Turning collection off also requires applying the saved settings; existing traces remain queryable. A successful connection test or configuration write does not prove Worker readiness or ingestion: run a task and inspect its trace.
+
+Team/Worker filters and trace list/detail/session export use the current account's Controller permissions. Selecting a Worker also selects its configured runtime. Each Controller deployment/organization needs its own Langfuse project; reusing Worker names across organizations is not a tenant boundary. Trace details include the waterfall, session navigation/export, duration, token totals and usage breakdown. The implementation targets Langfuse v3 ingestion and v1 query APIs.
+
+#### Alibaba Cloud AgentLoop
+
+Select **阿里云 AgentLoop** as the query backend in tracing settings. Enter the Trace store region, CMS Workspace and the raw Trace SLS Project/Logstore resolved from that Workspace's CMS EntityStore (`apm.trace_set.storage`). This is the XTrace store, not the AgentSpace's `agent-trajectory` store. The binding is supplied explicitly by an administrator; Dashboard does not discover or validate the CMS binding automatically.
+
+Dashboard uses the official `@alicloud/credentials` default server credential chain (including STS and RAM/OIDC roles), with read access scoped to the target Trace store. Cloud query credentials are never form fields or Worker environment values. Optional server defaults: `AGENTTEAMS_TRACING_BACKEND=agentloop`, `AGENTLOOP_REGION`, `AGENTLOOP_WORKSPACE`, `AGENTLOOP_SLS_PROJECT`, `AGENTLOOP_SLS_LOGSTORE`. The default SLS Project endpoint is `https://<project>.<region>.log.aliyuncs.com`; `AGENTLOOP_SLS_ENDPOINT` overrides this full endpoint server-side for intranet access or local protocol testing.
+
+Collector must export to the target Workspace using its OTLP/HTTP endpoint and ingestion headers. It may also export the same spans to Langfuse. Changing the query backend does not reconfigure Collector exporters. Worker telemetry supplies `gen_ai.span.kind`, Session/Turn, model usage and model/tool contents alongside existing Langfuse fields. This backend reads the documented raw Span schema with nanosecond `startTime`/`duration`; it does not create audit events, trajectory pipelines, datasets or evaluators.
+
+Every SLS page must report complete results; incomplete pages retry without advancing, and budget/time failures return errors instead of partial sessions. Queries have a 100000-row, 32 MiB and roughly 60-second budget. Session queries cover retained history without a 24-hour cutoff. List responses omit content; details/export retain the current account's Worker/Team checks. Prices remain unknown unless reported, rather than being treated as zero.
+
+The implementation is based on the [official AgentLoop query contract](https://help.aliyun.com/zh/agentloop/use-cases/agentloop-data-query-api-usage-guide) and [raw Trace schema](https://help.aliyun.com/zh/sls/raw-source-data-format-association-and-minimum-requirements). Local acceptance uses signed HTTP/OTLP fixtures; cloud ingestion and AgentLoop UI recognition await a supplied test endpoint.
 
 ### Stateless deployment mode (`DASHBOARD_STATELESS=1`)
 

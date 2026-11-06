@@ -15,7 +15,7 @@ export async function filterEnvironmentResponse(request: NextRequest, response: 
   if (!response.ok || readServerIdentity(request)?.level === 3) return response;
   const body = await response.clone().json().catch(() => null);
   if (!body) return response;
-  const workers = Array.isArray(body.workers) ? body.workers : [body];
+  const workers = Array.isArray(body) ? body : Array.isArray(body.workers) ? body.workers : [body];
   for (const worker of workers) { delete worker.env; worker.envEditable = false; }
-  return NextResponse.json(body, { status: response.status });
+  return NextResponse.json(body, { status: response.status, headers: response.headers });
 }

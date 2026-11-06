@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, forwardRef } from 'react';
-import { TimelinePanel } from './TimelinePanel';
+import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { TimelinePanel, buildTimelineItems } from './TimelinePanel';
 import type { ScrollPanelHandle } from './ScrollPanel';
 import { buildGroupedMessages, type GroupedMessage } from '../grouper/MainGrouper';
 import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
@@ -43,6 +43,15 @@ function SystemNoticeItem({
     notice.autoRetry && notice.retryAfterMs ? notice.retryAfterMs : 0
   );
 
+  // f4-2: notice 对象来自 useState 数组（useOutboundMessages），身份稳定；
+  // onRetry 却随父级每次重渲染经 useMutation 对象链换新引用。倒计时 effect 若
+  // 把 onRetry 放进 deps，活动房间（流式输出 / typing 持续重渲染）里 start 会
+  // 被反复重置、倒计时永远走不完——用 ref 固定最新回调，deps 收敛到 [notice]。
+  const onRetryRef = useRef(onRetry);
+  useEffect(() => {
+    onRetryRef.current = onRetry;
+  });
+
   useEffect(() => {
     if (!notice.autoRetry || !notice.retryAfterMs) return;
     const start = Date.now();
@@ -50,13 +59,13 @@ function SystemNoticeItem({
       const remaining = notice.retryAfterMs! - (Date.now() - start);
       if (remaining <= 0) {
         clearInterval(timer);
-        onRetry(notice);
+        onRetryRef.current(notice);
         return;
       }
       setLeftMs(remaining);
     }, 250);
     return () => clearInterval(timer);
-  }, [notice, onRetry]);
+  }, [notice]);
 
   const seconds = Math.max(1, Math.ceil(leftMs / 1000));
 
@@ -173,7 +182,18 @@ interface MessageListProps {
   onOpenWorkerChats?: (_workerName: string) => void;
 }
 
-export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(function MessageList(
+/**
+ * Imperative handle exposed to ChatRoom. Everything from ScrollPanelHandle is
+ * forwarded verbatim; scrollToEvent adds a jump in the TIMELINE index space
+ * (the same items the panel renders, including the unread-divider splice), so
+ * reply / search定位 land on the target message instead of one row off (f5-1).
+ */
+export interface MessageListHandle extends ScrollPanelHandle {
+  /** Jump to the first timeline item matching id/eventId/sourceEventIds. Returns false when not found. */
+  scrollToEvent: (_eventId: string) => boolean;
+}
+
+export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     messages,
     localMessages = [],
@@ -210,6 +230,12 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
   // disconnected bubbles.
   const displayMessages = useMemo(() => coalesceWorkerTurns(messages), [messages]);
   const grouped = useMemo(() => buildGroupedMessages(displayMessages), [displayMessages]);
+
+  // f5-1: timeline index space used by scrollToEvent. Same pure function and
+  // same inputs as TimelinePanel's internal computation (fold on chatIr.messages
+  // is identity; the read-marker splice is the only offset), so indexes here
+  // match what the panel actually renders.
+  const timelineItems = useMemo(() => buildTimelineItems(grouped, readEventId), [grouped, readEventId]);
 
   const itemContent = useCallback((_index: number, gm: GroupedMessage) => {
     if (!gm) return null;
@@ -270,11 +296,36 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     return <div />;
   }, [isFetchingNextPage, hasNextPage, grouped.length, onLoadMore]);
 
+  // f5-1: self-held inner ref + useImperativeHandle — forwards every
+  // ScrollPanelHandle method and adds scrollToEvent over the timeline items.
+  const timelineRef = useRef<ScrollPanelHandle>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToBottom: (options?: { smooth?: boolean }) => timelineRef.current?.scrollToBottom(options),
+      scrollToIndex: (index: number) => timelineRef.current?.scrollToIndex(index),
+      scrollToItem: (key: string) => timelineRef.current?.scrollToItem(key),
+      scrollToEvent: (eventId: string): boolean => {
+        const index = timelineItems.findIndex(
+          (item) =>
+            item.kind === 'message' &&
+            (item.gm.message.id === eventId ||
+              item.gm.message.eventId === eventId ||
+              (item.gm.message.sourceEventIds?.includes(eventId) ?? false)),
+        );
+        if (index < 0) return false;
+        timelineRef.current?.scrollToIndex(index);
+        return true;
+      },
+    }),
+    [timelineItems]
+  );
+
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {header}
       <TimelinePanel
-        ref={ref}
+        ref={timelineRef}
         items={grouped}
         readEventId={readEventId}
         itemContent={itemContent}

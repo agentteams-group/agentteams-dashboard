@@ -180,10 +180,28 @@ export function ChatSection() {
     refetchHumans,
   ]);
 
+  useEffect(() => {
+    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : null;
+    useRoomMetaStore.getState().setActiveRoomId(active);
+  }, [selectedRoomId, rooms]);
+
   // Deep-link consumption: read the pending value WITHOUT clearing it, and
   // only take (clear) it once the room list is loaded and actually contains
   // the target room. FUNC-04: clearing unconditionally during render dropped
   // the deep link whenever the rooms list was still loading.
+  //
+  // f4-1: runs as an effect, NOT in the render body — handleSelectRoom writes
+  // useRoomMetaStore.setActiveRoomId, which has mounted subscribers (room
+  // header, task dots). Writing a subscribed store during this component's
+  // render trips "Cannot update a component while rendering a different
+  // component" whenever another subscribed component renders concurrently
+  // (same failure mode recorded at tasks-section.tsx:652-669). Effects run
+  // post-commit, so the write is safe; FUNC-04 semantics (consume only once
+  // rooms are loaded and contain the target) are unchanged.
+  //
+  // Declared AFTER the clear-guard effect above: within one commit effects
+  // run in declaration order, so consumption wins over the guard's
+  // setActiveRoomId(null) while selectedRoomId still holds the pre-link value.
   const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   useEffect(() => {
     if (isLoading) return;
@@ -192,17 +210,11 @@ export function ChatSection() {
       handleSelectRoom(pendingChatRoomId);
       return;
     }
-    // A requested deep link always wins over the role-based landing room.
     if (!pendingChatRoomId && selectedRoomId === null) {
       const preferred = preferredAgentRoom(rooms, userLevel ?? 3);
       if (preferred) handleSelectRoom(preferred.id);
     }
   }, [isLoading, pendingChatRoomId, rooms, selectedRoomId, userLevel, handleSelectRoom]);
-
-  useEffect(() => {
-    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : null;
-    useRoomMetaStore.getState().setActiveRoomId(active);
-  }, [selectedRoomId, rooms]);
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) || null,
     [rooms, selectedRoomId],

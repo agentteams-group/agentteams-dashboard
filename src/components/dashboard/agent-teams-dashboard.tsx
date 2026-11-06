@@ -72,6 +72,7 @@ const LoopsSection = lazy(() => import('./sections/loops-section').then(m => ({ 
 const MyWorkbenchSection = lazy(() => import('./sections/my-workbench-section').then(m => ({ default: m.MyWorkbenchSection })));
 const ResourcesSection = lazy(() => import('./sections/resources-section').then(m => ({ default: m.ResourcesSection })));
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
+const TracingSection = lazy(() => import('./sections/tracing-section').then(m => ({ default: m.TracingSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
 const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
@@ -92,6 +93,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   tools: McpServersSection,
   knowledge: KnowledgeSection,
   audit: AuditSection,
+  tracing: TracingSection,
   chat: ChatSection,
 };
 

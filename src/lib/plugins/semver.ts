@@ -106,8 +106,16 @@ function parseRangeGroup(group: string): Predicate | null {
   const tokens = group.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return () => true;
   const predicates: Predicate[] = [];
+  // f6-1: 比较符被空白与版本号拆开（'>= 1.0.0' → ['>=', '1.0.0']）时先并回
+  // 一个 token——parseComparator 的正则会把独立 '>=' 回溯成 op='>'、
+  // target='='，经 Number('=')=NaN 返回 null。'-' 不匹配比较符正则，连字符
+  // 区间 '1.2.3 - 2.0.0' 不受影响。
   // Merge hyphen ranges "a - b".
   for (let i = 0; i < tokens.length; i++) {
+    if (i < tokens.length - 1 && /^(>=|<=|==|=|>|<|\^|~)$/.test(tokens[i])) {
+      tokens[i] = tokens[i] + tokens[i + 1];
+      tokens.splice(i + 1, 1);
+    }
     if (tokens[i] === '-' && i > 0 && i < tokens.length - 1) {
       const lower = parseComparator(`>=${tokens[i - 1]}`);
       const upper = parseComparator(`<=${tokens[i + 1]}`);

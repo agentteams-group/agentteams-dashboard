@@ -175,6 +175,17 @@ export function templateToDraft(tpl: (typeof LOOP_TEMPLATES)[number], actor: str
   };
 }
 
+/** 与 loop-canvas NODE_TYPE_STYLES/NODE_TYPE_LABELS 同款六枚举（f5-2）：
+ *  未知 type 的节点会在画布取样式时 TypeError，在结构校验阶段直接拒绝。 */
+const VALID_NODE_TYPES: ReadonlySet<string> = new Set([
+  'start',
+  'agent',
+  'human',
+  'review',
+  'condition',
+  'end',
+]);
+
 /** 结构校验（导入/状态事件读取共用）：start/end 恰各一、边引用存在节点。 */
 export function isValidLoopDefinition(value: unknown): value is LoopDefinition {
   if (!value || typeof value !== 'object') return false;
@@ -182,13 +193,22 @@ export function isValidLoopDefinition(value: unknown): value is LoopDefinition {
   if (typeof d.id !== 'string' || !d.id) return false;
   if (typeof d.name !== 'string' || !d.name) return false;
   if (typeof d.version !== 'number' || d.version < 1) return false;
-  if (d.status !== 'draft' && d.status !== 'published' && d.status !== 'archived') return false;
+  // rolled_back 为回滚产物（类型定义 :44），不得在 readDrafts/导入时被静默过滤。
+  if (
+    d.status !== 'draft' &&
+    d.status !== 'published' &&
+    d.status !== 'archived' &&
+    d.status !== 'rolled_back'
+  ) {
+    return false;
+  }
   if (!Array.isArray(d.nodes) || d.nodes.length === 0) return false;
   if (!Array.isArray(d.edges)) return false;
   const ids = new Set(d.nodes.map((n) => n.id));
   if (!ids.has('start') || !ids.has('end')) return false;
   for (const n of d.nodes) {
     if (typeof n.id !== 'string' || typeof n.label !== 'string') return false;
+    if (!VALID_NODE_TYPES.has(n.type)) return false;
     if (!ids.has(n.id)) return false;
   }
   for (const e of d.edges) {

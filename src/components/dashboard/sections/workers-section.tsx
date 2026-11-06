@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -180,6 +180,9 @@ export function WorkersSection() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
+  const [loadingWorker, setLoadingWorker] = useState<string | null>(null);
+  const detailRequest = useRef(0);
+  useEffect(() => () => { detailRequest.current++; }, []);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -331,18 +334,22 @@ export function WorkersSection() {
     waitForWorkersToDisappear,
   ]);
 
-  const handleExport = useCallback(() => {
-    if (!workers) return;
-    const data = JSON.stringify(workers, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `agentteams-workers-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Workers 数据已导出');
-  }, [workers]);
+  const handleExport = useCallback(async () => {
+    try {
+      // Export is an explicit bulk-detail operation, not the polling snapshot.
+      const data = JSON.stringify(await agentteamsApi.listWorkers(), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `agentteams-workers-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Workers 数据已导出');
+    } catch {
+      toast.error('Workers 数据导出失败，请重试');
+    }
+  }, []);
 
   // Soft model alias validation (embedded mode): warn but allow submit.
   // If the requested alias cannot be resolved through any configured AiRoute,
@@ -523,19 +530,38 @@ export function WorkersSection() {
     []
   );
 
-  const openEdit = useCallback((worker: WorkerResponse) => {
-    setEditWorker(worker);
-    setEditForm({
-      name: worker.name,
-      env: worker.envEditable ? (worker.env || {}) : undefined,
-      model: worker.model || '',
-      runtime: worker.runtime,
-      image: worker.image || '',
-      skills: worker.skills || [],
-      agents: worker.agents,
-      mcpServers: worker.mcpServers,
-    });
+  const loadWorker = useCallback(async (row: WorkerResponse, mode: 'view' | 'edit') => {
+    const request = ++detailRequest.current;
+    setDetailWorker(null);
+    setEditWorker(null);
+    setEditForm({});
+    setLoadingWorker(row.name);
+    try {
+      const worker = await agentteamsApi.getWorker(row.name);
+      if (request !== detailRequest.current) return;
+      if (mode === 'view') {
+        setDetailWorker(worker);
+      } else {
+        setEditWorker(worker);
+        setEditForm({
+          name: worker.name,
+          env: worker.envEditable ? (worker.env || {}) : undefined,
+          model: worker.model || '',
+          runtime: worker.runtime,
+          image: worker.image || '',
+          skills: worker.skills || [],
+          agents: worker.agents,
+          mcpServers: worker.mcpServers,
+        });
+      }
+    } catch {
+      if (request === detailRequest.current) toast.error(`读取 Worker "${row.name}" 详情失败，请重试`);
+    } finally {
+      if (request === detailRequest.current) setLoadingWorker(null);
+    }
   }, []);
+  const openEdit = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'edit'); }, [loadWorker]);
+  const openDetail = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'view'); }, [loadWorker]);
 
   const closeEdit = useCallback(() => {
     setEditWorker(null);
@@ -634,6 +660,12 @@ export function WorkersSection() {
 
   return (
     <div className="space-y-6">
+      {loadingWorker && (
+        <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />正在读取 {loadingWorker} 的详情…
+          <Button variant="ghost" size="sm" onClick={() => { detailRequest.current++; setLoadingWorker(null); }}>取消</Button>
+        </div>
+      )}
       {syncingSkills && (
         (() => {
           const isPartial = !!syncingSkills.specFailed?.length;
@@ -824,7 +856,7 @@ export function WorkersSection() {
                   index={i}
                   isSelected={selectedWorkers.has(worker.name)}
                   onToggleSelect={() => toggleSelect(worker.name)}
-                  onView={() => setDetailWorker(worker)}
+                  onView={() => openDetail(worker)}
                   onEdit={() => openEdit(worker)}
                   onOpenChat={() => openChatRoom(worker.roomID)}
                   onWake={() => wakeWorker.mutate(worker.name)}
@@ -842,7 +874,7 @@ export function WorkersSection() {
               workers={paginatedWorkers}
               selectedWorkers={selectedWorkers}
               onToggleSelect={toggleSelect}
-              onView={setDetailWorker}
+              onView={openDetail}
               onEdit={openEdit}
               onOpenChat={(worker) => openChatRoom(worker.roomID)}
               onWake={(name) => wakeWorker.mutate(name)}

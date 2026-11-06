@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Lock, Mail, Shield, Eye, Play, Pencil, Trash2, Sun, Moon, CheckCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/dashboard/copy-button';
@@ -14,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { HumanResponse } from '@/lib/agentteams-api';
+import { agentteamsApi, type HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import { getAccessSummary } from '@/lib/rbac-engine';
 
@@ -77,7 +78,7 @@ function TagList({ items, label }: { items: string[] | undefined; label: string 
 }
 
 export function HumanDetailDialog({
-  human,
+  human: summary,
   onOpenChange,
   onEdit,
 }: {
@@ -85,12 +86,27 @@ export function HumanDetailDialog({
   onOpenChange: (_open: boolean) => void;
   onEdit?: (_human: HumanResponse) => void;
 }) {
+  const { data, isFetching, isError, refetch } = useQuery({
+    queryKey: ['agentteams-human-detail', summary?.name],
+    queryFn: () => agentteamsApi.getHuman(summary!.name),
+    enabled: !!summary,
+    gcTime: 0, // A provisioning credential must not linger after closing.
+    retry: false,
+  });
+  const human = data ?? summary;
   return (
     <Dialog open={!!human} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Human 详情 - {human?.name}</DialogTitle>
         </DialogHeader>
+        {isFetching && <p className="text-xs text-muted-foreground">详情加载中…</p>}
+        {isError && (
+          <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
+            详情加载失败
+            <Button variant="ghost" size="sm" onClick={() => void refetch()}>重试</Button>
+          </div>
+        )}
         {human && (
           <div className="space-y-3 py-4 text-sm">
             <div className="flex items-center gap-2 mb-3">

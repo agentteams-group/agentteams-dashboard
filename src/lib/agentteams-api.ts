@@ -3,6 +3,7 @@
 
 import { ApiError, NetworkError } from '@/lib/api-error';
 import { apiUrl } from '@/lib/api-base';
+import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
 
 // ============ Response Types ============
@@ -92,6 +93,73 @@ export interface TeamResponse extends LlmTuningFields {
   message: string;
   workerNames: string[];
   workerExposedPorts: Record<string, ExposedPort[]>;
+}
+
+// ----- team attention inbox (upstream #1503) -----
+//
+// `GET /api/v1/teams/{name}/attention` aggregates the in-flight human
+// questions (approval / decision / escalation) of every project of one team
+// into a single read. The row shape follows the workbench contract
+// (camelCase) and is the same record the project-scoped #1434 endpoint
+// projects; the answer still goes to the task's Matrix room, so this is a
+// read-only surface.
+
+/** One selectable answer, description optional and passed through verbatim. */
+export interface TeamAttentionOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+/**
+ * The notification delivery outcome recorded with the attention request
+ * (`notification_log` in the task meta). `gaps` lists the delivery steps that
+ * did not complete, so the UI can distinguish "nobody was told" from "told,
+ * no reply yet".
+ */
+export interface TeamAttentionNotified {
+  sent: boolean;
+  roomAccepted: boolean;
+  channelAccepted: unknown;
+  recipients: unknown[];
+  gaps: unknown[];
+  at: string;
+}
+
+/** One inbox row. Pointer fields serialize as `null` when absent. */
+export interface TeamAttentionItem {
+  taskId: string;
+  /** Matrix event id of the room message that raised the record (`null` when the notification was withheld). */
+  eventId: string | null;
+  teamId: string;
+  projectId: string;
+  kind: string;
+  question: string;
+  options: TeamAttentionOption[];
+  requestedAt: string;
+  timeoutAt: string;
+  /** Server-resolved deadline state — mirrors `timeoutAt` against the controller clock. */
+  overdue: boolean;
+  resolved: boolean;
+  resolvedVia: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  resolution: string | null;
+  freeform: boolean;
+  notified: TeamAttentionNotified | null;
+  roomId: string;
+  /** Relative workbench link the controller suggests (`/projects/{id}/tasks/{taskId}`). */
+  url: string;
+}
+
+export interface TeamAttentionResponse {
+  /** Team name from the URL (the CR name). */
+  team_id: string;
+  items: TeamAttentionItem[];
+  /** Rows actually returned, not the rows that matched the filter. */
+  count: number;
+  /** `true` when the filter matched more rows than `limit`. */
+  truncated: boolean;
 }
 
 export interface HumanResponse {
@@ -397,9 +465,10 @@ async function proxyRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const requestScope = currentReadScope();
   let res: Response;
   try {
-    res = await fetch(apiUrl(`/api/agentteams${path}`), {
+    res = await conditionalFetch(apiUrl(`/api/agentteams${path}`), {
       ...options,
       headers: {
         ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
@@ -407,6 +476,7 @@ async function proxyRequest<T>(
       },
     });
   } catch (err) {
+    if (err instanceof ApiError) throw err;
     throw new NetworkError(path, err);
   }
 
@@ -434,8 +504,11 @@ async function proxyRequest<T>(
   }
 
   try {
-    return await res.json();
+    const data = await res.json();
+    if (currentReadScope() !== requestScope) throw new ApiError('账号或连接已切换，请重新读取', 409, path);
+    return data;
   } catch (err) {
+    if (err instanceof ApiError) throw err;
     const message = err instanceof Error ? err.message : 'unknown';
     throw new ApiError(
       `Failed to parse API JSON response: ${message}`,
@@ -571,6 +644,33 @@ export const agentteamsApi = {
     return Array.isArray(result) ? result : (result.workers ?? []);
   },
 
+  // Poll projections only; full configuration stays on listWorkers/getWorker.
+  listWorkerSummaries: async (): Promise<WorkerResponse[]> => {
+    type Rows = WorkerResponse[] | { workers: WorkerResponse[] };
+    const rows = (result: Rows) => Array.isArray(result) ? result : result.workers ?? [];
+    try {
+      const [spec, status] = await Promise.all([
+        proxyRequest<Rows>('/workers?fields=spec'),
+        proxyRequest<Rows>('/workers?fields=status'),
+      ]);
+      let byName = new Map(rows(spec).map((worker) => [worker.name, worker]));
+      const live = rows(status);
+      if (live.some((worker) => !byName.has(worker.name))) {
+        const fresh = await proxyRequest<Rows>('/workers?fields=spec', { cache: 'reload' });
+        byName = new Map(rows(fresh).map((worker) => [worker.name, worker]));
+        if (live.some((worker) => !byName.has(worker.name))) {
+          return rows(await proxyRequest<Rows>('/workers?fields=spec,status'));
+        }
+      }
+      // Status is authoritative for membership: removed Workers must disappear.
+      return live.map((worker) => ({ ...byName.get(worker.name), ...worker }));
+    } catch (error) {
+      // Old Controllers either ignore fields (already compatible above) or reject it.
+      if (error instanceof ApiError && error.status === 400) return agentteamsApi.listWorkers();
+      throw error;
+    }
+  },
+
   getWorker: (name: string) => proxyRequest<WorkerResponse>(`/workers/${encodeURIComponent(name)}`),
 
   createWorker: (data: CreateWorkerRequest) =>
@@ -602,6 +702,28 @@ export const agentteamsApi = {
   },
 
   getTeam: (name: string) => proxyRequest<TeamResponse>(`/teams/${encodeURIComponent(name)}`),
+
+  /**
+   * Team attention inbox (upstream #1503, read-only).
+   *
+   * `status`: `open` (default) | `overdue` | `resolved` | `all`; anything else
+   * is a controller 400. `limit`: 1..1000 (default 200) — above/below is a
+   * 400, never a clamp. 404 means either the team is unreadable (existence
+   * hidden) or the Controller predates #1503, so callers render the upgrade
+   * placeholder via `isUnsupportedEndpointError`.
+   */
+  getTeamAttention: async (
+    name: string,
+    options: { status?: 'open' | 'overdue' | 'resolved' | 'all'; limit?: number } = {},
+  ): Promise<TeamAttentionResponse> => {
+    const params = new URLSearchParams();
+    if (options.status) params.set('status', options.status);
+    if (options.limit) params.set('limit', String(options.limit));
+    const qs = params.toString();
+    return proxyRequest<TeamAttentionResponse>(
+      `/teams/${encodeURIComponent(name)}/attention${qs ? `?${qs}` : ''}`,
+    );
+  },
 
   createTeam: async (data: CreateTeamRequest) => {
     // 兼容旧字段 admin：Controller 实际接收的是 leader.name（workerMembers 中的 team_leader）

@@ -89,6 +89,35 @@ describe('buildThemeInitScript', () => {
     expect(root.style.getPropertyValue('--radius')).toBe('0.75rem');
     expect(root.style.fontSize).toBe('18px');
     expect(root.classList.contains('dark')).toBe(true);
+    expect(root.style.colorScheme).toBe('dark');
+  });
+
+  it('pre-paints a base:"light" custom theme without the dark class (f6-2)', () => {
+    runScript(
+      JSON.stringify({
+        state: {
+          themeId: 'brand-light',
+          customThemes: [
+            {
+              id: 'brand-light',
+              name: 'Brand Light',
+              base: 'light',
+              variables: { '--primary': '#1677ff' },
+              radius: 0.75,
+            },
+          ],
+        },
+        version: 0,
+      })
+    );
+    const root = document.documentElement;
+    // 预绘制阶段按 base 判定：首帧不渲染成暗色（旧逻辑按 resolved!==‘light’
+    // 判定，自定义 id ≠ 'light' 会让首帧带上 dark 类）。
+    expect(root.classList.contains('dark')).toBe(false);
+    expect(root.style.colorScheme).toBe('light');
+    expect(root.getAttribute('data-theme')).toBe('brand-light');
+    // 变量消费不受判定改动影响。
+    expect(root.style.getPropertyValue('--primary')).toBe('#1677ff');
   });
 
   it('follows the system preference when themeId is system', () => {

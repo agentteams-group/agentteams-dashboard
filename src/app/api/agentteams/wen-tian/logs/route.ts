@@ -4,7 +4,7 @@
 //
 // Body:
 //   range      string  log window, e.g. "1h" (default) — max 30d
-//   redact     boolean PII redaction, default true
+//   redact     boolean must not be false — PII redaction is always on (400 otherwise)
 //   container  string  substring filter on agentteams-* container names
 //   room       string  Matrix room name filter
 //   homeserver string  Matrix homeserver (paired with the Authorization header)
@@ -231,7 +231,7 @@ function buildPrompt(args: {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await enforceLevelOnlyRbac(request, 'view', 'wen-tian', 'logs');
+  const denied = await enforceLevelOnlyRbac(request, 'manage', 'wen-tian', 'logs');
   if (denied) return denied;
   let rawBody: unknown;
   try { rawBody = await request.json(); } catch {
@@ -246,6 +246,13 @@ export async function POST(request: NextRequest) {
   }
   if (body['redact'] !== undefined && typeof body['redact'] !== 'boolean') {
     return Response.json({ error: "'redact' must be a boolean" }, { status: 400 });
+  }
+  // 调试日志始终脱敏（SEC）：关闭脱敏的请求直接拒绝。
+  if (body['redact'] === false) {
+    return Response.json(
+      { error: 'PII redaction cannot be disabled: log bundles are always redacted' },
+      { status: 400 }
+    );
   }
   if (body['symptom'] !== undefined && typeof body['symptom'] !== 'string') {
     return Response.json({ error: "'symptom' must be a string" }, { status: 400 });
@@ -262,7 +269,8 @@ export async function POST(request: NextRequest) {
   try { rangeSeconds = parseRange(rangeStr); } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Invalid range' }, { status: 400 });
   }
-  const redact = (body['redact'] as boolean | undefined) !== false;
+  // 输出恒走 redactPii（redact:false 已在校验里拒绝），不再消费 body.redact。
+  const redact: boolean = true;
   const containerFilter = String(body['container'] ?? '').trim();
   const roomFilter = String(body['room'] ?? '').trim();
   const sinceEpochSec = Date.now() / 1000 - rangeSeconds;

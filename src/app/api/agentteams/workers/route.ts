@@ -5,7 +5,12 @@ import { getRequestModelAlias, rejectExternalModelProvider, rejectUnavailableExt
 import { enforceServerSideRbac } from '@/lib/server-auth';
 
 export async function GET(request: NextRequest) {
-  return filterEnvironmentResponse(request, await proxyToAgentTeams(request, getControllerUrl(request), '/api/v1/workers', { forwardBody: false }));
+  const query = new URLSearchParams();
+  for (const key of ['fields', 'team']) {
+    for (const value of request.nextUrl.searchParams.getAll(key)) query.append(key, value);
+  }
+  const suffix = query.size ? `?${query}` : '';
+  return filterEnvironmentResponse(request, await proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/workers${suffix}`, { forwardBody: false }));
 }
 
 export async function POST(request: NextRequest) {

@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { exportMatrixMessages } from '../../debug-log/matrix';
-import { readServerIdentity } from '@/lib/server-auth';
+import { readServerIdentity, SERVER_USER_LEVEL_HEADER } from '@/lib/server-auth';
 import { listAuditEvents, type AuditEventRecord } from '@/lib/audit-log';
 import { parseAuditRef } from '@/lib/replay/audit-ref';
 
@@ -29,6 +29,14 @@ export function replayDir(): string {
 
 export function isReplayId(id: string): boolean {
   return REPLAY_ID_PATTERN.test(id);
+}
+
+/** 同 audit/route.ts 的 isAuditorLevel：L2+ 可做审计互查（深链只解析审计
+ * 事件关联的回放引用），L1 及以下拒绝。 */
+function isAuditorLevel(value: string | null): boolean {
+  if (!value) return false;
+  const level = Number(value);
+  return Number.isFinite(level) && level >= 2;
 }
 
 export async function POST(request: NextRequest) {
@@ -119,6 +127,16 @@ export async function GET(request: NextRequest) {
 
   // 1. 如果传入 room 参数，扫描 replayDir 返回该房间最新的一条回放包引用（用于审计互查深链）
   if (room) {
+    // ?room= 会枚举回放包引用，与 audit 读同款等级门（L2+）；?id= 的
+    // capability 分支不受此门影响（无身份也可按 id 读取，见下方分支 2）。
+    const identity = readServerIdentity(request);
+    const levelHeader = request.headers.get(SERVER_USER_LEVEL_HEADER);
+    if (!identity || !isAuditorLevel(levelHeader)) {
+      return NextResponse.json(
+        { success: false, error: '需要审计权限', requiredLevel: 2 },
+        { status: 403 },
+      );
+    }
     try {
       const dir = replayDir();
       const files = await fs.readdir(dir);

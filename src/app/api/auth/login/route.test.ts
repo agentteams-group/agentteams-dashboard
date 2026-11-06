@@ -570,6 +570,30 @@ describe('POST /api/auth/login (dual track, M19)', () => {
     expect(response.headers.getSetCookie().some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))).toBe(true);
   });
 
+  it('external mode: Console credential failure does NOT fall through to Matrix (401, no topology/token leak)', async () => {
+    vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    const fetchMock = installFetchMock({
+      // Would-be Matrix-track response if the fall-through still happened.
+      matrixLogin: { body: { access_token: 'secret-matrix', user_id: '@admin:sat.example', device_id: 'D' } },
+    });
+
+    const response = await POST(request({ username: 'admin', password: 'wrong-password' }));
+    expect(response.status).toBe(401);
+    const data = await responseJson(response);
+    expect(data.success).toBe(false);
+    const serialized = JSON.stringify(data);
+    expect(serialized.toLowerCase()).not.toContain('matrix');
+    expect(serialized).not.toContain('accessToken');
+    expect(serialized).not.toContain('agentteams-controller:6167');
+    // The internal homeserver was never probed with the remote client's
+    // credentials in external mode.
+    const matrixCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes('/_matrix/client/v3/login'));
+    expect(matrixCalls).toEqual([]);
+  });
+
   it('post-merge review Block 1: saved matrix address (setup page) is used for login when env is empty (standalone deployment)', async () => {
     mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'login-matrix-cfg-'));

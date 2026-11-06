@@ -66,7 +66,9 @@ function definitionToFlow(def: LoopDefinition): { nodes: Node[]; edges: Edge[] }
     const layer = layerOf.get(n.id) ?? 0;
     const index = perLayer.get(layer) ?? 0;
     perLayer.set(layer, index + 1);
-    const style = NODE_TYPE_STYLES[n.type];
+    // 历史坏草稿可能带未知 type（旧版校验放过）：降级用 agent 样式渲染，
+    // 而不是取 style 时 TypeError 使整个循环分区崩溃（f5-2）。
+    const style = NODE_TYPE_STYLES[n.type] ?? NODE_TYPE_STYLES.agent;
     return {
       id: n.id,
       position: saved?.[n.id] ?? { x: layer * 230 + 40, y: index * 110 + 40 },
@@ -80,7 +82,7 @@ function definitionToFlow(def: LoopDefinition): { nodes: Node[]; edges: Edge[] }
               >
                 {style.badge}
               </span>
-              {NODE_TYPE_LABELS[n.type]}
+              {NODE_TYPE_LABELS[n.type] ?? n.type}
             </div>
             <div className="text-xs font-medium">{n.label}</div>
             {n.assignee && <div className="text-xs text-muted-foreground">@{n.assignee}</div>}

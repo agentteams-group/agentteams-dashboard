@@ -191,6 +191,15 @@ export async function POST(request: NextRequest) {
       return l1.response;
     }
 
+    // External mode (upstream #76): Console credential failure stops here —
+    // falling through to attemptMatrixLogin would probe the internal
+    // homeserver with the remote client's credentials and could return
+    // Matrix-track responses (mode:'matrix' + access token), violating the
+    // no-Matrix-token/URL contract declared at the top of this file.
+    // Response shape mirrors attemptMatrixLogin's credential-failure 401.
+    if (isExternal) {
+      return NextResponse.json({ success: false, error: '用户名或密码错误' }, { status: 401 });
+    }
     return await attemptMatrixLogin(request, username, password, adminUsername, adminPassword, controllerToken);
   } catch (err: unknown) {
     // SEC-09: the raw error can carry internal details (session secret

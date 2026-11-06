@@ -5,6 +5,7 @@ import { markWorking, orderedCandidates, pickBackendUrl } from '@/lib/backend-co
 import { appendAuditEvent } from '@/lib/audit-log';
 import { readServerIdentity } from '@/lib/server-auth';
 import { isStatelessAuthMode } from '@/lib/static-mode';
+import { createHash } from 'node:crypto';
 
 const TIMEOUT_MS = 10000;
 // Request-layer failover (plugin catch-all parity): a transport error retries
@@ -186,6 +187,8 @@ export async function proxyToAgentTeams(
      * 'content-disposition' for binary download routes). Only these are
      * forwarded; everything else is filtered. */
     passthroughHeaders?: string[];
+    /** Version read by a caller editing a conditional-write endpoint. */
+    ifMatch?: string | null;
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
@@ -197,6 +200,9 @@ export async function proxyToAgentTeams(
     method,
     headers: {},
   };
+  if (options.ifMatch) {
+    (fetchOptions.headers as Record<string, string>)['If-Match'] = options.ifMatch;
+  }
 
   // Per-session Controller credential (M19 dual-track):
   // - L2 session → the user's own Matrix access token, held in the
@@ -278,12 +284,45 @@ export async function proxyToAgentTeams(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
-        const res = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
+        const parsed = new URL(targetUrl);
+        const conditionalRead = method === 'GET' && !options.stream && (
+          ['/api/v1/version', '/api/v1/skills', '/api/v1/mcp-servers', '/api/v1/gateway/ai-routes'].includes(parsed.pathname)
+          || (parsed.pathname === '/api/v1/workers' && parsed.searchParams.get('fields') === 'spec')
+        );
+        // Scope validators to the effective server credential, identity and target.
+        // A browser cannot replay an admin body's validator after switching account.
+        const identity = readServerIdentity(request);
+        const validatorScope = createHash('sha256').update(JSON.stringify([
+          targetUrl, fetchOptions.headers, identity?.name, identity?.level,
+        ])).digest('hex').slice(0, 32);
+        const upstreamHeaders = new Headers(fetchOptions.headers);
+        const incoming = /^W\/"([a-f0-9]{32})\.([A-Za-z0-9_-]+)"$/.exec(request.headers.get('If-None-Match') ?? '');
+        if (conditionalRead && incoming?.[1] === validatorScope) {
+          upstreamHeaders.set('If-None-Match', Buffer.from(incoming[2], 'base64url').toString());
+        }
+        const res = await fetch(targetUrl, { ...fetchOptions, headers: upstreamHeaders, signal: controller.signal });
         clearTimeout(timeout);
         if (res.status < 400) markWorking('controller', target);
         // Governance audit: record proxied mutations (success=info, upstream
         // 4xx/5xx=warning) with the server-resolved identity.
         auditProxiedMutation(request, path, method, res.status);
+
+        const upstreamETag = conditionalRead ? res.headers.get('ETag') : null;
+        const responseETag = upstreamETag
+          ? `W/"${validatorScope}.${Buffer.from(upstreamETag).toString('base64url')}"` : null;
+        if (res.status === 304) {
+          if (!conditionalRead || !upstreamHeaders.has('If-None-Match')) {
+            return NextResponse.json({ error: 'Controller returned 304 without a matching validator' }, { status: 502 });
+          }
+          return new NextResponse(null, {
+            status: 304,
+            headers: {
+              ...(responseETag ? { ETag: responseETag } : {}),
+              'Cache-Control': 'private, no-store',
+              Vary: 'Authorization, Cookie',
+            },
+          });
+        }
 
         // For 204 No Content
         if (res.status === 204) {
@@ -335,6 +374,10 @@ export async function proxyToAgentTeams(
         const responseHeaders = new Headers();
         const resCT = res.headers.get('content-type');
         if (resCT) responseHeaders.set('content-type', resCT);
+        if (responseETag && res.ok) {
+          responseHeaders.set('ETag', responseETag);
+          responseHeaders.set('Vary', 'Authorization, Cookie');
+        }
         // Pass through any explicitly requested headers (e.g. content-disposition
         // for artifact downloads so RFC 5987 filenames survive the proxy).
         for (const name of options.passthroughHeaders ?? []) {

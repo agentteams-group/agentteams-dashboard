@@ -17,6 +17,8 @@
 
 ---
 
+聊天语音输入：点击麦克风录音，转写填入草稿后可编辑再发送。默认本地免费识别，可配置服务端 API Key 启用百炼付费识别。详见[语音输入配置](docs/voice-input.md)。
+
 <!-- TODO(录制)：以下三张占位图替换为真实截图/动图——录制清单见
      docs/images/README.md（overview 拓扑 / 任务看板 HITL 干预 / Chat 回放）。 -->
 
@@ -243,6 +245,28 @@ docker build -t agentteams-dashboard:local .
 | `DASHBOARD_SHARED_MODE` | `1` = 多用户共享本实例（配置保存仅 L1、写操作审计） | 未设（一人一实例） |
 | `DASHBOARD_ALLOWED_HOSTS` | setup「测试连接」探针的严格白名单（探针已 token/会话门控；metadata 哨兵 169.254.169.254 全模式拒绝） | 未设（对 session/token 持有者放行） |
 | `NEXT_PUBLIC_BASE_PATH` | URL 基础路径（嵌入部署时用） | `/dashboard` |
+
+### 可选的 Worker 链路追踪
+
+AT 与 Dashboard 不依赖 Langfuse 也能启动。管理员在「控制台 → 治理 → Tracing」打开「可观测配置」，填写 Langfuse 项目查询凭据与已有的 OTLP/HTTP Collector 地址，测试连接、保存并应用到选定的托管 Worker。Collector 需已把数据导出到同一个 Langfuse 项目，且 Worker 能访问它。Collector 侧请使用仅具备写入权限的凭据，项目查询凭据只留在 Dashboard 服务端。
+
+保存后无需重启 Dashboard。配置以 `0600` 权限原子写入 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`，该目录需挂载持久卷。密钥字段只写不读，留空表示保留已保存的值。`LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_URL`、`LANGFUSE_PROJECT_ID`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 仍可作为读取存量 Trace 的服务端默认值。
+
+采集默认关闭。应用时只通过 Controller 既有的 Worker API 合并遥测相关环境变量；运行中的托管 Worker 会重建，休眠中的 Worker 在下次启动时生效。这要求 QwenPaw 或 Hermes 镜像已支持遥测，且 Controller 允许编辑 Worker 环境变量。关闭采集同样需要执行一次「应用」，已入库的 Trace 仍可查询。连接测试或配置写入成功都不代表 Worker 已就绪或已开始上报：请实际运行一个任务并查看对应的 Trace。
+
+Team/Worker 过滤、Trace 列表/详情/会话导出都按当前账号在 Controller 的权限执行。选中 Worker 会同时锁定其运行时。每个 Controller 部署或组织应使用独立的 Langfuse 项目；跨组织复用 Worker 名称不构成租户隔离。Trace 详情包含瀑布图、会话跳转/导出、耗时、Token 总量与用量分布。实现面向 Langfuse v3 写入与 v1 查询 API。
+
+#### 阿里云 AgentLoop
+
+在 Tracing 的「可观测配置」中，将查询后端选为「阿里云 AgentLoop」，填写地域、CMS Workspace，以及通过该 Workspace 的 CMS EntityStore（`apm.trace_set.storage`）定位的原始 Trace SLS Project / Logstore。此处不是 AgentSpace 的 `agent-trajectory` 数据源；绑定关系由管理员显式提供，Dashboard 不自动发现或核实 CMS 绑定。
+
+查询使用官方 `@alicloud/credentials` 服务端默认凭证链，支持 STS、RAM/OIDC 角色等，只授予目标 Trace 数据源的读取权限。浏览器和 Worker 不持有查询密钥。可用服务端默认变量：`AGENTTEAMS_TRACING_BACKEND=agentloop`、`AGENTLOOP_REGION`、`AGENTLOOP_WORKSPACE`、`AGENTLOOP_SLS_PROJECT`、`AGENTLOOP_SLS_LOGSTORE`。默认 SLS Project 接入点为 `https://<project>.<region>.log.aliyuncs.com`；内网或协议测试可通过服务端 `AGENTLOOP_SLS_ENDPOINT` 设置完整 Project 接入点。
+
+Collector 需配置目标 Workspace 的 OTLP/HTTP 地址和采集鉴权头，也可同时上报 Langfuse。切换查询后端不修改 Collector 的出口。Worker 输出标准入口、Session/Turn、模型用量和模型/工具内容，并保留 Langfuse 兼容字段。查询按官方 raw Span 的纳秒 `startTime` / `duration` 读取；本轮不创建审计事件、轨迹 Pipeline、Dataset 或评估器。
+
+查询逐页确认完整性，不完整页重试但不前进，超出 100000 行、32 MiB 或约 60 秒预算时明确报错，不返回伪完整会话。Session 查询不套最近 24 小时限制，仅覆盖实际保留的数据。列表不返回内容，详情/导出继续校验当前账号的 Worker/Team 权限；未知费用显示未计价。
+
+实现依据[官方 AgentLoop 查询契约](https://help.aliyun.com/zh/agentloop/use-cases/agentloop-data-query-api-usage-guide)和[原始 Trace 格式](https://help.aliyun.com/zh/sls/raw-source-data-format-association-and-minimum-requirements)。已完成本机签名查询、OTLP 和页面夹具验收，云上入库及 AgentLoop 控制台识别留待提供测试端点后验证。
 
 ## 🏗 核心设计
 

@@ -1,5 +1,6 @@
 import {
   Inbox,
+  Activity,
   LayoutDashboard,
   Bot,
   Users,
@@ -109,6 +110,7 @@ export const navItems: NavItem[] = [
   { id: 'knowledge', label: '知识库', icon: KnowledgeBookIcon, area: 'console', group: 'resources', legacyGroup: 'resource' },
   // 治理：审计。
   { id: 'audit', label: '审计', icon: ScrollText, area: 'console', group: 'governance', legacyGroup: 'resource' },
+  { id: 'tracing', label: 'Tracing', icon: Activity, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 1 },
   // 系统：集群概览归入系统（附录 A）。
   { id: 'overview', label: '总览', icon: LayoutDashboard, area: 'console', group: 'system', legacyGroup: 'core' },
 ];

@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from './ChatStore';
-import { MessageList } from './structures/MessageList';
-import type { ScrollPanelHandle } from './structures/ScrollPanel';
+import { MessageList, type MessageListHandle } from './structures/MessageList';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
@@ -181,7 +180,9 @@ export function ChatRoom({
   const sessionDot = useChatRoomSessionState(roomId, workerMatrixUserIds);
   // Live typing indicators, read receipts and room meta are fed by the global
   // useGlobalMatrixSync loop mounted at dashboard level — no per-room loop here.
-  const scrollRef = useRef<ScrollPanelHandle>(null);
+  // f5-1: MessageList 的 imperative handle（timeline 索引空间，含未读分割线
+  // splice 的 +1 偏移修正）。
+  const scrollRef = useRef<MessageListHandle>(null);
   const prevMsgCountRef = useRef(0);
   const prevMsgLastIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
@@ -538,14 +539,13 @@ export function ChatRoom({
 
   const handleReply = useCallback((message: DisplayMessage) => {
     setReplyTo(message);
-    const idx = formattedMessages.findIndex(m => m.id === message.id || m.eventId === message.eventId);
-    if (idx >= 0) {
-      // Scroll to the replied message.
-      scrollRef.current?.scrollToIndex(idx);
-    } else {
+    // f5-1: 定位改走 timeline 索引空间（scrollToEvent 匹配 id/eventId/
+    // sourceEventIds），未读分割线的 +1 偏移由 MessageList 修正；找不到时
+    // 维持原来的回底兜底。
+    if (!scrollRef.current?.scrollToEvent(message.eventId || message.id)) {
       scrollRef.current?.scrollToBottom({ smooth: true });
     }
-  }, [formattedMessages]);
+  }, []);
 
   const { copy: copyToClipboard } = useCopyToClipboard({ resetMs: 1600 });
 
@@ -601,10 +601,10 @@ export function ChatRoom({
   }, [formattedMessages]);
 
   const handleRevealEvent = useCallback((eventId: string) => {
-    const idx = messageIndexRef.current.get(eventId);
-    if (idx === undefined) return false;
-    scrollRef.current?.scrollToIndex(idx);
-    return true;
+    // messageIndexRef 仍作存在性判断/返回值；定位本身走 timeline 索引空间
+    // （f5-1：未读分割线的 +1 偏移由 MessageList.scrollToEvent 修正）。
+    if (messageIndexRef.current.get(eventId) === undefined) return false;
+    return scrollRef.current?.scrollToEvent(eventId) ?? false;
   }, []);
 
   const handleEditSubmit = useCallback(async (message: DisplayMessage, newContent: string) => {
@@ -862,6 +862,7 @@ export function ChatRoom({
           <TypingIndicator users={typingUsers} />
           <AgentActivityTrack roomId={roomId} />
           <ChatComposer
+            roomId={roomId}
             value={inputValue}
             onChange={handleInputChange}
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}

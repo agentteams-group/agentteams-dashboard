@@ -74,8 +74,11 @@ export async function POST(request: NextRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
+    // 规范端点：DELETE /_matrix/client/v3/devices/{deviceId}（单设备删除）。
+    // POST /_matrix/client/v3/delete_devices 是需 UIA 的批量端点，且不接受
+    // DELETE 方法——旧路径在规范 homeserver（含内嵌 Tuwunel）上只会 404。
     const res = await fetch(
-      `${parsed.origin}/_matrix/client/v3/delete_devices/${encodeURIComponent(deviceId)}`,
+      `${parsed.origin}/_matrix/client/v3/devices/${encodeURIComponent(deviceId)}`,
       {
         method: 'DELETE',
         signal: controller.signal,
