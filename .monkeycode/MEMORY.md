@@ -181,7 +181,7 @@ Entries discovered by the Agent while performing [specific task description] sho
 - Context: Discovered by Agent while fixing #138 license and #139 installer drift
 - Category: Workflow & Collaboration | Testing Methods
 - Instructions:
-  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-04 已对齐上游 main `c69037acb24c`，与上游 diff 0。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
+  - `install/agentteams-install.sh` 是 `agentscope-ai/AgentTeams` 上游安装器的工作副本。2026-11-06 已对齐上游 main `a64757c`，与上游 diff 0（含 #1501 `AGENTTEAMS_FS_PUBLIC_ENDPOINT`）。Higress adapter env、`_dashboard_merge_console_host`、volume export/chown、WASM plugin registry、`_controller_admin_url_env_args` 均已在上游。漂移告警：`.github/workflows/upstream-drift.yml` 每周一，阈值 50 行或 diff 命中 "dashboard"
   - 对齐方法：直接用上游 main 的 `install/agentteams-install.sh` 覆盖本仓副本，再把 `_dashboard_merge_console_host` / volume export/chown 同步到 standalone `install/agentteams-dashboard.sh`。weekly drift 只扫 `agentteams-install.sh`（上游没有独立 dashboard.sh）
   - 安装器验证命令（无需 Docker）：`bash -n install/agentteams-install.sh`、`bash scripts/check-docs-consistency.sh`、`bash install/agentteams-dashboard-tests.sh`（62 用例）
   - 本仓根目录原本缺 `LICENSE`；许可证采用 Apache-2.0（Copyright 2026 AgentTeams Contributors，与上游一致），`package.json` 亦补 `license` 字段
@@ -206,4 +206,5 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值（plugin-route 即走此路径）；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（经典导航开关用，store persist v4）；侧栏分组统一走 use-nav-sections.ts
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
+  - `npm install` 若非必要会改动 `package-lock.json` 的 `dev`/`devOptional` 标记，提交前用 `git checkout -- package-lock.json` 还原这类非语义 churn
   - 全量 vitest 基线：244 文件 / 2281 测试（孤儿清理后），全量跑约 3.5-4 分钟；孤儿 section（architecture/security/quickstart/runtime/docs/projects 共 7 文件）已于 M1 删除
