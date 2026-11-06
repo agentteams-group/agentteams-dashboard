@@ -200,7 +200,7 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 装验视觉口径：会话气泡浅色轻装饰（自己 emerald 浅底/Agent 中性浅底，46rem 宽）；标签卡统一 rounded-lg 无阴影；顶栏资源计数与连接状态合并为胶囊；侧栏宽度 w-auto 自适应 168-256px
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
   - `npm install` 若非必要会改动 `package-lock.json` 的 `dev`/`devOptional` 标记，提交前用 `git checkout -- package-lock.json` 还原这类非语义 churn
-  - 全量 vitest 基线：311 文件 / 2825 用例，全量约 4.5-5 分钟；`@huggingface/transformers`、`opencc-js` 已声明，缺装会挂 speech/voice 相关 4 个文件
+  - 全量 vitest 基线：313 文件 / 2867 用例（#182 评审修复后），全量约 5-6 分钟；`@huggingface/transformers`、`opencc-js` 已声明，缺装会挂 speech/voice 相关 4 个文件
 
 [Project Knowledge Summary]
 - Date: 2026-11-06
