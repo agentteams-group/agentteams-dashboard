@@ -39,6 +39,11 @@ export interface TraceList {
   meta: { page: number; totalPages: number; totalItems: number };
 }
 
+export interface TraceScope {
+  teams: { name: string; label: string }[];
+  workers: { name: string; team: string }[];
+}
+
 export function summarizeTrace(observations: TraceObservation[]) {
   const calls = observations.filter((o) => o.type === 'GENERATION')
     .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime))

@@ -1,5 +1,5 @@
 // Server-only Langfuse access. Never expose the project secret to the browser.
-import type { TraceDetail, TraceList } from './tracing-types';
+import type { TraceDetail, TraceList, TraceScope, TraceSummary } from './tracing-types';
 
 export class TracingError extends Error {
   status: number;
@@ -40,12 +40,15 @@ async function query<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function listTraces(search: URLSearchParams): Promise<TraceList> {
+export async function listTraces(search: URLSearchParams, scope: TraceScope): Promise<TraceList> {
   const page = search.get('page') ?? '1';
   if (!/^[1-9]\d{0,4}$/.test(page)) throw new TracingError(400, '无效页码');
   const params = new URLSearchParams({ page, limit: '20', orderBy: 'timestamp.desc', tags: 'agentteams' });
   params.append('tags', 'worker-turn');
   const worker = search.get('worker');
+  const team = search.get('team');
+  if ((worker && !scope.workers.some((w) => w.name === worker)) ||
+      (team && !scope.teams.some((t) => t.name === team))) throw new TracingError(404, '资源不存在或无权访问');
   if (worker) params.set('userId', worker);
   const runtime = search.get('runtime');
   if (runtime) params.append('tags', runtime);
@@ -60,18 +63,35 @@ export async function listTraces(search: URLSearchParams): Promise<TraceList> {
   const hours = Number(search.get('hours') ?? '24');
   if (![1, 24, 168].includes(hours)) throw new TracingError(400, '无效时间范围');
   if (!session) params.set('fromTimestamp', new Date(Date.now() - hours * 3600000).toISOString());
-  const result = await query<TraceList>(`traces?${params}`);
+  const names = scope.workers.filter((w) => (!worker || w.name === worker) && (!team || w.team === team)).map((w) => w.name);
+  const visible: TraceSummary[] = [];
+  if (names.length) {
+    params.set('filter', JSON.stringify([{ type: 'stringOptions', column: 'userId', operator: 'any of', value: names }]));
+    // Apply the authoritative Worker/Team relationship before pagination and
+    // counts, including sessions and history from reassigned Workers.
+    params.set('limit', '100');
+    let current = 1;
+    let pages = 1;
+    do {
+      params.set('page', String(current));
+      const result = await query<TraceList>(`traces?${params}`);
+      visible.push(...result.data.filter((t) => traceInScope(t, scope)));
+      pages = result.meta.totalPages; current++;
+    } while (current <= pages);
+  }
   // Keep input/output out of the list; load content only on explicit selection.
-  return { meta: result.meta, data: result.data.map((t) => ({
+  return { meta: { page: Number(page), totalItems: visible.length, totalPages: Math.ceil(visible.length / 20) },
+    data: visible.slice((Number(page) - 1) * 20, Number(page) * 20).map((t) => ({
     id: t.id, name: t.name, timestamp: t.timestamp, userId: t.userId,
     sessionId: t.sessionId, tags: t.tags, metadata: t.metadata,
     latency: t.latency, totalCost: t.totalCost,
   })) };
 }
 
-export async function getTrace(id: string): Promise<TraceDetail> {
+export async function getTrace(id: string, scope: TraceScope): Promise<TraceDetail> {
   if (!/^[a-f0-9]{32}$/i.test(id)) throw new TracingError(400, '无效 Trace ID');
   const result = await query<TraceDetail>(`traces/${encodeURIComponent(id)}`);
+  if (!traceInScope(result, scope)) throw new TracingError(404, 'Trace 不存在或无权访问');
   const publicBase = process.env.LANGFUSE_PUBLIC_URL;
   const project = process.env.LANGFUSE_PROJECT_ID;
   let langfuseUrl: string | null = null;
@@ -85,4 +105,18 @@ export async function getTrace(id: string): Promise<TraceDetail> {
       ...observation.metadata,
     } };
   }), langfuseUrl };
+}
+
+export function traceInScope(trace: TraceSummary, scope: TraceScope): boolean {
+  const worker = scope.workers.find((w) => w.name === trace.userId);
+  if (!worker || !trace.tags.includes('agentteams') || !trace.tags.includes('worker-turn')) return false;
+  const metadata = trace.metadata ?? {};
+  const attributes = metadata.attributes as Record<string, unknown> | undefined;
+  const recordedWorker = metadata['agentteams.worker.name'] ?? attributes?.['agentteams.worker.name'];
+  if (recordedWorker != null && recordedWorker !== worker.name) return false;
+  const teams = trace.tags.filter((tag) => tag.startsWith('team:')).map((tag) => tag.slice(5));
+  const team = metadata['agentteams.team.id'] ?? attributes?.['agentteams.team.id'];
+  if (typeof team === 'string' && team) teams.push(team);
+  // A reassigned Worker must not expose its previous team's trace content.
+  return worker.team ? teams.length > 0 && teams.every((t) => t === worker.team) : teams.length === 0;
 }

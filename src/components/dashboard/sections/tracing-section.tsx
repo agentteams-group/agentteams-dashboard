@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { apiUrl } from '@/lib/api-base';
-import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation } from '@/lib/tracing-types';
+import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation, type TraceScope } from '@/lib/tracing-types';
 
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(apiUrl(`/api/agentteams/traces${path}`), { signal });
@@ -35,11 +35,19 @@ export function TracingSection() {
   const [selected, setSelected] = useState('');
   const [observationId, setObservationId] = useState('');
   const [filters, setFilters] = useState({ worker: '', runtime: '', task: '', hours: '24', session: '', team: '', room: '' });
+  const resources = useQuery({
+    queryKey: ['trace-resources'],
+    queryFn: ({ signal }) => read<TraceScope>('?options=resources', signal),
+    refetchInterval: 10000,
+    retry: false,
+  });
+  const workerOptions = (resources.data?.workers ?? []).filter((w) => !team || w.team === team);
   const list = useQuery({
     queryKey: ['traces', filters, page],
     queryFn: ({ signal }) => read<TraceList>(`?${new URLSearchParams({ ...filters, page: String(page) })}`, signal),
     refetchInterval: 10000,
     retry: false,
+    enabled: Boolean(resources.data) && !resources.error,
   });
   const detail = useQuery({
     queryKey: ['trace', selected],
@@ -58,6 +66,7 @@ export function TracingSection() {
   const upstream = detail.data?.metadata?.['agentteams.upstream.trace_id'];
 
   function openSession(id: string) {
+    setWorker(''); setTeam(''); setRuntime(''); setTask(''); setRoom('');
     setSession(id);
     setFilters({ worker: '', runtime: '', task: '', hours, session: id, team: '', room: '' });
     setPage(1);
@@ -89,23 +98,33 @@ export function TracingSection() {
 
   return <div className="space-y-5">
     <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
-      <Button variant="outline" size="sm" onClick={() => { void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button>
+      <Button variant="outline" size="sm" onClick={() => { void resources.refetch(); void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button>
     } />
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → Langfuse<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
       e.preventDefault(); setFilters({ worker, runtime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
-      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<Input aria-label="Worker" placeholder="全部 Worker" value={worker} onChange={(e) => setWorker(e.target.value)} /></label>
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Team<select aria-label="Team" className="block h-9 w-full rounded-md border bg-background px-3" value={team} onChange={(e) => {
+        const next = e.target.value; setTeam(next);
+        if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) setWorker('');
+      }}>
+        <option value="">全部可访问 Team</option>{resources.data?.teams.map((t) => <option key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</option>)}
+      </select></label>
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<select aria-label="Worker" className="block h-9 w-full rounded-md border bg-background px-3" value={worker} onChange={(e) => setWorker(e.target.value)}>
+        <option value="">全部可访问 Worker</option>{workerOptions.map((w) => <option key={w.name} value={w.name}>{w.name}</option>)}
+      </select></label>
       <label className="space-y-1 text-xs">运行时<select aria-label="运行时" className="block h-9 rounded-md border bg-background px-3" value={runtime} onChange={(e) => setRuntime(e.target.value)}>
         <option value="">全部运行时</option>{['qwenpaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <option key={r}>{r}</option>)}
       </select></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Session ID<Input aria-label="Session ID" placeholder="查询会话的全部轮次" value={session} onChange={(e) => setSession(e.target.value)} /></label>
-      <label className="min-w-32 flex-1 space-y-1 text-xs">Team ID<Input aria-label="Team ID" value={team} onChange={(e) => setTeam(e.target.value)} /></label>
       <label className="min-w-32 flex-1 space-y-1 text-xs">Room ID<Input aria-label="Room ID" value={room} onChange={(e) => setRoom(e.target.value)} /></label>
       <label className="space-y-1 text-xs">时间<select aria-label="时间" className="block h-9 rounded-md border bg-background px-3" value={hours} onChange={(e) => setHours(e.target.value)}><option value="1">最近 1 小时</option><option value="24">最近 24 小时</option><option value="168">最近 7 天</option></select></label>
       <Button type="submit" size="sm">查询</Button>
     </form>
+    {resources.isLoading ? <p className="text-xs text-muted-foreground">正在读取当前账号的资源访问范围…</p> : null}
+    {resources.error ? <p role="alert" className="text-sm text-destructive">{resources.error.message}</p> : null}
+    {resources.data && !resources.data.workers.length ? <p className="text-xs text-muted-foreground">当前账号暂无可访问的 Worker。</p> : null}
     {filters.session ? <p className="break-all text-xs text-muted-foreground">会话：{filters.session} · 展示全部时间范围内的执行轮次</p> : null}
     {list.error ? <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{list.error.message}</p> : null}
     <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.6fr)]">

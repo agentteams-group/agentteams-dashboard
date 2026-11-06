@@ -5,11 +5,18 @@ import { TracingSection } from './tracing-section';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
+function traceResponse(url: string, data: unknown) {
+  return Response.json(url.includes('options=resources') ? {
+    teams: [{ name: 'a', label: 'Team A' }, { name: 'b', label: 'Team B' }],
+    workers: [{ name: 'hermes-demo', team: 'a' }, { name: 'qwen-demo', team: 'b' }],
+  } : data);
+}
+
 it('queries server filters, opens a trace, and shows the selected span content', async () => {
   const id = 'a'.repeat(32);
   const trace = { id, name: 'hermes / worker.turn', timestamp: '2026-11-06T00:00:00Z',
     userId: 'hermes-demo', tags: ['agentteams', 'hermes', 'fixture'], metadata: {}, totalCost: 0 };
-  const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(Response.json(
+  const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(traceResponse(url,
     url.includes(`/${id}`) ? { ...trace, langfuseUrl: 'http://localhost:13100/project/at-workers/traces/' + id,
       observations: [{ id: 'span', parentObservationId: null, name: 'openai.chat', type: 'GENERATION',
         level: 'DEFAULT', startTime: trace.timestamp, endTime: '2026-11-06T00:00:00.500Z',
@@ -20,6 +27,7 @@ it('queries server filters, opens a trace, and shows the selected span content',
   vi.stubGlobal('fetch', fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  await screen.findByRole('option', { name: 'hermes-demo' });
   fireEvent.change(screen.getByLabelText('运行时'), { target: { value: 'hermes' } });
   fireEvent.change(screen.getByLabelText('Worker'), { target: { value: 'hermes-demo' } });
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
@@ -32,6 +40,12 @@ it('queries server filters, opens a trace, and shows the selected span content',
   expect(within(screen.getByLabelText('Trace 概览')).getByText('500 ms')).toBeTruthy();
   expect(screen.getByText('未计价')).toBeTruthy();
   expect(screen.getByRole('link', { name: /Langfuse/ }).getAttribute('href')).toContain(id);
+  fireEvent.change(screen.getByLabelText('Team'), { target: { value: 'b' } });
+  expect(screen.queryByRole('option', { name: 'hermes-demo' })).toBeNull();
+  expect(screen.getByRole('option', { name: 'qwen-demo' })).toBeTruthy();
+  expect((screen.getByLabelText('Worker') as HTMLSelectElement).value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: '查询' }));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('team=b') && url.includes('worker=&'))).toBe(true));
   view.unmount(); client.clear();
 });
 
@@ -40,7 +54,7 @@ it('shows token totals, input share, model shares and opens the largest call', a
   const trace = { id, name: 'token-breakdown', timestamp: '2026-11-06T00:00:00Z', tags: [], metadata: {} };
   const observation = (spanId: string, start: number, end: number) => ({ id: spanId, parentObservationId: 'root',
     name: spanId, type: 'GENERATION', level: 'DEFAULT', startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() });
-  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(Response.json(
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(traceResponse(url,
     url.includes(`/${id}`) ? { ...trace, observations: [
       { ...observation('root', 0, 2000), parentObservationId: null, type: 'AGENT' },
       { ...observation('first', 100, 1500), model: 'model-a', usage: { input: 70, output: 30 } },
@@ -69,6 +83,7 @@ it('exports every page and trace in a session, independently of the visible page
   const second = 'b'.repeat(32);
   const summary = (id: string) => ({ id, name: id, sessionId: 'worker-session', timestamp: '2026-11-06T00:00:00Z', tags: [], metadata: {} });
   const fetcher = vi.fn().mockImplementation((url: string) => {
+    if (url.includes('options=resources')) return Promise.resolve(traceResponse(url, null));
     if (url.includes(`/${first}`) || url.includes(`/${second}`)) {
       return Promise.resolve(Response.json({ ...summary(url.includes(first) ? first : second), observations: [] }));
     }
@@ -88,4 +103,15 @@ it('exports every page and trace in a session, independently of the visible page
   expect(fetcher.mock.calls.some(([url]) => url.includes(`/${second}`))).toBe(true);
   expect(click).toHaveBeenCalledOnce();
   click.mockRestore(); view.unmount(); client.clear();
+});
+
+it('does not query traces when the account resource scope cannot be resolved', async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ error: '无法确认资源范围' }, { status: 503 }));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '无法确认资源范围');
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls[0][0]).toContain('options=resources');
+  view.unmount(); client.clear();
 });

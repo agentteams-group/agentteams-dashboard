@@ -78,7 +78,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     expect(byId.get('models')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('knowledge')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('audit')).toMatchObject({ area: 'console', group: 'governance' });
-    expect(byId.get('tracing')).toMatchObject({ area: 'console', group: 'governance', minLevel: 3 });
+    expect(byId.get('tracing')).toMatchObject({ area: 'console', group: 'governance', minLevel: 1 });
     expect(byId.get('overview')).toMatchObject({ area: 'console', group: 'system' });
   });
 
@@ -104,7 +104,7 @@ describe('UI level gate (M19 dual track)', () => {
       .map((item) => item.id);
     expect(ids).not.toContain('managers');
     expect(ids).not.toContain('humans');
-    expect(ids).not.toContain('tracing');
+    expect(ids).toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
     expect(ids).toContain('workers');
     expect(ids).toContain('teams');
