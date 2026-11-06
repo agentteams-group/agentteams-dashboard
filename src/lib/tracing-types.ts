@@ -40,6 +40,7 @@ export interface TraceList {
 }
 
 export interface TraceScope {
+  canConfigure?: boolean;
   teams: { name: string; label: string }[];
   workers: { name: string; team: string; runtime?: string }[];
 }

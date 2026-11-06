@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { TracingSettingsDialog } from './tracing-settings-dialog';
 import { apiUrl } from '@/lib/api-base';
 import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation, type TraceScope } from '@/lib/tracing-types';
 
@@ -101,7 +102,7 @@ export function TracingSection() {
 
   return <div className="space-y-5">
     <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
-      <Button variant="outline" size="sm" onClick={() => { void resources.refetch(); void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button>
+      <div className="flex gap-2">{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
     } />
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → Langfuse<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {

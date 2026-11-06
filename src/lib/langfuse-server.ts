@@ -1,17 +1,14 @@
 // Server-only Langfuse access. Never expose the project secret to the browser.
 import type { TraceDetail, TraceList, TraceScope, TraceSummary } from './tracing-types';
+import { readObservabilityConfig } from './observability-config';
+import { TracingError } from './tracing-error';
+export { TracingError } from './tracing-error';
 
-export class TracingError extends Error {
-  status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
-}
-
-function configuration() {
-  const base = process.env.LANGFUSE_BASE_URL;
-  const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
-  const secretKey = process.env.LANGFUSE_SECRET_KEY;
+async function configuration() {
+  const settings = await readObservabilityConfig();
+  const { langfuseUrl: base, publicKey, secretKey } = settings;
   if (!base || !publicKey || !secretKey) {
-    throw new TracingError(503, '尚未配置 Langfuse。请设置服务端 LANGFUSE_BASE_URL、LANGFUSE_PUBLIC_KEY 和 LANGFUSE_SECRET_KEY。');
+    throw new TracingError(503, '尚未配置 Langfuse，请由管理员打开可观测配置完成连接设置。');
   }
   const url = new URL(base);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
@@ -21,7 +18,7 @@ function configuration() {
 }
 
 async function query<T>(path: string): Promise<T> {
-  const config = configuration();
+  const config = await configuration();
   let response: Response;
   try {
     response = await fetch(`${config.base}/api/public/${path}`, {
@@ -92,8 +89,9 @@ export async function getTrace(id: string, scope: TraceScope): Promise<TraceDeta
   if (!/^[a-f0-9]{32}$/i.test(id)) throw new TracingError(400, '无效 Trace ID');
   const result = await query<TraceDetail>(`traces/${encodeURIComponent(id)}`);
   if (!traceInScope(result, scope)) throw new TracingError(404, 'Trace 不存在或无权访问');
-  const publicBase = process.env.LANGFUSE_PUBLIC_URL;
-  const project = process.env.LANGFUSE_PROJECT_ID;
+  const settings = await readObservabilityConfig();
+  const publicBase = settings.publicUrl || settings.langfuseUrl;
+  const project = settings.projectId;
   let langfuseUrl: string | null = null;
   if (publicBase && project && /^https?:\/\//.test(publicBase)) {
     langfuseUrl = `${publicBase.replace(/\/$/, '')}/project/${encodeURIComponent(project)}/traces/${id}`;

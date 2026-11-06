@@ -27,7 +27,7 @@ describe('tracing resource boundary', () => {
       headers: { 'x-agentteams-user': 'alice', 'x-agentteams-user-level': '1' },
     });
     vi.mocked(getTraceScope).mockResolvedValue({ teams: [], workers: [{ name: 'own', team: '' }] });
-    expect(await (await GET(request)).json()).toEqual({ teams: [], workers: [{ name: 'own', team: '' }] });
+    expect(await (await GET(request)).json()).toEqual({ teams: [], workers: [{ name: 'own', team: '' }], canConfigure: false });
     vi.mocked(getTraceScope).mockRejectedValue(new TracingError(403, 'scope denied'));
     expect((await GET(request)).status).toBe(403);
     expect(listTraces).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   if (!identity) return NextResponse.json({ error: '请先登录' }, { status: 401 });
   try {
     const scope = await getTraceScope(request);
-    if (request.nextUrl.searchParams.get('options') === 'resources') return NextResponse.json(scope);
+    if (request.nextUrl.searchParams.get('options') === 'resources') return NextResponse.json({ ...scope, canConfigure: identity.level === 3 });
     return NextResponse.json(await listTraces(request.nextUrl.searchParams, scope));
   } catch (error) {
     return NextResponse.json({ error: error instanceof TracingError ? error.message : 'Tracing 查询失败' },
