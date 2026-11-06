@@ -47,7 +47,7 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
-      {room.agentRole && <AssistantTaskNote room={room} rooms={rooms ?? [room]} contextOpen={contextPanel !== null} onOpen={() => onContextPanelChange(null)} />}
+      {(room.agentRole || room.type === 'team') && <AssistantTaskNote room={room} rooms={rooms ?? [room]} contextOpen={contextPanel !== null} onOpen={() => onContextPanelChange(null)} />}
     </div>
   );
 }
