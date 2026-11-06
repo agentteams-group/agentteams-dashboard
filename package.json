@@ -21,6 +21,7 @@
   "dependencies": {
     "@a2ui/react": "^0.12.0",
     "@a2ui/web_core": "^0.12.0",
+    "@alicloud/credentials": "2.4.7",
     "@huggingface/transformers": "3.8.1",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-avatar": "^1.2.6",

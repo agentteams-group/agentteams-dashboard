@@ -104,7 +104,7 @@ export function TracingSection() {
     <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
       <div className="flex gap-2">{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
     } />
-    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → Langfuse<Badge variant="outline">每 10 秒刷新</Badge></div>
+    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → 可观测后端<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
       e.preventDefault(); setFilters({ worker, runtime: effectiveRuntime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
@@ -148,7 +148,7 @@ export function TracingSection() {
     <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.6fr)]">
       <div className="min-w-0 overflow-hidden rounded-xl border bg-card">
         <div className="border-b px-4 py-3 text-sm font-medium">执行记录 <span className="text-muted-foreground">{list.data?.meta.totalItems ?? 0}</span></div>
-        {list.isLoading ? <p className="p-6 text-sm text-muted-foreground">正在读取 Langfuse…</p> : null}
+        {list.isLoading ? <p className="p-6 text-sm text-muted-foreground">正在读取 Tracing…</p> : null}
         {!list.isLoading && !list.error && !list.data?.data.length ? <p className="p-6 text-sm text-muted-foreground">暂无 Trace。运行 Worker 后刷新查看，入库可能需要数秒。</p> : null}
         <div className="max-h-[650px] overflow-y-auto">{list.data?.data.map((trace) => <button type="button" key={trace.id} onClick={() => { setSelected(trace.id); setObservationId(''); }} className={`block w-full border-b p-4 text-left transition-colors hover:bg-muted/60 ${selected === trace.id ? 'bg-muted' : ''}`}>
           <div className="truncate text-sm font-medium">{trace.name ?? trace.id}</div>
@@ -163,7 +163,7 @@ export function TracingSection() {
         {detail.isFetching ? <p className="text-sm text-muted-foreground">正在读取 Trace…</p> : null}
         {detail.error ? <p role="alert" className="text-sm text-destructive">{detail.error.message}</p> : null}
         {detail.data ? <>
-          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-medium">{detail.data.name}</h2><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selected}</p></div>{detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.langfuseUrl} target="_blank" rel="noreferrer">Langfuse<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-medium">{detail.data.name}</h2><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selected}</p></div>{detail.data.backendUrl || detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.backendUrl || detail.data.langfuseUrl!} target="_blank" rel="noreferrer">{detail.data.backend === 'agentloop' ? 'AgentLoop' : 'Langfuse'}<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
           {detail.data.sessionId ? <div className="flex flex-wrap items-center gap-2 text-xs"><span className="break-all text-muted-foreground">Session: {detail.data.sessionId}</span><Button size="sm" variant="outline" onClick={() => openSession(detail.data!.sessionId!)}>查看整个会话</Button><Button size="sm" variant="outline" disabled={exporting} onClick={() => void exportSession(detail.data!.sessionId!)}>{exporting ? '正在导出…' : '导出会话 JSON'}</Button></div> : null}
           {exportError ? <p role="alert" className="text-xs text-destructive">{exportError}</p> : null}
           {typeof upstream === 'string' && /^[a-f0-9]{32}$/i.test(upstream) ? <Button size="sm" variant="outline" onClick={() => { setSelected(upstream); setObservationId(''); }}>查看上游 Worker Trace</Button> : null}

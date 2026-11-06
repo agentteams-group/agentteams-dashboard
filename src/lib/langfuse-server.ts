@@ -1,5 +1,7 @@
 // Server-only Langfuse access. Never expose the project secret to the browser.
 import type { TraceDetail, TraceList, TraceScope, TraceSummary } from './tracing-types';
+import { traceInScope } from './tracing-scope';
+export { traceInScope } from './tracing-scope';
 import { readObservabilityConfig } from './observability-config';
 import { TracingError } from './tracing-error';
 export { TracingError } from './tracing-error';
@@ -96,25 +98,11 @@ export async function getTrace(id: string, scope: TraceScope): Promise<TraceDeta
   if (publicBase && project && /^https?:\/\//.test(publicBase)) {
     langfuseUrl = `${publicBase.replace(/\/$/, '')}/project/${encodeURIComponent(project)}/traces/${id}`;
   }
-  return { ...result, observations: result.observations.map((observation) => {
+  return { ...result, backend: 'langfuse', backendUrl: langfuseUrl, observations: result.observations.map((observation) => {
     const attributes = observation.metadata?.attributes;
     return { ...observation, metadata: {
       ...(attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {}),
       ...observation.metadata,
     } };
   }), langfuseUrl };
-}
-
-export function traceInScope(trace: TraceSummary, scope: TraceScope): boolean {
-  const worker = scope.workers.find((w) => w.name === trace.userId);
-  if (!worker || !trace.tags.includes('agentteams') || !trace.tags.includes('worker-turn')) return false;
-  const metadata = trace.metadata ?? {};
-  const attributes = metadata.attributes as Record<string, unknown> | undefined;
-  const recordedWorker = metadata['agentteams.worker.name'] ?? attributes?.['agentteams.worker.name'];
-  if (recordedWorker != null && recordedWorker !== worker.name) return false;
-  const teams = trace.tags.filter((tag) => tag.startsWith('team:')).map((tag) => tag.slice(5));
-  const team = metadata['agentteams.team.id'] ?? attributes?.['agentteams.team.id'];
-  if (typeof team === 'string' && team) teams.push(team);
-  // A reassigned Worker must not expose its previous team's trace content.
-  return worker.team ? teams.length > 0 && teams.every((t) => t === worker.team) : teams.length === 0;
 }

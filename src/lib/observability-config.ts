@@ -5,6 +5,8 @@ import { configFilePath, isTestTargetAllowed } from './backend-config';
 import { TracingError } from './tracing-error';
 
 export interface ObservabilityConfig {
+  backend: 'langfuse' | 'agentloop';
+  agentloop: { region: string; workspace: string; project: string; logstore: string };
   enabled: boolean;
   captureContent: boolean;
   mode: 'collector';
@@ -26,16 +28,23 @@ export type ObservabilityView = Omit<ObservabilityConfig, 'secretKey' | 'collect
 function filePath() { return path.join(path.dirname(configFilePath()), 'observability.json'); }
 
 export async function readObservabilityConfig(): Promise<ObservabilityConfig> {
-  try { return JSON.parse(await fs.readFile(filePath(), 'utf8')) as ObservabilityConfig; }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new TracingError(503, '可观测配置无法读取');
-  }
-  return {
+  const defaults: ObservabilityConfig = {
+    backend: process.env.AGENTTEAMS_TRACING_BACKEND === 'agentloop' ? 'agentloop' : 'langfuse',
+    agentloop: { region: process.env.AGENTLOOP_REGION ?? '', workspace: process.env.AGENTLOOP_WORKSPACE ?? '',
+      project: process.env.AGENTLOOP_SLS_PROJECT ?? '', logstore: process.env.AGENTLOOP_SLS_LOGSTORE ?? '' },
     enabled: false, captureContent: true, mode: 'collector',
     langfuseUrl: process.env.LANGFUSE_BASE_URL ?? '', publicUrl: process.env.LANGFUSE_PUBLIC_URL ?? '',
     projectId: process.env.LANGFUSE_PROJECT_ID ?? '', publicKey: process.env.LANGFUSE_PUBLIC_KEY ?? '',
     secretKey: process.env.LANGFUSE_SECRET_KEY ?? '', collectorEndpoint: '', collectorHeaders: '', revision: 'environment',
   };
+  try {
+    const saved = JSON.parse(await fs.readFile(filePath(), 'utf8')) as Partial<ObservabilityConfig>;
+    return { ...defaults, ...saved, agentloop: { ...defaults.agentloop, ...saved.agentloop } };
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new TracingError(503, '可观测配置无法读取');
+  }
+  return defaults;
 }
 
 export function publicObservabilityConfig(config: ObservabilityConfig): ObservabilityView {
@@ -56,6 +65,19 @@ export function mergeObservabilityConfig(previous: ObservabilityConfig, input: u
   if (!input || typeof input !== 'object') throw new TracingError(400, '配置格式无效');
   const body = input as Record<string, unknown>;
   const config = { ...previous };
+  if (body.backend != null) {
+    if (body.backend !== 'langfuse' && body.backend !== 'agentloop') throw new TracingError(400, '查询后端无效');
+    config.backend = body.backend;
+  }
+  if (body.agentloop != null) {
+    if (typeof body.agentloop !== 'object' || Array.isArray(body.agentloop)) throw new TracingError(400, 'AgentLoop 配置无效');
+    config.agentloop = { ...previous.agentloop };
+    for (const key of ['region', 'workspace', 'project', 'logstore'] as const) {
+      const value = (body.agentloop as Record<string, unknown>)[key];
+      if (typeof value !== 'string' || value.length > 128 || (value && !/^[a-zA-Z0-9_-]+$/.test(value))) throw new TracingError(400, 'AgentLoop 资源名称无效');
+      config.agentloop[key] = value;
+    }
+  }
   for (const key of ['enabled', 'captureContent'] as const) {
     if (typeof body[key] !== 'boolean') throw new TracingError(400, '采集开关格式无效');
     config[key] = body[key];
@@ -72,11 +94,19 @@ export function mergeObservabilityConfig(previous: ObservabilityConfig, input: u
   for (const [key, label] of [['langfuseUrl', 'Langfuse'], ['publicUrl', '浏览器访问'], ['collectorEndpoint', 'Collector']] as const) {
     if (config[key]) config[key] = observabilityUrl(config[key], label);
   }
-  if (config.enabled && (!config.langfuseUrl || !config.publicKey || !config.secretKey)) throw new TracingError(400, '请填写 Langfuse 地址和项目密钥');
+  if (config.enabled && config.backend === 'langfuse' && (!config.langfuseUrl || !config.publicKey || !config.secretKey)) throw new TracingError(400, '请填写 Langfuse 地址和项目密钥');
+  if (config.enabled && config.backend === 'agentloop') validateAgentLoopConfig(config);
   if (config.enabled && !config.collectorEndpoint) throw new TracingError(400, '请填写 Collector OTLP/HTTP 地址');
   if (config.collectorHeaders) parseOtlpHeaders(config.collectorHeaders);
   if (config.projectId && !/^[a-zA-Z0-9_-]+$/.test(config.projectId)) throw new TracingError(400, 'Langfuse Project ID 无效');
   return config;
+}
+
+export function validateAgentLoopConfig(config: ObservabilityConfig) {
+  const { region, workspace, project, logstore } = config.agentloop;
+  if (!region || !workspace || !project || !logstore || !/^[a-z0-9-]+$/.test(region) || !/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9_-]+$/.test(logstore)) {
+    throw new TracingError(400, '请填写 AgentLoop 地域、CMS Workspace 和已定位的 Trace Project / Logstore');
+  }
 }
 
 export async function saveObservabilityConfig(config: ObservabilityConfig): Promise<ObservabilityConfig> {
@@ -126,6 +156,12 @@ export function workerObservabilityEnv(config: ObservabilityConfig, previous: Re
 }
 
 export async function testObservabilityConnection(config: ObservabilityConfig) {
+  if (config.backend === 'agentloop') {
+    const { testAgentLoopConnection } = await import('./agentloop-server');
+    const result = await testAgentLoopConnection(config);
+    await testCollector(config);
+    return result;
+  }
   const base = observabilityUrl(config.langfuseUrl, 'Langfuse');
   const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString('base64')}`;
   const request = async (url: string, options: RequestInit = {}) => {
@@ -137,10 +173,16 @@ export async function testObservabilityConnection(config: ObservabilityConfig) {
   const data = await projects.json() as { data?: { id: string; name: string }[] };
   const project = data.data?.find((p) => !config.projectId || p.id === config.projectId);
   if (!project) throw new TracingError(400, '项目密钥与 Project ID 不匹配');
-  const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
-  const response = await request(`${endpoint}/v1/traces`, { method: 'POST', headers: {
-    'Content-Type': 'application/json', ...parseOtlpHeaders(config.collectorHeaders),
-  }, body: JSON.stringify({ resourceSpans: [] }) });
-  if (!response.ok) throw new TracingError(502, `OTLP 接收端测试失败（HTTP ${response.status}）`);
+  await testCollector(config);
   return { projectId: project.id, projectName: project.name, source: 'dashboard', message: '项目认证和 OTLP 接收端可达；Worker 网络与实际采集需在应用后验证。' };
+}
+
+async function testCollector(config: ObservabilityConfig) {
+  const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
+  let response: Response;
+  try { response = await fetch(`${endpoint}/v1/traces`, { method: 'POST', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10000), headers: {
+    'Content-Type': 'application/json', ...parseOtlpHeaders(config.collectorHeaders),
+  }, body: JSON.stringify({ resourceSpans: [] }) }); }
+  catch { throw new TracingError(502, '无法连接 OTLP Collector'); }
+  if (!response.ok) throw new TracingError(502, `OTLP 接收端测试失败（HTTP ${response.status}）`);
 }

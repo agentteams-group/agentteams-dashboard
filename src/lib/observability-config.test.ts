@@ -6,6 +6,7 @@ import { mergeObservabilityConfig, parseOtlpHeaders, publicObservabilityConfig, 
 
 let directory: string;
 const connected: ObservabilityConfig = {
+  backend: 'langfuse', agentloop: { region: '', workspace: '', project: '', logstore: '' },
   enabled: true, captureContent: true, mode: 'collector', langfuseUrl: 'http://langfuse.local', publicUrl: 'http://localhost:13100',
   projectId: 'project-a', publicKey: 'pk-a', secretKey: 'sk-private', collectorEndpoint: 'http://collector:4318', collectorHeaders: '', revision: 'one',
 };
@@ -68,4 +69,21 @@ it('tests project authentication and OTLP without creating fake trace spans or f
 it('does not return an upstream secret-bearing error body', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('secret-upstream-body', { status: 401 })));
   await expect(testObservabilityConnection(connected)).rejects.toThrow('Langfuse 项目认证失败（HTTP 401）');
+});
+
+it('supports AgentLoop without Langfuse credentials and never injects cloud query settings into Workers', () => {
+  const config = mergeObservabilityConfig(connected, { ...connected, backend: 'agentloop', langfuseUrl: '', publicKey: '', secretKey: '',
+    agentloop: { region: 'cn-hangzhou', workspace: 'workspace-a', project: 'trace-project', logstore: 'trace-store' } });
+  const env = workerObservabilityEnv(config, {});
+  expect(env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT).toBe('http://collector:4318/v1/traces');
+  expect(JSON.stringify(env)).not.toContain('workspace-a');
+  expect(JSON.stringify(env)).not.toContain('trace-project');
+  expect(() => mergeObservabilityConfig(config, { ...config, agentloop: { ...config.agentloop, project: 'bad/../project' } })).toThrow();
+  expect(() => mergeObservabilityConfig(config, { ...config, agentloop: { ...config.agentloop, logstore: '' } })).toThrow();
+});
+
+it('reads an existing Langfuse-only configuration with default backend fields', async () => {
+  const { backend: _backend, agentloop: _agentloop, ...legacy } = connected;
+  await fs.writeFile(path.join(directory, 'observability.json'), JSON.stringify(legacy));
+  expect(await readObservabilityConfig()).toMatchObject({ backend: 'langfuse', agentloop: { region: '', workspace: '', project: '', logstore: '' }, secretKey: 'sk-private' });
 });
