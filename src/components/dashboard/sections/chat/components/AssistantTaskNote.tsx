@@ -96,7 +96,7 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen }: {
   return (
     <>
       {!wide && <button type="button" aria-label="收起任务便签遮罩" className="fixed inset-0 z-40 bg-background/70" onClick={() => setOpen(false)} />}
-      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[88vw] shrink-0 flex-col border-l border-border bg-muted/20 xl:static xl:z-auto xl:max-w-none">
+      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[88vw] shrink-0 flex-col border-l border-border bg-background xl:static xl:z-auto xl:max-w-none xl:bg-muted/20">
         <div className="flex h-18 shrink-0 items-center gap-2 border-b border-border px-4">
           <StickyNote className="size-4 text-primary" aria-hidden="true" />
           <h3 className="flex-1 text-sm font-semibold">任务便签</h3>
