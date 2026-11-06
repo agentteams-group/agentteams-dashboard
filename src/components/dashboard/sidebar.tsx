@@ -19,7 +19,7 @@ interface SidebarProps {
   mode?: DeploymentMode | null;
 }
 
-export function Sidebar({ agentRooms, activeSection, countMap, sectionsWithNotifications, collapsed, onNavClick, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ agentRooms, activeSection, countMap, sectionsWithNotifications, collapsed, onNavClick, onToggleCollapse, mode }: SidebarProps) {
   const userLevel = useAgentTeamsStore(state => state.userLevel);
   const openSettings = useAgentTeamsStore(state => state.openSettings);
   return (
@@ -32,7 +32,7 @@ export function Sidebar({ agentRooms, activeSection, countMap, sectionsWithNotif
         </div>}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-        <WorkspaceNavigation agentRooms={agentRooms} activeSection={activeSection} countMap={countMap} sectionsWithNotifications={sectionsWithNotifications} collapsed={collapsed} onNavClick={onNavClick} />
+        <WorkspaceNavigation mode={mode} onExpandSidebar={onToggleCollapse} agentRooms={agentRooms} activeSection={activeSection} countMap={countMap} sectionsWithNotifications={sectionsWithNotifications} collapsed={collapsed} onNavClick={onNavClick} />
       </div>
       <div className="space-y-2 p-3">
         <Button variant="ghost" className={`min-h-11 w-full ${collapsed ? 'justify-center' : 'justify-start'}`} onClick={openSettings} aria-label="设置" title={collapsed ? '设置' : undefined}>

@@ -20,7 +20,7 @@ interface MobileSidebarProps {
   mode?: DeploymentMode | null;
 }
 
-export function MobileSidebar({ agentRooms, open, activeSection, countMap, sectionsWithNotifications, onNavClick, onClose }: MobileSidebarProps) {
+export function MobileSidebar({ agentRooms, open, activeSection, countMap, sectionsWithNotifications, onNavClick, onClose, mode }: MobileSidebarProps) {
   const openSettings = useAgentTeamsStore(state => state.openSettings);
   return (
     <AnimatePresence>
@@ -36,7 +36,7 @@ export function MobileSidebar({ agentRooms, open, activeSection, countMap, secti
             <Button variant="ghost" size="icon" aria-label="关闭导航" onClick={onClose}><X className="size-5" /></Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-            <WorkspaceNavigation agentRooms={agentRooms} activeSection={activeSection} countMap={countMap} sectionsWithNotifications={sectionsWithNotifications} onNavClick={onNavClick} />
+            <WorkspaceNavigation mode={mode} agentRooms={agentRooms} activeSection={activeSection} countMap={countMap} sectionsWithNotifications={sectionsWithNotifications} onNavClick={onNavClick} />
           </div>
           <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             <Button variant="ghost" className="min-h-11 w-full justify-start" aria-label="设置" onClick={() => { onClose(); openSettings(); }}>

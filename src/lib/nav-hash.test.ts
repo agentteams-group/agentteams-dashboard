@@ -132,8 +132,8 @@ describe('resolveHash — layered hashes', () => {
 
   it('resolves console hashes (附录 A；F7.1 资源路径进容器)', () => {
     expect(resolveHash('console/resources', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/workers', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('resources');
+    expect(resolveHash('console/resources/workers', isKnown)?.section).toBe('workers');
+    expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('humans');
     expect(resolveHash('console/resources/skills', isKnown)?.section).toBe('skills');
     expect(resolveHash('console/governance/audit', isKnown)?.section).toBe('audit');
     expect(resolveHash('console/system/overview', isKnown)?.section).toBe('overview');

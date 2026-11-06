@@ -98,10 +98,10 @@ describe('useActiveSection', () => {
       expect(window.location.hash).toBe('#workbench/tasks');
     });
 
-    it('preserves a resource tab deep link on mount', () => {
+    it('opens a resource child page and preserves its deep link on mount', () => {
       setHash('#console/resources/humans');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('resources');
+      expect(result.current.activeSection).toBe('humans');
       expect(window.location.hash).toBe('#console/resources/humans');
     });
   });

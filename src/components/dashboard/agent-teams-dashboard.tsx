@@ -54,7 +54,7 @@ import {
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
 import { buildRooms } from './sections/chat/room-builders';
 import styles from './workspace.module.css';
-import { WorkspaceSectionNav, workspaceMenuFor, workspaceMenus } from './workspace-navigation';
+import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -196,14 +196,15 @@ export function AgentTeamsDashboard() {
       // is removed, the section route still works if navigated to directly".
       // The projects section was merged into tasks (use-active-section
       // aliases #projects -> #tasks), so it never reaches this check.
-      // Only mode-hidden or unknown sections fall back.
+      // Mode-hidden, unknown or privileged sections fall back; flag-hidden routes remain reachable.
       const known = navItems.find((n) => n.id === activeSection);
       const modeHidden = !known || (!!known.modes && !!mode && !known.modes.includes(mode));
-      if (modeHidden) {
-        setActiveSection('overview');
+      const levelHidden = !!known?.minLevel && userLevel < known.minLevel;
+      if (modeHidden || levelHidden) {
+        setActiveSection(levelHidden ? 'resources' : 'overview');
       }
     }
-  }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes]);
+  }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes, userLevel]);
 
   // Notify plugins about section changes (host:section-changed).
   useEffect(() => {
@@ -241,13 +242,12 @@ export function AgentTeamsDashboard() {
 
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 
-      const currentIndex = workspaceMenus.findIndex((item) => item.id === focusedSection);
+      const buttons = Array.from(focusedElement.closest('aside')?.querySelectorAll<HTMLButtonElement>('[data-nav-section]') ?? [])
+        .filter(button => !button.closest('[hidden]'));
+      const currentIndex = buttons.indexOf(focusedElement as HTMLButtonElement);
       const nextIndex = currentIndex + (e.key === 'ArrowDown' ? 1 : -1);
-      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= workspaceMenus.length) return;
-
-      const target = focusedElement
-        .closest('aside')
-        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${workspaceMenus[nextIndex].id}"]`);
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= buttons.length) return;
+      const target = buttons[nextIndex];
       if (target) {
         e.preventDefault();
         target.focus();
@@ -257,8 +257,10 @@ export function AgentTeamsDashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setActiveSection]);
 
-  const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
+  const ActiveSectionComponent = activeItem?.minLevel && userLevel < activeItem.minLevel
+    ? ResourcesSection
+    : sectionMap[activeSection] || OverviewSection;
   const activePluginRoute = useMemo(() => {
     const parsed = parsePluginSectionId(activeSection);
     if (!parsed) return null;
@@ -437,8 +439,6 @@ export function AgentTeamsDashboard() {
                   </nav>
                 </div>
               )}
-
-              <WorkspaceSectionNav activeSection={activeSection} mode={mode} onNavClick={handleNavClick} />
 
               {activeSection === 'chat' ? (
                 <div className="flex-1 flex flex-col min-h-0">
