@@ -18,8 +18,8 @@ export function SectionHeader({ title, description, isLive, onRefresh, isRefresh
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div className="flex items-center gap-2">
         <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          {description && <p className="text-muted-foreground text-sm">{description}</p>}
+          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          {description && <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>}
         </div>
         {isLive && (
           <Badge variant="outline" className="text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400 gap-1">
@@ -33,7 +33,7 @@ export function SectionHeader({ title, description, isLive, onRefresh, isRefresh
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-xs"
+            className="h-8 text-sm"
             onClick={onRefresh}
             disabled={isRefreshing}
           >

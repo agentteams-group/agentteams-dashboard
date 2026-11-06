@@ -248,8 +248,8 @@ export function ChatSection() {
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-2 sm:px-8">
-          <Button variant="ghost" size="sm" className="gap-2 text-xs text-muted-foreground" aria-label="打开空间列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
+        <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
+          <Button variant="ghost" size="sm" className="h-8 gap-2 px-0 text-sm text-muted-foreground" aria-label="打开空间列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
             <PanelLeftOpen className="size-4" />切换对话
           </Button>
           <SyncStatusChip />

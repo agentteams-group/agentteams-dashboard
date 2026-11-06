@@ -43,7 +43,7 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
   }, [activeSection]);
 
   return (
-    <nav aria-label="主要功能" className="space-y-2 px-3 py-4">
+    <nav aria-label="主要功能" className="space-y-1 px-3 py-3">
       {workspaceMenus.map(menu => {
         const active = menu.sections.includes(activeSection);
         const items = menu.sections.flatMap(section => {
@@ -72,19 +72,19 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
                 const room = agentRooms.find(agent => agent.id === current) ?? preferredAgentRoom(agentRooms, userLevel);
                 if (room) openChatRoom(room.id);
               }}
-              className={`relative flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary ${collapsed ? 'justify-center' : ''} ${active ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
-              <Icon className="size-5 shrink-0" aria-hidden="true" />
+              className={`relative flex min-h-11 w-full items-center md:min-h-10 gap-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${collapsed ? 'justify-center px-0' : 'px-3'} ${active && (!grouped || collapsed) ? 'bg-primary/10 text-primary' : active ? 'text-foreground hover:bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+              <Icon className="size-4 shrink-0" aria-hidden="true" />
               {!collapsed && <span className="truncate">{menu.label}</span>}
               {count > 0 && <span className={`rounded-full bg-primary/10 px-1.5 text-xs text-primary ${collapsed ? 'absolute right-0 top-0' : 'ml-auto'}`}>{count > 99 ? '99+' : count}</span>}
               {notification && !active && count === 0 && <span aria-label="有新动态" className="ml-auto size-2 rounded-full bg-primary" />}
               {grouped && !collapsed && <ChevronDown aria-hidden="true" className={`ml-auto size-4 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`} />}
             </button>
             {grouped && !collapsed && (
-              <div id={`${id}-${menu.id}`} role="group" aria-label={`${menu.label}分类`} hidden={!expanded} className="ml-5 mt-1 space-y-1 border-l border-border pl-3">
+              <div id={`${id}-${menu.id}`} role="group" aria-label={`${menu.label}分类`} hidden={!expanded} className="ml-5 mt-0.5 space-y-0.5 pl-3">
                 {items.map(item => (
                   <button key={item.id} type="button" aria-label={item.id === 'workers' ? 'Agent' : item.id === 'humans' ? '用户' : item.label} data-nav-section={item.id} aria-current={activeSection === item.id ? 'page' : undefined}
                     onClick={() => onNavClick(item.id)}
-                    className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary ${activeSection === item.id ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+                    className={`flex min-h-11 w-full items-center md:min-h-9 gap-2 rounded-md px-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary ${activeSection === item.id ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
                     <span>{item.id === 'workers' ? 'Agent' : item.id === 'humans' ? '用户' : item.label}</span>
                     {(countMap[item.id] ?? 0) > 0 && <span className="ml-auto text-xs tabular-nums">{countMap[item.id] > 99 ? '99+' : countMap[item.id]}</span>}
                   </button>

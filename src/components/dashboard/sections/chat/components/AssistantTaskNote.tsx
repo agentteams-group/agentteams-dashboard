@@ -82,7 +82,7 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen }: {
   const summary = `${actionable.length} 项待处理${degraded || partialError ? ' · 数据待更新' : ''}`;
   if (!expanded) {
     return (
-      <div className="flex w-12 shrink-0 flex-col items-center border-l border-border/60 bg-primary/5 py-4">
+      <div className="flex w-9 shrink-0 flex-col items-center sm:w-11 border-l border-border bg-muted/30 py-4">
         <button type="button" aria-label={`展开任务便签，${summary}`} aria-expanded={false} aria-controls={panelId} onClick={() => { onOpen(); setOpen(true); }} className="flex w-full flex-col items-center gap-3 px-1 py-2 text-primary focus-visible:outline-2 focus-visible:outline-primary">
           <StickyNote className="size-4" aria-hidden="true" />
           <span className="text-xs [writing-mode:vertical-rl]">任务便签</span>
@@ -96,30 +96,30 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen }: {
   return (
     <>
       {!wide && <button type="button" aria-label="收起任务便签遮罩" className="fixed inset-0 z-40 bg-background/70" onClick={() => setOpen(false)} />}
-      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-80 max-w-[88vw] shrink-0 flex-col border-l border-primary/15 bg-background xl:static xl:z-auto xl:max-w-none">
-        <div className="flex items-center gap-2 border-b border-primary/10 bg-primary/5 px-4 py-3">
+      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[88vw] shrink-0 flex-col border-l border-border bg-muted/20 xl:static xl:z-auto xl:max-w-none">
+        <div className="flex h-18 shrink-0 items-center gap-2 border-b border-border px-4">
           <StickyNote className="size-4 text-primary" aria-hidden="true" />
           <h3 className="flex-1 text-sm font-semibold">任务便签</h3>
           <Button variant="ghost" size="icon" className="size-8" aria-label="刷新任务便签" onClick={() => { void list.refetch(); void client.invalidateQueries({ queryKey: ['agentteams-project-workflow'] }); }}><RefreshCw className="size-3.5" /></Button>
           <Button variant="ghost" size="icon" className="size-8" aria-label="收起任务便签" aria-expanded={true} onClick={() => setOpen(false)}><ChevronRight className="size-4" /></Button>
         </div>
-        <div className="border-b border-border/60 bg-primary/5 px-4 pb-3 pt-2">
-          <p className="text-xs text-muted-foreground">{room.agentRole === 'operations' ? '当前账号可见的任务' : '当前团队的任务'}</p>
-          <p className={`mt-1 text-sm font-medium ${actionable.length ? 'text-amber-700 dark:text-amber-400' : 'text-primary'}`} role="status" aria-live="polite">{loading ? '正在同步任务…' : summary}</p>
+        <div className="px-4 pb-2 pt-4">
+          <p className="text-sm text-muted-foreground">{room.agentRole === 'operations' ? '当前账号可见的任务' : '当前团队的任务'}</p>
+          <p className={`mt-1 text-sm font-medium ${actionable.length ? 'text-amber-700 dark:text-amber-400' : 'text-foreground'}`} role="status" aria-live="polite">{loading ? '正在同步任务…' : summary}</p>
         </div>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto custom-scrollbar bg-primary/[0.025] p-3">
-          {(degraded || partialError) && <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400" role="status">{degraded ? '任务暂时无法更新' : '部分任务暂时无法更新'}，请稍后刷新。已显示的事项仍可查看。</p>}
-          {loading && items.length === 0 && <p className="p-3 text-xs text-muted-foreground">正在加载任务…</p>}
-          {!loading && !degraded && !partialError && items.length === 0 && <p className="p-3 text-xs leading-6 text-muted-foreground">暂时没有分配的任务</p>}
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto custom-scrollbar p-4">
+          {(degraded || partialError) && <p className="rounded-lg border border-status-waiting/25 bg-status-waiting/5 p-3 text-sm leading-6 text-status-waiting" role="status">{degraded ? '任务暂时无法更新' : '部分任务暂时无法更新'}，请稍后刷新。已显示的事项仍可查看。</p>}
+          {loading && items.length === 0 && <p className="py-3 text-sm text-muted-foreground">正在加载任务…</p>}
+          {!loading && !degraded && !partialError && items.length === 0 && <div className="space-y-2 py-4"><p className="text-sm font-medium">暂时没有分配的任务</p><p className="text-sm leading-6 text-muted-foreground">任务进度、待验收和需要你确认的事项会显示在这里。</p></div>}
           {TASK_NOTE_GROUPS.map(group => {
             const groupItems = items.filter(item => item.group === group.id);
             if (groupItems.length === 0) return null;
             return <section key={group.id} className="space-y-2">
-              <h4 className={`flex items-center justify-between px-1 text-xs font-semibold ${group.id === 'failed' ? 'text-red-600 dark:text-red-400' : group.attention ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{group.label}<span>{groupItems.length}</span></h4>
-              {groupItems.map(item => <button key={item.id} type="button" aria-label={`${item.confirmationId ? '去确认' : '查看任务'}：${item.title}`} onClick={() => openItem(item)} className={`w-full rounded-xl border bg-background px-3 py-2.5 text-left transition-colors hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary ${group.id === 'failed' ? 'border-red-500/25' : group.attention ? 'border-amber-500/20' : 'border-border/60'}`}>
+              <h4 className={`flex items-center justify-between text-sm font-medium ${group.id === 'failed' ? 'text-red-600 dark:text-red-400' : group.attention ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{group.label}<span>{groupItems.length}</span></h4>
+              {groupItems.map(item => <button key={item.id} type="button" aria-label={`${item.confirmationId ? '去确认' : '查看任务'}：${item.title}`} onClick={() => openItem(item)} className={`w-full rounded-lg border bg-background px-3 py-3 text-left transition-colors hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary ${group.id === 'failed' ? 'border-red-500/25' : group.attention ? 'border-amber-500/20' : 'border-border/60'}`}>
                 <span className="block text-sm font-medium leading-6">{item.title}</span>
-                {(item.projectTitle || item.assignee) && <span className="mt-1 block text-xs leading-5 text-muted-foreground">{[item.projectTitle, item.assignee && `负责人 ${item.assignee}`].filter(Boolean).join(' · ')}</span>}
-                <span className="mt-2 block text-xs text-primary">{item.confirmationId ? '去确认' : '查看任务'} →</span>
+                {(item.projectTitle || item.assignee) && <span className="mt-1 block text-sm leading-6 text-muted-foreground">{[item.projectTitle, item.assignee && `负责人 ${item.assignee}`].filter(Boolean).join(' · ')}</span>}
+                <span className="mt-2 block text-sm text-primary">{item.confirmationId ? '去确认' : '查看任务'} →</span>
               </button>)}
             </section>;
           })}

@@ -52,3 +52,11 @@ AT 绿色为默认主色；亮色、暗色、高对比度和企业主题继续�
 - 登录期间，较早的匿名探测响应不能使新登录的用户退出。
 
 运行 `npm test`、`npm run lint`、`npm run typecheck` 和 `npm run build`，再使用真实账号检查默认入口及原有工具路径。Team 实测需要可用的团队账号与 Leader DM；测试数据验证不能代替真实消息链路验收。
+
+## 视觉节奏
+
+导航与主内容采用清晰分区，取消主内容外层的额外圆角框；卡片、表格和分区线统一使用主题边框，工具栏以无边框的独立按钮区分功能。左侧仅当前子页面使用绿色选中底，父分组保留展开状态与文字层级。
+
+标题、界面正文、聊天正文与时间等元信息分层；默认使用 Geist 并补充中文无衬线回退，企业主题的字体与字号覆盖继续生效。模型页的添加操作与数量放在对应标题行，减少单行数据的卡片空高。语音、文件、刷新、通知、主题、设置和对话上下文入口保持独立可达。
+
+设计参考：[Linear 的界面重设](https://linear.app/now/how-we-redesigned-the-linear-ui)、[Intercom Inbox](https://www.intercom.com/help/en/articles/6258745-the-inbox-explained)、[Notion 侧栏整理](https://www.notion.com/releases/2026-03-26)。仅参考分区、对齐与密度，不引入这些产品的协议或额外功能。
