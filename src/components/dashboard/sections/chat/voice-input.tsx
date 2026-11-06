@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { apiUrl } from '@/lib/api-base';
 import { decodeSpeechRecording, encodeSpeechWav, MAX_SPEECH_SECONDS } from '@/lib/speech-audio';
+import { normalizeSpeechTranscript } from '@/lib/speech-transcript';
 
 type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing';
 
@@ -104,12 +105,18 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
       setError(message);
       onBusyChange(false);
     };
-    const accept = (text: string) => {
+    const accept = async (text: string) => {
       if (current !== generation.current) return;
       if (!text.trim()) { fail('未识别到语音，请重试'); return; }
-      onTranscript(text.trim());
-      setPhase('idle');
-      onBusyChange(false);
+      try {
+        const normalized = await normalizeSpeechTranscript(text, language);
+        if (current !== generation.current) return;
+        onTranscript(normalized);
+        setPhase('idle');
+        onBusyChange(false);
+      } catch {
+        fail('语音文字转换失败，请重试');
+      }
     };
 
     try {
@@ -141,7 +148,7 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
               });
               const result = await response.json();
               if (!response.ok) throw new Error(result.error || '语音识别失败，请重试');
-              accept(result.text);
+              await accept(result.text);
             } finally {
               clearTimeout(timeout);
             }
@@ -153,7 +160,7 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
               const result = event.data;
               if (result.type === 'progress') setProgress(`正在加载本地语音模型 ${result.progress}%`);
               if (result.type === 'recognizing') setProgress('正在本地识别…');
-              if (result.type === 'result') accept(result.text);
+              if (result.type === 'result') void accept(result.text);
               if (result.type === 'error') fail(result.error);
             };
             worker.current.onerror = () => fail('本地语音识别无法启动，请重试');
@@ -207,7 +214,7 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
                 <span>识别语言</span>
                 <select aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
                   className="w-full rounded-md border bg-background p-2 text-sm">
-                  <option value="zh">中文</option>
+                  <option value="zh">中文（简体）</option>
                   <option value="en">English</option>
                   <option value="auto">自动识别</option>
                 </select>

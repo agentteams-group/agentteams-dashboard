@@ -79,8 +79,8 @@ describe('voice input in the composer', () => {
     expect(FakeWorker.instances[0].postMessage.mock.calls[0][0]).toMatchObject({ language: 'zh' });
     expect(stopTrack).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
-    await act(async () => FakeWorker.instances[0].onmessage?.({ data: { type: 'result', text: '检查 Nacos 配置。' } }));
-    expect(screen.getByRole('textbox')).toHaveValue('@worker 原有草稿 检查 Nacos 配置。');
+    await act(async () => FakeWorker.instances[0].onmessage?.({ data: { type: 'result', text: '檢查 Nacos 配置。' } }));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('@worker 原有草稿 检查 Nacos 配置。'));
     expect(onSend).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '修改后的文字' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -155,7 +155,7 @@ describe('voice input in the composer', () => {
 
   it('uses the paid service only after explicit selection, without starting a local worker', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ dashscopeAvailable: true }))
-      .mockResolvedValueOnce(Response.json({ text: '百炼转写' }));
+      .mockResolvedValueOnce(Response.json({ text: '百煉轉寫' }));
     render(<Composer />);
     fireEvent.click(screen.getByRole('button', { name: '语音设置' }));
     await waitFor(() => expect(screen.getByRole('option', { name: '百炼（按量付费）' })).not.toBeDisabled());
