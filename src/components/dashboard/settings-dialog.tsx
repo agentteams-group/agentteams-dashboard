@@ -41,6 +41,7 @@ import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { ThemeTab } from './settings/theme-tab';
 import { PluginsTab } from './settings/plugins-tab';
 import { BackendTab } from './settings/backend-tab';
+import { SpeechSettings } from './settings/speech-settings';
 import { ClientConfigTab } from './settings/client-config-tab';
 import { UpdateTab } from './settings/update-tab';
 
@@ -399,8 +400,9 @@ export function SettingsDialog() {
             </div>
           </TabsContent>
 
-          <TabsContent value="backends" className="py-4">
+          <TabsContent value="backends" className="space-y-6 py-4">
             <BackendTab />
+            <SpeechSettings canManage={isL1} />
           </TabsContent>
 
           <TabsContent value="theme" className="py-4">

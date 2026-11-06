@@ -220,7 +220,7 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
                 </select>
               </label>
               <p className="text-muted-foreground">本地模型首次使用需要加载，之后会缓存。每次最多录制 60 秒，转写后可编辑再发送。</p>
-              {!dashscopeAvailable && <p className="text-muted-foreground">百炼需管理员在服务端配置语音 API Key 后启用。</p>}
+              {!dashscopeAvailable && <p className="text-muted-foreground">请管理员在「设置 → 后端 → 语音识别」配置百炼 API Key 后启用。</p>}
               {provider === 'dashscope' && <p className="text-muted-foreground">录音将发送至百炼，按管理员配置的服务计费。</p>}
             </PopoverContent>
           </Popover>

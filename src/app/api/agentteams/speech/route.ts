@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readServerIdentity } from '@/lib/server-auth';
 import { MAX_SPEECH_BYTES, validateSpeechWav } from '@/lib/speech-audio';
+import { readSpeechConfig, type SpeechConfig } from '@/lib/speech-config';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   if (!readServerIdentity(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  return NextResponse.json({
-    dashscopeAvailable: Boolean(process.env.DASHBOARD_SPEECH_DASHSCOPE_API_KEY?.trim()),
-  }, { headers: { 'Cache-Control': 'no-store' } });
+  try {
+    const config = await readSpeechConfig();
+    return NextResponse.json({ dashscopeAvailable: Boolean(config.apiKey) }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch {
+    return NextResponse.json({ error: '无法读取语音服务配置' }, { status: 503 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -16,7 +20,11 @@ export async function POST(request: NextRequest) {
   const identity = readServerIdentity(request);
   if (!identity) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (identity.level < 2) return NextResponse.json({ error: '当前账号无权使用付费语音识别' }, { status: 403 });
-  const apiKey = process.env.DASHBOARD_SPEECH_DASHSCOPE_API_KEY?.trim();
+  let config: SpeechConfig;
+  try { config = await readSpeechConfig(); } catch {
+    return NextResponse.json({ error: '无法读取语音服务配置' }, { status: 503 });
+  }
+  const { apiKey, baseUrl, model } = config;
   if (!apiKey) return NextResponse.json({ error: '管理员尚未配置百炼语音识别，请使用本地免费识别' }, { status: 503 });
   const language = request.nextUrl.searchParams.get('language') || 'zh';
   if (!['zh', 'en', 'auto'].includes(language)) return NextResponse.json({ error: '不支持的识别语言' }, { status: 400 });
@@ -48,13 +56,12 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
-    const baseUrl = (process.env.DASHBOARD_SPEECH_DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/$/, '');
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(60000)]),
       body: JSON.stringify({
-        model: process.env.DASHBOARD_SPEECH_DASHSCOPE_MODEL || 'qwen3-asr-flash',
+        model,
         messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: `data:audio/wav;base64,${audio.toString('base64')}` } }] }],
         stream: false,
         ...(language === 'auto' ? {} : { asr_options: { language } }),
