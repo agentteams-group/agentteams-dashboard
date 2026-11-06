@@ -34,12 +34,27 @@ export const useTaskStore = create<TaskStore>()((set) => ({
   upsertTask: (task, timestamp) =>
     set((state) => {
       const existing = state.tasks[task.runId];
-      // Only update if we have more steps/subagents data or a status change
+      // Only update if we have more steps/subagents data, a status change, or
+      // a content-level change within the same shape (m.replace revisions:
+      // e.g. a step flipping pending→completed while the overall status stays
+      // put — f3-1). Event-driven frequency and small arrays make the
+      // stringify cost negligible; identical references short-circuit it.
+      const sameShape =
+        existing !== undefined &&
+        task.steps.length === existing.steps.length &&
+        task.subagents.length === existing.subagents.length &&
+        task.status === existing.status;
+      const hasContentChange =
+        sameShape &&
+        (task.steps !== existing.steps || task.subagents !== existing.subagents) &&
+        (JSON.stringify(task.steps) !== JSON.stringify(existing.steps) ||
+          JSON.stringify(task.subagents) !== JSON.stringify(existing.subagents));
       const hasMoreData =
         !existing ||
         task.subagents.length > existing.subagents.length ||
         task.steps.length > existing.steps.length ||
-        task.status !== existing.status;
+        task.status !== existing.status ||
+        hasContentChange;
 
       if (!hasMoreData && existing) return state;
 

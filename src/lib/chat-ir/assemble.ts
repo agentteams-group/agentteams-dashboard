@@ -440,8 +440,14 @@ function latestEventIdOf(entries: Entry[]): { latest: string; latestTopLevel: st
 
 function lifecyclePauses(events: MatrixEvent[]): Map<string, number> {
   const paused = new Map<string, number>();
-  for (const event of events) {
-    if (event.type !== 'm.room.message') continue;
+  // 按 origin_server_ts 升序扫描——与 buildRawIndex 及文件头「消息到达顺序
+  // 不能改变结果」契约一致（f3-3）。生产调用链 ChatRoom.tsx 传 dir:'b' 最新
+  // 在前的分页 chunk：倒序输入 [resumed(t2), paused(t1)] 若按到达序处理会以
+  // paused 收尾，worker 被误记 paused。
+  const sorted = events
+    .filter((e) => e.type === 'm.room.message')
+    .sort((a, b) => a.origin_server_ts - b.origin_server_ts);
+  for (const event of sorted) {
     const body = typeof event.content.body === 'string' ? event.content.body : '';
     const notice = parseWorkerLifecycleNotice(body);
     if (!notice) continue;
