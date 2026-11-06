@@ -34,11 +34,11 @@ export async function getTraceScope(request: NextRequest): Promise<TraceScope> {
   for (const response of [workerResponse, teamResponse]) {
     if (!response.ok) throw new TracingError([401, 403].includes(response.status) ? response.status : 503, '无法确认当前账号的资源访问范围');
   }
-  const workers = (await workerResponse.json()).workers as { name: string; team?: string }[];
+  const workers = (await workerResponse.json()).workers as { name: string; team?: string; runtime?: string }[];
   const teams = (await teamResponse.json()).teams as { name: string; teamName?: string }[];
   if (!Array.isArray(workers) || !Array.isArray(teams)) throw new TracingError(503, '资源访问范围响应无效');
   return {
-    workers: workers.map((w) => ({ name: w.name, team: w.team ?? '' })).sort((a, b) => a.name.localeCompare(b.name)),
+    workers: workers.map((w) => ({ name: w.name, team: w.team ?? '', runtime: w.runtime })).sort((a, b) => a.name.localeCompare(b.name)),
     teams: teams.map((t) => ({ name: t.name, label: t.teamName || t.name })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

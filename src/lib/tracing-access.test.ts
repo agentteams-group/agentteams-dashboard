@@ -29,15 +29,15 @@ it('uses each account credential and the fixed deployment Controller for its Tea
     const token = new Headers(options.headers).get('authorization');
     const owner = token === 'Bearer token-a' ? 'a' : token === 'Bearer token-b' ? 'b' : 'unexpected';
     expect(owner).not.toBe('unexpected');
-    return Promise.resolve(Response.json(url.endsWith('/workers') ? { workers: [{ name: `${owner}-worker`, team: `${owner}-team`, env: { SECRET: 'hidden' } }] }
+    return Promise.resolve(Response.json(url.endsWith('/workers') ? { workers: [{ name: `${owner}-worker`, team: `${owner}-team`, runtime: owner === 'a' ? 'hermes' : 'qwenpaw', env: { SECRET: 'hidden' } }] }
       : { teams: [{ name: `${owner}-team`, teamName: `${owner} team` }] }));
   });
   vi.stubGlobal('fetch', fetcher);
   expect(await getTraceScope(userRequest('alice', 'token-a'))).toEqual({
-    teams: [{ name: 'a-team', label: 'a team' }], workers: [{ name: 'a-worker', team: 'a-team' }],
+    teams: [{ name: 'a-team', label: 'a team' }], workers: [{ name: 'a-worker', team: 'a-team', runtime: 'hermes' }],
   });
   expect(await getTraceScope(userRequest('bob', 'token-b'))).toEqual({
-    teams: [{ name: 'b-team', label: 'b team' }], workers: [{ name: 'b-worker', team: 'b-team' }],
+    teams: [{ name: 'b-team', label: 'b team' }], workers: [{ name: 'b-worker', team: 'b-team', runtime: 'qwenpaw' }],
   });
   expect(fetcher).toHaveBeenCalledTimes(4);
 });

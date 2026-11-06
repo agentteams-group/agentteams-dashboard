@@ -15,7 +15,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function traceResponse(url: string, data: unknown) {
   return Response.json(url.includes('options=resources') ? {
     teams: [{ name: 'a', label: 'Team A' }, { name: 'b', label: 'Team B' }],
-    workers: [{ name: 'hermes-demo', team: 'a' }, { name: 'qwen-demo', team: 'b' }],
+    workers: [{ name: 'hermes-demo', team: 'a', runtime: 'hermes' }, { name: 'qwen-demo', team: 'b', runtime: 'qwenpaw' }],
   } : data);
 }
 
@@ -36,9 +36,11 @@ it('queries server filters, opens a trace, and shows the selected span content',
   const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
   await screen.findByRole('button', { name: /hermes \/ worker.turn/ });
   fireEvent.keyDown(screen.getByRole('combobox', { name: '运行时' }), { key: 'Enter' });
-  fireEvent.click(await screen.findByRole('option', { name: 'hermes' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'openclaw' }));
   fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('option', { name: 'hermes-demo' }));
+  expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('hermes');
+  expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('runtime=hermes') && url.includes('worker=hermes-demo'))).toBe(true));
   fireEvent.click(await screen.findByRole('button', { name: /hermes \/ worker.turn/ }));
@@ -52,10 +54,17 @@ it('queries server filters, opens a trace, and shows the selected span content',
   fireEvent.keyDown(screen.getByRole('combobox', { name: 'Team' }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('option', { name: 'Team B (b)' }));
   expect(screen.getByRole('combobox', { name: 'Worker' }).textContent).toBe('全部可访问 Worker');
+  expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('全部运行时');
+  expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
   expect(screen.queryByRole('option', { name: 'hermes-demo' })).toBeNull();
   expect(screen.getByRole('option', { name: 'qwen-demo' })).toBeTruthy();
-  fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+  fireEvent.click(screen.getByRole('option', { name: 'qwen-demo' }));
+  expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('qwenpaw');
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
+  fireEvent.click(screen.getByRole('option', { name: '全部可访问 Worker' }));
+  expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('全部运行时');
+  expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('team=b') && url.includes('worker=&'))).toBe(true));
   view.unmount(); client.clear();

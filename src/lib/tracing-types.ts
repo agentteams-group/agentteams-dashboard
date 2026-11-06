@@ -41,7 +41,7 @@ export interface TraceList {
 
 export interface TraceScope {
   teams: { name: string; label: string }[];
-  workers: { name: string; team: string }[];
+  workers: { name: string; team: string; runtime?: string }[];
 }
 
 export function summarizeTrace(observations: TraceObservation[]) {

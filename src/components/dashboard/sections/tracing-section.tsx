@@ -43,6 +43,8 @@ export function TracingSection() {
     retry: false,
   });
   const workerOptions = (resources.data?.workers ?? []).filter((w) => !team || w.team === team);
+  const workerRuntime = resources.data?.workers.find((w) => w.name === worker)?.runtime;
+  const effectiveRuntime = workerRuntime || runtime;
   const list = useQuery({
     queryKey: ['traces', filters, page],
     queryFn: ({ signal }) => read<TraceList>(`?${new URLSearchParams({ ...filters, page: String(page) })}`, signal),
@@ -103,27 +105,27 @@ export function TracingSection() {
     } />
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → Langfuse<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
-      e.preventDefault(); setFilters({ worker, runtime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
+      e.preventDefault(); setFilters({ worker, runtime: effectiveRuntime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Team<Select value={team || '__all__'} onValueChange={(value) => {
         const next = value === '__all__' ? '' : value; setTeam(next);
-        if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) setWorker('');
+        if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) { setWorker(''); setRuntime(''); }
       }}>
         <SelectTrigger aria-label="Team" className="w-full bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部可访问 Team</SelectItem>{resources.data?.teams.map((t) => <SelectItem className="cursor-pointer rounded-lg py-2" key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</SelectItem>)}
         </SelectContent>
       </Select></label>
-      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<Select value={worker || '__all__'} onValueChange={(value) => setWorker(value === '__all__' ? '' : value)}>
+      <label className="min-w-40 flex-1 space-y-1 text-xs">Worker<Select value={worker || '__all__'} onValueChange={(value) => { setWorker(value === '__all__' ? '' : value); setRuntime(''); }}>
         <SelectTrigger aria-label="Worker" className="w-full bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部可访问 Worker</SelectItem>{workerOptions.map((w) => <SelectItem className="cursor-pointer rounded-lg py-2" key={w.name} value={w.name}>{w.name}</SelectItem>)}
         </SelectContent>
       </Select></label>
-      <label className="space-y-1 text-xs">运行时<Select value={runtime || '__all__'} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
+      <label className="space-y-1 text-xs">运行时{workerRuntime ? '（自动）' : ''}<Select value={effectiveRuntime || '__all__'} disabled={Boolean(workerRuntime)} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
         <SelectTrigger aria-label="运行时" className="min-w-36 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
-          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'copaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
         </SelectContent>
       </Select></label>
       <label className="min-w-40 flex-1 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
