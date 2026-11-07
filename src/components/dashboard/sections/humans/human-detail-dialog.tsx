@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Mail, Shield, Eye, Play, Pencil, Trash2, Sun, Moon, CheckCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
@@ -18,6 +19,7 @@ import {
 import { agentteamsApi, type HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import { getAccessSummary } from '@/lib/rbac-engine';
+import { HumanFilesPanel } from './human-files-panel';
 
 const BASE_FIELDS: Array<[string, (_h: HumanResponse) => string]> = [
   ['名称', (h) => h.name],
@@ -94,94 +96,120 @@ export function HumanDetailDialog({
     retry: false,
   });
   const human = data ?? summary;
+  const [tab, setTab] = useState('info');
+  // Opening another record must not land on the previous one's file browser.
+  useEffect(() => {
+    setTab('info');
+  }, [summary?.name]);
   return (
     <Dialog open={!!human} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[85vh] overflow-y-auto">
+      <DialogContent
+        className={`max-w-[95vw] max-h-[85vh] overflow-y-auto ${
+          tab === 'files' ? 'sm:max-w-3xl' : 'sm:max-w-lg'
+        }`}
+      >
         <DialogHeader>
           <DialogTitle>Human 详情 - {human?.name}</DialogTitle>
         </DialogHeader>
-        {isFetching && <p className="text-xs text-muted-foreground">详情加载中…</p>}
-        {isError && (
-          <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
-            详情加载失败
-            <Button variant="ghost" size="sm" onClick={() => void refetch()}>重试</Button>
-          </div>
-        )}
-        {human && (
-          <div className="space-y-3 py-4 text-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <StatusDot phase={human.phase} />
-              <PhaseBadge kind="human" phase={human.phase} />
-            </div>
-            {BASE_FIELDS.map(([label, read]) => (
-              <DetailRow key={label} label={label} value={read(human)} />
-            ))}
-            <DetailRow
-              label="Matrix 用户"
-              value={human.matrixUserID || '-'}
-              copy={human.matrixUserID || undefined}
-            />
-            <div className="flex justify-between py-1 border-b border-border/50">
-              <span className="text-muted-foreground">初始密码</span>
-              {human.initialPassword ? (
-                <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
-                  <Badge
-                    variant="outline"
-                    className="text-xs gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0"
-                  >
-                    <Lock className="w-2.5 h-2.5" aria-hidden="true" />
-                    敏感
-                  </Badge>
-                  <span className="font-mono text-xs truncate">{human.initialPassword}</span>
-                  <CopyButton text={human.initialPassword} />
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">-</span>
-              )}
-            </div>
-            <div className="flex justify-between py-1 border-b border-border/50">
-              <span className="text-muted-foreground">邮箱</span>
-              {human.email ? (
-                <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
-                  <Mail className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
-                  <span className="text-xs truncate">{human.email}</span>
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">-</span>
-              )}
-            </div>
-            <div className="flex justify-between py-1 border-b border-border/50">
-              <span className="text-muted-foreground">权限等级</span>
-              <Badge
-                variant="outline"
-                className={`text-xs ${
-                  PERMISSION_BADGE_CLASSES[human.permissionLevel ?? 2] || ''
-                }`}
-              >
-                <Shield className="w-3 h-3 mr-1" aria-hidden="true" />
-                {human.permissionLevel ?? 2} - {PERMISSION_LABELS[human.permissionLevel ?? 2]}
-              </Badge>
-            </div>
-            {human.message && (
-              <DetailRow label="消息" value={human.message} />
+        <Tabs value={tab} onValueChange={setTab} className="min-w-0">
+          <TabsList className="w-full justify-start">
+            <TabsTrigger value="info">基本信息</TabsTrigger>
+            <TabsTrigger value="files">文件</TabsTrigger>
+          </TabsList>
+          <TabsContent value="info" className="space-y-3 py-4 text-sm">
+            {isFetching && <p className="text-xs text-muted-foreground">详情加载中…</p>}
+            {isError && (
+              <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
+                详情加载失败
+                <Button variant="ghost" size="sm" onClick={() => void refetch()}>重试</Button>
+              </div>
             )}
-            <RBACSummary human={human} />
-            <TagList items={human.accessibleTeams} label="可访问团队" />
-            <TagList items={human.accessibleWorkers} label="可访问 Workers" />
-            <div className="pt-2">
-              <p className="text-muted-foreground mb-2">房间 ({human.rooms?.length || 0})</p>
-              <div className="max-h-32 overflow-y-auto custom-scrollbar">
-                <div className="flex flex-wrap gap-1">
-                  {human.rooms && human.rooms.length > 0 ? (
-                    human.rooms.map((room) => <RoomBadge key={room} room={room} />)
+            {human && (
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <StatusDot phase={human.phase} />
+                  <PhaseBadge kind="human" phase={human.phase} />
+                </div>
+                {BASE_FIELDS.map(([label, read]) => (
+                  <DetailRow key={label} label={label} value={read(human)} />
+                ))}
+                <DetailRow
+                  label="Matrix 用户"
+                  value={human.matrixUserID || '-'}
+                  copy={human.matrixUserID || undefined}
+                />
+                <div className="flex justify-between py-1 border-b border-border/50">
+                  <span className="text-muted-foreground">初始密码</span>
+                  {human.initialPassword ? (
+                    <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
+                      <Badge
+                        variant="outline"
+                        className="text-xs gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0"
+                      >
+                        <Lock className="w-2.5 h-2.5" aria-hidden="true" />
+                        敏感
+                      </Badge>
+                      <span className="font-mono text-xs truncate">{human.initialPassword}</span>
+                      <CopyButton text={human.initialPassword} />
+                    </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">-</span>
                   )}
                 </div>
+                <div className="flex justify-between py-1 border-b border-border/50">
+                  <span className="text-muted-foreground">邮箱</span>
+                  {human.email ? (
+                    <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
+                      <Mail className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
+                      <span className="text-xs truncate">{human.email}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/50">
+                  <span className="text-muted-foreground">权限等级</span>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${
+                      PERMISSION_BADGE_CLASSES[human.permissionLevel ?? 2] || ''
+                    }`}
+                  >
+                    <Shield className="w-3 h-3 mr-1" aria-hidden="true" />
+                    {human.permissionLevel ?? 2} - {PERMISSION_LABELS[human.permissionLevel ?? 2]}
+                  </Badge>
+                </div>
+                {human.message && (
+                  <DetailRow label="消息" value={human.message} />
+                )}
+                <RBACSummary human={human} />
+                <TagList items={human.accessibleTeams} label="可访问团队" />
+                <TagList items={human.accessibleWorkers} label="可访问 Workers" />
+                <div className="pt-2">
+                  <p className="text-muted-foreground mb-2">房间 ({human.rooms?.length || 0})</p>
+                  <div className="max-h-32 overflow-y-auto custom-scrollbar">
+                    <div className="flex flex-wrap gap-1">
+                      {human.rooms && human.rooms.length > 0 ? (
+                        human.rooms.map((room) => <RoomBadge key={room} room={room} />)
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
+          </TabsContent>
+          <TabsContent value="files" className="py-4">
+            {human && (
+              <HumanFilesPanel
+                key={human.name}
+                humanName={human.name}
+                active={tab === 'files'}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
         {human && onEdit && (
           <DialogFooter>
             <Button variant="outline" onClick={() => onEdit(human)}>
