@@ -63,8 +63,8 @@ RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
 # Create non-root user and persistent data directory
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
-    mkdir -p /app/db && \
-    chown -R nextjs:nodejs /app
+    mkdir -p /app/db /data/agentteams-dashboard && \
+    chown -R nextjs:nodejs /app /data/agentteams-dashboard
 
 # Copy standalone output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
