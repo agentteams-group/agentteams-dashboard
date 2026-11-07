@@ -22,7 +22,7 @@ weekly drift check fires; there is no pinned source revision.
 Release preparation (2026-11-08): `install/agentteams-install.sh` matches
 the proposed Core v1.2.6 installer in
 [upstream PR #1552](https://github.com/agentscope-ai/AgentTeams/pull/1552)
-at `bdc9a1d` (diff 0). Keep the release draft until Dashboard v1.4.0,
+at `1bbf73f` (diff 0). Keep the release draft until Dashboard v1.4.0,
 Harness v0.1.1, and Core v1.2.6 publication is confirmed. Upstream includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
 `AGENTTEAMS_AI_GATEWAY_URL`, `_dashboard_merge_console_host` on every
 `step_dashboard` return path, Dashboard volume export/chown,
