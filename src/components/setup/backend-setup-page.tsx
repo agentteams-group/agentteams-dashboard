@@ -92,6 +92,9 @@ interface SetupStatusResponse {
   backends?: Record<BackendName, BackendStatus>;
   /** 逐地址条目（已脱敏；秘密 '***'）——回填认证方式与「已保存」占位。 */
   entries?: Record<BackendName, ServerAddrs>;
+  /** 旧字符串投影（仅 session 响应返回）：{ name: { internal?, external? } }。
+   * 没有 entries 的老响应/匿名响应只能靠它回填槽位。 */
+  config?: Record<string, { internal?: string; external?: string }>;
   /** 工作缓存里当前生效的地址（「当前生效」徽标）。 */
   effective?: Partial<Record<BackendName, string>>;
   embedded: {
@@ -193,7 +196,15 @@ function draftToEntry(draft: SlotDraft): ServerEntry | undefined {
   return url;
 }
 
-/** 服务端响应 → 表单预填：只填空槽，绝不覆盖用户已输入的地址。 */
+/** 服务端响应 → 表单预填：只填空槽，绝不覆盖用户已输入的地址。
+ *
+ * 槽位身份只能来自按槽位给出的数据：`entries` 存在时**只用 entries**，
+ * 空槽保持空。`candidates` 是去掉空槽后的紧凑列表（只存外网时
+ * candidates[0] = 外网地址），按下标回填会把外网地址猜进内网
+ * （2026-11-07 实测缺陷）。
+ *
+ * `entries` 缺失（老响应 / 匿名响应）时才退回 legacy：先按槽位读
+ * `data.config[name][slot]`，最后才在两个槽都空时按位置用 candidates。 */
 function applyPrefill(
   data: SetupStatusResponse,
   prev: Record<BackendName, BackendForm>,
@@ -201,21 +212,31 @@ function applyPrefill(
   return Object.fromEntries(
     BACKEND_NAMES.map((name) => {
       const entries = data.entries?.[name];
+      const legacy = data.config?.[name];
       const candidates = data.backends?.[name]?.candidates ?? [];
       const next: BackendForm = {
         internal: { ...prev[name].internal },
         external: { ...prev[name].external },
       };
-      (['internal', 'external'] as const).forEach((slot, idx) => {
-        if (next[slot].url.trim()) return;
-        const entry = entries?.[slot];
-        if (entry) {
-          next[slot] = entryToDraft(entry);
-          return;
+      const slots = ['internal', 'external'] as const;
+      for (const slot of slots) {
+        if (next[slot].url.trim()) continue;
+        if (entries) {
+          const entry = entries[slot];
+          if (entry) next[slot] = entryToDraft(entry);
+          continue;
         }
-        const url = candidates[idx] ?? '';
-        if (url) next[slot] = { ...EMPTY_SLOT, url };
-      });
+        const legacyUrl = legacy?.[slot];
+        if (legacyUrl) next[slot] = { ...EMPTY_SLOT, url: legacyUrl };
+      }
+      // 位置回填只作为最后的兜底，且两个槽都空时才用 —— 只要有任一槽已有
+      // 地址（用户输入 / entries / legacy），位置对应关系就不再可信。
+      if (!entries && !next.internal.url.trim() && !next.external.url.trim()) {
+        slots.forEach((slot, idx) => {
+          const url = candidates[idx] ?? '';
+          if (url) next[slot] = { ...EMPTY_SLOT, url };
+        });
+      }
       return [name, next];
     }),
   ) as Record<BackendName, BackendForm>;

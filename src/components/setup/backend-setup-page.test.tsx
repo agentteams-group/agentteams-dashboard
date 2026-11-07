@@ -115,6 +115,85 @@ describe('BackendSetupPage: setup token 在会话内记住（重开回填）', (
   });
 });
 
+describe('BackendSetupPage: 地址按槽位回填（外网不猜进内网）', () => {
+  // 2026-11-07 实测缺陷：只填外网地址并保存后，重开配置页外网地址被回填到
+  // 内网槽 —— `candidates` 是去掉空槽后的紧凑列表（只存外网时
+  // candidates[0] = 外网），按 internal/external 下标回填即错位。
+  const ADDR_PLACEHOLDER = 'host:port（自动识别 https / http）';
+
+  /** controller 是第一个后端，所以地址输入框 [0]=内网、[1]=外网。 */
+  async function controllerInputs() {
+    await screen.findByRole('button', { name: /保存并进入登录/ });
+    const inputs = await screen.findAllByPlaceholderText(ADDR_PLACEHOLDER);
+    expect(inputs.length).toBeGreaterThanOrEqual(2);
+    return { internal: inputs[0] as HTMLInputElement, external: inputs[1] as HTMLInputElement };
+  }
+
+  it('entries 只有 external → 外网有值、内网保持空（不回退 candidates）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          configured: true,
+          setupTokenRequired: true,
+          // 只存外网时服务端的紧凑候选列表首项就是外网地址
+          backends: { controller: { configured: true, candidates: ['https://wan.example.com'] } },
+          entries: { controller: { external: 'https://wan.example.com' } },
+          embedded: { defaults: {}, healthy: null },
+        }),
+      ),
+    );
+
+    render(<BackendSetupPage onDone={() => {}} />);
+
+    const { internal, external } = await controllerInputs();
+    expect(external).toHaveValue('https://wan.example.com');
+    expect(internal).toHaveValue('');
+  });
+
+  it('entries 只有 internal → 内网有值、外网保持空', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          configured: true,
+          setupTokenRequired: true,
+          backends: { controller: { configured: true, candidates: ['http://10.0.0.5:8090'] } },
+          entries: { controller: { internal: 'http://10.0.0.5:8090' } },
+          embedded: { defaults: {}, healthy: null },
+        }),
+      ),
+    );
+
+    render(<BackendSetupPage onDone={() => {}} />);
+
+    const { internal, external } = await controllerInputs();
+    expect(internal).toHaveValue('http://10.0.0.5:8090');
+    expect(external).toHaveValue('');
+  });
+
+  it('老响应（无 entries）仍按 config 槽位回填，不拿 candidates 猜空槽', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          configured: true,
+          setupTokenRequired: true,
+          backends: { controller: { configured: true, candidates: ['https://wan.example.com'] } },
+          config: { controller: { external: 'https://wan.example.com' } },
+          embedded: { defaults: {}, healthy: null },
+        }),
+      ),
+    );
+
+    render(<BackendSetupPage onDone={() => {}} />);
+
+    const { internal, external } = await controllerInputs();
+    expect(external).toHaveValue('https://wan.example.com');
+    expect(internal).toHaveValue('');
+  });
+});
+
 describe('BackendSetupPage: 草稿凭据参与「测试」', () => {
   it('点「测试」时把表单里刚填的 Basic 凭据一起送出（否则门后地址永远 401）', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
