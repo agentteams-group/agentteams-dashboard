@@ -626,6 +626,45 @@ describe('F1f3: DASHBOARD_SETUP_TOKEN_ENFORCE=0 (installer opt-out)', () => {
     expect(data.setupTokenRequired).toBe(false);
   });
 
+  // 实测阻塞：ENFORCE=0 保存后重开 ?setup=1，地址回显为空。token 门关闭时
+  // pre-login 写本来就开放（POST 同门），隐藏拓扑不增安全性，只坏回填。
+  it('GET without token prefills the saved topology (enforce=0)', async () => {
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: { controller: { internal: 'http://in:8090', external: 'http://out:8090' } },
+      }),
+    );
+    vi.stubEnv('DASHBOARD_SETUP_TOKEN_ENFORCE', '0');
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      backends?: Record<string, { candidates: string[] }>;
+      entries?: Record<string, { internal?: unknown }>;
+      effective?: Record<string, string>;
+    };
+    expect(data.backends?.controller?.candidates).toEqual(['http://in:8090', 'http://out:8090']);
+    expect(data.entries?.controller?.internal).toBe('http://in:8090');
+    expect(data.effective).toBeDefined();
+  });
+
+  it('GET without token stays gate-shape when the gate is enforced (enforce=1)', async () => {
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({ version: 1, backends: { controller: { internal: 'http://in:8090' } } }),
+    );
+    const res = await GET(makeRequest());
+    const data = (await res.json()) as {
+      backends?: unknown;
+      entries?: unknown;
+      effective?: unknown;
+    };
+    expect(data.backends).toBeUndefined();
+    expect(data.entries).toBeUndefined();
+    expect(data.effective).toBeUndefined();
+  });
+
   it('default (env unset) keeps the gate: GET reports required', async () => {
     const res = await GET(makeRequest());
     const data = (await res.json()) as { setupTokenRequired: boolean };

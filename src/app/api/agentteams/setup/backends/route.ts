@@ -229,7 +229,12 @@ export async function GET(request: NextRequest) {
   //   - a pre-login caller holding the setup token (?token= — the same
   //     owner gate as the pre-login write), so the ?setup=1 reconfigure
   //     page can prefill the saved addresses once the operator has the
-  //     token.
+  //     token,
+  //   - any pre-login caller when the installer opted out of the gate
+  //     (DASHBOARD_SETUP_TOKEN_ENFORCE=0): that flag already makes the
+  //     pre-login WRITE open (POST is gated by the same check, see below),
+  //     so withholding the topology adds no protection — it only broke
+  //     "save, reopen ?setup=1" (addresses came back empty).
   // Everyone else gets the gate-shape only: configured / setupTokenRequired
   // / embedded defaults (hardcoded in the source, not deployment data).
   const session = getSessionFromRequest(request);
@@ -244,8 +249,12 @@ export async function GET(request: NextRequest) {
     ?.replace(/^Bearer\s+/i, '')
     .trim();
   const candidateToken = headerToken || queryToken;
+  // F1f3: with the gate disabled (ENFORCE=0) the pre-login write is already
+  // open, so prefill is open too; otherwise the old rule applies — session,
+  // or a valid setup token.
+  const gateOpen = !isSetupTokenEnforced();
   const prefillAuthorized =
-    !session && candidateToken ? await verifySetupToken(candidateToken) : !!session;
+    gateOpen || !!session || (!!candidateToken && (await verifySetupToken(candidateToken)));
   if (!prefillAuthorized) {
     return NextResponse.json({
       configured,
