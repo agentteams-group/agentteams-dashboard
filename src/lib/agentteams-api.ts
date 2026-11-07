@@ -194,6 +194,134 @@ export interface ManagerResponse {
   skills?: string[];
 }
 
+// ----- human file sync (upstream #1499) -----
+//
+// Read-only view of the per-human sync manifest. The manifest PUT is the
+// file-sync client's job; the dashboard only reports generation, timestamps,
+// entry counts and the write-base ETag.
+
+export interface HumanSyncStatus {
+  entries: number;
+  tombstones: number;
+  generation: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface HumanSyncManifest {
+  version: number;
+  generation: number;
+  entries: Record<string, unknown>;
+  tombstones: unknown[];
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface HumanSyncManifestRead {
+  manifest: HumanSyncManifest;
+  /** Storage ETag of the stored manifest — the base for a later If-Match. */
+  etag: string | null;
+}
+
+// ----- plugin registries / module index (upstream #1526) -----
+//
+// The controller projects only the pinned plugin metadata fields
+// (id, name, version, description, author, enabled, loaded, plugin_type,
+// frontend_entry); every field is optional because upstream drift is
+// tolerated on the whitelist only.
+
+export interface PluginMetadataEntry {
+  id?: string;
+  name?: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  enabled?: boolean;
+  loaded?: boolean;
+  plugin_type?: string;
+  frontend_entry?: string;
+}
+
+export interface TeamModuleMember {
+  worker: string;
+  version?: string;
+  loaded: boolean;
+}
+
+export interface TeamModuleView {
+  module: string;
+  name?: string;
+  kind?: string;
+  versions: Record<string, number>;
+  members: TeamModuleMember[];
+  consistent: boolean;
+}
+
+export interface TeamModulesResponse {
+  team: string;
+  modules: TeamModuleView[];
+  errors?: Array<{ worker: string; error: string }>;
+}
+
+export interface MillforgeArtifact {
+  name: string;
+  sha256: string;
+}
+
+export interface MillforgeVersion {
+  artifacts?: MillforgeArtifact[];
+  requires?: Record<string, string>;
+  commit?: string;
+  published_at?: string;
+  deprecated?: boolean;
+}
+
+export interface MillforgeModuleEntry {
+  kind?: string;
+  pluginId?: string;
+  latest?: string | null;
+  versions?: Record<string, MillforgeVersion>;
+  note?: string;
+}
+
+export interface MillforgeIndex {
+  schema: number;
+  channel: string;
+  modules: Record<string, MillforgeModuleEntry>;
+  source: string;
+  repo: string;
+  fetched_at: string;
+}
+
+export interface MillforgeIndexQuery {
+  source?: 'github' | 'gitcode';
+  repo?: string;
+  ref?: string;
+  channel?: 'alpha' | 'beta' | 'stable';
+}
+
+/** Install/update request shared by the team, worker and manager planes. */
+export interface ModuleInstallRequest {
+  module: string;
+  source: 'github' | 'gitcode';
+  repo?: string;
+  ref?: string;
+  channel?: 'alpha' | 'beta' | 'stable';
+  version?: string;
+  artifact?: string;
+  sha256?: string;
+}
+
+export interface ModuleInstallResult {
+  installed?: boolean;
+  loaded?: boolean;
+  previous_version?: string;
+  updated?: string[];
+  target_version?: string;
+  failed?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 export interface CreateWorkerRequest {
   name: string;
   model?: RequestModelAlias;
@@ -621,6 +749,31 @@ async function fetchCodingRunDetail(
   return res;
 }
 
+/**
+ * Read one human's sync manifest together with its storage ETag. The ETag is
+ * a response header (the write base for a later If-Match), so this read needs
+ * the raw Response rather than proxyRequest.
+ */
+async function fetchHumanSyncManifest(name: string): Promise<HumanSyncManifestRead> {
+  const path = `/humans/${encodeURIComponent(name)}/sync/manifest`;
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+  } catch (err) {
+    throw new NetworkError(path, err);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(
+      `API Error ${res.status}: ${text || res.statusText}`,
+      res.status,
+      path,
+    );
+  }
+  const manifest = (await res.json()) as HumanSyncManifest;
+  return { manifest, etag: res.headers.get('etag') };
+}
+
 // ============ API Methods ============
 
 export const agentteamsApi = {
@@ -815,6 +968,12 @@ export const agentteamsApi = {
   updateHuman: (name: string, data: UpdateHumanRequest) =>
     proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Human file sync (read-only; #1499)
+  getHumanSyncStatus: (name: string) =>
+    proxyRequest<HumanSyncStatus>(`/humans/${encodeURIComponent(name)}/sync/status`),
+
+  getHumanSyncManifest: (name: string) => fetchHumanSyncManifest(name),
+
   // Managers
   listManagers: async (): Promise<ManagerResponse[]> => {
     const result = await proxyRequest<ManagerResponse[] | { managers: ManagerResponse[] }>('/managers');
@@ -832,6 +991,57 @@ export const agentteamsApi = {
 
   deleteManager: (name: string) =>
     proxyRequest<void>(`/managers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  // Module updates (upstream #1526)
+  //
+  // Read surface: the Millforge release index plus each plane's installed
+  // plugin registry. Write surface: the controller's existing
+  // install/update endpoints (the dashboard only forwards them).
+  getMillforgeIndex: (query: MillforgeIndexQuery = {}) => {
+    const params = new URLSearchParams();
+    params.set('source', query.source ?? 'github');
+    if (query.repo) params.set('repo', query.repo);
+    if (query.ref) params.set('ref', query.ref);
+    if (query.channel) params.set('channel', query.channel);
+    return proxyRequest<MillforgeIndex>(`/millforge/index?${params.toString()}`);
+  },
+
+  getTeamModules: (name: string) =>
+    proxyRequest<TeamModulesResponse>(`/teams/${encodeURIComponent(name)}/modules`),
+
+  getWorkerPlugins: async (name: string): Promise<PluginMetadataEntry[]> => {
+    const result = await proxyRequest<PluginMetadataEntry[] | { plugins: PluginMetadataEntry[] }>(
+      `/workers/${encodeURIComponent(name)}/plugins`,
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.plugins ?? [];
+  },
+
+  getManagerPlugins: async (name: string): Promise<PluginMetadataEntry[]> => {
+    const result = await proxyRequest<PluginMetadataEntry[] | { plugins: PluginMetadataEntry[] }>(
+      `/managers/${encodeURIComponent(name)}/plugins`,
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.plugins ?? [];
+  },
+
+  installTeamModule: (team: string, module: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(
+      `/teams/${encodeURIComponent(team)}/modules/${encodeURIComponent(module)}/install`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  installWorkerPlugin: (worker: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(`/workers/${encodeURIComponent(worker)}/plugins/install`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  installManagerPlugin: (manager: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(`/managers/${encodeURIComponent(manager)}/plugins/install`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Gateway
   listConsumers: async (): Promise<ConsumerResponse[]> => {
