@@ -20,6 +20,7 @@ import { agentteamsApi, type HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import { getAccessSummary } from '@/lib/rbac-engine';
 import { HumanFilesPanel } from './human-files-panel';
+import { HumanSyncPanel } from './human-sync-panel';
 
 const BASE_FIELDS: Array<[string, (_h: HumanResponse) => string]> = [
   ['名称', (h) => h.name],
@@ -185,6 +186,7 @@ export function HumanDetailDialog({
                 <RBACSummary human={human} />
                 <TagList items={human.accessibleTeams} label="可访问团队" />
                 <TagList items={human.accessibleWorkers} label="可访问 Workers" />
+                {data && <HumanSyncPanel humanName={human.name} />}
                 <div className="pt-2">
                   <p className="text-muted-foreground mb-2">房间 ({human.rooms?.length || 0})</p>
                   <div className="max-h-32 overflow-y-auto custom-scrollbar">
