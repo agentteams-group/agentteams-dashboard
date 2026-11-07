@@ -162,7 +162,7 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="management" className="w-full">
-          <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 [&_[data-slot=tabs-trigger]]:h-9">
             <TabsTrigger value="management">管理</TabsTrigger>
             <TabsTrigger value="connection">连接</TabsTrigger>
             {isStateless && (

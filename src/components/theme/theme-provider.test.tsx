@@ -80,6 +80,16 @@ describe('ThemeProvider + useTheme', () => {
     expect(document.documentElement.classList.contains('warm')).toBe(false);
   });
 
+  it('keeps scheduling when enterprise locking has no default override', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
+    useThemeStore.setState({ themeId: 'scheduled' });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    act(() => useThemeStore.getState().setEnterpriseConfig({ themes: [], locked: true }));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
   it('applies the selected built-in theme to the document', async () => {
     useThemeStore.setState({ themeId: 'dark' });
     render(

@@ -19,13 +19,13 @@ import { normalizeThemeDefinition, ThemeConfigError } from '@/lib/theme/config';
 import { SCHEDULED_THEME_ID } from '@/lib/theme/schedule';
 
 export interface UseThemeResult {
-  /** The id the user picked ('system' when following the OS). */
+  /** Selected id, or 'system' / 'scheduled' for automatic modes. */
   theme: string;
   /** The theme definition actually applied right now. */
   resolvedTheme: ThemeDefinition;
   /** All pickable themes (built-in + custom + enterprise). */
   themes: ThemeDefinition[];
-  /** Switch theme by id; pass 'system' to follow the OS preference. */
+  /** Select a theme, 'system' for the OS, or 'scheduled' for local day/night. */
   setTheme: (_id: string) => void;
   /** True when an enterprise config prevents switching. */
   locked: boolean;
@@ -126,7 +126,7 @@ export function ThemeProvider({ children, disableEnterprise = false }: ThemeProv
   const enterpriseLoaded = useThemeStore((s) => s.enterpriseLoaded);
   const setThemeId = useThemeStore((s) => s.setThemeId);
   const setEnterpriseConfig = useThemeStore((s) => s.setEnterpriseConfig);
-  const followsSchedule = (enterpriseLocked ? enterpriseDefaultTheme : themeId) === SCHEDULED_THEME_ID;
+  const followsSchedule = (enterpriseLocked && enterpriseDefaultTheme ? enterpriseDefaultTheme : themeId) === SCHEDULED_THEME_ID;
   const subscribeClock = useCallback(
     (callback: () => void) => followsSchedule ? subscribeToClock(callback) : () => {},
     [followsSchedule]
