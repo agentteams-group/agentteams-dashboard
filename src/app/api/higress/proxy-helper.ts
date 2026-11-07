@@ -1,6 +1,6 @@
 // Shared proxy helper for Higress Console API routes
 import { NextResponse } from 'next/server';
-import { addressUrl, readConfigSync } from '@/lib/backend-config';
+import { addressUrl, backendAuthHeader, readConfigSync } from '@/lib/backend-config';
 
 const TIMEOUT_MS = 15000;
 const FALLBACK_CONFIG_WRITE_ENABLED = process.env.AGENTTEAMS_HIGRESS_FALLBACK_CONFIG_WRITE_ENABLED === 'true';
@@ -90,7 +90,7 @@ export function getHigressConsoleURL(): string {
   // URLs).
   const saved = readConfigSync()?.backends['higress-console'];
   // 地址条目可能是纯字符串或 {url, auth}（逐地址凭据）——统一经 addressUrl
-  // 取 URL；higress 这一轮不加覆盖凭据头（仅 controller/matrix）。
+  // 取 URL；覆盖凭据由 callHigressConsole 按命中的 Console 地址注入。
   const savedUrl = addressUrl(saved?.internal) || addressUrl(saved?.external);
   if (savedUrl) {
     const savedHost = new URL(savedUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -165,6 +165,10 @@ export async function callHigressConsole(
 
     const headers = fetchOptions.headers as Record<string, string>;
     headers['Accept'] = 'application/json';
+    // 逐地址覆盖凭据：公网网关 Basic 门（Caddy 等）/ API key 门（Bearer）挡在
+    // Console 前面时，只有命中「已保存的 Console 地址」才注入——凭据只进本次
+    // 请求头，不写日志、不回传浏览器，也不会串到其它后端地址。
+    Object.assign(headers, backendAuthHeader('higress-console', consoleUrl));
     if (options.cookie) {
       headers['Cookie'] = options.cookie;
     }

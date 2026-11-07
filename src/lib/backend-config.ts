@@ -64,7 +64,9 @@ loadFs().catch(() => {
  * - basic → 公网网关 Basic 门（Caddy 等）
  * - bearer → 网关 API key 门（Higress 等），即 Bearer token
  * 无 auth 的条目 = 用服务自身认证（controller token / matrix token /
- * SGLang 无鉴权）。 */
+ * SGLang 无鉴权）。MinIO 例外：S3 请求用 Access Key/Secret Key 签名
+ * （AGENTTEAMS_FS_ACCESS_KEY / AGENTTEAMS_FS_SECRET_KEY），不是
+ * Authorization 的 Basic/Bearer，因此不在本表语义内。 */
 export type BackendAuth =
   | { type: 'basic'; username: string; password: string }
   | { type: 'bearer'; token: string };
@@ -898,7 +900,14 @@ async function probeOnce(name: BackendName, url: string, timeoutMs: number): Pro
     const res = await probeFetchWithVettedRedirects(target, {
       method: spec.method ?? 'GET',
       signal: controller.signal,
-      headers: spec.body ? { 'content-type': 'application/json' } : undefined,
+      headers: {
+        ...(spec.body ? { 'content-type': 'application/json' } : {}),
+        // 逐地址覆盖凭据：门后（公网 Basic 门 / API key 门）的后端不带凭据探测
+        // 会停在 401/403（httpOk=false），永远进不了 effective 选举，设置页的
+        // 「当前生效」就永远空着。MinIO 用 Access Key/Secret Key（S3 签名），
+        // 不在这套 Authorization 语义里 —— 显式跳过。
+        ...(name === 'minio' ? {} : backendAuthHeader(name, url)),
+      },
       body: spec.body,
     });
     const latencyMs = Date.now() - startedAt;

@@ -483,6 +483,76 @@ describe('probeBackend', () => {
   });
 });
 
+describe('probeBackend: per-address auth on probes', () => {
+  let server: Server;
+  let base: string;
+  const receivedAuth: Array<string | undefined> = [];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      receivedAuth.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no server address');
+    base = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  beforeEach(() => {
+    receivedAuth.length = 0;
+  });
+
+  it('a gated backend is probed with its saved Basic credential (so 200 ⇒ 可选举)', async () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          'higress-console': {
+            internal: {
+              url: base,
+              auth: { type: 'basic', username: 'admin', password: 'pass' },
+            },
+          },
+        },
+      }),
+    );
+
+    const result = await probeBackend('higress-console', base);
+
+    expect(result.httpOk).toBe(true);
+    // base64("admin:pass") = YWRtaW46cGFzcw==
+    expect(receivedAuth[receivedAuth.length - 1]).toBe('Basic YWRtaW46cGFzcw==');
+  });
+
+  it('minio probes stay credential-free (S3 uses Access Key/Secret Key, not Basic/Bearer)', async () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          minio: {
+            internal: {
+              url: base,
+              auth: { type: 'basic', username: 'admin', password: 'pass' },
+            },
+          },
+        },
+      }),
+    );
+
+    await probeBackend('minio', base);
+
+    expect(receivedAuth[receivedAuth.length - 1]).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // F1c: plugin parity — election, error classification, candidate order,
 // applied-only cache updates, refresh_effective

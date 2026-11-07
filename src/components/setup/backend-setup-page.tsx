@@ -18,6 +18,9 @@
 // secrets are NEVER echoed back into the inputs: a stored credential shows
 // as the 「已保存 · 留空保持」placeholder and an empty submit inherits the
 // saved value server-side; switching back to 服务自身认证 drops it.
+// MinIO is the exception: S3 requests sign with Access Key / Secret Key
+// (AGENTTEAMS_FS_ACCESS_KEY / _SECRET_KEY), so its slots show an
+// explanatory note instead of the auth selector.
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
@@ -476,6 +479,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
             每个后端可只填一个地址；「内网」= 容器/集群网络，「外网」= 跨网段备用（自动切换）。
             「测试」一次验证该后端填写的全部地址（✅ 可用 / ⚠️ 已连通需鉴权 / ❌ 不可达，含原因分类）。
             「认证方式」：服务自身认证 = 不额外加头；Basic / Bearer 用于地址前面的公网网关门（Basic 门 / API key 门）。
+            MinIO 例外：用 Access Key / Secret Key 签名，不走该认证方式。
             已保存的密码或 token 不回显，留空即保持不变；切回「服务自身认证」= 清除该地址已存凭据。
           </CardDescription>
           {reconfigure && (
@@ -590,56 +594,64 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
                             placeholder="http://host:port"
                             spellCheck={false}
                           />
-                          {/* 认证方式 + 凭据（秘密永不回显：已存时占位提示，留空保持）。 */}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <select
-                              aria-label={`${slotLabel}认证方式`}
-                              value={draft.type}
-                              onChange={(e) =>
-                                setSlot(name, slot, {
-                                  type: e.target.value as AuthType,
-                                  stored: false,
-                                })
-                              }
-                              className="h-8 rounded-md border bg-background px-2 text-xs"
-                            >
-                              <option value="none">服务自身认证</option>
-                              <option value="basic">Basic 认证</option>
-                              <option value="bearer">Bearer Token</option>
-                            </select>
-                            {draft.type === 'basic' && (
-                              <>
-                                <Input
-                                  className="h-8 min-w-24 flex-1 text-xs"
-                                  value={draft.username}
-                                  onChange={(e) => setSlot(name, slot, { username: e.target.value })}
-                                  placeholder="用户名"
-                                  spellCheck={false}
-                                  autoComplete="off"
-                                />
+                          {/* 认证方式 + 凭据（秘密永不回显：已存时占位提示，留空保持）。
+                              MinIO 例外：S3 用 Access Key/Secret Key 签名，不提供 Basic/Bearer。 */}
+                          {name === 'minio' ? (
+                            <p className="text-xs text-muted-foreground">
+                              MinIO 用 Access Key / Secret Key 签名（AGENTTEAMS_FS_ACCESS_KEY /
+                              AGENTTEAMS_FS_SECRET_KEY），不走 Basic/Bearer —— 这里只填地址。
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                aria-label={`${slotLabel}认证方式`}
+                                value={draft.type}
+                                onChange={(e) =>
+                                  setSlot(name, slot, {
+                                    type: e.target.value as AuthType,
+                                    stored: false,
+                                  })
+                                }
+                                className="h-8 rounded-md border bg-background px-2 text-xs"
+                              >
+                                <option value="none">服务自身认证</option>
+                                <option value="basic">Basic 认证</option>
+                                <option value="bearer">Bearer Token</option>
+                              </select>
+                              {draft.type === 'basic' && (
+                                <>
+                                  <Input
+                                    className="h-8 min-w-24 flex-1 text-xs"
+                                    value={draft.username}
+                                    onChange={(e) => setSlot(name, slot, { username: e.target.value })}
+                                    placeholder="用户名"
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                  />
+                                  <Input
+                                    className="h-8 min-w-24 flex-1 text-xs"
+                                    type="password"
+                                    value={draft.password}
+                                    onChange={(e) => setSlot(name, slot, { password: e.target.value })}
+                                    placeholder={draft.stored ? '密码（已保存 · 留空保持）' : '密码'}
+                                    spellCheck={false}
+                                    autoComplete="new-password"
+                                  />
+                                </>
+                              )}
+                              {draft.type === 'bearer' && (
                                 <Input
                                   className="h-8 min-w-24 flex-1 text-xs"
                                   type="password"
-                                  value={draft.password}
-                                  onChange={(e) => setSlot(name, slot, { password: e.target.value })}
-                                  placeholder={draft.stored ? '密码（已保存 · 留空保持）' : '密码'}
+                                  value={draft.token}
+                                  onChange={(e) => setSlot(name, slot, { token: e.target.value })}
+                                  placeholder={draft.stored ? 'Token（已保存 · 留空保持）' : 'Bearer token'}
                                   spellCheck={false}
                                   autoComplete="new-password"
                                 />
-                              </>
-                            )}
-                            {draft.type === 'bearer' && (
-                              <Input
-                                className="h-8 min-w-24 flex-1 text-xs"
-                                type="password"
-                                value={draft.token}
-                                onChange={(e) => setSlot(name, slot, { token: e.target.value })}
-                                placeholder={draft.stored ? 'Token（已保存 · 留空保持）' : 'Bearer token'}
-                                spellCheck={false}
-                                autoComplete="new-password"
-                              />
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
