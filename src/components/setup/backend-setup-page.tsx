@@ -22,7 +22,6 @@
 // (AGENTTEAMS_FS_ACCESS_KEY / _SECRET_KEY), so its slots show an
 // explanatory note instead of the auth selector.
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -193,7 +192,7 @@ function applyPrefill(
 }
 
 export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () => void; reconfigure?: boolean }) {
-  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<BackendName, BackendForm>>(() => emptyForm());
@@ -485,7 +484,14 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           {reconfigure && (
             <button
               type="button"
-              onClick={() => router.push('/')}
+              onClick={() => {
+                // A client-side router.push('/') changes the URL but keeps
+                // this same-route component mounted; Home's mount effect
+                // (which reads ?setup=1 and forceSetup) never runs again,
+                // so the setup screen stays visible. A full replace clears
+                // the query and remounts Home as the login gate.
+                window.location.replace('/');
+              }}
               className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               ← 返回登录页
