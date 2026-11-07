@@ -116,13 +116,14 @@ describe('MessageBubble', () => {
     { status: 'error' as const, receipt: '发送失败', title: true },
     { status: undefined, receipt: '已读' },
   ])('keeps continuation time and $receipt below the content', ({ status, receipt, title }) => {
+    const timestamp = new Date(2026, 10, 7, 9, 31).getTime();
     const { container } = renderWithProvider(
       <MessageBubble
-        message={{ id: '$time-continuation', sender: '@me:test', senderShort: 'me', content: 'continued message', timestamp: new Date(2026, 10, 7, 9, 31).getTime(), type: 'm.text', isMe: true, status }}
+        message={{ id: '$time-continuation', sender: '@me:test', senderShort: 'me', content: 'continued message', timestamp, type: 'm.text', isMe: true, status }}
         showSender
         isContinuation
         currentUserId="@me:test"
-        readReceipts={{ '@peer:test': { ts: Date.now(), eventId: '$time-continuation' } }}
+        readReceipts={{ '@peer:test': { ts: timestamp + 1000, eventId: '$time-continuation' } }}
       />
     );
     const footer = container.querySelector('[data-chat-message-footer]')!;
