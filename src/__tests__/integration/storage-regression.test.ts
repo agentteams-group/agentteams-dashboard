@@ -22,7 +22,7 @@ vi.mock('@/lib/server-auth', () => ({
   readServerIdentity: vi.fn(() => ({ level: 3 })),
 }));
 
-import { GET as presignGET } from '@/app/api/agentteams/storage/presign/route';
+import { GET as presignGET, POST as presignPOST } from '@/app/api/agentteams/storage/presign/route';
 import { POST as uploadPOST } from '@/app/api/agentteams/storage/upload/route';
 import { GET as downloadGET } from '@/app/api/agentteams/storage/download/route';
 import { GET as bucketsGET, POST as bucketsPOST } from '@/app/api/agentteams/storage/buckets/route';
@@ -127,8 +127,8 @@ d('§3.3.4 #2 presign chain', () => {
 
   it('issues a PUT presigned URL that accepts uploads', async () => {
     const key = `${PREFIX}/presign/put.txt`;
-    const res = await presignGET(
-      jsonReq(`http://localhost/api/agentteams/storage/presign?bucket=${config!.bucket}&key=${encodeURIComponent(key)}&method=PUT`, 'GET'),
+    const res = await presignPOST(
+      jsonReq('http://localhost/api/agentteams/storage/presign', 'POST', { bucket: config!.bucket, key }),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { url: string };
@@ -184,10 +184,10 @@ d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
   it('object upload / download / list / stats / delete round-trip', async () => {
     const key = `${PREFIX}/objects/roundtrip.txt`;
     const upload = await uploadPOST(
-      jsonReq(`http://localhost/api/agentteams/storage/upload`, 'POST', {
-        bucket: config!.bucket,
-        key,
-        content: 'round-trip-content',
+      new NextRequest(`http://localhost/api/agentteams/storage/upload?bucket=${config!.bucket}&key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+        body: 'round-trip-content',
+        headers: { 'Content-Length': String(Buffer.byteLength('round-trip-content')) },
       }),
     );
     expect(upload.status).toBe(200);
@@ -199,12 +199,12 @@ d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
     expect(await download.text()).toBe('round-trip-content');
 
     const list = await objectsGET(
-      jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects?prefix=${encodeURIComponent(PREFIX)}`, 'GET'),
+      jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects?prefix=${encodeURIComponent(`${PREFIX}/objects/`)}`, 'GET'),
       { params: Promise.resolve({ bucket: config!.bucket }) },
     );
     expect(list.status).toBe(200);
-    const listBody = (await list.json()) as { objects?: Array<{ name?: string }> } | Array<{ name?: string }>;
-    const names = Array.isArray(listBody) ? listBody.map((o) => o.name) : (listBody.objects ?? []).map((o) => o.name);
+    const listBody = (await list.json()) as { objects: Array<{ key: string }> };
+    const names = listBody.objects.map((o) => o.key);
     expect(names).toContain(key);
 
     const stats = await statsGET(
