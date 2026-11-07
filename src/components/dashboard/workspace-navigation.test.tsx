@@ -7,6 +7,7 @@ import { useExtensionStore } from '@/lib/plugins/extension-store';
 import { Sidebar } from './sidebar';
 import { MobileSidebar } from './mobile-sidebar';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './sections/chat/room-info';
 
 const labels = ['助手', '工作台', '资产中心', '成员与团队'];
@@ -89,10 +90,20 @@ describe('compact workspace navigation', () => {
   it('opens the existing Leader DM from the assistant entry for a Team user', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });
     useHitlInboxStore.setState({ pendingChatRoomId: null });
-    const leader: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [] };
+    const leader: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [], access: 'joined' };
+    useRoomMetaStore.setState({ activeRoomId: leader.id });
     render(<Sidebar {...props} agentRooms={[leader]} collapsed={false} onToggleCollapse={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '助手' }));
     expect(props.onNavClick).toHaveBeenCalledWith('chat');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(leader.id);
+  });
+
+  it('leaves the remembered selection to ChatSection instead of forcing a default DM', () => {
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    useRoomMetaStore.setState({ activeRoomId: null });
+    render(<Sidebar {...props} agentRooms={[]} collapsed={false} onToggleCollapse={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '助手' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('chat');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
   });
 });

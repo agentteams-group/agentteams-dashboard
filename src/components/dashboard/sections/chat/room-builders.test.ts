@@ -144,7 +144,7 @@ describe('buildRooms', () => {
     const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1' })]);
     expect(rooms).toHaveLength(1);
     expect(rooms[0].type).toBe('manager');
-    expect(rooms[0].name).toBe('Manager: m1');
+    expect(rooms[0].name).toBe('平台助手');
   });
 
   it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
@@ -158,7 +158,7 @@ describe('buildRooms', () => {
       manager({ name: 'default', roomID: '!admin-dm:matrix', leaderDMRoomID: '!leader-dm:matrix' }),
     ]);
     expect(rooms.map((r) => r.id)).toEqual(['!admin-dm:matrix', '!leader-dm:matrix']);
-    expect(rooms.map((r) => r.name)).toEqual(['Manager: default', 'default 对话']);
+    expect(rooms.map((r) => r.name)).toEqual(['平台助手', 'default 对话']);
     expect(rooms.every((r) => r.type === 'manager')).toBe(true);
   });
 
@@ -170,14 +170,14 @@ describe('buildRooms', () => {
     expect(rooms[0].id).toBe('!same:matrix');
   });
 
-  it('prefers Matrix roomName for manager rooms when sync meta is present', () => {
+  it('keeps the platform assistant name consistent with the header', () => {
     const rooms = buildRooms(
       undefined,
       undefined,
       [manager({ name: 'default', roomID: '!sv0d:matrix' })],
       { '!sv0d:matrix': { roomName: 'Manager: default' } },
     );
-    expect(rooms[0].name).toBe('Manager: default');
+    expect(rooms[0].name).toBe('平台助手');
   });
 
   it('builds human rooms from human.rooms', () => {

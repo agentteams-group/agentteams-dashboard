@@ -21,9 +21,9 @@ function managerDisplayName(
   rid: string,
   lookup: RoomMetaByRoomId,
 ): string {
+  if (rid === manager.roomID) return '平台助手';
   const named = lookup[rid]?.roomName;
   if (named) return named;
-  if (rid === manager.roomID) return `Manager: ${manager.name}`;
   return `${manager.name} 对话`;
 }
 

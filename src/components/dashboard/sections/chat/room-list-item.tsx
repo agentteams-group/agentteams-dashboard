@@ -12,15 +12,17 @@ import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import { PHASE_STATUS_TOKEN, statusDotClass, statusTextClass } from '@/lib/status-tokens';
-import { INTERACTIVE_STATES_CLASS, SELECTED_SURFACE_CLASS } from '@/lib/interaction-states';
+import { INTERACTIVE_STATES_CLASS } from '@/lib/interaction-states';
+import { canOpenConversation, LEADER_ACCESS_LABELS } from './agent-conversations';
+import { TaskAttention, type ConversationAttention } from './conversation-switcher';
 import type { RoomInfo } from './room-info';
 
 function roomTypeIcon(type: RoomInfo['type']) {
   switch (type) {
     case 'team':
-      return <Users className="w-4 h-4 text-emerald-500" />;
+      return <Users className="w-4 h-4 text-muted-foreground" />;
     case 'worker':
-      return <Bot className="w-4 h-4 text-emerald-500" />;
+      return <Bot className="w-4 h-4 text-muted-foreground" />;
     case 'manager':
       return <Crown className="w-4 h-4 text-violet-500" />;
     case 'human':
@@ -35,10 +37,14 @@ export function RoomListItem({
   room,
   isSelected,
   onClick,
+  attention,
+  attentionPending,
 }: {
   room: RoomInfo;
   isSelected: boolean;
   onClick: () => void;
+  attention?: ConversationAttention;
+  attentionPending?: string;
 }) {
   // Clear the unread red dot immediately on click. The actual m.fully_read
   // upload (and any subsequent server-confirmed reset) is handled by
@@ -72,11 +78,16 @@ export function RoomListItem({
   // 阶段名 → 语义色只走 PHASE_STATUS_TOKEN 一处（方案 v3 A-2）；认不出的阶段
   // （旧服务端可能回别的词）给中性色，不替它编一个运行状态。
   const phaseToken = room.phase ? PHASE_STATUS_TOKEN[room.phase] : undefined;
+  const accessible = canOpenConversation(room);
+  const accessLabel = room.access && room.access !== 'joined' ? LEADER_ACCESS_LABELS[room.access] : undefined;
   return (
     <motion.button
       onClick={handleClick}
+      disabled={!accessible}
+      aria-current={isSelected ? 'page' : undefined}
+      title={accessLabel}
       className={`w-full border text-left p-3 rounded-lg ${INTERACTIVE_STATES_CLASS} ${
-        isSelected ? SELECTED_SURFACE_CLASS : 'border-transparent hover:bg-accent'
+        isSelected ? 'bg-primary/5 border-primary/15' : 'border-transparent hover:bg-accent'
       }`}
       whileTap={{ scale: 0.99 }}
     >
@@ -98,7 +109,7 @@ export function RoomListItem({
             {isTeamRoom ? (
               <WorkerSessionRunningDot running={teamRunning} />
             ) : null}
-            {room.phase ? (
+            {!room.agentRole && room.phase ? (
               <Badge
                 variant="outline"
                 className={`text-xs px-1 py-0 shrink-0 ${phaseToken ? statusTextClass(phaseToken) : ''}`}
@@ -110,7 +121,7 @@ export function RoomListItem({
           {/* Runtime badge on its own row (below the name) so long room
               names are never pushed off-screen by a second badge. */}
           <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-            {room.runtime ? (
+            {!room.agentRole && room.runtime ? (
               <Badge
                 variant="outline"
                 className="text-xs px-1 py-0 shrink-0"
@@ -120,12 +131,13 @@ export function RoomListItem({
               </Badge>
             ) : null}
             <p className="text-xs text-muted-foreground truncate min-w-0">
-              {room.lastMessagePreview || room.parentTeam || room.id}
+              {accessLabel || room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : '暂无消息')}
             </p>
           </div>
+          {room.agentRole && <TaskAttention counts={attention} pending={attentionPending} />}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {pendingCount > 0 && (
+          {pendingCount > 0 && !attention && (
             <Badge
               variant="secondary"
               className="h-4 px-1.5 text-xs"
