@@ -97,8 +97,8 @@ fi
 
 # Test 1c: Default dashboard version is independent of AGENTTEAMS_VERSION
 dashboard_version_line=$(grep -E 'AGENTTEAMS_DASHBOARD_VERSION=.*:-' "${INSTALL_SCRIPT}" | head -1)
-if echo "${dashboard_version_line}" | grep -q 'v1\.3\.1'; then
-    pass "Dashboard has independent default version (v1.3.1)"
+if echo "${dashboard_version_line}" | grep -q 'v1\.4\.0'; then
+    pass "Dashboard has independent default version (v1.4.0)"
 else
     fail "Dashboard default version line: ${dashboard_version_line}"
 fi
@@ -479,8 +479,8 @@ if echo "${_exec_result}" | grep -q "EXTRACTION_FAILED\|FUNCTION_NOT_FOUND"; the
     fail "Exec non-interactive enabled: cannot verify (extraction failed)"
 else
     # Test 15a: Version is correct
-    if echo "${_exec_result}" | grep -q "RESULT_VERSION=v1.3.1"; then
-        pass "Exec non-interactive: default version = v1.3.1"
+    if echo "${_exec_result}" | grep -q "RESULT_VERSION=v1.4.0"; then
+        pass "Exec non-interactive: default version = v1.4.0"
     else
         fail "Exec non-interactive: wrong version (got: $(echo "${_exec_result}" | grep RESULT_VERSION))"
     fi
@@ -493,7 +493,7 @@ else
     fi
 
     # Test 15c: Image contains correct tag
-    if echo "${_exec_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.3.1"; then
+    if echo "${_exec_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.4.0"; then
         pass "Exec non-interactive: image tag matches version"
     else
         fail "Exec non-interactive: wrong image tag"
@@ -852,7 +852,7 @@ else
     else
         fail "Exec quick-start: wrong port (got: $(echo "${_qs_result}" | grep RESULT_PORT))"
     fi
-    if echo "${_qs_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.3.1"; then
+    if echo "${_qs_result}" | grep -q "RESULT_IMAGE=.*agentteams-dashboard:v1.4.0"; then
         pass "Exec quick-start: image tag matches default version"
     else
         fail "Exec quick-start: wrong image (got: $(echo "${_qs_result}" | grep RESULT_IMAGE))"

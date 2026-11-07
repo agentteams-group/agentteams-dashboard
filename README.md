@@ -111,8 +111,8 @@ Worker polling supports slim list projections and private ETag revalidation, wit
 
 The Dashboard integrates with the [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer as an optional step in `agentteams-install.sh` (merged upstream via [PR #1075](https://github.com/agentscope-ai/AgentTeams/pull/1075)) — the interactive installer will prompt whether to install it, and the container is automatically started alongside the Controller/Manager. Further upstream changes are contributed through pull requests to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
-- **Current Dashboard release**: `v1.3.1` (release tag). The app version source of truth is `version` in `package.json` (`1.3.1`); release tags use a four-segment variant (`v1.3.1` = `1.2.4` + ninth hotfix)
-- **Installer default**: `v1.3.1`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
+- **Dashboard release target**: `v1.4.0`. The app version source of truth is `version` in `package.json` (`1.4.0`); the matching release tag is `v1.4.0`.
+- **Installer default**: `v1.4.0`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -139,7 +139,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.3.1` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.4.0` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 
@@ -154,7 +154,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.3.1 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.0 \
   AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 
