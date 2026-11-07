@@ -235,7 +235,7 @@ export function ReviewReportCard({ payload, eventId, onSend }: ReviewReportCardP
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 gap-1 px-3 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                    className="h-7 gap-1 px-3 text-xs"
                     onClick={() => writeState.mutate('release')}
                     disabled={writeState.isPending}
                     title="人工放行（写入房间状态事件并落审计）"

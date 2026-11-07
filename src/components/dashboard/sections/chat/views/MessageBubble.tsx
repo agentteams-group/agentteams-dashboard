@@ -456,7 +456,7 @@ export function MessageBubble({
     isTextBubble && !isContinuation ? (message.isMe ? 'rounded-tr-md' : 'rounded-tl-md') : '',
     isTextBubble
       ? message.isMe
-        ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
+        ? 'bg-primary/5 text-foreground border-primary/10'
         : 'bg-muted/60 text-foreground border-border/40'
       : '',
     message.status === 'error' ? 'ring-1 ring-status-failed/70' : '',
@@ -574,7 +574,7 @@ export function MessageBubble({
                 }}
                 autoFocus
                 rows={2}
-                className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {editError && (
                 <span className="text-xs text-red-500">{editError}</span>

@@ -504,7 +504,7 @@ export function ChatComposer({
 
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
-      <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
+      <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-ring">
         <input
           ref={fileInputRef}
           type="file"

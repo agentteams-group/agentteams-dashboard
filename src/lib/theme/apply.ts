@@ -71,6 +71,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
 
   root.classList.toggle('dark', theme.base === 'dark');
   root.classList.toggle('high-contrast', theme.id === 'high-contrast');
+  root.classList.toggle('warm', theme.id === 'warm');
   root.setAttribute('data-theme', theme.id);
   root.style.colorScheme = theme.base;
 
@@ -185,7 +186,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
 export function clearTheme(options: ApplyThemeOptions = {}): void {
   const root = options.root ?? document.documentElement;
   clearInlineTheme(root);
-  root.classList.remove('dark', 'high-contrast');
+  root.classList.remove('dark', 'high-contrast', 'warm');
   root.removeAttribute('data-theme');
   root.style.removeProperty('color-scheme');
   document.body.classList.remove('animate-none', 'animate-slow', 'animate-fast',

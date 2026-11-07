@@ -4,8 +4,13 @@
 }
 
 .conversation :global([data-chat-timeline-item]),
+.conversation :global([data-chat-typing] > div),
 .conversation :global([data-chat-composer] > div) {
   max-width: 50rem;
+}
+
+.conversation :global([data-chat-typing]) {
+  padding-inline: 1.5rem;
 }
 
 .conversation :global([data-chat-message]) {
@@ -77,7 +82,7 @@
 .conversation :global([data-chat-composer]) {
   border-top: 0;
   background: var(--background);
-  padding: 1rem 1.5rem 1.25rem;
+  padding: 0.5rem 1.5rem 1.25rem;
 }
 
 .conversation :global([data-chat-composer-frame]) {
@@ -114,7 +119,11 @@
 }
 
 @media (max-width: 767px) {
+  .conversation :global([data-chat-typing]) {
+    padding-inline: 0.75rem;
+  }
+
   .conversation :global([data-chat-composer]) {
-    padding: 0.75rem 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+    padding: 0.5rem 0.75rem max(0.75rem, env(safe-area-inset-bottom));
   }
 }

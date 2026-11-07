@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildThemeInitScript } from './init-script';
 import { THEME_STORAGE_KEY } from './types';
 
@@ -34,20 +34,39 @@ function runScript(storageValue: string | null, prefersDark = false) {
 
 describe('buildThemeInitScript', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
     document.documentElement.className = '';
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.cssText = '';
     localStorage.clear();
   });
+  afterEach(() => vi.useRealTimers());
 
   it('is syntactically valid javascript', () => {
     expect(() => new Function(buildThemeInitScript(THEME_STORAGE_KEY))).not.toThrow();
   });
 
-  it('defaults to dark (app default) when nothing is persisted and OS is dark', () => {
+  it('defaults to scheduled light during the local day regardless of OS preference', () => {
     runScript(null, true);
-    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('pre-paints scheduled dark at the exact night boundary', () => {
+    vi.setSystemTime(new Date(2026, 10, 7, 19));
+    runScript(null, false);
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
+
+  it('pre-paints optional warm white as light-based, including a saved daytime schedule', () => {
+    runScript(JSON.stringify({ state: { themeId: 'scheduled', themeSchedule: { lightStart: '08:00', darkStart: '20:00', dayTheme: 'warm' } } }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('warm');
+    expect(document.documentElement.classList.contains('warm')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
+    runScript(JSON.stringify({ state: { themeId: 'warm' } }));
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 
   it('applies the light theme when persisted', () => {

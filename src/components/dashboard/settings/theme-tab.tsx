@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Sun,
@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { normalizeThemeSchedule, SCHEDULED_THEME_ID } from '@/lib/theme/schedule';
 import {
   Select,
   SelectContent,
@@ -62,45 +64,45 @@ import {
  */
 
 const LIGHT_PRESET: Record<string, string> = {
-  '--primary': '#10b981',
+  '--primary': '#25282d',
   '--primary-foreground': '#ffffff',
   '--background': '#ffffff',
-  '--foreground': '#111827',
+  '--foreground': '#22252a',
   '--card': '#ffffff',
-  '--card-foreground': '#111827',
+  '--card-foreground': '#22252a',
   '--popover': '#ffffff',
-  '--popover-foreground': '#111827',
-  '--secondary': '#f3f4f6',
-  '--secondary-foreground': '#111827',
-  '--muted': '#f3f4f6',
-  '--muted-foreground': '#6b7280',
-  '--accent': '#f3f4f6',
-  '--accent-foreground': '#111827',
+  '--popover-foreground': '#22252a',
+  '--secondary': '#f1f2f4',
+  '--secondary-foreground': '#22252a',
+  '--muted': '#f1f2f4',
+  '--muted-foreground': '#6f747d',
+  '--accent': '#eceef1',
+  '--accent-foreground': '#22252a',
   '--border': '#e5e7eb',
-  '--input': '#e5e7eb',
-  '--ring': '#10b981',
+  '--input': '#d4d7dc',
+  '--ring': '#858b94',
   '--destructive': '#ef4444',
   '--destructive-foreground': '#ffffff',
 };
 
 const DARK_PRESET: Record<string, string> = {
-  '--primary': '#10b981',
-  '--primary-foreground': '#ffffff',
-  '--background': '#0a0a0a',
-  '--foreground': '#fafafa',
-  '--card': '#171717',
-  '--card-foreground': '#fafafa',
-  '--popover': '#171717',
-  '--popover-foreground': '#fafafa',
-  '--secondary': '#262626',
-  '--secondary-foreground': '#fafafa',
-  '--muted': '#262626',
-  '--muted-foreground': '#a3a3a3',
-  '--accent': '#262626',
-  '--accent-foreground': '#fafafa',
-  '--border': '#3f3f46',
-  '--input': '#3f3f46',
-  '--ring': '#10b981',
+  '--primary': '#e9ebef',
+  '--primary-foreground': '#24262c',
+  '--background': '#1b1d22',
+  '--foreground': '#eeeff3',
+  '--card': '#22252b',
+  '--card-foreground': '#eeeff3',
+  '--popover': '#25282e',
+  '--popover-foreground': '#eeeff3',
+  '--secondary': '#2b2e35',
+  '--secondary-foreground': '#eeeff3',
+  '--muted': '#2b2e35',
+  '--muted-foreground': '#a5aab4',
+  '--accent': '#2d3037',
+  '--accent-foreground': '#eeeff3',
+  '--border': '#34373e',
+  '--input': '#41464f',
+  '--ring': '#9198a4',
   '--destructive': '#f87171',
   '--destructive-foreground': '#ffffff',
 };
@@ -186,6 +188,11 @@ export function ThemeTab() {
   const updateCustomTheme = useThemeStore((s) => s.updateCustomTheme);
   const removeCustomTheme = useThemeStore((s) => s.removeCustomTheme);
   const customThemes = useThemeStore((s) => s.customThemes);
+  const themeSchedule = useThemeStore((s) => s.themeSchedule);
+  const setThemeSchedule = useThemeStore((s) => s.setThemeSchedule);
+  const [draftSchedule, setDraftSchedule] = useState(themeSchedule);
+  const [scheduleError, setScheduleError] = useState('');
+  const automatic = theme === SCHEDULED_THEME_ID;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editingTheme =
@@ -240,6 +247,61 @@ export function ThemeTab() {
 
   return (
     <div className="space-y-6">
+      <div className="space-y-4 rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="theme-auto">按时间自动切换</Label>
+            <p className="text-sm text-muted-foreground">
+              设备时区：{Intl.DateTimeFormat().resolvedOptions().timeZone}。当前外观：{resolvedTheme.nameZh || resolvedTheme.name}。
+            </p>
+          </div>
+          <Switch id="theme-auto" checked={automatic} disabled={locked}
+            onCheckedChange={(checked) => setTheme(checked ? SCHEDULED_THEME_ID : resolvedTheme.id)} />
+        </div>
+        {automatic && (
+          <form className="space-y-3" onSubmit={(event) => {
+            event.preventDefault();
+            const normalized = normalizeThemeSchedule(draftSchedule);
+            if (normalized.lightStart !== draftSchedule.lightStart || normalized.darkStart !== draftSchedule.darkStart) {
+              setScheduleError('请填写有效时间，白天与夜间的开始时间不能相同。');
+              return;
+            }
+            setThemeSchedule(normalized);
+            setScheduleError('');
+            toast.success('自动切换时间已保存');
+          }}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="theme-light-start">白天开始</Label>
+                <Input id="theme-light-start" type="time" required disabled={locked} value={draftSchedule.lightStart}
+                  onChange={(event) => setDraftSchedule({ ...draftSchedule, lightStart: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="theme-dark-start">夜间开始</Label>
+                <Input id="theme-dark-start" type="time" required disabled={locked} value={draftSchedule.darkStart}
+                  onChange={(event) => setDraftSchedule({ ...draftSchedule, darkStart: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="theme-day-palette">白天配色</Label>
+                <Select value={draftSchedule.dayTheme} disabled={locked}
+                  onValueChange={(value) => setDraftSchedule({ ...draftSchedule, dayTheme: value as 'light' | 'warm' })}>
+                  <SelectTrigger id="theme-day-palette" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">冷灰白</SelectItem>
+                    <SelectItem value="warm">暖白</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {scheduleError && <p role="alert" className="text-sm text-destructive">{scheduleError}</p>}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">夜间使用深石墨，设置保存在此浏览器。</p>
+              <Button type="submit" variant="outline" size="sm" disabled={locked}>保存切换时间</Button>
+            </div>
+          </form>
+        )}
+        <p className="text-sm text-muted-foreground">关闭后保持当前外观。手动选择主题也会关闭自动切换。</p>
+      </div>
       {/* ── Theme picker ─────────────────────────────── */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">

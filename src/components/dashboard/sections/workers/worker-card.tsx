@@ -88,7 +88,7 @@ export function WorkerCard({
     >
       <Card
         aria-busy={isDeleting || undefined}
-        className={`relative h-full flex flex-col glass-card hover-lift ${isSelected ? 'ring-2 ring-emerald-500/50' : ''} ${
+        className={`relative h-full flex flex-col glass-card hover-lift ${isSelected ? 'ring-2 ring-ring/50' : ''} ${
           isDeleting ? 'worker-card-deleting' : ''
         }`}
       >

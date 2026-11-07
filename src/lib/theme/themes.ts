@@ -14,14 +14,14 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   {
     id: 'light',
     name: 'Light',
-    nameZh: '亮色',
+    nameZh: '冷灰白',
     base: 'light',
     builtin: true,
   },
   {
     id: 'dark',
     name: 'Dark',
-    nameZh: '暗色',
+    nameZh: '深石墨',
     base: 'dark',
     builtin: true,
   },
@@ -30,6 +30,13 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
     name: 'High Contrast',
     nameZh: '高对比度',
     base: 'dark',
+    builtin: true,
+  },
+  {
+    id: 'warm',
+    name: 'Warm White',
+    nameZh: '暖白',
+    base: 'light',
     builtin: true,
   },
 ];

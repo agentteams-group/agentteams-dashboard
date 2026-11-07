@@ -82,7 +82,7 @@ export function WorkerTable({
             return (
               <TableRow
                 key={worker.name}
-                className={selectedWorkers.has(worker.name) ? 'bg-emerald-500/5' : ''}
+                className={selectedWorkers.has(worker.name) ? 'bg-accent' : ''}
               >
               <TableCell>
                 <button

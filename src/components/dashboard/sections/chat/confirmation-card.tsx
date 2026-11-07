@@ -76,7 +76,7 @@ export function ConfirmationCard({ payload, onApprove, onReject }: ConfirmationC
           <div className="flex items-center gap-2 pt-1">
             <Button
               size="sm"
-              className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-700"
+              className="h-7 px-3 text-xs"
               onClick={handleApprove}
             >
               <Check className="w-3 h-3 mr-1" />
