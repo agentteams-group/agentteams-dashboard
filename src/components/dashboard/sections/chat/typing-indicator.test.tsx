@@ -22,6 +22,7 @@ describe('typing status', () => {
   ])('announces the actual senders: %s', (names, text) => {
     render(<TypingIndicator users={names.map((displayName) => ({ userId: `@${displayName}:test`, displayName }))} />);
     expect(screen.getByRole('status')).toHaveTextContent(text);
-    expect(screen.getByText(text)).toHaveAttribute('title', text);
+    expect(screen.getByTitle(text)).toHaveTextContent(text);
+    expect(screen.getByText(names.length > 2 ? '等 3 人正在输入' : '正在输入')).toBeInTheDocument();
   });
 });

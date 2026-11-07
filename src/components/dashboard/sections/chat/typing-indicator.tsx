@@ -14,14 +14,17 @@ interface TypingIndicatorProps {
 
 export function TypingIndicator({ users }: TypingIndicatorProps) {
   const names = users.map((u) => u.displayName);
-  let text = '';
+  let nameText = '';
+  let statusText = '正在输入';
   if (names.length === 1) {
-    text = `${names[0]} 正在输入`;
+    nameText = names[0];
   } else if (names.length === 2) {
-    text = `${names[0]} 和 ${names[1]} 正在输入`;
+    nameText = `${names[0]} 和 ${names[1]}`;
   } else if (names.length > 2) {
-    text = `${names[0]} 等 ${names.length} 人正在输入`;
+    nameText = names[0];
+    statusText = `等 ${names.length} 人正在输入`;
   }
+  const text = `${nameText} ${statusText}`;
 
   return (
     <div data-chat-typing role="status" aria-live="polite" aria-atomic="true" className="h-6 shrink-0 px-3 sm:px-6">
@@ -51,7 +54,10 @@ export function TypingIndicator({ users }: TypingIndicatorProps) {
                   transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }}
                 />
               </span>
-              <span className="truncate" title={text}>{text}</span>
+              <span className="flex min-w-0 items-center gap-1" title={text}>
+                <span data-chat-typing-name className="truncate">{nameText}</span>{' '}
+                <span className="shrink-0 whitespace-nowrap">{statusText}</span>
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
