@@ -266,7 +266,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
                     <div
                       key={obj.key}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors group ${
-                        selectedKey === obj.key ? 'bg-accent border-l-2 border-emerald-500' : ''
+                        selectedKey === obj.key ? 'bg-accent border-l-2 border-primary' : ''
                       }`}
                     >
                       <button

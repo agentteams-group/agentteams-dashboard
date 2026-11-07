@@ -126,7 +126,7 @@ export function WelcomeSteps({ visible }: { visible: boolean }) {
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+              className="h-6 px-2 text-xs gap-1"
               onClick={() => setDemoOpen(true)}
             >
               <PlayCircle className="h-3.5 w-3.5" />

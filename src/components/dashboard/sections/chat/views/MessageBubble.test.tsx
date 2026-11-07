@@ -447,8 +447,8 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     const ownBubble = screen.getByText('我的消息').parentElement;
-    expect(ownBubble).toHaveClass('bg-emerald-500/10');
-    expect(ownBubble).toHaveClass('border-emerald-500/25');
+    expect(ownBubble).toHaveClass('bg-primary/5');
+    expect(ownBubble).toHaveClass('border-primary/10');
     expect(ownBubble).not.toHaveClass('shadow-sm');
   });
 

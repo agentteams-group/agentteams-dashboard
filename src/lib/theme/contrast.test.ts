@@ -123,9 +123,10 @@ const TEXT_PAIRS: [string, string][] = [
 describe.each([
   ['light', ':root'],
   ['dark', '.dark'],
+  ['warm', '.warm'],
   ['high-contrast', '.high-contrast'],
 ] as const)('%s theme tokens (UI-05)', (_, selector) => {
-  const vars = section(selector);
+  const vars = { ...section(':root'), ...section(selector) };
 
   it.each(TEXT_PAIRS)('%s on %s is WCAG AA (≥ 4.5:1)', (fg, bg) => {
     const ratio = contrastRatio(vars[fg], vars[bg]);
@@ -150,9 +151,10 @@ const STATUS_TOKENS = [
 describe.each([
   ['light', ':root', 4.5],
   ['dark', '.dark', 4.5],
+  ['warm', '.warm', 4.5],
   ['high-contrast', '.high-contrast', 7],
 ] as const)('%s theme status tokens (A-2)', (_, selector, minRatio) => {
-  const vars = section(selector);
+  const vars = { ...section(':root'), ...section(selector) };
 
   it.each(STATUS_TOKENS)(`%s on --card ≥ ${minRatio}:1`, (token) => {
     const value = vars[token];

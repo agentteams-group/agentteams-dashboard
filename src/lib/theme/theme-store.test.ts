@@ -3,10 +3,12 @@ import { resolveTheme, selectAvailableThemes, useThemeStore } from './theme-stor
 import { BUILTIN_THEMES } from './themes';
 import { SYSTEM_THEME_ID } from './types';
 import type { ThemeDefinition } from './types';
+import { normalizeThemeSchedule, SCHEDULED_THEME_ID } from './schedule';
 
 function resetStore() {
   useThemeStore.setState({
     themeId: SYSTEM_THEME_ID,
+    themeSchedule: normalizeThemeSchedule(undefined),
     customThemes: [],
     enterpriseThemes: [],
     enterpriseDefaultTheme: null,
@@ -21,8 +23,32 @@ describe('theme store', () => {
     localStorage.clear();
   });
 
-  it('defaults to following the system preference', () => {
+  it('retains explicit following of the system preference', () => {
     expect(useThemeStore.getState().themeId).toBe(SYSTEM_THEME_ID);
+  });
+
+  it('defaults new browser profiles to automatic day/night switching', () => {
+    expect(useThemeStore.getInitialState().themeId).toBe(SCHEDULED_THEME_ID);
+  });
+
+  it('persists schedule settings and restores them without overwriting a legacy explicit choice', async () => {
+    useThemeStore.getState().setThemeSchedule({ lightStart: '08:00', darkStart: '20:00', dayTheme: 'warm' });
+    const stored = JSON.parse(localStorage.getItem('agentteams-theme')!);
+    expect(stored.state.themeSchedule.dayTheme).toBe('warm');
+    localStorage.setItem('agentteams-theme', JSON.stringify({ state: { themeId: 'dark', customThemes: [] }, version: 0 }));
+    await useThemeStore.persist.rehydrate();
+    expect(useThemeStore.getState().themeId).toBe('dark');
+    expect(useThemeStore.getState().themeSchedule).toEqual(normalizeThemeSchedule(undefined));
+  });
+
+  it('resolves automatic schedules while retaining enterprise lock priority', () => {
+    useThemeStore.setState({ themeId: SCHEDULED_THEME_ID });
+    expect(resolveTheme(useThemeStore.getState(), false, 7 * 60).id).toBe('light');
+    expect(resolveTheme(useThemeStore.getState(), false, 19 * 60).id).toBe('dark');
+    useThemeStore.getState().setEnterpriseConfig({ themes: [], defaultTheme: 'high-contrast', locked: true });
+    useThemeStore.getState().setThemeSchedule({ lightStart: '09:00', darkStart: '21:00', dayTheme: 'warm' });
+    expect(useThemeStore.getState().themeSchedule.dayTheme).toBe('light');
+    expect(resolveTheme(useThemeStore.getState(), false, 10 * 60).id).toBe('high-contrast');
   });
 
   it('setThemeId switches the selection', () => {

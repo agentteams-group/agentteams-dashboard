@@ -253,7 +253,7 @@ export function RoomFilesPanel({ roomId }: { roomId: string }) {
                     <div
                       key={file.eventId}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors group ${
-                        selectedFile?.eventId === file.eventId ? 'bg-accent border-l-2 border-emerald-500' : ''
+                        selectedFile?.eventId === file.eventId ? 'bg-accent border-l-2 border-primary' : ''
                       }`}
                     >
                       <button

@@ -859,8 +859,8 @@ export function ChatRoom({
               </button>
             </div>
           )}
-          <TypingIndicator users={typingUsers} />
           <AgentActivityTrack roomId={roomId} />
+          <TypingIndicator users={typingUsers} />
           <ChatComposer
             roomId={roomId}
             value={inputValue}

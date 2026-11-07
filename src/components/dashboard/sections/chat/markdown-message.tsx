@@ -259,7 +259,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       <div className="matrix-message-content">
         <button
           type="button"
-          className="block max-w-full rounded-lg cursor-zoom-in focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+          className="block max-w-full rounded-lg cursor-zoom-in focus:outline-none focus:ring-1 focus:ring-ring"
           onClick={() => setViewerOpen(true)}
           title="点击查看大图"
         >

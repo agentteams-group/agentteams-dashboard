@@ -498,7 +498,7 @@ export function LoopsSection() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 gap-1 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                      className="h-7 gap-1 text-xs"
                       onClick={() => void publish()}
                       disabled={userLevel < 3}
                       title={userLevel < 3 ? '发布/回滚仅管理员（§7.2）' : '发布为不可变版本（写入绑定空间状态事件）'}

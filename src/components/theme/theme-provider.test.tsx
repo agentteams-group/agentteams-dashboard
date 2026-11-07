@@ -1,12 +1,13 @@
 'use client';
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider, useTheme } from './theme-provider';
 import { useThemeStore } from '@/lib/theme/theme-store';
 import { clearTheme } from '@/lib/theme/apply';
 import type { ThemeDefinition } from '@/lib/theme/types';
+import { normalizeThemeSchedule } from '@/lib/theme/schedule';
 
 function Probe() {
   const { theme, resolvedTheme, setTheme, themes } = useTheme();
@@ -30,6 +31,7 @@ describe('ThemeProvider + useTheme', () => {
     clearTheme();
     useThemeStore.setState({
       themeId: 'system',
+      themeSchedule: normalizeThemeSchedule(undefined),
       customThemes: [],
       enterpriseThemes: [],
       enterpriseDefaultTheme: null,
@@ -42,6 +44,40 @@ describe('ThemeProvider + useTheme', () => {
     cleanup();
     clearTheme();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('switches at the exact local-time boundary and stops the clock after manual selection', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
+    useThemeStore.setState({ themeId: 'scheduled' });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    expect(document.documentElement.dataset.theme).toBe('light');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    fireEvent.click(screen.getByText('go light'));
+    act(() => vi.advanceTimersByTime(0));
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.setSystemTime(new Date(2026, 10, 8, 23));
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('catches up after sleep and clears warm-mode styling at night', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
+    useThemeStore.setState({ themeId: 'scheduled', themeSchedule: { lightStart: '07:00', darkStart: '19:00', dayTheme: 'warm' } });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    expect(document.documentElement.dataset.theme).toBe('warm');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    act(() => {
+      vi.setSystemTime(new Date(2026, 10, 7, 22));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.classList.contains('warm')).toBe(false);
   });
 
   it('applies the selected built-in theme to the document', async () => {

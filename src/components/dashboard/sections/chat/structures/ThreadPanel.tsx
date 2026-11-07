@@ -191,7 +191,7 @@ export function ThreadPanel({
           placeholder={isLoggedIn ? '回复此话题... (Enter 发送, Shift+Enter 换行)' : '请先登录后再回复'}
           disabled={!isLoggedIn}
           rows={1}
-          className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"
+          className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"
         />
         <div className="flex items-center justify-between mt-1.5">
           <span className="text-xs text-muted-foreground">{replies.length} 条回复</span>

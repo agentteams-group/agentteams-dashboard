@@ -108,7 +108,7 @@ export function ReleaseControls({
           <Button
             variant="outline"
             size="sm"
-            className="h-5 px-1.5 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+            className="h-5 px-1.5 text-xs"
             onClick={() => void act('release')}
             title="人工放行（写入房间状态事件并落审计）"
           >
