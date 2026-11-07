@@ -11,6 +11,7 @@ import {
   selectAndMark,
   toProbeRow,
   verifySetupToken,
+  type BackendAuth,
   type BackendName,
   type ProbeRow,
 } from '@/lib/backend-config';
@@ -22,7 +23,9 @@ import { isAddressLike, resolveBackendUrl } from '@/lib/backend-url-resolve';
 // Plugin /config_test semantics (F1c parity):
 // - body { backends: { [name]: { internal?, external? } } } = test the DRAFT
 //   (unsaved form values) for the given backends; omit/empty = test the
-//   currently configured candidate list.
+//   currently configured candidate list. A slot is a URL string or
+//   { url, auth } — the DRAFT credential probes the address behind the
+//   gateway door (a `***` secret echo falls back to the saved credential).
 // - A draft test NEVER touches the effective cache; only when the tested
 //   list equals the SAVED config list (applied) does selectAndMark re-elect.
 // - A failed test NEVER clears the current effective address.
@@ -41,7 +44,40 @@ import { isAddressLike, resolveBackendUrl } from '@/lib/backend-url-resolve';
 // session/token holders above, strict allowlist when set) plus an
 // unconditional deny of the cloud metadata sentinel (169.254.169.254).
 
-type DraftAddrs = { internal?: string; external?: string };
+type DraftAddrs = { internal?: DraftSlot; external?: DraftSlot };
+/** 草稿槽位：URL 字符串（服务自身认证）或 {url, auth?}（草稿凭据参与探测）。 */
+type DraftSlot = string | { url: string; auth?: BackendAuth };
+
+function draftSlotUrl(slot: DraftSlot | undefined): string {
+  if (typeof slot === 'string') return slot;
+  return slot?.url ?? '';
+}
+
+/** 草稿槽位解析：地址形状照旧（允许省略协议）；对象形态保留 auth —— 设置
+ * 页「测试」必须能带上表单里刚填的网关凭据，否则门后地址永远 401。秘密的
+ * 「'***' = 继承已存值」在探测侧判定，这里不丢字段。 */
+function parseDraftSlot(raw: unknown): DraftSlot | undefined {
+  if (typeof raw === 'string') return isAddressLike(raw) ? raw.trim() : undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const obj = raw as { url?: unknown; auth?: unknown };
+  const url = typeof obj.url === 'string' ? obj.url.trim() : '';
+  if (!isAddressLike(url)) return undefined;
+  const auth = obj.auth;
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return url;
+  const a = auth as Record<string, unknown>;
+  const type = typeof a.type === 'string' ? a.type.trim().toLowerCase() : '';
+  if (type === 'basic') {
+    const username = typeof a.username === 'string' ? a.username.trim() : '';
+    if (!username) return url;
+    const password = typeof a.password === 'string' ? a.password.trim() : '';
+    return { url, auth: { type: 'basic', username, password } };
+  }
+  if (type === 'bearer') {
+    const token = typeof a.token === 'string' ? a.token.trim() : '';
+    return { url, auth: { type: 'bearer', token } };
+  }
+  return url;
+}
 
 function parseDrafts(body: unknown): Partial<Record<BackendName, DraftAddrs>> | null {
   if (body == null) return {};
@@ -54,11 +90,10 @@ function parseDrafts(body: unknown): Partial<Record<BackendName, DraftAddrs>> | 
     const entry = (raw as Record<string, unknown>)[name];
     if (!entry || typeof entry !== 'object') continue;
     const addrs: DraftAddrs = {};
-    const internal = (entry as DraftAddrs).internal;
-    const external = (entry as DraftAddrs).external;
-    // 草稿允许省略协议（host:port）——协议在下面按 https 优先解析。
-    if (isAddressLike(internal)) addrs.internal = internal!.trim();
-    if (isAddressLike(external)) addrs.external = external!.trim();
+    const internal = parseDraftSlot((entry as Record<string, unknown>).internal);
+    const external = parseDraftSlot((entry as Record<string, unknown>).external);
+    if (internal) addrs.internal = internal;
+    if (external) addrs.external = external;
     if (addrs.internal || addrs.external) out[name] = addrs;
   }
   return out;
@@ -93,7 +128,8 @@ export async function POST(request: NextRequest) {
   for (const name of BACKEND_NAMES) {
     const draft = drafts[name];
     if (!draft) continue;
-    for (const raw of [draft.internal, draft.external]) {
+    for (const slot of [draft.internal, draft.external]) {
+      const raw = draftSlotUrl(slot);
       if (!raw) continue;
       const probeUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`;
       if (!isTestTargetAllowed(probeUrl)) {
@@ -108,24 +144,33 @@ export async function POST(request: NextRequest) {
   // sources 记住「解析结果 ← 原始输入」的对应，行里回报 resolvedFrom 供 UI
   // 回填输入框。
   const targets: Partial<Record<BackendName, string[]>> = {};
-  const sources: Partial<Record<BackendName, Array<{ url: string; from?: string }>>> = {};
+  const sources: Partial<
+    Record<BackendName, Array<{ url: string; from?: string; auth?: BackendAuth }>>
+  > = {};
   await Promise.all(
     BACKEND_NAMES.map(async (name) => {
       const draft = drafts[name];
-      const raws = draft
-        ? [draft.internal, draft.external].filter((v): v is string => !!v)
+      const slots = draft
+        ? [draft.internal, draft.external].filter((v): v is DraftSlot => v !== undefined)
         : [];
-      if (raws.length === 0) {
+      if (slots.length === 0) {
         const saved = backendCandidatesSync(name);
         if (saved.length > 0) targets[name] = saved;
         return;
       }
-      const rows: Array<{ url: string; from?: string }> = [];
-      for (const raw of raws) {
+      const rows: Array<{ url: string; from?: string; auth?: BackendAuth }> = [];
+      for (const slot of slots) {
+        const raw = draftSlotUrl(slot);
+        if (!raw) continue;
         const resolved = await resolveBackendUrl(raw);
         if (!isHttpUrl(resolved.url)) continue;
         if (rows.some((r) => r.url === resolved.url)) continue;
-        rows.push(resolved.changed ? { url: resolved.url, from: raw } : { url: resolved.url });
+        const auth = typeof slot === 'object' ? slot.auth : undefined;
+        rows.push({
+          url: resolved.url,
+          ...(resolved.changed ? { from: raw } : {}),
+          ...(auth ? { auth } : {}),
+        });
       }
       if (rows.length === 0) {
         const saved = backendCandidatesSync(name);
@@ -159,7 +204,9 @@ export async function POST(request: NextRequest) {
   await Promise.all(
     (Object.keys(targets) as BackendName[]).map(async (name) => {
       const urls = targets[name]!;
-      const probeResults = await Promise.all(urls.map((url) => probeBackend(name, url, 6000)));
+      const probeResults = await Promise.all(
+        urls.map((url, i) => probeBackend(name, url, 6000, sources[name]?.[i]?.auth)),
+      );
       const rows = urls.map((url, i) => toProbeRow(url, probeResults[i], sources[name]?.[i]?.from));
       results[name] = rows;
 

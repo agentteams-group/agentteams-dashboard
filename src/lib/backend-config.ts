@@ -912,7 +912,24 @@ async function probeFetchWithVettedRedirects(url: string, init: RequestInit, max
   }
 }
 
-async function probeOnce(name: BackendName, url: string, timeoutMs: number): Promise<ProbeResult> {
+/** 探测用凭据头：草稿凭据（未保存的表单值）优先——设置页「测试」必须能
+ * 量到门后地址的真实可达性，否则填了 Basic 账号密码也永远停在 401。
+ * 草稿凭据不完整或带 '***'（已存秘密的回显占位）时不算凭据：回落到该地址
+ * 已存的凭据，绝不把占位符当密码发出去。 */
+function probeAuthHeaders(
+  name: BackendName,
+  url: string,
+  draftAuth?: BackendAuth | null,
+): Record<string, string> {
+  return authHeaderFor(normalizeAuth(draftAuth) ?? authForUrl(name, url));
+}
+
+async function probeOnce(
+  name: BackendName,
+  url: string,
+  timeoutMs: number,
+  draftAuth?: BackendAuth | null,
+): Promise<ProbeResult> {
   const spec = PROBE_PATHS[name];
   const target = new URL(spec.path, url.replace(/\/+$/, '')).toString();
   const controller = new AbortController();
@@ -928,7 +945,7 @@ async function probeOnce(name: BackendName, url: string, timeoutMs: number): Pro
         // 会停在 401/403（httpOk=false），永远进不了 effective 选举，设置页的
         // 「当前生效」就永远空着。MinIO 用 Access Key/Secret Key（S3 签名），
         // 不在这套 Authorization 语义里 —— 显式跳过。
-        ...(name === 'minio' ? {} : backendAuthHeader(name, url)),
+        ...(name === 'minio' ? {} : probeAuthHeaders(name, url, draftAuth)),
       },
       body: spec.body,
     });
@@ -953,13 +970,14 @@ export async function probeBackend(
   name: BackendName,
   url: string,
   timeoutMs = 5000,
+  draftAuth?: BackendAuth | null,
 ): Promise<ProbeResult> {
-  const first = await probeOnce(name, url, timeoutMs);
+  const first = await probeOnce(name, url, timeoutMs, draftAuth);
   if (first.ok) return first;
   // v0.4.92 port: a one-off network-layer blip should not fail a row — retry
   // once after 500ms. Connected results (including 401/403) are never retried.
   await new Promise((resolve) => setTimeout(resolve, 500));
-  return probeOnce(name, url, timeoutMs);
+  return probeOnce(name, url, timeoutMs, draftAuth);
 }
 
 /** Convert a probe result into a UI row (plugin config_test row semantics).

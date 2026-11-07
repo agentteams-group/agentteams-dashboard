@@ -192,6 +192,152 @@ describe('无协议草稿地址（host:port）：测试前解析协议', () => {
   });
 });
 
+describe('草稿凭据参与探测（门后地址「测试」401 修复）', () => {
+  /** 起一个本地目标服务器，记录每次请求的 Authorization 头。 */
+  async function startCaptureServer() {
+    const seen: Array<string | undefined> = [];
+    const srv = createServer((req, res) => {
+      seen.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const addr = srv.address();
+    if (!addr || typeof addr === 'string') throw new Error('no server');
+    return {
+      url: `http://127.0.0.1:${addr.port}`,
+      seen,
+      close: () => new Promise<void>((resolve) => srv.close(() => resolve())),
+    };
+  }
+
+  const basic = (username: string, password: string) =>
+    `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+
+  it('草稿 Basic 凭据进入发往目标服务器的 Authorization 头', async () => {
+    const gate = await startCaptureServer();
+    try {
+      const res = await POST(
+        post({
+          backends: {
+            controller: {
+              internal: { url: gate.url, auth: { type: 'basic', username: 'ops', password: 's3cret' } },
+            },
+          },
+        }),
+      );
+      const data = (await res.json()) as TestResponse;
+      expect(res.status).toBe(200);
+      expect(data.results.controller[0].url).toBe(gate.url);
+      expect(data.results.controller[0].httpOk).toBe(true);
+      expect(gate.seen).toContain(basic('ops', 's3cret'));
+    } finally {
+      await gate.close();
+    }
+  });
+
+  it('草稿凭据覆盖已存凭据头（测试量的是表单草稿）', async () => {
+    const gate = await startCaptureServer();
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: {
+              url: gate.url,
+              auth: { type: 'basic', username: 'ops', password: 'stored' },
+            },
+          },
+        },
+      }),
+    );
+    try {
+      await POST(
+        post({
+          backends: {
+            controller: {
+              internal: { url: gate.url, auth: { type: 'basic', username: 'ops', password: 'fresh' } },
+            },
+          },
+        }),
+      );
+      expect(gate.seen).toContain(basic('ops', 'fresh'));
+      expect(gate.seen).not.toContain(basic('ops', 'stored'));
+    } finally {
+      await gate.close();
+    }
+  });
+
+  it('Bearer 草稿凭据同样参与探测', async () => {
+    const gate = await startCaptureServer();
+    try {
+      await POST(
+        post({
+          backends: {
+            controller: { internal: { url: gate.url, auth: { type: 'bearer', token: 'api-key-1' } } },
+          },
+        }),
+      );
+      expect(gate.seen).toContain('Bearer api-key-1');
+    } finally {
+      await gate.close();
+    }
+  });
+
+  it('*** 占位不当密码发送：无已存凭据时探测不带 Authorization', async () => {
+    const gate = await startCaptureServer();
+    try {
+      const res = await POST(
+        post({
+          backends: {
+            controller: {
+              internal: { url: gate.url, auth: { type: 'basic', username: 'ops', password: '***' } },
+            },
+          },
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(gate.seen.length).toBeGreaterThan(0);
+      expect(gate.seen.every((value) => value === undefined)).toBe(true);
+    } finally {
+      await gate.close();
+    }
+  });
+
+  it('*** 占位回落到已存凭据（回显 = 保持不变）', async () => {
+    const gate = await startCaptureServer();
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: {
+              url: gate.url,
+              auth: { type: 'basic', username: 'ops', password: 'stored' },
+            },
+          },
+        },
+      }),
+    );
+    try {
+      await POST(
+        post({
+          backends: {
+            controller: {
+              internal: { url: gate.url, auth: { type: 'basic', username: 'ops', password: '***' } },
+            },
+          },
+        }),
+      );
+      expect(gate.seen).toContain(basic('ops', 'stored'));
+    } finally {
+      await gate.close();
+    }
+  });
+});
+
 describe('PR-91 review (Block 2): the probe is no longer unauthenticated', () => {
   it('pre-login probe without a token → 403 token-required, nothing probed', async () => {
     fs.writeFileSync(

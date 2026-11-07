@@ -45,6 +45,36 @@ type ServerAddrs = { internal?: ServerEntry; external?: ServerEntry };
 
 const REDACTED_SECRET = '***';
 
+/** 保存成功后离开本页，而 setup token 只活在内存 state 里 → 再次打开
+ * ?setup=1 时 token 为空；PR-91 之后匿名 GET 只回门形状（不返回已存拓扑），
+ * 于是地址全空。把 token 放 sessionStorage（标签页级、关浏览器即失，不做
+ * 长期留存），挂载时读回，交给下面 token 驱动的 prefill 重取已存条目。 */
+const SETUP_TOKEN_STORAGE_KEY = 'agentteams.setupToken';
+
+function readStoredSetupToken(): string {
+  try {
+    return window.sessionStorage.getItem(SETUP_TOKEN_STORAGE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberSetupToken(value: string): void {
+  try {
+    if (value) window.sessionStorage.setItem(SETUP_TOKEN_STORAGE_KEY, value);
+  } catch {
+    /* 隐私模式 / storage 不可用：退化成手输 token */
+  }
+}
+
+function forgetSetupToken(): void {
+  try {
+    window.sessionStorage.removeItem(SETUP_TOKEN_STORAGE_KEY);
+  } catch {
+    /* 同上 */
+  }
+}
+
 interface BackendStatus {
   configured: boolean;
   candidates: string[];
@@ -242,6 +272,14 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
     };
   }, []);
 
+  // 重开 ?setup=1 时把上次保存成功的 setup token 读回 state —— 下面的
+  // token 驱动 prefill 会用它带 Authorization 重取已存条目（本页此前只在
+  // 用户手输 token 时才回填，重开即空白）。
+  useEffect(() => {
+    const saved = readStoredSetupToken();
+    if (saved) setToken((prev) => prev || saved);
+  }, []);
+
   // PR-91 review: the saved topology is no longer served pre-login. Once
   // the operator enters the setup token (reconfigure mode), refetch with
   // it — same owner gate as the pre-login write — and prefill the saved
@@ -262,7 +300,14 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
       })
         .then((res) => res.json().catch(() => null))
         .then((data: SetupStatusResponse | null) => {
-          if (cancelled || (!data?.backends && !data?.entries)) return;
+          if (cancelled || !data) return;
+          if (!data.backends && !data.entries) {
+            // 服务端不返回拓扑 = token 不认（PR-91：匿名只回门形状）——丢掉
+            // 过期 token，下次重开不再白跑一次。
+            forgetSetupToken();
+            return;
+          }
+          rememberSetupToken(trimmed);
           setForm((prev) => applyPrefill(data, prev));
           if (data.effective) setEffective(data.effective);
         })
@@ -337,8 +382,15 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
             // the save) — the endpoint is no longer an unauthenticated
             // fetch proxy.
             token: token.trim() || undefined,
-            // 连通性探测只带地址（草稿凭据不进探测通道）。
-            backends: { [name]: { internal: internal || undefined, external: external || undefined } },
+            // 草稿凭据一起送探测：门后地址（公网 Basic/API key 门）只有带
+            // 上表单里刚填的凭据才量得到真实可达性；已存秘密回显的 '***'
+            // 由服务端认定为「沿用已存凭据」，不会当密码发出去。
+            backends: {
+              [name]: {
+                internal: internal ? draftToEntry(form[name].internal) : undefined,
+                external: external ? draftToEntry(form[name].external) : undefined,
+              },
+            },
             addressMode,
           }),
         });
@@ -460,6 +512,9 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
         warnings?: Array<{ backend?: string; slot?: 'internal' | 'external'; warning?: string }>;
       };
       if (res.ok && data.ok) {
+        // 保存成功 = token 有效：留一份在 sessionStorage，重开 ?setup=1 才能
+        // 带 Authorization 取回已存地址（匿名 GET 不返回拓扑）。
+        rememberSetupToken(token.trim());
         // 无协议地址（host:port）已被服务端解析成确定的协议：回填输入框，
         // 让用户看到真正落库的地址。
         if (data.resolved) {
@@ -490,7 +545,10 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
         'invalid-token': '首次启动 token 不正确（见服务器日志 docker logs <容器>，或 env DASHBOARD_SETUP_TOKEN）',
         'already-configured': '后端已配置过；请刷新页面（或让管理员在设置里修改）',
       };
-      setSaveError(messages[data.error ?? ''] || data.error || `保存失败（HTTP ${res.status}）`);
+      const error = data.error ?? '';
+      // token 不认 → 丢掉存下的那份，别让下次重开继续用坏 token。
+      if (error === 'invalid-token' || error === 'token-required') forgetSetupToken();
+      setSaveError(messages[error] || error || `保存失败（HTTP ${res.status}）`);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : '保存失败');
     } finally {
@@ -532,7 +590,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           <CardTitle className="text-lg">{reconfigure ? '后端配置' : '后端配置（首次启动）'}</CardTitle>
           <CardDescription>
             {reconfigure
-              ? `覆盖现有后端配置${tokenRequired ? '（登录前保存需要 setup token）' : '（本实例已关闭登录前 token 验证，直接保存即可）'}。保存后回到登录页；配置在挂载卷中，重启不丢失。登录前默认看不到已保存的具体值，直接填写正确地址即可；填入 setup token 后已存值会自动回填空槽。`
+              ? `覆盖现有后端配置${tokenRequired ? '（登录前保存需要 setup token）' : '（本实例已关闭登录前 token 验证，直接保存即可）'}。保存后回到登录页；配置在挂载卷中，重启不丢失。登录前默认看不到已保存的具体值；token 在本标签页内记住（关闭浏览器即失效），再次打开本页会自动带它取回已存地址。`
               : 'Dashboard 还没有可用的后端地址。填写后保存即可登录；配置保存在挂载卷中，重启不丢失。'}
             每个后端可只填一个地址；「内网」= 容器/集群网络，「外网」= 跨网段备用（自动切换）。
             「测试」一次验证该后端填写的全部地址（✅ 可用 / ⚠️ 已连通需鉴权 / ❌ 不可达，含原因分类）。
