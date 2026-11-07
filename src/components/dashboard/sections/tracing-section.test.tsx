@@ -3,6 +3,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TracingSection } from './tracing-section';
 
+// The first case drives two Radix comboboxes + a trace detail fetch; under
+// full-suite parallel load it periodically exceeds the default 5s budget
+// (passes in isolation). Widen only this file's budget — assertions and
+// waitFor intervals are unchanged.
+vi.setConfig({ testTimeout: 15_000 });
+
 // jsdom has no layout scrolling; Radix uses this when focusing menu options.
 const scrollDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
 beforeAll(() => Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() }));

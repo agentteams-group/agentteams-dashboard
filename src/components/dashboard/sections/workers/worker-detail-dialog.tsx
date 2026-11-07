@@ -15,6 +15,7 @@ import { useWorkerSkills, useUploadWorkerSkill } from '@/hooks/use-agentteams-wo
 import { useWorkerApproval, APPROVAL_LEVELS, APPROVAL_LEVEL_LABELS } from '@/hooks/use-worker-approval';
 import { PluginDetailBlocks } from '@/components/plugins/plugin-detail-blocks';
 import { WorkerRuntimeConfigPanel } from '@/components/dashboard/sections/workers/worker-runtime-config-panel';
+import { WorkerRestartEffectivePanel } from '@/components/dashboard/sections/workers/worker-restart-effective-panel';
 import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerChannelsPanel } from '@/components/dashboard/sections/workers/worker-channels-panel';
 import { WorkerToolsPanel } from '@/components/dashboard/sections/workers/worker-tools-panel';
@@ -163,8 +164,14 @@ export function WorkerDetailDialog({
               )}
 
               {/* B5: runtime-config 编辑（#1231 消费；上游未合并时 404 占位横幅）。
-                  key=worker.name：换 worker 重挂载，编辑态自然清零 */}
-              <WorkerRuntimeConfigPanel key={worker.name} workerName={worker.name} />
+                  key=worker.name：换 worker 重挂载，编辑态自然清零。
+                  runtime 分支：QwenPaw 用 running-config 编辑面板；其它运行时走
+                  controller member-config 的「生效状态 + 重启生效」面板（#1473）。 */}
+              {worker.runtime === 'qwenpaw' ? (
+                <WorkerRuntimeConfigPanel key={worker.name} workerName={worker.name} />
+              ) : (
+                <WorkerRestartEffectivePanel key={`apply-${worker.name}`} workerName={worker.name} />
+              )}
 
               {/* 缺口 3: LLM 调优（#146；读回显 + 字段级 diff，归属 Worker→团队→registry）。
                   key=worker.name：换 worker 重挂载，编辑态自然清零 */}
