@@ -1,6 +1,6 @@
 'use client';
 
-import { Lock, UserCheck } from 'lucide-react';
+import { UserCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -53,13 +53,6 @@ export function HumanPanel() {
                       {human.matrixUserID}
                     </p>
                     <CopyButton text={human.matrixUserID} className="h-5 w-5" />
-                  </div>
-                )}
-                {human.initialPassword && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <Lock className="w-3 h-3 text-amber-500" />
-                    <p className="text-xs text-amber-600 dark:text-amber-400">初始密码已生成</p>
-                    <CopyButton text={human.initialPassword} className="h-5 w-5" />
                   </div>
                 )}
                 {human.rooms && human.rooms.length > 0 && (

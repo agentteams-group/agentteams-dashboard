@@ -210,4 +210,7 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 可观测配置落 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`（0600 原子 rename，目录 0700），不写 Controller；未建文件时回退 `LANGFUSE_*` env，`revision` 固定为 `environment`
   - 下发给 Worker 的 env 仅：`AGENTTEAMS_OTEL_ENABLED`、`AGENTTEAMS_OTEL_CAPTURE_CONTENT`、`AGENTTEAMS_OTEL_CONFIG_REVISION`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`、`OTEL_EXPORTER_OTLP_PROTOCOL`（http/protobuf）、`OTEL_EXPORTER_OTLP_HEADERS`、`OTEL_EXPORTER_OTLP_TRACES_HEADERS`；Langfuse 项目密钥只留 Dashboard 服务端
   - 关闭采集同样要执行一次 apply；apply 前必须 `revision` 匹配最新保存值，否则 409
+  - 查询后端自 #194 起双轨：`backend: 'langfuse'|'agentloop'`（env `AGENTTEAMS_TRACING_BACKEND` 切默认），AgentLoop 走 SLS（`AGENTLOOP_REGION/WORKSPACE/SLS_PROJECT/SLS_LOGSTORE`，`AGENTLOOP_SLS_ENDPOINT` 可覆盖），凭据走 `@alicloud/credentials` 服务端链，分发层在 `tracing-server.ts`，scope 校验共用 `tracing-scope.ts`
+  - 上游 #1481 起 teams/humans 列表响应不再携带 `initialPassword`（详情 GET 保留）；列表渲染密码的 UI 会静默失效，必须走单个 GET
+  - 上游 #1522 起 runtime-config PUT 必带 `If-Match`（缺 428、过期 409+`{etag,current}`）；Dashboard B5 代理已双向透传 If-Match/ETag
   - `AGENTTEAMS_TRACING_DEMO=true` 仅用于无 Controller 的隔离演示，需同时 `AGENTTEAMS_AUTH_DISABLED=true` 且 `AGENTTEAMS_TRACING_DEMO_SCOPE` 提供合法 JSON scope
