@@ -673,4 +673,88 @@ describe('POST /api/auth/login (dual track, M19)', () => {
       requestSpy.mockRestore();
     }
   });
+
+  // ── Token-only track (no Console admin / no Matrix Human account) ──────
+  // Field report: Console 401 + Matrix 403 for the same operator, while the
+  // Controller admin token is valid. A single-operator deployment must be
+  // able to log in with that token alone.
+
+  it('token-only: valid Controller admin token → 200 level-3 session, mode controller-token, session cookie', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    const fetchMock = installFetchMock({ humansList: { body: { humans: [] } } });
+
+    const response = await POST(request({ controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(200);
+    const data = await responseJson(response);
+    expect(data).toEqual({
+      success: true,
+      user: { username: 'controller-admin', level: 3 },
+      mode: 'controller-token',
+    });
+
+    const cookies = response.headers.getSetCookie();
+    const sessionCookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+    expect(sessionCookie).toBeTruthy();
+    const value = (sessionCookie as string).split(';')[0].slice(SESSION_COOKIE_NAME.length + 1);
+    const boundSession = validateSessionToken(value);
+    expect(boundSession?.level).toBe(3);
+    // The token is held server-side only (never in a cookie / response).
+    expect(boundSession?.credential).toEqual({ kind: 'controller-token', token: 'admin-token-1' });
+    expect(cookies.every((c) => !c.includes('admin-token-1'))).toBe(true);
+    expect(JSON.stringify(data)).not.toContain('admin-token-1');
+
+    // Neither the Console nor the Matrix track was touched: only the
+    // admin-only Controller verification ran.
+    expect(mockCallHigressConsole).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      'http://controller.test:8090/api/v1/humans',
+    ]);
+  });
+
+  it('token-only: invalid token → 401 Controller 管理员 token 无效, no cookie, no session', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    installFetchMock({ humansList: { status: 403 } });
+
+    const response = await POST(request({ controllerToken: 'not-an-admin-token' }));
+    expect(response.status).toBe(401);
+    const data = await responseJson(response);
+    expect(data.success).toBe(false);
+    expect(data.error).toBe('Controller 管理员 token 无效');
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(mockCallHigressConsole).not.toHaveBeenCalled();
+  });
+
+  it('token-only: username+password present → dual track unchanged (a valid token never short-circuits it)', async () => {
+    mockCallHigressConsole.mockResolvedValue(successfulConsoleLogin());
+    const fetchMock = installFetchMock({ humansList: { body: { humans: [] } } });
+
+    const response = await POST(request({ username: 'admin', password: 'password', controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(200);
+    const data = await responseJson(response);
+    expect(data.mode).toBe('higress');
+    expect(data.user).toEqual({ username: 'admin', level: 3 });
+    // The token was not consumed as a login credential.
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.every((u) => !u.endsWith('/api/v1/humans'))).toBe(true);
+  });
+
+  it('token-only: username+password present but both tracks fail → 401, not a silent token login', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    installFetchMock({ humansList: { body: { humans: [] } }, matrixLogin: { status: 401 } });
+
+    const response = await POST(request({ username: 'carol', password: 'wrong', controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(401);
+    const data = await responseJson(response);
+    expect(data.success).toBe(false);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('token-only: no credentials at all → 400 (token branch requires a token)', async () => {
+    installFetchMock({});
+
+    const response = await POST(request({}));
+    expect(response.status).toBe(400);
+    const data = await responseJson(response);
+    expect(data.error).toBe('Username and password are required');
+  });
 });

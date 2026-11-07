@@ -21,7 +21,9 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [controllerToken, setControllerToken] = useState('');
+  const [tokenOnlyToken, setTokenOnlyToken] = useState('');
   const [adminVisible, setAdminVisible] = useState(false);
+  const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setMatrixAuth = useMatrixStore((s) => s.setMatrixAuth);
@@ -50,6 +52,40 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
       }
 
       // Store Matrix auto-login result if available
+      if (data.matrix?.accessToken) {
+        setMatrixAuth(data.matrix);
+      }
+
+      // Small delay to ensure cookie is fully persisted before reload
+      setTimeout(() => onLoginSuccess?.(), 100);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Token-only login: no username/password at all. The Controller admin token
+  // is admin-grade on its own (single-operator deployments may have neither a
+  // Console admin nor a Matrix Human account).
+  const handleTokenLogin = async () => {
+    if (!tokenOnlyToken) return;
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(apiUrl('/api/auth/login'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ controllerToken: tokenOnlyToken }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Login failed');
+      }
+
       if (data.matrix?.accessToken) {
         setMatrixAuth(data.matrix);
       }
@@ -158,6 +194,50 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
                 />
                 <p className="text-xs text-muted-foreground">
                   仅在管理员要求额外验证时填写。普通团队账号无需填写。
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setTokenOnlyVisible((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {tokenOnlyVisible ? '收起 token 直接登录' : '仅用 Controller 管理员 token 登录'}
+            </button>
+            {tokenOnlyVisible && (
+              <div className="space-y-2">
+                <Input
+                  id="controller-token-only"
+                  type="password"
+                  placeholder="Controller 管理员 token"
+                  value={tokenOnlyToken}
+                  onChange={(e) => setTokenOnlyToken(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleTokenLogin()}
+                  disabled={isLoading}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTokenLogin}
+                  disabled={isLoading || !tokenOnlyToken}
+                  className="w-full h-10 rounded-xl"
+                >
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      登录中...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Token 登录
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  没有 Console / Matrix 账号时使用。该 token 等同于管理员凭据，请勿在公共设备上保存。
                 </p>
               </div>
             )}

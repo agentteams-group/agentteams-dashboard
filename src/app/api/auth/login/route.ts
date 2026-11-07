@@ -19,6 +19,13 @@
 //   Controller credential for level 2/3 — A2 chain scopes reads to
 //   accessibleTeams. Non-Human Matrix accounts (no CR) → generic 401.
 //
+// Track Controller token (no Console/Matrix account at all):
+//   A pasted Controller admin token on its own. Used by single-operator
+//   deployments where neither a Console admin nor a Matrix Human account is
+//   reachable; the token is verified against an admin-only Controller
+//   endpoint and carried server-side as the session credential. It is
+//   admin-grade by definition, so the session is level 3 like Console.
+//
 // Both tracks fail → 401. Session secret missing → login fails closed
 // (dashboard-session throws, logged once).
 //
@@ -178,6 +185,15 @@ export async function POST(request: NextRequest) {
     const adminUsername = typeof body.adminUsername === 'string' ? body.adminUsername.trim() : '';
     const adminPassword = typeof body.adminPassword === 'string' ? body.adminPassword : '';
     const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
+
+    // Token-only track: a Controller admin token is admin-grade on its own,
+    // so a deployment with no reachable Console admin AND no Matrix Human
+    // account can still log in. Strictly gated on BOTH credential fields
+    // being absent — any username/password pair keeps the dual-track flow
+    // below byte-for-byte.
+    if (!username && !password && controllerToken) {
+      return await attemptControllerTokenLogin(request, controllerToken);
+    }
 
     if (!username || !password) {
       return NextResponse.json({ success: false, error: 'Username and password are required' }, { status: 400 });
@@ -397,6 +413,53 @@ async function verifyControllerToken(request: NextRequest, token: string): Promi
   } catch {
     return false;
   }
+}
+
+/**
+ * Token-only track: the pasted Controller admin token is the credential.
+ * Security note: this token is admin-grade — logging in with it grants the
+ * same level-3 data-plane standing as a Console admin login, which is
+ * intended for single-operator deployments. It is verified against an
+ * admin-only Controller endpoint first, held server-side only
+ * (credential kind 'controller-token'), and never written to the session
+ * cookie, the response body, or any client-readable store.
+ */
+async function attemptControllerTokenLogin(
+  request: NextRequest,
+  controllerToken: string,
+): Promise<NextResponse> {
+  if (!(await verifyControllerToken(request, controllerToken))) {
+    return NextResponse.json({ success: false, error: 'Controller 管理员 token 无效' }, { status: 401 });
+  }
+
+  let cookieValue: string;
+  try {
+    ({ cookieValue } = createSession({
+      user: 'controller-admin',
+      crLevel: 1,
+      teams: [],
+      credential: { kind: 'controller-token', token: controllerToken },
+    }));
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
+      { status: 503 },
+    );
+  }
+
+  const responseHeaders = new Headers();
+  responseHeaders.set('content-type', 'application/json');
+  responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+
+  return new NextResponse(
+    JSON.stringify({
+      success: true,
+      user: { username: 'controller-admin', level: 3 },
+      mode: 'controller-token',
+    }),
+    { status: 200, headers: responseHeaders },
+  );
 }
 
 /**
