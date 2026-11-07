@@ -517,13 +517,13 @@ export function MessageBubble({
 
       <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
-          <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
+          <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 items-baseline gap-2 ${message.isMe ? 'justify-end' : ''}`}>
+            <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
               {senderLabel}
             </span>
             {message.isEdited && (
               <span
-                className="text-xs text-muted-foreground italic"
+                className="shrink-0 text-xs text-muted-foreground italic"
                 title={
                   message.revisionCount
                     ? `已编辑 ${message.revisionCount} 次`
@@ -534,13 +534,13 @@ export function MessageBubble({
               </span>
             )}
             {message.status === 'sending' && (
-              <span className="text-xs text-muted-foreground italic">发送中...</span>
+              <span className="shrink-0 text-xs text-muted-foreground italic">发送中...</span>
             )}
             {message.status === 'error' && (
-              <span className="text-xs text-status-failed italic">发送失败</span>
+              <span className="shrink-0 text-xs text-status-failed italic">发送失败</span>
             )}
-            {/* 设计稿把时间放在名字行最右侧；发送/已读标记跟随时间一起排。 */}
-            <span className={`flex shrink-0 items-center gap-1 ${message.isMe ? 'mr-auto pr-3' : 'ml-auto pl-3'}`}>
+            {/* Keep the timestamp and receipt next to the sender on either side. */}
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <MessageTime timestamp={message.timestamp} />
               {message.isMe && message.status === 'sending' && (
                 <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" aria-label="发送中" />
@@ -786,12 +786,11 @@ export function MessageBubble({
           )}
 
           <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />
+        </div>
 
-          {/* 续接消息（同发送者分组）默认不占行：时间/回执在 hover 时显示在行尾。 */}
-          {!showAvatar && (
-          <div className={`flex items-center gap-1 text-xs ${
-            isContinuation && !isHovered && !showActions ? 'opacity-0 group-hover/message:opacity-100' : ''
-          }`}>
+        {/* Continuations keep metadata below the content, including on touch screens. */}
+        {!showAvatar && (
+          <div data-chat-message-footer className="mt-1 flex items-center gap-1 text-xs">
             <MessageTime timestamp={message.timestamp} />
             {/* element-web style delivery ticks for my own messages */}
             {message.isMe && message.status === 'sending' && (
@@ -808,8 +807,7 @@ export function MessageBubble({
               )
             )}
           </div>
-          )}
-        </div>
+        )}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button
