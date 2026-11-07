@@ -196,11 +196,12 @@ Entries discovered by the Agent while performing [specific task description] sho
   - 干预协议：isInterventionConfirmation 按 question/options/questions 字段存在判定，v1 工具确认不受影响；上游 v2 answer 契约就绪前回写一律降级为自然语言消息，UI 徽标常显
   - 审查闭环：review.report v2 块；放行记录走 com.agentteams.release 房间状态事件（BFF state-event 仅放行 com.agentteams.* 前缀）；自动放行走 com.agentteams.space（默认关）；artifact-state 放行历史优先
   - 导航数据源：nav-items.ts 的 NavItem 带 area('workbench'|'console') + group + legacyGroup（store persist v4）；侧栏分组统一走 use-nav-sections.ts
+  - 2026-11-07 #196 工作区改造后：侧栏一级入口改为 workspaceMenus 四菜单（助手/工作台/资产中心/成员与团队，workspace-navigation.tsx），audit/overview/tracing/插件经设置弹窗 ManagementTab 进入；`resources/{workers,teams,...}` 深链直入对应 section（nav-hash consoleMap 改直映射，不再进 ResourcesSection 容器）；默认落点 L3=平台助手 operations 房、L2=Leader DM（preferredAgentRoom）；useHumans/useManagers 加 `enabled: userLevel>=3` 门控
   - 分层 hash 唯一映射层是 src/lib/nav-hash.ts：section id 保持扁平，hashForSection 对无映射 id 回退原值；旧扁平 hash 经 history.replaceState 归一化，带 roomId/params 的分层 hash 不归一化
   - 装验视觉口径：会话气泡浅色轻装饰（自己 emerald 浅底/Agent 中性浅底，46rem 宽）；标签卡统一 rounded-lg 无阴影；顶栏资源计数与连接状态合并为胶囊；侧栏宽度 w-auto 自适应 168-256px
   - 本环境 npm ci 报 usage error 不可用，装依赖用 npm install --no-audit --no-fund（约 2 分钟）
   - `npm install` 若非必要会改动 `package-lock.json` 的 `dev`/`devOptional` 标记，提交前用 `git checkout -- package-lock.json` 还原这类非语义 churn
-  - 全量 vitest 基线：313 文件 / 2867 用例（#182 评审修复后），全量约 5-6 分钟；`@huggingface/transformers`、`opencc-js` 已声明，缺装会挂 speech/voice 相关 4 个文件
+  - 全量 vitest 基线：325 文件 / 2934 用例（#196 工作区改造后），全量约 5-6 分钟；`@huggingface/transformers`、`opencc-js` 已声明，缺装会挂 speech/voice 相关 4 个文件
 
 [Project Knowledge Summary]
 - Date: 2026-11-06
