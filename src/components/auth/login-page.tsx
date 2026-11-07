@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow } from 'lucide-react';
+import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow, Settings2 } from 'lucide-react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,7 +16,6 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPageProps) {
-  const router = useRouter();
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
@@ -188,18 +186,20 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
               </>
             )}
           </Button>
-          {/* F1e (plugin parity: the config surface is always one click away,
-              not a first-launch easter egg) — re-configure backends from a
-              logged-out browser when the environment changed or addresses
-              are wrong. Pre-login writes stay token-gated server-side. */}
+          {/* 登录页其余部分保持原样：只加一个「配置后端地址」按钮，
+              点击才跳转到 ?setup=1（异地/换机部署需要改地址时用）。
+              服务端 setup token 门控不变（ENFORCE=0 时免 token）。 */}
           <div className="pt-1 text-center">
-            <button
+            <Button
               type="button"
-              onClick={() => router.push('?setup=1')}
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground h-9"
+              onClick={() => window.location.assign('/?setup=1')}
             >
-              连接设置与登录帮助
-            </button>
+              <Settings2 className="w-3.5 h-3.5 mr-1" />
+              配置后端地址
+            </Button>
           </div>
         </CardContent>
       </Card>
