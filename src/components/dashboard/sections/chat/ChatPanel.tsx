@@ -3,6 +3,7 @@ import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 import styles from './agent-conversation.module.css';
 import { AssistantTaskNote } from './components/AssistantTaskNote';
+import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -15,6 +16,7 @@ interface ChatPanelProps {
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   className?: string;
+  taskFeed?: AssistantTaskFeed;
 }
 
 export function ChatPanel({
@@ -25,6 +27,7 @@ export function ChatPanel({
   canSend = true,
   onSendMessage,
   className = '',
+  taskFeed,
 }: ChatPanelProps) {
   return (
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
@@ -47,7 +50,7 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
-      {(room.agentRole || room.type === 'team') && <AssistantTaskNote room={room} rooms={rooms ?? [room]} contextOpen={contextPanel !== null} onOpen={() => onContextPanelChange(null)} />}
+      {(room.agentRole || room.type === 'team') && <AssistantTaskNote room={room} rooms={rooms ?? [room]} contextOpen={contextPanel !== null} onOpen={() => onContextPanelChange(null)} taskFeed={taskFeed} />}
     </div>
   );
 }

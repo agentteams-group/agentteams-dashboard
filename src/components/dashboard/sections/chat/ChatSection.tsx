@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useState, useMemo, useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
@@ -23,7 +23,12 @@ import { MatrixStatusBanner } from './matrix-status-banner';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ChatProvider } from './ChatStore';
 import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
-import { preferredAgentRoom } from './agent-conversations';
+import { preferredAgentRoom, withLeaderAccess, canOpenConversation, conversationStorageKey, LEADER_ACCESS_LABELS } from './agent-conversations';
+import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
+import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
+import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes';
+import { ConversationSwitcher } from './conversation-switcher';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const NARROW_MQ = '(max-width: 767px)';
 
@@ -80,10 +85,14 @@ export function ChatSection() {
     error: humansError,
     refetch: refetchHumans,
   } = useHumans();
-  const { isConnected, userLevel } = useAgentTeamsStore();
-  const { isLoggedIn, userId, logout } = useMatrixStore();
+  const { isConnected, userLevel, sessionUser } = useAgentTeamsStore();
+  const { isLoggedIn, userId, homeserver, logout } = useMatrixStore();
+  const selectionKey = conversationStorageKey(homeserver, userId || sessionUser || '');
+  const roomAccess = useChatRoomAccess();
+  const switcherRef = useRef<HTMLButtonElement>(null);
 
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
+  const selectedRoomId = selection.scope === selectionKey ? selection.id : null;
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(true);
@@ -91,16 +100,6 @@ export function ChatSection() {
 
   // Keep SSR and the first client render consistent; narrow screens use a drawer.
   const narrowViewport = useSyncExternalStore(subscribeNarrowViewport, getNarrowViewport, () => false);
-
-  // Publish the open room to the global sync loop (via the room-meta store)
-  // so it merges live timeline events into that room's message cache. Written
-  // on every selection change; cleared when the room list is empty.
-  const handleSelectRoom = useCallback((roomId: string) => {
-    useRoomMetaStore.getState().setActiveRoomId(roomId);
-    setSelectedRoomId(roomId);
-    setContextPanel(null);
-    setMobileRoomListOpen(false);
-  }, []);
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
@@ -122,9 +121,30 @@ export function ChatSection() {
   // buildRooms and sort at the boundary.
   const roomMeta = useRoomMetaStore((s) => s.meta);
   const rooms = useMemo(
-    () => sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)),
-    [workers, teams, managers, humans, roomMeta],
+    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)), roomAccess.joinedRooms, roomAccess.state)
+      .filter(room => userLevel >= 3 || room.agentRole !== 'operations'),
+    [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel],
   );
+  const taskFeed = useAssistantTaskFeed(undefined, rooms.some(room => room.agentRole || room.type === 'team'));
+  const confirmations = useHitlInboxStore(state => state.confirmations);
+  const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
+  const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
+
+  const handleSelectRoom = useCallback((roomId: string, remember = true) => {
+    const room = rooms.find(room => room.id === roomId);
+    if (!room || !canOpenConversation(room)) return;
+    if (remember) {
+      useHitlInboxStore.getState().takePendingChatRoomId();
+      if (selectionKey) {
+        try { window.localStorage.setItem(selectionKey, roomId); } catch { /* Non-persistent browser. */ }
+      }
+    }
+    useRoomMetaStore.getState().setActiveRoomId(roomId);
+    setSelection({ scope: selectionKey, id: roomId });
+    setContextPanel(null);
+    setMobileRoomListOpen(false);
+  }, [rooms, selectionKey]);
+
 
   const projectionNotices = useMemo(() => {
     const notices: { key: string; message: string; retry: () => void }[] = [];
@@ -181,7 +201,7 @@ export function ChatSection() {
   ]);
 
   useEffect(() => {
-    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : null;
+    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId && canOpenConversation(room)) ? selectedRoomId : null;
     useRoomMetaStore.getState().setActiveRoomId(active);
   }, [selectedRoomId, rooms]);
 
@@ -205,18 +225,25 @@ export function ChatSection() {
   const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   useEffect(() => {
     if (isLoading) return;
-    if (pendingChatRoomId && rooms.some((r) => r.id === pendingChatRoomId)) {
-      useHitlInboxStore.getState().takePendingChatRoomId();
-      handleSelectRoom(pendingChatRoomId);
+    if (pendingChatRoomId) {
+      const target = rooms.find(room => room.id === pendingChatRoomId);
+      if (target && canOpenConversation(target)) {
+        useHitlInboxStore.getState().takePendingChatRoomId();
+        handleSelectRoom(pendingChatRoomId, false);
+      }
       return;
     }
-    if (!pendingChatRoomId && selectedRoomId === null) {
-      const preferred = preferredAgentRoom(rooms, userLevel ?? 3);
-      if (preferred) handleSelectRoom(preferred.id);
+    if (rooms.some(room => room.id === selectedRoomId && canOpenConversation(room))) return;
+    if (roomAccess.state === 'checking' && rooms.some(room => room.agentRole === 'leader')) return;
+    let rememberedId: string | null = null;
+    if (selectionKey) {
+      try { rememberedId = window.localStorage.getItem(selectionKey); } catch { /* Non-persistent browser. */ }
     }
-  }, [isLoading, pendingChatRoomId, rooms, selectedRoomId, userLevel, handleSelectRoom]);
+    const preferred = preferredAgentRoom(rooms, userLevel ?? 3, rememberedId);
+    if (preferred) handleSelectRoom(preferred.id, false);
+  }, [isLoading, pendingChatRoomId, rooms, selectedRoomId, userLevel, handleSelectRoom, selectionKey, roomAccess.state]);
   const selectedRoom = useMemo(
-    () => rooms.find((r) => r.id === selectedRoomId) || null,
+    () => rooms.find((r) => r.id === selectedRoomId && canOpenConversation(r)) || null,
     [rooms, selectedRoomId],
   );
 
@@ -249,9 +276,10 @@ export function ChatSection() {
       <RuntimeMapProvider map={runtimeMap}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
-          <Button variant="ghost" size="sm" className="h-8 gap-2 px-0 text-sm text-muted-foreground" aria-label="打开空间列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
-            <PanelLeftOpen className="size-4" />切换对话
+          <Button ref={switcherRef} variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
+            <PanelLeftOpen className="size-4" />
           </Button>
+          <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
           <SyncStatusChip />
         </div>
         {projectionNotices.map((notice) => (
@@ -268,6 +296,8 @@ export function ChatSection() {
           </div>
         ))}
 
+        {roomAccess.state === 'error' && rooms.some(room => room.agentRole === 'leader') && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">团队私聊权限暂时无法核验，其他对话仍可使用。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
+        {pendingChatRoomId && rooms.some(room => room.id === pendingChatRoomId && !canOpenConversation(room)) && <p role="status" className="mx-4 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{LEADER_ACCESS_LABELS[rooms.find(room => room.id === pendingChatRoomId)!.access as keyof typeof LEADER_ACCESS_LABELS]}</p>}
         {/* Login banner */}
         {!isLoggedIn && (
           <MatrixStatusBanner isLoggedIn={isLoggedIn} onLoginClick={() => setShowLoginDialog(true)} />
@@ -286,32 +316,19 @@ export function ChatSection() {
               isLoading={isLoading}
               onCollapse={() => setIsRoomListCollapsed(true)}
               footer={sessionFooter}
+              attention={attention}
+              attentionPending={attentionPending}
             />
 
           )}
 
-          {narrowViewport && mobileRoomListOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="关闭空间列表"
-                className="fixed inset-0 z-40 bg-background/70 md:hidden"
-                onClick={() => setMobileRoomListOpen(false)}
-              />
-              <div className="fixed inset-y-0 left-0 z-50 max-w-[88vw] shadow-xl md:hidden [&>div]:h-full">
-                <ChatRoomSidebar
-                  rooms={rooms}
-                  selectedRoomId={selectedRoomId}
-                  onSelectRoom={handleSelectRoom}
-                  isLoggedIn={isLoggedIn}
-                  userId={userId}
-                  isLoading={isLoading}
-                  onCollapse={() => setMobileRoomListOpen(false)}
-                  footer={sessionFooter}
-                />
-              </div>
-            </>
-          )}
+          <Dialog open={narrowViewport && mobileRoomListOpen} onOpenChange={setMobileRoomListOpen}>
+            <DialogContent aria-modal="true" showCloseButton={false} className="inset-y-0 left-0 top-0 flex h-dvh w-fit max-w-[88vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-background p-0 sm:max-w-[88vw] [&>div]:h-full" onCloseAutoFocus={event => { event.preventDefault(); switcherRef.current?.focus(); }}>
+              <DialogTitle className="sr-only">切换对话</DialogTitle>
+              <DialogDescription className="sr-only">选择平台助手、团队助手或其他对话</DialogDescription>
+              <ChatRoomSidebar rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
+            </DialogContent>
+          </Dialog>
 
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -325,6 +342,7 @@ export function ChatSection() {
                 rooms={rooms}
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
+                taskFeed={taskFeed}
               />
             ) : (
               <ChatEmptyState

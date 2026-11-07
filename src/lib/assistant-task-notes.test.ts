@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkflowResponse } from './agentteams-projects-api';
 import type { HitlConfirmation } from './hitl-inbox';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
-import { assistantTaskNotes } from './assistant-task-notes';
+import { assistantTaskNotes, attentionCounts } from './assistant-task-notes';
 
 const room: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [], parentTeam: 'design', team: { name: 'design', teamName: '设计团队' } as RoomInfo['team'] };
 function workflow(overrides: Partial<WorkflowResponse> = {}): WorkflowResponse {
@@ -10,6 +10,14 @@ function workflow(overrides: Partial<WorkflowResponse> = {}): WorkflowResponse {
 }
 
 describe('assistant task notes', () => {
+  it('counts attention per team using raw states without merging same-id tasks or approvals', () => {
+    const other = { ...room, id: '!other:test', parentTeam: 'other', team: { name: 'other' } as RoomInfo['team'] };
+    const workflows = [workflow(), workflow({ team_id: 'other', tasks_detail: [{ task_id: 'task', status: 'failed' }] })];
+    expect(attentionCounts(assistantTaskNotes(room, [room, other], workflows, {}))).toEqual({ confirmation: 0, review: 1, failed: 0 });
+    expect(attentionCounts(assistantTaskNotes(other, [room, other], workflows, {}))).toEqual({ confirmation: 0, review: 0, failed: 1 });
+    const completed = workflow({ tasks_detail: [{ task_id: 'task', status: 'completed', result_status: 'SUCCESS' }] });
+    expect(attentionCounts(assistantTaskNotes(room, [room], [completed], {})).review).toBe(0);
+  });
   it('uses raw submitted state as awaiting acceptance despite a successful result and normalized running node', () => {
     const [item] = assistantTaskNotes(room, [room], [workflow()], {});
     expect(item).toMatchObject({ group: 'review', title: '首页设计', assignee: 'designer', projectId: 'project', teamId: 'design' });

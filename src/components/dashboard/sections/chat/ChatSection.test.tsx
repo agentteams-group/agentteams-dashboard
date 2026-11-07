@@ -12,13 +12,16 @@ const hooksMock = vi.hoisted(() => ({
   useTeams: vi.fn(),
   useManagers: vi.fn(),
   useHumans: vi.fn(),
+  useRoomAccess: vi.fn(),
 }));
-const sessionMock = vi.hoisted(() => ({ userLevel: 3 }));
+const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test' }));
 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: hooksMock.useWorkers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: hooksMock.useManagers }));
 vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans }));
+vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: hooksMock.useRoomAccess }));
+vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [], loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({
@@ -26,7 +29,7 @@ vi.mock('@/lib/agentteams-store', () => ({
 }));
 
 vi.mock('@/lib/matrix-store', () => ({
-  useMatrixStore: () => ({ isLoggedIn: true, userId: '@user:test', logout: vi.fn() }),
+  useMatrixStore: () => ({ isLoggedIn: true, userId: sessionMock.userId, homeserver: 'https://test', logout: vi.fn() }),
 }));
 
 // Room-members/state queries are irrelevant here; keep useRoomMetaStore real.
@@ -50,8 +53,8 @@ vi.mock('./ChatPanel', () => ({
 }));
 
 vi.mock('./chat-room-sidebar', () => ({
-  ChatRoomSidebar: ({ footer }: { footer?: ReactNode }) => (
-    <div data-testid="sidebar-stub">{footer}</div>
+  ChatRoomSidebar: ({ footer, rooms, onSelectRoom }: { footer?: ReactNode; rooms: { id: string; name: string }[]; onSelectRoom: (_id: string) => void }) => (
+    <div data-testid="sidebar-stub">{footer}{rooms.map(room => <button key={room.id} onClick={() => onSelectRoom(room.id)}>{room.name}</button>)}</div>
   ),
 }));
 vi.mock('./chat-auth-badge', () => ({ ChatAuthBadge: () => <div>MatrixAuth</div> }));
@@ -70,6 +73,13 @@ vi.mock('./runtime-map-context', () => ({
 import { ChatSection } from './ChatSection';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { conversationStorageKey } from './agent-conversations';
+
+beforeEach(() => {
+  localStorage.clear();
+  sessionMock.userId = '@user:test';
+  hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test'], state: 'joined', refetch: vi.fn() });
+});
 
 const WORKER = {
   name: 'w1',
@@ -188,6 +198,47 @@ describe('role-based assistant landing', () => {
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
   });
+
+  it('restores the same account selection and gives an explicit deep link priority', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
+    cleanup();
+    useHitlInboxStore.getState().setPendingChatRoomId(WORKER.roomID);
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
+  });
+
+  it('does not open an unjoined DM from a saved selection or deep link', () => {
+    sessionMock.userLevel = 2;
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
+    localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
+    useHitlInboxStore.getState().setPendingChatRoomId('!leader:test');
+    renderWithQueryClient();
+    expect(screen.queryByTestId('chat-panel-stub')).toBeNull();
+    expect(screen.getAllByText(/尚未加入私聊/).length).toBeGreaterThan(0);
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!leader:test');
+  });
+
+  it('falls back when membership is revoked and keeps another account selection separate', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
+    cleanup();
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+    cleanup();
+    sessionMock.userId = '@other:test';
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test'], state: 'joined', refetch: vi.fn() });
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+  });
 });
 
 describe('ChatSection mobile room drawer', () => {
@@ -206,14 +257,17 @@ describe('ChatSection mobile room drawer', () => {
     vi.unstubAllGlobals();
   });
 
-  it('opens the existing room sidebar as a drawer and closes it from the backdrop', () => {
+  it('opens an accessible room drawer and closes it with Escape', async () => {
     renderWithQueryClient();
     expect(screen.queryByTestId('sidebar-stub')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
     expect(screen.getByTestId('sidebar-stub')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '关闭空间列表' }));
-    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+    expect(screen.getByRole('dialog', { name: '切换对话' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '切换对话' })).toHaveAttribute('aria-modal', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('sidebar-stub')).toBeNull());
+    expect(screen.getByRole('button', { name: '打开空间列表' })).toHaveFocus();
   });
 });
 

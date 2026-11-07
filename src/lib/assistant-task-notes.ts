@@ -27,6 +27,14 @@ export interface AssistantTaskNoteItem {
   confirmationId?: string;
 }
 
+export function attentionCounts(items: AssistantTaskNoteItem[]) {
+  return {
+    confirmation: items.filter(item => item.group === 'confirmation').length,
+    review: items.filter(item => item.group === 'review').length,
+    failed: items.filter(item => item.group === 'failed').length,
+  };
+}
+
 function taskGroup(status?: string): AssistantTaskNoteItem['group'] {
   switch (status) {
     case 'submitted': return 'review';

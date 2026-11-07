@@ -46,10 +46,11 @@ function projectActivityTs(p: ProjectSummary): number {
  * returned so callers can distinguish a real empty list from a degraded
  * controller (`degraded` / `degradedReason` / `error`).
  */
-export function useProjects() {
+export function useProjects(enabled = true) {
   return useQuery({
     queryKey: ['agentteams-projects'],
     queryFn: () => listProjects(),
+    enabled,
     refetchInterval: 15000,
     retry: 1,
     placeholderData: (previousData) => previousData,

@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore, useState, useCallback, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle, Clock3, LayoutList, ListFilter } from 'lucide-react';
+import { MessageSquare, PanelLeftClose, Search, Inbox as InboxIcon, Check, X, AlertCircle, Clock3, LayoutList, ListFilter, ChevronRight } from 'lucide-react';
 
 /** Element-style resizable room list: drag the right edge to change width. */
 const SIDEBAR_DEFAULT_W = 264;
@@ -71,13 +71,13 @@ import { useInviteStore, type Invite } from '@/lib/matrix-invite-store';
 import { RoomListItem } from './room-list-item';
 import { filterRooms, groupRoomsByType, sortRoomsByRecency } from './room-builders';
 import type { RoomInfo } from './room-info';
+import { conversationSections } from './agent-conversations';
+import { TaskAttention, type ConversationAttention } from './conversation-switcher';
 
 const SORT_KEY = 'chat-sidebar-sort';
 
-// 12.15：排序模式持久化走 useSyncExternalStore（SSR 首个客户端渲染用 server
-// 快照 'time'，随后切到持久化值——规避 react-hooks/set-state-in-effect，
-// 与页面既有宽度存储同思路）。
-type SortMode = 'time' | 'type';
+// Persist the arrangement while keeping the first client render consistent with SSR.
+type SortMode = 'workspace' | 'time' | 'type';
 type KindFilter = 'all' | 'space' | 'group' | 'dm';
 const KIND_LABELS: Record<KindFilter, string> = {
   all: '全部',
@@ -87,9 +87,10 @@ const KIND_LABELS: Record<KindFilter, string> = {
 };
 function readSortStore(): SortMode {
   try {
-    return localStorage.getItem(SORT_KEY) === 'type' ? 'type' : 'time';
+    const saved = localStorage.getItem(SORT_KEY);
+    return saved === 'type' || saved === 'time' ? saved : 'workspace';
   } catch {
-    return 'time';
+    return 'workspace';
   }
 }
 const sortListeners = new Set<() => void>();
@@ -250,6 +251,8 @@ export function ChatRoomSidebar({
   isLoading,
   onCollapse,
   footer,
+  attention,
+  attentionPending,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -260,6 +263,8 @@ export function ChatRoomSidebar({
   onCollapse: () => void;
   /** Replaces the account line with the caller's session cluster. */
   footer?: ReactNode;
+  attention?: Record<string, ConversationAttention>;
+  attentionPending?: string;
 }) {
   const [filter, setFilter] = useState('');
   // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
@@ -279,13 +284,14 @@ export function ChatRoomSidebar({
               : (r.memberCount ?? 0) <= 2,
         );
   const groups = groupRoomsByType(visible);
-  // 12.15（装验反馈「项目群被丢进『其他』、要和 Element/插件一样排序」）：
-  // 默认「按时间」=Element/插件同款的单一时间序混合列表；「按类型」保留
-  // 分组视图（团队/Agent/Manager/房间）。
-  const sortMode = useSyncExternalStore(subscribeSort, readSortStore, () => 'time' as const);
+  // Existing time/type preferences remain available; new profiles start with teams.
+  const sortMode = useSyncExternalStore(subscribeSort, readSortStore, () => 'workspace' as const);
   const changeSort = publishSort;
   const timeOrdered = sortRoomsByRecency(visible);
   const shortId = shortUserId(userId);
+  const sections = conversationSections(visible);
+  const [collapsedTeams, setCollapsedTeams] = useState<Record<string, boolean>>({});
+  const renderRoom = (room: RoomInfo) => <RoomListItem key={room.id} room={room} isSelected={selectedRoomId === room.id} onClick={() => onSelectRoom(room.id)} attention={sortMode === 'workspace' && room.parentTeam ? undefined : attention?.[room.id]} attentionPending={sortMode === 'workspace' && room.parentTeam ? undefined : attentionPending} />;
 
   // Resizable width (persisted) via the module store above — SSR and the
   // first client paint agree on the default; the persisted width applies
@@ -332,7 +338,7 @@ export function ChatRoomSidebar({
   return (
     <div
       className={`relative shrink-0 flex flex-col border-r border-border bg-muted/20 overflow-hidden ${isResizing ? 'select-none' : ''}`}
-      style={{ width }}
+      style={{ width, maxWidth: '88vw' }}
     >
       {/* Drag handle: right edge, Element-style col-resize */}
       <div
@@ -367,7 +373,7 @@ export function ChatRoomSidebar({
                 type="button"
                 aria-label="房间分类"
                 title={`房间分类：${KIND_LABELS[kindFilter]}`}
-                className="flex h-7 cursor-pointer items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                className="flex h-8 cursor-pointer items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
               >
                 <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
                 {width >= 220 && (
@@ -388,20 +394,23 @@ export function ChatRoomSidebar({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8" aria-label="会话排列">
+                {sortMode === 'time' ? <Clock3 className="size-4" /> : <LayoutList className="size-4" />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuRadioGroup value={sortMode} onValueChange={value => changeSort(value as SortMode)}>
+                <DropdownMenuRadioItem value="workspace">按团队分组</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="time">按最近消息</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="type">按房间类型</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
-            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => changeSort(sortMode === 'time' ? 'type' : 'time')}
-            title={sortMode === 'time' ? '按时间排序（点击按类型分组）' : '按类型分组（点击按时间排序）'}
-            aria-label={sortMode === 'time' ? '当前按时间排序，切换为按类型分组' : '当前按类型分组，切换为按时间排序'}
-          >
-            {sortMode === 'time'
-              ? <Clock3 className="h-3.5 w-3.5" />
-              : <LayoutList className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            type="button"
-            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={onCollapse}
             title="隐藏会话列表"
           >
@@ -440,31 +449,32 @@ export function ChatRoomSidebar({
             </p>
           </div>
         ) : (
-          sortMode === 'time'
-            ? timeOrdered.map((room) => (
-                <RoomListItem
-                  key={room.id}
-                  room={room}
-                  isSelected={selectedRoomId === room.id}
-                  onClick={() => onSelectRoom(room.id)}
-                />
-              ))
-            : groups.map((group) => (
-                <div key={group.type} className="mb-1.5">
-                  <p className="px-2 py-1 text-xs font-semibold tracking-wide text-muted-foreground">
-                    {group.label}
-                    <span className="ml-1 font-normal">{group.rooms.length}</span>
-                  </p>
-                  {group.rooms.map((room) => (
-                    <RoomListItem
-                      key={room.id}
-                      room={room}
-                      isSelected={selectedRoomId === room.id}
-                      onClick={() => onSelectRoom(room.id)}
-                    />
-                  ))}
-                </div>
-              ))
+          sortMode === 'workspace' ? (
+            <div className="space-y-4">
+              {sections.operations.length > 0 && <section aria-label="平台助手">{sections.operations.map(renderRoom)}</section>}
+              {sections.teams.length > 0 && <section aria-label="我的团队" className="space-y-1">
+                <p className="px-2 py-1 text-xs font-medium text-muted-foreground">我的团队</p>
+                {sections.teams.map(team => {
+                  const selected = team.rooms.some(room => room.id === selectedRoomId);
+                  const expanded = Boolean(filter) || !(collapsedTeams[team.id] ?? !selected);
+                  const assistant = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
+                  return <div key={team.id}>
+                    <button type="button" aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'}团队：${team.name}`} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setCollapsedTeams(current => ({ ...current, [team.id]: expanded }))}>
+                      <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{team.name}</span><TaskAttention counts={attention?.[assistant.id]} pending={attentionPending} /></span>
+                    </button>
+                    {expanded && <div className="ml-2 border-l border-border pl-1">{team.rooms.map(renderRoom)}</div>}
+                  </div>;
+                })}
+              </section>}
+              {sections.other.length > 0 && <section aria-label="其他对话"><p className="px-2 py-1 text-xs font-medium text-muted-foreground">其他对话</p>{sections.other.map(renderRoom)}</section>}
+            </div>
+          ) : sortMode === 'time' ? timeOrdered.map(renderRoom) : groups.map(group => (
+            <section key={group.type} className="mb-1.5">
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{group.label}<span className="ml-1">{group.rooms.length}</span></p>
+              {group.rooms.map(renderRoom)}
+            </section>
+          ))
         )}
       </div>
       <div className="shrink-0 border-t border-border bg-card/30 p-2">

@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronRight, Loader2, RefreshCw, StickyNote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { useProjects } from '@/hooks/use-projects';
-import { getProjectWorkflow, type WorkflowResponse } from '@/lib/agentteams-projects-api';
+import { useAssistantTaskFeed, type AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { assistantTaskNotes, TASK_NOTE_GROUPS, type AssistantTaskNoteItem } from '@/lib/assistant-task-notes';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
@@ -30,36 +28,23 @@ function openItem(item: AssistantTaskNoteItem) {
   }
 }
 
-export function AssistantTaskNote({ room, rooms, contextOpen, onOpen }: {
+export function AssistantTaskNote({ room, rooms, contextOpen, onOpen, taskFeed }: {
   room: RoomInfo;
   rooms: RoomInfo[];
   contextOpen: boolean;
   onOpen: () => void;
+  taskFeed?: AssistantTaskFeed;
 }) {
   const wide = useSyncExternalStore(subscribeWide, isWide, () => false);
   const [open, setOpen] = useState<boolean | null>(null);
   const expanded = !contextOpen && (open ?? wide);
   const panelId = useId();
   const confirmations = useHitlInboxStore(state => state.confirmations);
-  const list = useProjects();
-  const client = useQueryClient();
-  const projects = useMemo(() => (list.data?.projects ?? []).filter(project => room.agentRole === 'operations' || !project.team_id || [room.parentTeam, room.team?.name, room.team?.teamName].includes(project.team_id)), [list.data?.projects, room.agentRole, room.parentTeam, room.team?.name, room.team?.teamName]);
-  const degraded = list.isError || Boolean(list.data?.degraded);
-  const queries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['agentteams-project-workflow', project.team_id ?? 'any', project.project_id],
-    queryFn: () => getProjectWorkflow(project.project_id, { includeTasks: true, teamId: project.team_id }),
-    enabled: !degraded,
-    refetchInterval: (query: { state: { data?: WorkflowResponse } }) => query.state.data?.status === 'completed' ? false : 15000,
-    staleTime: 15000,
-    retry: 1,
-    throwOnError: false,
-  })) });
-  const workflows = queries.flatMap((query, index) => query.data ? [{ ...query.data, team_id: query.data.team_id ?? projects[index].team_id }] : []);
+  const localFeed = useAssistantTaskFeed(room, !taskFeed);
+  const { workflows, loading, degraded, partialError, refresh } = taskFeed ?? localFeed;
   const items = assistantTaskNotes(room, rooms, workflows, confirmations);
   const actionable = items.filter(item => TASK_NOTE_GROUPS.some(group => group.id === item.group && group.attention));
   const attentionIds = actionable.map(item => `${item.id}:${item.group}`);
-  const loading = list.isLoading || queries.some(query => query.isLoading);
-  const partialError = queries.some(query => query.isError);
   const previousAttention = useRef<Set<string> | null>(null);
 
   useEffect(() => {
@@ -100,7 +85,7 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen }: {
         <div className="flex h-18 shrink-0 items-center gap-2 border-b border-border px-4">
           <StickyNote className="size-4 text-primary" aria-hidden="true" />
           <h3 className="flex-1 text-sm font-semibold">任务便签</h3>
-          <Button variant="ghost" size="icon" className="size-8" aria-label="刷新任务便签" onClick={() => { void list.refetch(); void client.invalidateQueries({ queryKey: ['agentteams-project-workflow'] }); }}><RefreshCw className="size-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="size-8" aria-label="刷新任务便签" onClick={refresh}><RefreshCw className="size-3.5" /></Button>
           <Button variant="ghost" size="icon" className="size-8" aria-label="收起任务便签" aria-expanded={true} onClick={() => setOpen(false)}><ChevronRight className="size-4" /></Button>
         </div>
         <div className="px-4 pb-2 pt-4">

@@ -45,6 +45,26 @@ const renderSidebar = (props: Partial<Parameters<typeof ChatRoomSidebar>[0]> = {
   );
 
 describe('ChatRoomSidebar', () => {
+  it('folds each team independently and keeps other conversations available', () => {
+    const leader = room({ id: '!design:test', name: '设计助手', type: 'manager', agentRole: 'leader', parentTeam: 'design', access: 'joined' });
+    renderSidebar({ rooms: [leader, room({ id: '!group:test', name: '设计群聊', parentTeam: 'design' }), room({ id: '!worker:test', name: '普通私聊', type: 'worker' })] });
+    expect(screen.queryByText('设计助手')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开团队：design' }));
+    expect(screen.getByText('设计助手')).toBeInTheDocument();
+    expect(screen.getByText('设计群聊')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '收起团队：design' }));
+    expect(screen.queryByText('设计助手')).toBeNull();
+    expect(screen.getByText('普通私聊')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('搜索对话…'), { target: { value: '设计助手' } });
+    expect(screen.getByText('设计助手')).toBeInTheDocument();
+  });
+
+  it('shows a reason on an unjoined DM without enabling it', () => {
+    renderSidebar({ rooms: [room({ name: '无权私聊', type: 'manager', agentRole: 'leader', access: 'not-joined' })] });
+    expect(screen.getByRole('button', { name: /无权私聊/ })).toBeDisabled();
+    expect(screen.getByText(/尚未加入私聊/)).toBeInTheDocument();
+  });
+
   it('renders rooms in the supplied order with unread badges', () => {
     renderSidebar();
     const buttons = screen.getAllByRole('button');
@@ -100,10 +120,10 @@ describe('ChatRoomSidebar', () => {
     expect(screen.queryByText('Newest')).toBeNull();
   });
 
-  it('defaults to a flat recency list (Element/plugin-style) without group headers', () => {
+  it('defaults to workspace groups while retaining ordinary rooms', () => {
     renderSidebar();
-    // 默认「按时间」：不出现类型分组头，房间直接并列。
-    expect(screen.queryByText('团队')).toBeNull();
+    // Ordinary rooms remain reachable below the team-oriented entries.
+    expect(screen.getByText('其他对话')).toBeInTheDocument();
     expect(screen.queryByText('Agent')).toBeNull();
     expect(screen.getByText('Newest')).toBeInTheDocument();
     expect(screen.getByText('最新一条')).toBeInTheDocument();
@@ -132,9 +152,10 @@ describe('ChatRoomSidebar', () => {
     expect(screen.queryByText('GroupRoom')).toBeNull();
   });
 
-  it('switches to type-grouped view via the toggle', () => {
+  it('retains type-grouped view via the arrangement menu', async () => {
     renderSidebar();
-    fireEvent.click(screen.getByLabelText('当前按时间排序，切换为按类型分组'));
+    fireEvent.pointerDown(screen.getByLabelText('会话排列'), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '按房间类型' }));
     expect(screen.getByText('团队')).toBeInTheDocument();
     expect(screen.getByText('Agent')).toBeInTheDocument();
   });

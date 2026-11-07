@@ -5,7 +5,7 @@ import { Bot, ChevronDown, Hammer, Library, Users } from 'lucide-react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { openChatRoom } from '@/lib/open-chat-room';
-import { preferredAgentRoom } from './sections/chat/agent-conversations';
+import { canOpenConversation } from './sections/chat/agent-conversations';
 import type { RoomInfo } from './sections/chat/room-info';
 import { isNavItemVisible, navItems, type DeploymentMode } from './nav-items';
 
@@ -69,7 +69,8 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
                 }
                 onNavClick(menu.id);
                 const current = useRoomMetaStore.getState().activeRoomId;
-                const room = agentRooms.find(agent => agent.id === current) ?? preferredAgentRoom(agentRooms, userLevel);
+                // ChatSection restores the account's last selection and verifies DM access.
+                const room = agentRooms.find(agent => agent.id === current && canOpenConversation(agent));
                 if (room) openChatRoom(room.id);
               }}
               className={`relative flex min-h-11 w-full items-center md:min-h-10 gap-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${collapsed ? 'justify-center px-0' : 'px-3'} ${active && (!grouped || collapsed) ? 'bg-primary/10 text-primary' : active ? 'text-foreground hover:bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
