@@ -204,6 +204,8 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** 保存成功但协议没探测通的提示（已按 https 落库，需用户确认方向）。 */
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,13 +343,37 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           }),
         });
         const data = (await res.json().catch(() => null)) as {
-          results?: Record<string, Array<{ url: string; ok: boolean; httpOk: boolean; ms: number | null; detail: string }>>;
+          results?: Record<
+            string,
+            Array<{
+              url: string;
+              ok: boolean;
+              httpOk: boolean;
+              ms: number | null;
+              detail: string;
+              /** 无协议输入的原始值（服务端解析出确定协议后回填输入框）。 */
+              resolvedFrom?: string;
+            }>
+          >;
         } | null;
         const rows = data?.results?.[name] ?? [];
+        // 无协议地址（host:port）由服务端按 https 优先解析；把解析结果回填到
+        // 输入框，让用户看到实际生效的协议，而不是心里猜。
+        const findRow = (url: string) => rows.find((r) => r.url === url || r.resolvedFrom === url);
+        const backfilled = { ...form, [name]: { ...form[name] } };
+        let touched = false;
+        for (const { slot, url } of filled) {
+          const row = findRow(url);
+          if (row && row.url !== url) {
+            backfilled[name][slot] = { ...backfilled[name][slot], url: row.url };
+            touched = true;
+          }
+        }
+        if (touched) setForm(backfilled);
         setTests((prev) => {
           const next = { ...prev };
           for (const { slot, url } of filled) {
-            const row = rows.find((r) => r.url === url);
+            const row = findRow(url);
             if (!row) {
               next[`${name}:${slot}`] = { status: 'fail', detail: '无测试结果' };
               continue;
@@ -393,9 +419,20 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
     setTests({});
   };
 
+  /** 保存成功后离开本页：F1g —— 先清掉 ?setup=1 深链再 onDone()（一次
+   * reload），否则 reloaded 页面又读到 ?setup=1、forceSetup 仍为真，用户被
+   * 困在本页，只能去找「返回登录页」逃生口（install-verify 9/9 验收）。 */
+  const finishSetup = () => {
+    if (window.location.search) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    }
+    onDone();
+  };
+
   const save = async () => {
     setSaving(true);
     setSaveError(null);
+    setSaveNotice(null);
     const backends: Record<string, { internal?: ServerEntry; external?: ServerEntry }> = {};
     for (const name of BACKEND_NAMES) {
       const internal = draftToEntry(form[name].internal);
@@ -414,16 +451,38 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ token: token.trim(), backends }),
       });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        /** 服务端协议解析结果（后端 → 槽位 → 带协议的地址）。 */
+        resolved?: Record<string, { internal?: string; external?: string }>;
+        /** 两路探测都不通、按 https 落地时的告知。 */
+        warnings?: Array<{ backend?: string; slot?: 'internal' | 'external'; warning?: string }>;
+      };
       if (res.ok && data.ok) {
-        // F1g: clear the ?setup=1 deep link before onDone() (a reload) —
-        // otherwise the reloaded page re-reads ?setup=1, forceSetup stays
-        // true, and the user is stuck on this page and must hunt for the
-        // "返回登录页" escape hatch (install-verify 9/9 acceptance).
-        if (window.location.search) {
-          window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+        // 无协议地址（host:port）已被服务端解析成确定的协议：回填输入框，
+        // 让用户看到真正落库的地址。
+        if (data.resolved) {
+          const next = { ...form };
+          for (const [name, slots] of Object.entries(data.resolved)) {
+            if (!(name in next)) continue;
+            const key = name as BackendName;
+            next[key] = { ...next[key] };
+            for (const slot of ['internal', 'external'] as const) {
+              const url = slots[slot];
+              if (url) next[key][slot] = { ...next[key][slot], url };
+            }
+          }
+          setForm(next);
         }
-        onDone();
+        if (data.warnings && data.warnings.length > 0) {
+          // 服务此刻探测不到：已按安全默认 https 保存（绝不静默存 http），但
+          // 直接进登录页大概率仍失败（明文打到 TLS 端口 = 400）。停在本页把
+          // 方向说清楚，由用户确认。
+          setSaveNotice('未探测到服务，已按 https 保存；若只支持 http，请显式写 http://');
+          return;
+        }
+        finishSetup();
         return;
       }
       const messages: Record<string, string> = {
@@ -597,7 +656,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
                           <Input
                             value={draft.url}
                             onChange={(e) => setSlot(name, slot, { url: e.target.value })}
-                            placeholder="http://host:port"
+                            placeholder="host:port（自动识别 https / http）"
                             spellCheck={false}
                           />
                           {/* 认证方式 + 凭据（秘密永不回显：已存时占位提示，留空保持）。
@@ -685,6 +744,15 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           )}
 
           {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+
+          {saveNotice && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              <span>{saveNotice}</span>
+              <button type="button" onClick={finishSetup} className="ml-2 underline">
+                仍要进入登录页
+              </button>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button onClick={save} disabled={saving}>

@@ -15,6 +15,7 @@ import {
   type ProbeRow,
 } from '@/lib/backend-config';
 import { getSessionFromRequest } from '@/lib/dashboard-session';
+import { isAddressLike, resolveBackendUrl } from '@/lib/backend-url-resolve';
 
 // POST /api/agentteams/setup/backends/test — server-side connectivity test.
 //
@@ -53,8 +54,11 @@ function parseDrafts(body: unknown): Partial<Record<BackendName, DraftAddrs>> | 
     const entry = (raw as Record<string, unknown>)[name];
     if (!entry || typeof entry !== 'object') continue;
     const addrs: DraftAddrs = {};
-    if (isHttpUrl((entry as DraftAddrs).internal)) addrs.internal = (entry as DraftAddrs).internal!.trim();
-    if (isHttpUrl((entry as DraftAddrs).external)) addrs.external = (entry as DraftAddrs).external!.trim();
+    const internal = (entry as DraftAddrs).internal;
+    const external = (entry as DraftAddrs).external;
+    // 草稿允许省略协议（host:port）——协议在下面按 https 优先解析。
+    if (isAddressLike(internal)) addrs.internal = internal!.trim();
+    if (isAddressLike(external)) addrs.external = external!.trim();
     if (addrs.internal || addrs.external) out[name] = addrs;
   }
   return out;
@@ -84,14 +88,54 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Targets: draft values where provided, otherwise the configured list.
-  const targets: Partial<Record<BackendName, string[]>> = {};
+  // SSRF 前置（PR-91）：无协议草稿在解析阶段就会发起网络请求，必须先按合成
+  // URL 过一遍过滤，不能等解析完再查。
   for (const name of BACKEND_NAMES) {
     const draft = drafts[name];
-    const fromDraft = draft ? [draft.internal, draft.external].filter((v): v is string => !!v) : [];
-    const urls = fromDraft.length > 0 ? fromDraft : backendCandidatesSync(name);
-    if (urls.length > 0) targets[name] = urls;
+    if (!draft) continue;
+    for (const raw of [draft.internal, draft.external]) {
+      if (!raw) continue;
+      const probeUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`;
+      if (!isTestTargetAllowed(probeUrl)) {
+        return NextResponse.json({ ok: false, error: 'host-not-allowed', url: raw }, { status: 403 });
+      }
+    }
   }
+
+  // Targets: draft values where provided, otherwise the configured list.
+  // 草稿先解析成确定的 http(s) URL（https 优先）再探测 —— 与保存路径同一
+  // 口径：TLS 端口若被当成 http 探测会「命中」，真正请求却吃 nginx 400。
+  // sources 记住「解析结果 ← 原始输入」的对应，行里回报 resolvedFrom 供 UI
+  // 回填输入框。
+  const targets: Partial<Record<BackendName, string[]>> = {};
+  const sources: Partial<Record<BackendName, Array<{ url: string; from?: string }>>> = {};
+  await Promise.all(
+    BACKEND_NAMES.map(async (name) => {
+      const draft = drafts[name];
+      const raws = draft
+        ? [draft.internal, draft.external].filter((v): v is string => !!v)
+        : [];
+      if (raws.length === 0) {
+        const saved = backendCandidatesSync(name);
+        if (saved.length > 0) targets[name] = saved;
+        return;
+      }
+      const rows: Array<{ url: string; from?: string }> = [];
+      for (const raw of raws) {
+        const resolved = await resolveBackendUrl(raw);
+        if (!isHttpUrl(resolved.url)) continue;
+        if (rows.some((r) => r.url === resolved.url)) continue;
+        rows.push(resolved.changed ? { url: resolved.url, from: raw } : { url: resolved.url });
+      }
+      if (rows.length === 0) {
+        const saved = backendCandidatesSync(name);
+        if (saved.length > 0) targets[name] = saved;
+        return;
+      }
+      targets[name] = rows.map((r) => r.url);
+      sources[name] = rows;
+    }),
+  );
   if (Object.keys(targets).length === 0) {
     return NextResponse.json(
       { ok: false, error: 'nothing-to-test', message: 'no addresses provided or configured' },
@@ -116,7 +160,7 @@ export async function POST(request: NextRequest) {
     (Object.keys(targets) as BackendName[]).map(async (name) => {
       const urls = targets[name]!;
       const probeResults = await Promise.all(urls.map((url) => probeBackend(name, url, 6000)));
-      const rows = urls.map((url, i) => toProbeRow(url, probeResults[i]));
+      const rows = urls.map((url, i) => toProbeRow(url, probeResults[i], sources[name]?.[i]?.from));
       results[name] = rows;
 
       // Effective-cache update is APPLIED-ONLY (plugin config_test): a draft

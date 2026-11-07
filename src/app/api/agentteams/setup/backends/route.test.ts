@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
 import {
   __resetSessionStoreForTests,
@@ -16,6 +17,7 @@ import {
   type BackendName,
   type BackendProbeFn,
 } from '@/lib/backend-config';
+import { __resetBackendUrlResolutionForTests } from '@/lib/backend-url-resolve';
 import { listAuditEvents, resetAuditLogForTests } from '@/lib/audit-log';
 import { GET, POST } from './route';
 
@@ -74,6 +76,7 @@ beforeEach(() => {
   vi.stubEnv('AGENTTEAMS_MATRIX_URL', '');
   vi.stubEnv('NEXT_PUBLIC_MATRIX_API_URL', '');
   __resetSessionStoreForTests();
+  __resetBackendUrlResolutionForTests();
   for (const name of BACKEND_NAMES) forgetWorking(name);
 });
 
@@ -396,6 +399,85 @@ describe('POST /api/agentteams/setup/backends', () => {
     expect(res.status).toBe(200);
     // the session (not the token) authorized the save
     expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://b:8090' });
+  });
+});
+
+describe('无协议地址（host:port）：保存前按 https 优先解析协议', () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      // 一个只讲明文 HTTP 的后端：https 探测必须失败、http 探测命中。
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('no server address');
+    base = `http://127.0.0.1:${addr.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('https 不通 → 回退 http，落库值带协议，并回报解析结果', async () => {
+    const bare = base.replace(/^http:\/\//, '');
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: bare } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      ok: boolean;
+      resolved?: Record<string, { internal?: string }>;
+      warnings?: unknown;
+    };
+    expect(data.ok).toBe(true);
+    expect(data.resolved?.controller.internal).toBe(base);
+    expect(data.warnings).toBeUndefined();
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: base });
+  });
+
+  it('两路都探测不到 → 按 https 落地 + warnings（不静默存成 http）', async () => {
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: '127.0.0.1:1' } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      ok: boolean;
+      warnings?: Array<Record<string, string>>;
+    };
+    expect(data.ok).toBe(true);
+    expect(data.warnings).toEqual([
+      {
+        backend: 'controller',
+        slot: 'internal',
+        input: '127.0.0.1:1',
+        url: 'https://127.0.0.1:1',
+        warning: 'scheme_unresolved',
+      },
+    ]);
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'https://127.0.0.1:1' });
+  });
+
+  it('显式 http:// 不会被升级（用户明确要求明文）', async () => {
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: base } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { resolved?: Record<string, { internal?: string }> };
+    expect(data.resolved?.controller.internal).toBe(base);
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: base });
   });
 });
 

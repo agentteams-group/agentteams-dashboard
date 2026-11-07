@@ -73,25 +73,27 @@ import {
   type BackendName,
 } from '@/lib/backend-config';
 import { appendAuditEvent } from '@/lib/audit-log';
+import { isAddressLike, resolveBackendUrl } from '@/lib/backend-url-resolve';
 
 type BackendNameSet = Record<string, BackendName>;
 
 /** 槽位条目解析：字符串（服务自身认证）或 {url, auth?}（显式覆盖凭据）。
  * 凭据的「留空 / *** = 继承旧值」在 updateConfig 的按槽位合并里处理，这里
- * 只校验形状与 URL 协议（URL 先归一，允许省略 http://）。 */
+ * 只校验形状与地址形态。地址允许省略协议（`host:port`）：协议由
+ * resolveBackendUrl 解析（https 优先）后再落盘，本函数不擅自补 http://。 */
 function parseSlot(candidate: unknown): { entry?: AddressEntry; error?: string } {
   if (candidate === undefined || candidate === null || candidate === '') return {};
   if (typeof candidate === 'string') {
-    const url = normalizeHttpUrl(candidate);
-    if (!isHttpUrl(url)) return { error: 'must be an http(s) URL' };
-    return { entry: url };
+    if (!isAddressLike(candidate)) return { error: 'must be an http(s) URL' };
+    return { entry: normalizeHttpUrl(candidate) };
   }
   if (typeof candidate !== 'object' || Array.isArray(candidate)) {
     return { error: 'must be a string or { url, auth }' };
   }
   const obj = candidate as { url?: unknown; auth?: unknown };
-  const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
-  if (!isHttpUrl(url)) return { error: 'url must be an http(s) URL' };
+  const rawUrl = typeof obj.url === 'string' ? obj.url : '';
+  if (!isAddressLike(rawUrl)) return { error: 'url must be an http(s) URL' };
+  const url = normalizeHttpUrl(rawUrl);
   if (obj.auth === undefined || obj.auth === null) return { entry: { url } };
   if (typeof obj.auth !== 'object' || Array.isArray(obj.auth)) {
     return { error: 'auth must be an object' };
@@ -140,6 +142,61 @@ function parseBackendsPayload(
 const BACKEND_NAMES_SET: BackendNameSet = Object.fromEntries(
   BACKEND_NAMES.map((name) => [name, name]),
 );
+
+/** 协议探测失败的告知（UI 展示用）：哪个槽位、用户原输入、落地的 URL。 */
+export interface BackendResolveWarning {
+  backend: BackendName;
+  slot: 'internal' | 'external';
+  input: string;
+  url: string;
+  warning: 'scheme_unresolved';
+}
+
+interface ResolvedPayload {
+  backends: Partial<Record<BackendName, BackendAddrs>>;
+  /** 后端 → 槽位 → 解析后的地址（UI 用来自动回填输入框）。 */
+  resolved: Partial<Record<BackendName, { internal?: string; external?: string }>>;
+  warnings: BackendResolveWarning[];
+}
+
+/** 保存前逐个地址解析协议（https 优先，见 backend-url-resolve）。显式
+ * http(s) 地址原样保留；无协议 `host:port` 探测后落成确定 URL，探测不到则
+ * 按 https 落地并回报 warning —— 绝不静默存成 http（TLS 端口收明文会被
+ * nginx 以 400 拒绝）。凭据随条目原样保留。 */
+async function resolveBackendsPayload(
+  sent: Partial<Record<BackendName, BackendAddrs>>,
+): Promise<ResolvedPayload> {
+  const backends: ResolvedPayload['backends'] = {};
+  const resolved: ResolvedPayload['resolved'] = {};
+  const warnings: BackendResolveWarning[] = [];
+  await Promise.all(
+    (Object.keys(sent) as BackendName[]).map(async (name) => {
+      const addrs = sent[name]!;
+      const entry: BackendAddrs = {};
+      const urls: { internal?: string; external?: string } = {};
+      await Promise.all(
+        (['internal', 'external'] as const).map(async (slot) => {
+          const item = addrs[slot];
+          if (!item) return;
+          const input = addressUrl(item);
+          if (!input) return;
+          const result = await resolveBackendUrl(input);
+          if (!isHttpUrl(result.url)) return; // 非 http(s) → 不落库（merge 同样丢）
+          if (result.warning) {
+            warnings.push({ backend: name, slot, input, url: result.url, warning: result.warning });
+          }
+          entry[slot] = typeof item === 'string' ? result.url : { ...item, url: result.url };
+          urls[slot] = result.url;
+        }),
+      );
+      if (entry.internal || entry.external) {
+        backends[name] = entry;
+        resolved[name] = urls;
+      }
+    }),
+  );
+  return { backends, resolved, warnings };
+}
 
 export async function GET(request: NextRequest) {
   const config = readConfigSync();
@@ -279,17 +336,27 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       );
     }
-    const result = await updateConfig(parsed.backends, addressMode);
+    // 协议解析（https 优先）必须在鉴权之后、合并落盘之前 —— 无协议输入在
+    // 解析时要发网络探测，未授权调用方不得触发。
+    const prepared = await resolveBackendsPayload(parsed.backends);
+    const result = await updateConfig(prepared.backends, addressMode);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     // F1f-C: every config write is audited with actor + level + diff.
-    await auditConfigWrite(before, savedSentBackends(parsed.backends), session.user, session.level, request);
+    await auditConfigWrite(before, savedSentBackends(prepared.backends), session.user, session.level, request);
     // Re-probe what was just saved (plugin put_config → refresh_effective):
     // the effective address is latency-elected from real probes, not seeded
     // blindly.
-    const { effective, switched } = await refreshEffective(Object.keys(parsed.backends) as BackendName[]);
-    return NextResponse.json({ ok: true, mode: 'update', effective, switched });
+    const { effective, switched } = await refreshEffective(Object.keys(prepared.backends) as BackendName[]);
+    return NextResponse.json({
+      ok: true,
+      mode: 'update',
+      effective,
+      switched,
+      resolved: prepared.resolved,
+      ...(prepared.warnings.length > 0 ? { warnings: prepared.warnings } : {}),
+    });
   }
 
   // Pre-login: token-gated, repeatable (F1e) — unless the installer
@@ -306,17 +373,26 @@ export async function POST(request: NextRequest) {
     }
   }
   const existed = await configExists();
+  // 同 session 分支：鉴权通过后再解析协议（https 优先），再合并落盘。
+  const prepared = await resolveBackendsPayload(parsed.backends);
   const result = existed
-    ? await updateConfig(parsed.backends, addressMode)
-    : await saveConfigOneShot(parsed.backends, addressMode);
+    ? await updateConfig(prepared.backends, addressMode)
+    : await saveConfigOneShot(prepared.backends, addressMode);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  await auditConfigWrite(before, savedSentBackends(parsed.backends), 'pre-login', 0, request);
+  await auditConfigWrite(before, savedSentBackends(prepared.backends), 'pre-login', 0, request);
   // Re-probe the saved config so the effective cache is honest from the
   // first request (plugin put_config → refresh_effective).
-  const { effective, switched } = await refreshEffective(Object.keys(parsed.backends) as BackendName[]);
-  return NextResponse.json({ ok: true, mode: existed ? 'update' : 'first-launch', effective, switched });
+  const { effective, switched } = await refreshEffective(Object.keys(prepared.backends) as BackendName[]);
+  return NextResponse.json({
+    ok: true,
+    mode: existed ? 'update' : 'first-launch',
+    effective,
+    switched,
+    resolved: prepared.resolved,
+    ...(prepared.warnings.length > 0 ? { warnings: prepared.warnings } : {}),
+  });
 }
 
 /** F1f-C: audit a config write with actor, level and a per-backend diff.

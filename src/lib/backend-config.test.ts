@@ -18,6 +18,7 @@ import {
   effectiveUrl,
   forgetWorking,
   getSetupToken,
+  hasScheme,
   isHttpUrl,
   normalizeHttpUrl,
   normalizeConfig,
@@ -75,9 +76,12 @@ describe('isHttpUrl', () => {
 });
 
 describe('normalizeHttpUrl', () => {
-  it('prepends http:// when the scheme is missing', () => {
-    expect(normalizeHttpUrl('192.168.54.107:6866')).toBe('http://192.168.54.107:6866');
-    expect(normalizeHttpUrl('controller.local:8090/api')).toBe('http://controller.local:8090/api');
+  it('keeps a scheme-less host:port as-is — the protocol is resolved later', () => {
+    // 协议不再擅自补 http://（TLS 端口存成 http 会被 nginx 以 400 拒绝）；
+    // 无协议输入保持原样，由 backend-url-resolve 按 https 优先后落库。
+    expect(normalizeHttpUrl('192.168.54.107:6866')).toBe('192.168.54.107:6866');
+    expect(normalizeHttpUrl('controller.local:8090/api')).toBe('controller.local:8090/api');
+    expect(normalizeHttpUrl('controller.local:8090/')).toBe('controller.local:8090');
   });
   it('keeps http/https and strips trailing slashes', () => {
     expect(normalizeHttpUrl('http://h:1/')).toBe('http://h:1');
@@ -86,6 +90,19 @@ describe('normalizeHttpUrl', () => {
   it('leaves other schemes for the validator to reject', () => {
     expect(normalizeHttpUrl('ws://h:1')).toBe('ws://h:1');
     expect(normalizeHttpUrl('javascript:alert(1)')).toBe('javascript:alert(1)');
+  });
+});
+
+describe('hasScheme', () => {
+  it('distinguishes explicit schemes from a bare host:port', () => {
+    expect(hasScheme('http://h:1')).toBe(true);
+    expect(hasScheme('https://h')).toBe(true);
+    expect(hasScheme('ftp://h')).toBe(true);
+    expect(hasScheme('javascript:alert(1)')).toBe(true);
+    // `localhost:` 是主机名的一部分，不是协议
+    expect(hasScheme('localhost:8090')).toBe(false);
+    expect(hasScheme('192.168.54.107:6866')).toBe(false);
+    expect(hasScheme('')).toBe(false);
   });
 });
 
@@ -783,7 +800,7 @@ describe('refreshEffective (port of plugin refresh_effective)', () => {
 // ---------------------------------------------------------------------------
 
 describe('per-address auth entries (plugin parity)', () => {
-  it('① string 与对象条目同归一（缺省 scheme 补全，凭据不完整塌回字符串）', () => {
+  it('① string 与对象条目同归一（落盘值必须带协议，凭据不完整塌回字符串）', () => {
     fs.writeFileSync(
       configFilePath(),
       JSON.stringify({
@@ -792,7 +809,7 @@ describe('per-address auth entries (plugin parity)', () => {
           controller: {
             internal: 'http://gw:8090/',
             external: {
-              url: 'gw2:8090',
+              url: 'https://gw2:8090',
               auth: { type: 'basic', username: 'u', password: 'p' },
             },
           },
@@ -803,22 +820,26 @@ describe('per-address auth entries (plugin parity)', () => {
             // basic 只有用户名 = 凭据不完整 → 规范形态为纯 URL 条目
             internal: { url: 'http://s:8000', auth: { type: 'basic', username: 'u' } },
           },
+          // 无协议条目（旧版 http 猜测的残留形态）读盘时丢弃：协议在保存前
+          // 已由 backend-url-resolve 定死，候选表里不该出现不可拨号的地址。
+          'higress-gateway': { internal: 'gw3:8090' },
         },
       }),
     );
     const cfg = readConfigSync();
     expect(cfg?.backends.controller).toEqual({
       internal: 'http://gw:8090',
-      external: { url: 'http://gw2:8090', auth: { type: 'basic', username: 'u', password: 'p' } },
+      external: { url: 'https://gw2:8090', auth: { type: 'basic', username: 'u', password: 'p' } },
     });
     expect(cfg?.backends.matrix?.internal).toEqual({
       url: 'https://mx:6167',
       auth: { type: 'bearer', token: 'tok' },
     });
     expect(cfg?.backends.sglang?.internal).toBe('http://s:8000');
+    expect(cfg?.backends['higress-gateway']).toBeUndefined();
     // 候选解析 / listMatchesSaved 对两种形态一视同仁
-    expect(backendCandidates('controller', cfg)).toEqual(['http://gw:8090', 'http://gw2:8090']);
-    expect(listMatchesSaved('controller', ['http://gw:8090', 'http://gw2:8090'])).toBe(true);
+    expect(backendCandidates('controller', cfg)).toEqual(['http://gw:8090', 'https://gw2:8090']);
+    expect(listMatchesSaved('controller', ['http://gw:8090', 'https://gw2:8090'])).toBe(true);
   });
 
   it('② 保存时密码/token 为空或 *** → 沿用旧秘密（basic + bearer）', async () => {

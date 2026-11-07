@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { BACKEND_NAMES, effectiveUrl, forgetWorking } from '@/lib/backend-config';
+import { __resetBackendUrlResolutionForTests } from '@/lib/backend-url-resolve';
 import { POST } from './route';
 
 let workDir: string;
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', '');
   vi.stubEnv('AGENTTEAMS_SGLANG_URL', '');
   serverHits = 0;
+  __resetBackendUrlResolutionForTests();
   for (const name of BACKEND_NAMES) forgetWorking(name);
 });
 
@@ -73,7 +75,10 @@ function postRaw(body: unknown): NextRequest {
 
 interface TestResponse {
   ok: boolean;
-  results: Record<string, Array<{ url: string; ok: boolean; httpOk: boolean; ms: number | null; detail: string }>>;
+  results: Record<
+    string,
+    Array<{ url: string; ok: boolean; httpOk: boolean; ms: number | null; detail: string; resolvedFrom?: string }>
+  >;
   effective: Record<string, string>;
   applied: boolean;
   switched: Record<string, boolean>;
@@ -156,6 +161,34 @@ describe('POST /api/agentteams/setup/backends/test (F1c plugin config_test seman
       }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe('无协议草稿地址（host:port）：测试前解析协议', () => {
+  it('https 不通 → 回退 http 探测，行里带解析后的 url 与 resolvedFrom', async () => {
+    const bare = goodUrl.replace(/^http:\/\//, '');
+    const res = await POST(post({ backends: { controller: { internal: bare } } }));
+    const data = (await res.json()) as TestResponse;
+    expect(res.status).toBe(200);
+    expect(data.results.controller).toHaveLength(1);
+    expect(data.results.controller[0].url).toBe(goodUrl);
+    expect(data.results.controller[0].resolvedFrom).toBe(bare);
+    expect(data.results.controller[0].httpOk).toBe(true);
+  });
+
+  it('显式地址不带 resolvedFrom（原样采用，不探测）', async () => {
+    const res = await POST(post({ backends: { controller: { internal: goodUrl } } }));
+    const data = (await res.json()) as TestResponse;
+    expect(data.results.controller[0].url).toBe(goodUrl);
+    expect(data.results.controller[0].resolvedFrom).toBeUndefined();
+  });
+
+  it('无协议草稿也先过 SSRF 过滤（解析阶段会发请求，不能等到探测后）', async () => {
+    const res = await POST(post({ backends: { controller: { internal: '169.254.169.254:80' } } }));
+    expect(res.status).toBe(403);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe('host-not-allowed');
+    expect(serverHits).toBe(0);
   });
 });
 

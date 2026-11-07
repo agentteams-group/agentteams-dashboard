@@ -114,9 +114,12 @@ function normalizeAuth(raw: unknown): BackendAuth | null {
   return null;
 }
 
-/** 地址条目归一：string → 归一化 URL（原逻辑等价）；对象要求 url 通过
- * normalizeHttpUrl + isHttpUrl，凭据不完整则塌回纯 URL 条目（诚实：不落
- * 半个凭据，且配置文件的规范形态 = 服务自身认证就是字符串）。 */
+/** 地址条目归一：string → 归一化 URL；对象要求 url 通过 normalizeHttpUrl +
+ * isHttpUrl，凭据不完整则塌回纯 URL 条目（诚实：不落半个凭据，且配置文件
+ * 的规范形态 = 服务自身认证就是字符串）。
+ * 落盘值必须带协议：无协议的 `host:port` 在保存前已由
+ * backend-url-resolve 解析成确定的 http(s) URL（https 优先），读盘时不再
+ * 猜测协议——这里丢掉无协议条目，免得候选表里出现不可拨号的地址。 */
 function normalizeEntry(raw: unknown): AddressEntry | undefined {
   if (typeof raw === 'string') {
     const url = normalizeHttpUrl(raw);
@@ -230,11 +233,27 @@ async function tokenFilePath(): Promise<string> {
 // URL validation
 // ---------------------------------------------------------------------------
 
-/** 地址协议自动识别（异地部署常用 `host:port`）：
+/** 无 `//` 的 scheme（ws:/javascript: 等）：规范形态就是原样，交由
+ * isHttpUrl 拒绝；它们与 `host:port` 的区分只靠已知前缀表（`localhost:8090`
+ * 里的 `localhost:` 是主机名，不是协议）。 */
+const NON_HTTP_SCHEME = /^(ws|wss|ftp|ftps|file|data|mailto|javascript|blob):/i;
+
+/** 是否带 scheme（`http://`、`ftp://`、`javascript:` …）。无协议的用户输入
+ * （异地部署常用的 `host:port`）返回 false —— 协议由 backend-url-resolve 的
+ * 探测决定（https 优先），这里不再擅自补 `http://`。 */
+export function hasScheme(value: string | undefined | null): boolean {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return false;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) || NON_HTTP_SCHEME.test(raw);
+}
+
+/** 地址规范化：
  * - 空串原样；
  * - 已带 http/https → 保留协议、去尾斜杠；
- * - 其它 scheme（ws:/javascript: 等）原样返回，交由 isHttpUrl 拒绝；
- * - 无 scheme → 前缀 http://。 */
+ * - 无协议 → 原样返回 `host:port[/path]`（去尾斜杠），**不补 http://**：
+ *   TLS 端口存成 http 会被 nginx 以 400 拒绝（plain HTTP request was sent to
+ *   HTTPS port），协议由 backend-url-resolve 探测决定；
+ * - 其它 scheme（ws:/javascript: 等）原样返回，交由 isHttpUrl 拒绝。 */
 export function normalizeHttpUrl(value: string | undefined | null): string {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return '';
@@ -245,8 +264,8 @@ export function normalizeHttpUrl(value: string | undefined | null): string {
     const rest = raw.slice(m[0].length).replace(/\/+$/, '');
     return rest ? `${scheme}://${rest}` : `${scheme}://`;
   }
-  if (/^(ws|wss|ftp|ftps|file|data|mailto|javascript|blob):/i.test(raw)) return raw;
-  return `http://${raw.replace(/\/+$/, '')}`;
+  if (NON_HTTP_SCHEME.test(raw)) return raw;
+  return raw.replace(/\/+$/, '');
 }
 
 export function isHttpUrl(value: string | undefined | null): value is string {
@@ -776,6 +795,9 @@ export interface ProbeRow {
   httpOk: boolean;
   ms: number | null;
   detail: string;
+  /** 用户填写的原始地址（仅当省略协议、由 backend-url-resolve 解析后才带；
+   * UI 用它把输入框回填成解析结果）。 */
+  resolvedFrom?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -940,8 +962,10 @@ export async function probeBackend(
   return probeOnce(name, url, timeoutMs);
 }
 
-/** Convert a probe result into a UI row (plugin config_test row semantics). */
-export function toProbeRow(url: string, r: ProbeResult): ProbeRow {
+/** Convert a probe result into a UI row (plugin config_test row semantics).
+ * `resolvedFrom` 只在地址是「无协议输入 → 解析结果」时传入（不同的原值）。 */
+export function toProbeRow(url: string, r: ProbeResult, resolvedFrom?: string): ProbeRow {
+  const resolved = resolvedFrom && resolvedFrom !== url ? { resolvedFrom } : {};
   if (r.ok) {
     const detail =
       r.error ??
@@ -950,9 +974,9 @@ export function toProbeRow(url: string, r: ProbeResult): ProbeRow {
         : r.status === 401 || r.status === 403
           ? `已连通，HTTP ${r.status}（需鉴权）`
           : `已连通，HTTP ${r.status}（状态异常）`);
-    return { url, ok: true, httpOk: r.httpOk, ms: r.latencyMs, detail };
+    return { url, ok: true, httpOk: r.httpOk, ms: r.latencyMs, detail, ...resolved };
   }
-  return { url, ok: false, httpOk: false, ms: null, detail: r.error ?? '不可达' };
+  return { url, ok: false, httpOk: false, ms: null, detail: r.error ?? '不可达', ...resolved };
 }
 
 // ---------------------------------------------------------------------------
