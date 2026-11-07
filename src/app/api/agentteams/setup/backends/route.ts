@@ -160,7 +160,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const authedConfig = session ? { config: config?.backends ?? {} } : {};
+  const authedConfig = session
+    ? { config: config?.backends ?? {}, addressMode: config?.addressMode ?? 'auto' }
+    : {};
 
   // Effective (working-cache) address per backend — the "在生效" badge data.
   const effective: Partial<Record<BackendName, string>> = {};
@@ -185,8 +187,12 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     token?: unknown;
     backends?: unknown;
+    addressMode?: unknown;
   } | null;
 
+  const rawMode = body?.addressMode;
+  const addressMode =
+    rawMode === 'lan' || rawMode === 'wan' || rawMode === 'auto' ? rawMode : undefined;
   const parsed = parseBackendsPayload(body?.backends);
   if (parsed.error || !parsed.backends) {
     return NextResponse.json({ error: parsed.error ?? 'invalid payload' }, { status: 400 });
@@ -208,7 +214,7 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       );
     }
-    const result = await updateConfig(parsed.backends);
+    const result = await updateConfig(parsed.backends, addressMode);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -235,7 +241,9 @@ export async function POST(request: NextRequest) {
     }
   }
   const existed = await configExists();
-  const result = existed ? await updateConfig(parsed.backends) : await saveConfigOneShot(parsed.backends);
+  const result = existed
+    ? await updateConfig(parsed.backends, addressMode)
+    : await saveConfigOneShot(parsed.backends, addressMode);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

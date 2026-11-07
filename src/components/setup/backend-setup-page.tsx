@@ -36,6 +36,8 @@ interface SetupStatusResponse {
   /** F1f3: false when the installer disabled the pre-login token gate
    * (DASHBOARD_SETUP_TOKEN_ENFORCE=0) — the token field is hidden. */
   setupTokenRequired?: boolean;
+  /** 地址模式（对齐工作台插件）：auto/lan/wan；老响应缺省 = auto。 */
+  addressMode?: 'auto' | 'lan' | 'wan';
   /** PR-91 review: absent in the anonymous (pre-login, no token) response —
    * the saved topology is only served to a session or ?token= holder. */
   backends?: Record<BackendName, BackendStatus>;
@@ -67,6 +69,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   const [embeddedHealthy, setEmbeddedHealthy] = useState(false);
   const [token, setToken] = useState('');
   const [tokenRequired, setTokenRequired] = useState(true);
+  const [addressMode, setAddressMode] = useState<'auto' | 'lan' | 'wan'>('auto');
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -95,6 +98,9 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
             REQUIRED_BACKENDS.every((name) => data.embedded.healthy?.[name] === true),
         );
         setTokenRequired(data.setupTokenRequired ?? true);
+        if (data.addressMode === 'lan' || data.addressMode === 'wan' || data.addressMode === 'auto') {
+          setAddressMode(data.addressMode);
+        }
         setLoading(false);
       })
       .catch(() => {
@@ -210,6 +216,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
             // fetch proxy.
             token: token.trim() || undefined,
             backends: { [name]: { internal: internal || undefined, external: external || undefined } },
+            addressMode,
           }),
         });
         const data = (await res.json().catch(() => null)) as {
@@ -353,6 +360,25 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           )}
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* 地址模式（对齐工作台插件）：自动=内网优先失败切外网；固定档失败不切换。 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="address-mode" className="text-sm font-medium">
+              地址模式
+            </label>
+            <select
+              id="address-mode"
+              value={addressMode}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'auto' || v === 'lan' || v === 'wan') setAddressMode(v);
+              }}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="auto">自动（内网优先，失败切外网）</option>
+              <option value="lan">固定内网（失败不切换）</option>
+              <option value="wan">固定外网（失败不切换）</option>
+            </select>
+          </div>
           {embeddedHealthy && (
             <div className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2">
               <span className="text-sm">检测到嵌入式部署（内置地址可用）</span>

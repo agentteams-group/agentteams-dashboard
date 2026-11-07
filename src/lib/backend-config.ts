@@ -65,9 +65,15 @@ export interface BackendAddrs {
   external?: string;
 }
 
+/** 地址模式（对齐工作台插件）：auto=内网优先并自动回退外网；lan=只用内网；
+ * wan=只用外网。固定档失败不静默切换（与插件 _pinned_note 同语义）。 */
+export type AddressMode = 'auto' | 'lan' | 'wan';
+export const ADDRESS_MODES: AddressMode[] = ['auto', 'lan', 'wan'];
+
 export interface DashboardConfig {
   version: number;
   backends: Partial<Record<BackendName, BackendAddrs>>;
+  addressMode?: AddressMode;
 }
 
 export function configFilePath(): string {
@@ -196,7 +202,7 @@ export function isTestTargetAllowed(url: string): boolean {
 // Config file access (sync read — see header; async writes)
 // ---------------------------------------------------------------------------
 
-function normalizeConfig(parsed: unknown): DashboardConfig | null {
+export function normalizeConfig(parsed: unknown): DashboardConfig | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const candidate = parsed as Partial<DashboardConfig>;
   if (!candidate.backends || typeof candidate.backends !== 'object') return null;
@@ -213,7 +219,10 @@ function normalizeConfig(parsed: unknown): DashboardConfig | null {
     if (isHttpUrl(external)) out.external = external;
     if (out.internal || out.external) backends[name] = out;
   }
-  return { version: 1, backends };
+  const mode = candidate.addressMode;
+  const addressMode: AddressMode =
+    mode === 'lan' || mode === 'wan' || mode === 'auto' ? mode : 'auto';
+  return { version: 1, backends, addressMode };
 }
 
 export function readConfigSync(): DashboardConfig | null {
@@ -254,9 +263,10 @@ async function writeConfigAtomic(config: DashboardConfig): Promise<void> {
  * a meaningful state. */
 export async function saveConfigOneShot(
   backends: DashboardConfig['backends'],
+  addressMode?: AddressMode,
 ): Promise<{ ok: boolean; error?: string }> {
   if (await configExists()) return { ok: false, error: 'already-configured' };
-  const config = normalizeConfig({ version: 1, backends });
+  const config = normalizeConfig({ version: 1, backends, addressMode });
   if (!config) return { ok: false, error: 'invalid-config' };
   if (Object.keys(config.backends).length === 0) return { ok: false, error: 'invalid-config' };
   await writeConfigAtomic(config);
@@ -266,6 +276,7 @@ export async function saveConfigOneShot(
 /** Level-3 (L1 admin) update: creates or overwrites the config file. */
 export async function updateConfig(
   backends: DashboardConfig['backends'],
+  addressMode?: AddressMode,
 ): Promise<{ ok: boolean; error?: string }> {
   // F1f-E: per-backend MERGE, not full replacement. Sent backends replace
   // their entry; unsent backends are preserved. A partial save (e.g. the
@@ -274,9 +285,14 @@ export async function updateConfig(
   // one save made the whole instance unusable until re-configured.
   // Explicit removal of a backend = `docker volume rm` factory reset
   // (the UI form always sends all six, so merge === replace from the UI).
-  const existing = readConfigSync()?.backends ?? {};
+  const existingCfg = readConfigSync();
+  const existing = existingCfg?.backends ?? {};
   const merged: DashboardConfig['backends'] = { ...existing, ...backends };
-  const config = normalizeConfig({ version: 1, backends: merged });
+  const config = normalizeConfig({
+    version: 1,
+    backends: merged,
+    addressMode: addressMode ?? existingCfg?.addressMode ?? 'auto',
+  });
   if (!config) return { ok: false, error: 'invalid-config' };
   await writeConfigAtomic(config);
   return { ok: true };
@@ -311,9 +327,12 @@ export function backendCandidates(name: BackendName, config: DashboardConfig | n
   const add = (value: string | undefined) => {
     if (value && isHttpUrl(value) && !out.includes(value.trim())) out.push(value.trim());
   };
-  add(config?.backends[name]?.internal);
-  add(config?.backends[name]?.external);
-  add(envAddr(name));
+  const mode = config?.addressMode ?? 'auto';
+  if (mode !== 'wan') add(config?.backends[name]?.internal);
+  if (mode !== 'lan') add(config?.backends[name]?.external);
+  // 固定档下没有匹配槽位 → 仍给 env 兜底（env 是部署级默认，不是“另一条链路”）。
+  if (out.length === 0) add(envAddr(name));
+  else if (mode === 'auto') add(envAddr(name));
   return out;
 }
 

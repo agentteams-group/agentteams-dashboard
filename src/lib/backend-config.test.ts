@@ -18,6 +18,7 @@ import {
   getSetupToken,
   isHttpUrl,
   normalizeHttpUrl,
+  normalizeConfig,
   isTestTargetAllowed,
   listMatchesSaved,
   markWorking,
@@ -82,6 +83,39 @@ describe('normalizeHttpUrl', () => {
   it('leaves other schemes for the validator to reject', () => {
     expect(normalizeHttpUrl('ws://h:1')).toBe('ws://h:1');
     expect(normalizeHttpUrl('javascript:alert(1)')).toBe('javascript:alert(1)');
+  });
+});
+
+describe('addressMode candidates', () => {
+  const cfg = (mode: 'auto' | 'lan' | 'wan') => ({
+    version: 1,
+    addressMode: mode,
+    backends: {
+      controller: { internal: 'http://lan:1', external: 'http://wan:1' },
+    },
+  });
+
+  it('auto keeps internal then external', () => {
+    expect(backendCandidates('controller', cfg('auto') as never)).toEqual([
+      'http://lan:1',
+      'http://wan:1',
+    ]);
+  });
+  it('lan pins internal only', () => {
+    expect(backendCandidates('controller', cfg('lan') as never)).toEqual([
+      'http://lan:1',
+    ]);
+  });
+  it('wan pins external only', () => {
+    expect(backendCandidates('controller', cfg('wan') as never)).toEqual([
+      'http://wan:1',
+    ]);
+  });
+  it('normalizeConfig keeps a valid mode and defaults garbage to auto', () => {
+    const ok = normalizeConfig({ version: 1, addressMode: 'wan', backends: {} });
+    expect(ok?.addressMode).toBe('wan');
+    const bad = normalizeConfig({ version: 1, addressMode: 'x', backends: {} });
+    expect(bad?.addressMode).toBe('auto');
   });
 });
 
