@@ -285,7 +285,7 @@ export function ThemeTab() {
                 <Label htmlFor="theme-day-palette">白天配色</Label>
                 <Select value={draftSchedule.dayTheme} disabled={locked}
                   onValueChange={(value) => setDraftSchedule({ ...draftSchedule, dayTheme: value as 'light' | 'warm' })}>
-                  <SelectTrigger id="theme-day-palette"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="theme-day-palette" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="light">冷灰白</SelectItem>
                     <SelectItem value="warm">暖白</SelectItem>
