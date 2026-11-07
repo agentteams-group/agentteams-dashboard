@@ -331,7 +331,6 @@ export function WorkerCreateDialog({
                 onSubmit();
               }}
               disabled={!value.name || !!nameError || isPending || modelVerdict.level === 'error'}
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
             >
               {isPending ? '创建中...' : '创建'}
             </Button>

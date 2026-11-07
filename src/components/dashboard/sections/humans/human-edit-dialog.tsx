@@ -240,7 +240,6 @@ export function HumanEditDialog({
             disabled={
               !hasChanges || missingTeams.length > 0 || missingWorkers.length > 0 || isPending
             }
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '保存中...' : '保存'}
           </Button>

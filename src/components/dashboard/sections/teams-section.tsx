@@ -289,7 +289,6 @@ export function TeamsSection() {
             </Button>
             <Button
               size="sm"
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />

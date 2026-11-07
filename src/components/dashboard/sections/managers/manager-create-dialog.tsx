@@ -112,7 +112,6 @@ export function ManagerCreateDialog({
           <Button
             onClick={onSubmit}
             disabled={!value.name || isPending}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '创建中...' : '创建'}
           </Button>
