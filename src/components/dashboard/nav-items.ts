@@ -75,9 +75,9 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   // ── 工作台（一级主线） ──
   // 我的工作台（F4.2）：聚合「等我」事项（待干预/待审批/@我的）。
-  { id: 'my-workbench', label: '我的工作台', icon: Inbox, area: 'workbench', group: 'mine' },
+  { id: 'my-workbench', label: '待你处理', icon: Inbox, area: 'workbench', group: 'mine' },
   // 协作空间：Matrix 房间升级为「工作单元」（F1.1）。id 仍为 chat。
-  { id: 'chat', label: '协作空间', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
+  { id: 'chat', label: '全部对话', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
   // 任务中心（原「任务看板 + 产物 + 编码执行」收拢，13 项零删减）。
   // The standalone projects section was merged into the task board's 项目
   // view, so there is no longer a separate 'projects' nav item.
@@ -89,12 +89,12 @@ export const navItems: NavItem[] = [
   // 编码执行记录（#146 缺口 2）：编码 CLI 一次性执行记录 + 原始日志（只读）。
   { id: 'coding-runs', label: '编码执行', icon: SquareTerminal, area: 'workbench', group: 'task-center', legacyGroup: 'runtime' },
   // 循环（M3 F5.2-F5.5）：定义/发布/复用由 Dashboard 承载，执行在上游。
-  { id: 'loops', label: '循环', icon: RefreshCcw, area: 'workbench', group: 'loop' },
+  { id: 'loops', label: '自动化', icon: RefreshCcw, area: 'workbench', group: 'loop' },
 
   // ── 控制台（二级：资源与治理合并） ──
   // 资源：Agent 目录（F7.1 资源收敛容器：Workers/团队/Humans/Managers
   // 以二级 tab 呈现）+ 市场 + 模型 + 知识库。
-  { id: 'resources', label: 'Agent 目录', icon: Bot, area: 'console', group: 'resources' },
+  { id: 'resources', label: '成员与团队', icon: Users, area: 'console', group: 'resources' },
   { id: 'workers', label: 'Workers', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
@@ -102,8 +102,9 @@ export const navItems: NavItem[] = [
   { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
   { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime', mergedInto: 'resources' },
   { id: 'humans', label: 'Humans', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
-  { id: 'skills', label: '市场', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
+  { id: 'skills', label: '技能', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },
+  { id: 'tools', label: '工具', icon: Wrench, area: 'console', group: 'resources', legacyGroup: 'resource' },
   // 知识库（#1208 workspace-files 消费：MEMORY.md/memory/**/digest/** 只读 +
   // wikilink 2D 图谱）。图标=手绘 SVG 摊书（lucide 同款规格）。
   { id: 'knowledge', label: '知识库', icon: KnowledgeBookIcon, area: 'console', group: 'resources', legacyGroup: 'resource' },
@@ -116,8 +117,8 @@ export const navItems: NavItem[] = [
 
 /** 工作台/控制台两级的区定义（侧栏一级入口）。 */
 export const navAreas: { id: NavArea; label: string; icon: LucideIcon }[] = [
-  { id: 'workbench', label: '工作台', icon: Hammer },
-  { id: 'console', label: '控制台', icon: Wrench },
+  { id: 'workbench', label: '工作进展', icon: Hammer },
+  { id: 'console', label: '管理工具', icon: Wrench },
 ];
 
 /** 区内分组定义。 */

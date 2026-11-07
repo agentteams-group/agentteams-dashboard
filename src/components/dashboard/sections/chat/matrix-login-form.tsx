@@ -26,21 +26,22 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
   };
 
   return (
-    <Card className="glass-card border-cyan-500/20">
+    <Card className="border-border shadow-none">
       <CardContent className="p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-            <Lock className="w-5 h-5 text-cyan-500" />
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Lock className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h3 className="font-semibold">登录 Matrix</h3>
-            <p className="text-xs text-muted-foreground">连接到 Matrix 服务器以收发消息</p>
+            <h3 className="font-semibold">连接对话</h3>
+            <p className="text-xs text-muted-foreground">使用你的 AgentTeams 账号继续协作</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Homeserver 地址</label>
+          <details>
+            <summary className="cursor-pointer text-xs text-muted-foreground">高级连接设置</summary>
+            <label className="text-xs text-muted-foreground mb-1 mt-3 block">消息服务地址</label>
             <Input
               placeholder="http://agentteams-controller:6167"
               value={effectiveHomeserverUrl}
@@ -52,7 +53,7 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
                 从基础设施自动获取: {infrastructure.matrix.homeserver}
               </p>
             )}
-          </div>
+          </details>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">用户名</label>
             <Input
@@ -101,7 +102,7 @@ export function MatrixLoginForm({ onLoginSuccess }: { onLoginSuccess?: () => voi
 
         <div className="mt-4 p-3 rounded-lg bg-muted/50">
           <p className="text-xs text-muted-foreground">
-            提示: AgentTeams 的 Human 用户可以作为 Matrix 账号登录。用户名即 Human 名称，初始密码由 Controller 创建时生成。
+            使用管理员提供的账号和密码。正常登录工作区后，对话会自动连接。
           </p>
         </div>
       </CardContent>

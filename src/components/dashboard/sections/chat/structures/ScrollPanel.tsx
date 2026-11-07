@@ -255,6 +255,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
           return (
             <div
               data-timeline-index={dataIndex}
+              data-chat-timeline-item
               className={`mx-auto w-full ${CHAT_COLUMN_CLASS} px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
                 highlightedIndex === dataIndex ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
               }`}

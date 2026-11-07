@@ -384,7 +384,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
+    <div data-chat-composer className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
       <div className={`mx-auto w-full ${CHAT_COLUMN_CLASS}`}>
       {/* Edit session bar (element-web style) */}
       {editSession && (
@@ -504,7 +504,7 @@ export function ChatComposer({
 
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
-      <div className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
+      <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
         <input
           ref={fileInputRef}
           type="file"
@@ -526,8 +526,9 @@ export function ChatComposer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
+          aria-label="消息"
           disabled={disabled || voiceBusy}
-          className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground/50"
+          className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
         />
@@ -535,7 +536,7 @@ export function ChatComposer({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={handleFileClick}
             disabled={disabled || isUploading}
             title="上传文件（也可直接粘贴或拖拽）"
@@ -551,7 +552,7 @@ export function ChatComposer({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={() => setPickerOpen(true)}
               disabled={disabled}
               title="引用工作空间文件"
@@ -574,8 +575,8 @@ export function ChatComposer({
             }}
           />
 
-          <p className="ml-1 hidden min-w-0 truncate text-xs text-muted-foreground/60 sm:block">
-            Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
+          <p className="ml-2 hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="↑ 编辑上一条 · @ 提及 · : 表情 · / 命令">
+            Enter 发送 · Shift+Enter 换行
           </p>
 
           {editSession ? (
@@ -592,6 +593,8 @@ export function ChatComposer({
           ) : (
             <Button
               size="sm"
+              data-chat-send
+              aria-label="发送消息"
               className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
               onClick={handleSend}
               disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}

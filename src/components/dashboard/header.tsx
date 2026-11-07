@@ -22,7 +22,6 @@ import {
 import { apiUrl } from '@/lib/api-base';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,7 +109,7 @@ export function DashboardHeader({
     });
   };
 
-  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? 'L2' : '观察者';
+  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? '团队成员' : '观察者';
 
   const visibleActions = useMemo(
     () => actions.filter((action) => isCreateActionVisible(action, mode, undefined, userLevel)),
@@ -159,7 +158,7 @@ export function DashboardHeader({
   }, [searchInputRef]);
 
   return (
-    <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center gap-3 px-4 sticky top-0 z-30">
+    <header className="h-14 shrink-0 border-b border-border bg-background flex items-center gap-1 px-3 sm:gap-3 sm:px-6 sticky top-0 z-30">
       <Button
         variant="ghost"
         size="icon"
@@ -170,11 +169,12 @@ export function DashboardHeader({
         <Menu className="w-5 h-5" aria-hidden="true" />
       </Button>
 
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+      <div className={`${paletteOpen ? 'absolute inset-x-3 top-3 z-40 sm:relative sm:inset-auto' : 'relative'} min-w-0 flex-1 max-w-sm`}>
+        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${paletteOpen ? 'block' : 'hidden sm:block'} w-4 h-4 text-muted-foreground z-10`} />
         <Input
           ref={searchInputRef}
-          placeholder="搜索页面、房间、Workers、团队... (K)"
+          placeholder="搜索 Agent、任务和工具…"
+          aria-label="搜索工作区"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
           onFocus={() => setPaletteOpen(true)}
@@ -182,7 +182,7 @@ export function DashboardHeader({
             // Delay closing so click events on results can fire
             setTimeout(() => setPaletteOpen(false), 200);
           }}
-          className="pl-9 h-9 bg-background/50"
+          className={`${paletteOpen ? '' : 'max-sm:sr-only'} pl-9 h-9 rounded-lg border-border bg-muted/30 shadow-none focus-visible:bg-background`}
         />
         {paletteOpen && searchResults.length > 0 && (
           <CommandPalette
@@ -210,43 +210,18 @@ export function DashboardHeader({
       </div>
 
       {isConnected && (
-        <div className="hidden lg:flex items-center">
-          {/* 资源计数合并为一枚胶囊（优化反馈：三个独立徽章视觉噪音），
-              tooltip 分项说明 */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className="text-xs h-6 gap-2 px-2 bg-background/40 text-muted-foreground"
-              >
-                <span className="flex items-center gap-1">
-                  <Bot className="w-3 h-3" />
-                  {workerCount}
-                </span>
-                <span className="h-3 w-px bg-border" aria-hidden="true" />
-                <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {teamCount}
-                </span>
-                <span className="h-3 w-px bg-border" aria-hidden="true" />
-                <span className="flex items-center gap-1">
-                  <Crown className="w-3 h-3" />
-                  {managerCount}
-                </span>
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              Workers {workerCount} · 团队 {teamCount} · Managers {managerCount}
-            </TooltipContent>
-          </Tooltip>
+        <div role="group" aria-label="资源数量" className="hidden shrink-0 items-center gap-4 text-sm text-muted-foreground xl:flex">
+          <span className="flex items-center gap-1.5"><Bot className="size-4" aria-hidden="true" />Agent <span className="font-medium tabular-nums text-foreground">{workerCount}</span></span>
+          <span className="flex items-center gap-1.5"><Users className="size-4" aria-hidden="true" />团队 <span className="font-medium tabular-nums text-foreground">{teamCount}</span></span>
+          {userLevel >= 3 && <span className="flex items-center gap-1.5"><Crown className="size-4" aria-hidden="true" />Manager <span className="font-medium tabular-nums text-foreground">{managerCount}</span></span>}
         </div>
       )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs">
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm" aria-label="创建">
             <Zap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">快速操作</span>
+            <span className="hidden sm:inline">创建</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
@@ -268,7 +243,7 @@ export function DashboardHeader({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -277,6 +252,7 @@ export function DashboardHeader({
               className="h-9 w-9"
               onClick={onRefreshAll}
               disabled={isRefreshingAll}
+              aria-label="刷新所有数据"
             >
               <RefreshCw className={`h-4 w-4 ${isRefreshingAll ? 'animate-spin' : ''}`} />
             </Button>
@@ -287,27 +263,16 @@ export function DashboardHeader({
         {/* Plugin-contributed toolbar buttons (extension point: toolbar) */}
         <PluginToolbarButtons />
 
-        {/* 连接状态 + 版本合并为单状态胶囊（优化反馈：减少独立徽章；
-            hover 显示版本与延迟详情） */}
+        {/* 连接状态独立展示，版本信息保留在说明中。 */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge
-              className={`gap-1.5 text-xs cursor-default ${
-                isConnected
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
-              }`}
-              variant="outline"
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}
-                aria-hidden="true"
-              />
-              <span className="hidden sm:inline">{isConnected ? '在线' : '离线'}</span>
-            </Badge>
+            <span className={`hidden items-center gap-1.5 text-sm sm:inline-flex ${isConnected ? 'text-status-done' : 'text-status-waiting'}`}>
+              <span className={`size-1.5 rounded-full ${isConnected ? 'bg-status-done' : 'bg-status-waiting'}`} aria-hidden="true" />
+              {isConnected ? '在线' : '离线'}
+            </span>
           </TooltipTrigger>
           <TooltipContent>
-            {isConnected ? 'Controller 已连接' : 'Controller 未连接'}
+            {isConnected ? '平台服务已连接' : '平台服务未连接'}
             {versionString && <div className="text-xs opacity-80">版本 v{versionString}</div>}
           </TooltipContent>
         </Tooltip>
@@ -317,21 +282,9 @@ export function DashboardHeader({
         {sessionUser && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-xs">
+              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-sm" aria-label={sessionUser}>
                 <UserCircle className="h-4 w-4" />
-                <span className="max-w-[120px] truncate">{sessionUser}</span>
-                <Badge
-                  variant="secondary"
-                  className={`text-xs ${
-                    userLevel === 3
-                      ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-                      : userLevel === 2
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                        : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
-                  }`}
-                >
-                  {levelLabel}
-                </Badge>
+                <span className="hidden sm:inline max-w-[120px] truncate">{sessionUser}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">

@@ -85,11 +85,11 @@ describe('ArtifactsSection（9/14 UX 对齐插件）', () => {
 
   it('① 时间排序：无时间戳项目按 project_id 内嵌日期兜底（0914 在 0901 前）', async () => {
     render(<ArtifactsSection />);
-    const b = await screen.findByText('B 项目');
-    expect(screen.getByText('A 项目')).toBeInTheDocument();
+    const b = await screen.findByTitle('B 项目');
+    expect(screen.getByTitle('A 项目')).toBeInTheDocument();
     // 默认 时间 新→旧：0914 的 B 在 0901 的 A 之前
     expect(
-      b.compareDocumentPosition(screen.getByText('A 项目')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      b.compareDocumentPosition(screen.getByTitle('A 项目')) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

@@ -55,17 +55,8 @@ function resolveInitialSection(): string {
     }
   }
 
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && isKnownSection(stored)) return stored;
-    // Pre-Workbench stored ids remain valid section ids — they were flat.
-  } catch {
-    /* localStorage unavailable */
-  }
-
-  // Default landing section: the collaboration space (conversation-first
-  // shell). Operators can pin another surface via a layered deep link or
-  // localStorage.
+  // The product root always opens the user's assistant. Explicit deep links
+  // above still restore a tool page or a particular conversation.
   return 'chat';
 }
 

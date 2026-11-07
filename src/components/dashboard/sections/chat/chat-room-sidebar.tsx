@@ -416,7 +416,7 @@ export function ChatRoomSidebar({
             aria-hidden="true"
           />
           <Input
-            placeholder="搜索房间..."
+            placeholder="搜索对话…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="h-7 pl-7 text-xs bg-background/70 rounded-md"
@@ -432,11 +432,11 @@ export function ChatRoomSidebar({
         ) : filtered.length === 0 ? (
           <div className="text-center py-8">
             <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground">暂无聊天房间</p>
+            <p className="text-xs text-muted-foreground">暂无对话</p>
             <p className="text-xs text-muted-foreground mt-1">
               {isLoggedIn
-                ? '创建 Worker 或 Team 后会自动生成 Matrix 房间'
-                : '创建 Worker 或 Team 后会自动生成 Matrix 房间；登录 Matrix 后还将加载项目群等其他房间'}
+                ? '创建 Agent 或团队后，对话会自动显示在这里'
+                : '连接对话后，即可查看 Agent、团队及项目的协作记录'}
             </p>
           </div>
         ) : (
@@ -474,7 +474,7 @@ export function ChatRoomSidebar({
             <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {isLoggedIn
                 ? `已登录: ${shortId}`
-                : '未登录 - 仅可查看房间列表'}
+                : '未连接 · 暂时只能查看对话列表'}
             </p>
           </div>
         )}

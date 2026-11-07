@@ -27,8 +27,8 @@ export function DashboardFooter({
   matrixSyncing,
 }: DashboardFooterProps) {
   return (
-    <footer className="h-7 border-t border-border bg-card/80 backdrop-blur-sm flex items-center px-3 gap-3 text-xs text-muted-foreground flex-shrink-0">
-      <div className="flex items-center gap-1.5">
+    <footer className="flex h-8 shrink-0 items-center gap-3 whitespace-nowrap border-t border-border bg-card px-4 text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-1.5">
         {isConnected ? (
           <Wifi className="w-3 h-3 text-emerald-500" />
         ) : (
@@ -46,37 +46,34 @@ export function DashboardFooter({
         )}
       </div>
 
-      <Separator orientation="vertical" className="h-3" />
-
-      <div className="flex items-center gap-1 min-w-0 max-w-[200px]">
-        <Globe className="w-3 h-3 flex-shrink-0" />
-        <span className="truncate">{controllerUrl.replace(/^https?:\/\//, '')}</span>
-      </div>
-
-      <Separator orientation="vertical" className="h-3" />
-
-      <div className="flex items-center gap-1">
-        <Clock className="w-3 h-3" />
+      {controllerUrl && <>
+        <Separator orientation="vertical" className="hidden h-3 md:block" />
+        <div className="hidden min-w-0 max-w-[200px] items-center gap-1 md:flex" title={controllerUrl}>
+          <Globe className="size-3 shrink-0" />
+          <span className="truncate">{controllerUrl.replace(/^https?:\/\//, '')}</span>
+        </div>
+      </>}
+      <Separator orientation="vertical" className="hidden h-3 md:block" />
+      <div className="hidden items-center gap-1 md:flex" title="上次刷新">
+        <Clock className="size-3" />
         <span>{lastRefreshText}</span>
       </div>
-
-      <Separator orientation="vertical" className="h-3" />
-
-      <div className="flex items-center gap-1">
-        <RefreshCw className="w-3 h-3" />
+      <Separator orientation="vertical" className="hidden h-3 md:block" />
+      <div className="hidden items-center gap-1 md:flex" title="重连间隔">
+        <RefreshCw className="size-3" />
         <span>{reconnectInterval / 1000}s</span>
       </div>
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <MessageSquare className="w-3 h-3" />
         <span>
           {matrixLoggedIn
             ? matrixSyncing
-              ? 'Matrix 同步中'
-              : 'Matrix 已连接'
-            : 'Matrix 未连接'}
+              ? '消息同步中'
+              : '对话已连接'
+            : '对话未连接'}
         </span>
         {matrixLoggedIn && (
           <span className={`w-1.5 h-1.5 rounded-full ${matrixSyncing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />

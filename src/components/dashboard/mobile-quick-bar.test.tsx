@@ -36,8 +36,8 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
   it('窄屏三项常驻：等我 / 空间 / 搜索', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
     expect(screen.getByRole('navigation', { name: '快捷导航' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '等我' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '空间' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '待处理' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '助手' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
   });
 
@@ -45,13 +45,13 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
     setPendingCount(0);
     render(<MobileQuickBar onSearch={() => {}} />);
     expect(screen.queryByText('0')).toBeNull();
-    expect(screen.getByRole('button', { name: '等我' })).toHaveTextContent('等我');
+    expect(screen.getByRole('button', { name: '待处理' })).toHaveTextContent('待处理');
   });
 
   it('计数为 3 原样显示', () => {
     setPendingCount(3);
     render(<MobileQuickBar onSearch={() => {}} />);
-    expect(screen.getByRole('button', { name: /等我/ })).toHaveTextContent('3');
+    expect(screen.getByRole('button', { name: /待处理/ })).toHaveTextContent('3');
   });
 
   it('计数 120 收成 99+', () => {
@@ -63,24 +63,24 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
 
   it('点「等我」只写 hash：#workbench/me', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: /等我/ }));
+    fireEvent.click(screen.getByRole('button', { name: /待处理/ }));
     expect(window.location.hash).toBe('#workbench/me');
   });
 
   it('点「空间」只写 hash：#workbench/space', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: '空间' }));
+    fireEvent.click(screen.getByRole('button', { name: '助手' }));
     expect(window.location.hash).toBe('#workbench/space');
   });
 
   it('当前分区那一项带 aria-current="page"，其余不带', () => {
     useSectionStore.getState().setActiveSection('my-workbench');
     render(<MobileQuickBar onSearch={() => {}} />);
-    expect(screen.getByRole('button', { name: /等我/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /待处理/ })).toHaveAttribute(
       'aria-current',
       'page'
     );
-    expect(screen.getByRole('button', { name: '空间' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '助手' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: '搜索' })).not.toHaveAttribute('aria-current');
   });
 

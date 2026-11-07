@@ -95,7 +95,7 @@ describe('ChatRoomSidebar', () => {
 
   it('filters rooms by search text', () => {
     renderSidebar();
-    fireEvent.change(screen.getByPlaceholderText('搜索房间...'), { target: { value: 'unread' } });
+    fireEvent.change(screen.getByPlaceholderText('搜索对话…'), { target: { value: 'unread' } });
     expect(screen.getByText('Unread Room')).toBeInTheDocument();
     expect(screen.queryByText('Newest')).toBeNull();
   });

@@ -469,6 +469,7 @@ export function MessageBubble({
 
   return (
     <div
+      data-chat-message={message.isMe ? 'user' : 'agent'}
       className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -484,7 +485,7 @@ export function MessageBubble({
           C-5: AgentPresenceCard 只在这一处包一层 hover/焦点悬浮卡。它包的是
           按钮外面（不是替按钮做 trigger），所以上面那句“可点”与 disabled
           规则一点没动；没 workerName 的人类发送者由卡片自己原样透出 children。 */}
-      <div className="w-[30px] shrink-0">
+      <div data-chat-avatar className="w-[30px] shrink-0">
         {showAvatar && (
           <AgentPresenceCard
             sender={message.sender}
@@ -516,7 +517,7 @@ export function MessageBubble({
 
       <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
         {showAvatar && (
-          <div className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+          <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
             <span className={`text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
               {senderLabel}
             </span>
@@ -733,7 +734,7 @@ export function MessageBubble({
                       <div key={idx} className="w-full space-y-1.5">
                         {/* 引言（选项块之前）原样保留 */}
                         {heuristic.before && (
-                          <div className={bubbleClasses}>
+                          <div data-chat-bubble className={bubbleClasses}>
                             <MarkdownMessage
                               content={heuristic.before}
                               msgType={message.type}
@@ -752,7 +753,7 @@ export function MessageBubble({
                         />
                         {/* 同一条消息里的其它问题（选项块之后）原样保留 */}
                         {heuristic.after && (
-                          <div className={bubbleClasses}>
+                          <div data-chat-bubble className={bubbleClasses}>
                             <MarkdownMessage
                               content={heuristic.after}
                               msgType={message.type}
@@ -766,7 +767,7 @@ export function MessageBubble({
                     );
                   }
                   return (
-                    <div key={idx} className={bubbleClasses}>
+                    <div key={idx} data-chat-bubble className={bubbleClasses}>
                       <MarkdownMessage
                         content={block.text}
                         formattedContent={message.formattedContent ? block.text : undefined}

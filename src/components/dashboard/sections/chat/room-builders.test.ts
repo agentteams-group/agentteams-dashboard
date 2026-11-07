@@ -75,6 +75,26 @@ const human = (overrides: Partial<HumanResponse> = {}): HumanResponse => ({
 });
 
 describe('buildRooms', () => {
+  it('builds the Team Leader DM without access to the global managers list', () => {
+    const rooms = buildRooms([], [team({ name: 'design', teamName: '设计团队', leaderName: 'design-leader', leaderDMRoomID: '!leader:test' })], undefined);
+    expect(rooms.find((room) => room.id === '!leader:test')).toMatchObject({
+      type: 'manager', agentRole: 'leader', parentTeam: 'design', name: '设计团队助手',
+    });
+  });
+
+  it('keeps leader DM unique when the Manager resource references the same conversation', () => {
+    const rooms = buildRooms([], [team({ leaderName: 'm1', leaderDMRoomID: '!leader:test' })], [manager({ leaderDMRoomID: '!leader:test' })]);
+    expect(rooms.filter((room) => room.id === '!leader:test')).toHaveLength(1);
+    expect(rooms.find((room) => room.id === '!leader:test')?.agentRole).toBe('leader');
+  });
+
+  it('resolves a Worker-based Leader identity for mentions, activity and workspace files', () => {
+    const rooms = buildRooms([worker({ name: 'leader', matrixUserID: '@leader:test', runtime: 'qwenpaw' })], [team({ leaderName: 'leader', leaderDMRoomID: '!leader:test' })], undefined);
+    expect(rooms.find((room) => room.id === '!leader:test')).toMatchObject({
+      workerName: 'leader', matrixUserId: '@leader:test', workerMatrixUserIds: ['@leader:test'], runtime: 'qwenpaw',
+    });
+  });
+
   it('returns empty when no data', () => {
     expect(buildRooms(undefined, undefined, undefined)).toEqual([]);
   });

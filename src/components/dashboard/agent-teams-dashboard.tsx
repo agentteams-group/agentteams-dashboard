@@ -52,6 +52,9 @@ import {
   parsePluginSectionId,
 } from '@/lib/plugins/types';
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
+import { buildRooms } from './sections/chat/room-builders';
+import styles from './workspace.module.css';
+import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -71,6 +74,7 @@ const ResourcesSection = lazy(() => import('./sections/resources-section').then(
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const TracingSection = lazy(() => import('./sections/tracing-section').then(m => ({ default: m.TracingSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
+const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
 export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
@@ -86,6 +90,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   managers: ManagersSection,
   humans: HumansSection,
   models: ModelsSection,
+  tools: McpServersSection,
   knowledge: KnowledgeSection,
   audit: AuditSection,
   tracing: TracingSection,
@@ -127,6 +132,7 @@ export function AgentTeamsDashboard() {
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
   const { data: humans } = useHumans();
+  const agentRooms = useMemo(() => buildRooms([], teams, managers).filter((room) => room.agentRole && (userLevel >= 3 || room.agentRole !== 'operations')), [teams, managers, userLevel]);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Plugin system: discover + activate plugins once per session.
@@ -190,14 +196,15 @@ export function AgentTeamsDashboard() {
       // is removed, the section route still works if navigated to directly".
       // The projects section was merged into tasks (use-active-section
       // aliases #projects -> #tasks), so it never reaches this check.
-      // Only mode-hidden or unknown sections fall back.
+      // Mode-hidden, unknown or privileged sections fall back; flag-hidden routes remain reachable.
       const known = navItems.find((n) => n.id === activeSection);
       const modeHidden = !known || (!!known.modes && !!mode && !known.modes.includes(mode));
-      if (modeHidden) {
-        setActiveSection('overview');
+      const levelHidden = !!known?.minLevel && userLevel < known.minLevel;
+      if (modeHidden || levelHidden) {
+        setActiveSection(levelHidden ? 'resources' : 'overview');
       }
     }
-  }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes]);
+  }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes, userLevel]);
 
   // Notify plugins about section changes (host:section-changed).
   useEffect(() => {
@@ -209,12 +216,12 @@ export function AgentTeamsDashboard() {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (isCmdOrCtrl) {
-        // Ctrl+1..8: activate each navigation item.
-        if (e.key >= '1' && e.key <= '8') {
+        // Ctrl+1..4 follows the four primary destinations.
+        if (e.key >= '1' && e.key <= '4') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
-          if (index < visibleNavItems.length) {
-            setActiveSection(visibleNavItems[index].id);
+          if (index < workspaceMenus.length) {
+            setActiveSection(workspaceMenus[index].id);
             setMobileMenuOpen(false);
           }
         }
@@ -229,20 +236,18 @@ export function AgentTeamsDashboard() {
 
       if (e.key === 'Enter' && focusedSection) {
         e.preventDefault();
-        setActiveSection(focusedSection);
-        setMobileMenuOpen(false);
+        focusedElement.click();
         return;
       }
 
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 
-      const currentIndex = visibleNavItems.findIndex((item) => item.id === focusedSection);
+      const buttons = Array.from(focusedElement.closest('aside')?.querySelectorAll<HTMLButtonElement>('[data-nav-section]') ?? [])
+        .filter(button => !button.closest('[hidden]'));
+      const currentIndex = buttons.indexOf(focusedElement as HTMLButtonElement);
       const nextIndex = currentIndex + (e.key === 'ArrowDown' ? 1 : -1);
-      if (nextIndex < 0 || nextIndex >= visibleNavItems.length) return;
-
-      const target = focusedElement
-        .closest('aside')
-        ?.querySelector<HTMLButtonElement>(`[data-nav-section="${visibleNavItems[nextIndex].id}"]`);
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= buttons.length) return;
+      const target = buttons[nextIndex];
       if (target) {
         e.preventDefault();
         target.focus();
@@ -250,10 +255,12 @@ export function AgentTeamsDashboard() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveSection, visibleNavItems]);
+  }, [setActiveSection]);
 
-  const ActiveSectionComponent = sectionMap[activeSection] || OverviewSection;
   const activeItem = navItems.find((n) => n.id === activeSection);
+  const ActiveSectionComponent = activeItem?.minLevel && userLevel < activeItem.minLevel
+    ? ResourcesSection
+    : sectionMap[activeSection] || OverviewSection;
   const activePluginRoute = useMemo(() => {
     const parsed = parsePluginSectionId(activeSection);
     if (!parsed) return null;
@@ -266,6 +273,7 @@ export function AgentTeamsDashboard() {
   const activeLabel = isPluginSection
     ? activePluginRoute?.contribution.title ?? '插件页面'
     : activeItem?.label || '总览';
+  const activeMenu = workspaceMenuFor(activeSection);
 
   const workerCount = workers?.length ?? 0;
   const teamCount = teams?.length ?? 0;
@@ -350,9 +358,10 @@ export function AgentTeamsDashboard() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="h-dvh overflow-hidden flex flex-col bg-background">
+      <div className={`${styles.workspace} h-dvh overflow-hidden flex flex-col bg-background`}>
         <div className="flex flex-1 min-h-0">
           <Sidebar
+            agentRooms={agentRooms}
             activeSection={activeSection}
             countMap={countMap}
             sectionsWithNotifications={sectionsWithNotifications}
@@ -363,6 +372,7 @@ export function AgentTeamsDashboard() {
           />
 
           <MobileSidebar
+            agentRooms={agentRooms}
             open={mobileMenuOpen}
             activeSection={activeSection}
             countMap={countMap}
@@ -376,7 +386,7 @@ export function AgentTeamsDashboard() {
               搜索项复用已有机制——聚焦顶栏搜索框即打开命令面板（与 ⌘/Ctrl+K 同路）。 */}
           <MobileQuickBar onSearch={() => searchInputRef.current?.focus()} />
 
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
             <DashboardHeader
               isConnected={isConnected}
               workerCount={workerCount}
@@ -415,15 +425,16 @@ export function AgentTeamsDashboard() {
               full height.
             */}
             <div
-              className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'border-b border-border/50 bg-background/50'}`}
+              className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'bg-background'}`}
             >
               {activeSection !== 'chat' && (
-                <div className="px-4 md:px-6 py-2 border-b border-border/50 bg-background/50">
+                <div className="px-5 py-3 md:px-6 bg-background">
                   <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Home className="w-3.5 h-3.5" />
                     <ChevronSep className="w-3 h-3" />
                     <span className="font-medium text-foreground">AgentTeams</span>
                     <ChevronSep className="w-3 h-3" />
+                    {activeMenu && activeMenu.label !== activeLabel && <><span>{activeMenu.label}</span><ChevronSep className="w-3 h-3" /></>}
                     <span>{activeLabel}</span>
                   </nav>
                 </div>
@@ -438,10 +449,11 @@ export function AgentTeamsDashboard() {
                   </SectionErrorBoundary>
                 </div>
               ) : (
-                <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
+                <main className="flex-1 overflow-y-auto custom-scrollbar p-5 md:px-6 md:pb-6 md:pt-3">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeSection}
+                      className="mx-auto w-full max-w-[1440px]"
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}

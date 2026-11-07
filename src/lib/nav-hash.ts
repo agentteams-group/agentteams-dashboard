@@ -38,6 +38,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   managers: 'console/resources/managers',
   skills: 'console/resources/skills',
   models: 'console/resources/models',
+  tools: 'console/resources/tools',
   knowledge: 'console/resources/knowledge',
   audit: 'console/governance/audit',
   tracing: 'console/governance/tracing',
@@ -62,6 +63,7 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   managers: 'managers',
   skills: 'skills',
   models: 'models',
+  tools: 'tools',
   knowledge: 'knowledge',
   audit: 'audit',
   tracing: 'tracing',
@@ -220,16 +222,16 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Console: resources / governance / system
   if (segments[0] === 'console') {
-    // 资源收敛（F7.1）：workers/teams/humans/managers 分层路径全部进入
-    // Agent 目录容器（tab 由 ResourcesSection 从第三段解析）。
+    // 成员子页面直接进入原有 section，左侧可展开菜单负责分类切换。
     const consoleMap: Record<string, string> = {
       'resources': 'resources',
-      'resources/workers': 'resources',
-      'resources/teams': 'resources',
-      'resources/humans': 'resources',
-      'resources/managers': 'resources',
+      'resources/workers': 'workers',
+      'resources/teams': 'teams',
+      'resources/humans': 'humans',
+      'resources/managers': 'managers',
       'resources/skills': 'skills',
       'resources/models': 'models',
+      'resources/tools': 'tools',
       'resources/knowledge': 'knowledge',
       'governance/audit': 'audit',
       'governance/tracing': 'tracing',

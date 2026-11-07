@@ -23,6 +23,7 @@ import { MatrixStatusBanner } from './matrix-status-banner';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ChatProvider } from './ChatStore';
 import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
+import { preferredAgentRoom } from './agent-conversations';
 
 const NARROW_MQ = '(max-width: 767px)';
 
@@ -79,13 +80,13 @@ export function ChatSection() {
     error: humansError,
     refetch: refetchHumans,
   } = useHumans();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const { isLoggedIn, userId, logout } = useMatrixStore();
 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
-  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
+  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(true);
   const [mobileRoomListOpen, setMobileRoomListOpen] = useState(false);
 
   // Keep SSR and the first client render consistent; narrow screens use a drawer.
@@ -180,9 +181,8 @@ export function ChatSection() {
   ]);
 
   useEffect(() => {
-    if (selectedRoomId === null || !rooms.some((r) => r.id === selectedRoomId)) {
-      useRoomMetaStore.getState().setActiveRoomId(null);
-    }
+    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : null;
+    useRoomMetaStore.getState().setActiveRoomId(active);
   }, [selectedRoomId, rooms]);
 
   // Deep-link consumption: read the pending value WITHOUT clearing it, and
@@ -202,14 +202,19 @@ export function ChatSection() {
   // Declared AFTER the clear-guard effect above: within one commit effects
   // run in declaration order, so consumption wins over the guard's
   // setActiveRoomId(null) while selectedRoomId still holds the pre-link value.
+  const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   useEffect(() => {
     if (isLoading) return;
-    const pendingChatRoomId = useHitlInboxStore.getState().pendingChatRoomId;
     if (pendingChatRoomId && rooms.some((r) => r.id === pendingChatRoomId)) {
       useHitlInboxStore.getState().takePendingChatRoomId();
       handleSelectRoom(pendingChatRoomId);
+      return;
     }
-  }, [isLoading, rooms, handleSelectRoom]);
+    if (!pendingChatRoomId && selectedRoomId === null) {
+      const preferred = preferredAgentRoom(rooms, userLevel ?? 3);
+      if (preferred) handleSelectRoom(preferred.id);
+    }
+  }, [isLoading, pendingChatRoomId, rooms, selectedRoomId, userLevel, handleSelectRoom]);
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) || null,
     [rooms, selectedRoomId],
@@ -243,6 +248,12 @@ export function ChatSection() {
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
+          <Button variant="ghost" size="sm" className="h-8 gap-2 px-0 text-sm text-muted-foreground" aria-label="打开空间列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
+            <PanelLeftOpen className="size-4" />切换对话
+          </Button>
+          <SyncStatusChip />
+        </div>
         {projectionNotices.map((notice) => (
           <div
             key={notice.key}
@@ -265,28 +276,6 @@ export function ChatSection() {
         {/* Main content: 2 or 3 column flex */}
         <div className="flex-1 flex min-h-0">
           {/* Left: Room list */}
-          {isRoomListCollapsed && !narrowViewport && (
-            <div className="w-10 shrink-0 border-r border-border bg-muted/20 pt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mx-auto h-7 w-7 p-0"
-                onClick={() => setIsRoomListCollapsed(false)}
-                title="显示会话列表"
-              >
-                <PanelLeftOpen className="w-3.5 h-3.5" />
-              </Button>
-              {/* Collapsed rail keeps the session signal the old bar carried. */}
-              <span
-                role="status"
-                aria-label={isLoggedIn ? 'Matrix 已连接' : 'Matrix 未连接'}
-                title={isLoggedIn ? 'Matrix 已连接' : 'Matrix 未连接'}
-                className={`mx-auto mt-2 block h-2 w-2 rounded-full ${
-                  isLoggedIn ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'
-                }`}
-              />
-            </div>
-          )}
           {!isRoomListCollapsed && !narrowViewport && (
             <ChatRoomSidebar
               rooms={rooms}
@@ -326,23 +315,6 @@ export function ChatSection() {
 
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            {/* Narrow viewports hide the room list behind a drawer, so the
-                trigger needs a row of its own above the conversation. */}
-            {narrowViewport && (
-              <div className="flex shrink-0 items-center border-b border-border bg-card/40 px-2 py-1.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setMobileRoomListOpen(true)}
-                  title="打开空间列表"
-                  aria-label="打开空间列表"
-                >
-                  <PanelLeftOpen className="w-4 h-4" aria-hidden="true" />
-                  空间列表
-                </Button>
-              </div>
-            )}
             {selectedRoom ? (
               // key forces a fresh ChatRoom instance per room so input,
               // in-flight local messages and scroll state never leak across

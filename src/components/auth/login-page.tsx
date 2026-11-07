@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { Lock, LogIn, RefreshCw, AlertCircle } from 'lucide-react';
+import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow } from 'lucide-react';
+import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -65,15 +66,31 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="grid min-h-dvh bg-background lg:grid-cols-2">
+      <section className="hidden flex-col justify-between bg-primary/5 p-12 lg:flex xl:p-16">
+        <div className="flex items-center gap-3"><Image src="/agentteams-logo.svg" alt="" width={32} height={32} /><span className="text-lg font-semibold tracking-tight">AgentTeams</span></div>
+        <div className="max-w-lg py-16">
+          <p className="mb-5 text-sm font-medium text-primary">你的目标，团队一起完成。</p>
+          <h1 className="text-4xl font-semibold leading-tight tracking-tight xl:text-5xl">从一句话开始，<br />把工作向前推进。</h1>
+          <p className="mt-6 max-w-md text-sm leading-7 text-muted-foreground">与平台助手管理日常运维，与团队助手协同推进项目。对话、执行过程和交付成果，都在同一个工作区。</p>
+          <div className="mt-12 space-y-5">
+            <div className="flex items-center gap-4"><ShieldCheck className="size-5 text-primary" /><span className="text-sm">平台管理，直接对话</span></div>
+            <div className="flex items-center gap-4"><Bot className="size-5 text-primary" /><span className="text-sm">团队协作，随时跟进</span></div>
+            <div className="flex items-center gap-4"><Workflow className="size-5 text-primary" /><span className="text-sm">从目标到交付，进展清晰可见</span></div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">AgentTeams · Agents work better together.</p>
+      </section>
+      <div className="flex items-center justify-center px-6 py-12 sm:px-12">
+      <Card className="w-full max-w-sm border-0 bg-transparent shadow-none">
         <CardHeader className="space-y-1">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <Lock className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">AgentTeams Dashboard</CardTitle>
+              <CardTitle className="text-xl font-semibold tracking-tight">欢迎回到 AgentTeams</CardTitle>
+              <p className="mt-1.5 text-sm text-muted-foreground">登录你的工作区，继续和 Agent 协作。</p>
             </div>
           </div>
         </CardHeader>
@@ -107,7 +124,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
               onClick={() => setAdminVisible((v) => !v)}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              {adminVisible ? '收起管理员账号验证 ▲' : '管理员账号验证（仅L1账号需要）▼'}
+              {adminVisible ? '收起高级登录选项' : '高级登录选项'}
             </button>
             {adminVisible && (
               <div className="space-y-2">
@@ -142,8 +159,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
                   disabled={isLoading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  仅 L1 账号（Human CR level 1，需管理数据时）填写：填管理员账号与密码（部署管理员告知），或直接填
-                  Controller 管理员 token，二选一。L2/L3 账号留空即可。
+                  仅在管理员要求额外验证时填写。普通团队账号无需填写。
                 </p>
               </div>
             )}
@@ -158,7 +174,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
           <Button
             onClick={handleLogin}
             disabled={isLoading || !username || !password}
-            className="w-full"
+            className="w-full h-11 rounded-xl"
           >
             {isLoading ? (
               <>
@@ -168,7 +184,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
             ) : (
               <>
                 <LogIn className="w-4 h-4 mr-2" />
-                登录
+                登录工作区 <ArrowUpRight className="ml-auto size-4" />
               </>
             )}
           </Button>
@@ -182,11 +198,12 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
               onClick={() => router.push('?setup=1')}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              无法登录？后端配置（地址 / 首启）
+              连接设置与登录帮助
             </button>
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

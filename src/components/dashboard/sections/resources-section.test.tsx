@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourcesSection } from './resources-section';
@@ -27,25 +27,32 @@ describe('ResourcesSection deep-link tabs', () => {
     vi.restoreAllMocks();
   });
 
-  it('pushes a history entry when switching tabs', () => {
-    const push = vi.spyOn(window.history, 'pushState');
+  it('keeps legacy resource links functional without content-area category tabs', async () => {
+    setHash('#console/resources/humans');
     render(<ResourcesSection />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /Humans/ }));
-
-    expect(push).toHaveBeenCalledWith(null, '', '#console/resources/humans');
-    expect(screen.getByRole('tab', { name: /Humans/ })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('humans-view')).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).toBeNull();
   });
 
-  it('follows browser back/forward hash changes', () => {
+  it('follows browser back/forward hash changes', async () => {
+    setHash('#console/resources/humans');
     render(<ResourcesSection />);
-    fireEvent.click(screen.getByRole('tab', { name: /Humans/ }));
-
+    expect(await screen.findByText('humans-view')).toBeInTheDocument();
     act(() => {
       setHash('#console/resources/workers');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
+    expect(await screen.findByText('workers-view')).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).toBeNull();
+  });
 
-    expect(screen.getByRole('tab', { name: /Workers/ })).toHaveAttribute('aria-selected', 'true');
+  it('keeps user and Manager administration hidden from a Team account', async () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    setHash('#console/resources/humans');
+    render(<ResourcesSection />);
+    expect(screen.queryByRole('tab', { name: '用户' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Managers' })).toBeNull();
+    expect(await screen.findByText('workers-view')).toBeInTheDocument();
+    expect(screen.queryByText('humans-view')).toBeNull();
   });
 });

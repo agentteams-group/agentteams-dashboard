@@ -17,8 +17,10 @@ import type { TeamResponse } from '@/lib/agentteams-api';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { RoomContextTab } from './RoomContextPanel';
+import type { RoomInfo } from '../room-info';
 
 interface ChatRoomHeaderProps {
+  agentRole?: RoomInfo['agentRole'];
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
@@ -54,21 +56,23 @@ function ContextChip({
 }) {
   return (
     <Button
-      variant={active ? 'secondary' : 'outline'}
+      variant={active ? 'secondary' : 'ghost'}
       size="sm"
-      className="h-7 gap-1 px-2 text-xs"
+      className="h-8 gap-1.5 px-2 text-sm max-sm:gap-1 max-sm:px-1.5"
       onClick={onClick}
       title={`${active ? '隐藏' : '显示'}${label}`}
+      aria-label={`${active ? '隐藏' : '显示'}${label}`}
       aria-pressed={active}
     >
-      <Icon className="h-3.5 w-3.5" />
-      <span className="hidden lg:inline">{label}</span>
-      {typeof count === 'number' && count > 0 && <span className="font-mono">{count}</span>}
+      <Icon className="h-4 w-4" />
+      <span className="hidden max-sm:inline lg:inline">{label}</span>
+      {typeof count === 'number' && count > 0 && <span className="hidden font-mono sm:inline">{count}</span>}
     </Button>
   );
 }
 
 export function ChatRoomHeader({
+  agentRole,
   roomName,
   team,
   topic,
@@ -84,14 +88,14 @@ export function ChatRoomHeader({
 }: ChatRoomHeaderProps) {
   const teamName = team ? team.teamName || team.name : '';
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 overflow-hidden border-b border-border bg-card/70 px-4 backdrop-blur-sm sm:px-6">
+    <div data-chat-room-header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden border-b border-border px-4 py-3 sm:h-18 sm:flex-nowrap sm:px-6 sm:py-0">
       {avatar ? (
-        <Avatar className="w-9 h-9 shrink-0 rounded-[10px]">
+        <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
         </Avatar>
       ) : (
-        <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm shrink-0">
-          <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
+        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <span className="text-xs font-semibold text-primary">{agentRole ? 'AT' : roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
       <div className="flex-1 min-w-0">
@@ -105,18 +109,20 @@ export function ChatRoomHeader({
               : <WorkerSessionDot state={sessionDot.state} />
             : null}
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
-          {roomPhase && (
+          {!agentRole && roomPhase && (
             <Badge variant="outline" className="text-xs px-1 py-0 h-4 shrink-0">
               {roomPhase}
             </Badge>
           )}
-          {roomRuntime && (
+          {!agentRole && roomRuntime && (
             <Badge variant="secondary" className="text-xs px-1 py-0 h-4 shrink-0">
               {RUNTIME_LABELS[roomRuntime] || roomRuntime}
             </Badge>
           )}
         </div>
-        {team ? (
+        {agentRole ? (
+          <p className="mt-1 truncate text-sm text-muted-foreground">{agentRole === 'operations' ? '你的平台管理助手 · 资源、部署与日常运维' : '你的团队助手 · 目标拆解、任务协调与交付'}</p>
+        ) : team ? (
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {teamName && teamName !== roomName && (
               <span className="inline-flex min-w-0 shrink items-center gap-1" title={teamName}>
@@ -141,7 +147,7 @@ export function ChatRoomHeader({
           )
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1 max-sm:gap-0.5 sm:w-auto sm:flex-nowrap">
         <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
@@ -169,16 +175,16 @@ export function ChatRoomHeader({
           onClick={() => onTogglePanel('thread')}
         />
         <Button
-          variant={activePanel === 'overview' ? 'secondary' : 'outline'}
+          variant={activePanel === 'overview' ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-7 w-7 p-0"
+          className="h-8 w-8 p-0"
           onClick={() => onTogglePanel('overview')}
           title={activePanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
           aria-pressed={activePanel === 'overview'}
         >
           {activePanel === 'overview'
-            ? <PanelRightClose className="h-3.5 w-3.5" />
-            : <PanelRightOpen className="h-3.5 w-3.5" />}
+            ? <PanelRightClose className="h-4 w-4" />
+            : <PanelRightOpen className="h-4 w-4" />}
         </Button>
       </div>
     </div>

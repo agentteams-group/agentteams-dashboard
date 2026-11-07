@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
-import { navItems, navAreas } from './nav-items';
+import { navItems } from './nav-items';
+import { workspaceMenus, workspaceMenuFor } from './workspace-navigation';
 import { useRoomMetaStore, useMatrixMessageSearch } from '@/hooks/use-matrix';
 import { useMergedTaskBoard } from '@/hooks/use-task-board';
 import { useAuditEvents } from '@/hooks/use-audit-events';
@@ -120,17 +121,15 @@ const PALETTE_ORDER = [
   'section',
 ] as const;
 
-const AREA_LABELS = Object.fromEntries(navAreas.map((a) => [a.id, a.label]));
-
 /**
  * Static navigation destinations (PRD §5.3 命令面板兜底): every nav item is
  * reachable by typing its label, which also eases the Workbench IA migration.
  */
-const SECTION_HITS: SearchResult[] = navItems.map((item) => ({
+const SECTION_HITS: SearchResult[] = [...workspaceMenus, ...navItems].map((item) => ({
   entity: 'section',
   name: item.label,
-  subtitle: AREA_LABELS[item.area] ?? '',
-  phase: AREA_LABELS[item.area] ?? '',
+  subtitle: workspaceMenuFor(item.id)?.label ?? '设置',
+  phase: workspaceMenuFor(item.id)?.label ?? '设置',
   section: item.id,
 }));
 

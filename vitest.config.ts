@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config';
 process.env.NODE_ENV = 'test';
 
 export default defineConfig({
+  css: { postcss: { plugins: [] } },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

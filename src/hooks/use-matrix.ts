@@ -1117,6 +1117,22 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
   // Missing thread roots: project the replies as one detached turn anchored on
   // the thread root id so the thread panel can still request its relations.
   for (const [rootId, replies] of orphanReplies) {
+    // A revision can recover the root without its placeholder being loaded.
+    // Keep that final answer, applying the normal thread rules to the replies.
+    const recoveredRoot = messages.get(rootId);
+    if (recoveredRoot) {
+      let inlineCount = 0;
+      for (const reply of replies) {
+        if (reply.sender === recoveredRoot.sender || recoveredRoot.sender === currentUserId) {
+          messages.set(reply.id, reply);
+          inlineCount++;
+        }
+      }
+      const count = (replyCounts.get(rootId) ?? 0) - inlineCount;
+      if (count > 0) replyCounts.set(rootId, count);
+      else replyCounts.delete(rootId);
+      continue;
+    }
     const first = replies[0];
     const last = replies[replies.length - 1];
     const sourceEventIds = [...new Set(

@@ -187,7 +187,7 @@ describe('ChatRoom read-position dual-write', () => {
 
     renderChatRoom();
 
-    const composer = screen.getByPlaceholderText(/发送消息到 测试房间/);
+    const composer = screen.getByRole('textbox', { name: '消息' });
     fireEvent.change(composer, { target: { value: '你好' } });
     fireEvent.keyDown(composer, { key: 'Enter', shiftKey: false });
 

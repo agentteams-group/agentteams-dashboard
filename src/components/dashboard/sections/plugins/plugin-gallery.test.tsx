@@ -111,4 +111,13 @@ describe('PluginGallery (D1 17.4 MVP)', () => {
     fireEvent.click(screen.getByText('打开'));
     expect(setSectionSpy).toHaveBeenCalledWith('plugin-route:wen-tian/diagnose');
   });
+
+  it('uses the settings navigation callback when hosted inside settings', () => {
+    seedStore({ menuItems: [], routes: [{ pluginId: 'wen-tian', contribution: { id: 'diagnose' } }], widgets: [] });
+    const navigate = vi.fn();
+    render(<PluginGallery onNavigate={navigate} />);
+    fireEvent.click(screen.getByText('打开'));
+    expect(navigate).toHaveBeenCalledWith('plugin-route:wen-tian/diagnose');
+    expect(setSectionSpy).not.toHaveBeenCalled();
+  });
 });

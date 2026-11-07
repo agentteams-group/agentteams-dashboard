@@ -78,12 +78,12 @@ describe('voice input in the composer', () => {
     await recordAndFinish();
     expect(FakeWorker.instances[0].postMessage.mock.calls[0][0]).toMatchObject({ language: 'zh' });
     expect(stopTrack).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
     await act(async () => FakeWorker.instances[0].onmessage?.({ data: { type: 'result', text: '檢查 Nacos 配置。' } }));
     await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('@worker 原有草稿 检查 Nacos 配置。'));
     expect(onSend).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '修改后的文字' } });
-    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 

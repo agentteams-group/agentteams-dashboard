@@ -1,0 +1,42 @@
+.workspace {
+  isolation: isolate;
+}
+
+.workspace :global([data-slot='card']) {
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: none;
+}
+
+.workspace :global([data-slot='tabs-list']) {
+  background: color-mix(in srgb, var(--muted) 65%, transparent);
+  border-radius: calc(var(--radius) - 4px);
+}
+
+.workspace :global([data-slot='tabs-trigger']) {
+  border-radius: calc(var(--radius) - 6px);
+}
+
+.workspace :global(table th) {
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  font-weight: 500;
+}
+
+.workspace :global(table td),
+.workspace :global(table th) {
+  padding-block: 12px;
+}
+
+.workspace :global([data-slot='input']),
+.workspace :global([data-slot='select-trigger']) {
+  border-radius: calc(var(--radius) - 4px);
+  box-shadow: none;
+}
+
+.workspace :global([data-slot='button']) {
+  box-shadow: none;
+}
+
+.workspace :global(svg.lucide) {
+  stroke-width: 1.65;
+}
