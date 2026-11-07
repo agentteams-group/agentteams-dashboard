@@ -93,6 +93,45 @@ describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
 });
 
 describe('MessageBubble', () => {
+  it.each([false, true])('keeps sender and time in reading order (isMe=%s)', (isMe) => {
+    const timestamp = new Date(2026, 10, 7, 9, 30).getTime();
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$time-header', sender: '@reviewer:test', senderShort: 'reviewer', content: 'hello', timestamp, type: 'm.text', isMe }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    const meta = container.querySelector('[data-chat-message-meta]')!;
+    const sender = screen.getByText('reviewer');
+    const time = screen.getByText('09:30');
+    expect(meta).toContainElement(sender);
+    expect(meta).toContainElement(time);
+    expect(sender.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText('09:30')).toHaveLength(1);
+  });
+
+  it.each([
+    { status: 'sending' as const, receipt: '发送中' },
+    { status: 'error' as const, receipt: '发送失败', title: true },
+    { status: undefined, receipt: '已读' },
+  ])('keeps continuation time and $receipt below the content', ({ status, receipt, title }) => {
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$time-continuation', sender: '@me:test', senderShort: 'me', content: 'continued message', timestamp: new Date(2026, 10, 7, 9, 31).getTime(), type: 'm.text', isMe: true, status }}
+        showSender
+        isContinuation
+        currentUserId="@me:test"
+        readReceipts={{ '@peer:test': { ts: Date.now(), eventId: '$time-continuation' } }}
+      />
+    );
+    const footer = container.querySelector('[data-chat-message-footer]')!;
+    expect(footer).toContainElement(screen.getByText('09:31'));
+    expect(footer).toContainElement(title ? screen.getByTitle(receipt) : screen.getByLabelText(receipt));
+    expect(footer.previousElementSibling).toContainElement(screen.getByText('continued message'));
+    expect(container.querySelector('[data-chat-message-meta]')).toBeNull();
+  });
+
   it('passes isStreaming to the text block renderer while streaming', () => {
     markdownMock.mockClear();
     renderWithProvider(
