@@ -52,24 +52,64 @@ import {
   BACKEND_NAMES,
   EMBEDDED_DEFAULTS,
   REQUIRED_BACKENDS,
+  addressUrl,
   backendCandidates,
   configExists,
   effectiveUrl,
   isHttpUrl,
   isSetupTokenEnforced,
   isSharedMode,
+  normalizeHttpUrl,
+  pickBackendUrl,
   probeBackend,
   readConfigSync,
+  redactBackends,
   refreshEffective,
   saveConfigOneShot,
   updateConfig,
   verifySetupToken,
+  type AddressEntry,
   type BackendAddrs,
   type BackendName,
 } from '@/lib/backend-config';
 import { appendAuditEvent } from '@/lib/audit-log';
 
 type BackendNameSet = Record<string, BackendName>;
+
+/** 槽位条目解析：字符串（服务自身认证）或 {url, auth?}（显式覆盖凭据）。
+ * 凭据的「留空 / *** = 继承旧值」在 updateConfig 的按槽位合并里处理，这里
+ * 只校验形状与 URL 协议（URL 先归一，允许省略 http://）。 */
+function parseSlot(candidate: unknown): { entry?: AddressEntry; error?: string } {
+  if (candidate === undefined || candidate === null || candidate === '') return {};
+  if (typeof candidate === 'string') {
+    const url = normalizeHttpUrl(candidate);
+    if (!isHttpUrl(url)) return { error: 'must be an http(s) URL' };
+    return { entry: url };
+  }
+  if (typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return { error: 'must be a string or { url, auth }' };
+  }
+  const obj = candidate as { url?: unknown; auth?: unknown };
+  const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
+  if (!isHttpUrl(url)) return { error: 'url must be an http(s) URL' };
+  if (obj.auth === undefined || obj.auth === null) return { entry: { url } };
+  if (typeof obj.auth !== 'object' || Array.isArray(obj.auth)) {
+    return { error: 'auth must be an object' };
+  }
+  const auth = obj.auth as Record<string, unknown>;
+  const type = typeof auth.type === 'string' ? auth.type.trim().toLowerCase() : '';
+  if (type === 'basic') {
+    const username = typeof auth.username === 'string' ? auth.username.trim() : '';
+    if (!username) return { error: 'auth.username is required for basic auth' };
+    const password = typeof auth.password === 'string' ? auth.password.trim() : '';
+    return { entry: { url, auth: { type: 'basic', username, password } } };
+  }
+  if (type === 'bearer') {
+    const token = typeof auth.token === 'string' ? auth.token.trim() : '';
+    return { entry: { url, auth: { type: 'bearer', token } } };
+  }
+  return { error: 'auth.type must be "basic" or "bearer"' };
+}
 
 function parseBackendsPayload(
   raw: unknown,
@@ -88,12 +128,9 @@ function parseBackendsPayload(
     const entry = value as Record<string, unknown>;
     const addrs: BackendAddrs = {};
     for (const slot of ['internal', 'external'] as const) {
-      const candidate = entry[slot];
-      if (candidate === undefined || candidate === null || candidate === '') continue;
-      if (typeof candidate !== 'string' || !isHttpUrl(candidate)) {
-        return { error: `backend "${key}" ${slot} must be an http(s) URL` };
-      }
-      addrs[slot] = candidate.trim();
+      const parsed = parseSlot(entry[slot]);
+      if (parsed.error) return { error: `backend "${key}" ${slot} ${parsed.error}` };
+      if (parsed.entry) addrs[slot] = parsed.entry;
     }
     if (addrs.internal || addrs.external) out[key as BackendName] = addrs;
   }
@@ -160,14 +197,22 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const authedConfig = session
-    ? { config: config?.backends ?? {}, addressMode: config?.addressMode ?? 'auto' }
-    : {};
+  // Two shapes for the owner view:
+  //   entries — 新增的逐地址条目（string | {url, auth}），秘密一律 '***'
+  //             （basic: password、bearer: token；username 保留用于回显），
+  //             前端据此回填认证方式 /「已保存 · 留空保持」占位。
+  //   config  — 旧的字符串投影（仅 session；settings 后端 tab 仍按
+  //             `{internal?: string}` 读取，保持向后兼容，不破坏老客户端）。
+  const legacyConfig = session && config ? projectLegacyConfig(config.backends) : undefined;
+  const redactedEntries = config ? redactBackends(config.backends) : {};
 
-  // Effective (working-cache) address per backend — the "在生效" badge data.
+  // Effective (working-cache) address per backend — the "当前生效" badge data.
+  // Working-cache first; before the first successful probe (fresh boot) the
+  // resolved candidate is what the next request will actually use, so it is
+  // reported too (never guessed in the anonymous branch above).
   const effective: Partial<Record<BackendName, string>> = {};
   for (const name of BACKEND_NAMES) {
-    const url = effectiveUrl(name);
+    const url = effectiveUrl(name) ?? pickBackendUrl(name);
     if (url) effective[name] = url;
   }
 
@@ -178,9 +223,29 @@ export async function GET(request: NextRequest) {
     setupTokenRequired: isSetupTokenEnforced(),
     backends: perBackend,
     embedded: { defaults: EMBEDDED_DEFAULTS, healthy },
-    ...authedConfig,
+    entries: redactedEntries,
+    ...(legacyConfig ? { config: legacyConfig, addressMode: config?.addressMode ?? 'auto' } : {}),
     effective,
   });
+}
+
+/** 旧字符串投影：{ name: { internal: url, external: url } }（无凭据信息）。 */
+function projectLegacyConfig(
+  backends: Partial<Record<BackendName, BackendAddrs>>,
+): Record<string, { internal?: string; external?: string }> {
+  const out: Record<string, { internal?: string; external?: string }> = {};
+  for (const name of BACKEND_NAMES) {
+    const addrs = backends[name];
+    if (!addrs) continue;
+    const internal = addressUrl(addrs.internal);
+    const external = addressUrl(addrs.external);
+    if (!internal && !external) continue;
+    out[name] = {
+      ...(internal ? { internal } : {}),
+      ...(external ? { external } : {}),
+    };
+  }
+  return out;
 }
 
 export async function POST(request: NextRequest) {
@@ -219,7 +284,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     // F1f-C: every config write is audited with actor + level + diff.
-    await auditConfigWrite(before, parsed.backends, session.user, session.level, request);
+    await auditConfigWrite(before, savedSentBackends(parsed.backends), session.user, session.level, request);
     // Re-probe what was just saved (plugin put_config → refresh_effective):
     // the effective address is latency-elected from real probes, not seeded
     // blindly.
@@ -247,7 +312,7 @@ export async function POST(request: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  await auditConfigWrite(before, parsed.backends, 'pre-login', 0, request);
+  await auditConfigWrite(before, savedSentBackends(parsed.backends), 'pre-login', 0, request);
   // Re-probe the saved config so the effective cache is honest from the
   // first request (plugin put_config → refresh_effective).
   const { effective, switched } = await refreshEffective(Object.keys(parsed.backends) as BackendName[]);
@@ -280,6 +345,39 @@ async function auditConfigWrite(
   }
 }
 
+/** 审计用的「保存后」快照：只取本次提交的后端，值来自真正落盘的配置
+ * （已按槽位合并凭据）——这样 '***' 占位不会被误报成秘密变更。 */
+function savedSentBackends(
+  sent: Partial<Record<BackendName, BackendAddrs>>,
+): Partial<Record<BackendName, BackendAddrs>> {
+  const saved = readConfigSync()?.backends ?? {};
+  const out: Partial<Record<BackendName, BackendAddrs>> = {};
+  for (const name of Object.keys(sent) as BackendName[]) {
+    if (saved[name]) out[name] = saved[name];
+  }
+  return out;
+}
+
+/** 槽位签名：URL + 认证方式 + 秘密（**秘密只用于相等比较，绝不写进
+ * details**——审计日志不得落凭据）。 */
+interface SlotSignature {
+  url: string;
+  auth: string;
+  secret: string;
+}
+
+function slotSignature(entry: AddressEntry | undefined): SlotSignature {
+  if (entry === undefined) return { url: '', auth: 'none', secret: '' };
+  if (typeof entry === 'string') return { url: entry, auth: 'none', secret: '' };
+  const auth = entry.auth;
+  if (!auth) return { url: entry.url, auth: 'none', secret: '' };
+  return {
+    url: entry.url,
+    auth: auth.type,
+    secret: auth.type === 'basic' ? auth.password : auth.token,
+  };
+}
+
 /** Per-backend merge diff: sent backends replace, unsent are preserved
  * (F1f-E merge semantics), so the diff lists exactly what changed. */
 function diffBackends(
@@ -293,14 +391,32 @@ function diffBackends(
     const a = after[name as BackendName];
     if (!a) continue; // merge keeps unsent backends — nothing to report
     if (!b) {
+      // 新增后端：只报槽位名（键名里没有凭据）。
       changed.push(`${name}+(${Object.keys(a).join(',')})`);
       continue;
     }
     const slots: string[] = [];
     for (const slot of ['internal', 'external'] as const) {
-      if (b[slot] !== a[slot]) {
-        slots.push(`${slot}:${b[slot] ? 'set' : 'unset'}→${a[slot] ? 'set' : 'unset'}`);
+      const beforeSig = slotSignature(b[slot]);
+      const afterSig = slotSignature(a[slot]);
+      if (
+        beforeSig.url === afterSig.url &&
+        beforeSig.auth === afterSig.auth &&
+        beforeSig.secret === afterSig.secret
+      ) {
+        continue;
       }
+      const notes = [
+        `${slot}:${beforeSig.url ? 'set' : 'unset'}→${afterSig.url ? 'set' : 'unset'}`,
+      ];
+      if (beforeSig.url && afterSig.url && beforeSig.url !== afterSig.url) {
+        notes.push(`${slot}:url-changed`);
+      }
+      if (beforeSig.auth !== afterSig.auth) notes.push(`${slot}:auth ${beforeSig.auth}→${afterSig.auth}`);
+      if (beforeSig.url && afterSig.url && beforeSig.secret !== afterSig.secret) {
+        notes.push(`${slot}:secret-changed`);
+      }
+      slots.push(notes.join(' '));
     }
     if (slots.length > 0) changed.push(`${name}(${slots.join(' ')})`);
   }

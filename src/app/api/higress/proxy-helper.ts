@@ -1,6 +1,6 @@
 // Shared proxy helper for Higress Console API routes
 import { NextResponse } from 'next/server';
-import { readConfigSync } from '@/lib/backend-config';
+import { addressUrl, readConfigSync } from '@/lib/backend-config';
 
 const TIMEOUT_MS = 15000;
 const FALLBACK_CONFIG_WRITE_ENABLED = process.env.AGENTTEAMS_HIGRESS_FALLBACK_CONFIG_WRITE_ENABLED === 'true';
@@ -89,7 +89,9 @@ export function getHigressConsoleURL(): string {
   // host (the env allowlist still governs env-configured and embedded
   // URLs).
   const saved = readConfigSync()?.backends['higress-console'];
-  const savedUrl = saved?.internal || saved?.external;
+  // 地址条目可能是纯字符串或 {url, auth}（逐地址凭据）——统一经 addressUrl
+  // 取 URL；higress 这一轮不加覆盖凭据头（仅 controller/matrix）。
+  const savedUrl = addressUrl(saved?.internal) || addressUrl(saved?.external);
   if (savedUrl) {
     const savedHost = new URL(savedUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
     return validateHigressConsoleURL(savedUrl, { trustedHosts: [savedHost] });

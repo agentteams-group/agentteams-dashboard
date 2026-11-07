@@ -1,7 +1,7 @@
 // Shared proxy helper for AgentTeams API routes
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/dashboard-session';
-import { markWorking, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
+import { backendAuthHeader, markWorking, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
 import { appendAuditEvent } from '@/lib/audit-log';
 import { readServerIdentity } from '@/lib/server-auth';
 import { isStatelessAuthMode } from '@/lib/static-mode';
@@ -296,6 +296,11 @@ export async function proxyToAgentTeams(
           targetUrl, fetchOptions.headers, identity?.name, identity?.level,
         ])).digest('hex').slice(0, 32);
         const upstreamHeaders = new Headers(fetchOptions.headers);
+        // 逐地址覆盖凭据（公网网关 Basic / API key 门）：命中该地址已存凭据
+        // 时整体替换 Authorization（插件 headers_with_auth 同语义）。凭据
+        // 只进请求头——不写日志、不回传浏览器。
+        const perAddressAuth = backendAuthHeader('controller', target).Authorization;
+        if (perAddressAuth) upstreamHeaders.set('authorization', perAddressAuth);
         const incoming = /^W\/"([a-f0-9]{32})\.([A-Za-z0-9_-]+)"$/.exec(request.headers.get('If-None-Match') ?? '');
         if (conditionalRead && incoming?.[1] === validatorScope) {
           upstreamHeaders.set('If-None-Match', Buffer.from(incoming[2], 'base64url').toString());

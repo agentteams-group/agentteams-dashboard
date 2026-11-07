@@ -36,7 +36,7 @@ import {
 } from '../../higress/proxy-helper';
 import { getAuthToken, getControllerUrl } from '../../agentteams/proxy-helper';
 import { createSession, sessionCookieHeader } from '@/lib/dashboard-session';
-import { pickBackendUrl } from '@/lib/backend-config';
+import { backendAuthHeader, pickBackendUrl } from '@/lib/backend-config';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 
 // Matrix homeserver for password login — resolved PER LOGIN ATTEMPT
@@ -138,7 +138,11 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
   try {
     const res = await fetch(`${homeserver}/_matrix/client/v3/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // 逐地址覆盖凭据（公网网关 Basic / API key 门）——凭据只进请求头。
+        ...backendAuthHeader('matrix', homeserver),
+      },
       body: JSON.stringify({
         type: 'm.login.password',
         identifier: { type: 'm.id.user', user: username },

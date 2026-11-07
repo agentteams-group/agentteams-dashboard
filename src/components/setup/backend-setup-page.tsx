@@ -11,6 +11,13 @@
 // is hidden and saving is plain. After the config is saved the login page
 // appears and this screen can never be reached again from a logged-out
 // browser (level-3 session updates go through the settings dialog, F1b).
+//
+// Per-address credentials (plugin SettingsTabShared parity): every address
+// slot carries an auth mode — 服务自身认证 (plain URL entry, no extra header)
+// / Basic 认证 / Bearer Token (public-gateway Basic or API-key door). Saved
+// secrets are NEVER echoed back into the inputs: a stored credential shows
+// as the 「已保存 · 留空保持」placeholder and an empty submit inherits the
+// saved value server-side; switching back to 服务自身认证 drops it.
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
@@ -25,6 +32,16 @@ import {
   REQUIRED_BACKENDS,
   type BackendName,
 } from '@/lib/backend-names';
+
+// Server address-entry shape (duplicated as TYPES only — the server module is
+// never imported into this client bundle). Secrets arrive as '***'.
+type ServerAuth =
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'bearer'; token: string };
+type ServerEntry = string | { url: string; auth?: ServerAuth };
+type ServerAddrs = { internal?: ServerEntry; external?: ServerEntry };
+
+const REDACTED_SECRET = '***';
 
 interface BackendStatus {
   configured: boolean;
@@ -41,6 +58,10 @@ interface SetupStatusResponse {
   /** PR-91 review: absent in the anonymous (pre-login, no token) response —
    * the saved topology is only served to a session or ?token= holder. */
   backends?: Record<BackendName, BackendStatus>;
+  /** 逐地址条目（已脱敏；秘密 '***'）——回填认证方式与「已保存」占位。 */
+  entries?: Record<BackendName, ServerAddrs>;
+  /** 工作缓存里当前生效的地址（「当前生效」徽标）。 */
+  effective?: Partial<Record<BackendName, string>>;
   embedded: {
     defaults: Record<BackendName, string | undefined>;
     healthy: Record<BackendName, boolean> | null;
@@ -56,20 +77,128 @@ type TestState =
 
 const EMPTY_TEST: TestState = { status: 'idle' };
 
+/** 认证方式草稿。stored = 该地址该类型已有服务端凭据（秘密不回显，输入框
+ * 留空 = 保持不变）；换类型时清零（防止把 A 类型的 stored 误带到 B 类型）。 */
+type AuthType = 'none' | 'basic' | 'bearer';
+
+interface SlotDraft {
+  url: string;
+  type: AuthType;
+  username: string;
+  password: string;
+  token: string;
+  stored: boolean;
+}
+
+const EMPTY_SLOT: SlotDraft = {
+  url: '',
+  type: 'none',
+  username: '',
+  password: '',
+  token: '',
+  stored: false,
+};
+
+interface BackendForm {
+  internal: SlotDraft;
+  external: SlotDraft;
+}
+
+function emptyForm(): Record<BackendName, BackendForm> {
+  return Object.fromEntries(
+    BACKEND_NAMES.map((name) => [
+      name,
+      { internal: { ...EMPTY_SLOT }, external: { ...EMPTY_SLOT } },
+    ]),
+  ) as Record<BackendName, BackendForm>;
+}
+
+/** 服务端条目 → 编辑草稿。脱敏值 '***' 不进输入框（只置 stored 标记）。 */
+function entryToDraft(entry: ServerEntry | undefined): SlotDraft {
+  if (entry && typeof entry === 'object') {
+    const auth = entry.auth;
+    if (auth?.type === 'basic') {
+      return {
+        ...EMPTY_SLOT,
+        url: entry.url,
+        type: 'basic',
+        username: auth.username ?? '',
+        stored: true,
+      };
+    }
+    if (auth?.type === 'bearer') {
+      return { ...EMPTY_SLOT, url: entry.url, type: 'bearer', stored: true };
+    }
+    return { ...EMPTY_SLOT, url: entry.url };
+  }
+  return { ...EMPTY_SLOT, url: typeof entry === 'string' ? entry : '' };
+}
+
+/** 草稿 → 提交条目（插件 buildAuthEntry 语义）：
+ * - 秘密已填 → 显式凭据；
+ * - 秘密留空且已存 → 发 '***' 占位，服务端按槽位继承旧秘密；
+ * - 凭据不完整 → 降级纯 URL 条目（诚实：不装半个凭据）。 */
+function draftToEntry(draft: SlotDraft): ServerEntry | undefined {
+  const url = draft.url.trim();
+  if (!url) return undefined;
+  if (draft.type === 'basic' && draft.username.trim()) {
+    const password = draft.password.trim();
+    if (password) {
+      return { url, auth: { type: 'basic', username: draft.username.trim(), password } };
+    }
+    if (draft.stored) {
+      return {
+        url,
+        auth: { type: 'basic', username: draft.username.trim(), password: REDACTED_SECRET },
+      };
+    }
+  }
+  if (draft.type === 'bearer') {
+    const token = draft.token.trim();
+    if (token) return { url, auth: { type: 'bearer', token } };
+    if (draft.stored) return { url, auth: { type: 'bearer', token: REDACTED_SECRET } };
+  }
+  return url;
+}
+
+/** 服务端响应 → 表单预填：只填空槽，绝不覆盖用户已输入的地址。 */
+function applyPrefill(
+  data: SetupStatusResponse,
+  prev: Record<BackendName, BackendForm>,
+): Record<BackendName, BackendForm> {
+  return Object.fromEntries(
+    BACKEND_NAMES.map((name) => {
+      const entries = data.entries?.[name];
+      const candidates = data.backends?.[name]?.candidates ?? [];
+      const next: BackendForm = {
+        internal: { ...prev[name].internal },
+        external: { ...prev[name].external },
+      };
+      (['internal', 'external'] as const).forEach((slot, idx) => {
+        if (next[slot].url.trim()) return;
+        const entry = entries?.[slot];
+        if (entry) {
+          next[slot] = entryToDraft(entry);
+          return;
+        }
+        const url = candidates[idx] ?? '';
+        if (url) next[slot] = { ...EMPTY_SLOT, url };
+      });
+      return [name, next];
+    }),
+  ) as Record<BackendName, BackendForm>;
+}
+
 export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () => void; reconfigure?: boolean }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [addrs, setAddrs] = useState<Record<BackendName, { internal: string; external: string }>>(
-    () =>
-      Object.fromEntries(
-        BACKEND_NAMES.map((name) => [name, { internal: '', external: '' }]),
-      ) as Record<BackendName, { internal: string; external: string }>,
-  );
+  const [form, setForm] = useState<Record<BackendName, BackendForm>>(() => emptyForm());
   const [embeddedHealthy, setEmbeddedHealthy] = useState(false);
   const [token, setToken] = useState('');
   const [tokenRequired, setTokenRequired] = useState(true);
   const [addressMode, setAddressMode] = useState<'auto' | 'lan' | 'wan'>('auto');
+  const [effective, setEffective] = useState<Partial<Record<BackendName, string>>>({});
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -86,13 +215,8 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
           }
           return;
         }
-        const next = Object.fromEntries(
-          BACKEND_NAMES.map((name) => {
-            const candidates = data.backends?.[name]?.candidates ?? [];
-            return [name, { internal: candidates[0] ?? '', external: candidates[1] ?? '' }];
-          }),
-        ) as Record<BackendName, { internal: string; external: string }>;
-        setAddrs(next);
+        setForm((prev) => applyPrefill(data, prev));
+        setEffective(data.effective ?? {});
         setEmbeddedHealthy(
           !!data.embedded?.healthy &&
             REQUIRED_BACKENDS.every((name) => data.embedded.healthy?.[name] === true),
@@ -117,7 +241,8 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   // PR-91 review: the saved topology is no longer served pre-login. Once
   // the operator enters the setup token (reconfigure mode), refetch with
   // it — same owner gate as the pre-login write — and prefill the saved
-  // addresses (only empty slots: never overwrite what the user typed).
+  // addresses + auth mode (only empty slots: never overwrite what the user
+  // typed).
   useEffect(() => {
     if (!reconfigure || !tokenRequired) return;
     const trimmed = token.trim();
@@ -133,22 +258,9 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
       })
         .then((res) => res.json().catch(() => null))
         .then((data: SetupStatusResponse | null) => {
-          if (cancelled || !data?.backends) return;
-          setAddrs((prev) =>
-            Object.fromEntries(
-              BACKEND_NAMES.map((name) => {
-                const candidates = data.backends?.[name]?.candidates ?? [];
-                const cur = prev[name];
-                return [
-                  name,
-                  {
-                    internal: cur.internal.trim() || (candidates[0] ?? ''),
-                    external: cur.external.trim() || (candidates[1] ?? ''),
-                  },
-                ];
-              }),
-            ) as Record<BackendName, { internal: string; external: string }>,
-          );
+          if (cancelled || (!data?.backends && !data?.entries)) return;
+          setForm((prev) => applyPrefill(data, prev));
+          if (data.effective) setEffective(data.effective);
         })
         .catch(() => {
           /* wrong token / transient — the user keeps typing manually */
@@ -169,23 +281,29 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   useEffect(() => {
     if (autoFilled || reconfigure) return;
     if (!embeddedHealthy) return;
-    setAddrs((prev) => {
+    setForm((prev) => {
       const anyFilled = BACKEND_NAMES.some(
-        (name) => prev[name].internal.trim() !== '' || prev[name].external.trim() !== '',
+        (name) => prev[name].internal.url.trim() !== '' || prev[name].external.url.trim() !== '',
       );
       if (anyFilled) return prev;
       return Object.fromEntries(
         BACKEND_NAMES.map((name) => [
           name,
-          { internal: EMBEDDED_DEFAULTS[name] ?? '', external: '' },
+          {
+            internal: { ...EMPTY_SLOT, url: EMBEDDED_DEFAULTS[name] ?? '' },
+            external: { ...EMPTY_SLOT },
+          },
         ]),
-      ) as Record<BackendName, { internal: string; external: string }>;
+      ) as Record<BackendName, BackendForm>;
     });
     setAutoFilled(true);
   }, [autoFilled, embeddedHealthy, reconfigure]);
 
-  const setSlot = (name: BackendName, slot: 'internal' | 'external', value: string) => {
-    setAddrs((prev) => ({ ...prev, [name]: { ...prev[name], [slot]: value } }));
+  const setSlot = (name: BackendName, slot: 'internal' | 'external', patch: Partial<SlotDraft>) => {
+    setForm((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], [slot]: { ...prev[name][slot], ...patch } },
+    }));
     setTests((prev) => ({ ...prev, [`${name}:${slot}`]: EMPTY_TEST }));
   };
 
@@ -194,8 +312,8 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   // ⚠️ connected but needs auth / ❌ classified error).
   const runTest = useCallback(
     async (name: BackendName) => {
-      const internal = addrs[name].internal.trim();
-      const external = addrs[name].external.trim();
+      const internal = form[name].internal.url.trim();
+      const external = form[name].external.url.trim();
       if (!internal && !external) return;
       const filled = [
         { slot: 'internal' as const, url: internal },
@@ -215,6 +333,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
             // the save) — the endpoint is no longer an unauthenticated
             // fetch proxy.
             token: token.trim() || undefined,
+            // 连通性探测只带地址（草稿凭据不进探测通道）。
             backends: { [name]: { internal: internal || undefined, external: external || undefined } },
             addressMode,
           }),
@@ -254,17 +373,20 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
     // Post-merge review Block 5: token was missing from the deps — entering
     // the address first and the token second left a stale-closure token
     // (empty → pre-login probe 403 → "no test result").
-    [addrs, token],
+    [form, token, addressMode],
   );
 
   const applyEmbeddedDefaults = () => {
-    setAddrs(
+    setForm(
       Object.fromEntries(
         BACKEND_NAMES.map((name) => [
           name,
-          { internal: EMBEDDED_DEFAULTS[name] ?? '', external: '' },
+          {
+            internal: { ...EMPTY_SLOT, url: EMBEDDED_DEFAULTS[name] ?? '' },
+            external: { ...EMPTY_SLOT },
+          },
         ]),
-      ) as Record<BackendName, { internal: string; external: string }>,
+      ) as Record<BackendName, BackendForm>,
     );
     setTests({});
   };
@@ -272,11 +394,16 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
   const save = async () => {
     setSaving(true);
     setSaveError(null);
-    const backends: Record<string, { internal?: string; external?: string }> = {};
+    const backends: Record<string, { internal?: ServerEntry; external?: ServerEntry }> = {};
     for (const name of BACKEND_NAMES) {
-      const internal = addrs[name].internal.trim();
-      const external = addrs[name].external.trim();
-      if (internal || external) backends[name] = { internal: internal || undefined, external: external || undefined };
+      const internal = draftToEntry(form[name].internal);
+      const external = draftToEntry(form[name].external);
+      if (internal || external) {
+        backends[name] = {
+          ...(internal ? { internal } : {}),
+          ...(external ? { external } : {}),
+        };
+      }
     }
     try {
       const res = await fetch(apiUrl('/api/agentteams/setup/backends'), {
@@ -348,6 +475,8 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
               : 'Dashboard 还没有可用的后端地址。填写后保存即可登录；配置保存在挂载卷中，重启不丢失。'}
             每个后端可只填一个地址；「内网」= 容器/集群网络，「外网」= 跨网段备用（自动切换）。
             「测试」一次验证该后端填写的全部地址（✅ 可用 / ⚠️ 已连通需鉴权 / ❌ 不可达，含原因分类）。
+            「认证方式」：服务自身认证 = 不额外加头；Basic / Bearer 用于地址前面的公网网关门（Basic 门 / API key 门）。
+            已保存的密码或 token 不回显，留空即保持不变；切回「服务自身认证」= 清除该地址已存凭据。
           </CardDescription>
           {reconfigure && (
             <button
@@ -390,17 +519,26 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
 
           <div className="space-y-4">
             {BACKEND_NAMES.map((name) => {
-              const hasAny = !!(addrs[name].internal.trim() || addrs[name].external.trim());
+              const hasAny = !!(form[name].internal.url.trim() || form[name].external.url.trim());
               const isTesting = ['internal', 'external'].some(
                 (slot) => (tests[`${name}:${slot}`] ?? EMPTY_TEST).status === 'testing',
               );
+              const effectiveUrl = effective[name];
               return (
                 <div key={name} className="rounded-md border p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium">
                     {BACKEND_LABELS[name]}
                     {REQUIRED_BACKENDS.includes(name) && (
                       <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                         必需
+                      </span>
+                    )}
+                    {effectiveUrl && (
+                      <span
+                        className="max-w-64 truncate rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-normal text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                        title={`当前生效：${effectiveUrl}`}
+                      >
+                        当前生效：{effectiveUrl}
                       </span>
                     )}
                     <Button
@@ -417,10 +555,12 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
                     {(['internal', 'external'] as const).map((slot) => {
                       const key = `${name}:${slot}`;
                       const test = tests[key] ?? EMPTY_TEST;
+                      const draft = form[name][slot];
+                      const slotLabel = slot === 'internal' ? '内网地址' : '外网地址（备用）';
                       return (
                         <div key={slot} className="space-y-1">
                           <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span className="shrink-0">{slot === 'internal' ? '内网地址' : '外网地址（备用）'}</span>
+                            <span className="shrink-0">{slotLabel}</span>
                             <span className="inline-flex items-center gap-1 min-w-0">
                               {test.status === 'ok' && (
                                 <>
@@ -445,11 +585,61 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
                             </span>
                           </div>
                           <Input
-                            value={addrs[name][slot]}
-                            onChange={(e) => setSlot(name, slot, e.target.value)}
+                            value={draft.url}
+                            onChange={(e) => setSlot(name, slot, { url: e.target.value })}
                             placeholder="http://host:port"
                             spellCheck={false}
                           />
+                          {/* 认证方式 + 凭据（秘密永不回显：已存时占位提示，留空保持）。 */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              aria-label={`${slotLabel}认证方式`}
+                              value={draft.type}
+                              onChange={(e) =>
+                                setSlot(name, slot, {
+                                  type: e.target.value as AuthType,
+                                  stored: false,
+                                })
+                              }
+                              className="h-8 rounded-md border bg-background px-2 text-xs"
+                            >
+                              <option value="none">服务自身认证</option>
+                              <option value="basic">Basic 认证</option>
+                              <option value="bearer">Bearer Token</option>
+                            </select>
+                            {draft.type === 'basic' && (
+                              <>
+                                <Input
+                                  className="h-8 min-w-24 flex-1 text-xs"
+                                  value={draft.username}
+                                  onChange={(e) => setSlot(name, slot, { username: e.target.value })}
+                                  placeholder="用户名"
+                                  spellCheck={false}
+                                  autoComplete="off"
+                                />
+                                <Input
+                                  className="h-8 min-w-24 flex-1 text-xs"
+                                  type="password"
+                                  value={draft.password}
+                                  onChange={(e) => setSlot(name, slot, { password: e.target.value })}
+                                  placeholder={draft.stored ? '密码（已保存 · 留空保持）' : '密码'}
+                                  spellCheck={false}
+                                  autoComplete="new-password"
+                                />
+                              </>
+                            )}
+                            {draft.type === 'bearer' && (
+                              <Input
+                                className="h-8 min-w-24 flex-1 text-xs"
+                                type="password"
+                                value={draft.token}
+                                onChange={(e) => setSlot(name, slot, { token: e.target.value })}
+                                placeholder={draft.stored ? 'Token（已保存 · 留空保持）' : 'Bearer token'}
+                                spellCheck={false}
+                                autoComplete="new-password"
+                              />
+                            )}
+                          </div>
                         </div>
                       );
                     })}

@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import {
   BACKEND_NAMES,
   EMBEDDED_DEFAULTS,
+  authHeaderFor,
+  backendAuthHeader,
   backendCandidates,
   backendCandidatesSync,
   bootstrapSetupToken,
@@ -26,6 +28,7 @@ import {
   pickBackendUrl,
   probeBackend,
   readConfigSync,
+  redactBackends,
   refreshEffective,
   saveConfigOneShot,
   selectAndMark,
@@ -701,5 +704,204 @@ describe('refreshEffective (port of plugin refresh_effective)', () => {
     const result = await refreshEffective(['sglang'], 1500);
     expect(result.effective.sglang).toBeUndefined();
     expect(effectiveUrl('sglang')).toBe(fastUrl);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 逐地址认证方式（对齐工作台插件 config_entries：AddressEntry =
+// string | {url, auth?}，merge_address_entries / redact / headers_with_auth）
+// ---------------------------------------------------------------------------
+
+describe('per-address auth entries (plugin parity)', () => {
+  it('① string 与对象条目同归一（缺省 scheme 补全，凭据不完整塌回字符串）', () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: 'http://gw:8090/',
+            external: {
+              url: 'gw2:8090',
+              auth: { type: 'basic', username: 'u', password: 'p' },
+            },
+          },
+          matrix: {
+            internal: { url: 'https://mx:6167', auth: { type: 'bearer', token: 'tok' } },
+          },
+          sglang: {
+            // basic 只有用户名 = 凭据不完整 → 规范形态为纯 URL 条目
+            internal: { url: 'http://s:8000', auth: { type: 'basic', username: 'u' } },
+          },
+        },
+      }),
+    );
+    const cfg = readConfigSync();
+    expect(cfg?.backends.controller).toEqual({
+      internal: 'http://gw:8090',
+      external: { url: 'http://gw2:8090', auth: { type: 'basic', username: 'u', password: 'p' } },
+    });
+    expect(cfg?.backends.matrix?.internal).toEqual({
+      url: 'https://mx:6167',
+      auth: { type: 'bearer', token: 'tok' },
+    });
+    expect(cfg?.backends.sglang?.internal).toBe('http://s:8000');
+    // 候选解析 / listMatchesSaved 对两种形态一视同仁
+    expect(backendCandidates('controller', cfg)).toEqual(['http://gw:8090', 'http://gw2:8090']);
+    expect(listMatchesSaved('controller', ['http://gw:8090', 'http://gw2:8090'])).toBe(true);
+  });
+
+  it('② 保存时密码/token 为空或 *** → 沿用旧秘密（basic + bearer）', async () => {
+    expect(
+      await updateConfig({
+        controller: {
+          internal: {
+            url: 'http://gw:8090',
+            auth: { type: 'basic', username: 'u', password: 'old-pass' },
+          },
+        },
+      }),
+    ).toEqual({ ok: true });
+    // '***' = 脱敏回传后的「保持不变」
+    await updateConfig({
+      controller: {
+        internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: '***' } },
+      },
+    });
+    expect(readConfigSync()?.backends.controller?.internal).toEqual({
+      url: 'http://gw:8090',
+      auth: { type: 'basic', username: 'u', password: 'old-pass' },
+    });
+    // 空串同义
+    await updateConfig({
+      controller: {
+        internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: '' } },
+      },
+    });
+    expect(readConfigSync()?.backends.controller?.internal).toEqual({
+      url: 'http://gw:8090',
+      auth: { type: 'basic', username: 'u', password: 'old-pass' },
+    });
+    // 新密码 → 覆盖
+    await updateConfig({
+      controller: {
+        internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: 'new-pass' } },
+      },
+    });
+    expect(
+      (readConfigSync()?.backends.controller?.internal as { auth: { password: string } }).auth.password,
+    ).toBe('new-pass');
+
+    // bearer 同理
+    await updateConfig({
+      matrix: { external: { url: 'http://mx:6167', auth: { type: 'bearer', token: 'tok-1' } } },
+    });
+    await updateConfig({
+      matrix: { external: { url: 'http://mx:6167', auth: { type: 'bearer', token: '***' } } },
+    });
+    expect(readConfigSync()?.backends.matrix?.external).toEqual({
+      url: 'http://mx:6167',
+      auth: { type: 'bearer', token: 'tok-1' },
+    });
+  });
+
+  it('③ 显式切回服务自身认证 → 丢弃旧凭据（存字符串条目）', async () => {
+    await updateConfig({
+      controller: {
+        internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: 'p' } },
+      },
+    });
+    // 字符串条目 = 明确选择「服务自身认证」
+    await updateConfig({ controller: { internal: 'http://gw:8090' } });
+    expect(readConfigSync()?.backends.controller?.internal).toBe('http://gw:8090');
+
+    // 对象形式但无 auth 也等价（同样清除）
+    await updateConfig({
+      controller: {
+        internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: 'p' } },
+      },
+    });
+    await updateConfig({ controller: { internal: { url: 'http://gw:8090' } } });
+    expect(readConfigSync()?.backends.controller?.internal).toBe('http://gw:8090');
+  });
+
+  it('④ 读取脱敏：password/token → ***，username 保留，明文不回传', () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: {
+              url: 'http://gw:8090',
+              auth: { type: 'basic', username: 'admin', password: 's3cret' },
+            },
+          },
+          matrix: {
+            external: { url: 'http://mx:6167', auth: { type: 'bearer', token: 'plain-token' } },
+          },
+          sglang: { internal: 'http://s:8000' },
+        },
+      }),
+    );
+    const redacted = redactBackends(readConfigSync()?.backends ?? {});
+    expect(redacted.controller?.internal).toEqual({
+      url: 'http://gw:8090',
+      auth: { type: 'basic', username: 'admin', password: '***' },
+    });
+    expect(redacted.matrix?.external).toEqual({
+      url: 'http://mx:6167',
+      auth: { type: 'bearer', token: '***' },
+    });
+    expect(redacted.sglang?.internal).toBe('http://s:8000');
+    // 明文绝不出现在脱敏结果里
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toContain('s3cret');
+    expect(serialized).not.toContain('plain-token');
+  });
+
+  it('⑤ basic/bearer 生成 Authorization 头（按地址命中，含尾斜杠归一）', () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: {
+              url: 'http://gw:8090',
+              auth: { type: 'basic', username: 'admin', password: 'pass' },
+            },
+          },
+          matrix: {
+            external: { url: 'http://mx:6167', auth: { type: 'bearer', token: 'tok' } },
+          },
+        },
+      }),
+    );
+    // base64("admin:pass") = YWRtaW46cGFzcw==
+    expect(backendAuthHeader('controller', 'http://gw:8090')).toEqual({
+      Authorization: 'Basic YWRtaW46cGFzcw==',
+    });
+    expect(backendAuthHeader('matrix', 'http://mx:6167/')).toEqual({
+      Authorization: 'Bearer tok',
+    });
+    // 候选 URL 的 http/https 变体命中同一条目（插件 X1c 归一）
+    expect(backendAuthHeader('controller', 'https://gw:8090')).toEqual({
+      Authorization: 'Basic YWRtaW46cGFzcw==',
+    });
+    // 地址不匹配 → 不带凭据（防凭据串到别的后端）
+    expect(backendAuthHeader('controller', 'http://other:8090')).toEqual({});
+    expect(authHeaderFor(null)).toEqual({});
+  });
+
+  it('⑥ 无覆写认证 → 空头（服务自身认证不加任何头）', () => {
+    fs.writeFileSync(
+      configFilePath(),
+      JSON.stringify({ version: 1, backends: { controller: { internal: 'http://plain:8090' } } }),
+    );
+    expect(backendAuthHeader('controller', 'http://plain:8090')).toEqual({});
+    // 未配置的后端也返回空头，不抛
+    expect(backendAuthHeader('higress-gateway', 'http://gw:8080')).toEqual({});
+    expect(backendAuthHeader('controller', '')).toEqual({});
   });
 });
