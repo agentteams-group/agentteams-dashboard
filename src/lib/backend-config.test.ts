@@ -17,6 +17,7 @@ import {
   forgetWorking,
   getSetupToken,
   isHttpUrl,
+  normalizeHttpUrl,
   isTestTargetAllowed,
   listMatchesSaved,
   markWorking,
@@ -66,6 +67,21 @@ describe('isHttpUrl', () => {
     expect(isHttpUrl('not a url')).toBe(false);
     expect(isHttpUrl('')).toBe(false);
     expect(isHttpUrl(undefined)).toBe(false);
+  });
+});
+
+describe('normalizeHttpUrl', () => {
+  it('prepends http:// when the scheme is missing', () => {
+    expect(normalizeHttpUrl('192.168.54.107:6866')).toBe('http://192.168.54.107:6866');
+    expect(normalizeHttpUrl('controller.local:8090/api')).toBe('http://controller.local:8090/api');
+  });
+  it('keeps http/https and strips trailing slashes', () => {
+    expect(normalizeHttpUrl('http://h:1/')).toBe('http://h:1');
+    expect(normalizeHttpUrl('https://h/path//')).toBe('https://h/path');
+  });
+  it('leaves other schemes for the validator to reject', () => {
+    expect(normalizeHttpUrl('ws://h:1')).toBe('ws://h:1');
+    expect(normalizeHttpUrl('javascript:alert(1)')).toBe('javascript:alert(1)');
   });
 });
 

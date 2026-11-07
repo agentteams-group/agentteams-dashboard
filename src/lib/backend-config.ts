@@ -83,6 +83,25 @@ async function tokenFilePath(): Promise<string> {
 // URL validation
 // ---------------------------------------------------------------------------
 
+/** 地址协议自动识别（异地部署常用 `host:port`）：
+ * - 空串原样；
+ * - 已带 http/https → 保留协议、去尾斜杠；
+ * - 其它 scheme（ws:/javascript: 等）原样返回，交由 isHttpUrl 拒绝；
+ * - 无 scheme → 前缀 http://。 */
+export function normalizeHttpUrl(value: string | undefined | null): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(raw);
+  if (m) {
+    const scheme = m[1].toLowerCase();
+    if (scheme !== 'http' && scheme !== 'https') return raw;
+    const rest = raw.slice(m[0].length).replace(/\/+$/, '');
+    return rest ? `${scheme}://${rest}` : `${scheme}://`;
+  }
+  if (/^(ws|wss|ftp|ftps|file|data|mailto|javascript|blob):/i.test(raw)) return raw;
+  return `http://${raw.replace(/\/+$/, '')}`;
+}
+
 export function isHttpUrl(value: string | undefined | null): value is string {
   if (!value) return false;
   try {
@@ -188,8 +207,10 @@ function normalizeConfig(parsed: unknown): DashboardConfig | null {
     const entry = candidate.backends[name];
     if (!entry || typeof entry !== 'object') continue;
     const out: BackendAddrs = {};
-    if (isHttpUrl(entry.internal)) out.internal = entry.internal.trim();
-    if (isHttpUrl(entry.external)) out.external = entry.external.trim();
+    const internal = normalizeHttpUrl(entry.internal);
+    const external = normalizeHttpUrl(entry.external);
+    if (isHttpUrl(internal)) out.internal = internal;
+    if (isHttpUrl(external)) out.external = external;
     if (out.internal || out.external) backends[name] = out;
   }
   return { version: 1, backends };
