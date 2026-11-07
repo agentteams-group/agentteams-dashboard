@@ -48,8 +48,19 @@ export async function PUT(
   try {
     const { roomId } = await params;
     const target = buildAccountDataTarget(request, roomId);
-    return await proxyToMatrix(request, target.homeserver, target.path, target.accessToken, {
-      method: 'PUT',
+    const body = await request.json();
+    if (typeof body?.event_id !== 'string' || !body.event_id.trim()) {
+      return NextResponse.json({ error: 'Missing event_id' }, { status: 400 });
+    }
+    const headers = new Headers(request.headers);
+    headers.set('content-type', 'application/json');
+    headers.delete('content-length');
+    const upstream = new NextRequest(request.url, {
+      method: 'POST', headers, body: JSON.stringify({ 'm.fully_read': body.event_id }),
+    });
+    return await proxyToMatrix(upstream, target.homeserver,
+      `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/read_markers`, target.accessToken, {
+      method: 'POST',
       forwardBody: true,
     });
   } catch (err: unknown) {
