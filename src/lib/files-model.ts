@@ -338,18 +338,9 @@ export function listGrid(columns: readonly FilesColumn[]): string {
   return columns.map((c) => COLUMN_TRACK[c]).join(' ');
 }
 
+/** 树视图轨道与列表一致：展开箭头在名称单元格内部，不单独占轨道。 */
 export function treeGrid(columns: readonly FilesColumn[]): string {
-  const parts: string[] = [];
-  let placed = false;
-  for (const c of columns) {
-    parts.push(COLUMN_TRACK[c]);
-    if (c === 'select') {
-      parts.push('24px');
-      placed = true;
-    }
-  }
-  if (!placed) parts.unshift('24px');
-  return parts.join(' ');
+  return listGrid(columns);
 }
 
 export function columnsTotal(columns: readonly FilesColumn[]): number {

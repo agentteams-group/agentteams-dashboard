@@ -367,6 +367,7 @@ export function TreeView({
       <div
         className="grid items-center gap-2 border-b px-2 pb-1 text-xs text-muted-foreground"
         style={{ gridTemplateColumns: grid }}
+        data-testid="files-tree-header"
       >
         {columns.showMultiSelect && <span className="size-11" />}
         <span>名称</span>

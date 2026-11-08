@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COLUMN_TRACK,
+  COLUMN_TRACK_PX,
+  LIST_GAP,
   columnsFor,
   columnsTotal,
+  listGrid,
+  treeGrid,
   rowClickIntent,
   selectAllState,
   selectedSummary,
@@ -34,6 +39,7 @@ import {
   entryRowPath,
   withDirPaths,
   type FileSort,
+  type FilesColumn,
 } from '@/lib/files-model';
 import type { HumanFileEntry } from '@/lib/human-files-api';
 
@@ -76,6 +82,75 @@ describe('列分档（按实测列表宽）', () => {
       expect(c.total).toBeLessThanOrEqual(width);
     }
     expect(columnsTotal(['select', 'name', 'size', 'type', 'modified', 'actions'])).toBeLessThanOrEqual(900);
+  });
+});
+
+/** 轨道切分：`minmax(0, 1fr)` 自带空格，不能直接按空格 split。 */
+function tracks(grid: string): string[] {
+  return grid.match(/minmax\([^)]*\)|\S+/g) ?? [];
+}
+
+describe('树视图轨道与单元格一一对应', () => {
+  const WIDTHS = [375, 680, 760, 900, 1200];
+  const CASES: FilesColumn[][] = [
+    ['name', 'more'],
+    ['select', 'name', 'more'],
+    ['name', 'size', 'actions'],
+    ['select', 'name', 'size', 'actions'],
+    ['name', 'size', 'type', 'modified', 'actions'],
+    ['select', 'name', 'size', 'type', 'modified', 'actions'],
+  ];
+
+  it('treeGrid 与 listGrid 轨道完全一致，且无额外 24px 列', () => {
+    for (const columns of CASES) {
+      expect(treeGrid(columns)).toBe(listGrid(columns));
+      expect(tracks(treeGrid(columns))).not.toContain('24px');
+    }
+    for (const width of WIDTHS) {
+      for (const multiSelect of [false, true]) {
+        const c = columnsFor(width, multiSelect);
+        expect(treeGrid(c.columns)).toBe(listGrid(c.columns));
+        expect(treeGrid(c.columns)).toBe(c.grid);
+      }
+    }
+  });
+
+  it('有 / 无多选、各列分档：轨道数量 == 数据列数', () => {
+    for (const columns of CASES) {
+      expect(tracks(treeGrid(columns))).toHaveLength(columns.length);
+      expect(tracks(listGrid(columns))).toHaveLength(columns.length);
+    }
+    for (const width of WIDTHS) {
+      for (const multiSelect of [false, true]) {
+        const c = columnsFor(width, multiSelect);
+        expect(tracks(treeGrid(c.columns))).toHaveLength(c.columns.length);
+        expect(tracks(c.grid)).toHaveLength(c.columns.length);
+      }
+    }
+  });
+
+  it('名称列落在唯一的弹性轨道上（不再被 24px 挤压）', () => {
+    for (const columns of CASES) {
+      const nameIndex = columns.indexOf('name');
+      expect(tracks(treeGrid(columns))[nameIndex]).toBe(COLUMN_TRACK.name);
+      expect(COLUMN_TRACK.name).toBe('minmax(0, 1fr)');
+    }
+  });
+
+  it('375 / 680 / 900 / 1200：名称列 ≥120px 且总宽不溢出', () => {
+    for (const width of [375, 680, 900, 1200]) {
+      for (const multiSelect of [false, true]) {
+        const c = columnsFor(width, multiSelect);
+        expect(c.total).toBeLessThanOrEqual(width);
+        // 名称列实际可用宽 = 列表宽 - 其它轨道 - 轨道间隙
+        const others = c.columns
+          .filter((col) => col !== 'name')
+          .reduce((sum, col) => sum + COLUMN_TRACK_PX[col], 0);
+        const nameWidth = width - others - (c.columns.length - 1) * LIST_GAP;
+        expect(nameWidth).toBeGreaterThanOrEqual(120);
+        expect(COLUMN_TRACK_PX.name).toBeGreaterThanOrEqual(120);
+      }
+    }
   });
 });
 
