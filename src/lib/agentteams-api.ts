@@ -5,6 +5,7 @@ import { ApiError, NetworkError } from '@/lib/api-error';
 import { apiUrl, extractErrorDetail } from '@/lib/api-base';
 import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
 import { normalizeWorkerMcpItems, type WorkerMcpResult } from '@/lib/worker-mcp';
+import { MANAGER_LOG_TAIL, clampLogTail } from '@/lib/manager-logs';
 import {
   getProjectMeta as fetchProjectMeta,
   getTaskMeta as fetchTaskMeta,
@@ -242,11 +243,29 @@ export interface SaveHumanWorkspaceAccessResult extends SaveHumanConfigResult {
   current: WorkspaceAccess | null;
 }
 
+/** ManagerSpec.Config（controller v1beta1.ManagerConfig）——Manager 独有的运行
+ * 调参。PUT 的 config 是整对象替换（UpdateManager：req.Config != nil 整体写），
+ * 空串 = 回退 Controller 默认（15m / 720m / admin-dm）。 */
+export interface ManagerConfigInfo {
+  heartbeatInterval?: string;
+  workerIdleTimeout?: string;
+  notifyChannel?: string;
+}
+
+/** Manager 的 MCP server 声明（spec.mcpServers）。 */
+export interface ManagerMcpServer {
+  name: string;
+  url: string;
+  transport?: string;
+}
+
 export interface ManagerResponse {
   name: string;
   phase: ManagerPhase;
   state: ManagerState;
   model: RequestModelAlias;
+  /** APIG Model API 名（spec.modelProvider）；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime: string;
   image: string;
   matrixUserID: string;
@@ -255,7 +274,15 @@ export interface ManagerResponse {
   version: string;
   message: string;
   welcomeSent: boolean;
+  /* ── ManagerSpec 配置面 ──────────────────────────────────────────────
+   * controller 的 managerToResponse 目前只映射标量列，详情响应同样不带这些
+   * 字段；后端补齐后自动点亮，缺省时抽屉诚实降级为「未配置」。 */
+  soul?: string;
+  agents?: string;
   skills?: string[];
+  mcpServers?: ManagerMcpServer[];
+  env?: Record<string, string>;
+  config?: ManagerConfigInfo;
 }
 
 // ----- human file sync (upstream #1499) -----
@@ -530,8 +557,25 @@ export interface CreateManagerRequest {
 
 export interface UpdateManagerRequest {
   model?: RequestModelAlias;
+  modelProvider?: string;
   runtime?: string;
   image?: string;
+  /** 文档（Controller 仅应用非空值——空串无法清除既有内容）。 */
+  soul?: string;
+  agents?: string;
+  /** 非 nil = 整表替换（空数组 = 清空）。 */
+  skills?: string[];
+  /** 非 nil = 整表替换（空数组 = 清空）。 */
+  mcpServers?: ManagerMcpServer[];
+  /**
+   * 环境变量（整表替换）。注意：controller 的 UpdateManagerRequest 目前没有
+   * env 字段，PUT 会静默忽略——抽屉保存后回读不一致会明示「未生效」，不假装成功。
+   */
+  env?: Record<string, string>;
+  /** 整对象替换；空串 = 回退默认。 */
+  config?: ManagerConfigInfo;
+  /** 期望生命周期状态（desired-state 语义）。 */
+  state?: ManagerState;
 }
 
 // Matches the controller's snake_case schema (agentteams-controller internal/server/types.go):
@@ -1233,6 +1277,29 @@ export const agentteamsApi = {
 
   updateManager: (name: string, data: UpdateManagerRequest) =>
     proxyRequest<ManagerResponse>(`/managers/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  /** 只改模型（PUT /managers/{name} 合并语义——Controller 仅在 model 非空时
+   * 写 spec）。多 provider 部署下同时下发 provider；空 provider 永不下发，
+   * 否则会把 Controller 现值清空。 */
+  updateManagerModel: (name: string, model: string, modelProvider?: string) => {
+    const body: Record<string, unknown> = { model };
+    if (modelProvider) body.modelProvider = modelProvider;
+    return proxyRequest<ManagerResponse>(`/managers/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** 重启 Manager（Controller POST /managers/{name}/restart，#1473）。 */
+  restartManager: (name: string) =>
+    proxyRequest<{ success?: boolean; note?: string }>(
+      `/managers/${encodeURIComponent(name)}/restart`,
+      { method: 'POST' },
+    ),
+
+  /** Manager 容器日志（Dashboard 代理 Controller Docker API；默认尾 300 行）。 */
+  getManagerLogs: (name: string, tail: number = MANAGER_LOG_TAIL) =>
+    proxyRequest<LogLine[]>(`/managers/${encodeURIComponent(name)}/logs?tail=${clampLogTail(tail)}`),
 
   deleteManager: (name: string) =>
     proxyRequest<void>(`/managers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
