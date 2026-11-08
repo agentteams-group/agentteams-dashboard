@@ -19,13 +19,15 @@ vi.mock('@/components/ui/select', () => ({
   Select: ({
     value,
     onValueChange,
+    disabled,
     children,
   }: {
     value?: string;
     onValueChange: (_v: string) => void;
+    disabled?: boolean;
     children: React.ReactNode;
   }) => (
-    <select value={value} onChange={(e) => onValueChange(e.target.value)}>
+    <select value={value} disabled={disabled} onChange={(e) => onValueChange(e.target.value)}>
       {children}
     </select>
   ),
@@ -104,6 +106,12 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
     expect(screen.getByLabelText('运行时选择说明')).toBeInTheDocument();
     expect(screen.queryByText(/CoPaw 已停止新建/)).not.toBeInTheDocument();
     expect(screen.queryByText('推荐 QwenPaw。')).not.toBeInTheDocument();
+  });
+
+  it('新建 Worker 的运行时仍可选（暂禁只针对已有对象）', () => {
+    renderDialog();
+    expect(screen.getByRole('combobox')).not.toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Hermes' })).toBeInTheDocument();
   });
 
   it('留空 = 跟随集群默认（✓，不拦提交）', () => {

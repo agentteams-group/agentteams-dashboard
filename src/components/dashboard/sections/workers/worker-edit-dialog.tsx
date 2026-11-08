@@ -20,13 +20,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/agentteams-api';
+import type { UpdateWorkerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
+import { runtimeLabel } from '@/lib/runtime-labels';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -58,6 +59,11 @@ export function WorkerEditDialog({
 
 }) {
   const [envValid, setEnvValid] = useState(true);
+  const currentRuntime = value.runtime || '';
+  const currentRuntimeListed =
+    !currentRuntime ||
+    isLegacyCopaw(currentRuntime) ||
+    CREATABLE_WORKER_RUNTIMES.some((option) => option.value === currentRuntime);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -91,7 +97,7 @@ export function WorkerEditDialog({
             </div>
             <Select
               value={value.runtime || ''}
-              onValueChange={(v) => onChange({ ...value, runtime: v as WorkerRuntime })}
+              disabled
             >
               <SelectTrigger>
                 <SelectValue />
@@ -102,6 +108,11 @@ export function WorkerEditDialog({
                     CoPaw（存量，请升级到 QwenPaw）
                   </SelectItem>
                 )}
+                {!currentRuntimeListed && (
+                  <SelectItem value={currentRuntime} disabled>
+                    {runtimeLabel(currentRuntime)}（存量）
+                  </SelectItem>
+                )}
                 {CREATABLE_WORKER_RUNTIMES.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
@@ -109,6 +120,9 @@ export function WorkerEditDialog({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              运行时切换暂不可用（上游运行时适配尚未就绪）
+            </p>
             {isLegacyCopaw(value.runtime) && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 CoPaw 已停止新建，保存后升级到 QwenPaw。
