@@ -14,7 +14,6 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 export interface ComboboxProps {
@@ -53,6 +52,7 @@ export function Combobox({
   const [draft, setDraft] = useState<string | null>(null);
   const listId = useId();
   const listRef = useRef<HTMLUListElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
   const unique = useMemo(() => {
@@ -80,6 +80,17 @@ export function Combobox({
     const node = listRef.current.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
     node?.scrollIntoView?.({ block: 'nearest' });
   }, [activeIndex, showList]);
+
+  useEffect(() => {
+    if (!showList) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        close();
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [showList]);
 
   const clearCloseTimer = () => {
     if (closeTimerRef.current !== null) {
@@ -160,80 +171,72 @@ export function Combobox({
   };
 
   return (
-    <Popover
-      open={showList}
-      onOpenChange={(next) => {
-        if (!next) close();
-      }}
-    >
-      <PopoverAnchor asChild>
-        <div className={cn('relative w-full min-w-0', className)}>
-          <Input
-            id={id}
-            role="combobox"
-            aria-label={ariaLabel}
-            aria-expanded={showList}
-            aria-controls={showList ? listId : undefined}
-            aria-autocomplete="list"
-            aria-activedescendant={
-              showList && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined
-            }
-            autoComplete="off"
-            value={text}
-            placeholder={placeholder}
-            disabled={disabled}
-            className={cn('pr-8', inputClassName)}
-            onChange={(event) => handleInput(event.target.value)}
-            onFocus={() => {
-              if (!disabled) openList();
-            }}
-            onBlur={close}
-            onKeyDown={handleKeyDown}
-          />
-          <ChevronDown
-            className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
+    <div ref={containerRef} className={cn('relative w-full min-w-0', className)}>
+      <Input
+        id={id}
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={showList}
+        aria-controls={showList ? listId : undefined}
+        aria-autocomplete="list"
+        aria-activedescendant={
+          showList && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined
+        }
+        autoComplete="off"
+        value={text}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={cn('pr-8', inputClassName)}
+        onChange={(event) => handleInput(event.target.value)}
+        onFocus={() => {
+          if (!disabled) openList();
+        }}
+        onBlur={() => {
+          // 不关闭：直接点击内联候选项时 blur 会先于 mousedown/click；
+          // 关闭交给外部 pointerdown / Escape / Tab。
+          if (!allowCustom) setDraft(null);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      <ChevronDown
+        className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden="true"
+      />
+      {showList ? (
+        <div className="absolute top-full left-0 z-50 mt-1 max-h-[min(50vh,260px)] w-full min-w-40 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+          <ul ref={listRef} id={listId} role="listbox" className="space-y-0.5">
+            {filtered.map((item, index) => {
+              const selected = item === value;
+              return (
+                <li
+                  key={item}
+                  id={`${listId}-option-${index}`}
+                  data-index={index}
+                  role="option"
+                  aria-selected={selected}
+                  className={cn(
+                    'flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
+                    index === activeIndex && 'bg-accent text-accent-foreground',
+                  )}
+                  onMouseEnter={() => setActive(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    choose(item);
+                  }}
+                  onClick={() => choose(item)}
+                >
+                  <span className="min-w-0 flex-1 truncate">{item}</span>
+                  {selected ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+                </li>
+              );
+            })}
+            {filtered.length === 0 ? (
+              <li className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</li>
+            ) : null}
+          </ul>
         </div>
-      </PopoverAnchor>
-      <PopoverContent
-        align="start"
-        sideOffset={4}
-        className="max-h-[min(50vh,260px)] w-[var(--radix-popper-anchor-width)] min-w-40 overflow-y-auto p-1"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onMouseDown={(event) => event.preventDefault()}
-      >
-        <ul ref={listRef} id={listId} role="listbox" className="space-y-0.5">
-          {filtered.map((item, index) => {
-            const selected = item === value;
-            return (
-              <li
-                key={item}
-                id={`${listId}-option-${index}`}
-                data-index={index}
-                role="option"
-                aria-selected={selected}
-                className={cn(
-                  'flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
-                  index === activeIndex && 'bg-accent text-accent-foreground',
-                )}
-                onMouseEnter={() => setActive(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  choose(item);
-                }}
-                onClick={() => choose(item)}
-              >
-                <span className="min-w-0 flex-1 truncate">{item}</span>
-                {selected ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-              </li>
-            );
-          })}
-          {filtered.length === 0 ? (
-            <li className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</li>
-          ) : null}
-        </ul>
-      </PopoverContent>
-    </Popover>
+      ) : null}
+    </div>
   );
+
 }
