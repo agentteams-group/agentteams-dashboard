@@ -128,7 +128,8 @@ export function nextFileSort(cur: FileSort, key: FileSortKey): FileSort {
   return { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
 }
 
-function compareName(a: HumanFileEntry, b: HumanFileEntry): number {
+/** 名称比较（numeric + 中文，大小写不敏感）：列表排序与全局搜索同一口径。 */
+export function compareEntryName(a: HumanFileEntry, b: HumanFileEntry): number {
   return entryDisplayName(a).localeCompare(entryDisplayName(b), 'zh-Hans-CN', {
     numeric: true,
     sensitivity: 'base',
@@ -166,10 +167,10 @@ function compareEntry(a: HumanFileEntry, b: HumanFileEntry, sort: FileSort): num
   else if (typeof va === 'string' && typeof vb === 'string') {
     cmp =
       sort.key === 'name'
-        ? compareName(a, b)
+        ? compareEntryName(a, b)
         : va.localeCompare(vb, 'zh-Hans-CN', { sensitivity: 'base' });
   }
-  if (cmp === 0) cmp = compareName(a, b);
+  if (cmp === 0) cmp = compareEntryName(a, b);
   return cmp * sign;
 }
 

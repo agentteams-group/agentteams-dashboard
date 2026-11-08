@@ -133,6 +133,108 @@ describe('FilesSection 布局与焦点', () => {
   });
 });
 
+describe('FilesSection 全局搜索', () => {
+  const RECURSIVE = [
+    { path: 'docs/a/report.md', size: 100, updatedAt: '2026-11-02T10:00:00Z' },
+  ];
+
+  it('≥2 字符 → listRecursive(limit 1000) + 结果列表 + 隐藏面包屑', async () => {
+    const spy = vi
+      .spyOn(humanFilesApi, 'listRecursive')
+      .mockResolvedValue({ entries: RECURSIVE, nextKey: null });
+    renderSection();
+    const input = await screen.findByLabelText('搜索全部文件');
+    expect(input).toHaveClass('h-11');
+    expect(input).toHaveAttribute('placeholder', '搜索全部文件（名称或路径）');
+
+    fireEvent.change(input, { target: { value: 'report' } });
+
+    expect(await screen.findByText(/搜索结果 · 1 项/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith('alice', { limit: 1000 });
+    expect(await screen.findByRole('button', { name: 'report.md' })).toBeInTheDocument();
+    expect(screen.getByText('docs/a')).toBeInTheDocument();
+    // 搜索态隐藏面包屑 + 目录内容。
+    expect(screen.queryByRole('button', { name: '我的文件' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'readme.md' })).not.toBeInTheDocument();
+  });
+
+  it('<2 字符只提示，不发请求且目录内容不受影响', async () => {
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    const spy = vi.spyOn(humanFilesApi, 'listRecursive');
+    fireEvent.change(screen.getByLabelText('搜索全部文件'), { target: { value: 'r' } });
+
+    expect(await screen.findByText('输入至少 2 个字符')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(spy).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'readme.md' })).toBeInTheDocument();
+  });
+
+  it('目录结果 → 进入目录并清空搜索', async () => {
+    vi.spyOn(humanFilesApi, 'listRecursive').mockResolvedValue({
+      entries: RECURSIVE,
+      nextKey: null,
+    });
+    renderSection();
+    const input = await screen.findByLabelText('搜索全部文件');
+    fireEvent.change(input, { target: { value: 'docs' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'docs' }, { timeout: 3000 }));
+
+    await waitFor(() => expect(input).toHaveValue(''));
+    await waitFor(() => expect(humanFilesApi.listDirectory).toHaveBeenCalledWith('alice', 'docs'));
+    expect(await screen.findByRole('button', { name: '我的文件' })).toBeInTheDocument();
+  });
+
+  it('文件结果 → 选中详情但保留搜索结果', async () => {
+    vi.spyOn(humanFilesApi, 'listRecursive').mockResolvedValue({
+      entries: RECURSIVE,
+      nextKey: null,
+    });
+    renderSection();
+    const input = await screen.findByLabelText('搜索全部文件');
+    fireEvent.change(input, { target: { value: 'report' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'report.md' }, { timeout: 3000 }));
+
+    expect(await screen.findByTestId('file-detail-card')).toBeInTheDocument();
+    expect(screen.getByText(/搜索结果 · 1 项/)).toBeInTheDocument();
+    expect(input).toHaveValue('report');
+  });
+
+  it('404/403/501 → 全局搜索不可用，目录内容照常', async () => {
+    vi.spyOn(humanFilesApi, 'listRecursive').mockRejectedValue(
+      new ApiError('forbidden', 404, '/api/agentteams/humans/alice/files'),
+    );
+    renderSection();
+    fireEvent.change(await screen.findByLabelText('搜索全部文件'), {
+      target: { value: 'rep' },
+    });
+
+    expect(await screen.findByText(/全局搜索不可用/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'readme.md' })).toBeInTheDocument();
+  });
+
+  it('nextKey → 「结果基于前 N 项」+ 加载更多（显式 cursor）', async () => {
+    const spy = vi
+      .spyOn(humanFilesApi, 'listRecursive')
+      .mockResolvedValueOnce({ entries: [{ path: 'docs/a.txt', size: 1 }], nextKey: 'k1' })
+      .mockResolvedValueOnce({ entries: [{ path: 'docs/b.txt', size: 2 }], nextKey: null });
+    renderSection();
+    fireEvent.change(await screen.findByLabelText('搜索全部文件'), {
+      target: { value: 'docs' },
+    });
+
+    expect(await screen.findByText(/结果基于前 2 项/, {}, { timeout: 3000 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith('alice', { cursor: 'k1', limit: 1000 }),
+    );
+    expect(await screen.findByRole('button', { name: 'b.txt' })).toBeInTheDocument();
+  });
+});
+
 describe('FilesSection 操作', () => {
   it('上传队列：选择文件 → uploadFile 到当前目录', async () => {
     renderSection();

@@ -10,6 +10,7 @@ import {
   Grid2X2,
   List,
   RefreshCw,
+  Search,
   Trash,
   Upload,
   Users,
@@ -50,6 +51,7 @@ import {
   markUploadStatus,
   nextFileSort,
   panesFor,
+  parentDir,
   parseFileSort,
   parseFilesView,
   pruneSelection,
@@ -77,6 +79,16 @@ import {
   type HumanFileEntry,
   type HumanTrashEntry,
 } from '@/lib/human-files-api';
+import {
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_FETCH_LIMIT,
+  parseSearchQuery,
+  rankSearchResults,
+  resultRelPath,
+  searchEntriesFromRecursive,
+  searchEntryName,
+  searchPageState,
+} from '@/lib/files-search';
 import { saveBlob } from '@/lib/human-files-api';
 import { ApiError } from '@/lib/api-error';
 import { FileDropTarget } from './files/file-drop-target';
@@ -90,6 +102,7 @@ import {
   type FileOpTarget,
 } from './files/files-dialogs';
 import { FileDetailCard, DetailPlaceholder } from './files/file-detail';
+import { FileSearchResults, type SearchRowActions } from './files/file-search-results';
 import { GridView, ListView, TreeView, type EntryActions } from './files/file-views';
 import { TrashDialog } from './files/trash-dialog';
 import { UploadQueuePanel } from './files/upload-panel';
@@ -162,6 +175,10 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   }, [canAdmin, humans, humanName, initialHuman, sessionUser]);
 
   const [dirPath, setDirPath] = useState('');
+  // 全局搜索：输入（原始）→ 250ms 去抖后的 term → 递归平铺客户端过滤。
+  const [searchRaw, setSearchRaw] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchQuery = useMemo(() => parseSearchQuery(searchRaw), [searchRaw]);
   const [view, setView] = useState<FilesView>(() => parseFilesView(readStorage(FILES_VIEW_STORAGE_KEY)));
   const [sort, setSort] = useState<FileSort>(() => parseFileSort(readStorage(FILE_SORT_STORAGE_KEY)));
   const [recursive, setRecursive] = useState(false);
@@ -190,6 +207,22 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   const uploadFiles = useRef(new Map<string, File>());
   const uploadAborts = useRef(new Map<string, AbortController>());
 
+  // 清空搜索 = 回到当前目录：输入 / 去抖 term / 搜索态焦点一起归零
+  //（命中的文件可能不在当前目录，焦点留着会让详情槽悬空）。
+  const clearSearch = useCallback(() => {
+    setSearchRaw('');
+    setSearchTerm('');
+    setFocusedPath(null);
+  }, []);
+
+  // 输入去抖 250ms；<2 字符 / 清空 → term 归空（不触发请求）。
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearchTerm(searchQuery.active ? searchQuery.term : '');
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [searchQuery.term, searchQuery.active]);
+
   // 换人 = 换文件区：目录 / 焦点 / 选择 / 上传目标一律归零，避免跨人残留。
   useEffect(() => {
     setDirPath('');
@@ -199,7 +232,8 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     setUploadDir('');
     setExpanded(new Set());
     setChildren(new Map());
-  }, [humanName]);
+    clearSearch();
+  }, [clearSearch, humanName]);
 
   useEffect(() => writeStorage(FILES_VIEW_STORAGE_KEY, view), [view]);
   useEffect(() => writeStorage(FILE_SORT_STORAGE_KEY, serializeFileSort(sort)), [sort]);
@@ -261,6 +295,53 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   const error = recursive ? recursiveQuery.error : dirQuery.error;
   const listStatus = error ? statusOf(error) : '';
 
+  // 全局搜索数据：首屏 1000 条递归平铺；后续 cursor 只在「加载更多」时显式续拉。
+  const searchData = useInfiniteQuery({
+    queryKey: ['human-files-search', humanName, searchTerm],
+    queryFn: ({ pageParam }) =>
+      humanFilesApi.listRecursive(
+        humanName,
+        pageParam
+          ? { cursor: pageParam, limit: SEARCH_FETCH_LIMIT }
+          : { limit: SEARCH_FETCH_LIMIT },
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextKey ?? undefined,
+    enabled: Boolean(humanName) && searchQuery.active && searchTerm !== '',
+    retry: false,
+  });
+
+  // 404/403/501（端点不可用）→ 降级「全局搜索不可用」，当前目录内容照常。
+  const searchStatus = searchData.error instanceof ApiError ? searchData.error.status : 0;
+  const searchUnavailable =
+    searchStatus === 404 || searchStatus === 403 || searchStatus === 501;
+  const searchOn = searchQuery.active && !searchUnavailable;
+
+  const searchEntries = useMemo<HumanFileEntry[]>(() => {
+    const pages = searchData.data?.pages ?? [];
+    return searchEntriesFromRecursive(pages.flatMap((page) => page.entries));
+  }, [searchData.data]);
+
+  const searchRanked = useMemo(
+    () => rankSearchResults(searchEntries, searchQuery),
+    // searchQuery 每次渲染新建 → 依赖真正决定匹配的字段。
+    [searchEntries, searchQuery.active, searchQuery.term],
+  );
+
+  const searchPage = useMemo(() => {
+    const pages = searchData.data?.pages ?? [];
+    const last = pages.length > 0 ? pages[pages.length - 1] : null;
+    return searchPageState({
+      entries: searchEntries,
+      nextKey: searchData.hasNextPage ? (last?.nextKey ?? '') : null,
+      limit: SEARCH_FETCH_LIMIT,
+    });
+  }, [searchData.data, searchData.hasNextPage, searchEntries]);
+
+  const searchPending = searchOn && (searchTerm === '' || searchData.isPending);
+  const searchErrorText =
+    searchData.error && !searchUnavailable ? filesErrorText(searchData.error) : '';
+
   const sortedEntries = useMemo(() => sortFileEntries(entries, sort), [entries, sort]);
 
   const sortedChildren = useMemo(() => {
@@ -295,8 +376,11 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
 
   const detailEntry = useMemo(() => {
     if (!focusedPath) return null;
-    return knownEntries.find((e) => entryRowPath(e, dirPath) === focusedPath) ?? null;
-  }, [dirPath, focusedPath, knownEntries]);
+    const inDir = knownEntries.find((e) => entryRowPath(e, dirPath) === focusedPath);
+    if (inDir) return inDir;
+    // 搜索结果里的文件不在当前目录 → 详情槽回落到搜索条目。
+    return searchEntries.find((e) => entryRowPath(e, '') === focusedPath) ?? null;
+  }, [dirPath, focusedPath, knownEntries, searchEntries]);
 
   useEffect(() => {
     setSelected((prev) => pruneSelection(prev, visiblePaths));
@@ -309,6 +393,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     (silent = false) => {
       void queryClient.invalidateQueries({ queryKey: ['human-files', humanName] });
       void queryClient.invalidateQueries({ queryKey: ['human-files-recursive', humanName] });
+      void queryClient.invalidateQueries({ queryKey: ['human-files-search', humanName] });
       void queryClient.invalidateQueries({ queryKey: ['human-quota', humanName] });
       void queryClient.invalidateQueries({ queryKey: ['human-trash', humanName] });
       if (!silent) {
@@ -363,18 +448,25 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (trashOpen || quotaOpen || newFolderOpen || renameTarget || moveTarget || editTarget || deleteTarget) return;
+      // 搜索态：Esc 先清空搜索并回到当前目录（再按才清选择 / 焦点）。
+      if (searchRaw !== '') {
+        clearSearch();
+        return;
+      }
       clearFocusAndSelection();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [
     clearFocusAndSelection,
+    clearSearch,
     deleteTarget,
     editTarget,
     moveTarget,
     newFolderOpen,
     quotaOpen,
     renameTarget,
+    searchRaw,
     trashOpen,
   ]);
 
@@ -462,6 +554,20 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     setExpanded(new Set());
     setChildren(new Map());
   }, []);
+
+  /** 搜索结果行：目录 = 进入并清搜索；文件 = 选中详情（保留结果）。 */
+  const activateSearchResult = useCallback(
+    (entry: HumanFileEntry) => {
+      const path = resultRelPath(entry);
+      if (entry.type === 'directory') {
+        enterDir(path);
+        clearSearch();
+        return;
+      }
+      setFocusedPath(path);
+    },
+    [clearSearch, enterDir],
+  );
 
   // ── 树懒加载 / 键盘 ────────────────────────────────────────────────
   const toggleExpand = useCallback(
@@ -830,21 +936,35 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     editable: (entry) => isEditableText(entry.name, entry.size),
   };
 
+  const searchRowActions: SearchRowActions = {
+    onEnter: activateSearchResult,
+    onDetails: (entry) => setFocusedPath(resultRelPath(entry)),
+    onDownload: (entry) =>
+      void doDownload(resultRelPath(entry), searchEntryName(entry), entry.size),
+    onDelete: (entry) => setDeleteTarget(entryToTarget(entry, '')),
+  };
+
   const quota = quotaQuery.data ?? null;
   const percent = quotaPercent(quota);
 
   const detailNode = (target: FileOpTarget | null) => {
     if (!target) return null;
-    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === target.path) ?? null;
+    const entry =
+      knownEntries.find((e) => entryRowPath(e, dirPath) === target.path) ??
+      searchEntries.find((e) => entryRowPath(e, '') === target.path) ??
+      null;
     if (!entry) return null;
+    const entryPath = entryRowPath(entry, dirPath);
+    // 搜索结果的文件可能不在当前目录：详情里的目录上下文取它自己的父目录。
+    const entryDir = searchOn && entry.path ? parentDir(entryPath) : dirPath;
     return (
       <aside className="min-h-0 w-full shrink-0 md:w-[380px]" aria-label="文件详情">
         <FileDetailCard
           humanName={humanName}
           entry={entry}
-          path={entryRowPath(entry, dirPath)}
-          dirPath={dirPath}
-          childCount={loadedChildCount(entries, target.path)}
+          path={entryPath}
+          dirPath={entryDir}
+          childCount={loadedChildCount(searchOn ? searchEntries : entries, target.path)}
           canAdmin={canAdmin}
           onClose={() => setFocusedPath(null)}
           onDownload={(e) => void doDownload(entryRowPath(e, dirPath), e.name, e.size)}
@@ -852,7 +972,10 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
           onMove={(e) => setMoveTarget(entryToTarget(e, dirPath))}
           onEdit={(e) => setEditTarget(entryToTarget(e, dirPath))}
           onDelete={(e) => setDeleteTarget(entryToTarget(e, dirPath))}
-          onOpenDir={(e) => enterDir(entryRowPath(e, dirPath))}
+          onOpenDir={(e) => {
+            enterDir(entryRowPath(e, dirPath));
+            if (searchOn) clearSearch();
+          }}
         />
       </aside>
     );
@@ -966,7 +1089,11 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               size="icon"
               className="size-11 md:size-9"
               aria-label="刷新"
-              onClick={() => refreshAll()}
+              onClick={() => {
+                // 刷新清空搜索：避免结果停留在旧快照上。
+                clearSearch();
+                refreshAll();
+              }}
               disabled={loading}
             >
               <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
@@ -974,89 +1101,146 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
           </div>
         </div>
 
-        {/* 面包屑 + 视图切换 + 排序 */}
+        {/* 面包屑 + 全局搜索 + 视图切换 + 排序 */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-xs">
-            {crumbs.map((crumb, index) => (
-              <span key={crumb.path || 'root'} className="flex items-center gap-1">
-                {index > 0 && <ChevronRight className="size-3 text-muted-foreground" />}
+          {searchOn ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-xs" data-testid="files-search-summary">
+              <span className="truncate font-medium">搜索结果 · {searchRanked.matched} 项</span>
+            </div>
+          ) : (
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-xs">
+              {crumbs.map((crumb, index) => (
+                <span key={crumb.path || 'root'} className="flex items-center gap-1">
+                  {index > 0 && <ChevronRight className="size-3 text-muted-foreground" />}
+                  <button
+                    type="button"
+                    onClick={() => enterDir(crumb.path)}
+                    className={cn(
+                      'min-h-8 rounded px-1.5 hover:bg-accent',
+                      index === crumbs.length - 1 ? 'font-medium' : 'text-muted-foreground',
+                    )}
+                  >
+                    {crumb.label}
+                  </button>
+                </span>
+              ))}
+              {targetDir && targetDir !== dirPath && (
+                <Badge variant="outline" className="ml-1 text-[10px]">
+                  上传/新建目标：{targetDir}/
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* 全局搜索（跨目录名称 / 路径）：44px 高；有内容出清除；<2 字符只提示。 */}
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-[280px]">
+            <div className="relative min-w-0">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={searchRaw}
+                aria-label="搜索全部文件"
+                placeholder="搜索全部文件（名称或路径）"
+                onChange={(e) => setSearchRaw(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    clearSearch();
+                  }
+                }}
+                className="h-11 w-full min-w-0 rounded-md border bg-background pl-8 pr-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              {searchRaw !== '' && (
                 <button
                   type="button"
-                  onClick={() => enterDir(crumb.path)}
-                  className={cn(
-                    'min-h-8 rounded px-1.5 hover:bg-accent',
-                    index === crumbs.length - 1 ? 'font-medium' : 'text-muted-foreground',
-                  )}
+                  aria-label="清除搜索"
+                  onClick={clearSearch}
+                  className="absolute right-0.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
-                  {crumb.label}
+                  <X className="size-4" />
                 </button>
-              </span>
-            ))}
-            {targetDir && targetDir !== dirPath && (
-              <Badge variant="outline" className="ml-1 text-[10px]">
-                上传/新建目标：{targetDir}/
-              </Badge>
+              )}
+            </div>
+            {searchQuery.tooShort && (
+              <span className="text-[11px] text-muted-foreground">输入至少 2 个字符</span>
             )}
           </div>
 
-          <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-[3px]" role="group" aria-label="文件视图">
-            {([
-              ['list', List, '列表'],
-              ['tree', FolderOpen, '树'],
-              ['grid', Grid2X2, '网格'],
-            ] as const).map(([id, Icon, label]) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={view === id}
-                aria-label={label}
-                onClick={() => {
-                  setView(id);
-                  setUploadDir('');
-                  if (id === 'tree') setRecursive(false);
-                }}
-                className={cn(
-                  'flex size-9 items-center justify-center rounded-md text-xs',
-                  view === id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Icon className="size-4" />
-              </button>
-            ))}
-          </div>
+          {!searchOn && (
+            <>
+              <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-[3px]" role="group" aria-label="文件视图">
+                {([
+                  ['list', List, '列表'],
+                  ['tree', FolderOpen, '树'],
+                  ['grid', Grid2X2, '网格'],
+                ] as const).map(([id, Icon, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={view === id}
+                    aria-label={label}
+                    onClick={() => {
+                      setView(id);
+                      setUploadDir('');
+                      if (id === 'tree') setRecursive(false);
+                    }}
+                    className={cn(
+                      'flex size-9 items-center justify-center rounded-md text-xs',
+                      view === id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="size-4" />
+                  </button>
+                ))}
+              </div>
 
-          <select
-            aria-label="排序键"
-            value={sort.key}
-            onChange={(e) => setSort(nextFileSort(sort, e.target.value as FileSort['key']))}
-            className="h-9 rounded-md border bg-background px-2 text-xs"
-          >
-            <option value="name">名称</option>
-            <option value="size">大小</option>
-            <option value="type">类型</option>
-            <option value="updatedAt">修改时间</option>
-          </select>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9"
-            onClick={() => setSort({ ...sort, dir: sort.dir === 'asc' ? 'desc' : 'asc' })}
-            aria-label={sort.dir === 'asc' ? '升序' : '降序'}
-          >
-            {sort.dir === 'asc' ? '↑' : '↓'}
-          </Button>
-          {(view === 'list' || view === 'grid') && (
-            <Button
-              variant={recursive ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-9"
-              aria-pressed={recursive}
-              onClick={() => setRecursive((v) => !v)}
-            >
-              全部文件
-            </Button>
+              <select
+                aria-label="排序键"
+                value={sort.key}
+                onChange={(e) => setSort(nextFileSort(sort, e.target.value as FileSort['key']))}
+                className="h-9 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="name">名称</option>
+                <option value="size">大小</option>
+                <option value="type">类型</option>
+                <option value="updatedAt">修改时间</option>
+              </select>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9"
+                onClick={() => setSort({ ...sort, dir: sort.dir === 'asc' ? 'desc' : 'asc' })}
+                aria-label={sort.dir === 'asc' ? '升序' : '降序'}
+              >
+                {sort.dir === 'asc' ? '↑' : '↓'}
+              </Button>
+              {(view === 'list' || view === 'grid') && (
+                <Button
+                  variant={recursive ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-9"
+                  aria-pressed={recursive}
+                  onClick={() => setRecursive((v) => !v)}
+                >
+                  全部文件
+                </Button>
+              )}
+            </>
           )}
         </div>
+
+        {/* 端点不可用降级：搜索不生效，当前目录内容照常可见。 */}
+        {searchQuery.active && searchUnavailable && (
+          <div
+            role="alert"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400"
+          >
+            全局搜索不可用（当前目录内容不受影响）
+          </div>
+        )}
       </div>
 
       {showUploads && uploadItems.length > 0 && (
@@ -1097,7 +1281,21 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
       {/* 主区：列表 + 详情 */}
       <div className="flex min-h-0 flex-1 gap-3">
         <div ref={listRef} className={cn('flex min-h-0 min-w-0 flex-1 flex-col')}>
-          {listStatus === '404' ? (
+          {searchOn ? (
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+              <FileSearchResults
+                ranked={searchRanked}
+                page={searchPage}
+                pending={searchPending}
+                error={searchErrorText}
+                loadingMore={searchData.isFetchingNextPage}
+                selectedPath={focusedPath}
+                actions={searchRowActions}
+                onActivate={activateSearchResult}
+                onLoadMore={() => void searchData.fetchNextPage()}
+              />
+            </div>
+          ) : listStatus === '404' ? (
             <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-400">
               无权限或不存在（该文件区不可见）
             </div>
