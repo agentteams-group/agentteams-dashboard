@@ -6,7 +6,7 @@ import { LoginPage } from './login-page';
 const { setMatrixAuth } = vi.hoisted(() => ({ setMatrixAuth: vi.fn() }));
 
 vi.mock('@/lib/matrix-store', () => ({
-  useMatrixStore: (selector: (s: { setMatrixAuth: typeof setMatrixAuth }) => unknown) =>
+  useMatrixStore: (selector: (_s: { setMatrixAuth: typeof setMatrixAuth }) => unknown) =>
     selector({ setMatrixAuth }),
 }));
 

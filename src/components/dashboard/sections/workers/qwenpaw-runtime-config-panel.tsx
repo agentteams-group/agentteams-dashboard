@@ -446,7 +446,6 @@ export function QwenpawRuntimeConfigPanel({
   );
 
   const remeConfig = asObject(config?.reme_light_memory_config);
-  const adbpgConfig = asObject(config?.adbpg_memory_config);
   const memoryJson = useMemo(
     () =>
       JSON.stringify(
