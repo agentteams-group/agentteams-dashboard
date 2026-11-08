@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DoorOpen, Plus, Trash2, X } from 'lucide-react';
+import { DoorOpen, FolderOpen, Plus, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,12 +28,14 @@ import {
   buildWorkspaceAccessPayload,
   extractWorkspaceAccess,
   validateAccess,
+  validateAccessPath,
   type AccessIssue,
   type AccessMode,
   type WorkspaceAccess,
   type WorkspaceAccessRule,
 } from '@/lib/workspace-access';
 import { toast } from 'sonner';
+import { DirectoryPickerDialog } from './directory-picker-dialog';
 
 const GRANT_MODES: AccessMode[] = ['read', 'readwrite'];
 const RESTRICTION_MODES: AccessMode[] = ['none', 'read'];
@@ -65,27 +67,63 @@ function issueText(issue: AccessIssue): string {
   }
 }
 
+/** validateAccessPath 的原因码 → 行内提示（与保存门的校验同一来源）。 */
+function pathProblemText(reason: string): string {
+  switch (reason) {
+    case 'not_files':
+      return '路径必须在 files/ 下（例如 files/docs/**）';
+    case 'absolute':
+      return '不能用绝对路径';
+    case 'backslash':
+      return '不能包含反斜杠';
+    case 'control':
+      return '不能包含控制字符';
+    case 'trailing_slash':
+      return '结尾不能带 /';
+    case 'empty_segment':
+      return '路径中不能有空段';
+    case 'dot_segment':
+      return '路径中不能出现 . 或 ..';
+    case 'reserved':
+      return '顶层保留目录（.trash/.sync/.control）不可授权';
+    default:
+      return '路径非法';
+  }
+}
+
 function PathChips({
   paths,
   disabled,
+  humanName,
   onChange,
 }: {
   paths: string[];
   disabled: boolean;
+  humanName: string;
   onChange: (_next: string[]) => void;
 }) {
   const [input, setInput] = useState('');
+  const [hint, setHint] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const atLimit = paths.length >= MAX_PATHS_PER_RULE;
 
   const add = () => {
     const path = input.trim();
     if (!path) return;
     if (paths.includes(path)) {
-      setInput('');
+      setHint('该路径已在列表中');
       return;
     }
-    if (paths.length >= MAX_PATHS_PER_RULE) return;
+    const problem = validateAccessPath(path);
+    if (problem) {
+      setHint(pathProblemText(problem));
+      return;
+    }
+    if (atLimit) return;
     onChange([...paths, path]);
     setInput('');
+    setHint('');
   };
 
   return (
@@ -116,8 +154,11 @@ function PathChips({
           placeholder="添加路径（支持 * 和 **）"
           aria-label="添加路径"
           className="min-w-[160px] flex-1"
-          disabled={disabled || paths.length >= MAX_PATHS_PER_RULE}
-          onChange={(event) => setInput(event.target.value)}
+          disabled={disabled || atLimit}
+          onChange={(event) => {
+            setInput(event.target.value);
+            setHint('');
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
@@ -128,16 +169,43 @@ function PathChips({
         <Button
           variant="outline"
           className="min-h-11"
-          disabled={disabled || paths.length >= MAX_PATHS_PER_RULE || input.trim() === ''}
+          aria-label="浏览目录"
+          title="浏览目录"
+          disabled={disabled || atLimit}
+          onClick={() => setPickerOpen(true)}
+        >
+          <FolderOpen className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+          浏览…
+        </Button>
+        <Button
+          variant="outline"
+          className="min-h-11"
+          disabled={disabled || atLimit || input.trim() === ''}
           onClick={add}
         >
           添加
         </Button>
       </div>
-      {paths.length >= MAX_PATHS_PER_RULE && (
+      {hint && (
+        <p role="alert" className="text-xs text-destructive">
+          {hint}
+        </p>
+      )}
+      {atLimit && (
         <p className="text-xs text-status-waiting">
           每规则至多 {MAX_PATHS_PER_RULE} 条路径，已达上限。
         </p>
+      )}
+      {pickerOpen && (
+        <DirectoryPickerDialog
+          open
+          humanName={humanName}
+          onOpenChange={(next) => !next && setPickerOpen(false)}
+          onPick={(path) => {
+            setInput(path);
+            setHint('');
+          }}
+        />
       )}
     </div>
   );
@@ -147,6 +215,7 @@ function RuleRow({
   rule,
   list,
   teamNames,
+  humanName,
   disabled,
   issues,
   onChange,
@@ -155,6 +224,7 @@ function RuleRow({
   rule: WorkspaceAccessRule;
   list: 'grants' | 'restrictions';
   teamNames: string[];
+  humanName: string;
   disabled: boolean;
   issues: AccessIssue[];
   onChange: (_next: WorkspaceAccessRule) => void;
@@ -222,6 +292,7 @@ function RuleRow({
       <PathChips
         paths={rule.paths}
         disabled={disabled}
+        humanName={humanName}
         onChange={(paths) => onChange({ ...rule, paths })}
       />
       {issues.length > 0 && (
@@ -322,6 +393,7 @@ export function HumanWorkspaceAccessDialog({
             rule={rule}
             list={list}
             teamNames={teamNames}
+            humanName={humanName}
             disabled={!canManage || busy}
             issues={issues.filter((issue) => issue.list === list && issue.index === index)}
             onChange={(next) => setList(list, rules.map((item, i) => (i === index ? next : item)))}
@@ -360,7 +432,7 @@ export function HumanWorkspaceAccessDialog({
             工作区访问 · {humanName}
           </DialogTitle>
           <DialogDescription>
-            只修改 spec.workspaceAccess；路径必须在 files/ 下，支持 *（单段）与 **（多段），每规则至多 {MAX_PATHS_PER_RULE} 条。保存后 re-GET 验证。
+            只修改 spec.workspaceAccess；路径必须在 files/ 下，支持 *（单段）与 **（多段），每规则至多 {MAX_PATHS_PER_RULE} 条。可手输或用「浏览…」选目录。保存后 re-GET 验证。
           </DialogDescription>
         </DialogHeader>
 

@@ -36,19 +36,26 @@ export function HumanCard({
       transition={{ delay: index * 0.03 }}
       layout
     >
-      <Card className="glass-card hover-lift">
+      <Card
+        className="glass-card hover-lift cursor-pointer"
+        data-testid="human-card"
+        role="group"
+        tabIndex={0}
+        aria-label={`打开 ${human.name} 详情`}
+        onClick={() => onView(human)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onView(human);
+        }}
+      >
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <StatusDot phase={human.phase} />
               <UserCheck className="w-5 h-5 text-teal-500 shrink-0" aria-hidden="true" />
-              <button
-                type="button"
-                className="truncate text-left font-medium hover:underline"
-                onClick={() => onView(human)}
-              >
-                {human.name}
-              </button>
+              <span className="truncate font-medium">{human.name}</span>
             </div>
             <PhaseBadge kind="human" phase={human.phase} />
           </div>
@@ -82,7 +89,10 @@ export function HumanCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
+          <div
+            className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border"
+            onClick={(event) => event.stopPropagation()}
+          >
             <Button
               variant="ghost"
               size="sm"
