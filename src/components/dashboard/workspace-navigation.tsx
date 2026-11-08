@@ -12,7 +12,7 @@ import { isNavItemVisible, navItems, type DeploymentMode } from './nav-items';
 export const workspaceMenus = [
   { id: 'chat', label: '助手', icon: Bot, sections: ['chat'] },
   { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops'] },
-  { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge'] },
+  { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
   { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'teams', 'humans', 'managers'] },
 ];
 

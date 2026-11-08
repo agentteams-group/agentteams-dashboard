@@ -189,6 +189,14 @@ export async function proxyToAgentTeams(
     passthroughHeaders?: string[];
     /** Version read by a caller editing a conditional-write endpoint. */
     ifMatch?: string | null;
+    /** Extra request headers to forward upstream (file read/write protocol:
+     * Range / If-Range / If-None-Match / If-Match). */
+    forwardRequestHeaders?: string[];
+    /** Let an upstream 304 through unchanged (file content revalidation). */
+    allowUpstream304?: boolean;
+    /** Forward the request body as raw bytes (file uploads) instead of
+     * decoding it as JSON text. */
+    rawBody?: boolean;
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
@@ -202,6 +210,10 @@ export async function proxyToAgentTeams(
   };
   if (options.ifMatch) {
     (fetchOptions.headers as Record<string, string>)['If-Match'] = options.ifMatch;
+  }
+  for (const name of options.forwardRequestHeaders ?? []) {
+    const value = request.headers.get(name);
+    if (value) (fetchOptions.headers as Record<string, string>)[name.toLowerCase()] = value;
   }
 
   // Per-session Controller credential (M19 dual-track):
@@ -249,7 +261,12 @@ export async function proxyToAgentTeams(
 
   try {
     if (forwardBody && ['POST', 'PUT', 'PATCH'].includes(method)) {
-      if (contentType === 'multipart/form-data') {
+      if (options.rawBody) {
+        fetchOptions.body = await request.arrayBuffer();
+        const origCT = request.headers.get('content-type');
+        (fetchOptions.headers as Record<string, string>)['content-type'] =
+          origCT || contentType || 'application/octet-stream';
+      } else if (contentType === 'multipart/form-data') {
         // Forward multipart as-is (don't set Content-Type, let fetch handle boundary)
         const body = await request.arrayBuffer();
         fetchOptions.body = body;
@@ -316,6 +333,15 @@ export async function proxyToAgentTeams(
         const responseETag = upstreamETag
           ? `W/"${validatorScope}.${Buffer.from(upstreamETag).toString('base64url')}"` : null;
         if (res.status === 304) {
+          if (options.allowUpstream304) {
+            const headers = new Headers();
+            for (const name of options.passthroughHeaders ?? []) {
+              const value = res.headers.get(name);
+              if (value) headers.set(name, value);
+            }
+            headers.set('cache-control', 'no-store');
+            return new NextResponse(null, { status: 304, headers });
+          }
           if (!conditionalRead || !upstreamHeaders.has('If-None-Match')) {
             return NextResponse.json({ error: 'Controller returned 304 without a matching validator' }, { status: 502 });
           }

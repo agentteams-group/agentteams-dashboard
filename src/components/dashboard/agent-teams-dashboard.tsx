@@ -74,6 +74,7 @@ const ResourcesSection = lazy(() => import('./sections/resources-section').then(
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const TracingSection = lazy(() => import('./sections/tracing-section').then(m => ({ default: m.TracingSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
+const FilesSection = lazy(() => import('./sections/files-section').then(m => ({ default: m.FilesSection })));
 const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
 export const sectionMap: Record<string, React.ComponentType> = {
@@ -92,6 +93,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   models: ModelsSection,
   tools: McpServersSection,
   knowledge: KnowledgeSection,
+  files: FilesSection,
   audit: AuditSection,
   tracing: TracingSection,
   chat: ChatSection,

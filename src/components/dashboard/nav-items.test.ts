@@ -31,6 +31,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       'models',
       'tools',
       'knowledge',
+      'files',
       'audit',
       'tracing',
       'overview',

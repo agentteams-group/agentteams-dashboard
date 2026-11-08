@@ -1,7 +1,24 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { NextConfig } from "next";
+
+// Git worktrees (and any checkout that reuses the main checkout's installed
+// dependencies) usually symlink node_modules to a directory outside the
+// worktree. Turbopack refuses to resolve a package through that symlink
+// ("Could not find the Next.js package") unless the workspace root covers the
+// real node_modules. Normal checkouts keep node_modules inside the project, so
+// this stays undefined and the default root applies.
+function resolveTurbopackRoot(): string | undefined {
+  try {
+    const real = realpathSync(join(process.cwd(), "node_modules"));
+    const prefix = `${realpathSync(process.cwd())}/`;
+    return real.startsWith(prefix) ? undefined : dirname(real);
+  } catch {
+    return undefined;
+  }
+}
+const turbopackRoot = resolveTurbopackRoot();
 
 // Collect allowed dev origins from env or use wildcard pattern for space-z.ai previews
 const devOrigins = process.env.ALLOWED_DEV_ORIGINS
@@ -90,6 +107,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   allowedDevOrigins: [...devOrigins],
   generateBuildId: () => dashboardBuildId,
+  ...(turbopackRoot ? { turbopack: { root: turbopackRoot } } : {}),
   env: {
     NEXT_PUBLIC_BUILD_ID: dashboardBuildId,
     NEXT_PUBLIC_BUILT_AT: dashboardBuiltAt,
