@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, useReducedMotion } from 'framer-motion';
-import { Bot, CheckSquare, Eye, MessageSquare, Moon, Pencil, Rocket, Square, Sun } from 'lucide-react';
+import { Bot, CheckSquare, Eye, Moon, RefreshCw, Square, Sun } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -13,7 +13,6 @@ import { useAgentHealth } from '@/hooks/use-agent-health';
 import { useNowTick } from '@/hooks/use-now-tick';
 import { getRuntimeMeta } from '@/lib/runtime-meta';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
-import { isLegacyCopaw } from '@/lib/runtime-options';
 import { countToolCalls24h } from '@/lib/tool-call-counter';
 import {
   buildStatusNarrative,
@@ -34,35 +33,41 @@ function VitalCell({ label, value, fullValue }: { label: string; value: string; 
   );
 }
 
+function canSleep(worker: WorkerResponse): boolean {
+  return worker.phase === 'Running' || worker.phase === 'Ready';
+}
+
+function canWake(worker: WorkerResponse): boolean {
+  return worker.phase === 'Sleeping' || worker.phase === 'Stopped';
+}
+
 export function WorkerCard({
   worker,
   index,
   isSelected,
   onToggleSelect,
   onView,
-  onEdit,
-  onOpenChat,
+  onOpenDrawer,
+  onRestart,
   onWake,
   onSleep,
-  onEnsureReady,
-  onUpgradeToQwenPaw,
-  onDelete,
   isActionPending,
+  isRestarting = false,
   isDeleting,
 }: {
   worker: WorkerResponse;
   index: number;
   isSelected: boolean;
   onToggleSelect: () => void;
+  /** 只读详情弹窗。 */
   onView: () => void;
-  onEdit: () => void;
-  onOpenChat?: () => void;
+  /** 点击卡片其它区域 → 右侧详情抽屉。 */
+  onOpenDrawer: () => void;
+  onRestart: () => void;
   onWake: () => void;
   onSleep: () => void;
-  onEnsureReady: () => void;
-  onUpgradeToQwenPaw?: () => void;
-  onDelete: () => void;
   isActionPending: boolean;
+  isRestarting?: boolean;
   isDeleting: boolean;
 }) {
   const health = useAgentHealth(worker);
@@ -78,6 +83,8 @@ export function WorkerCard({
   const activityText = worker.lastActivityAt ? formatAgoZh(worker.lastActivityAt, now) : null;
   const toolCallCount = countToolCalls24h(worker.name, now);
 
+  const sleeping = canWake(worker);
+
   return (
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, y: 20 }}
@@ -88,9 +95,22 @@ export function WorkerCard({
     >
       <Card
         aria-busy={isDeleting || undefined}
-        className={`relative h-full flex flex-col glass-card hover-lift ${isSelected ? 'ring-2 ring-ring/50' : ''} ${
-          isDeleting ? 'worker-card-deleting' : ''
-        }`}
+        data-testid="worker-card"
+        role="group"
+        tabIndex={0}
+        aria-label={`打开 ${worker.name} 详情面板`}
+        onClick={() => {
+          if (!isDeleting) onOpenDrawer();
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          if (!isDeleting) onOpenDrawer();
+        }}
+        className={`relative h-full flex flex-col glass-card cursor-pointer transition-shadow hover:ring-2 hover:ring-ring/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          isSelected ? 'ring-2 ring-ring/50' : ''
+        } ${isDeleting ? 'worker-card-deleting' : ''}`}
       >
         {isDeleting && (
           <div className="absolute inset-0 z-10 rounded-[inherit] bg-background/40" data-testid="deleting-overlay">
@@ -111,7 +131,10 @@ export function WorkerCard({
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
-                onClick={onToggleSelect}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleSelect();
+                }}
                 className="shrink-0"
                 title={isSelected ? '取消选择' : '选择'}
                 aria-label={isSelected ? '取消选择' : '选择'}
@@ -194,7 +217,15 @@ export function WorkerCard({
           </div>
 
           <div className="flex items-center gap-1.5 mt-auto pt-3 border-t border-border">
-            <Button variant="ghost" size="sm" className="h-7 text-xs flex-1" onClick={onView}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs flex-1"
+              onClick={(event) => {
+                event.stopPropagation();
+                onView();
+              }}
+            >
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
@@ -202,80 +233,32 @@ export function WorkerCard({
               variant="ghost"
               size="sm"
               className="h-7 text-xs flex-1"
-              onClick={onEdit}
-              disabled={isDeleting}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRestart();
+              }}
+              disabled={isActionPending || isRestarting || isDeleting}
             >
-              <Pencil className="w-3 h-3 mr-1" aria-hidden="true" />
-              编辑
+              <RefreshCw className={`w-3 h-3 mr-1 ${isRestarting ? 'animate-spin' : ''}`} aria-hidden="true" />
+              重启
             </Button>
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs flex-1"
-              onClick={onOpenChat}
-              disabled={isDeleting || !worker.roomID || !onOpenChat}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (sleeping) onWake();
+                else onSleep();
+              }}
+              disabled={isActionPending || isDeleting || (!sleeping && !canSleep(worker))}
             >
-              <MessageSquare className="w-3 h-3 mr-1" aria-hidden="true" />
-              打开聊天
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-1.5 mt-2">
-            {(worker.phase === 'Sleeping' || worker.phase === 'Stopped') && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs flex-1"
-                onClick={onWake}
-                disabled={isActionPending || isDeleting}
-              >
+              {sleeping ? (
                 <Sun className="w-3 h-3 mr-1" aria-hidden="true" />
-                唤醒
-              </Button>
-            )}
-            {(worker.phase === 'Running' || worker.phase === 'Ready') && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs flex-1"
-                onClick={onSleep}
-                disabled={isActionPending || isDeleting}
-              >
+              ) : (
                 <Moon className="w-3 h-3 mr-1" aria-hidden="true" />
-                休眠
-              </Button>
-            )}
-            {(worker.phase === 'Pending' || worker.phase === 'Stopped') && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs flex-1"
-                onClick={onEnsureReady}
-                disabled={isActionPending || isDeleting}
-              >
-                <Rocket className="w-3 h-3 mr-1" aria-hidden="true" />
-                Ensure Ready
-              </Button>
-            )}
-            {isLegacyCopaw(worker.runtime) && onUpgradeToQwenPaw && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs flex-1"
-                onClick={onUpgradeToQwenPaw}
-                disabled={isActionPending || isDeleting}
-              >
-                升级到 QwenPaw
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:text-destructive"
-              onClick={onDelete}
-              disabled={isActionPending || isDeleting}
-            >
-              删除
+              )}
+              {sleeping ? '唤醒' : '休眠'}
             </Button>
           </div>
         </CardContent>

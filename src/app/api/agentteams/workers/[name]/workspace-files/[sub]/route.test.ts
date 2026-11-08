@@ -6,7 +6,7 @@ vi.mock('../../../../proxy-helper', () => ({
   getAuthToken: async () => 'tok',
 }));
 
-import { GET, __resetKbCacheForTests } from './route';
+import { GET, PUT, __resetKbCacheForTests } from './route';
 
 // ── 最小 ustar 构造（与 route.ts tarMembers 解析对齐）─────────────────────
 function tarHeader(name: string, size: number, mtime: number, isdir = false): Buffer {
@@ -275,5 +275,70 @@ describe('/workers/[name]/workspace-files/[sub]（v2：Controller Docker 代理�
   it('file-content?raw=1 敏感文件 → 400（下载与预览同一道闸）', async () => {
     const res = await call('file-content', `?path=${encodeURIComponent('credentials/x.yaml')}&raw=1`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('/workers/[name]/workspace-files/[sub] PUT（Controller 写回）', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function callPut(
+    path: string,
+    content: string,
+    sub = 'file-content',
+  ) {
+    const url = `http://localhost/api/agentteams/workers/w1/workspace-files/${sub}?path=${encodeURIComponent(path)}`;
+    return PUT(
+      new NextRequest(url, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content }),
+      }),
+      { params: Promise.resolve({ name: 'w1', sub }) },
+    );
+  }
+
+  it('reads the ETag of an existing file and forwards If-Match on PUT', async () => {
+    const calls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      calls.push({ url, method, headers: (init?.headers ?? {}) as Record<string, string> });
+      if (method === 'GET') {
+        return new Response(JSON.stringify({ content: 'old', etag: 'etag-1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ etag: 'etag-2', path: 'MEMORY.md', size: 5 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+
+    const res = await callPut('MEMORY.md', 'hello');
+    expect(res.status).toBe(200);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[1].method).toBe('PUT');
+    expect(calls[1].url).toContain('/api/v1/workers/w1/workspace-files/file-content?path=MEMORY.md');
+    expect(calls[1].headers['If-Match']).toBe('etag-1');
+  });
+
+  it('passes 403 through so the panel can degrade to read-only', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'GET') {
+        return new Response(JSON.stringify({ content: 'old', etag: 'etag-1' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 });
+    }));
+
+    expect((await callPut('MEMORY.md', 'hello')).status).toBe(403);
+  });
+
+  it('rejects non file-content subpaths without touching the controller', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await callPut('MEMORY.md', 'hello', 'tree')).status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

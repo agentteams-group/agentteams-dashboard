@@ -46,6 +46,8 @@ export interface WorkerResponse extends LlmTuningFields {
   state: WorkerState;
   containerManaged: boolean;
   model: RequestModelAlias;
+  /** APIG Model API name（per-worker LLM provider）；列表投影可能缺省。 */
+  modelProvider?: string;
   runtime: WorkerRuntime;
   image: string;
   containerState: string;
@@ -340,6 +342,8 @@ export interface CreateWorkerRequest {
 export interface UpdateWorkerRequest extends LlmTuningFields {
   env?: Record<string, string>;
   model?: RequestModelAlias;
+  /** APIG Model API name；缺省 = 保持控制器现值（合并语义）。 */
+  modelProvider?: string;
   runtime?: WorkerRuntime;
   image?: string;
   soul?: string;

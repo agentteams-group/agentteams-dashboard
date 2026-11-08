@@ -358,3 +358,109 @@ export async function GET(
     return jsonError(message, status);
   }
 }
+
+// ── 文本写回（Controller workspace-files PUT；QwenPaw ≥ 2.1）─────────────
+// 读走 Docker 代理（老 Controller 亦可用），写只有 Controller 有端点：
+//   PUT /api/v1/workers/{name}/workspace-files/file-content?path=
+//   body {"content": string}；现有文件必须带 If-Match（读回的 ETag），
+//   新建文件必须不带。客户端不传 If-Match 时这里先 GET 一次拿 ETag，
+//   避免把「已存在文件」误判成新建而吃 400。
+// 404/403/405 → 原样回传，前端降级为只读；409 = 读后文件被改。
+
+const WRITE_TIMEOUT_MS = 40_000;
+
+async function controllerRequest(
+  controllerUrl: string,
+  token: string | undefined,
+  path: string,
+  init: { method: string; body?: string; headers?: Record<string, string> },
+): Promise<{ status: number; body: string; contentType: string }> {
+  const url = `${controllerUrl.replace(/\/$/, '')}${path}`;
+  const res = await fetch(url, {
+    method: init.method,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+    body: init.body,
+    cache: 'no-store',
+    signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+  });
+  return {
+    status: res.status,
+    body: await res.text(),
+    contentType: res.headers.get('content-type') ?? 'application/json',
+  };
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ name: string; sub: string }> },
+) {
+  const { name, sub } = await params;
+  if (!isValidNameSegment(name)) {
+    return jsonError('非法 Worker 名', 400);
+  }
+  if (sub !== 'file-content') {
+    return jsonError('仅 file-content 支持写入', 400);
+  }
+  const path = request.nextUrl.searchParams.get('path') ?? '';
+  if (!path || path.includes('..') || path.startsWith('/')) {
+    return jsonError('非法路径', 400);
+  }
+  const denied = await enforceServerSideRbac(request, 'update', 'worker', name);
+  if (denied) return denied;
+
+  let content: string;
+  try {
+    const body = (await request.json()) as { content?: unknown };
+    if (typeof body?.content !== 'string') throw new Error('content must be a string');
+    content = body.content;
+  } catch {
+    return jsonError('请求体须为 {"content": string}', 400);
+  }
+  if (content.length > MAX_FILE_BYTES) {
+    return jsonError('内容超出 1MB 写入上限', 400);
+  }
+
+  const controllerUrl = getControllerUrl(request);
+  const token = await getAuthToken();
+  const qs = `path=${encodeURIComponent(path)}`;
+  const basePath = `/api/v1/workers/${encodeURIComponent(name)}/workspace-files/file-content`;
+
+  try {
+    let ifMatch = request.headers.get('if-match') ?? '';
+    if (!ifMatch) {
+      const probe = await controllerRequest(controllerUrl, token, `${basePath}?${qs}`, { method: 'GET' });
+      if (probe.status === 200) {
+        try {
+          const parsed = JSON.parse(probe.body) as { etag?: unknown };
+          if (typeof parsed.etag === 'string' && parsed.etag) ifMatch = parsed.etag;
+        } catch {
+          // 非 JSON 读回：交给控制器按 existence 判定
+        }
+      } else if (probe.status === 401 || probe.status === 403) {
+        return new NextResponse(probe.body, {
+          status: probe.status,
+          headers: { 'content-type': probe.contentType },
+        });
+      }
+    }
+
+    const written = await controllerRequest(controllerUrl, token, `${basePath}?${qs}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        ...(ifMatch ? { 'If-Match': ifMatch } : {}),
+      },
+      body: JSON.stringify({ content }),
+    });
+    return new NextResponse(written.body, {
+      status: written.status,
+      headers: { 'content-type': written.contentType },
+    });
+  } catch (err) {
+    return jsonError(err instanceof Error ? err.message : '工作区文件写入失败', 502);
+  }
+}
+

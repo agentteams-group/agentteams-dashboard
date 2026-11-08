@@ -55,20 +55,18 @@ describe('resource deletion lock', () => {
           isActionPending={false}
           onToggleSelect={vi.fn()}
           onView={vi.fn()}
-          onEdit={vi.fn()}
+          onOpenDrawer={vi.fn()}
+          onRestart={vi.fn()}
           onWake={vi.fn()}
           onSleep={vi.fn()}
-          onEnsureReady={vi.fn()}
-          onDelete={vi.fn()}
         />
       </TooltipProvider>,
     );
 
     expect(screen.getByRole('status').textContent).toContain('删除中');
     expect((screen.getByRole('button', { name: '详情' }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '重启' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '休眠' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps only team details available while deleting', () => {
