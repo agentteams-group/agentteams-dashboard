@@ -40,6 +40,7 @@ import { WorkerCheckpointsCard } from './worker-checkpoints-card';
 import { WorkerCodingCliPanel } from './worker-coding-cli-panel';
 import { WorkerEnvCard } from './worker-env-card';
 import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
+import { WorkerMcpPanel } from './worker-mcp-panel';
 import { WorkerModelDialog } from './worker-model-dialog';
 import { WorkerPluginsCard } from './worker-plugins-card';
 import { WorkerRestartEffectivePanel } from './worker-restart-effective-panel';
@@ -429,19 +430,7 @@ function WorkerDrawerContent({
               </ResourceCard>
 
               <ResourceCard title="MCP" expanded={expanded.has('mcp')} onToggle={() => toggle('mcp')}>
-                {(view.mcpServers?.length ?? 0) === 0 ? (
-                  <p className="text-xs text-muted-foreground">无 MCP server</p>
-                ) : (
-                  <ul className="space-y-1 text-xs">
-                    {view.mcpServers?.map((server) => (
-                      <li key={`${server.name}-${server.url}`} className="flex flex-wrap items-baseline gap-2">
-                        <span className="font-medium">{server.name}</span>
-                        <span className="text-muted-foreground">({server.transport})</span>
-                        <span className="min-w-0 break-all font-mono">{server.url}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <WorkerMcpPanel key={`mcp-${view.name}`} worker={view} />
               </ResourceCard>
 
               <ResourceCard title="工具" expanded={expanded.has('tools')} onToggle={() => toggle('tools')}>

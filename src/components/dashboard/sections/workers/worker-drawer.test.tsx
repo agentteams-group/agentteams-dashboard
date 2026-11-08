@@ -6,6 +6,7 @@ import type { WorkerResponse } from '@/lib/agentteams-api';
 
 const mounts = vi.hoisted(() => ({
   runtime: 0,
+  mcp: 0,
   tools: 0,
   skills: 0,
   channels: 0,
@@ -33,6 +34,12 @@ vi.mock('./worker-runtime-config-panel', () => ({
 }));
 vi.mock('./worker-tools-panel', () => ({
   WorkerToolsPanel: () => { mounts.tools += 1; return <div>tools-panel</div>; },
+}));
+vi.mock('./worker-mcp-panel', () => ({
+  WorkerMcpPanel: ({ worker }: { worker: { mcpServers?: Array<{ name: string }> } }) => {
+    mounts.mcp += 1;
+    return <div>{(worker.mcpServers ?? []).map((server) => server.name).join(',')}</div>;
+  },
 }));
 vi.mock('./worker-skill-assign', () => ({
   WorkerSkillAssign: () => { mounts.skills += 1; return <div>skills-panel</div>; },
@@ -148,6 +155,11 @@ describe('WorkerDrawer', () => {
     expect(screen.queryByText('channels-panel')).not.toBeInTheDocument();
     expect(screen.queryByText('workspace-panel')).not.toBeInTheDocument();
     expect(screen.queryByText('plugins-panel')).not.toBeInTheDocument();
+    expect(mounts.mcp).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
+    expect(mounts.mcp).toBe(1);
+    expect(screen.getByText('ctx7')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '工具' }));
     expect(screen.getByText('tools-panel')).toBeInTheDocument();

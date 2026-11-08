@@ -2,9 +2,12 @@
 // All requests go through Next.js API proxy routes
 
 import { ApiError, NetworkError } from '@/lib/api-error';
-import { apiUrl } from '@/lib/api-base';
+import { apiUrl, extractErrorDetail } from '@/lib/api-base';
 import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
+import { normalizeWorkerMcpItems, type WorkerMcpResult } from '@/lib/worker-mcp';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
+
+export type { WorkerMcpItem, WorkerMcpResult } from '@/lib/worker-mcp';
 
 // ============ Response Types ============
 
@@ -1508,3 +1511,50 @@ export const agentteamsApi = {
     return proxyRequest(`/agentspecs/nacos/detail${qs}`);
   },
 };
+
+// ── Worker MCP 合并读（CRD 声明 + worker 自注册）─────────────────────────
+//
+// GET /api/agentteams/workers/{name}/mcp → Controller
+// GET /api/v1/workers/{name}/mcp（worker 的 QwenPaw `mcp.clients` 注册表）。
+// Next 代理已在服务端把 200 响应归一化/脱敏（env/headers 只剩键名），
+// 本函数只负责状态码语义：端点缺失/无凭据/无权限/部署形态不支持都降级为
+// `available:false`，调用方据此显示一行提示而不是宣称「没有 MCP」。
+export async function fetchWorkerMcp(name: string): Promise<WorkerMcpResult> {
+  const path = `/workers/${encodeURIComponent(name)}/mcp`;
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+  } catch (err) {
+    throw new NetworkError(path, err);
+  }
+
+  const degrade = (reason: string): WorkerMcpResult => ({ available: false, reason, items: [] });
+  if (res.status === 404) return degrade('controller_too_old');
+  if (res.status === 401) return degrade('no_token');
+  if (res.status === 403) return degrade('forbidden');
+  if (res.status === 400 || res.status === 503) return degrade('unsupported');
+  if (!res.ok) {
+    const detail = await extractErrorDetail(res, `HTTP ${res.status}`);
+    throw new ApiError(detail, res.status, path);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    throw new ApiError('worker 自注册 MCP 响应不是合法 JSON', res.status, path);
+  }
+
+  // 防御性：代理若已按插件契约返回 available=false 信封，直接透传降级原因。
+  if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+    const envelope = payload as { available?: unknown; reason?: unknown; items?: unknown };
+    if (envelope.available === false) {
+      return {
+        available: false,
+        reason: typeof envelope.reason === 'string' ? envelope.reason : 'unknown',
+        items: normalizeWorkerMcpItems(envelope.items),
+      };
+    }
+  }
+  return { available: true, items: normalizeWorkerMcpItems(payload) };
+}
