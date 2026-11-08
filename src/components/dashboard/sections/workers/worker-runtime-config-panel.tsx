@@ -1,5 +1,12 @@
 'use client';
 
+// DEPRECATED (2026-11-08, DASH-RUNTIME-PARITY): superseded by
+// `worker-runtime-config-surface.tsx` (full runtime surface port: every face,
+// grouping/search/advanced filter, changed count, per-field reset, rev
+// rollback, pending-restart entry). This 3-field panel is no longer mounted by
+// the worker drawer; keep it only until a cleanup pass can move it to the trash
+// (container policy blocks `gio trash`/`rm` from this session).
+//
 // B5 worker runtime-config 面板（#1231 消费，spec=PR/worker-runtime-config/scope.md）
 // 与插件 A2 表单同构语义：
 //   · 字段级 diff——PUT body 只发改动字段，未动字段（含 loop_config）不发
