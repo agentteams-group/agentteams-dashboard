@@ -74,7 +74,7 @@ export function ManagerEditDialog({
             <Label>运行时</Label>
             <Select
               value={value.runtime || ''}
-              onValueChange={(runtime) => onChange({ ...value, runtime })}
+              disabled
             >
               <SelectTrigger>
                 <SelectValue placeholder="选择运行时" />
@@ -92,6 +92,9 @@ export function ManagerEditDialog({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              运行时切换暂不可用（上游运行时适配尚未就绪）
+            </p>
             {isLegacyCopaw(value.runtime) && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 CoPaw 已停止新建。将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据。
