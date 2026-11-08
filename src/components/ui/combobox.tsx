@@ -75,6 +75,21 @@ export function Combobox({
   const activeIndex = filtered.length > 0 && active >= 0 ? Math.min(active, filtered.length - 1) : -1;
   const showList = open && !disabled && (filtered.length > 0 || !allowCustom);
 
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const close = () => {
+    clearCloseTimer();
+    setOpen(false);
+    setSearch('');
+    setActive(-1);
+    setDraft(null);
+  };
+
   useEffect(() => {
     if (activeIndex < 0 || !listRef.current) return;
     const node = listRef.current.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
@@ -90,22 +105,7 @@ export function Combobox({
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [showList]);
-
-  const clearCloseTimer = () => {
-    if (closeTimerRef.current !== null) {
-      window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  };
-
-  const close = () => {
-    clearCloseTimer();
-    setOpen(false);
-    setSearch('');
-    setActive(-1);
-    setDraft(null);
-  };
+  }, [close, showList]);
 
   const choose = (next: string) => {
     onChange(next);
