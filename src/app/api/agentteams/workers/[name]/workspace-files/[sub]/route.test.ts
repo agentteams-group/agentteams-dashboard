@@ -1,10 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import {
+  createSession,
+  sessionCookieHeader,
+  __resetSessionStoreForTests,
+} from '@/lib/dashboard-session';
+
+// 凭据链测试开关（hoisted：vi.mock 工厂先于模块执行）。
+const h = vi.hoisted(() => ({
+  saToken: 'tok' as string | undefined,
+  perAddressAuth: '',
+}));
 
 vi.mock('../../../../proxy-helper', () => ({
   getControllerUrl: () => 'http://c:8090',
-  getAuthToken: async () => 'tok',
+  getAuthToken: async () => h.saToken,
 }));
+
+// 只覆盖 per-address 凭据查表，其余 backend-config 导出保持真实实现
+// （dashboard-session 等同模块图消费方需要 configFilePath 等）。
+vi.mock('@/lib/backend-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/backend-config')>();
+  return {
+    ...actual,
+    backendAuthHeader: () => (h.perAddressAuth ? { Authorization: h.perAddressAuth } : {}),
+  };
+});
 
 import { GET, PUT, __resetKbCacheForTests } from './route';
 
@@ -65,13 +86,18 @@ interface Fixtures {
   fileTar?: T[];
   /** true=个别 daemon 形态：目录 archive 直接返回相对名（无根前缀） */
   relativeNames?: boolean;
+  /** archive GET（非 HEAD）强制状态码——401/403 透传用例 */
+  archiveGetStatus?: number;
+  /** 所有 fetch 抛网络错误——502 用例 */
+  networkError?: boolean;
 }
 const fx: Fixtures = {};
 
 function installFetch() {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string, init?: { method?: string }) => {
+    vi.fn(async (url: string, init?: { method?: string; headers?: Record<string, string> }) => {
+      if (fx.networkError) throw new TypeError('fetch failed');
       const u = url as string;
       const method = (init?.method ?? 'GET').toUpperCase();
       const json = (status: number, body?: unknown) =>
@@ -83,6 +109,9 @@ function installFetch() {
         return json(fx.inspectStatus ?? 200);
       }
       if (u.includes('/archive?path=')) {
+        if (method === 'GET' && fx.archiveGetStatus !== undefined) {
+          return json(fx.archiveGetStatus, { message: 'denied' });
+        }
         const p = decodeURIComponent(u.slice(u.indexOf('/archive?path=') + '/archive?path='.length));
         const cands = [WS, WS_COPAW, '/root/agentteams-fs/agents/w1'];
         if (method === 'HEAD') {
@@ -114,11 +143,12 @@ function installFetch() {
   );
 }
 
-function call(sub: string, query = '', name = 'w1') {
+function call(sub: string, query = '', name = 'w1', cookie?: string) {
   const url = `http://localhost/api/agentteams/workers/${encodeURIComponent(name)}/workspace-files/${sub}${query}`;
-  return GET(new NextRequest(url, { method: 'GET' }), {
-    params: Promise.resolve({ name, sub }),
-  });
+  return GET(
+    new NextRequest(url, { method: 'GET', headers: cookie ? { cookie } : undefined }),
+    { params: Promise.resolve({ name, sub }) },
+  );
 }
 
 const TOP_TAR: T[] = [
@@ -142,7 +172,10 @@ describe('/workers/[name]/workspace-files/[sub]（v2：Controller Docker 代理�
     Object.keys(fx).forEach((k) => delete fx[k as keyof Fixtures]);
     fx.topTar = TOP_TAR;
     fx.memoryTar = MEMORY_TAR;
+    h.saToken = 'tok';
+    h.perAddressAuth = '';
     __resetKbCacheForTests();
+    __resetSessionStoreForTests();
     installFetch();
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -275,6 +308,130 @@ describe('/workers/[name]/workspace-files/[sub]（v2：Controller Docker 代理�
   it('file-content?raw=1 敏感文件 → 400（下载与预览同一道闸）', async () => {
     const res = await call('file-content', `?path=${encodeURIComponent('credentials/x.yaml')}&raw=1`);
     expect(res.status).toBe(400);
+  });
+});
+
+// ── 凭据链（11/8 dashboard 502 修复）──────────────────────────────────────
+describe('/workers/[name]/workspace-files/[sub] Docker 代理凭据链与状态透传', () => {
+  const TOKEN_ENV_MESSAGE = '未配置 Controller 服务账号 token';
+
+  beforeEach(() => {
+    Object.keys(fx).forEach((k) => delete fx[k as keyof Fixtures]);
+    fx.topTar = TOP_TAR;
+    fx.memoryTar = MEMORY_TAR;
+    h.saToken = 'tok';
+    h.perAddressAuth = '';
+    __resetKbCacheForTests();
+    __resetSessionStoreForTests();
+    installFetch();
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  function sessionCookie(credential:
+    | { kind: 'sa' }
+    | { kind: 'controller-token'; token: string }
+    | { kind: 'matrix'; token: string }): string {
+    vi.stubEnv('DASHBOARD_SESSION_SECRET', 'a'.repeat(64));
+    const { cookieValue } = createSession({
+      user: 'bob',
+      crLevel: credential.kind === 'matrix' ? 2 : 1,
+      credential,
+    });
+    return sessionCookieHeader(cookieValue);
+  }
+
+  function sentAuthHeaders(): string[] {
+    return vi.mocked(fetch).mock.calls.map(([, init]) =>
+      ((init?.headers ?? {}) as Record<string, string>).Authorization,
+    );
+  }
+
+  it('无任何凭据 → 401（不再是 502）+ 前端可读文案，且不外呼 Docker 代理', async () => {
+    h.saToken = undefined;
+    const res = await call('tree');
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(401);
+    expect(body.error).toContain(TOKEN_ENV_MESSAGE);
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it('SA env token → 每个 Docker 代理请求都带 Bearer SA', async () => {
+    h.saToken = 'sa-env-token';
+    expect((await call('tree')).status).toBe(200);
+    const auths = sentAuthHeaders();
+    expect(auths.length).toBeGreaterThan(0);
+    expect(auths.every((value) => value === 'Bearer sa-env-token')).toBe(true);
+  });
+
+  it('per-address Basic 优先且不叠加 SA Bearer', async () => {
+    h.perAddressAuth = 'Basic YWRtaW46cHc=';
+    h.saToken = 'sa-env-token';
+    expect((await call('tree')).status).toBe(200);
+    const auths = sentAuthHeaders();
+    expect(auths.length).toBeGreaterThan(0);
+    expect(auths.every((value) => value === 'Basic YWRtaW46cHc=')).toBe(true);
+  });
+
+  it('controller-token session 回退 → Bearer 该 token', async () => {
+    h.saToken = undefined;
+    const res = await call('tree', '', 'w1', sessionCookie({ kind: 'controller-token', token: 'ctl-token' }));
+    expect(res.status).toBe(200);
+    expect(sentAuthHeaders().every((value) => value === 'Bearer ctl-token')).toBe(true);
+  });
+
+  it('Matrix session 回退 → Bearer Matrix token（Controller 放行）', async () => {
+    h.saToken = undefined;
+    const res = await call('tree', '', 'w1', sessionCookie({ kind: 'matrix', token: 'mx-token' }));
+    expect(res.status).toBe(200);
+    expect(sentAuthHeaders().every((value) => value === 'Bearer mx-token')).toBe(true);
+  });
+
+  it('Matrix session + Docker 403 → 403 原样（可读文案，不伪造 502）', async () => {
+    h.saToken = undefined;
+    fx.inspectStatus = 403;
+    const res = await call('tree', '', 'w1', sessionCookie({ kind: 'matrix', token: 'mx-token' }));
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(403);
+    expect(body.error).toContain('无 Docker 代理权限');
+  });
+
+  it('Docker inspect 401 → 401 原样（凭据不足文案）', async () => {
+    fx.inspectStatus = 401;
+    const res = await call('tree');
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(401);
+    expect(body.error).toContain('无 Controller 管理凭据');
+  });
+
+  it('工作区候选 HEAD 全部 403 → 403（不退化成「未找到工作区」404）', async () => {
+    fx.headStatuses = [403, 403, 403];
+    const res = await call('tree');
+    expect(res.status).toBe(403);
+  });
+
+  it('archive GET 403 → tree / file-content 均 403 原样', async () => {
+    fx.archiveGetStatus = 403;
+    expect((await call('tree')).status).toBe(403);
+    const file = await call('file-content', '?path=MEMORY.md');
+    expect(file.status).toBe(403);
+    expect(((await file.json()) as { error: string }).error).toContain('无 Docker 代理权限');
+  });
+
+  it('网络错误 → 502 且文案明确「Docker 代理请求失败」', async () => {
+    fx.networkError = true;
+    const res = await call('tree');
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(502);
+    expect(body.error).toContain('Docker 代理请求失败');
+  });
+
+  it('尾斜杠 /tree/?path= 与空 path、path=/、path=memory/ 均正常', async () => {
+    expect((await call('tree', '?path=')).status).toBe(200);
+    expect((await call('tree', '?path=%2F')).status).toBe(200);
+    const memory = await call('tree', '?path=memory%2F');
+    expect(memory.status).toBe(200);
+    const body = (await memory.json()) as { entries: { path: string }[] };
+    expect(body.entries.map((e) => e.path)).toContain('memory/2026-09-15.md');
   });
 });
 
