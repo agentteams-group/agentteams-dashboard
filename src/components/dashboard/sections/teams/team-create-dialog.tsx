@@ -187,7 +187,7 @@ export function TeamCreateDialog({
                 value={value.leader?.name || undefined}
                 onValueChange={(name) => onChange({ ...value, leader: { name } })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue placeholder="选择 Leader（已有或新建 Worker）" />
                 </SelectTrigger>
                 <SelectContent>

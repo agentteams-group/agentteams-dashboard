@@ -99,7 +99,7 @@ export function WorkerEditDialog({
               value={value.runtime || ''}
               disabled
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

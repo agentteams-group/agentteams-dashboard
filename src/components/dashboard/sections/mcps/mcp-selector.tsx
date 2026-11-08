@@ -122,12 +122,12 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
             {value.length > 0 ? `${value.length} 个 MCP 服务器已选择...` : '选择 MCP 服务器...'}
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
+        <DialogContent className="w-full min-w-0 max-w-[95vw] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>选择 MCP 服务器</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             <Input
               placeholder="搜索 MCP 服务器..."
               value={search}

@@ -144,7 +144,7 @@ export function MillforgeDialog({
         data-testid="millforge-dialog"
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'max-h-[80vh] w-full sm:w-[900px] sm:max-w-[900px]',
+          'max-h-[80vh] w-full sm:w-[min(900px,calc(100vw-2rem))] sm:max-w-[min(900px,calc(100vw-2rem))]',
           'max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0',
         )}
       >

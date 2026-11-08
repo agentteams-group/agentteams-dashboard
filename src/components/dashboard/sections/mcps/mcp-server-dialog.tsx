@@ -186,7 +186,7 @@ export function McpServerDialog({
                   if (el) el.value = v;
                 }}
               >
-                <SelectTrigger id="type">
+                <SelectTrigger id="type" className="w-full min-w-0">
                   <SelectValue placeholder="选择类型" />
                 </SelectTrigger>
                 <SelectContent>
@@ -263,7 +263,7 @@ export function McpServerDialog({
                 if (el) el.value = v;
               }}
             >
-              <SelectTrigger id="transport">
+              <SelectTrigger id="transport" className="w-full min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

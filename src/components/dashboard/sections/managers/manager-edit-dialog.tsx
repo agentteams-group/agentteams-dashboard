@@ -76,7 +76,7 @@ export function ManagerEditDialog({
               value={value.runtime || ''}
               disabled
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full min-w-0">
                 <SelectValue placeholder="选择运行时" />
               </SelectTrigger>
               <SelectContent>

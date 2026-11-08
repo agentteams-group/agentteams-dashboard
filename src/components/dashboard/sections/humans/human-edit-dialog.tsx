@@ -152,7 +152,7 @@ export function HumanEditDialog({
                 value={String(draft.permissionLevel)}
                 onValueChange={(v) => setDraft({ ...draft, permissionLevel: Number(v) as 1 | 2 | 3 })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -104,12 +104,12 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
             : '选择技能...'}
         </Button>
 
-        <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
+        <DialogContent className="w-full min-w-0 max-w-[95vw] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>选择技能</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 py-3 overflow-hidden">
+          <div className="min-w-0 space-y-3 overflow-x-hidden py-3">
             <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />

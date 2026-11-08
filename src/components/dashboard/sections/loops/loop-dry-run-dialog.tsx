@@ -72,7 +72,7 @@ export function LoopDryRunDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="border-b border-border/60 pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

@@ -56,12 +56,12 @@ export function SkillEditDialog({ skill, open, onOpenChange, onSuccess }: SkillE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent key={skill?.name ?? 'new'} className="sm:max-w-md max-w-[95vw] overflow-hidden">
+      <DialogContent key={skill?.name ?? 'new'} className="w-full min-w-0 max-w-[95vw] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>编辑技能</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-3 overflow-hidden">
+        <div className="min-w-0 space-y-4 overflow-x-hidden py-3">
           <div className="space-y-2">
             <label className="text-sm font-medium">技能名称</label>
             <Input

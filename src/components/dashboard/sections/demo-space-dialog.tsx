@@ -46,7 +46,7 @@ export function DemoSpaceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader className="border-b border-border/60 pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">

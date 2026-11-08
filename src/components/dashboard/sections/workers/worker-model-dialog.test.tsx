@@ -1,0 +1,89 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+import { WorkerModelDialog } from './worker-model-dialog';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
+
+vi.mock('@/hooks/use-agentteams-mutations', () => ({
+  useUpdateWorker: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+// Radix Select 打开时用 ResizeObserver 量触发按钮宽度。
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+if (!('ResizeObserver' in window)) {
+  Object.defineProperty(window, 'ResizeObserver', {
+    value: ResizeObserverStub,
+    configurable: true,
+  });
+}
+
+// 最长 alias + 最长 route 描述：编辑模型弹窗此前被 SelectTrigger 的
+// min-content 宽度撑出 max-w-md 白卡片（横向溢出），这里钉住收敛类。
+const LONG_ALIAS = `team-chat-${'very-long-alias-'.repeat(4)}alias`;
+const options: ModelSelectionOption[] = [
+  {
+    alias: LONG_ALIAS,
+    kind: 'configured',
+    binding: {
+      requestModelAlias: LONG_ALIAS,
+      routeName: `route-${'segment-'.repeat(6)}name`,
+      providerName: `provider-${'segment-'.repeat(5)}name`,
+      targetModel: `model-${'segment-'.repeat(6)}name`,
+      available: true,
+    },
+  },
+];
+
+describe('WorkerModelDialog 弹窗溢出收口', () => {
+  afterEach(cleanup);
+
+  function renderDialog() {
+    render(
+      <TooltipProvider>
+        <WorkerModelDialog
+          open
+          workerName="worker-with-a-long-name"
+          model={LONG_ALIAS}
+          providerHint="higress.internal.example-provider"
+          modelOptions={options}
+          onOpenChange={() => {}}
+        />
+      </TooltipProvider>,
+    );
+  }
+
+  it('SelectTrigger 收敛宽度，长 alias 不撑开弹窗', () => {
+    renderDialog();
+
+    const trigger = screen.getByRole('combobox');
+    expect(trigger.className).toContain('w-full');
+    expect(trigger.className).toContain('min-w-0');
+  });
+
+  it('Provider 输入框占满可用宽度', () => {
+    renderDialog();
+
+    const input = screen.getByPlaceholderText(/当前解析/);
+    expect(input.className).toContain('w-full');
+    expect(input.className).toContain('min-w-0');
+  });
+
+  it('DialogContent 无固定像素宽度且带横向防溢出兜底', () => {
+    renderDialog();
+
+    const content = document.querySelector('[data-slot="dialog-content"]');
+    expect(content).not.toBeNull();
+    const className = content?.className ?? '';
+    expect(className).toContain('overflow-x-hidden');
+    expect(className).toContain('overflow-y-auto');
+    expect(className).toContain('min-w-0');
+    expect(className).toContain('sm:max-w-md');
+    expect(className).not.toMatch(/(?<![\w-])(?:[a-z-]+:)?w-\[\d+px\]/);
+  });
+});

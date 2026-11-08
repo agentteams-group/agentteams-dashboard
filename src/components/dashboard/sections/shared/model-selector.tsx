@@ -122,10 +122,10 @@ export function ModelSelector({
         }}
         disabled={disabled}
       >
-        <SelectTrigger className="w-full min-w-0" aria-label="请求模型别名">
+        <SelectTrigger className="w-full min-w-0 overflow-hidden" aria-label="请求模型别名">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent className="max-w-[min(100vw-2rem,28rem)]">
+        <SelectContent className="max-h-[min(60vh,320px,var(--radix-select-content-available-height))] max-w-[min(100vw-2rem,28rem)]">
           {configuredOptions.length > 0 && (
             <SelectGroup>
               <SelectLabel>Higress alias（路由可解析）</SelectLabel>
@@ -135,16 +135,16 @@ export function ModelSelector({
                     <span className="font-mono truncate">{option.alias}</span>
                   </span>
                   {option.kind === 'configured' && option.binding ? (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       {option.binding.routeName} / {option.binding.providerName} / {option.binding.targetModel}
                     </span>
                   ) : (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       网关路由可解析
                     </span>
                   )}
                   {option.kind === 'configured' && option.routeAuth ? (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       {describeRouteAuthorization(option.routeAuth)}
                     </span>
                   ) : null}
@@ -164,7 +164,7 @@ export function ModelSelector({
                       内置
                     </Badge>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block min-w-0 truncate text-xs text-muted-foreground">
                     内置模型，需在「模型管理」配置路由映射
                   </span>
                 </SelectItem>
@@ -183,7 +183,7 @@ export function ModelSelector({
                       SGLang
                     </Badge>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block min-w-0 truncate text-xs text-muted-foreground">
                     SGLang 推理服务在线模型，经 AI 网关路由转发
                   </span>
                 </SelectItem>
