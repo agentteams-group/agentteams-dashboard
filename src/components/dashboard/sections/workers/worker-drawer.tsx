@@ -430,7 +430,18 @@ function WorkerDrawerContent({
               </ResourceCard>
 
               <ResourceCard title="MCP" expanded={expanded.has('mcp')} onToggle={() => toggle('mcp')}>
-                <WorkerMcpPanel key={`mcp-${view.name}`} worker={view} />
+                <WorkerMcpPanel
+                  key={`mcp-${view.name}`}
+                  worker={view}
+                  workerName={view.name}
+                  workerTeam={view.team || undefined}
+                  canEdit={userLevel >= 2}
+                  onChanged={() => {
+                    invalidateWorkerDetail(view.name);
+                    void refreshDetail(true);
+                    onChanged?.();
+                  }}
+                />
               </ResourceCard>
 
               <ResourceCard title="工具" expanded={expanded.has('tools')} onToggle={() => toggle('tools')}>

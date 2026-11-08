@@ -1,6 +1,6 @@
 'use client';
 
-// Worker MCP 面板（只读合并视图，与工作台插件右栏 WorkerMcpPanel 对齐）：
+// Worker MCP 面板（合并视图，与工作台插件右栏 WorkerMcpPanel 对齐）：
 // - declared = worker detail `spec.mcpServers`（props 传入，Controller 透传）；
 // - self-registered = GET /api/agentteams/workers/{name}/mcp（Next 代理
 //   Controller 的 worker MCP 注册表只读端点，200 响应已在服务端脱敏）。
@@ -13,18 +13,33 @@
 // 400/503（非 qwenpaw 运行时或部署形态不支持）→ 一行 info，declared 照常
 // 显示，不宣称「无 MCP」；其余错误（5xx/网络）→ 一行 warning + 重试。
 //
-// 只读：无编辑/保存入口；刷新按钮只重拉自注册一路。
+// 编辑：declared 一路可写（PUT /workers/{name} 只提交 mcpServers，避免整表单
+// 覆盖别人刚改的字段）；self-registered 来自 worker 自己的 QwenPaw 注册表，
+// 不在 spec 内，永远不会被这次保存改动。刷新按钮只重拉自注册一路。
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2, Pencil, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  McpSelector,
+  type SelectedMcpServer,
+} from '@/components/dashboard/sections/mcps/mcp-selector';
+import {
+  agentteamsApi,
   fetchWorkerMcp,
   type WorkerMcpResult,
   type WorkerResponse,
 } from '@/lib/agentteams-api';
-import { shortErrorMessage } from '@/lib/api-error';
+import { formatErrorMessage, shortErrorMessage } from '@/lib/api-error';
 import {
   mergeWorkerMcpRows,
   workerMcpEndpoint,
@@ -46,23 +61,40 @@ function degradeMessage(reason: string | undefined): string {
   }
 }
 
-/** 只读 MCP 合并视图。挂载即拉自注册一路（抽屉折叠卡保证展开才挂载）。 */
-export function WorkerMcpPanel({ worker }: { worker: WorkerResponse }) {
+/** MCP 合并视图 + declared 编辑入口（仅 canEdit 时可见）。挂载即拉自注册一路
+ * （抽屉折叠卡保证展开才挂载）。 */
+export function WorkerMcpPanel({
+  worker,
+  workerName,
+  workerTeam,
+  canEdit,
+  onChanged,
+}: {
+  worker: WorkerResponse;
+  workerName: string;
+  workerTeam?: string;
+  canEdit: boolean;
+  onChanged?: () => void;
+}) {
   const [self, setSelf] = useState<WorkerMcpResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [draft, setDraft] = useState<SelectedMcpServer[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      setSelf(await fetchWorkerMcp(worker.name));
+      setSelf(await fetchWorkerMcp(workerName));
     } catch (err) {
       setLoadError(shortErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [worker.name]);
+  }, [workerName]);
 
   // load 的 catch 分支含 setState——延迟一个宏任务，避免 effect 同步阶段进入
   // setState 链（react-hooks/set-state-in-effect，同其他 worker 面板惯例）。
@@ -79,23 +111,63 @@ export function WorkerMcpPanel({ worker }: { worker: WorkerResponse }) {
   // 空态只在两路都读成功且真的为空时成立：降级/失败是「读不到」而非「没有」。
   const empty = !loading && !loadError && !degraded && rows.length === 0;
 
+  const openEdit = useCallback(() => {
+    setDraft(worker.mcpServers ?? []);
+    setSaveError('');
+    setEditOpen(true);
+  }, [worker.mcpServers]);
+
+  const handleSave = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      // 只提交 mcpServers：PUT /workers 是全字段更新，带整表单会冲掉别人刚
+      // 改的 model/env 等字段。
+      await agentteamsApi.updateWorker(workerName, { mcpServers: draft });
+    } catch (err) {
+      // 403/400 的后端 message 原样展示（如控制器 RBAC / 校验失败原因）。
+      setSaveError(formatErrorMessage(err));
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
+    setEditOpen(false);
+    onChanged?.();
+    // declared 由父级 detail 刷新带回；这里先重拉自注册一路，合并视图立即更新。
+    void load();
+  }, [draft, load, onChanged, saving, workerName]);
+
   return (
     <div className="space-y-2 pt-2">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-xs text-muted-foreground">
           CRD 声明（spec.mcpServers）+ worker 自注册（容器启动时注册进 QwenPaw 的 MCP）。
           env/headers 仅显示键名，值已脱敏。
         </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 shrink-0 px-2 text-xs"
-          disabled={loading}
-          onClick={() => void load()}
-        >
-          <RefreshCw className={`mr-1 h-3 w-3 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-          刷新
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 px-3 text-sm"
+              onClick={openEdit}
+            >
+              <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              编辑分配
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={`mr-1 h-3 w-3 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            刷新
+          </Button>
+        </div>
       </div>
 
       {degraded && self && (
@@ -180,11 +252,52 @@ export function WorkerMcpPanel({ worker }: { worker: WorkerResponse }) {
                     headers: {headerKeys.map((key) => `${key}=***`).join('  ')}
                   </p>
                 )}
+                <p className="text-[10px] text-muted-foreground">
+                  {row.declared ? '可在上方编辑' : '运行时注册，只读'}
+                </p>
               </li>
             );
           })}
         </ul>
       )}
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(next) => {
+          if (saving) return;
+          setEditOpen(next);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>MCP 分配 — {workerName}</DialogTitle>
+            <DialogDescription className="text-xs">
+              只写 Worker 的 spec.mcpServers；self-registered（运行时注册）不在 spec 内，
+              不会被动。保存后需 controller reconcile 才会挂到 Worker 运行时。
+              {workerTeam ? `所属团队：${workerTeam}。` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <McpSelector value={draft} onChange={setDraft} />
+          {saveError && (
+            <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1 break-words">{saveError}</span>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => setEditOpen(false)}
+            >
+              取消
+            </Button>
+            <Button disabled={saving} onClick={() => void handleSave()}>
+              {saving ? '保存中…' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
