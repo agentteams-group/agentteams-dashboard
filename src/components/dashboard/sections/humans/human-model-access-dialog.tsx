@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Brain, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import {
   Dialog,
   DialogContent,
@@ -12,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -24,6 +24,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { agentteamsApi, type HumanConfigRecord } from '@/lib/agentteams-api';
 import { ApiError, formatErrorMessage } from '@/lib/api-error';
+import { useModelSelection } from '@/hooks/use-model-selection';
 import {
   MODEL_ACCESS_ROLES,
   allSurfacesLocked,
@@ -37,6 +38,11 @@ import {
   type ModelAccessPair,
   type ModelAccessScopeDraft,
 } from '@/lib/model-access';
+import {
+  buildModelCandidateCatalog,
+  modelOptionsForProvider,
+  type ModelCandidateCatalog,
+} from '@/lib/model-catalog';
 import { toast } from 'sonner';
 
 const CLI_OPTIONS = ['qwen-code', 'opencode', 'qoder'] as const;
@@ -47,57 +53,70 @@ const DEFAULT_ROLE = '__default__';
 
 function PairRows({
   entries,
+  catalog,
   disabled,
   onChange,
 }: {
   entries: ModelAccessPair[];
+  catalog: ModelCandidateCatalog;
   disabled: boolean;
   onChange: (_next: ModelAccessPair[]) => void;
 }) {
+  const patch = (index: number, next: ModelAccessPair) =>
+    onChange(entries.map((item, i) => (i === index ? next : item)));
   return (
     <div className="space-y-1.5">
-      {entries.map((entry, index) => (
-        <div key={index} className="flex flex-wrap items-center gap-1.5">
-          <Input
-            value={entry.provider}
-            aria-label={`provider ${index + 1}`}
-            placeholder="provider（如 higress）"
-            className="min-w-[120px] flex-1"
-            disabled={disabled}
-            onChange={(event) =>
-              onChange(
-                entries.map((item, i) =>
-                  i === index ? { ...item, provider: event.target.value } : item,
-                ),
-              )
-            }
-          />
-          <Input
-            value={entry.model}
-            aria-label={`model ${index + 1}`}
-            placeholder="model（路由 alias）"
-            className="min-w-[120px] flex-1"
-            disabled={disabled}
-            onChange={(event) =>
-              onChange(
-                entries.map((item, i) =>
-                  i === index ? { ...item, model: event.target.value } : item,
-                ),
-              )
-            }
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="min-h-11 min-w-11 shrink-0 text-muted-foreground"
-            aria-label={`删除模型行 ${index + 1}`}
-            disabled={disabled}
-            onClick={() => onChange(entries.filter((_, i) => i !== index))}
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        </div>
-      ))}
+      {entries.map((entry, index) => {
+        // 两者一填一空 = 不完整行：行内红字先提示，保存门另有汇总拦截。
+        const incomplete = Boolean(entry.provider.trim()) !== Boolean(entry.model.trim());
+        return (
+          <div key={index} className="space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Combobox
+                value={entry.provider}
+                options={catalog.providers}
+                ariaLabel={`provider ${index + 1}`}
+                placeholder="provider（如 higress）"
+                className="min-w-[120px] flex-1"
+                disabled={disabled}
+                onChange={(provider) => patch(index, { ...entry, provider })}
+              />
+              <Combobox
+                value={entry.model}
+                options={modelOptionsForProvider(catalog, entry.provider)}
+                ariaLabel={`model ${index + 1}`}
+                placeholder="model（路由 alias）"
+                className="min-w-[120px] flex-1"
+                disabled={disabled}
+                onChange={(model) =>
+                  patch(index, {
+                    ...entry,
+                    model,
+                    // 选模型时按 binding 反查 provider；已填 provider 不覆盖。
+                    provider:
+                      entry.provider.trim() || !model.trim()
+                        ? entry.provider
+                        : (catalog.providerByModel[model.trim()] ?? ''),
+                  })
+                }
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="min-h-11 min-w-11 shrink-0 text-muted-foreground"
+                aria-label={`删除模型行 ${index + 1}`}
+                disabled={disabled}
+                onClick={() => onChange(entries.filter((_, i) => i !== index))}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+            {incomplete && (
+              <p className="text-xs text-destructive">provider 与 model 需成对填写</p>
+            )}
+          </div>
+        );
+      })}
       <Button
         variant="outline"
         size="sm"
@@ -136,6 +155,7 @@ function ScopeEditor({
   scope,
   index,
   tables,
+  catalog,
   disabled,
   onChange,
   onRemove,
@@ -143,6 +163,7 @@ function ScopeEditor({
   scope: ModelAccessScopeDraft;
   index: number;
   tables: string[];
+  catalog: ModelCandidateCatalog;
   disabled: boolean;
   onChange: (_next: ModelAccessScopeDraft) => void;
   onRemove: () => void;
@@ -230,6 +251,7 @@ function ScopeEditor({
           <SurfaceSection title="主模型" hint="(provider, model) 成对；空 = 全锁">
             <PairRows
               entries={scope.main}
+              catalog={catalog}
               disabled={disabled}
               onChange={(main) => onChange({ ...scope, main })}
             />
@@ -250,6 +272,7 @@ function ScopeEditor({
             {!scope.spawn.inherit && (
               <PairRows
                 entries={scope.spawn.entries}
+                catalog={catalog}
                 disabled={disabled}
                 onChange={(entries) => onChange({ ...scope, spawn: { ...scope.spawn, entries } })}
               />
@@ -309,6 +332,7 @@ function ScopeEditor({
                   {!cli.inherit && (
                     <PairRows
                       entries={cli.entries}
+                      catalog={catalog}
                       disabled={disabled}
                       onChange={(entries) => setCli(cliIndex, { ...cli, entries })}
                     />
@@ -378,6 +402,13 @@ export function HumanModelAccessDialog({
   const locked = allSurfacesLocked(capabilities);
   const readOnly = !canManage || locked;
   const issues = findPairIssues(draft);
+  // provider / model 候选与其它模型编辑入口同源（use-model-selection）。
+  // 候选为空（Console 会话失效 / 未配路由）时 Combobox 仍可自由输入。
+  const modelSelection = useModelSelection();
+  const catalog = useMemo(
+    () => buildModelCandidateCatalog(modelSelection.options),
+    [modelSelection.options],
+  );
 
   const updateScope = (index: number, next: ModelAccessScopeDraft) => {
     setDirty(true);
@@ -444,6 +475,7 @@ export function HumanModelAccessDialog({
               scope={scope}
               index={index}
               tables={tables}
+              catalog={catalog}
               disabled={readOnly || busy}
               onChange={(next) => updateScope(index, next)}
               onRemove={() => {

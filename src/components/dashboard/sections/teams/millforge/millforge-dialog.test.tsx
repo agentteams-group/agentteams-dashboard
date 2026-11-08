@@ -254,7 +254,9 @@ const teamModulesFixture: TeamModulesResponse = {
   ],
 };
 
-function renderDialog(overrides: { canInstall?: boolean; onInjected?: () => void } = {}) {
+function renderDialog(
+  overrides: { canInstall?: boolean; onInjected?: () => void; modelAliases?: string[] } = {},
+) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -265,6 +267,7 @@ function renderDialog(overrides: { canInstall?: boolean; onInjected?: () => void
         team={teamFixture}
         workers={workersFixture}
         canInstall={overrides.canInstall ?? true}
+        modelAliases={overrides.modelAliases}
         onOpenChange={() => {}}
         onInjected={overrides.onInjected}
       />
@@ -637,5 +640,60 @@ describe('MillforgeDialog · 模块更新 tab', () => {
     expect(screen.queryByText('qwen-code-bridge')).not.toBeInTheDocument();
     // 已装但被过滤的模块也不该落进「索引外的已安装模块（只读）」兜底列表。
     expect(screen.queryByText('索引外的已安装模块（只读）')).not.toBeInTheDocument();
+  });
+});
+
+describe('MillforgeDialog · 枚举/模型字段控件形态', () => {
+  it('发布通道是 Select（非自由输入框）', async () => {
+    renderDialog();
+    switchTab('模块更新');
+
+    const panel = await screen.findByTestId('millforge-modules-tab');
+    const channel = within(panel).getAllByRole('combobox')[0];
+    expect(channel.tagName).toBe('SELECT');
+    expect(
+      within(channel as unknown as HTMLElement)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['alpha', 'beta', 'stable']);
+    expect(screen.queryByRole('textbox', { name: '发布通道' })).toBeNull();
+  });
+
+  it('自定义团队的运行时给候选且可自由输入', async () => {
+    renderDialog();
+    switchTab('自定义团队');
+
+    const runtime = (await screen.findByLabelText('运行时（选填）')) as HTMLInputElement;
+    expect(runtime.tagName).toBe('INPUT');
+    fireEvent.focus(runtime);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'openclaw',
+      'hermes',
+      'qwenpaw',
+      'deepseek-harness',
+    ]);
+
+    fireEvent.change(runtime, { target: { value: 'custom-runtime' } });
+    expect(runtime).toHaveValue('custom-runtime');
+  });
+
+  it('新建 Worker 行的模型字段有别名候选，也可自由输入', async () => {
+    renderDialog({ modelAliases: ['qwen3.5-plus', 'team-chat'] });
+    expect(await screen.findByText('模板包（pack）')).toBeInTheDocument();
+    fireEvent.click(await waitForCompileReady());
+    await screen.findByText(/编译预览（build b-1/);
+
+    fireEvent.click(screen.getByRole('button', { name: '新建 Worker 并注入' }));
+    const model = (await screen.findByLabelText('模型（lead-role）')) as HTMLInputElement;
+    fireEvent.focus(model);
+
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['qwen3.5-plus', 'team-chat']);
+
+    fireEvent.change(model, { target: { value: 'custom-alias' } });
+    expect(model).toHaveValue('custom-alias');
   });
 });

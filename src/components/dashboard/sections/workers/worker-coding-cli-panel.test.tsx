@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WorkerCodingCliPanel } from './worker-coding-cli-panel';
 
@@ -649,5 +649,59 @@ describe('CodingCLI QwenCode 语音模型（voiceModel，对齐插件 16.142）'
     render(<WorkerCodingCliPanel workerName="w1" runtime="openclaw" />);
     await screen.findByText('编码 CLI（探测 / 安装 / 配置）');
     expect(screen.queryByLabelText('QwenPaw × QwenCode 桥')).not.toBeInTheDocument();
+  });
+});
+
+describe('CodingCLI 模型名候选（与 Worker 模型编辑同源）', () => {
+  beforeEach(() => {
+    calls = [];
+    if (!('ResizeObserver' in window)) {
+      Object.defineProperty(window, 'ResizeObserver', {
+        value: class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+        configurable: true,
+      });
+    }
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('模型名有别名候选，且仍可自由输入', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+    ]);
+    render(
+      <WorkerCodingCliPanel
+        workerName="w1"
+        modelAliases={['qwen3.5-plus', 'team-chat']}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+
+    const field = (await screen.findByLabelText('模型名')) as HTMLInputElement;
+    expect(field).toHaveValue('qwen3-coder');
+
+    fireEvent.focus(field);
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['qwen3.5-plus', 'team-chat']);
+
+    fireEvent.change(field, { target: { value: 'custom-cli-model' } });
+    expect(field).toHaveValue('custom-cli-model');
+
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put!.body!)).toEqual({ model: { name: 'custom-cli-model' } });
+    });
   });
 });

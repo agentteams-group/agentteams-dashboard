@@ -9,10 +9,14 @@ import { AlertCircle, CheckCircle2, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { CREATABLE_WORKER_RUNTIMES } from '@/lib/runtime-options';
 import type { MillforgeCore } from './use-millforge-core';
+
+const RUNTIME_CANDIDATES = CREATABLE_WORKER_RUNTIMES.map((option) => option.value);
 
 export function MillforgeCustomTab({
   core,
@@ -76,12 +80,14 @@ export function MillforgeCustomTab({
           <Label htmlFor="millforge-custom-runtime" className="text-xs font-semibold text-muted-foreground">
             运行时（选填）
           </Label>
-          <Input
+          <Combobox
             id="millforge-custom-runtime"
-            className="h-9 text-xs"
-            placeholder="qwenpaw"
             value={custom.runtime}
-            onChange={(event) => set({ runtime: event.target.value })}
+            options={RUNTIME_CANDIDATES}
+            onChange={(runtime) => set({ runtime })}
+            placeholder="qwenpaw"
+            inputClassName="text-xs"
+            ariaLabel="运行时（选填）"
           />
         </div>
         <div className="space-y-1">

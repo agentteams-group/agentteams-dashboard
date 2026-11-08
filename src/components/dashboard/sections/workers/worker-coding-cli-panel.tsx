@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -196,11 +197,14 @@ function previewJson(settings: SettingsObject): string {
 export function WorkerCodingCliPanel({
   workerName,
   runtime,
+  modelAliases = [],
   onChanged,
 }: {
   workerName: string;
   /** Worker 运行时：QwenCode 卡的「QwenPaw × QwenCode 桥」仅 qwenpaw 渲染。 */
   runtime?: WorkerRuntime;
+  /** 模型别名候选（与 Worker 模型编辑同源；空 = 纯自由输入）。 */
+  modelAliases?: readonly string[];
   /** 桥模块安装/更新成功后通知父级（抽屉刷新详情）。 */
   onChanged?: () => void;
 }) {
@@ -704,10 +708,13 @@ export function WorkerCodingCliPanel({
           <p className="text-xs text-muted-foreground">{CLI_LABEL[selected]} settings</p>
           <label className="block text-xs text-muted-foreground">
             模型名
-            <Input
+            <Combobox
               value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              className="mt-0.5 h-7 text-xs"
+              options={modelAliases}
+              onChange={setModelName}
+              placeholder="选择或输入模型别名"
+              ariaLabel="模型名"
+              className="mt-0.5"
               disabled={readOnly}
             />
           </label>

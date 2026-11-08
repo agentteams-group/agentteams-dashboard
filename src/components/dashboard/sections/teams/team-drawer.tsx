@@ -575,6 +575,7 @@ function TeamDrawerContent({
         team={team}
         workers={workers}
         canInstall={userLevel >= 3}
+        modelAliases={modelOptions.map((option) => option.alias)}
         onOpenChange={setMillforgeOpen}
         onInjected={onChanged}
       />

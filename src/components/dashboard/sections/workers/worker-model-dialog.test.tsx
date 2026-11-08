@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { WorkerModelDialog } from './worker-model-dialog';
@@ -61,7 +61,9 @@ describe('WorkerModelDialog 弹窗溢出收口', () => {
   it('SelectTrigger 收敛宽度，长 alias 不撑开弹窗', () => {
     renderDialog();
 
-    const trigger = screen.getByRole('combobox');
+    // 模型选择仍是 Select（role=combobox）；Provider 已换成可输入 Combobox，
+    // 这里按 aria-label 精确定位模型选择触发按钮。
+    const trigger = screen.getByLabelText('请求模型别名');
     expect(trigger.className).toContain('w-full');
     expect(trigger.className).toContain('min-w-0');
   });
@@ -72,6 +74,21 @@ describe('WorkerModelDialog 弹窗溢出收口', () => {
     const input = screen.getByPlaceholderText(/当前解析/);
     expect(input.className).toContain('w-full');
     expect(input.className).toContain('min-w-0');
+  });
+
+  it('Provider 候选来自模型绑定，且仍可自由输入', () => {
+    renderDialog();
+    const provider = screen.getByPlaceholderText(/当前解析/) as HTMLInputElement;
+
+    fireEvent.focus(provider);
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([options[0].binding?.providerName]);
+
+    fireEvent.change(provider, { target: { value: 'legacy-provider' } });
+    expect(provider).toHaveValue('legacy-provider');
   });
 
   it('DialogContent 无固定像素宽度且带横向防溢出兜底', () => {

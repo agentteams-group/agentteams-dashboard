@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -80,10 +81,13 @@ export function MillforgeInjectPanel({
   core,
   workers,
   teamName,
+  modelAliases = [],
 }: {
   core: MillforgeCore;
   workers: WorkerResponse[];
   teamName: string;
+  /** 新建 Worker 行的模型候选（与 Worker 模型编辑同源；空 = 纯自由输入）。 */
+  modelAliases?: readonly string[];
 }) {
   const {
     build,
@@ -221,15 +225,17 @@ export function MillforgeInjectPanel({
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <Input
-                  aria-label={`模型（${row.role_id}）`}
-                  className="h-8 min-w-0 flex-[1_1_140px] text-xs"
+                <Combobox
+                  ariaLabel={`模型（${row.role_id}）`}
+                  className="min-w-0 flex-[1_1_140px]"
+                  inputClassName="text-xs"
                   placeholder="模型（可选，留空跟随集群默认）"
                   value={row.model}
-                  onChange={(event) =>
+                  options={modelAliases}
+                  onChange={(model) =>
                     setCreateRows((previous) =>
                       previous.map((item) =>
-                        item.key === row.key ? { ...item, model: event.target.value } : item,
+                        item.key === row.key ? { ...item, model } : item,
                       ),
                     )
                   }

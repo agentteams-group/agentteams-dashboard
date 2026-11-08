@@ -34,11 +34,13 @@ function MillforgeDialogBody({
   team,
   workers,
   canInstall,
+  modelAliases,
   onInjected,
 }: {
   team: TeamResponse;
   workers: WorkerResponse[];
   canInstall: boolean;
+  modelAliases?: readonly string[];
   onInjected?: () => void;
 }) {
   const core = useMillforgeCore({ team, workers, onInjected });
@@ -103,7 +105,12 @@ function MillforgeDialogBody({
               {core.build.source === 'custom' ? '自定义（team_json）' : '模板'}）
             </p>
             <MillforgeBuildPreview build={core.build} />
-            <MillforgeInjectPanel core={core} workers={workers} teamName={core.teamName} />
+            <MillforgeInjectPanel
+              core={core}
+              workers={workers}
+              teamName={core.teamName}
+              modelAliases={modelAliases}
+            />
           </div>
         ) : null}
       </TabsContent>
@@ -128,6 +135,7 @@ export function MillforgeDialog({
   team,
   workers,
   canInstall,
+  modelAliases,
   onOpenChange,
   onInjected,
 }: {
@@ -135,6 +143,8 @@ export function MillforgeDialog({
   team: TeamResponse;
   workers: WorkerResponse[];
   canInstall: boolean;
+  /** 新建 Worker 行的模型候选（父级模型目录；空 = 纯自由输入）。 */
+  modelAliases?: readonly string[];
   onOpenChange: (_open: boolean) => void;
   onInjected?: () => void;
 }) {
@@ -160,6 +170,7 @@ export function MillforgeDialog({
             team={team}
             workers={workers}
             canInstall={canInstall}
+            modelAliases={modelAliases}
             onInjected={onInjected}
           />
         ) : null}
