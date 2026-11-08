@@ -36,6 +36,9 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Image publication tests
+        run: node --test scripts/test-image-publication.mjs
+
   docs-consistency:
     name: Docs consistency
     runs-on: ubuntu-latest
