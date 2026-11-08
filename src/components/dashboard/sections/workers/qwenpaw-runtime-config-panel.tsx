@@ -117,7 +117,7 @@ function FieldRow({
     <div className="flex flex-col gap-1.5 border-b border-border/40 py-2.5 last:border-0 sm:flex-row sm:items-center sm:gap-3">
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium">{label}</p>
-        {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -636,7 +636,7 @@ export function QwenpawRuntimeConfigPanel({
         <TabsContent value="loop">
           <div className="space-y-2">
             <SectionCard title="Loop 模板">
-              <p className="mb-2 text-[11px] text-muted-foreground">
+              <p className="mb-2 text-xs text-muted-foreground">
                 选择内置模板，或添加自己的（按模板生成自定义模式）。模板设计：QwenPaw 上游。
               </p>
               <div className="mb-2 flex flex-wrap gap-1.5">
@@ -651,7 +651,7 @@ export function QwenpawRuntimeConfigPanel({
                       for (const gate of LOOP_TEMPLATES[id] ?? []) next[gate] = true;
                       setTemplateGates(next);
                     }}
-                    className={`rounded-md border px-2 py-1 text-[11px] ${
+                    className={`rounded-md border px-2 py-1 text-xs ${
                       template === id ? 'border-amber-500 text-amber-700 dark:text-amber-400' : ''
                     }`}
                   >
@@ -660,11 +660,11 @@ export function QwenpawRuntimeConfigPanel({
                 ))}
               </div>
               {(LOOP_TEMPLATES[template] ?? []).length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">空管道——创建后再逐个添加 gate（高级 JSON）。</p>
+                <p className="text-xs text-muted-foreground">空管道——创建后再逐个添加 gate（高级 JSON）。</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {(LOOP_TEMPLATES[template] ?? []).map((gate) => (
-                    <label key={gate} className="flex items-center gap-1 text-[11px]">
+                    <label key={gate} className="flex items-center gap-1 text-xs">
                       <input
                         type="checkbox"
                         checked={templateGates[gate] !== false}
@@ -748,7 +748,7 @@ export function QwenpawRuntimeConfigPanel({
                     />
                   </FieldRow>
                   {gates.iterationMax === null ? (
-                    <p className="text-[10.5px] text-muted-foreground">未显式配置——显示运行时默认 40，保存后落库</p>
+                    <p className="text-xs text-muted-foreground">未显式配置——显示运行时默认 40，保存后落库</p>
                   ) : null}
                 </div>
 
@@ -789,7 +789,7 @@ export function QwenpawRuntimeConfigPanel({
                     </FieldRow>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-[11px] text-muted-foreground">干预规则</p>
+                    <p className="text-xs text-muted-foreground">干预规则</p>
                     {stages.map((stage, index) => (
                       <div key={index} className="flex flex-wrap items-center gap-1.5">
                         <Input
@@ -1015,7 +1015,7 @@ export function QwenpawRuntimeConfigPanel({
                         value={loopJson ?? ''}
                         onChange={(event) => setLoopJson(event.target.value)}
                       />
-                      <p className="mt-1 text-[11px] text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         loop 为整块替换语义——保存后整个 loop 对象以此 JSON 为准（覆盖上方 gate 编辑）；loop 变更将通知团队 Leader。
                       </p>
                     </div>
@@ -1053,10 +1053,10 @@ export function QwenpawRuntimeConfigPanel({
                 <>
                   {loops ? (
                     <div className="mb-2">
-                      <p className="mb-1 text-[11px] text-muted-foreground">模式目录</p>
+                      <p className="mb-1 text-xs text-muted-foreground">模式目录</p>
                       <div className="flex flex-wrap gap-1">
                         {loops.map((mode) => (
-                          <Badge key={mode.id} variant="secondary" className="text-[10.5px]">
+                          <Badge key={mode.id} variant="secondary" className="text-xs">
                             {mode.name}
                             {mode.slash_command ? ` /${mode.slash_command}` : ''}
                           </Badge>
@@ -1064,9 +1064,9 @@ export function QwenpawRuntimeConfigPanel({
                       </div>
                     </div>
                   ) : null}
-                  <p className="mb-1 text-[11px] text-muted-foreground">自定义 Loop</p>
+                  <p className="mb-1 text-xs text-muted-foreground">自定义 Loop</p>
                   {customs && customs.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">该 Worker 暂无自定义 loop</p>
+                    <p className="text-xs text-muted-foreground">该 Worker 暂无自定义 loop</p>
                   ) : null}
                   {customs?.map((mode) => {
                     const modeGates = Array.isArray(mode.gates) ? mode.gates : [];
@@ -1084,10 +1084,10 @@ export function QwenpawRuntimeConfigPanel({
                         />
                         <span className="font-mono font-medium">{mode.id}</span>
                         <span className="text-muted-foreground">{mode.name}</span>
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-xs">
                           /{mode.slash_command}
                         </Badge>
-                        <span className="text-[10.5px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           门禁 {modeGates.length} 个（启用 {enabledGates}）
                         </span>
                         <div className="flex-1" />
@@ -1114,7 +1114,7 @@ export function QwenpawRuntimeConfigPanel({
                         value={newJson}
                         onChange={(event) => setNewJson(event.target.value)}
                       />
-                      <p className="mt-1 text-[10.5px] text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         id 与 slash_command 须小写字母/数字/_/-；重名或 slash 冲突 409，管道校验失败 422。
                       </p>
                       <Button
@@ -1186,7 +1186,7 @@ export function QwenpawRuntimeConfigPanel({
         <TabsContent value="rate">
           <SectionCard>
             {!canWrite ? (
-              <p className="mb-2 text-[11px] text-muted-foreground">
+              <p className="mb-2 text-xs text-muted-foreground">
                 L1-only 字段——需要 Controller 管理 token。
               </p>
             ) : null}
@@ -1257,7 +1257,7 @@ export function QwenpawRuntimeConfigPanel({
         <TabsContent value="ctx">
           <SectionCard>
             {!canWrite ? (
-              <p className="mb-2 text-[11px] text-muted-foreground">
+              <p className="mb-2 text-xs text-muted-foreground">
                 L1-only 字段——需要 Controller 管理 token。
               </p>
             ) : null}
@@ -1524,7 +1524,7 @@ export function QwenpawRuntimeConfigPanel({
                 {memJsonOpen ? '隐藏配置 JSON' : '查看配置 JSON'}
               </Button>
               {memJsonOpen ? (
-                <pre className="mt-1.5 max-h-44 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[10.5px] break-all whitespace-pre-wrap">
+                <pre className="mt-1.5 max-h-44 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-xs break-all whitespace-pre-wrap">
                   {memoryJson}
                 </pre>
               ) : null}

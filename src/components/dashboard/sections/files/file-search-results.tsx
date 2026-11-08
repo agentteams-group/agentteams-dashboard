@@ -139,7 +139,7 @@ function SearchResultRow({
               {name}
               {isDir && <span className="text-muted-foreground"> ›</span>}
             </p>
-            <p className="truncate text-[11px] text-muted-foreground" title={parent || '根目录'}>
+            <p className="truncate text-xs text-muted-foreground" title={parent || '根目录'}>
               {parent === '' ? '根目录' : parent}
             </p>
           </div>
@@ -200,13 +200,13 @@ export function FileSearchResults({
         </ul>
       )}
       {ranked.capped && (
-        <p className="px-2 pt-2 text-[11px] text-muted-foreground">
+        <p className="px-2 pt-2 text-xs text-muted-foreground">
           仅显示前 {SEARCH_RESULT_CAP} 条，继续输入缩小范围
         </p>
       )}
       {page.hasMore && (
         <div className="flex flex-wrap items-center gap-2 px-2 pt-2">
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-xs">
             结果基于前 {page.loaded} 项
           </Badge>
           <Button variant="outline" size="sm" className="min-h-11 sm:min-h-9" disabled={loadingMore} onClick={onLoadMore}>

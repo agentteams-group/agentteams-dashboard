@@ -59,14 +59,14 @@ function coerceText(text: string): unknown {
 function AppliesBadge({ applies }: { applies: SurfaceField['applies'] }) {
   if (applies === 'next-turn') {
     return (
-      <Badge variant="secondary" className="text-[10px]">
+      <Badge variant="secondary" className="text-xs">
         下一轮生效
       </Badge>
     );
   }
   if (applies === 'restart') {
     return (
-      <Badge variant="outline" className="border-red-500/40 text-[10px] text-red-600 dark:text-red-400">
+      <Badge variant="outline" className="border-red-500/40 text-xs text-red-600 dark:text-red-400">
         需重启
       </Badge>
     );
@@ -340,7 +340,7 @@ export function SchemaField({
             {field.unit ? `（${field.unit}）` : ''}
           </span>
           <AppliesBadge applies={field.applies} />
-          <Badge variant="secondary" className="text-[10px]">
+          <Badge variant="secondary" className="text-xs">
             复合结构，暂不支持编辑
           </Badge>
         </div>

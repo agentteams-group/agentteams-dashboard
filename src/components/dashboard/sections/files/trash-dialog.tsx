@@ -229,7 +229,7 @@ export function TrashDialog({
                       <span>{fmtBytes(entry.size)}</span>
                       <span>{fmtTs(entry.deletedAt) || '—'}</span>
                       {entry.caller && <span>删除者 {entry.caller}</span>}
-                      {entry.role && <Badge variant="outline" className="text-[10px]">{entry.role}</Badge>}
+                      {entry.role && <Badge variant="outline" className="text-xs">{entry.role}</Badge>}
                     </p>
                   </div>
                   <Button

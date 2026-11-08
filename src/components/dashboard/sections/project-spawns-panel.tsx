@@ -95,7 +95,7 @@ function SpawnMessageRow({ message }: { message: SpawnMessage }) {
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <Badge
           variant="outline"
-          className={`text-[11px] ${
+          className={`text-xs ${
             role === 'user'
               ? 'border-amber-500/40 text-amber-700 dark:text-amber-400'
               : 'border-sky-500/40 text-sky-700 dark:text-sky-400'
@@ -104,7 +104,7 @@ function SpawnMessageRow({ message }: { message: SpawnMessage }) {
           {role}
         </Badge>
         {message.name && <span className="text-xs font-medium">{message.name}</span>}
-        {when && <span className="text-[11px] text-muted-foreground">{when}</span>}
+        {when && <span className="text-xs text-muted-foreground">{when}</span>}
       </div>
       {message.content && (
         <div className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed">
@@ -177,7 +177,7 @@ export function SpawnSessionMessages({
           加载失败 · 重试
         </Button>
         {state.message && (
-          <span className="min-w-0 break-words text-[11px] text-muted-foreground">
+          <span className="min-w-0 break-words text-xs text-muted-foreground">
             {state.message}
           </span>
         )}
@@ -200,7 +200,7 @@ export function SpawnSessionMessages({
         </div>
       </ScrollArea>
       {moreCount > 0 && (
-        <p className="text-[11px] text-muted-foreground">仅显示最近 {moreCount} 条</p>
+        <p className="text-xs text-muted-foreground">仅显示最近 {moreCount} 条</p>
       )}
     </div>
   );
@@ -261,17 +261,17 @@ function SpawnNodeRow({
         <span className="min-w-0 flex-1 truncate text-xs font-medium" title={node.session_id}>
           {spawnRowName(node)}
         </span>
-        <Badge variant="outline" className={`shrink-0 text-[11px] ${meta.badge}`}>
+        <Badge variant="outline" className={`shrink-0 text-xs ${meta.badge}`}>
           {meta.label}
         </Badge>
         {descendants > 0 && (
-          <Badge variant="outline" className="shrink-0 text-[11px] text-muted-foreground">
+          <Badge variant="outline" className="shrink-0 text-xs text-muted-foreground">
             {descendants} 子会话
           </Badge>
         )}
         {last && (
           <span
-            className="shrink-0 text-[11px] text-muted-foreground"
+            className="shrink-0 text-xs text-muted-foreground"
             title={`最近活动 ${node.last_activity}`}
           >
             {last}
@@ -279,7 +279,7 @@ function SpawnNodeRow({
         )}
         {created && (
           <span
-            className="shrink-0 text-[11px] text-muted-foreground"
+            className="shrink-0 text-xs text-muted-foreground"
             title={`创建于 ${node.created_at}`}
           >
             创建 {created}
@@ -303,9 +303,9 @@ function SpawnNodeRow({
         >
           {tools.length > 0 && (
             <>
-              <span className="text-[11px] text-muted-foreground">工具白名单</span>
+              <span className="text-xs text-muted-foreground">工具白名单</span>
               {tools.map((tool) => (
-                <Badge key={`tool-${tool}`} variant="outline" className="text-[11px]">
+                <Badge key={`tool-${tool}`} variant="outline" className="text-xs">
                   {tool}
                 </Badge>
               ))}
@@ -313,12 +313,12 @@ function SpawnNodeRow({
           )}
           {skills.length > 0 && (
             <>
-              <span className="ml-2 text-[11px] text-muted-foreground">技能白名单</span>
+              <span className="ml-2 text-xs text-muted-foreground">技能白名单</span>
               {skills.map((skill) => (
                 <Badge
                   key={`skill-${skill}`}
                   variant="outline"
-                  className="border-sky-500/40 text-[11px] text-sky-700 dark:text-sky-400"
+                  className="border-sky-500/40 text-xs text-sky-700 dark:text-sky-400"
                 >
                   {skill}
                 </Badge>
@@ -364,12 +364,12 @@ function SpawnWorkerGroup({
       <div className="flex flex-wrap items-center gap-1.5 pb-1">
         <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate text-xs font-semibold">{group.worker}</span>
-        <Badge variant="outline" className="text-[11px] text-muted-foreground">
+        <Badge variant="outline" className="text-xs text-muted-foreground">
           {countSpawnNodes(forest)}
         </Badge>
       </div>
       {rows.length === 0 ? (
-        <p className="pl-1 text-[11px] text-muted-foreground">该 Worker 暂无子会话</p>
+        <p className="pl-1 text-xs text-muted-foreground">该 Worker 暂无子会话</p>
       ) : (
         rows.map(({ node, depth, hasChildren }) => (
           <SpawnNodeRow
@@ -451,7 +451,7 @@ export function ProjectSpawnsPanel({
           加载失败 · 重试
         </Button>
         {state.message && (
-          <span className="min-w-0 break-words text-[11px] text-muted-foreground">
+          <span className="min-w-0 break-words text-xs text-muted-foreground">
             {state.message}
           </span>
         )}
@@ -478,7 +478,7 @@ export function ProjectSpawnsPanel({
           <Users className="h-4 w-4" />
           子会话
           {total !== null && total > 0 && (
-            <Badge variant="outline" className="text-[11px]">
+            <Badge variant="outline" className="text-xs">
               {total}
             </Badge>
           )}

@@ -71,7 +71,7 @@ export function HumanSyncPanel({ humanName }: { humanName: string }) {
     <div className="pt-3" data-testid="human-sync-panel">
       <div className="flex items-center gap-2 mb-2">
         <p className="text-muted-foreground">同步</p>
-        <Badge variant="outline" className="text-[10px] h-4 px-1">只读</Badge>
+        <Badge variant="outline" className="text-xs h-4 px-1">只读</Badge>
         <Button
           variant="ghost"
           size="sm"

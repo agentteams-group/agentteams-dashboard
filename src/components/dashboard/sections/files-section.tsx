@@ -1274,7 +1274,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               <div className="flex h-11 items-center gap-2 rounded-md border bg-muted/30 px-3 text-xs md:h-9">
                 <Users className="size-3.5" />
                 当前用户：{humanName || '未识别'}
-                <Badge variant="outline" className="text-[10px]">只读提示</Badge>
+                <Badge variant="outline" className="text-xs">只读提示</Badge>
               </div>
             )}
             {quota ? (
@@ -1339,7 +1339,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               <Trash className="size-4" />
               <span className="hidden sm:inline">回收站</span>
               {(trashQuery.data?.length ?? 0) > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 px-1 text-[10px]">
+                <Badge variant="secondary" className="ml-1 h-5 px-1 text-xs">
                   {trashQuery.data?.length}
                 </Badge>
               )}
@@ -1382,7 +1382,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                 </span>
               ))}
               {targetDir && targetDir !== dirPath && (
-                <Badge variant="outline" className="ml-1 text-[10px]">
+                <Badge variant="outline" className="ml-1 text-xs">
                   上传/新建目标：{targetDir}/
                 </Badge>
               )}
@@ -1422,7 +1422,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               )}
             </div>
             {searchQuery.tooShort && (
-              <span className="text-[11px] text-muted-foreground">输入至少 2 个字符</span>
+              <span className="text-xs text-muted-foreground">输入至少 2 个字符</span>
             )}
           </div>
 
@@ -1504,7 +1504,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         <div
           role="status"
           aria-live="polite"
-          className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+          className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
           data-testid="files-updating-bar"
         >
           <Loader2 className="size-3 animate-spin" />

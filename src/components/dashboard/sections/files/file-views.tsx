@@ -276,7 +276,7 @@ export function ListView({
                       {entry.name}
                     </p>
                     {showSecondary && (
-                      <p className="truncate text-[11px] text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground">
                         {sizeCell(entry)}
                         {fmtTs(entry.updatedAt) ? ` · ${fmtTs(entry.updatedAt)}` : ''}
                       </p>
@@ -599,7 +599,7 @@ export function GridView({
               <p className="line-clamp-2 break-words text-xs leading-4" title={entry.name}>
                 {entry.name}
               </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">{sizeCell(entry)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{sizeCell(entry)}</p>
             </div>
           </div>
         );

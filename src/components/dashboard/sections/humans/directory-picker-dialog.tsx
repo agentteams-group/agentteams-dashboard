@@ -239,13 +239,13 @@ export function DirectoryPickerDialog({
                   )}
                   <span className="min-w-0 truncate">{label(row.path)}</span>
                   {row.path === ROOT && (
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">files/</span>
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">files/</span>
                   )}
                   {state?.status === 'error' && (
-                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">不可访问</span>
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">不可访问</span>
                   )}
                   {loaded && state.dirs.length === 0 && (
-                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">无子目录</span>
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">无子目录</span>
                   )}
                 </div>
               );

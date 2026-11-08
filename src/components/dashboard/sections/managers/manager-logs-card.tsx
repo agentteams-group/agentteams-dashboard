@@ -136,7 +136,7 @@ export function ManagerLogsCard({
           ) : state.lines.length === 0 ? (
             <p className="text-xs text-muted-foreground">（无日志行）</p>
           ) : (
-            <pre className="max-h-80 min-w-0 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+            <pre className="max-h-80 min-w-0 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
               {state.lines.join('\n')}
             </pre>
           )}

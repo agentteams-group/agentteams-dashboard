@@ -205,7 +205,7 @@ export function FileDetailCard({
           <p className="truncate text-sm font-medium" title={entry.name}>
             {entry.name}
           </p>
-          <p className="truncate text-[11px] text-muted-foreground" title={path || dirPath}>
+          <p className="truncate text-xs text-muted-foreground" title={path || dirPath}>
             {path || dirPath || '根目录'}
           </p>
         </div>
@@ -232,8 +232,8 @@ export function FileDetailCard({
           )}
         </dl>
         {!canAdmin && (
-          <p className="text-[11px] text-muted-foreground">
-            <Badge variant="outline" className="mr-1 text-[10px]">只读提示</Badge>
+          <p className="text-xs text-muted-foreground">
+            <Badge variant="outline" className="mr-1 text-xs">只读提示</Badge>
             无权限的写操作会由服务端拒绝。
           </p>
         )}

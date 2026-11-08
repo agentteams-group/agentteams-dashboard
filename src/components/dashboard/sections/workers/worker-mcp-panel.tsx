@@ -212,7 +212,7 @@ export function WorkerMcpPanel({
                   {row.declared && (
                     <Badge
                       variant="outline"
-                      className="h-4 border-blue-500/40 bg-blue-500/10 px-1 text-[10px] text-blue-700 dark:text-blue-300"
+                      className="h-4 border-blue-500/40 bg-blue-500/10 px-1 text-xs text-blue-700 dark:text-blue-300"
                     >
                       声明
                     </Badge>
@@ -220,18 +220,18 @@ export function WorkerMcpPanel({
                   {row.self && (
                     <Badge
                       variant="outline"
-                      className="h-4 border-emerald-500/40 bg-emerald-500/10 px-1 text-[10px] text-emerald-700 dark:text-emerald-400"
+                      className="h-4 border-emerald-500/40 bg-emerald-500/10 px-1 text-xs text-emerald-700 dark:text-emerald-400"
                     >
                       注册
                     </Badge>
                   )}
                   {row.self?.enabled === false && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                    <Badge variant="secondary" className="h-4 px-1 text-xs">
                       停用
                     </Badge>
                   )}
                   {transport && (
-                    <Badge variant="secondary" className="h-4 px-1 font-mono text-[10px]">
+                    <Badge variant="secondary" className="h-4 px-1 font-mono text-xs">
                       {transport}
                     </Badge>
                   )}
@@ -252,7 +252,7 @@ export function WorkerMcpPanel({
                     headers: {headerKeys.map((key) => `${key}=***`).join('  ')}
                   </p>
                 )}
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {row.declared ? '可在上方编辑' : '运行时注册，只读'}
                 </p>
               </li>

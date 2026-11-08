@@ -52,7 +52,7 @@ export function UploadQueuePanel({
               <span className="block truncate" title={item.path}>
                 {item.name}
               </span>
-              <span className="block truncate text-[11px] text-muted-foreground">
+              <span className="block truncate text-xs text-muted-foreground">
                 {fmtBytes(item.size)}
                 {item.status === 'failed' && item.error ? ` · ${item.error}` : ''}
               </span>
