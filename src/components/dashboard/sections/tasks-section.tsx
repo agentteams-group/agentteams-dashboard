@@ -59,6 +59,7 @@ import { useProjectRoomTimestamps } from '@/hooks/use-project-room-ts';
 // timeline) — defined in the (now-merged) projects section; only the panel
 // crosses the module boundary.
 import { WorkflowDetail } from './projects/workflow-detail';
+import { MetaEditorEntry } from './projects/meta-editor';
 import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
@@ -361,11 +362,13 @@ function ProjectCard({
   taskCount,
   onSelect,
   selected,
+  onMetaSaved,
 }: {
   project: BoardProject;
   taskCount: number;
   onSelect: (_id: string) => void;
   selected: boolean;
+  onMetaSaved?: () => void;
 }) {
   const allItems = project.phases.flatMap((p) => p.items);
   const done = allItems.filter((i) => i.done).length;
@@ -398,7 +401,20 @@ function ProjectCard({
           </Badge>
         </div>
         <div>
-          <p className="text-sm font-semibold">{project.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold">{project.name}</p>
+            {/* 项目 meta 编辑入口（仅 Controller API 项目有 meta 端点；
+                405/404 → 入口自隐藏） */}
+            {project.source === 'api' && (
+              <MetaEditorEntry
+                kind="project"
+                id={project.runId}
+                title={project.name}
+                teamId={project.teamId}
+                onSaved={onMetaSaved}
+              />
+            )}
+          </div>
           <p className="text-xs text-muted-foreground font-mono mt-0.5">
             {project.runId}
           </p>
@@ -1006,6 +1022,7 @@ export function TasksSection() {
                       taskCount={tasksForProject(p.runId).length}
                       onSelect={setSelectedProjectId}
                       selected={p.runId === effectiveProjectId}
+                      onMetaSaved={() => board.refetch()}
                     />
                   ))}
                 </div>

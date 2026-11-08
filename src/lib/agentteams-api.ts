@@ -5,9 +5,17 @@ import { ApiError, NetworkError } from '@/lib/api-error';
 import { apiUrl, extractErrorDetail } from '@/lib/api-base';
 import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
 import { normalizeWorkerMcpItems, type WorkerMcpResult } from '@/lib/worker-mcp';
+import {
+  getProjectMeta as fetchProjectMeta,
+  getTaskMeta as fetchTaskMeta,
+  saveProjectMeta as putProjectMeta,
+  saveTaskMeta as putTaskMeta,
+  type MetaReadResult,
+} from '@/lib/meta-api';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
 
 export type { WorkerMcpItem, WorkerMcpResult } from '@/lib/worker-mcp';
+export type { MetaReadResult } from '@/lib/meta-api';
 
 // ============ Response Types ============
 
@@ -1510,6 +1518,23 @@ export const agentteamsApi = {
     const qs = `?name=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}`;
     return proxyRequest(`/agentspecs/nacos/detail${qs}`);
   },
+
+  // 项目/任务 meta（meta.json）：GET 返回 {raw, etag}；保存 PUT + If-Match。
+  // 契约与错误分类在 @/lib/meta-api（405/404 = 端点不可用 → 入口隐藏）。
+  getProjectMeta: (id: string): Promise<MetaReadResult> => fetchProjectMeta(id),
+
+  getTaskMeta: (id: string, team?: string): Promise<MetaReadResult> =>
+    fetchTaskMeta(id, team),
+
+  saveProjectMeta: (id: string, raw: string, etag: string): Promise<MetaReadResult> =>
+    putProjectMeta(id, raw, etag),
+
+  saveTaskMeta: (
+    id: string,
+    raw: string,
+    etag: string,
+    team?: string,
+  ): Promise<MetaReadResult> => putTaskMeta(id, raw, etag, team),
 };
 
 // ── Worker MCP 合并读（CRD 声明 + worker 自注册）─────────────────────────
