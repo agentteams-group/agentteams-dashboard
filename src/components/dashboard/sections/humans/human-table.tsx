@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Trash2, UserCheck } from 'lucide-react';
+import { Eye, Pencil, Trash2, UserCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,13 +21,17 @@ function permissionLabel(level: number): string {
   return PERMISSION_LABELS[level] || `L${level}`;
 }
 
+const ACTION_BUTTON = 'h-8 w-8 p-0 max-sm:h-11 max-sm:w-11';
+
 export function HumanTable({
   humans,
   onView,
+  onEdit,
   onDelete,
 }: {
   humans: HumanResponse[];
   onView: (_human: HumanResponse) => void;
+  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   return (
@@ -49,12 +53,25 @@ export function HumanTable({
             // CR 标尺缺省按 2（团队成员）显示，与 controller/插件默认一致
             const level = human.permissionLevel ?? 2;
             return (
-              <TableRow key={human.name}>
+              <TableRow
+                key={human.name}
+                className="cursor-pointer"
+                onClick={() => onView(human)}
+              >
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <StatusDot phase={human.phase} />
                     <UserCheck className="w-4 h-4 text-teal-500 shrink-0" aria-hidden="true" />
-                    <span className="font-medium truncate max-w-[180px]">{human.name}</span>
+                    <button
+                      type="button"
+                      className="max-w-[180px] truncate text-left font-medium hover:underline"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onView(human);
+                      }}
+                    >
+                      {human.name}
+                    </button>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -83,12 +100,12 @@ export function HumanTable({
                     {human.rooms?.length || 0}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0"
+                      className={ACTION_BUTTON}
                       onClick={() => onView(human)}
                       title="查看详情"
                       aria-label={`查看 ${human.name} 详情`}
@@ -98,7 +115,17 @@ export function HumanTable({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      className={ACTION_BUTTON}
+                      onClick={() => onEdit(human)}
+                      title="编辑"
+                      aria-label={`编辑 ${human.name}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`${ACTION_BUTTON} text-destructive hover:text-destructive`}
                       onClick={() => onDelete(human.name)}
                       title="删除"
                       aria-label={`删除 ${human.name}`}
