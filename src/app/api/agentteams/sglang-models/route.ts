@@ -1,16 +1,17 @@
 // GET /api/agentteams/sglang-models — list the models actually served by a
 // local SGLang inference server (OpenAI-compatible /v1/models), if one is
-// configured via AGENTTEAMS_SGLANG_URL. Feeds the "SGLang" source layer of the
-// model selector, so locally hosted models (e.g. a self-served
-// qwen3.6-27b-fp8) are selectable without guessing the id.
+// configured (setup page config file, then AGENTTEAMS_SGLANG_URL). Feeds the
+// "SGLang" source layer of the model selector, so locally hosted models
+// (e.g. a self-served qwen3.6-27b-fp8) are selectable without guessing the id.
 //
 // Response: { enabled: boolean, models: string[], error?: string }
-//   - env unset            -> 200 { enabled: false, models: [] }
+//   - unconfigured         -> 200 { enabled: false, models: [] }
 //   - server unreachable   -> 503 { enabled: true, models: [], error }
 //   - server non-2xx       -> 502 { enabled: true, models: [], error }
 // The client treats every non-200 as "hide the layer", so a broken SGLang can
 // never break model selection.
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAuthHeader, pickBackendUrl } from '@/lib/backend-config';
 
 const TIMEOUT_MS = 5000;
 
@@ -20,9 +21,11 @@ interface SglangModelsResponse {
   error?: string;
 }
 
-// Read per request (not at module load) so tests can stub the env.
+// 地址解析与其它后端同一条链：配置（内网/外网 + 失效切换工作缓存）> env。
+// 旧实现只读 env，setup 页保存的 SGLang 地址在模型列表上不生效。
+// 每次请求现读（不在模块加载时定值），测试可随时改 env / 配置文件。
 function readSglangUrl(): string {
-  return (process.env.AGENTTEAMS_SGLANG_URL || '').trim();
+  return (pickBackendUrl('sglang') || '').trim();
 }
 
 function normalizeModelsUrl(baseUrl: string): string {
@@ -62,7 +65,12 @@ export async function GET(_request: NextRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(normalizeModelsUrl(baseUrl), { signal: controller.signal });
+    const res = await fetch(normalizeModelsUrl(baseUrl), {
+      signal: controller.signal,
+      // 逐地址覆盖凭据（SGLang 前的 Basic / Bearer 门）：命中保存的该地址才
+      // 注入；地址不匹配 → 空头，绝不把凭据发到别处。
+      headers: backendAuthHeader('sglang', baseUrl),
+    });
     if (!res.ok) {
       const body: SglangModelsResponse = {
         enabled: true,

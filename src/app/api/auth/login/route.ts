@@ -19,6 +19,13 @@
 //   Controller credential for level 2/3 — A2 chain scopes reads to
 //   accessibleTeams. Non-Human Matrix accounts (no CR) → generic 401.
 //
+// Track Controller token (no Console/Matrix account at all):
+//   A pasted Controller admin token on its own. Used by single-operator
+//   deployments where neither a Console admin nor a Matrix Human account is
+//   reachable; the token is verified against an admin-only Controller
+//   endpoint and carried server-side as the session credential. It is
+//   admin-grade by definition, so the session is level 3 like Console.
+//
 // Both tracks fail → 401. Session secret missing → login fails closed
 // (dashboard-session throws, logged once).
 //
@@ -36,7 +43,13 @@ import {
 } from '../../higress/proxy-helper';
 import { getAuthToken, getControllerUrl } from '../../agentteams/proxy-helper';
 import { createSession, sessionCookieHeader } from '@/lib/dashboard-session';
-import { pickBackendUrl } from '@/lib/backend-config';
+import {
+  authForUrl,
+  authHeaderFor,
+  backendAuthHeader,
+  orderedCandidates,
+  pickBackendUrl,
+} from '@/lib/backend-config';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 
 // Matrix homeserver for password login — resolved PER LOGIN ATTEMPT
@@ -62,6 +75,27 @@ interface HumanRecord {
   accessibleWorkers?: string[];
 }
 
+/** 直连 Controller 的 Authorization：该地址槽位存有网关凭据（公网 Basic 门 /
+ * API key 门）时用它，否则用调用方自己的 Bearer token。与请求层
+ * backendAuthHeader 同语义——网关门在服务之前，凭据只进请求头。 */
+function controllerHeaders(request: NextRequest, token: string): Record<string, string> {
+  const gateway = authForUrl('controller', getControllerUrl(request));
+  return gateway ? authHeaderFor(gateway) : { Authorization: `Bearer ${token}` };
+}
+
+/** Controller 候选地址（当前生效/override 优先，其后是配置候选表：内网 →
+ * 外网 → env），逐个尝试——内/外网切换期间网关后的候选也能验证。 */
+function controllerProbeTargets(request: NextRequest): string[] {
+  const out: string[] = [];
+  const add = (url: string | undefined) => {
+    const value = url?.trim();
+    if (value && !out.includes(value)) out.push(value);
+  };
+  add(getControllerUrl(request));
+  for (const candidate of orderedCandidates('controller')) add(candidate);
+  return out;
+}
+
 /**
  * Resolve a Human CR via the admin SA token. Returns null when the controller
  * is unreachable, the token is missing, or the human does not exist.
@@ -81,7 +115,7 @@ async function fetchHumanViaSa(request: NextRequest, name: string): Promise<Huma
 async function probeMatrixToken(request: NextRequest, matrixToken: string): Promise<boolean> {
   try {
     const res = await fetch(`${getControllerUrl(request)}/api/v1/status`, {
-      headers: { Authorization: `Bearer ${matrixToken}` },
+      headers: controllerHeaders(request, matrixToken),
       signal: AbortSignal.timeout(5000),
     });
     return res.ok;
@@ -96,7 +130,7 @@ async function probeMatrixToken(request: NextRequest, matrixToken: string): Prom
 async function fetchTeamsWithToken(request: NextRequest, matrixToken: string): Promise<string[]> {
   try {
     const res = await fetch(`${getControllerUrl(request)}/api/v1/teams`, {
-      headers: { Authorization: `Bearer ${matrixToken}` },
+      headers: controllerHeaders(request, matrixToken),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
@@ -113,7 +147,7 @@ async function fetchTeamsWithToken(request: NextRequest, matrixToken: string): P
 async function fetchHumanWithToken(request: NextRequest, name: string, token: string): Promise<HumanRecord | null> {
   try {
     const res = await fetch(`${getControllerUrl(request)}/api/v1/humans/${encodeURIComponent(name)}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: controllerHeaders(request, token),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
@@ -138,7 +172,11 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
   try {
     const res = await fetch(`${homeserver}/_matrix/client/v3/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // 逐地址覆盖凭据（公网网关 Basic / API key 门）——凭据只进请求头。
+        ...backendAuthHeader('matrix', homeserver),
+      },
       body: JSON.stringify({
         type: 'm.login.password',
         identifier: { type: 'm.id.user', user: username },
@@ -174,6 +212,15 @@ export async function POST(request: NextRequest) {
     const adminUsername = typeof body.adminUsername === 'string' ? body.adminUsername.trim() : '';
     const adminPassword = typeof body.adminPassword === 'string' ? body.adminPassword : '';
     const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
+
+    // Token-only track: a Controller admin token is admin-grade on its own,
+    // so a deployment with no reachable Console admin AND no Matrix Human
+    // account can still log in. Strictly gated on BOTH credential fields
+    // being absent — any username/password pair keeps the dual-track flow
+    // below byte-for-byte.
+    if (!username && !password && controllerToken) {
+      return await attemptControllerTokenLogin(request, controllerToken);
+    }
 
     if (!username || !password) {
       return NextResponse.json({ success: false, error: 'Username and password are required' }, { status: 400 });
@@ -382,17 +429,80 @@ async function verifyAdminConsoleCredentials(
  * but still succeeds) — a non-admin token would pass verification and be
  * stored as the session's admin data-plane credential (kind
  * 'controller-token').
+ *
+ * Gateway deployments: a controller address behind a public gateway (Basic
+ * door / API-key door) rejects a bare `Bearer <controllerToken>` at the door
+ * — the saved per-address credential must be presented as Authorization
+ * INSTEAD of the controller token (same semantics as backendAuthHeader at
+ * the request layer). Without that, a valid admin token was reported as
+ * 无效 on gateway deployments. Candidates are walked in order (working /
+ * override address first, then config internal → external → env) so an
+ * internal 401 still lets the external candidate verify.
  */
 async function verifyControllerToken(request: NextRequest, token: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${getControllerUrl(request)}/api/v1/humans`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
+  for (const url of controllerProbeTargets(request)) {
+    const gateway = authForUrl('controller', url);
+    const headers = gateway ? authHeaderFor(gateway) : { Authorization: `Bearer ${token}` };
+    try {
+      const res = await fetch(`${url.replace(/\/+$/, '')}/api/v1/humans?limit=1`, {
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      // 200 = admin-grade proof. 401/403 (and any other non-2xx) just means
+      // this candidate cannot verify the token — try the next one.
+      if (res.ok) return true;
+    } catch {
+      // Unreachable candidate: continue with the next address.
+    }
   }
+  return false;
+}
+
+/**
+ * Token-only track: the pasted Controller admin token is the credential.
+ * Security note: this token is admin-grade — logging in with it grants the
+ * same level-3 data-plane standing as a Console admin login, which is
+ * intended for single-operator deployments. It is verified against an
+ * admin-only Controller endpoint first, held server-side only
+ * (credential kind 'controller-token'), and never written to the session
+ * cookie, the response body, or any client-readable store.
+ */
+async function attemptControllerTokenLogin(
+  request: NextRequest,
+  controllerToken: string,
+): Promise<NextResponse> {
+  if (!(await verifyControllerToken(request, controllerToken))) {
+    return NextResponse.json({ success: false, error: 'Controller 管理员 token 无效' }, { status: 401 });
+  }
+
+  let cookieValue: string;
+  try {
+    ({ cookieValue } = createSession({
+      user: 'controller-admin',
+      crLevel: 1,
+      teams: [],
+      credential: { kind: 'controller-token', token: controllerToken },
+    }));
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
+      { status: 503 },
+    );
+  }
+
+  const responseHeaders = new Headers();
+  responseHeaders.set('content-type', 'application/json');
+  responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+
+  return new NextResponse(
+    JSON.stringify({
+      success: true,
+      user: { username: 'controller-admin', level: 3 },
+      mode: 'controller-token',
+    }),
+    { status: 200, headers: responseHeaders },
+  );
 }
 
 /**

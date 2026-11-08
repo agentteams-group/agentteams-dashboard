@@ -34,6 +34,7 @@ import {
   EyeOff,
   Palette,
   Puzzle,
+  Package,
   Sparkles,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
@@ -43,6 +44,7 @@ import { BackendTab } from './settings/backend-tab';
 import { SpeechSettings } from './settings/speech-settings';
 import { ClientConfigTab } from './settings/client-config-tab';
 import { UpdateTab } from './settings/update-tab';
+import { ModulesTab } from './settings/modules-tab';
 import { ManagementTab, navigateFromSettings } from './settings/management-tab';
 
 const PluginGallery = lazy(() => import('./sections/plugins/plugin-gallery').then(module => ({ default: module.PluginGallery })));
@@ -191,6 +193,10 @@ export function SettingsDialog() {
               <History className="w-3.5 h-3.5 mr-1" />
               更新
             </TabsTrigger>
+            <TabsTrigger value="modules">
+              <Package className="w-3.5 h-3.5 mr-1" />
+              模块
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="management" className="py-4">
@@ -199,6 +205,10 @@ export function SettingsDialog() {
 
           <TabsContent value="updates" className="py-4">
             <UpdateTab />
+          </TabsContent>
+
+          <TabsContent value="modules" className="py-4">
+            <ModulesTab />
           </TabsContent>
 
           {isStateless && (

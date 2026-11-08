@@ -1,6 +1,6 @@
 'use client';
 
-// Settings > 后端 tab (F1b + F1c): the server-side backend address config.
+// Settings > 后端 tab (F1b + F1c + F1d): the server-side backend address config.
 //
 // Plugin parity (F1c, decided 9/9 — deployment model is one instance per
 // user, no shared instances): ANY logged-in user (L1 or L2) can view, test
@@ -10,17 +10,29 @@
 // install-method difference). SSRF surface of user-supplied addresses stays
 // pinned server-side by DASHBOARD_ALLOWED_HOSTS.
 //
-// - GET /api/agentteams/setup/backends → config (internal/external per
-//   backend) + effective (working cache) for the "在生效" badge.
-// - Per-backend "测试" → POST .../backends/test with the FORM values (draft):
-//   the server probes each address (parallel, one retry) and returns rows in
-//   the plugin's two-layer model — ✅ connected & usable (ms) / ⚠️ connected
-//   but needs auth (401/403) / ❌ classified error (DNS / refused / timeout /
-//   TLS 握手 / TLS 证书 / 连接失败). Draft tests never touch the effective
-//   cache; a failed test never clears it.
+// - GET /api/agentteams/setup/backends → entries (per-slot address + auth,
+//   secrets redacted to '***') + effective (working cache) for the "在生效"
+//   badge. `entries` is the authoritative shape; the legacy string-only
+//   `config` projection is only a fallback for an older server.
+// - Per-slot auth (plugin config_entries.AuthEntry parity): a slot is either
+//   the service's own auth (plain URL) or a gateway credential — Basic
+//   (public gateway door) / Bearer (API-key door). The saved secret comes
+//   back as '***'; leaving the field blank keeps the stored secret, and
+//   switching back to 服务自身认证 sends a plain URL (clears it). A slot is
+//   NEVER downgraded from {url, auth} to a bare URL string while a
+//   credential is selected — that was the F1d defect (saved Basic/Bearer
+//   dropped on every save).
+// - Per-backend "测试" → POST .../backends/test with the FORM values (draft,
+//   INCLUDING the draft credential — otherwise a gateway-fronted address
+//   always reports 401): the server probes each address (parallel, one
+//   retry) and returns rows in the plugin's two-layer model — ✅ connected &
+//   usable (ms) / ⚠️ connected but needs auth (401/403) / ❌ classified error
+//   (DNS / refused / timeout / TLS 握手 / TLS 证书 / 连接失败). Draft tests
+//   never touch the effective cache; a failed test never clears it.
 // - 保存 → POST .../backends (no token). The server re-probes what was saved
-//   and returns effective/switched; the tab then auto-runs a test on the
-//   saved list (plugin "保存后自动测一次") and shows the switch banner.
+//   and returns effective/switched; the tab then reloads `entries` (so the
+//   redacted secrets confirm what was kept) and auto-runs a test on the saved
+//   list (plugin "保存后自动测一次").
 //
 // Resolution priority (documented for the user): config file > env vars >
 // embedded defaults. The background re-rank loop re-probes backends with
@@ -43,6 +55,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { apiUrl } from '@/lib/api-base';
 import {
   BACKEND_LABELS,
@@ -52,15 +71,45 @@ import {
   type BackendName,
 } from '@/lib/backend-names';
 
-interface BackendAddrs {
-  internal?: string;
-  external?: string;
+/** 脱敏占位（与服务端 REDACTED_SECRET 同值）：秘密字段留空 + 该槽位已有
+ * 同类型凭据 → 发送 '***'，服务端按槽位继承旧秘密。 */
+const REDACTED_SECRET = '***';
+const STORED_HINT = '已保存 · 留空保持';
+
+type AuthType = 'none' | 'basic' | 'bearer';
+type SlotName = 'internal' | 'external';
+
+interface EntryAuth {
+  type?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+}
+
+type AddressEntry = string | { url?: string; auth?: EntryAuth };
+
+interface SlotForm {
+  url: string;
+  authType: AuthType;
+  username: string;
+  password: string;
+  token: string;
+  /** 该槽位已保存的凭据类型（秘密被服务端脱敏回显，前端只留占位）。 */
+  storedType: 'basic' | 'bearer' | null;
+}
+
+interface BackendForm {
+  internal: SlotForm;
+  external: SlotForm;
 }
 
 interface BackendsState {
   configured: boolean;
   backends: Record<string, { configured: boolean; candidates: string[] }>;
-  config?: Record<string, BackendAddrs>;
+  /** 逐地址条目（服务端 redactBackends）：string 或 {url, auth}（秘密 '***'）。 */
+  entries?: Record<string, { internal?: AddressEntry; external?: AddressEntry }>;
+  /** 旧字符串投影（仅 session；entries 缺失时的兜底）。 */
+  config?: Record<string, { internal?: string; external?: string }>;
   effective?: Record<string, string>;
   embedded?: {
     defaults: Record<string, string | undefined>;
@@ -76,42 +125,140 @@ interface TestRow {
   detail: string;
 }
 
+/** 保存/测试请求里的槽位：纯 URL（服务自身认证）或带凭据的对象。 */
+type DraftAuth =
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'bearer'; token: string };
+type DraftSlot = string | { url: string; auth: DraftAuth };
+type DraftAddrs = { internal?: DraftSlot; external?: DraftSlot };
+
+function emptySlot(url = ''): SlotForm {
+  return { url, authType: 'none', username: '', password: '', token: '', storedType: null };
+}
+
+/** entries 槽位 → 表单：secret 永远不回填（服务端只回 '***'），凭据类型 +
+ * 用户名用来还原「认证方式」和占位提示。 */
+function slotFromEntry(entry: AddressEntry | undefined): SlotForm {
+  if (!entry) return emptySlot();
+  if (typeof entry === 'string') return emptySlot(entry);
+  const url = entry.url ?? '';
+  const auth = entry.auth;
+  if (auth?.type === 'basic') {
+    return {
+      url,
+      authType: 'basic',
+      username: auth.username ?? '',
+      password: '',
+      token: '',
+      storedType: 'basic',
+    };
+  }
+  if (auth?.type === 'bearer') {
+    return { url, authType: 'bearer', username: '', password: '', token: '', storedType: 'bearer' };
+  }
+  return emptySlot(url);
+}
+
 function initialFields(
-  config: Record<string, BackendAddrs> | undefined,
-  embedded: BackendsState['embedded'],
-) {
-  const out: Record<string, { internal: string; external: string }> = {};
+  state: BackendsState,
+  prefillEmbedded: boolean,
+): Record<string, BackendForm> {
+  const out: Record<string, BackendForm> = {};
   for (const name of BACKEND_NAMES) {
-    const cfg = config?.[name];
+    const entries = state.entries?.[name];
+    const legacy = state.config?.[name];
+    const internal = slotFromEntry(entries?.internal ?? legacy?.internal);
+    const external = slotFromEntry(entries?.external ?? legacy?.external);
     // F-3 / 需求 2.4: an empty `internal` slot paired with a healthy embedded
     // probe gets prefilled with EMBEDDED_DEFAULTS — editable (the operator can
     // overwrite before saving). Required backends always get the default so
     // the slot never stays blank in the standard embedded install. `external`
     // stays empty (no auto-fallback for the operator's wide-area address).
-    const internal =
-      cfg?.internal?.trim() ||
-      (embedded?.healthy?.[name] === true && EMBEDDED_DEFAULTS[name]
-        ? EMBEDDED_DEFAULTS[name] ?? ''
-        : '');
-    out[name] = {
-      internal,
-      external: cfg?.external ?? '',
-    };
+    // A reload after saving never re-prefills: a deliberately cleared slot
+    // must stay cleared.
+    if (
+      prefillEmbedded &&
+      !internal.url.trim() &&
+      state.embedded?.healthy?.[name] === true &&
+      EMBEDDED_DEFAULTS[name]
+    ) {
+      internal.url = EMBEDDED_DEFAULTS[name] ?? '';
+    }
+    out[name] = { internal, external };
   }
   return out;
 }
 
-function RowIcon({ row }: { row: TestRow }) {
-  if (row.ok && row.httpOk) return <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />;
-  if (row.ok) return <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />;
-  return <XCircle className="w-3 h-3 text-red-600 shrink-0" />;
+/** 表单槽位 → 请求槽位。认证方式为「服务自身认证」= 纯 URL 字符串（服务端
+ * 据此清除该槽位旧凭据）；Basic/Bearer 保留对象形态。秘密留空且该槽位已有
+ * 同类型凭据时发 '***'（保留旧值）。 */
+function slotPayload(slot: SlotForm): DraftSlot | null {
+  const url = slot.url.trim();
+  if (!url) return null;
+  if (slot.authType === 'basic') {
+    const password = slot.password || (slot.storedType === 'basic' ? REDACTED_SECRET : '');
+    return { url, auth: { type: 'basic', username: slot.username.trim(), password } };
+  }
+  if (slot.authType === 'bearer') {
+    const token = slot.token || (slot.storedType === 'bearer' ? REDACTED_SECRET : '');
+    return { url, auth: { type: 'bearer', token } };
+  }
+  return url;
 }
+
+function buildDraft(fields: Record<string, BackendForm>): Record<string, DraftAddrs> {
+  const out: Record<string, DraftAddrs> = {};
+  for (const [name, form] of Object.entries(fields)) {
+    const internal = slotPayload(form.internal);
+    const external = slotPayload(form.external);
+    if (internal || external) {
+      out[name] = { ...(internal ? { internal } : {}), ...(external ? { external } : {}) };
+    }
+  }
+  return out;
+}
+
+/** 保存前的可读校验：选了 Basic/Bearer 但秘密和已存凭据都没有时，服务端只会
+ * 把该槽位静默降级成纯 URL（凭据丢失的旧缺陷换了个入口）。这里先拦住。
+ * 返回第一条错误文案，null = 通过。 */
+function validateDraft(fields: Record<string, BackendForm>): string | null {
+  for (const name of BACKEND_NAMES) {
+    const form = fields[name];
+    if (!form) continue;
+    for (const slot of ['internal', 'external'] as const) {
+      const slotForm = form[slot];
+      const label = `${BACKEND_LABELS[name]} ${slot === 'internal' ? '内网' : '外网'}`;
+      if (slotForm.authType === 'basic') {
+        if (!slotForm.username.trim()) return `${label}：Basic 认证需要填写用户名。`;
+        if (!slotForm.password && slotForm.storedType !== 'basic') {
+          return `${label}：请填写网关密码（或切回「服务自身认证」）。`;
+        }
+      }
+      if (slotForm.authType === 'bearer' && !slotForm.token && slotForm.storedType !== 'bearer') {
+        return `${label}：请填写网关 Bearer token（或切回「服务自身认证」）。`;
+      }
+    }
+  }
+  return null;
+}
+
+function RowIcon({ row }: { row: TestRow }) {
+  if (row.ok && row.httpOk) return <CheckCircle2 className="w-3 h-3 text-status-done shrink-0" />;
+  if (row.ok) return <AlertTriangle className="w-3 h-3 text-status-waiting shrink-0" />;
+  return <XCircle className="w-3 h-3 text-status-failed shrink-0" />;
+}
+
+const AUTH_OPTIONS: Array<{ value: AuthType; label: string }> = [
+  { value: 'none', label: '服务自身认证' },
+  { value: 'basic', label: 'Basic' },
+  { value: 'bearer', label: 'Bearer' },
+];
 
 export function BackendTab() {
   const queryClient = useQueryClient();
   const [state, setState] = useState<BackendsState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fields, setFields] = useState<Record<string, { internal: string; external: string }>>({});
+  const [fields, setFields] = useState<Record<string, BackendForm>>({});
   const [rows, setRows] = useState<Record<string, TestRow[]>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -119,13 +266,17 @@ export function BackendTab() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ switched: string[]; unchanged: string[] } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refill = false) => {
     try {
       const res = await fetch(apiUrl('/api/agentteams/setup/backends/'), { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as BackendsState;
       setState(data);
-      setFields((prev) => (Object.keys(prev).length > 0 ? prev : initialFields(data.config, data.embedded)));
+      // refill: 保存成功后按新的 entries 回填（确认凭据仍是 stored 状态）。
+      // 首次加载自动预填嵌入式默认；回填不再预填（保持用户清空的槽位）。
+      setFields((prev) =>
+        refill || Object.keys(prev).length === 0 ? initialFields(data, !refill) : prev,
+      );
     } finally {
       setLoading(false);
     }
@@ -135,8 +286,7 @@ export function BackendTab() {
     void load();
   }, [load]);
 
-  const setField = (backend: string, slot: 'internal' | 'external', value: string) => {
-    setFields((prev) => ({ ...prev, [backend]: { ...prev[backend], [slot]: value } }));
+  const clearFeedback = (backend: string) => {
     setSaved(false);
     setSaveError(null);
     setBanner(null);
@@ -147,26 +297,51 @@ export function BackendTab() {
     });
   };
 
+  const updateSlot = (backend: string, slot: SlotName, patch: Partial<SlotForm>) => {
+    setFields((prev) => {
+      const form = prev[backend];
+      if (!form) return prev;
+      return { ...prev, [backend]: { ...form, [slot]: { ...form[slot], ...patch } } };
+    });
+    clearFeedback(backend);
+  };
+
+  /** 认证方式切换：切回「服务自身认证」= 清凭据（保存时发纯 URL）；
+   * 切到另一种凭据类型时清空秘密输入，且只有同类型的已存秘密才允许
+   * 「留空保持」（发 '***'）。 */
+  const setAuthType = (backend: string, slot: SlotName, authType: AuthType) => {
+    const current = fields[backend]?.[slot];
+    if (!current || current.authType === authType) return;
+    if (authType === 'none') {
+      updateSlot(backend, slot, {
+        authType,
+        username: '',
+        password: '',
+        token: '',
+        storedType: null,
+      });
+      return;
+    }
+    updateSlot(backend, slot, {
+      authType,
+      password: '',
+      token: '',
+      storedType: current.storedType === authType ? current.storedType : null,
+    });
+  };
+
   const runTest = useCallback(
-    async (backends: Record<string, { internal: string; external: string }>) => {
-      const payload: Record<string, BackendAddrs> = {};
-      for (const [name, addrs] of Object.entries(backends)) {
-        const internal = addrs.internal?.trim() ?? '';
-        const external = addrs.external?.trim() ?? '';
-        if (internal || external) {
-          payload[name] = { ...(internal ? { internal } : {}), ...(external ? { external } : {}) };
-        }
-      }
-      if (Object.keys(payload).length === 0) {
+    async (backends: Record<string, DraftAddrs>) => {
+      if (Object.keys(backends).length === 0) {
         setSaveError('请先在内部或外部地址栏填写地址，再点「测试」。');
         return;
       }
-      setTesting(Object.fromEntries(Object.keys(payload).map((n) => [n, true])));
+      setTesting(Object.fromEntries(Object.keys(backends).map((n) => [n, true])));
       try {
         const res = await fetch(apiUrl('/api/agentteams/setup/backends/test/'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ backends: payload }),
+          body: JSON.stringify({ backends }),
         });
         if (!res.ok) {
           setSaveError(`测试失败（HTTP ${res.status}）`);
@@ -187,7 +362,7 @@ export function BackendTab() {
       } finally {
         setTesting((prev) => {
           const next = { ...prev };
-          for (const n of Object.keys(payload)) next[n] = false;
+          for (const n of Object.keys(backends)) next[n] = false;
           return next;
         });
       }
@@ -196,11 +371,13 @@ export function BackendTab() {
   );
 
   const handleTestBackend = (name: string) => {
-    if (!fields[name]) {
+    const form = fields[name];
+    if (!form) {
       setSaveError('该后端没有待测草稿地址——先在内部/外部地址栏填写后再点「测试」。');
       return;
     }
-    void runTest({ [name]: fields[name] });
+    // 草稿凭据随请求发送：门后的地址不带表单里刚填的 Basic/Bearer 永远 401。
+    void runTest(buildDraft({ [name]: form }));
   };
 
   const handleSave = async () => {
@@ -208,13 +385,19 @@ export function BackendTab() {
     setSaved(false);
     setSaveError(null);
     setBanner(null);
+    const draftFields: Record<string, BackendForm> = {};
+    for (const name of BACKEND_NAMES) {
+      const form = fields[name];
+      if (form) draftFields[name] = form;
+    }
+    const invalid = validateDraft(draftFields);
+    if (invalid) {
+      setSaving(false);
+      setSaveError(invalid);
+      return;
+    }
+    const backends = buildDraft(draftFields);
     try {
-      const backends: Record<string, { internal: string; external: string }> = {};
-      for (const name of BACKEND_NAMES) {
-        const internal = (fields[name]?.internal ?? '').trim();
-        const external = (fields[name]?.external ?? '').trim();
-        if (internal || external) backends[name] = { internal, external };
-      }
       const res = await fetch(apiUrl('/api/agentteams/setup/backends/'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -228,7 +411,9 @@ export function BackendTab() {
       } | null;
       if (res.ok && data?.ok) {
         setSaved(true);
-        await load();
+        // 重新 GET 回填 entries：确认 Basic/Bearer 凭据仍以 stored（'***'）
+        // 形态存在，而不是被降级成纯 URL。
+        await load(true);
         // The overview infrastructure panel re-resolves per request; nudge it
         // so the health tiles reflect the new addresses promptly.
         void queryClient.invalidateQueries({ queryKey: ['agentteams-infrastructure'] });
@@ -268,6 +453,7 @@ export function BackendTab() {
         地址保存在服务端配置文件（<code className="font-mono">DASHBOARD_CONFIG_FILE</code>，数据卷上），保存后立即生效。
         解析优先级：本配置 &gt; 环境变量 &gt; 内置默认。
         <span className="block mt-1">
+          公网网关后的地址可选「Basic / Bearer」并填网关凭据（只存服务端，回显为已保存）；留空即保持已存凭据，切回「服务自身认证」会清除该槽位凭据。
           有 ≥2 个地址的后端每 2 分钟自动重测、切到最快可达的（防抖：需快 100ms 且快 30% 以上才切）；
           切换内/外网期间请求自动逐候选重试，不会掉。测试未保存的草稿不影响生效地址，测试失败也不会清掉当前生效地址。
         </span>
@@ -276,13 +462,13 @@ export function BackendTab() {
       {banner && (
         <div className="space-y-1 rounded-lg border px-3 py-2 text-xs">
           {banner.switched.map((label) => (
-            <div key={`s-${label}`} className="flex items-center gap-1.5 text-emerald-600">
+            <div key={`s-${label}`} className="flex items-center gap-2 text-status-done">
               <RefreshCw className="w-3 h-3" />
               {label}：已切换到最快可达地址
             </div>
           ))}
           {banner.unchanged.map((label) => (
-            <div key={`u-${label}`} className="flex items-center gap-1.5 text-muted-foreground">
+            <div key={`u-${label}`} className="flex items-center gap-2 text-muted-foreground">
               <CheckCircle2 className="w-3 h-3" />
               {label}：当前生效地址已是最快，保持不变
             </div>
@@ -295,10 +481,11 @@ export function BackendTab() {
         const required = REQUIRED_BACKENDS.includes(name);
         const missingRequired = required && candidates.length === 0;
         const isTesting = !!testing[name];
-        const hasAny = !!(fields[name]?.internal?.trim() || fields[name]?.external?.trim());
+        const form = fields[name];
+        const hasAny = !!(form?.internal.url.trim() || form?.external.url.trim());
         return (
-          <div key={name} className="space-y-1.5 rounded-lg border p-3">
-            <div className="flex items-center gap-2">
+          <div key={name} className="space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center gap-2">
               <Server className="w-3.5 h-3.5 text-muted-foreground" />
               <Label className="text-sm">{BACKEND_LABELS[name]}</Label>
               {missingRequired && (
@@ -309,7 +496,8 @@ export function BackendTab() {
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-auto h-7 text-xs"
+                className="ml-auto px-3 text-xs"
+                aria-label={`测试 ${BACKEND_LABELS[name]}`}
                 onClick={() => handleTestBackend(name)}
                 disabled={isTesting || !hasAny}
               >
@@ -317,33 +505,99 @@ export function BackendTab() {
               </Button>
             </div>
             {(['internal', 'external'] as const).map((slot) => {
-              const prefilled =
+              const slotForm = form?.[slot];
+              if (!slotForm) return null;
+              const slotLabel = slot === 'internal' ? '内网' : '外网';
+              const keptSecret =
+                slotForm.authType !== 'none' && slotForm.storedType === slotForm.authType;
+              const embeddedPrefill =
                 slot === 'internal' &&
-                !fields[name]?.internal?.trim() &&
-                state.embedded?.healthy?.[name] === true &&
-                !!EMBEDDED_DEFAULTS[name];
+                !!EMBEDDED_DEFAULTS[name] &&
+                slotForm.url.trim() === EMBEDDED_DEFAULTS[name] &&
+                !state.entries?.[name]?.internal &&
+                !state.config?.[name]?.internal &&
+                state.embedded?.healthy?.[name] === true;
               return (
-                <div key={slot} className="flex items-center gap-2 pl-5">
-                  <span className="w-14 text-xs text-muted-foreground shrink-0">
-                    {slot === 'internal' ? '内网' : '外网'}
-                  </span>
-                  <Input
-                    value={fields[name]?.[slot] ?? ''}
-                    onChange={(e) => setField(name, slot, e.target.value)}
-                    placeholder="http://host:port（可选，留空=用 env/内置）"
-                    className="h-8 text-xs flex-1"
-                    spellCheck={false}
-                  />
-                  {prefilled && (
-                    <Badge variant="secondary" className="shrink-0 text-xs h-4 px-1.5">
-                      嵌入式探测
-                    </Badge>
+                <div key={slot} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-14 text-xs text-muted-foreground shrink-0">{slotLabel}</span>
+                    <Input
+                      aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 地址`}
+                      value={slotForm.url}
+                      onChange={(e) => updateSlot(name, slot, { url: e.target.value })}
+                      placeholder="http://host:port（可选，留空=用 env/内置）"
+                      className="min-w-[10rem] flex-1 text-xs"
+                      spellCheck={false}
+                    />
+                    <Select
+                      value={slotForm.authType}
+                      onValueChange={(value) => setAuthType(name, slot, value as AuthType)}
+                    >
+                      <SelectTrigger
+                        size="sm"
+                        className="w-32 text-xs shrink-0"
+                        aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 认证方式`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AUTH_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {embeddedPrefill && (
+                      <Badge variant="secondary" className="shrink-0 text-xs h-4 px-1.5">
+                        嵌入式探测
+                      </Badge>
+                    )}
+                    {keptSecret && (
+                      <Badge variant="secondary" className="shrink-0 text-xs h-4 px-1.5">
+                        凭据已保存
+                      </Badge>
+                    )}
+                  </div>
+                  {slotForm.authType === 'basic' && (
+                    <div className="flex flex-wrap items-center gap-2 sm:pl-[4.5rem]">
+                      <Input
+                        aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 用户名`}
+                        value={slotForm.username}
+                        onChange={(e) => updateSlot(name, slot, { username: e.target.value })}
+                        placeholder="网关用户名"
+                        className="min-w-[8rem] flex-1 text-xs"
+                        spellCheck={false}
+                      />
+                      <Input
+                        type="password"
+                        aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 密码`}
+                        value={slotForm.password}
+                        onChange={(e) => updateSlot(name, slot, { password: e.target.value })}
+                        placeholder={keptSecret ? STORED_HINT : '网关密码'}
+                        className="min-w-[8rem] flex-1 text-xs"
+                        spellCheck={false}
+                      />
+                    </div>
+                  )}
+                  {slotForm.authType === 'bearer' && (
+                    <div className="flex flex-wrap items-center gap-2 sm:pl-[4.5rem]">
+                      <Input
+                        type="password"
+                        aria-label={`${BACKEND_LABELS[name]} ${slotLabel} Token`}
+                        value={slotForm.token}
+                        onChange={(e) => updateSlot(name, slot, { token: e.target.value })}
+                        placeholder={keptSecret ? STORED_HINT : '网关 Bearer token'}
+                        className="min-w-[8rem] flex-1 text-xs"
+                        spellCheck={false}
+                      />
+                    </div>
                   )}
                 </div>
               );
             })}
             {rows[name]?.map((row) => (
-              <div key={row.url} className="flex items-center gap-1.5 pl-5 text-xs">
+              <div key={row.url} className="flex flex-wrap items-center gap-2 text-xs sm:pl-5">
                 <RowIcon row={row} />
                 <span className="text-muted-foreground shrink-0">
                   {row.ok && row.httpOk && row.ms != null ? `${row.ms}ms · ` : ''}
@@ -369,7 +623,7 @@ export function BackendTab() {
         );
       })}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -379,7 +633,7 @@ export function BackendTab() {
           保存配置
         </Button>
         {saved && (
-          <span className="text-xs text-emerald-600 flex items-center gap-1">
+          <span className="text-xs text-status-done flex items-center gap-2">
             <CheckCircle2 className="w-3.5 h-3.5" /> 已保存，立即生效
           </span>
         )}

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthToken, getControllerUrl } from '../../../../proxy-helper';
+import { backendAuthHeader } from '@/lib/backend-config';
+import { getSessionFromRequest } from '@/lib/dashboard-session';
 import { isValidNameSegment } from '@/lib/skill-package';
 import { isSensitiveFileName } from '@/lib/sensitive-files';
 import { enforceServerSideRbac } from '@/lib/server-auth';
@@ -11,7 +13,9 @@ import { enforceServerSideRbac } from '@/lib/server-auth';
 //
 // 数据面（workbench connector/router.py _kb_docker/_kb_workspace 移植）：
 //   GET/HEAD {controller}/docker/v1.41/containers/{agentteams-worker-<name>}/archive?path=...
-//   Bearer=AGENTTEAMS_AUTH_TOKEN（getAuthToken：env/token-file，随投影 SA 轮换重读）
+//   Authorization 凭据链（服务端，见 resolveDockerAuth）：
+//     per-address controller Basic/Bearer > AGENTTEAMS_AUTH_TOKEN（env/token-file）
+//     > dashboard session（controller-token / Matrix token）；全无 → 401
 //   Controller Docker 代理 GET/HEAD 恒放行（插件实测）；单 tar 上限 20MB（daemon 限制）
 //   工作区探测：候选路径 HEAD archive 并行探测（qwenpaw→copaw→顶层），30min 缓存
 //   （容器挂载决定路径、实际不变；插件同款 5min→30min 调优）
@@ -93,9 +97,43 @@ function previewKindOf(name: string): string {
 
 const iso = (sec: number) => (sec > 0 ? new Date(sec * 1000).toISOString() : '');
 
+// ── Docker 代理凭据链（服务端独占；凭据只进请求头，不入日志/响应）─────────
+// 优先级（任务书 11/8）：
+//   1. per-address controller 覆盖凭据（公网网关 Basic / API key）——命中时
+//      整体替换 Authorization，不再叠加 SA Bearer（网关是服务前的门）；
+//   2. AGENTTEAMS_AUTH_TOKEN（env / token-file，投影 SA，随轮换重读）；
+//   3. dashboard session 凭据（controller-token → 其 token；matrix → 其
+//      Matrix token，Controller 拒绝时按 401/403 原样回传）；
+//   4. 全无 → 401「未配置 Controller 服务账号 token」。
+interface DockerAuth {
+  /** Authorization 头值（含 scheme）；undefined = 无任何凭据 */
+  header?: string;
+}
+
+async function resolveDockerAuth(request: NextRequest, controllerUrl: string): Promise<DockerAuth> {
+  const perAddress = backendAuthHeader('controller', controllerUrl).Authorization;
+  if (perAddress) return { header: perAddress };
+  const saToken = await getAuthToken();
+  if (saToken) return { header: `Bearer ${saToken}` };
+  // per-address / SA 均无 —— 回退到 dashboard 服务端 session 凭据。
+  const session = getSessionFromRequest(request);
+  const credential = session?.credential;
+  if (credential && credential.kind !== 'sa' && credential.token) {
+    return { header: `Bearer ${credential.token}` };
+  }
+  return {};
+}
+
+/** Docker 代理 401/403 → 可读文案（状态码原样透传，不折叠成 502）。 */
+function dockerAuthMessage(status: number): string {
+  return status === 401
+    ? 'Dashboard 服务端无 Controller 管理凭据（Docker 代理返回 401）'
+    : '当前账号无 Docker 代理权限（Docker 代理返回 403）';
+}
+
 async function dockerProxy(
   controllerUrl: string,
-  token: string | undefined,
+  authHeader: string | undefined,
   path: string,
   head: boolean,
   timeoutMs = 40_000,
@@ -105,13 +143,18 @@ async function dockerProxy(
   try {
     res = await fetch(url, {
       method: head ? 'HEAD' : 'GET',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeader ? { Authorization: authHeader } : {},
       cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
+    const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     throw Object.assign(
-      new Error(`Docker 代理请求失败：${err instanceof Error ? err.message : String(err)}`),
+      new Error(
+        timedOut
+          ? `Docker 代理请求超时（>${timeoutMs}ms）`
+          : `Docker 代理请求失败：${err instanceof Error ? err.message : String(err)}`,
+      ),
       { status: 502 },
     );
   }
@@ -126,7 +169,7 @@ function jsonError(message: string, status: number): NextResponse {
 /** 工作区路径探测（插件 _kb_workspace 移植：inspect→候选并行 HEAD，30min 缓存）。 */
 async function resolveWorkspace(
   controllerUrl: string,
-  token: string | undefined,
+  authHeader: string | undefined,
   name: string,
 ): Promise<string> {
   const now = Date.now();
@@ -134,9 +177,13 @@ async function resolveWorkspace(
   if (hit && now - hit.ts < WS_CACHE_TTL_MS) return hit.ws;
 
   const container = `${process.env.AGENTTEAMS_RESOURCE_PREFIX || 'agentteams-'}worker-${name}`;
-  const stInspect = await dockerProxy(controllerUrl, token, `/containers/${container}/json`, false, 15_000);
+  const stInspect = await dockerProxy(controllerUrl, authHeader, `/containers/${container}/json`, false, 15_000);
   if (stInspect.status === 404) {
     throw Object.assign(new Error(`容器 ${container} 不存在`), { status: 404 });
+  }
+  if (stInspect.status === 401 || stInspect.status === 403) {
+    // 凭据不足/无权 —— 原样透传状态码，前端可据此提示，不折叠成 502。
+    throw Object.assign(new Error(dockerAuthMessage(stInspect.status)), { status: stInspect.status });
   }
   if (stInspect.status !== 200) {
     throw Object.assign(new Error(`容器探测失败（Docker API ${stInspect.status}）`), { status: 502 });
@@ -150,7 +197,7 @@ async function resolveWorkspace(
   ];
   const results = await Promise.all(
     candidates.map((cand) =>
-      dockerProxy(controllerUrl, token, `/containers/${container}/archive?path=${encodeURIComponent(cand)}`, true, 40_000)
+      dockerProxy(controllerUrl, authHeader, `/containers/${container}/archive?path=${encodeURIComponent(cand)}`, true, 40_000)
         .then((r) => r.status)
         .catch(() => 0),
     ),
@@ -162,6 +209,15 @@ async function resolveWorkspace(
     }
   }
   wsCache.delete(name);
+  // 候选全部 401/403 → 凭据/权限问题（不是「目录不存在」）。
+  const denied = results.find((status) => status === 401 || status === 403);
+  if (denied) {
+    throw Object.assign(new Error(dockerAuthMessage(denied)), { status: denied });
+  }
+  // 候选全部网络失败（dockerProxy 抛错被折叠成 0）→ 502，不误导成 404。
+  if (results.every((status) => status === 0)) {
+    throw Object.assign(new Error('Docker 代理请求失败：工作区候选路径全部不可达'), { status: 502 });
+  }
   throw Object.assign(new Error(`未找到工作区目录（容器 ${container} 可能仍在启动中）`), { status: 404 });
 }
 
@@ -176,7 +232,7 @@ async function resolveWorkspace(
  */
 async function listDir(
   controllerUrl: string,
-  token: string | undefined,
+  authHeader: string | undefined,
   container: string,
   ws: string,
   dir: string,
@@ -184,11 +240,14 @@ async function listDir(
   const target = dir ? `${ws}/${dir}` : ws;
   const r = await dockerProxy(
     controllerUrl,
-    token,
+    authHeader,
     `/containers/${container}/archive?path=${encodeURIComponent(target)}`,
     false,
   );
   if (r.status === 404) return { status: 404, error: `路径不存在：${dir || '(工作区根)'}` };
+  if (r.status === 401 || r.status === 403) {
+    return { status: r.status, error: dockerAuthMessage(r.status) };
+  }
   if (r.status !== 200 && r.status !== 304) {
     return { status: 502, error: `工作区列取失败（Docker API ${r.status}）` };
   }
@@ -256,12 +315,17 @@ export async function GET(
   const denied = await enforceServerSideRbac(request, 'view', 'worker', name);
   if (denied) return denied;
   const controllerUrl = getControllerUrl(request);
-  const token = await getAuthToken();
+  const auth = await resolveDockerAuth(request, controllerUrl);
+  const authHeader = auth.header;
+  if (!authHeader) {
+    // 无任何服务端凭据：明确 401（此前是 Docker 代理 401 → 折叠成 502）。
+    return jsonError('未配置 Controller 服务账号 token，知识库 Docker 代理不可用', 401);
+  }
   const container = `${process.env.AGENTTEAMS_RESOURCE_PREFIX || 'agentteams-'}worker-${name}`;
   const qs = request.nextUrl.searchParams;
 
   try {
-    const ws = await resolveWorkspace(controllerUrl, token, name);
+    const ws = await resolveWorkspace(controllerUrl, authHeader, name);
 
     if (sub === 'tree') {
       const dir = (qs.get('path') ?? '').replace(/^\/+|\/+$/g, '');
@@ -271,7 +335,7 @@ export async function GET(
       if (!dirOk) {
         return jsonError('仅 memory/** 与 digest/** 支持展开', 400);
       }
-      const r = await listDir(controllerUrl, token, container, ws, dir);
+      const r = await listDir(controllerUrl, authHeader, container, ws, dir);
       if (r.status !== 200 || !r.entries) return jsonError(r.error ?? '列取失败', r.status);
       const entries = r.entries
         .filter((e) => !isSensitiveFileName(e.name, dir ? `${dir}/${e.name}` : e.name))
@@ -301,11 +365,14 @@ export async function GET(
       const target = `${ws}/${path}`;
       const r = await dockerProxy(
         controllerUrl,
-        token,
+        authHeader,
         `/containers/${container}/archive?path=${encodeURIComponent(target)}`,
         false,
       );
       if (r.status === 404) return jsonError(`文件不存在：${path}`, 404);
+      if (r.status === 401 || r.status === 403) {
+        return jsonError(dockerAuthMessage(r.status), r.status);
+      }
       if (r.status !== 200 && r.status !== 304) {
         return jsonError(`文件读取失败（Docker API ${r.status}）`, 502);
       }
@@ -358,3 +425,109 @@ export async function GET(
     return jsonError(message, status);
   }
 }
+
+// ── 文本写回（Controller workspace-files PUT；QwenPaw ≥ 2.1）─────────────
+// 读走 Docker 代理（老 Controller 亦可用），写只有 Controller 有端点：
+//   PUT /api/v1/workers/{name}/workspace-files/file-content?path=
+//   body {"content": string}；现有文件必须带 If-Match（读回的 ETag），
+//   新建文件必须不带。客户端不传 If-Match 时这里先 GET 一次拿 ETag，
+//   避免把「已存在文件」误判成新建而吃 400。
+// 404/403/405 → 原样回传，前端降级为只读；409 = 读后文件被改。
+
+const WRITE_TIMEOUT_MS = 40_000;
+
+async function controllerRequest(
+  controllerUrl: string,
+  token: string | undefined,
+  path: string,
+  init: { method: string; body?: string; headers?: Record<string, string> },
+): Promise<{ status: number; body: string; contentType: string }> {
+  const url = `${controllerUrl.replace(/\/$/, '')}${path}`;
+  const res = await fetch(url, {
+    method: init.method,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+    body: init.body,
+    cache: 'no-store',
+    signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+  });
+  return {
+    status: res.status,
+    body: await res.text(),
+    contentType: res.headers.get('content-type') ?? 'application/json',
+  };
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ name: string; sub: string }> },
+) {
+  const { name, sub } = await params;
+  if (!isValidNameSegment(name)) {
+    return jsonError('非法 Worker 名', 400);
+  }
+  if (sub !== 'file-content') {
+    return jsonError('仅 file-content 支持写入', 400);
+  }
+  const path = request.nextUrl.searchParams.get('path') ?? '';
+  if (!path || path.includes('..') || path.startsWith('/')) {
+    return jsonError('非法路径', 400);
+  }
+  const denied = await enforceServerSideRbac(request, 'update', 'worker', name);
+  if (denied) return denied;
+
+  let content: string;
+  try {
+    const body = (await request.json()) as { content?: unknown };
+    if (typeof body?.content !== 'string') throw new Error('content must be a string');
+    content = body.content;
+  } catch {
+    return jsonError('请求体须为 {"content": string}', 400);
+  }
+  if (content.length > MAX_FILE_BYTES) {
+    return jsonError('内容超出 1MB 写入上限', 400);
+  }
+
+  const controllerUrl = getControllerUrl(request);
+  const token = await getAuthToken();
+  const qs = `path=${encodeURIComponent(path)}`;
+  const basePath = `/api/v1/workers/${encodeURIComponent(name)}/workspace-files/file-content`;
+
+  try {
+    let ifMatch = request.headers.get('if-match') ?? '';
+    if (!ifMatch) {
+      const probe = await controllerRequest(controllerUrl, token, `${basePath}?${qs}`, { method: 'GET' });
+      if (probe.status === 200) {
+        try {
+          const parsed = JSON.parse(probe.body) as { etag?: unknown };
+          if (typeof parsed.etag === 'string' && parsed.etag) ifMatch = parsed.etag;
+        } catch {
+          // 非 JSON 读回：交给控制器按 existence 判定
+        }
+      } else if (probe.status === 401 || probe.status === 403) {
+        return new NextResponse(probe.body, {
+          status: probe.status,
+          headers: { 'content-type': probe.contentType },
+        });
+      }
+    }
+
+    const written = await controllerRequest(controllerUrl, token, `${basePath}?${qs}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        ...(ifMatch ? { 'If-Match': ifMatch } : {}),
+      },
+      body: JSON.stringify({ content }),
+    });
+    return new NextResponse(written.body, {
+      status: written.status,
+      headers: { 'content-type': written.contentType },
+    });
+  } catch (err) {
+    return jsonError(err instanceof Error ? err.message : '工作区文件写入失败', 502);
+  }
+}
+

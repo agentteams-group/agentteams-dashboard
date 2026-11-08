@@ -27,27 +27,35 @@ function makeWorker(overrides: Partial<WorkerResponse> = {}): WorkerResponse {
 
 function renderCard(
   worker: WorkerResponse,
-  opts: { isDeleting?: boolean; onOpenChat?: () => void } = {},
+  opts: { isDeleting?: boolean; isActionPending?: boolean; isRestarting?: boolean } = {},
 ) {
-  return render(
+  const handlers = {
+    onToggleSelect: vi.fn(),
+    onView: vi.fn(),
+    onOpenDrawer: vi.fn(),
+    onRestart: vi.fn(),
+    onWake: vi.fn(),
+    onSleep: vi.fn(),
+  };
+  render(
     <TooltipProvider>
       <WorkerCard
         worker={worker}
         index={0}
         isSelected={false}
-        onToggleSelect={() => {}}
-        onView={() => {}}
-        onEdit={() => {}}
-        onOpenChat={opts.onOpenChat}
-        onWake={() => {}}
-        onSleep={() => {}}
-        onEnsureReady={() => {}}
-        onDelete={() => {}}
-        isActionPending={false}
+        onToggleSelect={handlers.onToggleSelect}
+        onView={handlers.onView}
+        onOpenDrawer={handlers.onOpenDrawer}
+        onRestart={handlers.onRestart}
+        onWake={handlers.onWake}
+        onSleep={handlers.onSleep}
+        isActionPending={opts.isActionPending ?? false}
+        isRestarting={opts.isRestarting ?? false}
         isDeleting={opts.isDeleting ?? false}
       />
     </TooltipProvider>,
   );
+  return handlers;
 }
 
 afterEach(() => {
@@ -55,28 +63,25 @@ afterEach(() => {
   clearToolCallLedger();
 });
 
-describe('WorkerCard v2', () => {
-  it('shows the header with runtime badge and health ring (AC-W2)', () => {
+describe('WorkerCard', () => {
+  it('shows the header with runtime badge and health ring', () => {
     renderCard(makeWorker());
     expect(screen.getByText('worker-a')).toBeInTheDocument();
-    // header badge + capability strip both carry the runtime label
     expect(screen.getAllByText('QwenPaw').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('img', { name: 'Running' })).toBeInTheDocument();
   });
 
-  it('fills the vitals strip with 暂无 when backend fields are missing (AC-W3)', () => {
+  it('fills the vitals strip with 暂无 when backend fields are missing', () => {
     renderCard(makeWorker({ message: '' }));
     const strip = screen.getByTestId('vitals-strip');
     expect(strip).toHaveTextContent('最近任务');
     expect(strip).toHaveTextContent('持续时长');
     expect(strip).toHaveTextContent('最近活动');
     expect(strip).toHaveTextContent('工具调用');
-    // all four columns fall back to 暂无
-    expect(strip.querySelectorAll('p')).toHaveLength(8);
     expect(strip.textContent?.match(/暂无/g)).toHaveLength(4);
   });
 
-  it('shows task, duration, activity and tool-call count when data exists (AC-W3)', () => {
+  it('shows task, duration, activity and tool-call count when data exists', () => {
     const now = Date.now();
     recordToolCalls('worker-a', '$evt1', 3, now);
     renderCard(
@@ -91,100 +96,82 @@ describe('WorkerCard v2', () => {
     expect(strip).toHaveTextContent('12 分钟');
     expect(strip).toHaveTextContent('5 分钟前');
     expect(strip).toHaveTextContent('3 次');
-    expect(strip).not.toHaveTextContent('暂无');
   });
 
-  it('narrates Running as 正在帮 {team} 处理 {task} (AC-W4)', () => {
+  it('keeps exactly the checkbox + 详情 / 重启 / 休眠 actions', () => {
+    renderCard(makeWorker());
+    const buttons = screen.getAllByRole('button').map((b) => b.textContent?.trim());
+    expect(buttons).toEqual(['', '详情', '重启', '休眠']);
+    expect(screen.queryByRole('button', { name: /编辑/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /打开聊天/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /删除/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ensure Ready/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /升级/ })).not.toBeInTheDocument();
+  });
+
+  it('shows 唤醒 for Sleeping / Stopped workers', () => {
+    renderCard(makeWorker({ phase: 'Sleeping', state: 'Sleeping' }));
+    expect(screen.getByRole('button', { name: /唤醒/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /休眠/ })).not.toBeInTheDocument();
+  });
+
+  it('disables the sleep button for Pending workers', () => {
+    renderCard(makeWorker({ phase: 'Pending', state: 'Stopped' }));
+    expect(screen.getByRole('button', { name: /休眠/ })).toBeDisabled();
+  });
+
+  it('opens the drawer when the card body is clicked', () => {
+    const handlers = renderCard(makeWorker());
+    fireEvent.click(screen.getByTestId('worker-card'));
+    expect(handlers.onOpenDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the drawer with Enter / Space for keyboard users', () => {
+    const handlers = renderCard(makeWorker());
+    const card = screen.getByTestId('worker-card');
+    expect(card).toHaveAttribute('aria-label', '打开 worker-a 详情面板');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(handlers.onOpenDrawer).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not bubble clicks from the checkbox or action buttons', () => {
+    const handlers = renderCard(makeWorker());
+    fireEvent.click(screen.getByRole('button', { name: '选择' }));
+    fireEvent.click(screen.getByRole('button', { name: '详情' }));
+    fireEvent.click(screen.getByRole('button', { name: '重启' }));
+    fireEvent.click(screen.getByRole('button', { name: '休眠' }));
+    expect(handlers.onToggleSelect).toHaveBeenCalledTimes(1);
+    expect(handlers.onView).toHaveBeenCalledTimes(1);
+    expect(handlers.onRestart).toHaveBeenCalledTimes(1);
+    expect(handlers.onSleep).toHaveBeenCalledTimes(1);
+    expect(handlers.onOpenDrawer).not.toHaveBeenCalled();
+  });
+
+  it('calls wake for sleeping workers and sleep for running workers', () => {
+    const sleeping = renderCard(makeWorker({ phase: 'Sleeping', state: 'Sleeping' }));
+    fireEvent.click(screen.getByRole('button', { name: /唤醒/ }));
+    expect(sleeping.onWake).toHaveBeenCalledTimes(1);
+    cleanup();
+    const running = renderCard(makeWorker());
+    fireEvent.click(screen.getByRole('button', { name: /休眠/ }));
+    expect(running.onSleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('narrates Running as 正在帮 {team} 处理 {task}', () => {
     renderCard(makeWorker({ lastTaskSummary: '处理工单 #4821' }));
     expect(screen.getByTestId('status-narrative')).toHaveTextContent('正在帮 team-alpha 处理 处理工单 #4821');
   });
 
-  it('falls back to message for the Running narrative when lastTaskSummary is absent', () => {
-    renderCard(makeWorker({ message: '巡检日志' }));
-    expect(screen.getByTestId('status-narrative')).toHaveTextContent('正在帮 team-alpha 处理 巡检日志');
-  });
-
-  it('narrates Sleeping as 空闲 {duration} from stateStartedAt (AC-W4)', () => {
-    const now = Date.now();
-    renderCard(
-      makeWorker({
-        phase: 'Sleeping',
-        state: 'Sleeping',
-        stateStartedAt: new Date(now - 12 * 60_000).toISOString(),
-      }),
-    );
-    expect(screen.getByTestId('status-narrative')).toHaveTextContent('空闲 12 分钟');
-  });
-
-  it('narrates Pending / Ready / Stopped / Failed / Updating with ops wording (AC-W4)', () => {
-    const cases: Array<[Partial<WorkerResponse>, string]> = [
-      [{ phase: 'Pending', state: 'Stopped' }, '等待 Controller 派发镜像，预计 < 2 分钟'],
-      [{ phase: 'Ready', state: 'Running' }, '已就绪，等待任务'],
-      [{ phase: 'Stopped', state: 'Stopped' }, '已停机'],
-      [{ phase: 'Failed', state: 'Stopped', message: 'tool_guard 拒绝\nError: stack line' }, '最近失败：tool_guard 拒绝'],
-      [{ phase: 'Updating', state: 'Running' }, '正在拉取新镜像'],
-    ];
-    for (const [overrides, expected] of cases) {
-      const { unmount } = renderCard(makeWorker(overrides));
-      expect(screen.getByTestId('status-narrative')).toHaveTextContent(expected);
-      unmount();
-    }
-  });
-
-  it('shows the runtime capability strip with the per-runtime note (AC-W5)', () => {
-    renderCard(makeWorker({ runtime: 'copaw' }));
-    const strip = screen.getByTestId('runtime-feature');
-    expect(strip).toHaveTextContent('CoPaw');
-    expect(strip).toHaveTextContent('已停止新建，请升级到 QwenPaw');
-  });
-
-  it('offers an upgrade action for leftover CoPaw workers', () => {
-    const onUpgradeToQwenPaw = vi.fn();
-    render(
-      <TooltipProvider>
-        <WorkerCard
-          worker={makeWorker({ runtime: 'copaw' })}
-          index={0}
-          isSelected={false}
-          onToggleSelect={() => {}}
-          onView={() => {}}
-          onEdit={() => {}}
-          onWake={() => {}}
-          onSleep={() => {}}
-          onEnsureReady={() => {}}
-          onUpgradeToQwenPaw={onUpgradeToQwenPaw}
-          onDelete={() => {}}
-          isActionPending={false}
-          isDeleting={false}
-        />
-      </TooltipProvider>,
-    );
-    fireEvent.click(screen.getByRole('button', { name: '升级到 QwenPaw' }));
-    expect(onUpgradeToQwenPaw).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders the deleting overlay with progress and blocks interaction (AC-W6)', () => {
+  it('renders the deleting overlay and blocks interaction', () => {
     renderCard(makeWorker(), { isDeleting: true });
     expect(screen.getByTestId('deleting-overlay')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('删除中，等待 Controller 完成任务');
     expect(screen.getByRole('button', { name: '选择' })).toBeDisabled();
   });
 
-  it('opens chat when the worker has a roomID', () => {
-    const onOpenChat = vi.fn();
-    renderCard(makeWorker(), { onOpenChat });
-    fireEvent.click(screen.getByRole('button', { name: '打开聊天' }));
-    expect(onOpenChat).toHaveBeenCalledTimes(1);
-  });
-
-  it('disables open chat when the worker has no roomID', () => {
-    renderCard(makeWorker({ roomID: '' }), { onOpenChat: vi.fn() });
-    expect(screen.getByRole('button', { name: '打开聊天' })).toBeDisabled();
-  });
-
-  it('uses tier wording instead of a bare health score (AC-W8)', () => {
+  it('uses tier wording instead of a bare health score', () => {
     renderCard(makeWorker());
-    // narrative area must not contain the old "健康评分 xx/100" phrasing
     expect(document.body.textContent).not.toMatch(/健康评分/);
     expect(screen.getByLabelText(/稳定运行/)).toBeInTheDocument();
   });

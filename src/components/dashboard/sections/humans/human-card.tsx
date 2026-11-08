@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Shield, Trash2, UserCheck } from 'lucide-react';
+import { Eye, Pencil, Shield, Trash2, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,13 @@ export function HumanCard({
   human,
   index,
   onView,
+  onEdit,
   onDelete,
 }: {
   human: HumanResponse;
   index: number;
   onView: (_human: HumanResponse) => void;
+  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   const level = human.permissionLevel ?? 2;
@@ -34,13 +36,26 @@ export function HumanCard({
       transition={{ delay: index * 0.03 }}
       layout
     >
-      <Card className="glass-card hover-lift">
+      <Card
+        className="glass-card hover-lift cursor-pointer"
+        data-testid="human-card"
+        role="group"
+        tabIndex={0}
+        aria-label={`打开 ${human.name} 详情`}
+        onClick={() => onView(human)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onView(human);
+        }}
+      >
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <StatusDot phase={human.phase} />
               <UserCheck className="w-5 h-5 text-teal-500 shrink-0" aria-hidden="true" />
-              <span className="font-medium truncate">{human.name}</span>
+              <span className="truncate font-medium">{human.name}</span>
             </div>
             <PhaseBadge kind="human" phase={human.phase} />
           </div>
@@ -74,11 +89,14 @@ export function HumanCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
+          <div
+            className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border"
+            onClick={(event) => event.stopPropagation()}
+          >
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs flex-1"
+              className="h-9 flex-1 text-xs max-sm:h-11"
               onClick={() => onView(human)}
             >
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
@@ -87,7 +105,17 @@ export function HumanCard({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs text-destructive hover:text-destructive"
+              className="h-9 flex-1 text-xs max-sm:h-11"
+              onClick={() => onEdit(human)}
+              aria-label={`编辑 ${human.name}`}
+            >
+              <Pencil className="w-3 h-3 mr-1" aria-hidden="true" />
+              编辑
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0 text-destructive hover:text-destructive max-sm:h-11 max-sm:w-11"
               onClick={() => onDelete(human.name)}
               aria-label={`删除 ${human.name}`}
               title="删除"

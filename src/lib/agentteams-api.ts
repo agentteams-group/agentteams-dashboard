@@ -2,9 +2,27 @@
 // All requests go through Next.js API proxy routes
 
 import { ApiError, NetworkError } from '@/lib/api-error';
-import { apiUrl } from '@/lib/api-base';
+import { apiUrl, extractErrorDetail } from '@/lib/api-base';
 import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
+import { normalizeWorkerMcpItems, type WorkerMcpResult } from '@/lib/worker-mcp';
+import { MANAGER_LOG_TAIL, clampLogTail } from '@/lib/manager-logs';
+import {
+  getProjectMeta as fetchProjectMeta,
+  getTaskMeta as fetchTaskMeta,
+  saveProjectMeta as putProjectMeta,
+  saveTaskMeta as putTaskMeta,
+  type MetaReadResult,
+} from '@/lib/meta-api';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
+import {
+  buildWorkspaceAccessPayload,
+  extractWorkspaceAccess,
+  workspaceAccessEqual,
+  type WorkspaceAccess,
+} from '@/lib/workspace-access';
+
+export type { WorkerMcpItem, WorkerMcpResult } from '@/lib/worker-mcp';
+export type { MetaReadResult } from '@/lib/meta-api';
 
 // ============ Response Types ============
 
@@ -46,6 +64,8 @@ export interface WorkerResponse extends LlmTuningFields {
   state: WorkerState;
   containerManaged: boolean;
   model: RequestModelAlias;
+  /** APIG Model API name（per-worker LLM provider）；列表投影可能缺省。 */
+  modelProvider?: string;
   runtime: WorkerRuntime;
   image: string;
   containerState: string;
@@ -91,6 +111,8 @@ export interface TeamResponse extends LlmTuningFields {
   readyWorkers: number;
   totalWorkers: number;
   message: string;
+  /** 团队成员可互 @（TeamSpec.peerMentions，缺省 = 控制器默认 true；旧控制器不投影）。 */
+  peerMentions?: boolean;
   workerNames: string[];
   workerExposedPorts: Record<string, ExposedPort[]>;
 }
@@ -178,11 +200,72 @@ export interface HumanResponse {
   note?: string;
 }
 
+/**
+ * GET /humans/{name}/quota 响应。quotaBytes null = 无限制，0 = 零额度；
+ * quotaFiles 为前向兼容字段（当前 Controller 未实现，缺省 = 不限）。
+ */
+export interface HumanQuotaResponse {
+  usedBytes: number;
+  quotaBytes: number | null;
+  quotaFiles?: number | null;
+}
+
+export interface SetHumanQuotaRequest {
+  quotaBytes: number | null;
+  quotaFiles?: number | null;
+}
+
+/**
+ * 人 CR 的配置面回读：GET /humans/{name} 的 flat 响应（HumanResponse）可能
+ * 额外带 modelAccess / workspaceAccess / capabilities；整体 CR 形状则把
+ * spec 嵌在 spec 下。两形状都兼容，写面按在场形状原样带回。
+ */
+export interface HumanConfigRecord extends HumanResponse {
+  capabilities?: string[];
+  modelAccess?: unknown;
+  workspaceAccess?: unknown;
+  spec?: Record<string, unknown>;
+}
+
+export interface ModelAccessTablesResponse {
+  tables?: string[];
+  items?: unknown[];
+  names?: string[];
+}
+
+export interface SaveHumanConfigResult {
+  method: 'PUT' | 'PATCH';
+}
+
+export interface SaveHumanWorkspaceAccessResult extends SaveHumanConfigResult {
+  /** re-GET 是否回读到所存内容（控制器不回显该字段时为 false）。 */
+  verified: boolean;
+  current: WorkspaceAccess | null;
+}
+
+/** ManagerSpec.Config（controller v1beta1.ManagerConfig）——Manager 独有的运行
+ * 调参。PUT 的 config 是整对象替换（UpdateManager：req.Config != nil 整体写），
+ * 空串 = 回退 Controller 默认（15m / 720m / admin-dm）。 */
+export interface ManagerConfigInfo {
+  heartbeatInterval?: string;
+  workerIdleTimeout?: string;
+  notifyChannel?: string;
+}
+
+/** Manager 的 MCP server 声明（spec.mcpServers）。 */
+export interface ManagerMcpServer {
+  name: string;
+  url: string;
+  transport?: string;
+}
+
 export interface ManagerResponse {
   name: string;
   phase: ManagerPhase;
   state: ManagerState;
   model: RequestModelAlias;
+  /** APIG Model API 名（spec.modelProvider）；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime: string;
   image: string;
   matrixUserID: string;
@@ -191,7 +274,143 @@ export interface ManagerResponse {
   version: string;
   message: string;
   welcomeSent: boolean;
+  /* ── ManagerSpec 配置面 ──────────────────────────────────────────────
+   * controller 的 managerToResponse 目前只映射标量列，详情响应同样不带这些
+   * 字段；后端补齐后自动点亮，缺省时抽屉诚实降级为「未配置」。 */
+  soul?: string;
+  agents?: string;
   skills?: string[];
+  mcpServers?: ManagerMcpServer[];
+  env?: Record<string, string>;
+  config?: ManagerConfigInfo;
+}
+
+// ----- human file sync (upstream #1499) -----
+//
+// Read-only view of the per-human sync manifest. The manifest PUT is the
+// file-sync client's job; the dashboard only reports generation, timestamps,
+// entry counts and the write-base ETag.
+
+export interface HumanSyncStatus {
+  entries: number;
+  tombstones: number;
+  generation: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface HumanSyncManifest {
+  version: number;
+  generation: number;
+  entries: Record<string, unknown>;
+  tombstones: unknown[];
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface HumanSyncManifestRead {
+  manifest: HumanSyncManifest;
+  /** Storage ETag of the stored manifest — the base for a later If-Match. */
+  etag: string | null;
+}
+
+// ----- plugin registries / module index (upstream #1526) -----
+//
+// The controller projects only the pinned plugin metadata fields
+// (id, name, version, description, author, enabled, loaded, plugin_type,
+// frontend_entry); every field is optional because upstream drift is
+// tolerated on the whitelist only.
+
+export interface PluginMetadataEntry {
+  id?: string;
+  name?: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  enabled?: boolean;
+  loaded?: boolean;
+  plugin_type?: string;
+  frontend_entry?: string;
+}
+
+export interface TeamModuleMember {
+  worker: string;
+  version?: string;
+  loaded: boolean;
+}
+
+export interface TeamModuleView {
+  module: string;
+  name?: string;
+  kind?: string;
+  versions: Record<string, number>;
+  members: TeamModuleMember[];
+  consistent: boolean;
+}
+
+export interface TeamModulesResponse {
+  team: string;
+  modules: TeamModuleView[];
+  errors?: Array<{ worker: string; error: string }>;
+}
+
+export interface MillforgeArtifact {
+  name: string;
+  sha256: string;
+}
+
+export interface MillforgeVersion {
+  artifacts?: MillforgeArtifact[];
+  requires?: Record<string, string>;
+  commit?: string;
+  published_at?: string;
+  deprecated?: boolean;
+}
+
+export interface MillforgeModuleEntry {
+  kind?: string;
+  pluginId?: string;
+  latest?: string | null;
+  versions?: Record<string, MillforgeVersion>;
+  note?: string;
+}
+
+export interface MillforgeIndex {
+  schema: number;
+  channel: string;
+  modules: Record<string, MillforgeModuleEntry>;
+  source: string;
+  repo: string;
+  fetched_at: string;
+}
+
+export interface MillforgeIndexQuery {
+  source?: 'github' | 'gitcode';
+  repo?: string;
+  ref?: string;
+  channel?: 'alpha' | 'beta' | 'stable';
+}
+
+/** Install/update request shared by the team, worker and manager planes. */
+export interface ModuleInstallRequest {
+  module: string;
+  source: 'github' | 'gitcode';
+  repo?: string;
+  ref?: string;
+  channel?: 'alpha' | 'beta' | 'stable';
+  version?: string;
+  artifact?: string;
+  sha256?: string;
+}
+
+export interface ModuleInstallResult {
+  installed?: boolean;
+  loaded?: boolean;
+  previous_version?: string;
+  updated?: string[];
+  target_version?: string;
+  failed?: Record<string, string>;
+  [key: string]: unknown;
 }
 
 export interface CreateWorkerRequest {
@@ -212,6 +431,8 @@ export interface CreateWorkerRequest {
 export interface UpdateWorkerRequest extends LlmTuningFields {
   env?: Record<string, string>;
   model?: RequestModelAlias;
+  /** APIG Model API name；缺省 = 保持控制器现值（合并语义）。 */
+  modelProvider?: string;
   runtime?: WorkerRuntime;
   image?: string;
   soul?: string;
@@ -246,6 +467,14 @@ export interface UpdateTeamRequest extends LlmTuningFields {
   humanMembers?: string[];
   defaultWorkerModel?: RequestModelAlias;
   defaultWorkerRuntime?: WorkerRuntime;
+  /**
+   * TeamSpec.workerIdleTimeout（默认 720m）。注意：controller v1.2.x 的
+   * UpdateTeamRequest 尚未接收该字段（PUT 会忽略）——保存后回读不一致时
+   * 抽屉会明示「服务端未应用」。
+   */
+  workerIdleTimeout?: string;
+  /** TeamSpec.peerMentions（指针语义：省略 = 不改）。 */
+  peerMentions?: boolean;
 }
 
 export type TeamWorkerMember = { name: string; role: 'team_leader' | 'worker' };
@@ -328,8 +557,25 @@ export interface CreateManagerRequest {
 
 export interface UpdateManagerRequest {
   model?: RequestModelAlias;
+  modelProvider?: string;
   runtime?: string;
   image?: string;
+  /** 文档（Controller 仅应用非空值——空串无法清除既有内容）。 */
+  soul?: string;
+  agents?: string;
+  /** 非 nil = 整表替换（空数组 = 清空）。 */
+  skills?: string[];
+  /** 非 nil = 整表替换（空数组 = 清空）。 */
+  mcpServers?: ManagerMcpServer[];
+  /**
+   * 环境变量（整表替换）。注意：controller 的 UpdateManagerRequest 目前没有
+   * env 字段，PUT 会静默忽略——抽屉保存后回读不一致会明示「未生效」，不假装成功。
+   */
+  env?: Record<string, string>;
+  /** 整对象替换；空串 = 回退默认。 */
+  config?: ManagerConfigInfo;
+  /** 期望生命周期状态（desired-state 语义）。 */
+  state?: ManagerState;
 }
 
 // Matches the controller's snake_case schema (agentteams-controller internal/server/types.go):
@@ -621,6 +867,171 @@ async function fetchCodingRunDetail(
   return res;
 }
 
+/**
+ * Read one human's sync manifest together with its storage ETag. The ETag is
+ * a response header (the write base for a later If-Match), so this read needs
+ * the raw Response rather than proxyRequest.
+ */
+async function fetchHumanSyncManifest(name: string): Promise<HumanSyncManifestRead> {
+  const path = `/humans/${encodeURIComponent(name)}/sync/manifest`;
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+  } catch (err) {
+    throw new NetworkError(path, err);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(
+      `API Error ${res.status}: ${text || res.statusText}`,
+      res.status,
+      path,
+    );
+  }
+  const manifest = (await res.json()) as HumanSyncManifest;
+  return { manifest, etag: res.headers.get('etag') };
+}
+
+// ----- human configuration writes (quota / modelAccess / workspaceAccess) -----
+//
+// PUT /humans/{name} is merge-patch: absent = unchanged, present = replace.
+// The two spec-object fields need read-modify-write (read the record, replace
+// only the target field, send the rest back untouched) so a partially
+// supported controller never loses sibling configuration. PUT 404/405 means
+// the endpoint is missing on an older controller → PATCH merge-patch fallback.
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function isUnsupportedWrite(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 404 || err.status === 405);
+}
+
+async function writeHumanConfig(
+  name: string,
+  buildBody: (_record: Record<string, unknown>) => Record<string, unknown>,
+  buildPatch: (_record: Record<string, unknown>) => Record<string, unknown>,
+): Promise<SaveHumanConfigResult> {
+  const path = `/humans/${encodeURIComponent(name)}`;
+  const record = asRecord(await proxyRequest<unknown>(path));
+  if (!record) throw new Error('人 CR 读取结果非法（期望对象）');
+  try {
+    await proxyRequest<unknown>(path, {
+      method: 'PUT',
+      body: JSON.stringify(buildBody(record)),
+    });
+    return { method: 'PUT' };
+  } catch (err) {
+    if (!isUnsupportedWrite(err)) throw err;
+    await proxyRequest<unknown>(path, {
+      method: 'PATCH',
+      body: JSON.stringify(buildPatch(record)),
+    });
+    return { method: 'PATCH' };
+  }
+}
+
+/**
+ * 保存 spec.modelAccess（读-改-写，只改该字段）。
+ * payload = null（无有效作用域）→ 发送空 scopes：该 Controller 以空 spec
+ * 表示全锁（fail-closed），删键在 merge-patch 下反而不会清空。
+ */
+export async function saveHumanModelAccess(
+  name: string,
+  payload: Record<string, unknown> | null,
+): Promise<SaveHumanConfigResult> {
+  const value = payload ?? { scopes: [] };
+  return writeHumanConfig(
+    name,
+    (record) => {
+      const spec = asRecord(record.spec);
+      return spec
+        ? { ...record, spec: { ...spec, modelAccess: value } }
+        : { ...record, modelAccess: value };
+    },
+    (record) =>
+      asRecord(record.spec)
+        ? { spec: { modelAccess: value } }
+        : { modelAccess: value },
+  );
+}
+
+/**
+ * 保存 spec.workspaceAccess（读-改-写，只改该字段）→ re-GET 验证。
+ * 当前 Controller 的 GET /humans/{name} 不回显 workspaceAccess（write-only）
+ * 时 verified = false，调用方按「未回读」告警而不是断言保存失败。
+ */
+export async function saveHumanWorkspaceAccess(
+  name: string,
+  access: WorkspaceAccess,
+): Promise<SaveHumanWorkspaceAccessResult> {
+  const payload = buildWorkspaceAccessPayload(access); // {} = 清空两列表
+  const result = await writeHumanConfig(
+    name,
+    (record) => {
+      const spec = asRecord(record.spec);
+      return spec
+        ? { ...record, spec: { ...spec, workspaceAccess: payload } }
+        : { ...record, workspaceAccess: payload };
+    },
+    (record) =>
+      asRecord(record.spec)
+        ? { spec: { workspaceAccess: payload } }
+        : { workspaceAccess: payload },
+  );
+  const verify = await proxyRequest<HumanConfigRecord>(
+    `/humans/${encodeURIComponent(name)}`,
+  );
+  const current = extractWorkspaceAccess(verify);
+  return { ...result, verified: workspaceAccessEqual(current, access), current };
+}
+
+/** 共享模型授权表清单（404 / 缺 CRD → supported=false，隐藏表选择器）。 */
+export async function listModelAccessTables(): Promise<{
+  supported: boolean;
+  tables: string[];
+}> {
+  try {
+    const body = await proxyRequest<
+      ModelAccessTablesResponse | string[] | unknown[]
+    >('/model-access-tables');
+    const record = asRecord(body);
+    const list: unknown = Array.isArray(body)
+      ? body
+      : (record?.items ?? record?.tables ?? record?.names);
+    const tables: string[] = [];
+    if (Array.isArray(list)) {
+      for (const item of list) {
+        const entry = asRecord(item);
+        const name =
+          typeof item === 'string'
+            ? item
+            : ((asRecord(entry?.metadata)?.name ?? entry?.name) as unknown);
+        if (typeof name === 'string' && name.trim() !== '' && !tables.includes(name)) {
+          tables.push(name);
+        }
+      }
+    }
+    return { supported: true, tables };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return { supported: false, tables: [] };
+    }
+    if (
+      err instanceof ApiError &&
+      err.status === 500 &&
+      /no matches for kind/i.test(err.message) &&
+      /modelaccesstable/i.test(err.message)
+    ) {
+      return { supported: false, tables: [] };
+    }
+    throw err;
+  }
+}
+
 // ============ API Methods ============
 
 export const agentteamsApi = {
@@ -815,6 +1226,43 @@ export const agentteamsApi = {
   updateHuman: (name: string, data: UpdateHumanRequest) =>
     proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // 配置面（详情抽屉四卡）：回读原始人 CR、配额、共享表清单、PATCH 兜底。
+  getHumanConfig: (name: string) =>
+    proxyRequest<HumanConfigRecord>(`/humans/${encodeURIComponent(name)}`),
+
+  getHumanQuota: async (name: string): Promise<HumanQuotaResponse> => {
+    const raw = await proxyRequest<Partial<HumanQuotaResponse> | null>(
+      `/humans/${encodeURIComponent(name)}/quota`,
+    );
+    return {
+      usedBytes: typeof raw?.usedBytes === 'number' ? raw.usedBytes : 0,
+      quotaBytes: typeof raw?.quotaBytes === 'number' ? raw.quotaBytes : null,
+      quotaFiles: typeof raw?.quotaFiles === 'number' ? raw.quotaFiles : null,
+    };
+  },
+
+  setHumanQuota: (name: string, data: SetHumanQuotaRequest) =>
+    proxyRequest<void>(`/humans/${encodeURIComponent(name)}/quota`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  patchHuman: (name: string, data: Record<string, unknown>) =>
+    proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  listModelAccessTables,
+  saveHumanModelAccess,
+  saveHumanWorkspaceAccess,
+
+  // Human file sync (read-only; #1499)
+  getHumanSyncStatus: (name: string) =>
+    proxyRequest<HumanSyncStatus>(`/humans/${encodeURIComponent(name)}/sync/status`),
+
+  getHumanSyncManifest: (name: string) => fetchHumanSyncManifest(name),
+
   // Managers
   listManagers: async (): Promise<ManagerResponse[]> => {
     const result = await proxyRequest<ManagerResponse[] | { managers: ManagerResponse[] }>('/managers');
@@ -830,8 +1278,82 @@ export const agentteamsApi = {
   updateManager: (name: string, data: UpdateManagerRequest) =>
     proxyRequest<ManagerResponse>(`/managers/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  /** 只改模型（PUT /managers/{name} 合并语义——Controller 仅在 model 非空时
+   * 写 spec）。多 provider 部署下同时下发 provider；空 provider 永不下发，
+   * 否则会把 Controller 现值清空。 */
+  updateManagerModel: (name: string, model: string, modelProvider?: string) => {
+    const body: Record<string, unknown> = { model };
+    if (modelProvider) body.modelProvider = modelProvider;
+    return proxyRequest<ManagerResponse>(`/managers/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** 重启 Manager（Controller POST /managers/{name}/restart，#1473）。 */
+  restartManager: (name: string) =>
+    proxyRequest<{ success?: boolean; note?: string }>(
+      `/managers/${encodeURIComponent(name)}/restart`,
+      { method: 'POST' },
+    ),
+
+  /** Manager 容器日志（Dashboard 代理 Controller Docker API；默认尾 300 行）。 */
+  getManagerLogs: (name: string, tail: number = MANAGER_LOG_TAIL) =>
+    proxyRequest<LogLine[]>(`/managers/${encodeURIComponent(name)}/logs?tail=${clampLogTail(tail)}`),
+
   deleteManager: (name: string) =>
     proxyRequest<void>(`/managers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  // Module updates (upstream #1526)
+  //
+  // Read surface: the Millforge release index plus each plane's installed
+  // plugin registry. Write surface: the controller's existing
+  // install/update endpoints (the dashboard only forwards them).
+  getMillforgeIndex: (query: MillforgeIndexQuery = {}) => {
+    const params = new URLSearchParams();
+    params.set('source', query.source ?? 'github');
+    if (query.repo) params.set('repo', query.repo);
+    if (query.ref) params.set('ref', query.ref);
+    if (query.channel) params.set('channel', query.channel);
+    return proxyRequest<MillforgeIndex>(`/millforge/index?${params.toString()}`);
+  },
+
+  getTeamModules: (name: string) =>
+    proxyRequest<TeamModulesResponse>(`/teams/${encodeURIComponent(name)}/modules`),
+
+  getWorkerPlugins: async (name: string): Promise<PluginMetadataEntry[]> => {
+    const result = await proxyRequest<PluginMetadataEntry[] | { plugins: PluginMetadataEntry[] }>(
+      `/workers/${encodeURIComponent(name)}/plugins`,
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.plugins ?? [];
+  },
+
+  getManagerPlugins: async (name: string): Promise<PluginMetadataEntry[]> => {
+    const result = await proxyRequest<PluginMetadataEntry[] | { plugins: PluginMetadataEntry[] }>(
+      `/managers/${encodeURIComponent(name)}/plugins`,
+    );
+    if (!result || typeof result !== 'object') return [];
+    return Array.isArray(result) ? result : result.plugins ?? [];
+  },
+
+  installTeamModule: (team: string, module: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(
+      `/teams/${encodeURIComponent(team)}/modules/${encodeURIComponent(module)}/install`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  installWorkerPlugin: (worker: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(`/workers/${encodeURIComponent(worker)}/plugins/install`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  installManagerPlugin: (manager: string, data: ModuleInstallRequest) =>
+    proxyRequest<ModuleInstallResult>(`/managers/${encodeURIComponent(manager)}/plugins/install`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Gateway
   listConsumers: async (): Promise<ConsumerResponse[]> => {
@@ -1293,4 +1815,68 @@ export const agentteamsApi = {
     const qs = `?name=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}`;
     return proxyRequest(`/agentspecs/nacos/detail${qs}`);
   },
+
+  // 项目/任务 meta（meta.json）：GET 返回 {raw, etag}；保存 PUT + If-Match。
+  // 契约与错误分类在 @/lib/meta-api（405/404 = 端点不可用 → 入口隐藏）。
+  getProjectMeta: (id: string): Promise<MetaReadResult> => fetchProjectMeta(id),
+
+  getTaskMeta: (id: string, team?: string): Promise<MetaReadResult> =>
+    fetchTaskMeta(id, team),
+
+  saveProjectMeta: (id: string, raw: string, etag: string): Promise<MetaReadResult> =>
+    putProjectMeta(id, raw, etag),
+
+  saveTaskMeta: (
+    id: string,
+    raw: string,
+    etag: string,
+    team?: string,
+  ): Promise<MetaReadResult> => putTaskMeta(id, raw, etag, team),
 };
+
+// ── Worker MCP 合并读（CRD 声明 + worker 自注册）─────────────────────────
+//
+// GET /api/agentteams/workers/{name}/mcp → Controller
+// GET /api/v1/workers/{name}/mcp（worker 的 QwenPaw `mcp.clients` 注册表）。
+// Next 代理已在服务端把 200 响应归一化/脱敏（env/headers 只剩键名），
+// 本函数只负责状态码语义：端点缺失/无凭据/无权限/部署形态不支持都降级为
+// `available:false`，调用方据此显示一行提示而不是宣称「没有 MCP」。
+export async function fetchWorkerMcp(name: string): Promise<WorkerMcpResult> {
+  const path = `/workers/${encodeURIComponent(name)}/mcp`;
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/agentteams${path}`), { cache: 'no-store' });
+  } catch (err) {
+    throw new NetworkError(path, err);
+  }
+
+  const degrade = (reason: string): WorkerMcpResult => ({ available: false, reason, items: [] });
+  if (res.status === 404) return degrade('controller_too_old');
+  if (res.status === 401) return degrade('no_token');
+  if (res.status === 403) return degrade('forbidden');
+  if (res.status === 400 || res.status === 503) return degrade('unsupported');
+  if (!res.ok) {
+    const detail = await extractErrorDetail(res, `HTTP ${res.status}`);
+    throw new ApiError(detail, res.status, path);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    throw new ApiError('worker 自注册 MCP 响应不是合法 JSON', res.status, path);
+  }
+
+  // 防御性：代理若已按插件契约返回 available=false 信封，直接透传降级原因。
+  if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+    const envelope = payload as { available?: unknown; reason?: unknown; items?: unknown };
+    if (envelope.available === false) {
+      return {
+        available: false,
+        reason: typeof envelope.reason === 'string' ? envelope.reason : 'unknown',
+        items: normalizeWorkerMcpItems(envelope.items),
+      };
+    }
+  }
+  return { available: true, items: normalizeWorkerMcpItems(payload) };
+}

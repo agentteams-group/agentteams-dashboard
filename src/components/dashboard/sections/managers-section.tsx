@@ -14,8 +14,6 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useManagers } from '@/hooks/use-agentteams-managers';
-import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useCreateManager, useDeleteManager, useUpdateManager } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -40,9 +38,7 @@ import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
 import type {
   CreateManagerRequest,
   ManagerResponse,
-  TeamResponse,
   UpdateManagerRequest,
-  WorkerResponse,
 } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './managers/manager-types';
 import {
@@ -53,7 +49,7 @@ import { ManagerCard } from './managers/manager-card';
 import { ManagerTable } from './managers/manager-table';
 import { ManagerCreateDialog } from './managers/manager-create-dialog';
 import { ManagerEditDialog, type ManagerEditForm } from './managers/manager-edit-dialog';
-import { ManagerDetailDialog } from './managers/manager-detail-dialog';
+import { ManagerDrawer } from './managers/manager-drawer';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 
 function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
@@ -99,10 +95,9 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 
 export function ManagersSection() {
   const { data: managers, isLoading, isError, refetch, isRefetching } = useManagers();
-  const { data: workers } = useWorkers();
-  const { data: teams } = useTeams();
   const { searchQuery } = useSearch();
   const { isConnected } = useAgentTeamsStore();
+  const userLevel = useAgentTeamsStore((state) => state.userLevel);
   const createManager = useCreateManager();
   const deleteManager = useDeleteManager();
   const updateManager = useUpdateManager();
@@ -227,9 +222,6 @@ export function ManagersSection() {
     );
   }, [editForm, editManager, updateManager, closeEdit, aiRoutes, providers, sessionIssue]);
 
-  const workersList: WorkerResponse[] = workers || [];
-  const teamsList: TeamResponse[] = teams || [];
-
   if (isError && !isConnected) {
     return <ApiErrorState />;
   }
@@ -340,11 +332,17 @@ export function ManagersSection() {
         sessionIssue={sessionIssue}
       />
 
-      <ManagerDetailDialog
+      <ManagerDrawer
         manager={detailManager}
-        workers={workersList}
-        teams={teamsList}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
         onOpenChange={(open) => !open && setDetailManager(null)}
+        onEdit={(manager) => {
+          setDetailManager(null);
+          openEdit(manager);
+        }}
+        onChanged={() => refetch()}
       />
 
       <ConfirmDeleteDialog

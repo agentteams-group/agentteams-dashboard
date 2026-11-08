@@ -37,37 +37,40 @@ export function HumanCreateDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
+      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>创建 Human</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>名称 *</Label>
+            <Label htmlFor="human-create-name">名称 *</Label>
             <Input
+              id="human-create-name"
               value={value.name}
               onChange={(e) => onChange({ ...value, name: e.target.value })}
               placeholder="human-name"
             />
           </div>
           <div className="space-y-2">
-            <Label>显示名称 *</Label>
+            <Label htmlFor="human-create-display-name">显示名称 *</Label>
             <Input
+              id="human-create-display-name"
               value={value.displayName}
               onChange={(e) => onChange({ ...value, displayName: e.target.value })}
               placeholder="用户显示名称"
             />
           </div>
           <div className="space-y-2">
-            <Label>邮箱</Label>
+            <Label htmlFor="human-create-email">邮箱</Label>
             <Input
+              id="human-create-email"
               value={value.email || ''}
               onChange={(e) => onChange({ ...value, email: e.target.value || undefined })}
               placeholder="user@example.com"
             />
           </div>
           <div className="space-y-2">
-            <Label>权限等级</Label>
+            <Label htmlFor="human-create-permission">权限等级</Label>
             <Select
               // CR 标尺（1=管理员 2=团队成员 3=Worker）：默认 2，不默认给管理员
               value={String(value.permissionLevel ?? 2)}
@@ -75,7 +78,7 @@ export function HumanCreateDialog({
                 onChange({ ...value, permissionLevel: Number(v) as 1 | 2 | 3 })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="human-create-permission" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -88,8 +91,9 @@ export function HumanCreateDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>可访问团队（逗号分隔）</Label>
+            <Label htmlFor="human-create-teams">可访问团队（逗号分隔）</Label>
             <Input
+              id="human-create-teams"
               value={value.accessibleTeams?.join(', ') || ''}
               onChange={(e) =>
                 onChange({
@@ -103,8 +107,9 @@ export function HumanCreateDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>可访问 Workers（逗号分隔）</Label>
+            <Label htmlFor="human-create-workers">可访问 Workers（逗号分隔）</Label>
             <Input
+              id="human-create-workers"
               value={value.accessibleWorkers?.join(', ') || ''}
               onChange={(e) =>
                 onChange({
@@ -119,10 +124,11 @@ export function HumanCreateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" className="min-h-11" onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
+            className="min-h-11"
             onClick={onSubmit}
             disabled={!value.name || !value.displayName || isPending}
           >

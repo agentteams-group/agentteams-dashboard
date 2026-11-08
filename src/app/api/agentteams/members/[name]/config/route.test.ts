@@ -1,0 +1,119 @@
+// @vitest-environment node
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const originalFetch = globalThis.fetch;
+
+async function callGet(workerName: string, controllerStatus = 200) {
+  vi.resetModules();
+  vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runtime: 'openclaw',
+          rev: 'rev-1',
+          values: {},
+          applied: 'pending',
+          pendingRestart: ['gateway.port'],
+        }),
+        { status: controllerStatus, headers: { 'content-type': 'application/json' } },
+      ),
+    ),
+  );
+
+  const route = await import('./route');
+  return route.GET(
+    {
+      method: 'GET',
+      nextUrl: {
+        pathname: `/api/agentteams/members/${workerName}/config`,
+        searchParams: new URLSearchParams(),
+      },
+      headers: new Headers(),
+    } as never,
+    { params: Promise.resolve({ name: workerName }) },
+  );
+}
+
+describe('GET /api/agentteams/members/[name]/config (proxy)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
+  });
+
+  it('proxies to the controller member-config path (no /v1)', async () => {
+    const res = await callGet('w1');
+    expect(res.status).toBe(200);
+    expect(fetch).toHaveBeenCalledWith(
+      'http://controller.test/api/members/w1/config',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('passes through 409 runtime_unknown so the panel can degrade', async () => {
+    const res = await callGet('w1', 409);
+    expect(res.status).toBe(409);
+  });
+
+  it('rejects an invalid worker name before proxying', async () => {
+    const res = await callGet('bad/name');
+    expect(res.status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+async function callPut(workerName: string, rev?: string) {
+  vi.resetModules();
+  vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ rev: 'rev-2', applied: 'applied', pendingRestart: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ),
+  );
+
+  const route = await import('./route');
+  const body = JSON.stringify({ patch: { gateway: { port: 9090 } } });
+  return route.PUT(
+    {
+      method: 'PUT',
+      nextUrl: {
+        pathname: `/api/agentteams/members/${workerName}/config`,
+        searchParams: new URLSearchParams(rev ? { 'if-rev': rev } : {}),
+      },
+      headers: new Headers(),
+      text: async () => body,
+    } as never,
+    { params: Promise.resolve({ name: workerName }) },
+  );
+}
+
+describe('PUT /api/agentteams/members/[name]/config (proxy)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
+  });
+
+  it('forwards the nested patch with the if-rev optimistic lock', async () => {
+    const res = await callPut('w1', 'rev-1');
+    expect(res.status).toBe(200);
+    expect(fetch).toHaveBeenCalledWith(
+      'http://controller.test/api/members/w1/config?if-rev=rev-1',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ patch: { gateway: { port: 9090 } } }) }),
+    );
+  });
+
+  it('omits if-rev when the client has no read token', async () => {
+    await callPut('w1');
+    expect(fetch).toHaveBeenCalledWith(
+      'http://controller.test/api/members/w1/config',
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+});

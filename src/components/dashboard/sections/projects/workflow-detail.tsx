@@ -26,6 +26,7 @@ import { ProjectTimelinePanel } from '../project-timeline-panel';
 import { ProjectEventsPanel } from '../project-events-panel';
 import { ProjectAttentionPanel } from '../project-attention-panel';
 import { ProjectSignalEventsPanel } from '../project-signal-events-panel';
+import { ProjectSpawnsPanel } from '../project-spawns-panel';
 import { useNowTick } from '@/hooks/use-now-tick';
 import {
   NODE_STATUS_COLOR,
@@ -35,6 +36,7 @@ import {
 } from './workflow-config';
 import { ProjectStatusBadge } from './status-views';
 import { TaskDetailRow } from './task-detail';
+import { MetaEditorEntry } from './meta-editor';
 
 // ----- Workflow detail panel -----
 
@@ -193,6 +195,14 @@ export function WorkflowDetail({
           <GitBranch className="h-4 w-4" />
           {wf.title}
           <ProjectStatusBadge status={wf.status} />
+          {/* 项目 meta 编辑（ETag/If-Match；405 → 入口静默隐藏） */}
+          <MetaEditorEntry
+            kind="project"
+            id={wf.project_id}
+            title={wf.title}
+            teamId={mutationTeamId}
+            onSaved={() => refetch()}
+          />
         </h3>
         <div className="flex items-center gap-1">
           {canPause && (
@@ -446,6 +456,7 @@ export function WorkflowDetail({
                 projectId={wf.project_id}
                 teamId={mutationTeamId}
                 roomId={wf.source_room_id}
+                onMetaSaved={() => refetch()}
               />
             ))}
           </div>
@@ -454,6 +465,9 @@ export function WorkflowDetail({
 
       {/* Attention aggregate (controller /attention, upstream #1434) */}
       <ProjectAttentionPanel projectId={wf.project_id} teamId={mutationTeamId} now={now} />
+
+      {/* Spawn subagent tree + lazy message stream (controller /spawns) */}
+      <ProjectSpawnsPanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Intervention timeline (controller history endpoint) */}
       <ProjectTimelinePanel projectId={wf.project_id} teamId={mutationTeamId} />

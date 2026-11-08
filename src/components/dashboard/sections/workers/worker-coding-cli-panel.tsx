@@ -34,6 +34,8 @@ import {
   type SettingsObject,
   type SettingsValue,
 } from '@/lib/coding-cli-presets';
+import type { WorkerRuntime } from '@/lib/agentteams-api';
+import { WorkerQwenCodeBridgeCard } from './worker-qwen-code-bridge-card';
 
 type LoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 
@@ -116,6 +118,12 @@ function getModelName(settings: SettingsObject): string {
   return '';
 }
 
+/** QwenCode 顶层 voiceModel（语音/转写模型）；非字符串一律视为未设置。 */
+function getVoiceModel(settings: SettingsObject): string {
+  const value = settings.voiceModel;
+  return typeof value === 'string' ? value : '';
+}
+
 function collectRedacted(
   obj: SettingsObject,
   path: string[] = [],
@@ -185,7 +193,17 @@ function previewJson(settings: SettingsObject): string {
   );
 }
 
-export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
+export function WorkerCodingCliPanel({
+  workerName,
+  runtime,
+  onChanged,
+}: {
+  workerName: string;
+  /** Worker 运行时：QwenCode 卡的「QwenPaw × QwenCode 桥」仅 qwenpaw 渲染。 */
+  runtime?: WorkerRuntime;
+  /** 桥模块安装/更新成功后通知父级（抽屉刷新详情）。 */
+  onChanged?: () => void;
+}) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -194,6 +212,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [settings, setSettings] = useState<SettingsObject | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelName, setModelName] = useState('');
+  const [voiceModel, setVoiceModel] = useState('');
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [versionTag, setVersionTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -258,6 +277,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       setSettingsOpen(true);
       setSettings(null);
       setModelName('');
+      setVoiceModel('');
       setSecrets({});
       setJsonPatch('');
       try {
@@ -289,6 +309,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
             : {};
         setSettings(config);
         setModelName(getModelName(config));
+        setVoiceModel(getVoiceModel(config));
         setSecrets({});
       } catch (err) {
         if (cancelledRef.current || reqId !== settingsReqRef.current) return;
@@ -304,6 +325,17 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     const diff: SettingsObject = {};
     if (modelName !== getModelName(settings)) {
       assignPath(diff, ['model', 'name'], modelName);
+    }
+    // QwenCode 语音模型（顶层 voiceModel）：留空且从未设置过 → 不写盘（文件里
+    // 不出现该键）；已有值清空 → 空串=清除覆盖（controller settings PUT 只做
+    // 深合并、没有删键语义，与插件 16.142 同口径）。
+    if (selected === 'qwen-code') {
+      const currentVoice = getVoiceModel(settings);
+      if (voiceModel.trim() === '') {
+        if (currentVoice) assignPath(diff, ['voiceModel'], '');
+      } else if (voiceModel !== currentVoice) {
+        assignPath(diff, ['voiceModel'], voiceModel);
+      }
     }
     for (const field of collectRedacted(settings)) {
       const key = field.path.join('.');
@@ -355,7 +387,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     } finally {
       setBusy(false);
     }
-  }, [base, busy, jsonPatch, loadSettings, modelName, readOnly, secrets, selected, settings]);
+  }, [base, busy, jsonPatch, loadSettings, modelName, readOnly, secrets, selected, settings, voiceModel]);
 
   const pollTask = useCallback(
     async (cli: CodingCliId, taskId: string) => {
@@ -654,6 +686,15 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         />
       </div>
 
+      {/* QwenCode 卡展开后、settings 之前：QwenPaw × QwenCode 桥安装/更新 */}
+      {selected === 'qwen-code' && (
+        <WorkerQwenCodeBridgeCard
+          workerName={workerName}
+          runtime={runtime}
+          onChanged={onChanged}
+        />
+      )}
+
       {settingsOpen && !settings && (
         <p className="text-xs text-muted-foreground">加载 settings…</p>
       )}
@@ -670,6 +711,28 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               disabled={readOnly}
             />
           </label>
+          {/* 语音（Voice）：QwenCode 独有的顶层 voiceModel（对齐插件 16.142）。
+           * 独立分组卡，不与模型/密钥混排；触控目标 h-11（44px），窄屏
+           * min-w-0 + w-full 不横溢，深浅色走主题 token。 */}
+          {selected === 'qwen-code' && (
+            <div className="min-w-0 space-y-1 rounded-md border border-border/60 bg-muted/20 p-2">
+              <p className="text-xs font-medium">语音（Voice）</p>
+              <p className="text-xs text-muted-foreground">
+                QwenCode 语音/转写模型（写入顶层 voiceModel）；留空=使用 CLI 默认，从未设置过则不写盘。
+              </p>
+              <label className="block min-w-0 text-xs text-muted-foreground">
+                语音模型 / Voice model
+                <Input
+                  value={voiceModel}
+                  onChange={(e) => setVoiceModel(e.target.value)}
+                  className="mt-0.5 h-11 w-full min-w-0 text-sm"
+                  placeholder="留空使用 CLI 默认"
+                  aria-label="语音模型"
+                  disabled={readOnly}
+                />
+              </label>
+            </div>
+          )}
           {redacted.map((field) => {
             const key = field.path.join('.');
             return (

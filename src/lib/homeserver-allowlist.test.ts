@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   HomeserverValidationError,
+  allowPrivateNetworkFromEnv,
   validateHomeserverUrl,
 } from '@/lib/homeserver-allowlist';
 
@@ -168,5 +169,55 @@ describe('validateHomeserverUrl', () => {
     } finally {
       process.env.MATRIX_HOMESERVER_ALLOWLIST = 'matrix.org,example.com';
     }
+  });
+
+  describe('MATRIX_ALLOW_PRIVATE_NETWORK', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('rejects a LAN homeserver by default', () => {
+      expect(() => validateHomeserverUrl('http://192.168.1.10:8008')).toThrow(
+        /private network addresses are not allowed/
+      );
+    });
+
+    it('accepts a LAN homeserver when the env flag is set', () => {
+      vi.stubEnv('MATRIX_ALLOW_PRIVATE_NETWORK', '1');
+      const out = validateHomeserverUrl('http://192.168.1.10:8008');
+      expect(out.hostname).toBe('192.168.1.10');
+      expect(out.port).toBe('8008');
+    });
+
+    it('still rejects cloud metadata endpoints when the env flag is set', () => {
+      vi.stubEnv('MATRIX_ALLOW_PRIVATE_NETWORK', '1');
+      expect(() => validateHomeserverUrl('http://169.254.169.254/')).toThrow(
+        /cloud metadata endpoints are not allowed/
+      );
+    });
+
+    it('allows a private host through requireAllowlist when the env flag is set', () => {
+      vi.stubEnv('MATRIX_ALLOW_PRIVATE_NETWORK', 'true');
+      const out = validateHomeserverUrl('http://192.168.1.10:8008', { requireAllowlist: true });
+      expect(out.hostname).toBe('192.168.1.10');
+    });
+
+    it('treats truthy values case-insensitively', () => {
+      for (const value of ['1', 'TRUE', 'Yes', 'on']) {
+        vi.stubEnv('MATRIX_ALLOW_PRIVATE_NETWORK', value);
+        expect(allowPrivateNetworkFromEnv()).toBe(true);
+        expect(validateHomeserverUrl('http://192.168.1.10:8008').hostname).toBe('192.168.1.10');
+      }
+    });
+
+    it('keeps the default deny for any other value', () => {
+      for (const value of ['0', 'false', 'off', '']) {
+        vi.stubEnv('MATRIX_ALLOW_PRIVATE_NETWORK', value);
+        expect(allowPrivateNetworkFromEnv()).toBe(false);
+        expect(() => validateHomeserverUrl('http://192.168.1.10:8008')).toThrow(
+          /private network addresses are not allowed/
+        );
+      }
+    });
   });
 });

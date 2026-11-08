@@ -105,7 +105,7 @@ function installFetchMock(opts: {
         headers: { 'content-type': 'application/json' },
       });
     }
-    if (url.endsWith('/api/v1/humans')) {
+    if (/\/api\/v1\/humans(\?.*)?$/.test(url)) {
       // verifyControllerToken endpoint — admin-only in the Controller
       // (an L2 Matrix token gets 403 here even though /api/v1/teams
       // returns 200 for it). Default 401 = invalid token; tests asserting
@@ -140,6 +140,17 @@ function installFetchMock(opts: {
 
 function responseJson(response: Response): Promise<Record<string, unknown>> {
   return response.json();
+}
+
+/** 写临时后端配置（controller 槽位/凭据），返回目录供 finally 清理。
+ * authForUrl / orderedCandidates 读的就是这份文件。 */
+function writeControllerConfig(controller: Record<string, unknown>): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'login-controller-cfg-'));
+  const configFile = path.join(dir, 'config.json');
+  fs.writeFileSync(configFile, JSON.stringify({ version: 1, backends: { controller } }));
+  vi.stubEnv('DASHBOARD_CONFIG_FILE', configFile);
+  forgetWorking('controller');
+  return dir;
 }
 
 describe('POST /api/auth/login (dual track, M19)', () => {
@@ -646,7 +657,9 @@ describe('POST /api/auth/login (dual track, M19)', () => {
     expect(response.status).toBe(401);
     const data = await responseJson(response);
     expect(data.error).toBe('Controller 管理员 token 无效');
-    const adminCheckCalls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.endsWith('/api/v1/humans'));
+    const adminCheckCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes('/api/v1/humans?'));
     expect(adminCheckCalls.length).toBe(1);
   });
 
@@ -671,6 +684,192 @@ describe('POST /api/auth/login (dual track, M19)', () => {
       expect(err).not.toContain('ECONNREFUSED');
     } finally {
       requestSpy.mockRestore();
+    }
+  });
+
+  // ── Token-only track (no Console admin / no Matrix Human account) ──────
+  // Field report: Console 401 + Matrix 403 for the same operator, while the
+  // Controller admin token is valid. A single-operator deployment must be
+  // able to log in with that token alone.
+
+  it('token-only: valid Controller admin token → 200 level-3 session, mode controller-token, session cookie', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    const fetchMock = installFetchMock({ humansList: { body: { humans: [] } } });
+
+    const response = await POST(request({ controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(200);
+    const data = await responseJson(response);
+    expect(data).toEqual({
+      success: true,
+      user: { username: 'controller-admin', level: 3 },
+      mode: 'controller-token',
+    });
+
+    const cookies = response.headers.getSetCookie();
+    const sessionCookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+    expect(sessionCookie).toBeTruthy();
+    const value = (sessionCookie as string).split(';')[0].slice(SESSION_COOKIE_NAME.length + 1);
+    const boundSession = validateSessionToken(value);
+    expect(boundSession?.level).toBe(3);
+    // The token is held server-side only (never in a cookie / response).
+    expect(boundSession?.credential).toEqual({ kind: 'controller-token', token: 'admin-token-1' });
+    expect(cookies.every((c) => !c.includes('admin-token-1'))).toBe(true);
+    expect(JSON.stringify(data)).not.toContain('admin-token-1');
+
+    // Neither the Console nor the Matrix track was touched: only the
+    // admin-only Controller verification ran.
+    expect(mockCallHigressConsole).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      'http://controller.test:8090/api/v1/humans?limit=1',
+    ]);
+    // 无网关凭据 → 服务自身的 Bearer controller token。
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+    expect(headers?.Authorization).toBe('Bearer admin-token-1');
+  });
+
+  it('token-only: invalid token → 401 Controller 管理员 token 无效, no cookie, no session', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    installFetchMock({ humansList: { status: 403 } });
+
+    const response = await POST(request({ controllerToken: 'not-an-admin-token' }));
+    expect(response.status).toBe(401);
+    const data = await responseJson(response);
+    expect(data.success).toBe(false);
+    expect(data.error).toBe('Controller 管理员 token 无效');
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(mockCallHigressConsole).not.toHaveBeenCalled();
+  });
+
+  it('token-only: username+password present → dual track unchanged (a valid token never short-circuits it)', async () => {
+    mockCallHigressConsole.mockResolvedValue(successfulConsoleLogin());
+    const fetchMock = installFetchMock({ humansList: { body: { humans: [] } } });
+
+    const response = await POST(request({ username: 'admin', password: 'password', controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(200);
+    const data = await responseJson(response);
+    expect(data.mode).toBe('higress');
+    expect(data.user).toEqual({ username: 'admin', level: 3 });
+    // The token was not consumed as a login credential.
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.every((u) => !u.endsWith('/api/v1/humans'))).toBe(true);
+  });
+
+  it('token-only: username+password present but both tracks fail → 401, not a silent token login', async () => {
+    mockCallHigressConsole.mockResolvedValue(failedConsoleLogin());
+    installFetchMock({ humansList: { body: { humans: [] } }, matrixLogin: { status: 401 } });
+
+    const response = await POST(request({ username: 'carol', password: 'wrong', controllerToken: 'admin-token-1' }));
+    expect(response.status).toBe(401);
+    const data = await responseJson(response);
+    expect(data.success).toBe(false);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('token-only: no credentials at all → 400 (token branch requires a token)', async () => {
+    installFetchMock({});
+
+    const response = await POST(request({}));
+    expect(response.status).toBe(400);
+    const data = await responseJson(response);
+    expect(data.error).toBe('Username and password are required');
+  });
+
+  // ── 网关部署：controller 地址的逐地址凭据 ──────────────────────────────
+  // 公网网关（Basic 门 / API key 门）后的 controller 会挡下裸
+  // `Bearer <controllerToken>`：验证必须改用该地址已存的网关凭据，否则有效
+  // 的 controller token 被误判 401。候选地址逐个尝试（内网 401 → 外网）。
+
+  it('gateway auth: controller 地址配了 Basic → Authorization 用 Basic 网关凭据，且不含 controller token', async () => {
+    const expected = `Basic ${Buffer.from('gw:gateway-pass').toString('base64')}`;
+    const dir = writeControllerConfig({
+      internal: {
+        url: 'http://controller.test:8090',
+        auth: { type: 'basic', username: 'gw', password: 'gateway-pass' },
+      },
+    });
+    try {
+      const fetchMock = installFetchMock({ humansList: { body: { humans: [] } } });
+
+      const response = await POST(request({ controllerToken: 'admin-token-1' }));
+      expect(response.status).toBe(200);
+      const data = await responseJson(response);
+      expect(data.mode).toBe('controller-token');
+
+      const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/v1/humans?'));
+      expect(String(call?.[0])).toBe('http://controller.test:8090/api/v1/humans?limit=1');
+      const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string> | undefined;
+      expect(headers?.Authorization).toBe(expected);
+      expect(JSON.stringify(headers)).not.toContain('admin-token-1');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gateway auth: 首候选 401 不影响后候选 —— 依次尝试，第二个 200 即通过', async () => {
+    mockGetControllerUrl.mockReturnValue('http://controller-a.test:8090');
+    const dir = writeControllerConfig({
+      internal: 'http://controller-a.test:8090',
+      external: 'http://controller-b.test:8090',
+    });
+    try {
+      const requested: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          requested.push(url);
+          if (url.startsWith('http://controller-b.test')) {
+            return new Response(JSON.stringify({ humans: [] }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          return new Response(null, { status: 401 });
+        }),
+      );
+
+      const response = await POST(request({ controllerToken: 'admin-token-1' }));
+      expect(response.status).toBe(200);
+      const data = await responseJson(response);
+      expect(data.mode).toBe('controller-token');
+      expect(requested).toEqual([
+        'http://controller-a.test:8090/api/v1/humans?limit=1',
+        'http://controller-b.test:8090/api/v1/humans?limit=1',
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gateway auth: 所有候选都 401/403 → 401 Controller 管理员 token 无效', async () => {
+    mockGetControllerUrl.mockReturnValue('http://controller-a.test:8090');
+    const dir = writeControllerConfig({
+      internal: 'http://controller-a.test:8090',
+      external: 'http://controller-b.test:8090',
+    });
+    try {
+      const requested: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          requested.push(String(input));
+          return new Response(null, { status: requested.length === 1 ? 401 : 403 });
+        }),
+      );
+
+      const response = await POST(request({ controllerToken: 'bad-token' }));
+      expect(response.status).toBe(401);
+      const data = await responseJson(response);
+      expect(data.error).toBe('Controller 管理员 token 无效');
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(requested).toEqual([
+        'http://controller-a.test:8090/api/v1/humans?limit=1',
+        'http://controller-b.test:8090/api/v1/humans?limit=1',
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

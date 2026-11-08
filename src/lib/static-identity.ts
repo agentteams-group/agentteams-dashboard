@@ -32,7 +32,7 @@
 import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { getControllerUrl } from '../app/api/agentteams/proxy-helper';
-import { pickBackendUrl } from './backend-config';
+import { backendAuthHeader, pickBackendUrl } from './backend-config';
 import { validateHomeserverUrl, HomeserverValidationError } from './homeserver-allowlist';
 
 export interface StaticIdentity {
@@ -72,10 +72,13 @@ function cacheKey(token: string): string {
 async function probe(
   url: string,
   token: string,
+  authHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: () => Promise<unknown> } | { networkError: true }> {
   try {
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      // 逐地址覆盖凭据（公网网关 Basic / API key 门）优先于 Bearer：
+      // 网关门在前，Bearer 只会被门拒掉。
+      headers: { ...authHeaders, Authorization: authHeaders.Authorization ?? `Bearer ${token}` },
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     return {
@@ -176,7 +179,11 @@ async function resolveName(
   token: string,
 ): Promise<string> {
   for (const homeserver of homeserverCandidates(request)) {
-    const result = await probe(`${homeserver}/_matrix/client/v3/account/whoami`, token);
+    const result = await probe(
+      `${homeserver}/_matrix/client/v3/account/whoami`,
+      token,
+      backendAuthHeader('matrix', homeserver),
+    );
     if ('networkError' in result) continue; // failover: try the next address
     if (result.status === 200) {
       const data = (await result.json()) as { user_id?: string } | null;
@@ -213,9 +220,10 @@ export async function resolveStaticIdentity(
   let allNetworkErrors = true;
 
   for (const base of bases) {
+    const controllerAuth = backendAuthHeader('controller', base);
     // 1) admin-grade probe (list humans: L2/L3 tokens are 403 by the
     //    authorizer — the same discriminator login uses).
-    const humans = await probe(`${base}/api/v1/humans`, token);
+    const humans = await probe(`${base}/api/v1/humans`, token, controllerAuth);
     if ('networkError' in humans) continue; // failover to the next controller
     allNetworkErrors = false;
 
@@ -227,7 +235,7 @@ export async function resolveStaticIdentity(
 
     // 2) team-scope (L2): ListTeams is 200 for team humans and returns the
     //    user's OWN accessibleTeams (server-side filtered).
-    const teams = await probe(`${base}/api/v1/teams`, token);
+    const teams = await probe(`${base}/api/v1/teams`, token, controllerAuth);
     if (!('networkError' in teams) && teams.status === 200) {
       const data = (await teams.json()) as { teams?: { name?: string }[] } | null;
       const names = (data?.teams ?? [])
@@ -249,7 +257,7 @@ export async function resolveStaticIdentity(
     //    scopes to team membership), so a NON-EMPTY /workers list here is
     //    the L3 worker-scope signature (#1220 §2/Q2); an empty list keeps
     //    the (valid) L2 classification with no teams.
-    const workers = await probe(`${base}/api/v1/workers`, token);
+    const workers = await probe(`${base}/api/v1/workers`, token, controllerAuth);
     if (!('networkError' in workers) && workers.status === 200) {
       const data = (await workers.json()) as { workers?: unknown[] } | null;
       const list = Array.isArray(data?.workers) ? data.workers : [];

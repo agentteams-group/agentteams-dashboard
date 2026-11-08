@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { WorkerApprovalControl } from './worker-detail-dialog';
+import { WorkerApprovalControl } from './worker-approval-control';
 
 // 工具执行安全卡片四档（插件同款 ToolExecutionLevelCard 样式）行为测试：
 // 四卡渲染 / 404 整节隐藏 / L2 403 琥珀提示 / 选卡→应用→成功更新 / 写 403 报错。

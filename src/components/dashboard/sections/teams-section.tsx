@@ -40,7 +40,7 @@ import { TeamCard } from './teams/team-card';
 import { TeamTable } from './teams/team-table';
 import { TeamCreateDialog } from './teams/team-create-dialog';
 import { TeamEditDialog, type TeamEditForm } from './teams/team-edit-dialog';
-import { TeamDetailDialog } from './teams/team-detail-dialog';
+import { TeamDrawer } from './teams/team-drawer';
 import { TeamTopologyDialog } from './teams/team-topology-dialog';
 import { TopologyOverview } from './teams/team-topology-overview';
 import { PaginationFooter } from './teams/team-pagination';
@@ -93,7 +93,7 @@ export function TeamsSection() {
   const queryClient = useQueryClient();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const createTeam = useCreateTeam();
   const deleteTeam = useDeleteTeam();
   const updateTeam = useUpdateTeam();
@@ -261,6 +261,10 @@ export function TeamsSection() {
 
   const workersList: WorkerResponse[] = workers || [];
   const managersList: ManagerResponse[] = managers || [];
+  // 抽屉打开期间跟随列表刷新（成员/阶段/模型保存后立即反映，不必关了重开）。
+  const liveDetailTeam = detailTeam
+    ? (teams?.find((team) => team.name === detailTeam.name) ?? detailTeam)
+    : null;
 
   if (isError && !isConnected) {
     return <ApiErrorState />;
@@ -432,10 +436,22 @@ export function TeamsSection() {
         workers={workersList}
       />
 
-      <TeamDetailDialog
-        team={detailTeam}
+      <TeamDrawer
+        team={liveDetailTeam}
+        allTeams={teams || []}
         workers={workersList}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
         onOpenChange={(open) => !open && setDetailTeam(null)}
+        onChanged={() => {
+          void refetch();
+          void queryClient.invalidateQueries({ queryKey: ['agentteams-workers'] });
+        }}
+        onDeleted={() => {
+          setDetailTeam(null);
+          void refetch();
+        }}
       />
 
       <TeamTopologyDialog

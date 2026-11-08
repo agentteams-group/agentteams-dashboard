@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useCreateHuman, useDeleteHuman, useUpdateHuman } from '@/hooks/use-agentteams-mutations';
+import { useCreateHuman, useDeleteHuman } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
@@ -24,11 +24,7 @@ import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
-import type {
-  CreateHumanRequest,
-  HumanResponse,
-  UpdateHumanRequest,
-} from '@/lib/agentteams-api';
+import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
   computePhaseStats,
@@ -39,7 +35,7 @@ import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
-import { HumanEditDialog } from './humans/human-edit-dialog';
+import { HumanDrawer } from './humans/human-drawer';
 import { PhaseDistribution } from './humans/human-phase-distribution';
 
 function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
@@ -88,15 +84,15 @@ export function HumansSection() {
   const { data: teams } = useTeams();
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const createHuman = useCreateHuman();
   const deleteHuman = useDeleteHuman();
-  const updateHuman = useUpdateHuman();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // 详情 = 只读弹窗；编辑 = 右侧抽屉（四卡）。
   const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
-  const [editingHuman, setEditingHuman] = useState<HumanResponse | null>(null);
+  const [drawerHuman, setDrawerHuman] = useState<HumanResponse | null>(null);
 
   const [newHuman, setNewHuman] = useState<CreateHumanRequest>({
     name: '',
@@ -138,17 +134,6 @@ export function HumansSection() {
       },
     });
   }, [createHuman, newHuman]);
-
-  const handleUpdate = useCallback(
-    (payload: UpdateHumanRequest) => {
-      if (!editingHuman) return;
-      updateHuman.mutate(
-        { name: editingHuman.name, data: payload },
-        { onSuccess: () => setEditingHuman(null) },
-      );
-    },
-    [editingHuman, updateHuman],
-  );
 
   const handleDelete = useCallback(() => {
     if (deleteTarget) {
@@ -241,6 +226,7 @@ export function HumansSection() {
               human={human}
               index={i}
               onView={setDetailHuman}
+              onEdit={setDrawerHuman}
               onDelete={setDeleteTarget}
             />
           ))}
@@ -249,6 +235,7 @@ export function HumansSection() {
         <HumanTable
           humans={sortedHumans}
           onView={setDetailHuman}
+          onEdit={setDrawerHuman}
           onDelete={setDeleteTarget}
         />
       )}
@@ -265,16 +252,17 @@ export function HumansSection() {
       <HumanDetailDialog
         human={detailHuman}
         onOpenChange={(open) => !open && setDetailHuman(null)}
-        onEdit={setEditingHuman}
       />
 
-      <HumanEditDialog
-        human={editingHuman}
-        teams={(teams ?? []).map((t) => t.name)}
-        workers={(workers ?? []).map((w) => w.name)}
-        isPending={updateHuman.isPending}
-        onOpenChange={(open) => !open && setEditingHuman(null)}
-        onSubmit={handleUpdate}
+      <HumanDrawer
+        human={drawerHuman}
+        teams={(teams ?? []).map((team) => ({
+          name: team.name,
+          humanMembers: team.humanMembers,
+        }))}
+        workers={(workers ?? []).map((worker) => ({ name: worker.name }))}
+        userLevel={userLevel}
+        onOpenChange={(open) => !open && setDrawerHuman(null)}
       />
 
       <ConfirmDeleteDialog

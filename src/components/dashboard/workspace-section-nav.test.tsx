@@ -7,11 +7,11 @@ import { WorkspaceNavigation } from './workspace-navigation';
 beforeEach(() => useAgentTeamsStore.setState({ userLevel: 3, taskBoardVisible: true }));
 afterEach(cleanup);
 
-it('switches among all four asset categories using their existing routes', () => {
+it('switches among all five asset categories using their existing routes', () => {
   const navigate = vi.fn();
   render(<WorkspaceNavigation activeSection="models" countMap={{}} sectionsWithNotifications={new Set()} onNavClick={navigate} />);
   const nav = screen.getByRole('group', { name: '资产中心分类' });
-  expect(within(nav).getAllByRole('button').map(button => button.textContent)).toEqual(['模型', '工具', '技能', '知识库']);
+  expect(within(nav).getAllByRole('button').map(button => button.textContent)).toEqual(['模型', '工具', '技能', '知识库', '文件']);
   fireEvent.click(within(nav).getByRole('button', { name: '工具' }));
   expect(navigate).toHaveBeenCalledWith('tools');
 });

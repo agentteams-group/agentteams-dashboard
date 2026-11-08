@@ -160,6 +160,18 @@ describe('TeamAttentionPanel', () => {
     expect(screen.getByText(/通知缺口 1/)).toBeInTheDocument();
   });
 
+  it('maps type / project / task / time into each row (列表映射)', async () => {
+    mockAttention.mockResolvedValue(response);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText(/approval · 2 个选项/)).toBeInTheDocument());
+    expect(screen.getByText('p1')).toBeInTheDocument();
+    expect(screen.getByText('· t1')).toBeInTheDocument();
+    // Relative time is computed against the local clock; assert the shape
+    // instead of a fixed day count so the test stays date-independent.
+    expect(screen.getAllByText(/\d+(秒|分钟|小时|天)前/).length).toBeGreaterThan(0);
+  });
+
   it('deep-links a room-bound row into chat', async () => {
     mockAttention.mockResolvedValue(response);
     renderPanel();

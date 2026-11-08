@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 import {
   filterWorkers,
+  groupWorkersByTeam,
   paginateWorkers,
   sortWorkers,
   computeRuntimeDist,
@@ -103,6 +104,31 @@ describe('paginateWorkers', () => {
     expect(totalPages).toBe(1);
     expect(safePage).toBe(1);
     expect(items).toEqual([]);
+  });
+});
+
+describe('groupWorkersByTeam', () => {
+  it('groups by team and puts ungrouped last', () => {
+    const groups = groupWorkersByTeam([
+      W({ name: 'a', team: 'beta' }),
+      W({ name: 'b', team: '' }),
+      W({ name: 'c', team: 'alpha' }),
+      W({ name: 'd', team: 'beta' }),
+    ]);
+    expect(groups.map((g) => g.team)).toEqual(['alpha', 'beta', '']);
+    expect(groups[1].workers.map((w) => w.name)).toEqual(['a', 'd']);
+    expect(groups[2].workers.map((w) => w.name)).toEqual(['b']);
+  });
+
+  it('treats whitespace-only team as ungrouped', () => {
+    const groups = groupWorkersByTeam([W({ name: 'a', team: '   ' })]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].team).toBe('');
+  });
+
+  it('drops empty groups after filtering', () => {
+    const filtered = groupWorkersByTeam(filterWorkers([W({ name: 'a', team: 'alpha' })], 'zzz'));
+    expect(filtered).toEqual([]);
   });
 });
 

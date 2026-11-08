@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow } from 'lucide-react';
+import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow, Settings2 } from 'lucide-react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,13 +16,14 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPageProps) {
-  const router = useRouter();
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [controllerToken, setControllerToken] = useState('');
+  const [tokenOnlyToken, setTokenOnlyToken] = useState('');
   const [adminVisible, setAdminVisible] = useState(false);
+  const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setMatrixAuth = useMatrixStore((s) => s.setMatrixAuth);
@@ -52,6 +52,40 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
       }
 
       // Store Matrix auto-login result if available
+      if (data.matrix?.accessToken) {
+        setMatrixAuth(data.matrix);
+      }
+
+      // Small delay to ensure cookie is fully persisted before reload
+      setTimeout(() => onLoginSuccess?.(), 100);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Token-only login: no username/password at all. The Controller admin token
+  // is admin-grade on its own (single-operator deployments may have neither a
+  // Console admin nor a Matrix Human account).
+  const handleTokenLogin = async () => {
+    if (!tokenOnlyToken) return;
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(apiUrl('/api/auth/login'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ controllerToken: tokenOnlyToken }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Login failed');
+      }
+
       if (data.matrix?.accessToken) {
         setMatrixAuth(data.matrix);
       }
@@ -164,6 +198,50 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
               </div>
             )}
           </div>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setTokenOnlyVisible((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {tokenOnlyVisible ? '收起 token 直接登录' : '仅用 Controller 管理员 token 登录'}
+            </button>
+            {tokenOnlyVisible && (
+              <div className="space-y-2">
+                <Input
+                  id="controller-token-only"
+                  type="password"
+                  placeholder="Controller 管理员 token"
+                  value={tokenOnlyToken}
+                  onChange={(e) => setTokenOnlyToken(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleTokenLogin()}
+                  disabled={isLoading}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTokenLogin}
+                  disabled={isLoading || !tokenOnlyToken}
+                  className="w-full h-10 rounded-xl"
+                >
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      登录中...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Token 登录
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  没有 Console / Matrix 账号时使用。该 token 等同于管理员凭据，请勿在公共设备上保存。
+                </p>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="flex items-center gap-2 text-destructive text-sm">
@@ -188,18 +266,20 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
               </>
             )}
           </Button>
-          {/* F1e (plugin parity: the config surface is always one click away,
-              not a first-launch easter egg) — re-configure backends from a
-              logged-out browser when the environment changed or addresses
-              are wrong. Pre-login writes stay token-gated server-side. */}
+          {/* 登录页其余部分保持原样：只加一个「配置后端地址」按钮，
+              点击才跳转到 ?setup=1（异地/换机部署需要改地址时用）。
+              服务端 setup token 门控不变（ENFORCE=0 时免 token）。 */}
           <div className="pt-1 text-center">
-            <button
+            <Button
               type="button"
-              onClick={() => router.push('?setup=1')}
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground h-9"
+              onClick={() => window.location.assign('/?setup=1')}
             >
-              连接设置与登录帮助
-            </button>
+              <Settings2 className="w-3.5 h-3.5 mr-1" />
+              配置后端地址
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -40,11 +40,10 @@ function renderCard(isDeleting = false) {
         isSelected={false}
         onToggleSelect={() => {}}
         onView={() => {}}
-        onEdit={() => {}}
+        onOpenDrawer={() => {}}
+        onRestart={() => {}}
         onWake={() => {}}
         onSleep={() => {}}
-        onEnsureReady={() => {}}
-        onDelete={() => {}}
         isActionPending={false}
         isDeleting={isDeleting}
       />

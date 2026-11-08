@@ -5,6 +5,9 @@ import { getTraceScope } from './tracing-access';
 
 vi.mock('@/lib/backend-config', () => ({
   pickBackendUrl: () => null, orderedCandidates: () => [], markWorking: vi.fn(), configFilePath: () => '/tmp/tracing-access-test/config.json',
+  // proxy-helper 现在按目标地址附加逐地址凭据头；本测试只验证凭据选择，
+  // 无覆盖凭据 → 空头。
+  backendAuthHeader: () => ({}),
 }));
 
 beforeEach(() => {

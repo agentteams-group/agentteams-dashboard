@@ -7,6 +7,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 const mocks = vi.hoisted(() => ({ update: vi.fn(), refetch: vi.fn(), workers: [] as WorkerResponse[] }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: mocks.workers, refetch: mocks.refetch, isLoading: false, isError: false }) }));
 vi.mock('@/lib/search-context', () => ({ useSearch: () => ({ searchQuery: '' }) }));
+vi.mock('@/lib/use-view-mode', () => ({ useViewMode: () => ({ viewMode: 'table', handleViewModeChange: vi.fn() }) }));
 vi.mock('@/hooks/use-model-selection', () => ({ useModelSelection: () => ({ options: [], providers: [], aiRoutes: [], sessionIssue: null }) }));
 vi.mock('@/hooks/use-agentteams-mutations', () => {
   const mutation = () => ({ mutate: vi.fn(), isPending: false });
@@ -14,6 +15,19 @@ vi.mock('@/hooks/use-agentteams-mutations', () => {
 });
 vi.mock('./workers/worker-card', () => ({ WorkerCard: ({ worker, onEdit, onView }: { worker: WorkerResponse; onEdit: () => void; onView: () => void }) => (
   <div><button onClick={onEdit}>edit-{worker.name}</button><button onClick={onView}>view-{worker.name}</button></div>
+) }));
+// 卡片视图已移除行内编辑；本组用例验证「详情先读后写」，走表格视图的编辑/查看入口。
+vi.mock('./workers/worker-table', () => ({ WorkerTable: ({ workers, onEdit, onView }: {
+  workers: WorkerResponse[];
+  onEdit: (_worker: WorkerResponse) => void;
+  onView: (_worker: WorkerResponse) => void;
+}) => (
+  <div>{workers.map((worker) => (
+    <div key={worker.name}>
+      <button onClick={() => onEdit(worker)}>edit-{worker.name}</button>
+      <button onClick={() => onView(worker)}>view-{worker.name}</button>
+    </div>
+  ))}</div>
 ) }));
 vi.mock('./workers/worker-detail-dialog', () => ({ WorkerDetailDialog: ({ worker }: { worker: WorkerResponse | null }) => worker ? <output data-testid="detail">{JSON.stringify(worker)}</output> : null }));
 vi.mock('./workers/worker-edit-dialog', () => ({ WorkerEditDialog: ({ open, value, onChange, onSubmit }: { open: boolean; value: Record<string, unknown>; onChange: (_value: Record<string, unknown>) => void; onSubmit: () => void }) => open ? (

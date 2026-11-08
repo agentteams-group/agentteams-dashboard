@@ -41,7 +41,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { describeWorkerDeleteError } from '@/lib/api-error';
+import { describeWorkerDeleteError, formatErrorMessage } from '@/lib/api-error';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
@@ -50,10 +50,13 @@ import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-typ
 import {
   computeRuntimeDist,
   filterWorkers,
+  groupWorkersByTeam,
   paginateWorkers,
   sortWorkers,
 } from './workers/worker-selectors';
 import { WorkerCard } from './workers/worker-card';
+import { WorkerDrawer } from './workers/worker-drawer';
+import { Badge } from '@/components/ui/badge';
 import { WorkerTable } from './workers/worker-table';
 import { WorkerPagination } from './workers/worker-pagination';
 import { WorkerBulkBar, WorkerBulkConfirm, type BulkAction } from './workers/worker-bulk-bar';
@@ -165,7 +168,7 @@ function skillChipClass(done: boolean, failed: boolean, specFailed: boolean): st
 
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const { searchQuery } = useSearch();
   const createWorker = useCreateWorker();
   const deleteWorker = useDeleteWorker();
@@ -179,6 +182,8 @@ export function WorkersSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
+  const [drawerWorker, setDrawerWorker] = useState<WorkerResponse | null>(null);
+  const [restartingWorker, setRestartingWorker] = useState<string | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
   const [loadingWorker, setLoadingWorker] = useState<string | null>(null);
   const detailRequest = useRef(0);
@@ -213,6 +218,7 @@ export function WorkersSection() {
     [sorted, currentPage]
   );
   const runtimeDist = useMemo(() => computeRuntimeDist(workers), [workers]);
+  const cardGroups = useMemo(() => groupWorkersByTeam(sorted), [sorted]);
 
   // Reset to first page when filters change (adjust state during render)
   const [prevFilters, setPrevFilters] = useState({ searchQuery, sortKey });
@@ -563,6 +569,20 @@ export function WorkersSection() {
   const openEdit = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'edit'); }, [loadWorker]);
   const openDetail = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'view'); }, [loadWorker]);
 
+  const handleCardRestart = useCallback(async (workerName: string) => {
+    if (restartingWorker) return;
+    setRestartingWorker(workerName);
+    try {
+      await agentteamsApi.restartWorker(workerName);
+      toast.success(`Worker "${workerName}" 重启中`);
+      await refetch();
+    } catch (err) {
+      toast.error(formatErrorMessage(err));
+    } finally {
+      setRestartingWorker(null);
+    }
+  }, [refetch, restartingWorker]);
+
   const closeEdit = useCallback(() => {
     setEditWorker(null);
     setEditForm({});
@@ -847,25 +867,35 @@ export function WorkersSection() {
       ) : (
         <>
           {viewMode === 'card' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paginatedWorkers.map((worker, i) => (
-                <WorkerCard
-                  key={worker.name}
-                  worker={worker}
-                  index={i}
-                  isSelected={selectedWorkers.has(worker.name)}
-                  onToggleSelect={() => toggleSelect(worker.name)}
-                  onView={() => openDetail(worker)}
-                  onEdit={() => openEdit(worker)}
-                  onOpenChat={() => openChatRoom(worker.roomID)}
-                  onWake={() => wakeWorker.mutate(worker.name)}
-                  onSleep={() => sleepWorker.mutate(worker.name)}
-                  onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
-                  onUpgradeToQwenPaw={() => setUpgradeTarget(worker)}
-                  onDelete={() => setDeleteTarget(worker.name)}
-                  isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
-                  isDeleting={deletingWorkerNames.has(worker.name)}
-                />
+            <div className="space-y-6">
+              {cardGroups.map((group) => (
+                <section key={group.team || '__ungrouped'} aria-label={group.team || '未分组'}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">{group.team || '未分组'}</h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {group.workers.length} 个 Worker
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.workers.map((worker, i) => (
+                      <WorkerCard
+                        key={worker.name}
+                        worker={worker}
+                        index={i}
+                        isSelected={selectedWorkers.has(worker.name)}
+                        onToggleSelect={() => toggleSelect(worker.name)}
+                        onView={() => openDetail(worker)}
+                        onOpenDrawer={() => setDrawerWorker(worker)}
+                        onRestart={() => void handleCardRestart(worker.name)}
+                        onWake={() => wakeWorker.mutate(worker.name)}
+                        onSleep={() => sleepWorker.mutate(worker.name)}
+                        isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
+                        isRestarting={restartingWorker === worker.name}
+                        isDeleting={deletingWorkerNames.has(worker.name)}
+                      />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
@@ -888,12 +918,14 @@ export function WorkersSection() {
               compact={viewMode === 'compact'}
             />
           )}
-          <WorkerPagination
-            currentPage={safePage}
-            totalPages={totalPages}
-            totalItems={sorted.length}
-            onChange={setCurrentPage}
-          />
+          {viewMode !== 'card' && (
+            <WorkerPagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={sorted.length}
+              onChange={setCurrentPage}
+            />
+          )}
         </>
       )}
 
@@ -926,7 +958,16 @@ export function WorkersSection() {
       <WorkerDetailDialog
         worker={detailWorker}
         onOpenChange={(open) => !open && setDetailWorker(null)}
-        onSaved={() => refetch()}
+      />
+
+      <WorkerDrawer
+        worker={drawerWorker}
+        onOpenChange={(open) => !open && setDrawerWorker(null)}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
+        onChanged={() => { void refetch(); }}
+        onDeleted={() => { setDrawerWorker(null); void refetch(); }}
       />
 
       <WorkerConfigDialog
