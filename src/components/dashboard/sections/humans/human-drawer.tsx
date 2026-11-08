@@ -208,12 +208,13 @@ function HumanDrawerContent({
               </Avatar>
               <div className="min-w-0 flex-1">
                 <SheetTitle className="flex flex-wrap items-center gap-1.5 text-base">
-                  <span className="truncate">{human.name}</span>
+                  <span>编辑人员</span>
                   <Badge variant="outline" className={`text-xs ${PERMISSION_BADGE_CLASSES[level] || ''}`}>
                     {PERMISSION_LABELS[level] || `L${level}`}
                   </Badge>
                 </SheetTitle>
                 <SheetDescription className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="min-w-0 truncate font-medium text-foreground">{human.name}</span>
                   <StatusDot phase={human.phase} />
                   <PhaseBadge kind="human" phase={human.phase} />
                   <span className="min-w-0 break-all font-mono">{human.matrixUserID || '无 Matrix 用户'}</span>

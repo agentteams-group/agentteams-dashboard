@@ -58,24 +58,29 @@ function Harness({
   userLevel?: number;
   preset?: HumanResponse | null;
 }) {
-  const [human, setHuman] = useState<HumanResponse | null>(preset);
+  const [detail, setDetail] = useState<HumanResponse | null>(null);
+  const [editing, setEditing] = useState<HumanResponse | null>(preset);
   return (
     <>
       <HumanTable
         humans={[summary]}
-        onView={setHuman}
-        onEdit={() => {}}
+        onView={setDetail}
+        onEdit={setEditing}
         onDelete={() => {}}
       />
+      <HumanDetailDialog
+        human={detail}
+        onOpenChange={(open) => !open && setDetail(null)}
+      />
       <HumanDrawer
-        human={human}
+        human={editing}
         teams={[
           { name: 'team-a', humanMembers: ['alice'] },
           { name: 'team-b' },
         ]}
         workers={[{ name: 'worker-a' }]}
         userLevel={userLevel}
-        onOpenChange={(open) => !open && setHuman(null)}
+        onOpenChange={(open) => !open && setEditing(null)}
       />
     </>
   );
@@ -120,19 +125,32 @@ describe('HumanDrawer', () => {
     );
   });
 
-  it('opens the right-side drawer from the detail action with the four cards', async () => {
+  it('opens the read-only detail dialog from the detail action and the drawer from edit', async () => {
+    vi.spyOn(agentteamsApi, 'getHuman').mockResolvedValue(summary);
     renderUi(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: '查看 alice 详情' }));
 
-    expect(await screen.findByText('访问与权限')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看 alice 详情' }));
+    expect(await screen.findByText('Human 详情 - alice')).toBeInTheDocument();
+    expect(screen.queryByText('访问与权限')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Human 详情 - alice')).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 alice' }));
+    expect(await screen.findByText('编辑人员')).toBeInTheDocument();
+    expect(screen.getByText('访问与权限')).toBeInTheDocument();
     expect(screen.getByText('工作区容量配额')).toBeInTheDocument();
     expect(screen.getByText('模型授权')).toBeInTheDocument();
     expect(screen.getByText('工作区访问')).toBeInTheDocument();
+    // 详情弹窗不再同时出现。
+    expect(screen.queryByText('Human 详情 - alice')).not.toBeInTheDocument();
   });
 
   it('opens one dialog per card', async () => {
-    renderUi(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: '查看 alice 详情' }));
+    renderUi(<Harness preset={summary} />);
     await screen.findByText('访问与权限');
 
     fireEvent.click(screen.getByRole('button', { name: /访问与权限/ }));
