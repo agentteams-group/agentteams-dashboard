@@ -1116,7 +1116,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                     type="button"
                     onClick={() => enterDir(crumb.path)}
                     className={cn(
-                      'min-h-8 rounded px-1.5 hover:bg-accent',
+                      'min-h-11 max-w-[60vw] cursor-pointer truncate rounded px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-8',
                       index === crumbs.length - 1 ? 'font-medium' : 'text-muted-foreground',
                     )}
                   >
@@ -1151,14 +1151,14 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                     clearSearch();
                   }
                 }}
-                className="h-11 w-full min-w-0 rounded-md border bg-background pl-8 pr-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-11 w-full min-w-0 rounded-md border bg-background pr-12 pl-8 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               {searchRaw !== '' && (
                 <button
                   type="button"
                   aria-label="清除搜索"
                   onClick={clearSearch}
-                  className="absolute right-0.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:size-9"
                 >
                   <X className="size-4" />
                 </button>
@@ -1188,7 +1188,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                       if (id === 'tree') setRecursive(false);
                     }}
                     className={cn(
-                      'flex size-9 items-center justify-center rounded-md text-xs',
+                      'flex size-11 cursor-pointer items-center justify-center rounded-md text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:size-9',
                       view === id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -1201,7 +1201,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                 aria-label="排序键"
                 value={sort.key}
                 onChange={(e) => setSort(nextFileSort(sort, e.target.value as FileSort['key']))}
-                className="h-9 rounded-md border bg-background px-2 text-xs"
+                className="min-h-11 rounded-md border bg-background px-2 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-9 sm:min-h-9"
               >
                 <option value="name">名称</option>
                 <option value="size">大小</option>
@@ -1211,7 +1211,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9"
+                className="min-h-11 sm:min-h-9"
                 onClick={() => setSort({ ...sort, dir: sort.dir === 'asc' ? 'desc' : 'asc' })}
                 aria-label={sort.dir === 'asc' ? '升序' : '降序'}
               >
@@ -1221,7 +1221,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                 <Button
                   variant={recursive ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="h-9"
+                  className="min-h-11 sm:min-h-9"
                   aria-pressed={recursive}
                   onClick={() => setRecursive((v) => !v)}
                 >
@@ -1236,7 +1236,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         {searchQuery.active && searchUnavailable && (
           <div
             role="alert"
-            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400"
+            className="rounded-xl border border-status-waiting/30 bg-status-waiting/5 p-3 text-xs text-status-waiting"
           >
             全局搜索不可用（当前目录内容不受影响）
           </div>
@@ -1253,25 +1253,25 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         />
       )}
 
-      {/* 批量条 */}
+      {/* 批量条：sticky 且留在文档流内（不覆盖最后一行），窄屏贴底留 8px 呼吸 */}
       {multiSelect && selected.size > 0 && (
         <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 p-2 shadow-sm backdrop-blur">
           <span className="text-xs">
             已选 {selectionSummary.count} 项 · {fmtBytes(selectionSummary.bytes)}
           </span>
-          <div className="ml-auto flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="h-9" onClick={() => void batchDownload()}>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={() => void batchDownload()}>
               <Download className="size-3.5" /> 下载
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 text-destructive"
+              className="min-h-11 text-destructive sm:min-h-9"
               onClick={() => setBatchDeleteOpen(true)}
             >
               <Trash className="size-3.5" /> 删除
             </Button>
-            <Button variant="ghost" size="sm" className="h-9" onClick={clearFocusAndSelection}>
+            <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={clearFocusAndSelection}>
               <X className="size-3.5" /> 取消选择
             </Button>
           </div>
@@ -1296,13 +1296,13 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               />
             </div>
           ) : listStatus === '404' ? (
-            <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-400">
+            <div role="alert" className="rounded-xl border border-status-waiting/30 bg-status-waiting/5 p-4 text-sm text-status-waiting">
               无权限或不存在（该文件区不可见）
             </div>
           ) : listStatus === 'err' ? (
             <div role="alert" className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
               <span className="min-w-0 flex-1">{filesErrorText(error)}</span>
-              <Button variant="ghost" size="sm" onClick={() => refreshAll()}>
+              <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={() => refreshAll()}>
                 重试
               </Button>
             </div>
@@ -1316,7 +1316,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
             <div className="rounded-xl border border-dashed p-8 text-center">
               <FolderOpen className="mx-auto size-8 text-muted-foreground" />
               <p className="mt-2 text-sm">{recursive ? '文件区还没有文件' : '此目录还是空的'}</p>
-              <Button variant="link" className="mt-1" onClick={() => fileInputRef.current?.click()}>
+              <Button variant="link" className="mt-1 min-h-11" onClick={() => fileInputRef.current?.click()}>
                 上传一个文件
               </Button>
             </div>
@@ -1387,6 +1387,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                     <Button
                       variant="outline"
                       size="sm"
+                      className="min-h-11 sm:min-h-9"
                       disabled={recursiveQuery.isFetchingNextPage}
                       onClick={() => void recursiveQuery.fetchNextPage()}
                     >

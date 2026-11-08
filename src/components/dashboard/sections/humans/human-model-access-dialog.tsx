@@ -418,7 +418,7 @@ export function HumanModelAccessDialog({
 
         <div className="max-h-[62vh] space-y-3 overflow-y-auto py-1">
           {readOnly && (
-            <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+            <p role="status" className="rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               只读（403）：{locked ? '当前授权由上游继承或策略限制。' : '需要 L1 管理员权限才能修改模型授权。'}
             </p>
           )}
@@ -428,7 +428,7 @@ export function HumanModelAccessDialog({
             </p>
           )}
           {draft.scopes.length === 0 && (
-            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+            <p className="rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               未配置模型授权（fail-closed）：添加作用域并授权 (provider, model) 对后保存。
             </p>
           )}

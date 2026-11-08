@@ -350,14 +350,16 @@ export function TeamSkillsPanel({
                         {worker.name}
                       </td>
                       {columns.map((skill) => (
-                        <td key={skill} className="p-2 text-center">
-                          <input
-                            type="checkbox"
-                            className="accent-primary size-4"
-                            aria-label={`${worker.name} ${skill}`}
-                            checked={skillValuesFor(matrix, baseline, worker.name).includes(skill)}
-                            onChange={() => toggleSkill(worker.name, skill)}
-                          />
+                        <td key={skill} className="p-0 text-center">
+                          <label className="flex size-11 items-center justify-center">
+                            <input
+                              type="checkbox"
+                              className="accent-primary size-4"
+                              aria-label={`${worker.name} ${skill}`}
+                              checked={skillValuesFor(matrix, baseline, worker.name).includes(skill)}
+                              onChange={() => toggleSkill(worker.name, skill)}
+                            />
+                          </label>
                         </td>
                       ))}
                     </tr>

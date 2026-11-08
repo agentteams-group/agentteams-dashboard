@@ -142,7 +142,7 @@ export function HumanDetailDialog({
                     <div className="flex items-center gap-1 min-w-0 max-w-[60%]">
                       <Badge
                         variant="outline"
-                        className="text-xs gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0"
+                        className="text-xs gap-1 bg-status-waiting/10 text-status-waiting border-status-waiting/20 shrink-0"
                       >
                         <Lock className="w-2.5 h-2.5" aria-hidden="true" />
                         敏感
@@ -240,7 +240,7 @@ function RBACSummary({ human }: { human: HumanResponse }) {
   return (
     <div className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
       <div className="flex items-center gap-2">
-        <Shield className="w-4 h-4 text-violet-500" />
+        <Shield className="w-4 h-4 text-status-info" />
         <span className="text-xs font-medium">权限摘要</span>
         <Badge variant="outline" className="text-xs">{summary.level}</Badge>
       </div>

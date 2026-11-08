@@ -209,7 +209,7 @@ export function FileDetailCard({
             {path || dirPath || '根目录'}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label="关闭详情" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="size-11 shrink-0 sm:size-8" aria-label="关闭详情" onClick={onClose}>
           <X className="size-4" />
         </Button>
       </div>

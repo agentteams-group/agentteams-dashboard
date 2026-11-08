@@ -186,7 +186,7 @@ export function HumanEditDialog({
                 placeholder="选择团队添加…"
               />
               {missingTeams.length > 0 && (
-                <p className="text-xs text-red-600 dark:text-red-400">
+                <p className="text-xs text-destructive">
                   以下团队不存在：{missingTeams.join('、')}（服务端拒绝悬空引用，请核对后再保存）
                 </p>
               )}
@@ -215,7 +215,7 @@ export function HumanEditDialog({
                 placeholder="选择 Worker 添加…"
               />
               {missingWorkers.length > 0 && (
-                <p className="text-xs text-red-600 dark:text-red-400">
+                <p className="text-xs text-destructive">
                   以下 Workers 不存在：{missingWorkers.join('、')}（服务端拒绝悬空引用，请核对后再保存）
                 </p>
               )}
@@ -232,10 +232,11 @@ export function HumanEditDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" className="min-h-11" onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
+            className="min-h-11"
             onClick={() => onSubmit(payload)}
             disabled={
               !hasChanges || missingTeams.length > 0 || missingWorkers.length > 0 || isPending

@@ -127,7 +127,7 @@ function SearchResultRow({
           }
         }}
         className={cn(
-          'grid min-h-11 cursor-default items-center gap-2 rounded-md px-2 text-sm transition-colors',
+          'grid min-h-11 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
           'grid-cols-[minmax(0,1fr)_auto_auto]',
           selected ? 'bg-primary/10' : 'hover:bg-accent/40',
         )}

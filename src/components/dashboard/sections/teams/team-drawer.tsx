@@ -100,7 +100,7 @@ function DrawerSection({
           type="button"
           aria-expanded={expanded}
           onClick={onToggle}
-          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 p-2.5 text-left text-xs font-semibold hover:bg-muted/50"
+          className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2 p-2.5 text-left text-xs font-semibold hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="truncate">{title}</span>
@@ -261,7 +261,7 @@ function TeamDrawerContent({
         >
           <SheetHeader>
             <SheetTitle className="flex min-w-0 items-center gap-2">
-              <Users className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
+              <Users className="size-4 shrink-0 text-status-done" aria-hidden="true" />
               <span className="truncate">{team.name}</span>
               <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
             </SheetTitle>
@@ -399,7 +399,7 @@ function TeamDrawerContent({
                   />
                 </div>
                 {showPeerMentions && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-h-11 items-center gap-2">
                     <Switch
                       id="team-drawer-peer-mentions"
                       checked={basic.peerMentions ?? false}
@@ -411,9 +411,9 @@ function TeamDrawerContent({
                   </div>
                 )}
                 {notices.length > 0 && (
-                  <div role="status" className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+                  <div role="status" className="space-y-1 rounded-md border border-status-waiting/30 bg-status-waiting/10 p-2">
                     {notices.map((notice) => (
-                      <p key={notice} className="text-xs text-amber-700 dark:text-amber-400">
+                      <p key={notice} className="text-xs text-status-waiting">
                         {notice}
                       </p>
                     ))}
@@ -447,7 +447,7 @@ function TeamDrawerContent({
                   idPrefix="team-drawer-llm"
                 />
                 {llmError && (
-                  <p className="text-xs text-red-600 dark:text-red-400">
+                  <p className="text-xs text-destructive">
                     {llmError.label}：{llmError.message}
                   </p>
                 )}

@@ -85,7 +85,7 @@ function ActionsMenu({ entry, actions }: { entry: HumanFileEntry; actions: Entry
         <Button
           variant="ghost"
           size="icon"
-          className="size-9"
+          className="size-11 sm:size-9"
           aria-label={`更多操作 ${entry.name}`}
           onClick={(e) => e.stopPropagation()}
         >
@@ -151,7 +151,7 @@ function HeaderCell({
     <button
       type="button"
       onClick={() => onSort(column)}
-      className={cn('flex min-h-8 items-center gap-1 text-left text-xs text-muted-foreground hover:text-foreground', className)}
+      className={cn('flex min-h-11 cursor-pointer items-center gap-1 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-8', className)}
       aria-label={`按${label}排序`}
     >
       {label}
@@ -250,7 +250,7 @@ export function ListView({
                   }
                 }}
                 className={cn(
-                  'grid min-h-11 cursor-default items-center gap-2 rounded-md px-2 text-sm transition-colors',
+                  'grid min-h-11 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                   focused ? 'bg-primary/10' : 'hover:bg-accent/40',
                 )}
                 style={{ gridTemplateColumns: grid }}
@@ -294,7 +294,7 @@ export function ListView({
                     </span>
                   </>
                 )}
-                <div className="flex items-center justify-end gap-1">
+                <div className="flex items-center justify-end gap-2">
                   {columns.compactActions ? (
                     <ActionsMenu entry={entry} actions={actions} />
                   ) : (
@@ -302,7 +302,7 @@ export function ListView({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-9"
+                        className="size-11 sm:size-9"
                         aria-label={`详情 ${entry.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -315,7 +315,7 @@ export function ListView({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-9"
+                          className="size-11 sm:size-9"
                           aria-label={`下载 ${entry.name}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -395,7 +395,7 @@ export function TreeView({
                 data-tree-index={index}
                 data-path={row.path}
                 className={cn(
-                  'grid min-h-11 items-center gap-2 rounded-md px-2 text-sm',
+                  'grid min-h-11 cursor-pointer items-center gap-2 rounded-md px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                   focused ? 'bg-primary/10' : 'hover:bg-accent/40',
                 )}
                 style={{ gridTemplateColumns: grid }}
@@ -415,9 +415,10 @@ export function TreeView({
                 )}
                 <div className="flex min-w-0 items-center gap-1" style={{ paddingLeft: row.depth * 16 }}>
                   {row.isDir ? (
+                    // 24px 视觉 + after 伪元素把命中区扩到 44×44（不撑动树缩进）
                     <button
                       type="button"
-                      className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-accent"
+                      className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-accent after:absolute after:-inset-2.5 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       aria-label={row.expanded ? `收起 ${row.name}` : `展开 ${row.name}`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -445,7 +446,7 @@ export function TreeView({
                     <span className="text-xs text-muted-foreground">{fmtTs(row.entry.updatedAt) || '—'}</span>
                   </>
                 )}
-                <div className="flex items-center justify-end gap-1">
+                <div className="flex items-center justify-end gap-2">
                   {columns.compactActions ? (
                     <ActionsMenu entry={row.entry} actions={actions} />
                   ) : (
@@ -453,7 +454,7 @@ export function TreeView({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-9"
+                        className="size-11 sm:size-9"
                         aria-label={`详情 ${row.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -570,19 +571,21 @@ export function GridView({
             onClick={(e) => onRowClick(entry, e)}
             onDoubleClick={() => entry.type === 'directory' && onEnterDir(entry)}
             className={cn(
-              'relative flex min-h-[132px] flex-col gap-2 rounded-xl border bg-card p-2 text-left transition-colors',
+              'relative flex min-h-[132px] cursor-pointer flex-col gap-2 rounded-xl border bg-card p-2 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
               focused ? 'border-primary/60 bg-primary/5' : 'hover:bg-accent/30',
             )}
           >
             {multiSelect && (
-              <input
-                type="checkbox"
-                aria-label={`选择 ${entry.name}`}
-                className="absolute right-2 top-2 z-10 size-4 accent-primary"
-                checked={selected.has(path)}
-                onChange={(e) => onToggleSelect(entry, e as unknown as React.MouseEvent)}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <label className="absolute right-0 top-0 z-10 flex size-11 items-center justify-center">
+                <input
+                  type="checkbox"
+                  aria-label={`选择 ${entry.name}`}
+                  className="size-4 accent-primary"
+                  checked={selected.has(path)}
+                  onChange={(e) => onToggleSelect(entry, e as unknown as React.MouseEvent)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </label>
             )}
             {isImageName(entry.name) && entry.type === 'file' ? (
               <Thumb humanName={humanName} entry={entry} />

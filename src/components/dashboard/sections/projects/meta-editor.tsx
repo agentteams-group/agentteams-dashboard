@@ -57,9 +57,9 @@ interface Notice {
 }
 
 const NOTICE_TONE: Record<Notice['tone'], string> = {
-  ok: 'text-emerald-700 dark:text-emerald-400',
-  warn: 'text-amber-700 dark:text-amber-400',
-  error: 'text-red-700 dark:text-red-400',
+  ok: 'text-status-done',
+  warn: 'text-status-waiting',
+  error: 'text-status-failed',
 };
 
 type Phase = 'loading' | 'ready' | 'error';
@@ -353,7 +353,7 @@ export function MetaEditorEntry({
         type="button"
         variant="outline"
         size="sm"
-        className={cn('h-11 gap-1 text-xs sm:h-7', className)}
+        className={cn('h-11 gap-1 text-xs', className)}
         onClick={handleOpen}
         onKeyDown={handleKeyDown}
         title={`编辑${kind === 'task' ? '任务' : '项目'} meta（JSON，ETag 并发保护）`}

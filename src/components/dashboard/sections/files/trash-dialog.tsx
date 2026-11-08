@@ -141,7 +141,7 @@ export function TrashDialog({
             onChange={(e) =>
               setSort(e.target.value === 'size' ? 'size' : e.target.value === 'name' ? 'name' : 'deletedAt')
             }
-            className="h-9 rounded-md border bg-background px-2 text-sm"
+            className="min-h-11 rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-9 sm:min-h-9"
           >
             <option value="deletedAt">删除时间</option>
             <option value="size">大小</option>
@@ -166,7 +166,7 @@ export function TrashDialog({
         </div>
 
         {confirmRestoreAll && (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-status-waiting/40 bg-status-waiting/10 p-2 text-xs">
             <span className="min-w-0 flex-1">确认恢复全部 {rows.length} 项？同名冲突会逐条失败。</span>
             <Button size="sm" variant="outline" onClick={() => setConfirmRestoreAll(false)}>
               取消
@@ -178,7 +178,7 @@ export function TrashDialog({
         )}
 
         {conflict && (
-          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-status-waiting/40 bg-status-waiting/10 p-2 text-xs">
             <span className="min-w-0 flex-1">
               {conflict.entry.path}：{conflict.message}
             </span>
