@@ -1,5 +1,9 @@
 'use client';
 
+// 已被 ManagerDrawer（右侧 Sheet，配置全套）取代，列表页不再挂载本组件。
+// 保留文件是为后续把「协调团队 / Workers / 任务」只读面板接回抽屉时复用其中
+// 的选择器与任务聚合逻辑——请勿再把它当详情入口。
+
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { Crown, ListTodo, Loader2, CircleCheck, CircleX } from 'lucide-react';
