@@ -60,6 +60,64 @@ export function describeRouteAuthorization(auth: ModelRouteAuthorization | undef
   return `授权 Consumer：${auth.allowedConsumers.join('、')}`;
 }
 
+/** provider / model 候选目录（选择器与自由输入共用同一份派生结果）。 */
+export interface ModelCandidateCatalog {
+  /** 网关 provider 名（去重排序）。 */
+  providers: string[];
+  /** 请求模型 alias（去重排序）。 */
+  models: string[];
+  /** provider → 该 provider 承载的 alias（供先选 provider 再筛模型）。 */
+  modelsByProvider: Record<string, string[]>;
+  /** alias → provider（选模型后反查，自动补 provider）。 */
+  providerByModel: Record<string, string>;
+}
+
+/**
+ * 从模型选择项派生 (provider, model) 候选目录。
+ *
+ * 只收 binding.providerName —— 没有路由映射的 alias（内置模板 / SGLang）
+ * 不归属任何 provider，仍留在 models 里供自由输入与模型名选择。
+ */
+export function buildModelCandidateCatalog(
+  options: readonly ModelSelectionOption[],
+): ModelCandidateCatalog {
+  const providers = new Set<string>();
+  const models = new Set<string>();
+  const modelsByProvider: Record<string, string[]> = {};
+  const providerByModel: Record<string, string> = {};
+  for (const option of options) {
+    const alias = option.alias.trim();
+    if (!alias) continue;
+    models.add(alias);
+    const provider = (option.binding?.providerName ?? '').trim();
+    if (!provider) continue;
+    providers.add(provider);
+    const bucket = (modelsByProvider[provider] ??= []);
+    if (!bucket.includes(alias)) bucket.push(alias);
+    if (!providerByModel[alias]) providerByModel[alias] = provider;
+  }
+  for (const bucket of Object.values(modelsByProvider)) bucket.sort((a, b) => a.localeCompare(b));
+  return {
+    providers: [...providers].sort((a, b) => a.localeCompare(b)),
+    models: [...models].sort((a, b) => a.localeCompare(b)),
+    modelsByProvider,
+    providerByModel,
+  };
+}
+
+/**
+ * 当前 provider 下的模型候选：命中映射 → 该 provider 的 alias；无映射
+ * （空 provider / 未配置路由）→ 全部候选，不误伤自由输入场景。
+ */
+export function modelOptionsForProvider(
+  catalog: ModelCandidateCatalog,
+  provider: string,
+): string[] {
+  const key = provider.trim();
+  const mapped = key ? catalog.modelsByProvider[key] : undefined;
+  return mapped && mapped.length > 0 ? mapped : catalog.models;
+}
+
 export function buildModelSelectionOptions(
   routes: AiRoute[],
   providers: LlmProviderResponse[],

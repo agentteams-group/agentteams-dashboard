@@ -15,18 +15,55 @@
  *
  * 401 handling (data plane only): the middleware / Controller answered 401
  * for a request we authenticated — the credential is expired or revoked.
- * Clear the browser credentials and bounce to the entry page (which shows
- * the stateless login form). /api/auth/* responses are excluded on purpose:
- * a 401 from the stateful login form means "wrong password" and must keep
- * rendering its inline error, not bounce.
+ * Clear BOTH credential stores, then bounce to the entry page (which shows
+ * the login form):
+ *   1. POST /api/auth/logout/ — the stateful HttpOnly session cookie
+ *      (at_dash_sess) lives server-side; clearing only the browser Matrix
+ *      store leaves it valid, so the reloaded page authenticates again, the
+ *      data request 401s again and the bounce repeats forever.
+ *   2. the browser Matrix store.
+ * /api/auth/* responses are excluded on purpose: a 401 from the stateful
+ * login form means "wrong password" and must keep rendering its inline
+ * error, not bounce.
+ *
+ * Bounce loop guard: a data-plane 401 that survives the bounce (Controller
+ * credential missing/revoked, gateway auth rejecting) must not reload
+ * forever — the bounce timestamp is kept in sessionStorage (it outlives the
+ * reload) and a second 401 within AUTH_BOUNCE_WINDOW_MS is handed back to
+ * the caller so the page can show an actionable error instead.
  */
 
 import { useMatrixStore } from './matrix-store';
 import { useAgentTeamsStore } from './agentteams-store';
 import { loadClientConfig } from './client-config-store';
+import { apiUrl } from './api-base';
 
 let installed = false;
 let redirecting = false;
+
+const AUTH_BOUNCE_KEY = 'at_auth_bounce_at';
+const AUTH_BOUNCE_WINDOW_MS = 10_000;
+
+/** Did we already bounce the page within the last few seconds? */
+function bouncedRecently(): boolean {
+  try {
+    const raw = window.sessionStorage.getItem(AUTH_BOUNCE_KEY);
+    if (!raw) return false;
+    const at = Number(raw);
+    if (!Number.isFinite(at)) return false;
+    return Date.now() - at < AUTH_BOUNCE_WINDOW_MS;
+  } catch {
+    return false; // storage unavailable — never block the bounce
+  }
+}
+
+function markBounced(): void {
+  try {
+    window.sessionStorage.setItem(AUTH_BOUNCE_KEY, String(Date.now()));
+  } catch {
+    /* storage unavailable — the in-realm `redirecting` flag still guards */
+  }
+}
 
 /** The credential the browser presents on the data plane (F7 priority). */
 export function activeClientBearerToken(): string | null {
@@ -50,6 +87,23 @@ function clearClientCredentials(): void {
     useMatrixStore.getState().logout();
   } catch {
     /* store not ready */
+  }
+}
+
+/**
+ * Clear the SERVER-side session (HttpOnly at_dash_sess cookie + session
+ * record). Best effort: a failed logout must not stop the bounce.
+ * Goes through the un-patched fetch so the logout response cannot re-enter
+ * this 401 handler.
+ */
+async function clearServerSession(fetchImpl: typeof fetch): Promise<void> {
+  try {
+    await fetchImpl(apiUrl('/api/auth/logout/'), {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch {
+    /* offline / route missing — the bounce still has to happen */
   }
 }
 
@@ -112,9 +166,15 @@ export function installClientAuthFetch(): void {
       authenticatedRequest &&
       !redirecting
     ) {
+      // Already bounced moments ago and the data plane still rejects the
+      // credential: reloading again would loop forever. Hand the 401 back to
+      // the caller so the page renders an actionable error.
+      if (bouncedRecently()) return response;
       redirecting = true;
+      markBounced();
+      await clearServerSession(originalFetch);
       clearClientCredentials();
-      window.location.replace('/?reason=unauthorized');
+      window.location.replace('/?reason=unauthorized&from=data401');
     }
     return response;
   }) as typeof fetch;
@@ -124,4 +184,9 @@ export function installClientAuthFetch(): void {
 export function __resetClientAuthFetchForTests(): void {
   installed = false;
   redirecting = false;
+  try {
+    window.sessionStorage.removeItem(AUTH_BOUNCE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
 }

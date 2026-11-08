@@ -43,6 +43,10 @@ export default function Home() {
   // F7: why the stateless login page should warn (expired vs invalid).
   const [staticReason, setStaticReason] = useState<'unauthorized' | 'invalid' | null>(null);
   const [staticDetail, setStaticDetail] = useState<string | undefined>(undefined);
+  // Data-plane 401 bounce (client-auth-fetch): the login succeeded but the
+  // Controller/gateway rejected the credential — the login page must show an
+  // actionable error instead of letting the page retry the data plane.
+  const [dataPlaneRejected, setDataPlaneRejected] = useState(false);
   // F7: which auth flow this deployment runs (from the public /mode probe).
   const [authMode, setAuthMode] = useState<'stateful' | 'stateless' | null>(null);
   // F7: server-side Matrix homeserver candidates (stateless deployments
@@ -95,6 +99,9 @@ export default function Home() {
               const bounced = new URLSearchParams(window.location.search).get('reason') === 'unauthorized';
               setStaticReason(data.reason === 'invalid' ? 'invalid' : bounced ? 'unauthorized' : null);
               setStaticDetail(data.detail);
+              setDataPlaneRejected(
+                bounced && new URLSearchParams(window.location.search).get('from') === 'data401',
+              );
             })
             .catch(() => {
               if (!cancelled) setAuth({ status: 'unreachable' });
@@ -109,10 +116,16 @@ export default function Home() {
             if (cancelled) return;
             if (!data.authenticated) {
               setAuth({ status: 'unauthenticated' });
+              const params = new URLSearchParams(window.location.search);
               // F1e: ?setup=1 forces the pre-login backend setup page from the
               // login screen (escape hatch — broken/changed environments).
-              const forceSetup = new URLSearchParams(window.location.search).get('setup') === '1';
+              const forceSetup = params.get('setup') === '1';
               setForceSetup(forceSetup);
+              // A data-plane bounce means the login was fine but the
+              // Controller credential was rejected — surface it, never retry.
+              setDataPlaneRejected(
+                params.get('reason') === 'unauthorized' && params.get('from') === 'data401',
+              );
               // F1: before offering the login form, check whether the dashboard
               // has any usable backend addresses. Standalone installs without
               // env config must configure backends FIRST (token-gated),
@@ -211,6 +224,7 @@ export default function Home() {
             reason={staticReason}
             detail={staticDetail}
             defaultHomeservers={defaultHomeservers ?? undefined}
+            fromData401={dataPlaneRejected}
           />
           <Toaster position="top-right" richColors />
         </ThemeProvider>
@@ -222,7 +236,7 @@ export default function Home() {
         {preSetup.status === 'required' ? (
           <BackendSetupPage onDone={handleLoginSuccess} reconfigure={forceSetup} />
         ) : (
-          <LoginPage onLoginSuccess={handleLoginSuccess} />
+          <LoginPage onLoginSuccess={handleLoginSuccess} dataPlaneRejected={dataPlaneRejected} />
         )}
         <Toaster position="top-right" richColors />
       </ThemeProvider>

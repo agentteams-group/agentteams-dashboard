@@ -111,7 +111,7 @@ export const navItems: NavItem[] = [
   { id: 'knowledge', label: '知识库', icon: KnowledgeBookIcon, area: 'console', group: 'resources', legacyGroup: 'resource' },
   // 文件（资产中心）：Human 文件区完整管理（列表/树/网格、上传、编辑、
   // 回收站、配额）。权限与 Humans 同档（L1 only）。
-  { id: 'files', label: '文件', icon: FolderOpen, area: 'console', group: 'resources', legacyGroup: 'resource', minLevel: 3 },
+  { id: 'files', label: '文件', icon: FolderOpen, area: 'console', group: 'resources', legacyGroup: 'resource', minLevel: 2 },
   // 治理：审计。
   { id: 'audit', label: '审计', icon: ScrollText, area: 'console', group: 'governance', legacyGroup: 'resource' },
   { id: 'tracing', label: 'Tracing', icon: Activity, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 1 },

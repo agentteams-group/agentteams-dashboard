@@ -60,6 +60,8 @@ import {
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
+import { MillforgeDialog } from './millforge/millforge-dialog';
+import { MillforgeEntryCard } from './millforge/millforge-entry-card';
 import { TeamMembersPanel } from './team-members-panel';
 import { TeamSkillsPanel } from './team-skills-panel';
 import {
@@ -158,6 +160,7 @@ function TeamDrawerContent({
   const [confirmName, setConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [joining, setJoining] = useState<string | null>(null);
+  const [millforgeOpen, setMillforgeOpen] = useState(false);
 
   const updateTeam = useUpdateTeam();
   const deleteTeam = useDeleteTeam();
@@ -480,7 +483,10 @@ function TeamDrawerContent({
               <TeamSkillsPanel team={team} workers={workers} onChanged={onChanged} />
             </DrawerSection>
 
-            {/* 5. 加入未归属 Worker */}
+            {/* 5. 千锻（注入 / 自定义团队 / 模块更新 / 注入历史） */}
+            <MillforgeEntryCard onClick={() => setMillforgeOpen(true)} />
+
+            {/* 6. 加入未归属 Worker */}
             <DrawerSection
               title="加入未归属 Worker"
               icon={UserPlus}
@@ -527,7 +533,7 @@ function TeamDrawerContent({
               </div>
             </DrawerSection>
 
-            {/* 6. 危险区 */}
+            {/* 7. 危险区 */}
             <DrawerSection
               title="危险区"
               icon={AlertTriangle}
@@ -563,6 +569,16 @@ function TeamDrawerContent({
           </div>
         </SheetContent>
       </Sheet>
+
+      <MillforgeDialog
+        open={millforgeOpen}
+        team={team}
+        workers={workers}
+        canInstall={userLevel >= 3}
+        modelAliases={modelOptions.map((option) => option.alias)}
+        onOpenChange={setMillforgeOpen}
+        onInjected={onChanged}
+      />
 
       <Dialog
         open={deleteOpen}

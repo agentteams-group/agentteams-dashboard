@@ -91,7 +91,7 @@ export function ChatAuthBadge({
           连接对话
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-[95vw] sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>连接你的 Agent</DialogTitle>
         </DialogHeader>

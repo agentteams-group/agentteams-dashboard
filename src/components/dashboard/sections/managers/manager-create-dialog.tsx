@@ -84,7 +84,7 @@ export function ManagerCreateDialog({
               value={value.runtime || 'openclaw'}
               onValueChange={(runtime) => onChange({ ...value, runtime })}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full min-w-0">
                 <SelectValue placeholder="选择运行时" />
               </SelectTrigger>
               <SelectContent>

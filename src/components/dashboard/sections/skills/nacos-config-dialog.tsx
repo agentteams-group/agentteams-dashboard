@@ -132,7 +132,7 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
             <div className="space-y-2">
               <Label>协议</Label>
               <Select value={protocol} onValueChange={(v) => setProtocol(v as 'http' | 'https')}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -144,7 +144,7 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
             <div className="space-y-2">
               <Label>模式</Label>
               <Select value={mode} onValueChange={(v) => setMode(v as 'services' | 'skills')}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

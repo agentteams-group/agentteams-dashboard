@@ -446,6 +446,7 @@ function WorkerDrawerContent({
           key={`coding-cli-${view.name}`}
           workerName={view.name}
           runtime={view.runtime}
+          modelAliases={modelOptions.map((option) => option.alias)}
           onChanged={onChanged}
         />
       ),

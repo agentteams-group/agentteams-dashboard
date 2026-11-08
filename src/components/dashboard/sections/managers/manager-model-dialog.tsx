@@ -18,10 +18,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
+import {
+  buildModelCandidateCatalog,
+  type ModelSelectionOption,
+} from '@/lib/model-catalog';
 
 function resolveProviderHint(
   model: string,
@@ -75,6 +78,7 @@ export function ManagerModelDialog({
   }
 
   const providerHint = resolveProviderHint(draft, modelOptions);
+  const providerCatalog = buildModelCandidateCatalog(modelOptions);
   const changed = draft.trim() !== model.trim() || providerTouched;
 
   return (
@@ -101,14 +105,16 @@ export function ManagerModelDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="manager-model-provider">Provider（可选）</Label>
-            <Input
+            <Combobox
               id="manager-model-provider"
               value={provider}
-              onChange={(event) => {
-                setProvider(event.target.value);
+              options={providerCatalog.providers}
+              onChange={(next) => {
+                setProvider(next);
                 setProviderTouched(true);
               }}
               placeholder={providerHint ? `当前解析：${providerHint}` : '留空 = 保持 Controller 现值'}
+              ariaLabel="Provider（可选）"
             />
             <p className="text-xs text-muted-foreground">
               多 provider 部署下同时下发 model 与 provider；留空则沿用 Controller 现值。
