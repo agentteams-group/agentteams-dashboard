@@ -392,10 +392,15 @@ async function readBodyWithResume(
 
 /** 文件区读写客户端。读走带 ETag 缓存的 GET；写走预签名/直传 + commit。 */
 export const humanFilesApi = {
-  listDirectory: (name: string, dir = ''): Promise<HumanFileListResponse> => {
+  listDirectory: (
+    name: string,
+    dir = '',
+    options: { signal?: AbortSignal } = {},
+  ): Promise<HumanFileListResponse> => {
     const suffix = dir ? '?list=1' : '';
     return requestJson<{ path?: string; entries?: unknown[] }>(
       apiUrl(`${humanFilesApiPath(name, dir)}${suffix}`),
+      options.signal,
     ).then((payload) => ({
       path: typeof payload.path === 'string' ? payload.path : dir,
       entries: (Array.isArray(payload.entries) ? payload.entries : [])
@@ -407,13 +412,14 @@ export const humanFilesApi = {
   /** 递归平铺（#1518 query 端点；游标分页，控制器按整个文件区扫描）。 */
   listRecursive: async (
     name: string,
-    options: { cursor?: string; limit?: number } = {},
+    options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
   ): Promise<HumanFileRecursiveResponse> => {
     const params = new URLSearchParams({ recursive: '1' });
     if (options.cursor) params.set('cursor', options.cursor);
     if (options.limit) params.set('limit', String(options.limit));
     const payload = await requestJson<{ entries?: unknown[]; nextKey?: unknown }>(
       apiUrl(`${humanFilesApiPath(name)}?${params.toString()}`),
+      options.signal,
     );
     const entries: HumanFileRecursiveEntry[] = [];
     for (const raw of Array.isArray(payload.entries) ? payload.entries : []) {
@@ -434,9 +440,9 @@ export const humanFilesApi = {
     };
   },
 
-  listTrash: async (name: string): Promise<HumanTrashEntry[]> => {
+  listTrash: async (name: string, options: { signal?: AbortSignal } = {}): Promise<HumanTrashEntry[]> => {
     const url = apiUrl(`/api/agentteams/humans/${encodeURIComponent(name)}/trash`);
-    return normalizeTrashEntries(await requestJson<unknown>(url));
+    return normalizeTrashEntries(await requestJson<unknown>(url, options.signal));
   },
 
   /** HEAD 元信息（ETag + 大小；不支持 HEAD → 空对象）。 */
@@ -625,9 +631,13 @@ export const humanFilesApi = {
 
   getQuota: async (
     name: string,
+    options: { signal?: AbortSignal } = {},
   ): Promise<{ usedBytes: number; quotaBytes: number | null }> => {
     const url = apiUrl(`/api/agentteams/humans/${encodeURIComponent(name)}/quota`);
-    const payload = await requestJson<{ usedBytes?: unknown; quotaBytes?: unknown }>(url);
+    const payload = await requestJson<{ usedBytes?: unknown; quotaBytes?: unknown }>(
+      url,
+      options.signal,
+    );
     return {
       usedBytes: typeof payload.usedBytes === 'number' ? payload.usedBytes : 0,
       quotaBytes: typeof payload.quotaBytes === 'number' ? payload.quotaBytes : null,

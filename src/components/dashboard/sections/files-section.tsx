@@ -1,7 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   ChevronRight,
   Download,
@@ -9,6 +14,7 @@ import {
   FolderPlus,
   Grid2X2,
   List,
+  Loader2,
   RefreshCw,
   Search,
   Trash,
@@ -54,7 +60,6 @@ import {
   parentDir,
   parseFileSort,
   parseFilesView,
-  pruneSelection,
   quotaPercent,
   resolveTargetDir,
   rowClickIntent,
@@ -75,8 +80,23 @@ import {
   type UploadItem,
 } from '@/lib/files-model';
 import {
+  FILES_GC_MS,
+  FILES_STALE_MS,
+  MIN_REFETCH_GAP_MS,
+  SEARCH_STALE_MS,
+  TRASH_STALE_MS,
+  VISIBLE_REFRESH_AFTER_MS,
+  filesQueryKeys,
+  mergeOptimisticRename,
+  pruneSelection,
+  queryKeysForWrite,
+  shouldBackgroundRefresh,
+  type FilesWriteKind,
+} from '@/lib/files-refresh';
+import {
   humanFilesApi,
   type HumanFileEntry,
+  type HumanFileListResponse,
   type HumanTrashEntry,
 } from '@/lib/human-files-api';
 import {
@@ -239,35 +259,53 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   useEffect(() => writeStorage(FILE_SORT_STORAGE_KEY, serializeFileSort(sort)), [sort]);
 
   // ── 数据 ───────────────────────────────────────────────────────────
+  // 缓存策略见 lib/files-refresh.ts：stale-while-revalidate —— 有旧数据先渲染，
+  // 后台重取只更新数据不换骨架；窗口 focus 仅在过期后才重取（不被 staleTime 绕过）。
   const dirQuery = useQuery({
-    queryKey: ['human-files', humanName, dirPath],
-    queryFn: () => humanFilesApi.listDirectory(humanName, dirPath),
+    queryKey: filesQueryKeys.dir(humanName, dirPath),
+    queryFn: ({ signal }) => humanFilesApi.listDirectory(humanName, dirPath, { signal }),
     enabled: Boolean(humanName) && !recursive,
     retry: false,
+    staleTime: FILES_STALE_MS,
+    gcTime: FILES_GC_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const recursiveQuery = useInfiniteQuery({
-    queryKey: ['human-files-recursive', humanName],
-    queryFn: ({ pageParam }) =>
-      humanFilesApi.listRecursive(humanName, { cursor: pageParam ?? undefined }),
+    queryKey: filesQueryKeys.recursive(humanName),
+    queryFn: ({ pageParam, signal }) =>
+      humanFilesApi.listRecursive(humanName, { cursor: pageParam ?? undefined, signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextKey ?? undefined,
     enabled: Boolean(humanName) && recursive,
     retry: false,
+    staleTime: FILES_STALE_MS,
+    gcTime: FILES_GC_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const trashQuery = useQuery({
-    queryKey: ['human-trash', humanName],
-    queryFn: () => humanFilesApi.listTrash(humanName),
+    queryKey: filesQueryKeys.trash(humanName),
+    queryFn: ({ signal }) => humanFilesApi.listTrash(humanName, { signal }),
     enabled: Boolean(humanName),
     retry: false,
+    staleTime: TRASH_STALE_MS,
+    gcTime: FILES_GC_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const quotaQuery = useQuery({
-    queryKey: ['human-quota', humanName],
-    queryFn: () => humanFilesApi.getQuota(humanName),
+    queryKey: filesQueryKeys.quota(humanName),
+    queryFn: ({ signal }) => humanFilesApi.getQuota(humanName, { signal }),
     enabled: Boolean(humanName),
     retry: false,
+    staleTime: FILES_STALE_MS,
+    gcTime: FILES_GC_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const directoryEntries = useMemo(
@@ -292,23 +330,49 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   const entries = recursive ? recursiveEntries : directoryEntries;
 
   const loading = recursive ? recursiveQuery.isPending : dirQuery.isPending;
-  const error = recursive ? recursiveQuery.error : dirQuery.error;
-  const listStatus = error ? statusOf(error) : '';
+  // 有旧数据就先把错误降级成「部分更新失败」提示，不拿错误占位替换整份列表
+  // （递归翻页失败尤其如此：已加载页必须留在屏上）。
+  const listError = recursive
+    ? recursiveQuery.data
+      ? null
+      : recursiveQuery.error
+    : dirQuery.data
+      ? null
+      : dirQuery.error;
+  const listStatus = listError ? statusOf(listError) : '';
+  // 旧数据仍在屏上时的「部分更新失败」文案（错误占位只留给首屏失败）。
+  // 翻页失败由列表底部的专属提示承载，这里不重复报。
+  const pageError = recursive && recursiveQuery.isFetchNextPageError;
+  const staleErrorText = !loading && !listStatus && !pageError
+    ? recursive
+      ? recursiveQuery.isError
+        ? filesErrorText(recursiveQuery.error)
+        : ''
+      : dirQuery.isError
+        ? filesErrorText(dirQuery.error)
+        : ''
+    : '';
 
   // 全局搜索数据：首屏 1000 条递归平铺；后续 cursor 只在「加载更多」时显式续拉。
   const searchData = useInfiniteQuery({
-    queryKey: ['human-files-search', humanName, searchTerm],
-    queryFn: ({ pageParam }) =>
+    queryKey: filesQueryKeys.searchTerm(humanName, searchTerm),
+    queryFn: ({ pageParam, signal }) =>
       humanFilesApi.listRecursive(
         humanName,
         pageParam
-          ? { cursor: pageParam, limit: SEARCH_FETCH_LIMIT }
-          : { limit: SEARCH_FETCH_LIMIT },
+          ? { cursor: pageParam, limit: SEARCH_FETCH_LIMIT, signal }
+          : { limit: SEARCH_FETCH_LIMIT, signal },
       ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextKey ?? undefined,
     enabled: Boolean(humanName) && searchQuery.active && searchTerm !== '',
     retry: false,
+    staleTime: SEARCH_STALE_MS,
+    gcTime: FILES_GC_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    // 换词时旧结果留屏到新结果到达（配合下面的「搜索中」指示）。
+    placeholderData: keepPreviousData,
   });
 
   // 404/403/501（端点不可用）→ 降级「全局搜索不可用」，当前目录内容照常。
@@ -382,34 +446,177 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     return searchEntries.find((e) => entryRowPath(e, '') === focusedPath) ?? null;
   }, [dirPath, focusedPath, knownEntries, searchEntries]);
 
+  const knownPathSet = useMemo(
+    () => new Set(knownEntries.map((e) => entryRowPath(e, dirPath))),
+    [dirPath, knownEntries],
+  );
+
+  // 选择只保留仍可见的路径（换视图 / 折叠树 / 数据刷新都走这里，静默）。
   useEffect(() => {
-    setSelected((prev) => pruneSelection(prev, visiblePaths));
+    setSelected((prev) => {
+      const next = pruneSelection(visiblePaths, prev);
+      return next.removed.length === 0 ? prev : next.selected;
+    });
   }, [visiblePaths]);
+
+  // 数据变化后消失的条目：摘出选择 / 关掉悬空详情，并提示一次。
+  const selectedRef = useRef<SelectionSet>(selected);
+  const focusedRef = useRef<string | null>(focusedPath);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+  useEffect(() => {
+    focusedRef.current = focusedPath;
+  }, [focusedPath]);
+
+  const prevKnownRef = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    const prev = prevKnownRef.current;
+    prevKnownRef.current = knownPathSet;
+    // 搜索态展示的是另一份结果集，目录缓存刷新不该牵动它。
+    if (!prev || prev.size === 0 || searchOn) return;
+    const vanished: string[] = [];
+    for (const p of prev) if (!knownPathSet.has(p)) vanished.push(p);
+    if (vanished.length === 0) return;
+    const dropped = vanished.filter((p) => selectedRef.current.has(p));
+    if (dropped.length > 0) {
+      setSelected((cur) => {
+        const next = pruneSelection(visiblePaths, cur);
+        return next.removed.length === 0 ? cur : next.selected;
+      });
+      toast.info(`${dropped.length} 个已选项已不存在，已从选择中移除`, {
+        id: 'files-selection-pruned',
+      });
+    }
+    if (focusedRef.current && vanished.includes(focusedRef.current)) setFocusedPath(null);
+  }, [knownPathSet, searchOn, visiblePaths]);
 
   const targetDir = resolveTargetDir(uploadDir, dirPath);
 
-  // ── 刷新 / 失效 ─────────────────────────────────────────────────────
-  const refreshAll = useCallback(
-    (silent = false) => {
-      void queryClient.invalidateQueries({ queryKey: ['human-files', humanName] });
-      void queryClient.invalidateQueries({ queryKey: ['human-files-recursive', humanName] });
-      void queryClient.invalidateQueries({ queryKey: ['human-files-search', humanName] });
-      void queryClient.invalidateQueries({ queryKey: ['human-quota', humanName] });
-      void queryClient.invalidateQueries({ queryKey: ['human-trash', humanName] });
-      if (!silent) {
-        void dirQuery.refetch();
-        void quotaQuery.refetch();
-        void trashQuery.refetch();
+  // ── 刷新 / 失效（stale-while-revalidate）─────────────────────────────
+  /** 当前视图必要 query（目录 / 递归当前页 / quota）——手动刷新只碰这些。 */
+  const refetchCurrent = useCallback(() => {
+    if (!humanName) return;
+    if (searchOn) {
+      void searchData.refetch();
+      return;
+    }
+    if (recursive) void recursiveQuery.refetch();
+    else void dirQuery.refetch();
+    void quotaQuery.refetch();
+  }, [dirQuery, humanName, quotaQuery, recursive, recursiveQuery, searchData, searchOn]);
+
+  /** 写操作后：只失效相关 key（搜索快照与无关目录不动）。 */
+  const afterWrite = useCallback(
+    (kind: FilesWriteKind, options: { dir?: string; destDir?: string } = {}) => {
+      if (!humanName) return;
+      const keys = queryKeysForWrite({
+        kind,
+        human: humanName,
+        dir: options.dir ?? dirPath,
+        destDir: options.destDir,
+      });
+      for (const key of keys) void queryClient.invalidateQueries({ queryKey: key });
+      if (kind !== 'quota' && kind !== 'purge') {
+        // 结构变了：树懒加载的分支缓存既可能多也可能少，丢掉重拉。
+        setChildren(new Map());
+        setExpanded(new Set());
+        setTreeErrors({});
       }
     },
-    [dirQuery, humanName, queryClient, quotaQuery, trashQuery],
+    [dirPath, humanName, queryClient],
   );
 
-  const mutateDone = useCallback(() => {
-    refreshAll(true);
-    setChildren(new Map());
-    setExpanded(new Set());
-  }, [refreshAll]);
+  /** 编辑器保存 / 上传队列收尾：内容变化但不重置视图状态。 */
+  const mutateDone = useCallback(() => afterWrite('upload'), [afterWrite]);
+
+  // ── 乐观缓存补丁（返回回滚）─────────────────────────────────────────
+  const patchDirCache = useCallback(
+    (dir: string, patch: (_entries: HumanFileEntry[]) => HumanFileEntry[]): (() => void) => {
+      const key = filesQueryKeys.dir(humanName, dir);
+      const prev = queryClient.getQueryData<HumanFileListResponse>(key);
+      if (!prev) return () => {};
+      const next = patch(prev.entries);
+      if (next === prev.entries) return () => {};
+      queryClient.setQueryData<HumanFileListResponse>(key, { ...prev, entries: next });
+      return () => queryClient.setQueryData(key, prev);
+    },
+    [humanName, queryClient],
+  );
+
+  const upsertInDir = useCallback(
+    (dir: string, entry: HumanFileEntry): (() => void) =>
+      patchDirCache(dir, (entries) => {
+        const target = entryRowPath(entry, dir);
+        const index = entries.findIndex((e) => entryRowPath(e, dir) === target);
+        if (index < 0) return [...entries, entry];
+        const next = entries.slice();
+        next[index] = { ...entries[index], ...entry };
+        return next;
+      }),
+    [patchDirCache],
+  );
+
+  const removeFromDir = useCallback(
+    (dir: string, path: string): (() => void) =>
+      patchDirCache(dir, (entries) => {
+        const next = entries.filter((e) => entryRowPath(e, dir) !== path);
+        return next.length === entries.length ? entries : next;
+      }),
+    [patchDirCache],
+  );
+
+  /** 重命名 / 移动的乐观替换：同目录就地换名，跨目录从源目录摘下再插到目标目录。 */
+  const optimisticMove = useCallback(
+    (entry: HumanFileEntry | null, from: string, to: string): (() => void) => {
+      const sourceDir = parentDir(from);
+      const destDir = parentDir(to);
+      if (sourceDir === destDir) {
+        return patchDirCache(sourceDir, (entries) => mergeOptimisticRename(entries, from, to));
+      }
+      const undoSource = removeFromDir(sourceDir, from);
+      const moved = entry ? mergeOptimisticRename([entry], from, to)[0] : null;
+      const undoDest = moved ? upsertInDir(destDir, moved) : () => {};
+      return () => {
+        undoDest();
+        undoSource();
+      };
+    },
+    [patchDirCache, removeFromDir, upsertInDir],
+  );
+
+  // 页面隐藏不轮询；回到可见且距上次成功 >60s 才后台重取（不换骨架、不清搜索）。
+  const lastAutoRefresh = useRef(0);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisible = () => {
+      if (document.visibilityState === 'hidden' || !humanName) return;
+      const now = Date.now();
+      if (!shouldBackgroundRefresh(lastAutoRefresh.current, now, MIN_REFETCH_GAP_MS)) return;
+      const keys: ReadonlyArray<readonly unknown[]> = searchOn
+        ? [filesQueryKeys.searchTerm(humanName, searchTerm)]
+        : recursive
+          ? [filesQueryKeys.recursive(humanName), filesQueryKeys.quota(humanName)]
+          : [filesQueryKeys.dir(humanName, dirPath), filesQueryKeys.quota(humanName)];
+      const lastSuccess = keys.reduce(
+        (latest, key) => Math.max(latest, queryClient.getQueryState(key)?.dataUpdatedAt ?? 0),
+        0,
+      );
+      if (!shouldBackgroundRefresh(lastSuccess, now, VISIBLE_REFRESH_AFTER_MS)) return;
+      lastAutoRefresh.current = now;
+      for (const key of keys) void queryClient.refetchQueries({ queryKey: key, type: 'active' });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [dirPath, humanName, queryClient, recursive, searchOn, searchTerm]);
+
+  const refreshing = searchOn
+    ? searchData.isFetching
+    : recursive
+      ? recursiveQuery.isFetching
+      : dirQuery.isFetching;
+  // 已有数据时的后台更新：给用户一条轻量提示，不拿骨架盖住列表。
+  const backgroundUpdating = !loading && (refreshing || quotaQuery.isFetching);
 
   // ── 布局测量 ───────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -691,6 +898,14 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
       try {
         await humanFilesApi.uploadFile(humanName, item.path, file, { signal: ctrl.signal });
         setUploadItems((prev) => markUploadStatus(prev, item.id, 'success'));
+        // 逐项落进当前目录缓存：队列跑完不再整页刷新，只有「收尾」才做一次校正。
+        upsertInDir(parent, {
+          name: item.path.split('/').pop() ?? item.name,
+          path: item.path,
+          type: 'file',
+          size: file.size,
+          updatedAt: new Date().toISOString(),
+        });
       } catch (err) {
         setUploadItems((prev) =>
           markUploadStatus(prev, item.id, 'failed', filesErrorText(err)),
@@ -699,7 +914,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         uploadAborts.current.delete(item.id);
       }
     },
-    [humanName],
+    [humanName, upsertInDir],
   );
 
   const progress = uploadProgress(uploadItems);
@@ -803,17 +1018,32 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   };
 
   const submitRename = async (plan: { from: string; to: string }) => {
-    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from);
-    await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
-    if (focusedPath === plan.from) setFocusedPath(plan.to);
-    mutateDone();
+    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from) ?? null;
+    // 先换名（同目录就地替换 path），失败回滚并让弹窗显示错误。
+    const rollback = optimisticMove(entry, plan.from, plan.to);
+    try {
+      await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
+      if (focusedPath === plan.from) setFocusedPath(plan.to);
+      afterWrite('rename', { dir: parentDir(plan.from), destDir: parentDir(plan.to) });
+    } catch (err) {
+      rollback();
+      toast.error('重命名失败', { description: filesErrorText(err) });
+      throw err;
+    }
   };
 
   const submitMove = async (plan: { from: string; to: string }) => {
-    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from);
-    await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
-    if (focusedPath === plan.from) setFocusedPath(plan.to);
-    mutateDone();
+    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from) ?? null;
+    const rollback = optimisticMove(entry, plan.from, plan.to);
+    try {
+      await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
+      if (focusedPath === plan.from) setFocusedPath(plan.to);
+      afterWrite('move', { dir: parentDir(plan.from), destDir: parentDir(plan.to) });
+    } catch (err) {
+      rollback();
+      toast.error('移动失败', { description: filesErrorText(err) });
+      throw err;
+    }
   };
 
   const deleteEntry = async (path: string) => {
@@ -823,40 +1053,56 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
 
   const confirmDelete = async (purge: boolean) => {
     if (!deleteTarget) return;
-    const trashId = await deleteEntry(deleteTarget.path);
-    if (!purge && trashId) {
+    const target = deleteTarget;
+    // 先从当前目录摘掉（回收站可见性由失效保证），失败回滚。
+    const rollback = removeFromDir(parentDir(target.path), target.path);
+    let trashId = '';
+    try {
+      trashId = await deleteEntry(target.path);
+    } catch (err) {
+      rollback();
+      toast.error('删除失败', { description: filesErrorText(err) });
+      throw err;
+    }
+    if (purge && trashId) {
+      try {
+        await humanFilesApi.purgeTrash(humanName, trashId);
+      } catch (err) {
+        toast.error('彻底删除失败', { description: filesErrorText(err) });
+      }
+    } else if (trashId) {
       // 软删成功：撤销条 8s（复用 toast action 形态）。
       toast('已移入回收站', {
-        description: deleteTarget.name,
+        description: target.name,
         duration: 8000,
         action: {
           label: '撤销',
           onClick: () => {
             void humanFilesApi
               .restoreTrash(humanName, trashId, false)
-              .then(() => mutateDone())
+              .then(() => afterWrite('restore', { dir: parentDir(target.path) }))
               .catch((err) => toast.error('撤销失败', { description: filesErrorText(err) }));
           },
         },
       });
-    } else if (purge && trashId) {
-      await humanFilesApi.purgeTrash(humanName, trashId);
     }
-    if (focusedPath === deleteTarget.path) setFocusedPath(null);
-    mutateDone();
+    if (focusedPath === target.path) setFocusedPath(null);
+    afterWrite(purge ? 'purge' : 'delete', { dir: parentDir(target.path) });
   };
 
   const confirmBatchDelete = async () => {
     const targets = knownEntries.filter((e) => selected.has(entryRowPath(e, dirPath)));
     const files = targets.filter((e) => e.type === 'file');
     const skippedDirs = targets.length - files.length;
-    let ok = 0;
+    const deleted: string[] = [];
     let failed = 0;
     let firstError = '';
     for (const e of files) {
+      const path = entryRowPath(e, dirPath);
       try {
-        await deleteEntry(entryRowPath(e, dirPath));
-        ok += 1;
+        await deleteEntry(path);
+        deleted.push(path);
+        removeFromDir(parentDir(path), path);
       } catch (err) {
         failed += 1;
         if (!firstError) firstError = filesErrorText(err);
@@ -865,11 +1111,12 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     setSelected(clearSelection());
     setAnchor(null);
     setFocusedPath(null);
-    mutateDone();
+    // 批量删除只重建当前目录（+ 回收站/配额），已成功的逐项摘掉，不整页刷新。
+    if (deleted.length > 0) afterWrite('delete');
     if (skippedDirs > 0) {
       toast.warning(`目录不支持批量删除，已跳过 ${skippedDirs} 个`);
     }
-    toast[failed > 0 ? 'error' : 'success'](`删除完成：成功 ${ok} 项${failed ? `，失败 ${failed} 项（${firstError}）` : ''}`);
+    toast[failed > 0 ? 'error' : 'success'](`删除完成：成功 ${deleted.length} 项${failed ? `，失败 ${failed} 项（${firstError}）` : ''}`);
   };
 
   const batchDownload = async () => {
@@ -887,8 +1134,21 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
 
   const onCreateFolder = async (name: string) => {
     const dir = targetDir ? `${targetDir}/${name}` : name;
-    await humanFilesApi.makeDirectory(humanName, dir);
-    mutateDone();
+    const rollback = upsertInDir(parentDir(dir), {
+      name,
+      path: dir,
+      type: 'directory',
+      size: 0,
+      updatedAt: new Date().toISOString(),
+    });
+    try {
+      await humanFilesApi.makeDirectory(humanName, dir);
+      afterWrite('create', { dir: parentDir(dir) });
+    } catch (err) {
+      rollback();
+      toast.error('新建文件夹失败', { description: filesErrorText(err) });
+      throw err;
+    }
   };
 
   const onDrop = (files: { file: File; relPath: string }[], truncated: boolean) => {
@@ -1089,14 +1349,11 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
               size="icon"
               className="size-11 md:size-9"
               aria-label="刷新"
-              onClick={() => {
-                // 刷新清空搜索：避免结果停留在旧快照上。
-                clearSearch();
-                refreshAll();
-              }}
-              disabled={loading}
+              title="刷新当前视图（保留选中与滚动位置）"
+              onClick={() => refetchCurrent()}
+              disabled={loading || refreshing}
             >
-              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4', (loading || refreshing) && 'animate-spin')} />
             </Button>
           </div>
         </div>
@@ -1243,6 +1500,18 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         )}
       </div>
 
+      {backgroundUpdating && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+          data-testid="files-updating-bar"
+        >
+          <Loader2 className="size-3 animate-spin" />
+          正在后台更新…
+        </div>
+      )}
+
       {showUploads && uploadItems.length > 0 && (
         <UploadQueuePanel
           items={uploadItems}
@@ -1281,6 +1550,17 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
       {/* 主区：列表 + 详情 */}
       <div className="flex min-h-0 flex-1 gap-3">
         <div ref={listRef} className={cn('flex min-h-0 min-w-0 flex-1 flex-col')}>
+          {staleErrorText !== '' && !searchOn && (
+            <div
+              role="alert"
+              className="mb-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            >
+              <span className="min-w-0 flex-1">更新失败：{staleErrorText}（屏上是上次结果）</span>
+              <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={() => refetchCurrent()}>
+                重试
+              </Button>
+            </div>
+          )}
           {searchOn ? (
             <div className="min-h-0 min-w-0 flex-1 overflow-auto">
               <FileSearchResults
@@ -1301,8 +1581,8 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
             </div>
           ) : listStatus === 'err' ? (
             <div role="alert" className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-              <span className="min-w-0 flex-1">{filesErrorText(error)}</span>
-              <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={() => refreshAll()}>
+              <span className="min-w-0 flex-1">{filesErrorText(listError)}</span>
+              <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9" onClick={() => refetchCurrent()}>
                 重试
               </Button>
             </div>
@@ -1381,6 +1661,24 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
                     onToggleSelect={onToggleSelect}
                     onEnterDir={(entry) => enterDir(entryRowPath(entry, dirPath))}
                   />
+                )}
+                {recursive && recursiveQuery.isError && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 py-2 text-xs text-destructive">
+                    <span>加载更多失败：{filesErrorText(recursiveQuery.error)}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-11 sm:min-h-9"
+                      aria-label="重试加载更多"
+                      onClick={() =>
+                        void (recursiveQuery.isFetchNextPageError
+                          ? recursiveQuery.fetchNextPage()
+                          : recursiveQuery.refetch())
+                      }
+                    >
+                      重试
+                    </Button>
+                  </div>
                 )}
                 {recursive && recursiveQuery.hasNextPage && (
                   <div className="flex justify-center py-2">
@@ -1485,8 +1783,17 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         quota={quota}
         canAdmin={canAdmin}
         onSave={async (bytes) => {
-          await humanFilesApi.setQuota(humanName, bytes);
-          void queryClient.invalidateQueries({ queryKey: ['human-quota', humanName] });
+          // 乐观写配额条：失败回滚，弹窗按 thrown 显示错误。
+          const key = filesQueryKeys.quota(humanName);
+          const prev = queryClient.getQueryData<{ usedBytes: number; quotaBytes: number | null }>(key);
+          if (prev) queryClient.setQueryData(key, { ...prev, quotaBytes: bytes });
+          try {
+            await humanFilesApi.setQuota(humanName, bytes);
+          } catch (err) {
+            if (prev) queryClient.setQueryData(key, prev);
+            throw err;
+          }
+          afterWrite('quota');
         }}
       />
       <TrashDialog
@@ -1499,11 +1806,12 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
         onReload={() => void trashQuery.refetch()}
         onRestore={async (entry, overwrite) => {
           await humanFilesApi.restoreTrash(humanName, entry.id, overwrite);
-          mutateDone();
+          // 恢复项落回的目录可能不是当前目录；只失效相关 key，当前目录由刷新校正。
+          afterWrite('restore', { dir: parentDir(entry.path) });
         }}
         onPurge={async (entry) => {
           await humanFilesApi.purgeTrash(humanName, entry.id);
-          mutateDone();
+          afterWrite('purge');
         }}
       />
     </div>
