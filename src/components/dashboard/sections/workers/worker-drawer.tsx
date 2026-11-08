@@ -105,7 +105,7 @@ function ResourceCard({
       type="button"
       aria-label={title}
       onClick={onOpen}
-      className="flex min-h-11 w-full items-center gap-2 rounded-lg border p-2.5 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-semibold">{title}</span>
@@ -386,7 +386,7 @@ function WorkerDrawerContent({
                 onChanged?.();
               }}
             />
-            <Button size="sm" variant="outline" className="h-11 text-sm" onClick={() => setUploadOpen(true)}>
+            <Button size="sm" variant="outline" className="h-11 text-sm sm:h-9" onClick={() => setUploadOpen(true)}>
               <Upload className="mr-1 h-4 w-4" />
               上传技能包
             </Button>
@@ -527,25 +527,25 @@ function WorkerDrawerContent({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="shrink-0 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded px-3 text-xs text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 aria-label="关闭详情面板"
               >
                 关闭
               </button>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs"
+                className="text-xs"
                 disabled={actionPending}
                 onClick={() => (sleeping ? wakeWorker.mutate(view.name) : sleepWorker.mutate(view.name))}
               >
                 {sleeping ? <Sun className="mr-1 h-3 w-3" /> : <Moon className="mr-1 h-3 w-3" />}
                 {sleeping ? '唤醒' : '休眠'}
               </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={restarting} onClick={() => void handleRestart()}>
+              <Button size="sm" variant="outline" className="text-xs" disabled={restarting} onClick={() => void handleRestart()}>
                 <RefreshCw className={`mr-1 h-3 w-3 ${restarting ? 'animate-spin' : ''}`} />
                 重启
               </Button>
@@ -553,7 +553,7 @@ function WorkerDrawerContent({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs"
+                  className="text-xs"
                   disabled={actionPending}
                   onClick={() => {
                     ensureReadyWorker.mutate(view.name, {
@@ -568,7 +568,7 @@ function WorkerDrawerContent({
                 </Button>
               )}
               {tracingUrl && (
-                <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+                <Button size="sm" variant="outline" className="text-xs" asChild>
                   <a href={tracingUrl} target="_blank" rel="noopener noreferrer">
                     <Activity className="mr-1 h-3 w-3" />
                     Tracing
@@ -579,7 +579,7 @@ function WorkerDrawerContent({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 text-xs text-destructive hover:text-destructive"
+                  className="text-xs text-destructive hover:text-destructive"
                   onClick={() => setDeleteOpen(true)}
                 >
                   <Trash2 className="mr-1 h-3 w-3" />
@@ -612,7 +612,7 @@ function WorkerDrawerContent({
                 <p className="truncate font-mono text-xs">{view.model || '未设置'}</p>
                 <p className="truncate text-xs text-muted-foreground">provider: {view.modelProvider || providerName || '-'}</p>
               </div>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setModelOpen(true)}>
+              <Button size="sm" variant="outline" className="text-xs" onClick={() => setModelOpen(true)}>
                 编辑模型
               </Button>
             </section>
@@ -648,6 +648,7 @@ function WorkerDrawerContent({
       >
         <DialogContent
           className="flex h-[86vh] w-[min(96vw,960px)] max-w-none flex-col gap-0 overflow-hidden rounded-lg p-0 max-sm:h-[100dvh] max-sm:w-full max-sm:max-w-none max-sm:rounded-none"
+          showCloseButton={false}
         >
           <DialogHeader className="flex shrink-0 flex-row items-start gap-2 border-b px-5 py-3 text-left">
             <div className="min-w-0 flex-1">

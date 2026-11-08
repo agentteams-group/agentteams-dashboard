@@ -39,18 +39,18 @@ export function MemberPicker({
   return (
     <div className="space-y-2">
       {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {selected.map((name) => (
             <span
               key={name}
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs"
+              className="inline-flex min-h-11 max-w-full items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs sm:min-h-6"
             >
-              {name}
+              <span className="min-w-0 truncate">{name}</span>
               <button
                 type="button"
                 aria-label={`移除 ${name}`}
                 onClick={() => onRemove(name)}
-                className="text-muted-foreground hover:text-foreground"
+                className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 sm:size-4"
               >
                 <X className="h-3 w-3" />
               </button>

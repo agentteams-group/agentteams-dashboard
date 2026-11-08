@@ -104,7 +104,7 @@ export function HumanAccessDialog({
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto py-1">
           {!canManage && (
-            <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+            <p role="status" className="rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               只读（403）：需要 L1 管理员权限（Controller 管理员 token）才能保存。
             </p>
           )}

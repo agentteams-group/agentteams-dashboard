@@ -519,7 +519,7 @@ export function QuotaDialog({
               value={unit}
               disabled={!canAdmin}
               onChange={(e) => setUnit(e.target.value === 'GB' ? 'GB' : 'MB')}
-              className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              className="min-h-11 w-full rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-9"
             >
               <option value="MB">MB</option>
               <option value="GB">GB</option>
@@ -625,8 +625,8 @@ export function TextEditorDialog({
           </DialogDescription>
         </DialogHeader>
         {conflict && (
-          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-status-waiting/40 bg-status-waiting/10 p-2 text-xs">
+            <AlertTriangle className="size-4 shrink-0 text-status-waiting" />
             <span className="min-w-0 flex-1">文件已被他人修改（412）。</span>
             <Button size="sm" variant="outline" onClick={() => void load()}>
               重新加载

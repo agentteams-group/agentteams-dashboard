@@ -94,12 +94,12 @@ function PathChips({
         {paths.map((path, index) => (
           <span
             key={`${path}-${index}`}
-            className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs"
+            className="inline-flex min-h-11 max-w-full items-center gap-1 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs sm:min-h-6"
           >
             <span className="min-w-0 break-all">{path}</span>
             <button
               type="button"
-              className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 sm:size-4"
               aria-label={`移除路径 ${path}`}
               disabled={disabled}
               onClick={() => onChange(paths.filter((_, i) => i !== index))}
@@ -135,7 +135,7 @@ function PathChips({
         </Button>
       </div>
       {paths.length >= MAX_PATHS_PER_RULE && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-xs text-status-waiting">
           每规则至多 {MAX_PATHS_PER_RULE} 条路径，已达上限。
         </p>
       )}
@@ -366,7 +366,7 @@ export function HumanWorkspaceAccessDialog({
 
         <div className="max-h-[62vh] space-y-3 overflow-y-auto py-1">
           {!canManage && (
-            <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+            <p role="status" className="rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               只读（403）：需要 L1 管理员权限才能修改工作区访问。
             </p>
           )}
@@ -376,7 +376,7 @@ export function HumanWorkspaceAccessDialog({
             </p>
           )}
           {warning && (
-            <p role="status" className="break-words rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+            <p role="status" className="break-words rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               {warning}
             </p>
           )}

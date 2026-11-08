@@ -66,9 +66,9 @@ const STATUS_LABEL: Record<BridgeState, string> = {
 
 const STATUS_CLASS: Record<BridgeState, string> = {
   'not-installed': 'border-transparent bg-muted text-muted-foreground',
-  'update-available': 'border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  'up-to-date': 'border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  ahead: 'border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  'update-available': 'border-transparent bg-status-waiting/15 text-status-waiting',
+  'up-to-date': 'border-transparent bg-status-done/15 text-status-done',
+  ahead: 'border-transparent bg-status-info/15 text-status-info',
   'no-versions': 'border-transparent bg-muted text-muted-foreground',
 };
 
@@ -202,7 +202,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
   return (
     <Card className="gap-0 py-0" aria-label="QwenPaw × QwenCode 桥">
       <CardContent className="space-y-2 p-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold">QwenPaw × QwenCode 桥</span>
           <span className="truncate font-mono text-xs text-muted-foreground">
             {BRIDGE_MODULE_KEY}
@@ -223,7 +223,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">频道</span>
           <Select
             value={channel}
@@ -245,7 +245,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="px-3 text-xs"
             disabled={busy || indexLoading}
             onClick={() => void loadIndex(channel)}
           >
@@ -274,7 +274,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-6 px-2 text-xs"
+                className="px-3 text-xs"
                 disabled={busy || indexLoading}
                 onClick={() => void loadIndex(channel)}
               >
@@ -288,7 +288,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
         {pluginsNote && <p className="text-xs text-muted-foreground">{pluginsNote}</p>}
 
         {!indexLoading && bridgeHasAction(state) && selectable && (
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Select
               value={activeVersion || undefined}
               onValueChange={setSelectedVersion}
@@ -334,7 +334,7 @@ function QwenCodeBridgeBody({ workerName, onChanged }: Omit<Props, 'runtime'>) {
         )}
 
         {installError && (
-          <p className="flex items-start gap-1 text-xs text-red-600 dark:text-red-400">
+          <p className="flex items-start gap-2 text-xs text-destructive">
             <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
             {installError}
           </p>

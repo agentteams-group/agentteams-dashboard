@@ -54,7 +54,7 @@ function CardButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-11 w-full items-start gap-2.5 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex min-h-11 w-full cursor-pointer items-start gap-2.5 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
       <span className="min-w-0 flex-1">
@@ -239,7 +239,7 @@ function HumanDrawerContent({
             </section>
 
             {!canManage && (
-              <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-400">
+              <p role="status" className="rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
                 只读（403）：配置人员需要 L1 管理员（Controller 管理员 token）。
               </p>
             )}

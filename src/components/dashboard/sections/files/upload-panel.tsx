@@ -29,17 +29,17 @@ export function UploadQueuePanel({
             <span className="ml-2 text-destructive">失败 {progress.failed}</span>
           )}
         </p>
-        <Button variant="ghost" size="sm" className="h-8" onClick={onDismiss} aria-label="收起上传队列">
+        <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-8" onClick={onDismiss} aria-label="收起上传队列">
           <X className="size-3.5" /> 收起
         </Button>
       </div>
       <Progress value={progress.percent} className="mt-2 h-1.5" aria-label="上传总进度" />
       <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
         {items.map((item) => (
-          <li key={item.id} className="flex min-h-9 items-center gap-2 text-xs">
+          <li key={item.id} className="flex min-h-11 items-center gap-2 text-xs">
             <span className="shrink-0">
               {item.status === 'success' ? (
-                <CheckCircle2 className="size-4 text-emerald-600" aria-label="成功" />
+                <CheckCircle2 className="size-4 text-status-done" aria-label="成功" />
               ) : item.status === 'failed' ? (
                 <XCircle className="size-4 text-destructive" aria-label="失败" />
               ) : item.status === 'uploading' ? (
@@ -58,14 +58,14 @@ export function UploadQueuePanel({
               </span>
             </span>
             {item.status === 'failed' ? (
-              <Button variant="ghost" size="sm" className="h-8" onClick={() => onRetry(item.id)}>
+              <Button variant="ghost" size="sm" className="min-h-11 sm:min-h-8" onClick={() => onRetry(item.id)}>
                 <RotateCcw className="size-3.5" /> 重试
               </Button>
             ) : item.status !== 'success' ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className={cn('h-8 text-muted-foreground')}
+                className={cn('min-h-11 text-muted-foreground sm:min-h-8')}
                 onClick={() => onCancel(item.id)}
                 aria-label={`取消 ${item.name}`}
               >

@@ -243,9 +243,9 @@ function validateDraft(fields: Record<string, BackendForm>): string | null {
 }
 
 function RowIcon({ row }: { row: TestRow }) {
-  if (row.ok && row.httpOk) return <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />;
-  if (row.ok) return <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />;
-  return <XCircle className="w-3 h-3 text-red-600 shrink-0" />;
+  if (row.ok && row.httpOk) return <CheckCircle2 className="w-3 h-3 text-status-done shrink-0" />;
+  if (row.ok) return <AlertTriangle className="w-3 h-3 text-status-waiting shrink-0" />;
+  return <XCircle className="w-3 h-3 text-status-failed shrink-0" />;
 }
 
 const AUTH_OPTIONS: Array<{ value: AuthType; label: string }> = [
@@ -462,13 +462,13 @@ export function BackendTab() {
       {banner && (
         <div className="space-y-1 rounded-lg border px-3 py-2 text-xs">
           {banner.switched.map((label) => (
-            <div key={`s-${label}`} className="flex items-center gap-1.5 text-emerald-600">
+            <div key={`s-${label}`} className="flex items-center gap-2 text-status-done">
               <RefreshCw className="w-3 h-3" />
               {label}：已切换到最快可达地址
             </div>
           ))}
           {banner.unchanged.map((label) => (
-            <div key={`u-${label}`} className="flex items-center gap-1.5 text-muted-foreground">
+            <div key={`u-${label}`} className="flex items-center gap-2 text-muted-foreground">
               <CheckCircle2 className="w-3 h-3" />
               {label}：当前生效地址已是最快，保持不变
             </div>
@@ -484,8 +484,8 @@ export function BackendTab() {
         const form = fields[name];
         const hasAny = !!(form?.internal.url.trim() || form?.external.url.trim());
         return (
-          <div key={name} className="space-y-1.5 rounded-lg border p-3">
-            <div className="flex items-center gap-2">
+          <div key={name} className="space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center gap-2">
               <Server className="w-3.5 h-3.5 text-muted-foreground" />
               <Label className="text-sm">{BACKEND_LABELS[name]}</Label>
               {missingRequired && (
@@ -496,7 +496,7 @@ export function BackendTab() {
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-auto h-7 text-xs"
+                className="ml-auto px-3 text-xs"
                 aria-label={`测试 ${BACKEND_LABELS[name]}`}
                 onClick={() => handleTestBackend(name)}
                 disabled={isTesting || !hasAny}
@@ -518,15 +518,15 @@ export function BackendTab() {
                 !state.config?.[name]?.internal &&
                 state.embedded?.healthy?.[name] === true;
               return (
-                <div key={slot} className="space-y-1 pl-5">
-                  <div className="flex items-center gap-2">
+                <div key={slot} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="w-14 text-xs text-muted-foreground shrink-0">{slotLabel}</span>
                     <Input
                       aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 地址`}
                       value={slotForm.url}
                       onChange={(e) => updateSlot(name, slot, { url: e.target.value })}
                       placeholder="http://host:port（可选，留空=用 env/内置）"
-                      className="h-8 text-xs flex-1"
+                      className="min-w-[10rem] flex-1 text-xs"
                       spellCheck={false}
                     />
                     <Select
@@ -535,7 +535,7 @@ export function BackendTab() {
                     >
                       <SelectTrigger
                         size="sm"
-                        className="h-8 w-32 text-xs shrink-0"
+                        className="w-32 text-xs shrink-0"
                         aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 认证方式`}
                       >
                         <SelectValue />
@@ -560,13 +560,13 @@ export function BackendTab() {
                     )}
                   </div>
                   {slotForm.authType === 'basic' && (
-                    <div className="flex items-center gap-2 pl-[4.5rem]">
+                    <div className="flex flex-wrap items-center gap-2 sm:pl-[4.5rem]">
                       <Input
                         aria-label={`${BACKEND_LABELS[name]} ${slotLabel} 用户名`}
                         value={slotForm.username}
                         onChange={(e) => updateSlot(name, slot, { username: e.target.value })}
                         placeholder="网关用户名"
-                        className="h-8 text-xs flex-1"
+                        className="min-w-[8rem] flex-1 text-xs"
                         spellCheck={false}
                       />
                       <Input
@@ -575,20 +575,20 @@ export function BackendTab() {
                         value={slotForm.password}
                         onChange={(e) => updateSlot(name, slot, { password: e.target.value })}
                         placeholder={keptSecret ? STORED_HINT : '网关密码'}
-                        className="h-8 text-xs flex-1"
+                        className="min-w-[8rem] flex-1 text-xs"
                         spellCheck={false}
                       />
                     </div>
                   )}
                   {slotForm.authType === 'bearer' && (
-                    <div className="flex items-center gap-2 pl-[4.5rem]">
+                    <div className="flex flex-wrap items-center gap-2 sm:pl-[4.5rem]">
                       <Input
                         type="password"
                         aria-label={`${BACKEND_LABELS[name]} ${slotLabel} Token`}
                         value={slotForm.token}
                         onChange={(e) => updateSlot(name, slot, { token: e.target.value })}
                         placeholder={keptSecret ? STORED_HINT : '网关 Bearer token'}
-                        className="h-8 text-xs flex-1"
+                        className="min-w-[8rem] flex-1 text-xs"
                         spellCheck={false}
                       />
                     </div>
@@ -597,7 +597,7 @@ export function BackendTab() {
               );
             })}
             {rows[name]?.map((row) => (
-              <div key={row.url} className="flex items-center gap-1.5 pl-5 text-xs">
+              <div key={row.url} className="flex flex-wrap items-center gap-2 text-xs sm:pl-5">
                 <RowIcon row={row} />
                 <span className="text-muted-foreground shrink-0">
                   {row.ok && row.httpOk && row.ms != null ? `${row.ms}ms · ` : ''}
@@ -623,7 +623,7 @@ export function BackendTab() {
         );
       })}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -633,7 +633,7 @@ export function BackendTab() {
           保存配置
         </Button>
         {saved && (
-          <span className="text-xs text-emerald-600 flex items-center gap-1">
+          <span className="text-xs text-status-done flex items-center gap-2">
             <CheckCircle2 className="w-3.5 h-3.5" /> 已保存，立即生效
           </span>
         )}
