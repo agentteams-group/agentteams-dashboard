@@ -21,8 +21,9 @@ for (const arch of ['amd64', 'arm64']) {
 
 for (const version of ['v1.4.0', 'v1.4.0-rc.1']) {
   test(`${version} publishes both platforms together with the existing latest policy`, () => {
-    const output = commands('push-manifest', `VERSION=${version}`);
+    const output = commands('push-manifest', `VERSION=${version}`, `SOURCE_TREE=${'a'.repeat(40)}`);
     assert.match(output, /docker buildx imagetools create/);
+    assert.ok(output.includes(`--annotation index:io.agentteams.source-tree=${'a'.repeat(40)}`));
     assert.ok(output.includes(`-t ${image}:${version}`));
     assert.ok(output.includes(`${image}:${version}-amd64`));
     assert.ok(output.includes(`${image}:${version}-arm64`));
@@ -36,8 +37,12 @@ test('publication uses native runners and merges only after both builds succeed'
   assert.match(workflow, /arch: arm64\s+runner: ubuntu-24\.04-arm/);
   assert.match(workflow, /runs-on: \$\{\{ matrix\.runner \}\}/);
   assert.doesNotMatch(workflow, /setup-qemu-action/);
-  assert.match(workflow, /make push-platform/);
-  assert.match(workflow, /ARCH="\$\{\{ matrix\.arch \}\}"/);
+  assert.match(workflow, /uses: docker\/build-push-action@v7/);
+  assert.match(workflow, /platforms: linux\/\$\{\{ matrix\.arch \}\}/);
+  assert.match(workflow, /tags: .*:\$\{\{ needs\.version\.outputs\.value \}\}-\$\{\{ matrix\.arch \}\}/);
+  assert.match(workflow, /if: needs\.version\.outputs\.ready != 'true'/);
+  assert.match(workflow, /cache-from: type=gha,scope=dashboard-\$\{\{ matrix\.arch \}\}/);
+  assert.match(workflow, /SOURCE_TREE="\$\{\{ needs\.version\.outputs\.source_tree \}\}"/);
   assert.match(workflow, /merge:\s+[^]*?needs: \[version, publish\]/);
   assert.match(workflow, /make push-manifest/);
   assert.doesNotMatch(workflow, /always\(\)/);

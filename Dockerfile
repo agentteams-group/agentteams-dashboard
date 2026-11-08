@@ -31,6 +31,8 @@ RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
 # NOTE: If Docker bridge DNS is broken, build with --network=host to use host networking.
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 COPY package.json package-lock.json ./
+# Voice transcription runs in browser WASM; native CPU libraries are bundled by npm.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 RUN npm config set registry "${NPM_REGISTRY}" && \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
