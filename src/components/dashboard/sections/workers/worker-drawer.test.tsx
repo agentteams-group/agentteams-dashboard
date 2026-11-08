@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 
 const mounts = vi.hoisted(() => ({
-  runtime: 0,
+  surface: {} as Record<string, number>,
   mcp: 0,
   tools: 0,
   skills: 0,
@@ -29,8 +29,11 @@ vi.mock('@/hooks/use-agentteams-worker-skills', () => ({
   useUploadWorkerSkill: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock('./worker-runtime-config-panel', () => ({
-  WorkerRuntimeConfigPanel: () => { mounts.runtime += 1; return <div>runtime-panel</div>; },
+vi.mock('./worker-runtime-config-surface', () => ({
+  WorkerRuntimeConfigSurface: ({ bucket = 'config' }: { bucket?: string }) => {
+    mounts.surface[bucket] = (mounts.surface[bucket] ?? 0) + 1;
+    return <div>{`surface-${bucket}`}</div>;
+  },
 }));
 vi.mock('./worker-tools-panel', () => ({
   WorkerToolsPanel: () => { mounts.tools += 1; return <div>tools-panel</div>; },
@@ -80,7 +83,9 @@ const worker = {
   state: 'Running',
   containerManaged: true,
   model: 'gpt-5',
-  runtime: 'qwenpaw',
+  // CoPaw exposes every card (legacy migration card included) and routes the
+  // capability cards through the runtime surface (non-QwenPaw path).
+  runtime: 'copaw',
   image: 'img:latest',
   containerState: 'running',
   matrixUserID: '@worker-a:server',
@@ -91,6 +96,8 @@ const worker = {
   agentStatus: 'idle',
   runningTaskCount: 0,
   lastActivityAt: new Date(Date.now() - 60_000).toISOString(),
+  env: { A: '1', B: '2' },
+  skills: ['s1'],
   mcpServers: [{ name: 'ctx7', url: 'http://mcp', transport: 'http' }],
 } as unknown as WorkerResponse;
 
@@ -110,14 +117,22 @@ function renderDrawer(userLevel = 3) {
 }
 
 beforeEach(() => {
-  Object.keys(mounts).forEach((key) => { mounts[key as keyof typeof mounts] = 0; });
+  mounts.surface = {};
+  mounts.mcp = 0;
+  mounts.tools = 0;
+  mounts.skills = 0;
+  mounts.channels = 0;
+  mounts.approval = 0;
+  mounts.coding = 0;
+  mounts.workspace = 0;
+  mounts.env = 0;
+  mounts.llm = 0;
+  mounts.plugins = 0;
+  mounts.checkpoints = 0;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/observability')) {
       return new Response(JSON.stringify({ error: '仅管理员' }), { status: 403 });
-    }
-    if (url.includes('/loops/status')) {
-      return new Response('{}', { status: 404 });
     }
     return new Response('{}', { status: 404 });
   }));
@@ -127,6 +142,22 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+const CARDS: Array<{ title: string; content: string }> = [
+  { title: '运行配置', content: 'surface-config' },
+  { title: 'MCP', content: 'surface-mcp' },
+  { title: '工具', content: 'surface-tools' },
+  { title: '技能', content: 'surface-skills' },
+  { title: '频道', content: 'surface-channels' },
+  { title: '审批模式', content: 'surface-approval' },
+  { title: 'Coding CLI', content: 'coding-panel' },
+  { title: '工作区文件', content: 'workspace-panel' },
+  { title: '环境变量与网关', content: 'env-panel' },
+  { title: 'LLM 调优', content: 'llm-panel' },
+  { title: 'Worker 插件', content: 'plugins-panel' },
+  { title: '运行时升级', content: '将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。' },
+  { title: '检查点', content: 'checkpoints-card' },
+];
 
 describe('WorkerDrawer', () => {
   it('renders header, status and model card', () => {
@@ -142,33 +173,46 @@ describe('WorkerDrawer', () => {
     expect(screen.getByRole('button', { name: '编辑模型' })).toBeInTheDocument();
   });
 
-  it('renders MCP and checkpoints sections', () => {
+  it('renders every resource card as an entry point (13 cards)', () => {
     renderDrawer();
-    fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
-    expect(screen.getByText('ctx7')).toBeInTheDocument();
-    expect(screen.getByText('checkpoints-card')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /./ })).not.toHaveLength(0);
+    for (const card of CARDS) {
+      expect(screen.getByRole('button', { name: card.title })).toBeInTheDocument();
+    }
+    expect(screen.getByText('2 个变量 · 模型 / MCP 网关探测')).toBeInTheDocument();
+    // non-QwenPaw runtimes route the five capability cards through the surface
+    expect(screen.getAllByText('CoPaw 配置面（surface 驱动）')).toHaveLength(5);
   });
 
-  it('lazily mounts resource panels only when expanded', () => {
+  it('does not mount panel content until a card is opened', () => {
     renderDrawer();
-    expect(screen.queryByText('tools-panel')).not.toBeInTheDocument();
-    expect(screen.queryByText('channels-panel')).not.toBeInTheDocument();
-    expect(screen.queryByText('workspace-panel')).not.toBeInTheDocument();
-    expect(screen.queryByText('plugins-panel')).not.toBeInTheDocument();
-    expect(mounts.mcp).toBe(0);
+    expect(screen.queryByText('checkpoints-card')).not.toBeInTheDocument();
+    expect(mounts.checkpoints).toBe(0);
+    expect(mounts.surface).toEqual({});
+    expect(mounts.coding).toBe(0);
+  });
 
+  it.each(CARDS)('opens "$title" in a dialog and closes it', async ({ title, content }) => {
+    renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: title }));
+
+    expect(await screen.findByText(content)).toBeInTheDocument();
+    // one modal, sized for the desktop panel
+    const dialog = screen.getAllByRole('dialog').at(-1);
+    expect(dialog).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }));
+    await waitFor(() => expect(screen.queryByText(content)).not.toBeInTheDocument());
+  });
+
+  it('closes the card dialog with Escape', async () => {
+    renderDrawer();
     fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
-    expect(mounts.mcp).toBe(1);
-    expect(screen.getByText('ctx7')).toBeInTheDocument();
+    expect(await screen.findByText('surface-mcp')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '工具' }));
-    expect(screen.getByText('tools-panel')).toBeInTheDocument();
-    expect(mounts.tools).toBe(1);
-    expect(screen.queryByText('channels-panel')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '频道' }));
-    expect(screen.getByText('channels-panel')).toBeInTheDocument();
-    expect(screen.getByText('tools-panel')).toBeInTheDocument();
+    const dialog = screen.getAllByRole('dialog').at(-1);
+    fireEvent.keyDown(dialog as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('surface-mcp')).not.toBeInTheDocument());
   });
 
   it('shows delete only for L1 (dashboard level 3)', () => {
