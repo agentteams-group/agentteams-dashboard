@@ -24,6 +24,7 @@ import {
   toastMutationError,
 } from './workflow-config';
 import { ArtifactLink } from './artifact-link';
+import { MetaEditorEntry } from './meta-editor';
 import { ReleaseControls } from './release-controls';
 
 /** Cancel button for one task row (POST .../tasks/{taskId}/cancel).
@@ -110,12 +111,15 @@ export function TaskDetailRow({
   projectId,
   teamId,
   roomId,
+  onMetaSaved,
 }: {
   task: WorkflowTaskDetail;
   projectId: string;
   teamId?: string;
   /** 项目来源房间（workflow.source_room_id）：有则提供放行控制。 */
   roomId?: string;
+  /** meta 保存成功 → 刷新工作流（detail 行由详情面板提供）。 */
+  onMetaSaved?: () => void;
 }) {
   const deliverables = Array.isArray(task.deliverables)
     ? task.deliverables.filter((d): d is string => typeof d === 'string')
@@ -131,6 +135,13 @@ export function TaskDetailRow({
     <div className="rounded-lg border bg-background/40 p-2 text-xs">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-mono text-xs text-muted-foreground">{task.task_id}</span>
+        <MetaEditorEntry
+          kind="task"
+          id={task.task_id}
+          title={task.summary ?? task.task_id}
+          teamId={teamId}
+          onSaved={onMetaSaved}
+        />
         {task.status && (
           <Badge className={`text-xs border ${NODE_STATUS_COLOR[normalizeNodeStatus(task.status)]}`}>
             {NODE_STATUS_LABEL[normalizeNodeStatus(task.status)]}
