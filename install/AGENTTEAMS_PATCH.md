@@ -19,9 +19,11 @@ export/chown, and Controller Console URL forwarding now live upstream.
 Rebase this tree onto current `agentscope-ai/AgentTeams` `main` when the
 weekly drift check fires; there is no pinned source revision.
 
-Working copy status (2026-11-06): rebased onto `agentscope-ai/AgentTeams`
-`main` at `9322b04`. `install/agentteams-install.sh` matches upstream
-main (diff 0). Upstream now includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
+Release preparation (2026-11-08): `install/agentteams-install.sh` matches
+the proposed Core v1.2.6 installer in
+[upstream PR #1552](https://github.com/agentscope-ai/AgentTeams/pull/1552)
+at `1bbf73f` (diff 0). Keep the release draft until Dashboard v1.4.0,
+Harness v0.1.1, and Core v1.2.6 publication is confirmed. Upstream includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
 `AGENTTEAMS_AI_GATEWAY_URL`, `_dashboard_merge_console_host` on every
 `step_dashboard` return path, Dashboard volume export/chown,
 `AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY`,
@@ -134,7 +136,7 @@ The upstream integration provides the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENTTEAMS_DASHBOARD` | `1` | Install Dashboard? (1=yes, 0=no) |
-| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.3.1` | Dashboard version tag (independent of AgentTeams version) |
+| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.4.0` | Dashboard version tag (independent of AgentTeams version) |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | derived | Full image reference (uses `AGENTTEAMS_DASHBOARD_VERSION`) |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | auto-detected | Higress Console URL for shared login |
@@ -170,7 +172,7 @@ The upstream integration provides the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DASHBOARD_CONTEXT` | `../agentteams-dashboard` | Path to dashboard source tree |
-| `DASHBOARD_VERSION` | `v1.3.1` | Dashboard version tag |
+| `DASHBOARD_VERSION` | `v1.4.0` | Dashboard version tag |
 | `DASHBOARD_IMAGE` | derived | Full image reference |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 
