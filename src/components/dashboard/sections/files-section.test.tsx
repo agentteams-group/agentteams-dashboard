@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-error';
-import { humanFilesApi } from '@/lib/human-files-api';
+import { humanFilesApi, type HumanFileListResponse } from '@/lib/human-files-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { FilesSection } from './files-section';
 
@@ -150,7 +151,7 @@ describe('FilesSection 全局搜索', () => {
     fireEvent.change(input, { target: { value: 'report' } });
 
     expect(await screen.findByText(/搜索结果 · 1 项/, {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(spy).toHaveBeenCalledWith('alice', { limit: 1000 });
+    expect(spy).toHaveBeenCalledWith('alice', expect.objectContaining({ limit: 1000 }));
     expect(await screen.findByRole('button', { name: 'report.md' })).toBeInTheDocument();
     expect(screen.getByText('docs/a')).toBeInTheDocument();
     // 搜索态隐藏面包屑 + 目录内容。
@@ -182,7 +183,9 @@ describe('FilesSection 全局搜索', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'docs' }, { timeout: 3000 }));
 
     await waitFor(() => expect(input).toHaveValue(''));
-    await waitFor(() => expect(humanFilesApi.listDirectory).toHaveBeenCalledWith('alice', 'docs'));
+    await waitFor(() =>
+      expect(humanFilesApi.listDirectory).toHaveBeenCalledWith('alice', 'docs', expect.anything()),
+    );
     expect(await screen.findByRole('button', { name: '我的文件' })).toBeInTheDocument();
   });
 
@@ -229,7 +232,10 @@ describe('FilesSection 全局搜索', () => {
     fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
 
     await waitFor(() =>
-      expect(spy).toHaveBeenLastCalledWith('alice', { cursor: 'k1', limit: 1000 }),
+      expect(spy).toHaveBeenLastCalledWith(
+        'alice',
+        expect.objectContaining({ cursor: 'k1', limit: 1000 }),
+      ),
     );
     expect(await screen.findByRole('button', { name: 'b.txt' })).toBeInTheDocument();
   });
@@ -321,5 +327,157 @@ describe('FilesSection 操作', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(humanFilesApi.setQuota).toHaveBeenCalledWith('alice', 2_000_000));
+  });
+});
+
+describe('FilesSection 刷新与远端变化', () => {
+  it('手动刷新：按钮在飞时禁用，旧列表留在屏上（不换骨架）', async () => {
+    const pending: { resolve?: (_value: HumanFileListResponse) => void } = {};
+    vi.mocked(humanFilesApi.listDirectory)
+      .mockResolvedValueOnce(ENTRIES)
+      .mockImplementationOnce(
+        () => new Promise<HumanFileListResponse>((resolve) => { pending.resolve = resolve; }),
+      );
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+
+    const refresh = screen.getByRole('button', { name: '刷新' });
+    fireEvent.click(refresh);
+    await waitFor(() => expect(refresh).toBeDisabled());
+    // 旧数据原位保留：没有骨架，只有一条轻量「后台更新中」提示。
+    expect(screen.getByRole('button', { name: 'readme.md' })).toBeInTheDocument();
+    expect(screen.getByTestId('files-updating-bar')).toBeInTheDocument();
+    expect(document.querySelector('.shimmer')).toBeNull();
+
+    pending.resolve?.(ENTRIES);
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled());
+  });
+
+  it('刷新保留焦点与选中：条目仍在则原地不动', async () => {
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: /多选/ }));
+    // 多选态下无修饰点击 = 聚焦 + 选中该项。
+    fireEvent.click(screen.getByRole('button', { name: 'readme.md' }));
+    expect(await screen.findByTestId('file-detail-card')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '选择 readme.md' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(humanFilesApi.listDirectory).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled());
+
+    expect(screen.getByTestId('file-detail-card')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '选择 readme.md' })).toBeChecked();
+  });
+
+  it('刷新后条目消失：摘掉选中 / 关掉详情并提示', async () => {
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: /多选/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'readme.md' }));
+    expect(await screen.findByTestId('file-detail-card')).toBeInTheDocument();
+    const info = vi.spyOn(toast, 'info');
+
+    vi.mocked(humanFilesApi.listDirectory).mockResolvedValueOnce({
+      path: '',
+      entries: [{ name: 'docs', type: 'directory', size: 0 }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+
+    await waitFor(() => expect(screen.queryByTestId('file-detail-card')).not.toBeInTheDocument());
+    await waitFor(() => expect(info).toHaveBeenCalled());
+    expect(String(info.mock.calls[0][0])).toMatch(/已从选择中移除/);
+    expect(screen.queryByRole('button', { name: 'readme.md' })).not.toBeInTheDocument();
+  });
+
+  it('搜索词变化：旧结果留屏到新结果到达（keepPreviousData）', async () => {
+    const pending: { resolve?: (_value: { entries: { path: string; size: number }[]; nextKey: null }) => void } = {};
+    const spy = vi
+      .spyOn(humanFilesApi, 'listRecursive')
+      .mockResolvedValueOnce({ entries: [{ path: 'docs/report.md', size: 10 }], nextKey: null })
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { pending.resolve = resolve; }),
+      );
+    renderSection();
+    const input = await screen.findByLabelText('搜索全部文件');
+    fireEvent.change(input, { target: { value: 'repo' } });
+    expect(await screen.findByRole('button', { name: 'report.md' }, { timeout: 3000 })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'report' } });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    // 新结果未回：上一批结果不闪空，配「后台更新中」提示。
+    expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument();
+    expect(screen.getByTestId('files-updating-bar')).toBeInTheDocument();
+
+    pending.resolve?.({ entries: [], nextKey: null });
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'report.md' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('递归翻页失败：已加载页保留，重试沿用原 cursor', async () => {
+    const spy = vi
+      .spyOn(humanFilesApi, 'listRecursive')
+      .mockResolvedValueOnce({ entries: [{ path: 'a.txt', size: 1 }], nextKey: 'k1' })
+      .mockRejectedValueOnce(new ApiError('boom', 500, '/api/agentteams/humans/alice/files'))
+      .mockResolvedValueOnce({ entries: [{ path: 'b.txt', size: 2 }], nextKey: null });
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: '全部文件' }));
+    expect(await screen.findByRole('button', { name: 'a.txt' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText(/加载更多失败/)).toBeInTheDocument();
+    // 失败不清场：已加载的第一页仍在。
+    expect(screen.getByRole('button', { name: 'a.txt' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试加载更多' }));
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        'alice',
+        expect.objectContaining({ cursor: 'k1' }),
+      ),
+    );
+    expect(await screen.findByRole('button', { name: 'b.txt' })).toBeInTheDocument();
+  });
+
+  it('删除成功：当前目录原地摘掉，不整页刷新', async () => {
+    const pending: { resolve?: (_value: HumanFileListResponse) => void } = {};
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    vi.mocked(humanFilesApi.listDirectory).mockImplementationOnce(
+      () => new Promise<HumanFileListResponse>((resolve) => { pending.resolve = resolve; }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'readme.md' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /删除/ }));
+    const dialog = await screen.findByRole('dialog');
+    const buttons = within(dialog).getAllByRole('button', { name: '删除' });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    // 后台重取还没回来，行已按乐观补丁消失。
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'readme.md' })).not.toBeInTheDocument(),
+    );
+    pending.resolve?.({ path: '', entries: [{ name: 'docs', type: 'directory', size: 0 }] });
+  });
+
+  it('删除失败：回滚列表（行仍在）', async () => {
+    vi.mocked(humanFilesApi.deleteFile).mockRejectedValueOnce(
+      new ApiError('nope', 500, '/api/agentteams/humans/alice/files/readme.md'),
+    );
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /删除/ }));
+    const dialog = await screen.findByRole('dialog');
+    const buttons = within(dialog).getAllByRole('button', { name: '删除' });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    // 弹窗保持打开（错误就地提示）；关掉后列表已回滚。
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(await screen.findByRole('button', { name: 'readme.md' })).toBeInTheDocument();
   });
 });
