@@ -197,9 +197,13 @@ export async function proxyToAgentTeams(
     /** Forward the request body as raw bytes (file uploads) instead of
      * decoding it as JSON text. */
     rawBody?: boolean;
+    /** Per-request upstream timeout (ms). Defaults to TIMEOUT_MS; long-running
+     * compile/inject/import endpoints pass a wider bound. */
+    timeoutMs?: number;
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
+  const requestTimeout = options.timeoutMs ?? TIMEOUT_MS;
   // F1c: walk the candidate set instead of a single URL — a dead first
   // candidate must never 502 the data plane (plugin catch-all parity).
   const targets = proxyTargets(request, controllerUrl);
@@ -299,7 +303,7 @@ export async function proxyToAgentTeams(
     }
     for (let attempt = 0; attempt <= SAME_ADDRESS_RETRIES; attempt++) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), requestTimeout);
       try {
         const parsed = new URL(targetUrl);
         const conditionalRead = method === 'GET' && !options.stream && (
@@ -437,7 +441,7 @@ export async function proxyToAgentTeams(
           url: target,
           error:
             err instanceof Error && err.name === 'AbortError'
-              ? `timeout after ${TIMEOUT_MS}ms`
+              ? `timeout after ${requestTimeout}ms`
               : err instanceof Error
                 ? err.message
                 : 'unknown error',
