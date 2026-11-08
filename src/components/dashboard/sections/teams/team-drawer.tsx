@@ -255,7 +255,10 @@ function TeamDrawerContent({
   return (
     <>
       <Sheet open onOpenChange={onOpenChange}>
-        <SheetContent data-testid="team-drawer">
+        <SheetContent
+          data-testid="team-drawer"
+          className="w-full gap-0 overflow-x-hidden p-0 sm:w-[560px] sm:max-w-[560px]"
+        >
           <SheetHeader>
             <SheetTitle className="flex min-w-0 items-center gap-2">
               <Users className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
