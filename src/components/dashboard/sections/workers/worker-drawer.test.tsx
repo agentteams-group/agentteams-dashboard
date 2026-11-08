@@ -6,6 +6,7 @@ import type { WorkerResponse } from '@/lib/agentteams-api';
 
 const mounts = vi.hoisted(() => ({
   surface: {} as Record<string, number>,
+  qwenpaw: 0,
   mcp: 0,
   tools: 0,
   skills: 0,
@@ -19,8 +20,10 @@ const mounts = vi.hoisted(() => ({
   checkpoints: 0,
 }));
 
+const detailState = vi.hoisted(() => ({ worker: null as unknown }));
+
 vi.mock('@/lib/worker-detail', () => ({
-  fetchWorkerDetail: vi.fn(async () => worker),
+  fetchWorkerDetail: vi.fn(async () => detailState.worker),
   invalidateWorkerDetail: vi.fn(),
 }));
 vi.mock('@/hooks/use-now-tick', () => ({ useNowTick: () => 0 }));
@@ -33,6 +36,18 @@ vi.mock('./worker-runtime-config-surface', () => ({
   WorkerRuntimeConfigSurface: ({ bucket = 'config' }: { bucket?: string }) => {
     mounts.surface[bucket] = (mounts.surface[bucket] ?? 0) + 1;
     return <div>{`surface-${bucket}`}</div>;
+  },
+}));
+vi.mock('./qwenpaw-runtime-config-panel', () => ({
+  QwenpawRuntimeConfigPanel: ({
+    workerName,
+    canWrite,
+  }: {
+    workerName: string;
+    canWrite?: boolean;
+  }) => {
+    mounts.qwenpaw += 1;
+    return <div>{`qwenpaw-runtime-${workerName}-${canWrite ? 'rw' : 'ro'}`}</div>;
   },
 }));
 vi.mock('./worker-tools-panel', () => ({
@@ -101,12 +116,13 @@ const worker = {
   mcpServers: [{ name: 'ctx7', url: 'http://mcp', transport: 'http' }],
 } as unknown as WorkerResponse;
 
-function renderDrawer(userLevel = 3) {
+function renderDrawerFor(target: WorkerResponse, userLevel = 3) {
+  detailState.worker = target;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <WorkerDrawer
-        worker={worker}
+        worker={target}
         onOpenChange={vi.fn()}
         modelOptions={[]}
         userLevel={userLevel}
@@ -116,8 +132,13 @@ function renderDrawer(userLevel = 3) {
   );
 }
 
+function renderDrawer(userLevel = 3) {
+  return renderDrawerFor(worker, userLevel);
+}
+
 beforeEach(() => {
   mounts.surface = {};
+  mounts.qwenpaw = 0;
   mounts.mcp = 0;
   mounts.tools = 0;
   mounts.skills = 0;
@@ -189,7 +210,29 @@ describe('WorkerDrawer', () => {
     expect(screen.queryByText('checkpoints-card')).not.toBeInTheDocument();
     expect(mounts.checkpoints).toBe(0);
     expect(mounts.surface).toEqual({});
+    expect(mounts.qwenpaw).toBe(0);
     expect(mounts.coding).toBe(0);
+  });
+
+  it('routes QwenPaw runtime config to the legacy panel instead of the surface', async () => {
+    const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
+    renderDrawerFor(qwenpawWorker);
+
+    fireEvent.click(screen.getByRole('button', { name: '运行配置' }));
+
+    expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
+    expect(mounts.qwenpaw).toBe(1);
+    expect(mounts.surface).toEqual({});
+  });
+
+  it('treats an empty runtime as non-QwenPaw (surface-driven, no fake fields)', async () => {
+    const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
+    renderDrawerFor(runtimeLessWorker);
+
+    fireEvent.click(screen.getByRole('button', { name: '运行配置' }));
+
+    expect(await screen.findByText('surface-config')).toBeInTheDocument();
+    expect(mounts.qwenpaw).toBe(0);
   });
 
   it.each(CARDS)('opens "$title" in a dialog and closes it', async ({ title, content }) => {

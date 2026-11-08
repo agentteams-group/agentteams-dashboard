@@ -43,6 +43,7 @@ import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
 import { WorkerMcpPanel } from './worker-mcp-panel';
 import { WorkerModelDialog } from './worker-model-dialog';
 import { WorkerPluginsCard } from './worker-plugins-card';
+import { QwenpawRuntimeConfigPanel } from './qwenpaw-runtime-config-panel';
 import { WorkerRuntimeConfigSurface } from './worker-runtime-config-surface';
 import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerSkillUploadDialog } from './worker-skill-upload-dialog';
@@ -300,7 +301,13 @@ function WorkerDrawerContent({
   // Non-QwenPaw runtimes expose their native config through the controller's
   // member-config surface; capability cards reuse that surface (bucket filter)
   // instead of calling QwenPaw-only worker endpoints that answer 400.
+  //
+  // QwenPaw is the exception: the controller registers no member-config
+  // surface adapter for it (only openclaw + hermes), so the legacy
+  // `runtime-config` end is the only real config plane. An empty runtime is
+  // treated as non-QwenPaw (surface), never as a fake QwenPaw form.
   const nonQwenpaw = Boolean(view.runtime) && view.runtime !== 'qwenpaw';
+  const isQwenpaw = view.runtime === 'qwenpaw';
   const runtimeName = runtimeLabel(view.runtime);
   const envCount = Object.keys(view.env ?? {}).length;
 
@@ -319,6 +326,19 @@ function WorkerDrawerContent({
     />
   );
 
+  const qwenpawRuntimeConfig = (
+    <QwenpawRuntimeConfigPanel
+      key={`qwenpaw-runtime-${view.name}`}
+      workerName={view.name}
+      canWrite={userLevel >= 3}
+      onChanged={() => {
+        invalidateWorkerDetail(view.name);
+        void refreshDetail(true);
+        onChanged?.();
+      }}
+    />
+  );
+
   const resourceCards: Array<{
     id: string;
     title: string;
@@ -328,8 +348,10 @@ function WorkerDrawerContent({
     {
       id: 'runtime',
       title: '运行配置',
-      desc: `${runtimeName} · 分组 / 搜索 / 已改计数 / 回滚`,
-      render: () => surface('config'),
+      desc: isQwenpaw
+        ? `${runtimeName} · 全部配置分区 / 循环 / 重启生效`
+        : `${runtimeName} · 分组 / 搜索 / 已改计数 / 回滚`,
+      render: () => (isQwenpaw ? qwenpawRuntimeConfig : surface('config')),
     },
     {
       id: 'mcp',
