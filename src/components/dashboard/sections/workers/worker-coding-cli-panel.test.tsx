@@ -634,4 +634,20 @@ describe('CodingCLI QwenCode 语音模型（voiceModel，对齐插件 16.142）'
     expect(screen.queryByText('语音（Voice）')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('语音模型')).not.toBeInTheDocument();
   });
+
+  // CodingCLI 桥的唯一入口：QwenCode 卡展开、且 Worker 是 qwenpaw 运行时。
+  it('㉖ qwenpaw + QwenCode 卡展开 → 显示「QwenPaw × QwenCode 桥」', async () => {
+    mockFetch([{ status: 200, body: PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" runtime="qwenpaw" />);
+    expect(
+      await screen.findByLabelText('QwenPaw × QwenCode 桥'),
+    ).toBeInTheDocument();
+  });
+
+  it('㉗ 非 qwenpaw 运行时 → QwenCode 卡内不渲染桥栏', async () => {
+    mockFetch([{ status: 200, body: PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" runtime="openclaw" />);
+    await screen.findByText('编码 CLI（探测 / 安装 / 配置）');
+    expect(screen.queryByLabelText('QwenPaw × QwenCode 桥')).not.toBeInTheDocument();
+  });
 });

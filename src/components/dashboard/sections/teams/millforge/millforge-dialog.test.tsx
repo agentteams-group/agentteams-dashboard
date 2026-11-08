@@ -206,6 +206,17 @@ const moduleIndexFixture: MillforgeIndex = {
         '0.2.0': { artifacts: [{ name: 'e.zip', sha256: 'e' }] },
       },
     },
+    // CodingCLI 桥在索引里出现（真实 index 就这样），但千锻模块面必须过滤掉。
+    'qwenpaw-qwencode-bridge': {
+      kind: 'plugin',
+      pluginId: 'qwen-code-bridge',
+      latest: '0.3.0',
+      versions: {
+        '0.3.0': {
+          artifacts: [{ name: 'qwenpaw-qwencode-bridge-0.3.0.zip', sha256: 'f' }],
+        },
+      },
+    },
   },
 };
 
@@ -232,6 +243,13 @@ const teamModulesFixture: TeamModulesResponse = {
         { worker: 'w1', version: '0.1.0', loaded: true },
         { worker: 'w2', version: '0.2.0', loaded: true },
       ],
+    },
+    // 已装注册表里也可能出现桥（团队装了它）；千锻模块面同样不得渲染。
+    {
+      module: 'qwenpaw-qwencode-bridge',
+      versions: { '0.2.0': 1 },
+      consistent: true,
+      members: [{ worker: 'w1', version: '0.2.0', loaded: true }],
     },
   ],
 };
@@ -603,5 +621,21 @@ describe('MillforgeDialog · 模块更新 tab', () => {
     const row = await screen.findByTestId('module-row-teamharness');
     expect(within(row).getByRole('button', { name: /更新/ })).toBeDisabled();
     expect(within(row).getByText('更新需要管理员（L1）权限。')).toBeInTheDocument();
+  });
+
+  it('千锻模块面不渲染 CodingCLI 桥（索引与已装列表都过滤）', async () => {
+    renderDialog();
+    switchTab('模块更新');
+
+    // 其它模块照常渲染，说明列表本身是好的（不是整表为空导致假阴性）。
+    expect(await screen.findByTestId('module-row-teamharness')).toBeInTheDocument();
+
+    expect(
+      screen.queryByTestId('module-row-qwenpaw-qwencode-bridge'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('qwenpaw-qwencode-bridge')).not.toBeInTheDocument();
+    expect(screen.queryByText('qwen-code-bridge')).not.toBeInTheDocument();
+    // 已装但被过滤的模块也不该落进「索引外的已安装模块（只读）」兜底列表。
+    expect(screen.queryByText('索引外的已安装模块（只读）')).not.toBeInTheDocument();
   });
 });

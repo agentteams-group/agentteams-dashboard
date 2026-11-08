@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getControllerUrl, proxyToAgentTeams } from '../../proxy-helper';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export const dynamic = 'force-dynamic';
@@ -9,9 +8,15 @@ export const dynamic = 'force-dynamic';
 // 千锻（Millforge）编译/注入域的固定路径白名单转发（禁通用反代）：
 // source（GET/PUT）、import、packs、packs/{pack}/file、compile、
 // inject、inject/preflight、rollback、prompt、parse-team-json、injections。
-// 契约 = agentteams_connector/millforge_api.py（工作台插件同一后端），
-// Controller 只做凭据/权限边界；本层原样转发服务端凭据与上游错误体。
-// 旧 Controller 无这些路由 → 404/405 原样回前端，四 tab 各自降级。
+//
+// 后端归属（2026-11-08 修正 dashboard 404/405）：
+// - 编译/注入核心域**不在 Controller**，只存在于工作台插件 connector
+//   （agentteams_connector/millforge_api.py，挂在 QwenPaw host 的
+//   /api/agentteams-proxy/millforge/*）→ 本层按 AGENTTEAMS_MILLFORGE_URL
+//   转发到 `<connector>/api/agentteams-proxy/millforge/{rest}`。
+// - 模块更新面（millforge/index、teams/{team}/modules、install）仍是
+//   Controller 路由，走各自 route 文件，不经过本层。
+// connector 不可达 → 503（不伪装 404/405）；上游 404/405 原样给 UI。
 //
 // 读端点保持短超时；import/compile/inject 是长作业（clone 90s、编译器
 // 120s、逐 Worker 注入），按插件前端同量级放宽上游超时。
@@ -29,6 +34,17 @@ const READ_TIMEOUT_MS = 30_000;
 const LONG_TIMEOUT_MS = 300_000;
 const COMPILE_TIMEOUT_MS = 180_000;
 const ACTION_TIMEOUT_MS = 60_000;
+
+/** 工作台插件 connector 默认地址（docker 侧经 host-gateway 到宿主 QwenPaw）。 */
+const DEFAULT_CONNECTOR_URL = 'http://host.docker.internal:8088';
+/** connector 侧的服务端身份，供插件审计归属（不转发任何凭据）。 */
+const IDENTITY_HEADERS = ['x-agentteams-user', 'x-agentteams-user-level'];
+
+/** connector 基址：env 优先，末尾斜杠归一。 */
+function getConnectorUrl(): string {
+  const configured = process.env.AGENTTEAMS_MILLFORGE_URL?.trim();
+  return (configured || DEFAULT_CONNECTOR_URL).replace(/\/+$/, '');
+}
 
 /** rest 段 → 端点规则；未列入的组合一律 400。 */
 function resolveRule(method: string, rest: string[]): Rule | null {
@@ -72,6 +88,77 @@ function forwardQuery(request: NextRequest): string {
   return qs ? `?${qs}` : '';
 }
 
+async function forwardToConnector(
+  request: NextRequest,
+  rest: string[],
+  method: string,
+  rule: Rule,
+) {
+  const timeoutMs = rule.timeoutMs ?? READ_TIMEOUT_MS;
+  const url = new URL(
+    `/api/agentteams-proxy/millforge/${rest.map(encodeURIComponent).join('/')}${forwardQuery(request)}`,
+    getConnectorUrl(),
+  );
+
+  const headers: Record<string, string> = {};
+  let body: string | undefined;
+  if (rule.forwardBody && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    try {
+      body = await request.text();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to read request body';
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+    headers['content-type'] = 'application/json';
+  }
+  for (const name of IDENTITY_HEADERS) {
+    const value = request.headers.get(name);
+    if (value) headers[name] = value;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url.toString(), {
+      method,
+      headers,
+      body,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    clearTimeout(timer);
+    // 上游 404/405 等错误状态原样给 UI（面板各自降级），不在这里改写。
+    if (res.status === 204) return new NextResponse(null, { status: 204 });
+    const data = await res.arrayBuffer();
+    const responseHeaders = new Headers();
+    const contentType = res.headers.get('content-type');
+    if (contentType) responseHeaders.set('content-type', contentType);
+    responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    responseHeaders.set('pragma', 'no-cache');
+    responseHeaders.set('expires', '0');
+    return new NextResponse(data, { status: res.status, headers: responseHeaders });
+  } catch (err: unknown) {
+    clearTimeout(timer);
+    const detail =
+      err instanceof Error && err.name === 'AbortError'
+        ? `timeout after ${timeoutMs}ms`
+        : err instanceof Error
+          ? err.message
+          : 'unknown error';
+    console.error(
+      '[dashboard] millforge connector unreachable',
+      JSON.stringify({ url: url.toString(), method, detail }),
+    );
+    return NextResponse.json(
+      {
+        error: '工作台插件 connector 不可达（AGENTTEAMS_MILLFORGE_URL）',
+        detail,
+      },
+      { status: 503 },
+    );
+  }
+}
+
 async function forward(request: NextRequest, rest: string[], method: string) {
   const rule = resolveRule(method, rest);
   if (!rule) {
@@ -80,16 +167,11 @@ async function forward(request: NextRequest, rest: string[], method: string) {
   if (rest.length >= 2 && rest[0] === 'packs' && !PACK_RE.test(rest[1])) {
     return NextResponse.json({ error: '非法模板包名' }, { status: 400 });
   }
-  const path = `/api/v1/millforge/${rest.map(encodeURIComponent).join('/')}${forwardQuery(request)}`;
   if (rule.mutates) {
     const denied = await enforceLevelOnlyRbac(request, 'update', 'millforge', rest.join('/'));
     if (denied) return denied;
   }
-  return proxyToAgentTeams(request, getControllerUrl(request), path, {
-    method,
-    forwardBody: rule.forwardBody,
-    timeoutMs: rule.timeoutMs,
-  });
+  return forwardToConnector(request, rest, method, rule);
 }
 
 export async function GET(

@@ -6,6 +6,10 @@
 // （可更新 / 已是最新 / 版本不一致）+ 单个版本下拉 + 单个安装/更新按钮
 // （不逐版本堆按钮）。安装复用 Controller 现有 install 端点，执行前二次确认。
 // 旧 Controller 无该读端点（404/405）→ 该平面显示「控制器不支持」，不影响其它 tab。
+//
+// CodingCLI 桥（qwenpaw-qwencode-bridge / pluginId qwen-code-bridge）不在此面：
+// 它只服务 QwenPaw × QwenCode，安装/更新入口固定在 CodingCLI → QwenCode 卡，
+// 索引里有也要过滤掉，避免同一模块两处入口版本打架。
 
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { agentteamsApi, type MillforgeIndexQuery, type ModuleInstallRequest } from '@/lib/agentteams-api';
+import { isCodingCliBridgeModule } from '@/lib/qwen-code-bridge';
 import { ApiError } from '@/lib/api-error';
 import { formatErrorMessage } from '@/lib/api-error';
 import { useTeams } from '@/hooks/use-agentteams-teams';
@@ -337,8 +342,17 @@ export function MillforgeModulesTab({
     retry: 1,
   });
 
-  const installed = useMemo(() => installedQuery.data ?? [], [installedQuery.data]);
-  const entries = indexModules(indexQuery.data);
+  const installed = useMemo(
+    () => (installedQuery.data ?? []).filter((row) => !isCodingCliBridgeModule(row.module)),
+    [installedQuery.data],
+  );
+  const entries = useMemo(
+    () =>
+      indexModules(indexQuery.data).filter(
+        (entry) => !isCodingCliBridgeModule(entry.module, entry.pluginId),
+      ),
+    [indexQuery.data],
+  );
 
   const rows = useMemo(() => {
     const byKey = new Map(installed.map((row) => [row.module, row] as const));

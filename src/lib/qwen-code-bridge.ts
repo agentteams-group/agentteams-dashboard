@@ -21,6 +21,20 @@ export const BRIDGE_MODULE_KEY = 'qwenpaw-qwencode-bridge';
 /** 安装后的 QwenPaw 插件 id（已装列表对账用）。 */
 export const BRIDGE_PLUGIN_ID = 'qwen-code-bridge';
 
+/**
+ * 千锻「模块更新」面不得出现 CodingCLI 桥：它只服务 QwenPaw × QwenCode，
+ * 安装/更新入口固定在 CodingCLI → QwenCode 卡里。索引条目按模块键，
+ * 已装注册表按插件 id 出现在列表里，两种键都要过滤。
+ */
+export function isCodingCliBridgeModule(module: string, pluginId?: string | null): boolean {
+  return (
+    module === BRIDGE_MODULE_KEY ||
+    module === BRIDGE_PLUGIN_ID ||
+    pluginId === BRIDGE_MODULE_KEY ||
+    pluginId === BRIDGE_PLUGIN_ID
+  );
+}
+
 /** 本栏固定查询参数（源/仓库/ref 固定；频道由用户选择）。 */
 export const BRIDGE_SOURCE = 'github' as const;
 export const BRIDGE_REPO = 'LUOSENGWA/Millforge';
