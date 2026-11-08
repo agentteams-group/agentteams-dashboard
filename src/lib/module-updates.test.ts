@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildModuleVersionOptions,
+  compareModuleVersions,
   indexModules,
   installedVersionsLabel,
+  moduleInstallDirection,
   moduleUpdateState,
+  pickDefaultModuleVersion,
   type MillforgeIndex,
 } from './module-updates';
 
@@ -78,5 +82,62 @@ describe('installedVersionsLabel', () => {
     expect(installedVersionsLabel(['0.1.0', '0.2.0'])).toBe('0.1.0 / 0.2.0');
     expect(installedVersionsLabel([])).toBe('未安装');
     expect(installedVersionsLabel(undefined)).toBe('未安装');
+  });
+});
+
+describe('compareModuleVersions', () => {
+  it('keeps prerelease ordering that compareSemver collapses', () => {
+    expect(compareModuleVersions('0.1.1-alpha.1', '0.1.1-alpha.2')).toBeLessThan(0);
+    expect(compareModuleVersions('0.1.1-alpha.2', '0.1.1-alpha.10')).toBeLessThan(0);
+    expect(compareModuleVersions('0.1.1-beta', '0.1.1-alpha.9')).toBeGreaterThan(0);
+    expect(compareModuleVersions('0.1.1', '0.1.1-alpha.9')).toBeGreaterThan(0);
+    expect(compareModuleVersions('v0.2.0', '0.1.9')).toBeGreaterThan(0);
+  });
+
+  it('flags a prerelease bump as update-available', () => {
+    expect(moduleUpdateState(['0.1.1-alpha.1'], '0.1.1-alpha.2')).toBe('update-available');
+    expect(moduleUpdateState(['0.1.1-alpha.2'], '0.1.1-alpha.2')).toBe('uptodate');
+  });
+});
+
+describe('buildModuleVersionOptions', () => {
+  const entry = {
+    versions: {
+      '0.1.0': { artifacts: [{ name: 'a.zip', sha256: 'a' }] },
+      '0.1.1-alpha.1': { artifacts: [{ name: 'b.zip', sha256: 'b' }] },
+      '0.1.1-alpha.2': { artifacts: [{ name: 'c.zip', sha256: 'c' }] },
+      '0.2.0': { artifacts: [{ name: 'meta.txt', sha256: 'd' }] },
+      '0.3.0': {},
+    },
+  };
+
+  it('lists newest first, disables the current and non-zip versions', () => {
+    const options = buildModuleVersionOptions(entry, '0.1.0');
+    expect(options.map((option) => option.value)).toEqual([
+      '0.3.0',
+      '0.2.0',
+      '0.1.1-alpha.2',
+      '0.1.1-alpha.1',
+      '0.1.0',
+    ]);
+    expect(options[0]).toMatchObject({ disabled: true, reason: 'unavailable' });
+    expect(options[1]).toMatchObject({ disabled: true, reason: 'unavailable' });
+    expect(options[2]).toMatchObject({ disabled: false, reason: null });
+    expect(options[4]).toMatchObject({ disabled: true, reason: 'current' });
+    expect(pickDefaultModuleVersion(options)).toBe('0.1.1-alpha.2');
+  });
+
+  it('returns nothing for a module without a version table', () => {
+    expect(buildModuleVersionOptions(undefined, null)).toEqual([]);
+    expect(pickDefaultModuleVersion([])).toBeNull();
+  });
+});
+
+describe('moduleInstallDirection', () => {
+  it('maps version comparison to install/update/downgrade', () => {
+    expect(moduleInstallDirection('0.2.0', null)).toBe('install');
+    expect(moduleInstallDirection('0.2.0', '0.1.0')).toBe('update');
+    expect(moduleInstallDirection('0.1.0', '0.2.0')).toBe('downgrade');
+    expect(moduleInstallDirection('0.2.0', '0.2.0')).toBe('update');
   });
 });

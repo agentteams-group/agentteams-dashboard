@@ -413,6 +413,259 @@ export interface ModuleInstallResult {
   [key: string]: unknown;
 }
 
+// ----- 千锻（Millforge）编译/注入域 -----
+//
+// 契约 = agentteams_connector/millforge_api.py（工作台插件同一后端）：源配置 →
+// 导入 pack → 模板编译 → SOUL 注入 → LLM 二次生成。仪表盘只消费，不改契约。
+// 旧 Controller 无这些路由（404/405）→ 面板按「控制器不支持」降级。
+
+/** GET/PUT /millforge/source（custom_url 空 = 按 kind+repo 派生 URL）。 */
+export interface MillforgeSource {
+  kind: 'github' | 'gitcode';
+  repo: string;
+  custom_url: string;
+  resolved_url: string;
+  updated_at?: string;
+}
+
+export interface MillforgeSourcePatch {
+  kind?: string;
+  repo?: string;
+  custom_url?: string;
+}
+
+/** POST /millforge/import（整包覆盖导入）。 */
+export interface MillforgeImportResult {
+  ok: boolean;
+  pack: string;
+  url: string;
+  ref: string;
+  commit: string;
+  files: number;
+  has_compiler: boolean;
+  has_core: boolean;
+}
+
+/** INDEX.yaml 单条目（skeletons/industry/domain/fragments 同构）。 */
+export interface MillforgePackEntry {
+  id: string;
+  file: string;
+  source?: string;
+  applies_to?: string;
+  /** domain 条目 → 所属行业（行业→领域级联过滤；旧包无此字段 → 回退全显）。 */
+  industry?: string;
+  budget?: string;
+}
+
+/** INDEX 整队组合（teams 段；选中自动填 members/domains）。 */
+export interface MillforgeTeamCombo {
+  id: string;
+  name: string;
+  industry: string;
+  members: { leader: string; workers: string; critic: string };
+  domains: string;
+  source: string;
+  experimental: string;
+}
+
+/** 解析后的 pack INDEX（null = 该包 INDEX 解析失败）。 */
+export interface MillforgePackIndex {
+  skeletons: MillforgePackEntry[];
+  industry: MillforgePackEntry[];
+  domain: MillforgePackEntry[];
+  fragments: MillforgePackEntry[];
+  teams: MillforgeTeamCombo[];
+}
+
+/** 单个模板包（pack 名 = 仓库 slug）。 */
+export interface MillforgePack {
+  pack: string;
+  meta: {
+    url: string;
+    ref: string;
+    commit: string;
+    imported_at: string;
+    files?: string[];
+  } | null;
+  index: MillforgePackIndex | null;
+  parse_error?: string | null;
+}
+
+export interface MillforgePacksResponse {
+  packs: MillforgePack[];
+}
+
+/** GET /millforge/packs/{pack}/file（.md/.yaml/.json/.py/.sh/.txt 只读预览）。 */
+export interface MillforgePackFile {
+  pack: string;
+  path: string;
+  size: number;
+  content: string;
+}
+
+/** 模板路径输入（INDEX 整队组合或 industry+domains+members 确定性组装）。 */
+export interface MillforgeTemplateSpec {
+  team_combo?: string;
+  industry?: string;
+  domains?: string[];
+  members?: { leader?: number; workers?: number; critic?: number };
+}
+
+/** 编译请求：template 与 team_json 恰好给一个。 */
+export interface MillforgeCompileRequest {
+  pack: string;
+  team: string;
+  lang: 'zh' | 'en';
+  template?: MillforgeTemplateSpec;
+  team_json?: Record<string, unknown>;
+}
+
+export interface MillforgeRoleOut {
+  role: string;
+  kind: 'coordinator' | 'leader' | 'worker' | 'critic';
+  lines: number;
+  budget: number;
+  budget_ok: boolean;
+  soul_sha256: string;
+  soul: string;
+}
+
+/** POST /millforge/compile 成功响应（build 落盘 + 全量 SOUL 预览）。 */
+export interface MillforgeBuildResult {
+  ok: boolean;
+  build_id: string;
+  pack: string;
+  team: string;
+  lang: string;
+  source: 'template' | 'custom';
+  roles: MillforgeRoleOut[];
+  fragments: string[];
+  spawn_specs: string[];
+  provenance: Record<string, unknown>;
+}
+
+/** create_workers 行（CR 角色 team_leader/worker）。 */
+export interface MillforgeCreateWorker {
+  name: string;
+  role_id: string;
+  role?: string;
+  model?: string;
+  runtime?: string;
+}
+
+/** POST /millforge/inject 请求（mapping 与 create_workers 二选一语义）。 */
+export interface MillforgeInjectRequest {
+  build_id: string;
+  team: string;
+  mapping: Record<string, string>;
+  create_workers: MillforgeCreateWorker[];
+  core_skill: boolean;
+  apply_soul: boolean;
+  /** 目标已有内容不同的 SOUL 时 true = 确认覆盖（未确认 → 后端 409）。 */
+  overwrite?: boolean;
+}
+
+/** 注入单项结果（souls / created 同构）。 */
+export interface MillforgeInjectEntry {
+  worker?: string;
+  name?: string;
+  role_id: string;
+  /** unchanged = 内容相同已跳过。 */
+  status: 'ok' | 'unchanged' | 'error';
+  error?: string;
+  verified?: boolean;
+  mode?: 'apply' | 'overwrite' | 'unchanged' | 'rollback';
+  prev_sha256?: string;
+  prev_provenance?: Record<string, string | boolean>;
+}
+
+/** POST /millforge/inject/preflight 单项（只读）。 */
+export interface MillforgePreflightTarget {
+  worker: string;
+  role_id: string;
+  state: 'empty' | 'same' | 'differs' | 'error';
+  prev_sha256?: string;
+  new_sha256?: string;
+  prev_provenance?: Record<string, string | boolean>;
+  prev_head?: string;
+  prev_len?: number;
+  error?: string;
+}
+
+export interface MillforgePreflightResult {
+  build_id: string;
+  targets: MillforgePreflightTarget[];
+  conflict_count: number;
+}
+
+/** POST /millforge/inject 响应（HTTP 200 + partial 如实回报逐项成败）。 */
+export interface MillforgeInjectResult {
+  ok: boolean;
+  partial: boolean;
+  build_id: string;
+  team: string;
+  souls: MillforgeInjectEntry[];
+  created: MillforgeInjectEntry[];
+  core_skill: {
+    status: 'ok' | 'partial' | 'error' | 'skipped';
+    skill?: string;
+    assigned?: string[];
+    detail?: string;
+  };
+}
+
+/** GET /millforge/injections 历史条目（留 50，最新在前）。 */
+export interface MillforgeInjectionRec {
+  id: string;
+  at: string;
+  build_id: string;
+  team: string;
+  partial: boolean;
+  souls: MillforgeInjectEntry[];
+  created: MillforgeInjectEntry[];
+  core_skill: MillforgeInjectResult['core_skill'];
+}
+
+export interface MillforgeInjectionsResponse {
+  injections: MillforgeInjectionRec[];
+}
+
+/** POST /millforge/prompt 表单（空字段 = 提示词标注「未提供」）。 */
+export interface MillforgePromptForm {
+  members: string;
+  task_types: string;
+  runtime: string;
+  pains: string;
+  team_name: string;
+}
+
+export interface MillforgePromptResult {
+  ok: boolean;
+  pack: string;
+  prompt: string;
+}
+
+/** 字段级校验错误（jsonschema 路径 + 消息）。 */
+export interface MillforgeParseError {
+  path: string;
+  message: string;
+}
+
+/** POST /millforge/parse-team-json 响应（ok=true 时 team = 校验后的 team.json）。 */
+export interface MillforgeParseResult {
+  ok: boolean;
+  team?: Record<string, unknown>;
+  errors?: MillforgeParseError[];
+}
+
+export interface MillforgeRollbackResult {
+  ok: boolean;
+  worker: string;
+  restored_sha256: string;
+  backup_at?: string;
+  verified: boolean;
+}
+
 export interface CreateWorkerRequest {
   name: string;
   model?: RequestModelAlias;
@@ -1317,6 +1570,70 @@ export const agentteamsApi = {
     if (query.channel) params.set('channel', query.channel);
     return proxyRequest<MillforgeIndex>(`/millforge/index?${params.toString()}`);
   },
+
+  // 千锻编译/注入域（工作台插件同一后端）；旧 Controller 404/405 由面板降级。
+  getMillforgeSource: () => proxyRequest<MillforgeSource>('/millforge/source'),
+
+  putMillforgeSource: (patch: MillforgeSourcePatch) =>
+    proxyRequest<MillforgeSource>('/millforge/source', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+
+  /** 整包覆盖导入（git clone 90s 后端上限 → 前端 300s 宽限）。 */
+  importMillforgePack: (ref = 'main') =>
+    proxyRequest<MillforgeImportResult>('/millforge/import', {
+      method: 'POST',
+      body: JSON.stringify({ ref }),
+    }),
+
+  getMillforgePacks: () => proxyRequest<MillforgePacksResponse>('/millforge/packs'),
+
+  getMillforgePackFile: (pack: string, path: string) =>
+    proxyRequest<MillforgePackFile>(
+      `/millforge/packs/${encodeURIComponent(pack)}/file?path=${encodeURIComponent(path)}`,
+    ),
+
+  /** 编译预览（编译器 120s 后端上限 → 前端 180s 宽限；422 = 编译器非 0 退出）。 */
+  compileMillforge: (req: MillforgeCompileRequest) =>
+    proxyRequest<MillforgeBuildResult>('/millforge/compile', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  preflightMillforgeSouls: (buildId: string, mapping: Record<string, string>) =>
+    proxyRequest<MillforgePreflightResult>('/millforge/inject/preflight', {
+      method: 'POST',
+      body: JSON.stringify({ build_id: buildId, mapping }),
+    }),
+
+  /** 注入（逐项 Controller 调用 + 读回验证；HTTP 200 + partial 逐项如实）。 */
+  injectMillforge: (req: MillforgeInjectRequest) =>
+    proxyRequest<MillforgeInjectResult>('/millforge/inject', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  rollbackMillforgeSoul: (worker: string) =>
+    proxyRequest<MillforgeRollbackResult>('/millforge/rollback', {
+      method: 'POST',
+      body: JSON.stringify({ worker }),
+    }),
+
+  promptMillforge: (pack: string, form: MillforgePromptForm) =>
+    proxyRequest<MillforgePromptResult>('/millforge/prompt', {
+      method: 'POST',
+      body: JSON.stringify({ pack, form }),
+    }),
+
+  parseMillforgeTeamJson: (pack: string, text: string) =>
+    proxyRequest<MillforgeParseResult>('/millforge/parse-team-json', {
+      method: 'POST',
+      body: JSON.stringify({ pack, text }),
+    }),
+
+  getMillforgeInjections: () =>
+    proxyRequest<MillforgeInjectionsResponse>('/millforge/injections'),
 
   getTeamModules: (name: string) =>
     proxyRequest<TeamModulesResponse>(`/teams/${encodeURIComponent(name)}/modules`),
