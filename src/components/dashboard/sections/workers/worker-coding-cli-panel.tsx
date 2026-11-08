@@ -34,6 +34,8 @@ import {
   type SettingsObject,
   type SettingsValue,
 } from '@/lib/coding-cli-presets';
+import type { WorkerRuntime } from '@/lib/agentteams-api';
+import { WorkerQwenCodeBridgeCard } from './worker-qwen-code-bridge-card';
 
 type LoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 
@@ -185,7 +187,17 @@ function previewJson(settings: SettingsObject): string {
   );
 }
 
-export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
+export function WorkerCodingCliPanel({
+  workerName,
+  runtime,
+  onChanged,
+}: {
+  workerName: string;
+  /** Worker 运行时：QwenCode 卡的「QwenPaw × QwenCode 桥」仅 qwenpaw 渲染。 */
+  runtime?: WorkerRuntime;
+  /** 桥模块安装/更新成功后通知父级（抽屉刷新详情）。 */
+  onChanged?: () => void;
+}) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -653,6 +665,15 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
           disabled={readOnly}
         />
       </div>
+
+      {/* QwenCode 卡展开后、settings 之前：QwenPaw × QwenCode 桥安装/更新 */}
+      {selected === 'qwen-code' && (
+        <WorkerQwenCodeBridgeCard
+          workerName={workerName}
+          runtime={runtime}
+          onChanged={onChanged}
+        />
+      )}
 
       {settingsOpen && !settings && (
         <p className="text-xs text-muted-foreground">加载 settings…</p>

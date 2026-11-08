@@ -475,7 +475,12 @@ function WorkerDrawerContent({
               </ResourceCard>
 
               <ResourceCard title="Coding CLI" expanded={expanded.has('coding-cli')} onToggle={() => toggle('coding-cli')}>
-                <WorkerCodingCliPanel key={`coding-cli-${view.name}`} workerName={view.name} />
+                <WorkerCodingCliPanel
+                  key={`coding-cli-${view.name}`}
+                  workerName={view.name}
+                  runtime={view.runtime}
+                  onChanged={onChanged}
+                />
               </ResourceCard>
 
               <ResourceCard title="工作区文件" expanded={expanded.has('workspace-files')} onToggle={() => toggle('workspace-files')}>
