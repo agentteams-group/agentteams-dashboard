@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: dashboard-image-${{ github.ref }}
+  group: dashboard-image-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -28,7 +28,10 @@ jobs:
       contents: read
     outputs:
       value: ${{ steps.version.outputs.value }}
+      source_tree: ${{ steps.version.outputs.source_tree }}
+      ready: ${{ steps.existing.outputs.ready }}
     steps:
+      - uses: actions/checkout@v4
       - name: Resolve version
         id: version
         env:
@@ -41,10 +44,30 @@ jobs:
           fi
 
           echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "${GITHUB_OUTPUT}"
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Check existing source and architectures
+        id: existing
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          SOURCE_TREE: ${{ steps.version.outputs.source_tree }}
+        run: |
+          node scripts/check-published-image.mjs \
+            "$REGISTRY/$REPO/agentteams-dashboard:$VERSION" "$SOURCE_TREE"
+      - name: Reuse summary
+        if: steps.existing.outputs.ready == 'true'
+        run: echo 'Reused the existing amd64/arm64 image with the exact source tree; build and push skipped.' >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Build and push ${{ matrix.arch }} image
     needs: version
+    if: needs.version.outputs.ready != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -72,13 +95,17 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and push
-        run: |
-          make push-platform \
-            ARCH="${{ matrix.arch }}" \
-            VERSION="${{ needs.version.outputs.value }}" \
-            REGISTRY="${{ env.REGISTRY }}" \
-            REPO="${{ env.REPO }}" \
-            DOCKER_BUILD_ARGS="--build-arg NEXT_PUBLIC_BASE_PATH= --build-arg DASHBOARD_BUILD_ID=${{ needs.version.outputs.value }}"
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPO }}/agentteams-dashboard:${{ needs.version.outputs.value }}-${{ matrix.arch }}
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=
+            DASHBOARD_BUILD_ID=${{ needs.version.outputs.value }}
+          cache-from: type=gha,scope=dashboard-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=dashboard-${{ matrix.arch }},ignore-error=true,timeout=2m
 
   merge:
     name: Publish multi-arch manifest
@@ -104,6 +131,7 @@ jobs:
       - name: Merge platform images
         run: |
           make push-manifest \
+            SOURCE_TREE="${{ needs.version.outputs.source_tree }}" \
             VERSION="${{ needs.version.outputs.value }}" \
             REGISTRY="${{ env.REGISTRY }}" \
             REPO="${{ env.REPO }}"

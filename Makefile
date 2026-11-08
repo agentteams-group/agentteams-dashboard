@@ -39,6 +39,7 @@ PUSH_LATEST   := $(if $(filter latest,$(VERSION)),,$(if $(filter 1,$(IS_PRERELEA
 
 # Extra build args
 DOCKER_BUILD_ARGS ?=
+SOURCE_TREE ?=
 DOCKER_PLATFORM   ?=
 ifdef DOCKER_PLATFORM
   PLATFORM_FLAG = --platform $(DOCKER_PLATFORM)
@@ -138,6 +139,7 @@ push-platform: ## Push one native platform to a temporary architecture tag
 
 push-manifest: ## Publish the completed amd64 and arm64 images together
 	docker buildx imagetools create -t $(IMAGE_TAG) \
+		$(if $(SOURCE_TREE),--annotation index:io.agentteams.source-tree=$(SOURCE_TREE)) \
 		$(if $(PUSH_LATEST),-t $(IMAGE):latest) \
 		$(IMAGE_TAG)-amd64 $(IMAGE_TAG)-arm64
 

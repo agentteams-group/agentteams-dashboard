@@ -25,6 +25,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: npm ci --no-audit --no-fund --legacy-peer-deps
 
       - name: Lint
@@ -37,7 +39,7 @@ jobs:
         run: npm run test
 
       - name: Image publication tests
-        run: node --test scripts/test-image-publication.mjs
+        run: node --test scripts/test-image-publication.mjs scripts/test-release-reuse.mjs
 
   docs-consistency:
     name: Docs consistency
