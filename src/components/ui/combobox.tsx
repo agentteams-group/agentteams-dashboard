@@ -53,6 +53,7 @@ export function Combobox({
   const [draft, setDraft] = useState<string | null>(null);
   const listId = useId();
   const listRef = useRef<HTMLUListElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
   const unique = useMemo(() => {
     const seen = new Set<string>();
@@ -80,7 +81,15 @@ export function Combobox({
     node?.scrollIntoView?.({ block: 'nearest' });
   }, [activeIndex, showList]);
 
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
   const close = () => {
+    clearCloseTimer();
     setOpen(false);
     setSearch('');
     setActive(-1);
@@ -93,6 +102,7 @@ export function Combobox({
   };
 
   const openList = () => {
+    clearCloseTimer();
     setOpen(true);
     setSearch('');
     setActive(-1);
@@ -208,7 +218,10 @@ export function Combobox({
                   index === activeIndex && 'bg-accent text-accent-foreground',
                 )}
                 onMouseEnter={() => setActive(index)}
-                onMouseDown={(event) => event.preventDefault()}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  choose(item);
+                }}
                 onClick={() => choose(item)}
               >
                 <span className="min-w-0 flex-1 truncate">{item}</span>
