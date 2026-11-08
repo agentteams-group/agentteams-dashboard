@@ -26,6 +26,7 @@ import { ProjectTimelinePanel } from '../project-timeline-panel';
 import { ProjectEventsPanel } from '../project-events-panel';
 import { ProjectAttentionPanel } from '../project-attention-panel';
 import { ProjectSignalEventsPanel } from '../project-signal-events-panel';
+import { ProjectSpawnsPanel } from '../project-spawns-panel';
 import { useNowTick } from '@/hooks/use-now-tick';
 import {
   NODE_STATUS_COLOR,
@@ -464,6 +465,9 @@ export function WorkflowDetail({
 
       {/* Attention aggregate (controller /attention, upstream #1434) */}
       <ProjectAttentionPanel projectId={wf.project_id} teamId={mutationTeamId} now={now} />
+
+      {/* Spawn subagent tree + lazy message stream (controller /spawns) */}
+      <ProjectSpawnsPanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Intervention timeline (controller history endpoint) */}
       <ProjectTimelinePanel projectId={wf.project_id} teamId={mutationTeamId} />

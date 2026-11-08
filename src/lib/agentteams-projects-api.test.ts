@@ -340,3 +340,115 @@ describe('getProjectHistory', () => {
     expect(url.searchParams.get('team')).toBe('biz-team');
   });
 });
+
+describe('getProjectSpawns', () => {
+  it('maps the controller spawnInfo shape and drops invalid rows', async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          project_id: 'p1',
+          workers: [
+            {
+              worker: 'alice',
+              spawns: [
+                {
+                  session_id: 'sub-1',
+                  name: '实现登录',
+                  status: 'running',
+                  created_at: '2026-11-08T09:00:00Z',
+                  updated_at: '2026-11-08T10:00:00Z',
+                  root_session_id: null,
+                  subagent_allowed_tools: ['read_file', ''],
+                  subagent_skills: ['deploy'],
+                },
+                { session_id: '', status: 'idle' },
+                null,
+              ],
+            },
+            { worker: '', spawns: [{ session_id: 'sub-2' }] },
+            null,
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    const { getProjectSpawns } = await import('./agentteams-projects-api');
+    const data = await getProjectSpawns('p1', 'biz-team');
+
+    expect(spy.mock.calls[0][0]).toBe(
+      '/api/agentteams/projects/p1/spawns?team=biz-team',
+    );
+    expect(data.project_id).toBe('p1');
+    expect(data.workers).toHaveLength(1);
+    expect(data.workers[0].worker).toBe('alice');
+    expect(data.workers[0].spawns).toEqual([
+      {
+        session_id: 'sub-1',
+        name: '实现登录',
+        status: 'running',
+        last_activity: '2026-11-08T10:00:00Z',
+        created_at: '2026-11-08T09:00:00Z',
+        root_session_id: null,
+        allowedTools: ['read_file'],
+        skills: ['deploy'],
+      },
+    ]);
+  });
+
+  it('passes 404 through so the panel can hide the block', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'not found' }), { status: 404 }),
+    ) as never;
+
+    const { getProjectSpawns } = await import('./agentteams-projects-api');
+    const err = await getProjectSpawns('p1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
+  });
+});
+
+describe('getSpawnMessages', () => {
+  it('clamps limit to the controller cap and normalizes rows', async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          session_id: 'sub-1',
+          task: '请实现登录',
+          messages: [
+            { seq: 3, role: 'assistant', content: '已完成', created_at: '2026-11-08T10:00:00Z' },
+            null,
+            { role: 42 },
+          ],
+          has_more: true,
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = spy as unknown as typeof fetch;
+
+    const { getSpawnMessages } = await import('./agentteams-projects-api');
+    const data = await getSpawnMessages('p1', 'sub-1', { limit: 200 });
+
+    expect(spy.mock.calls[0][0]).toBe(
+      '/api/agentteams/projects/p1/spawns/sub-1/messages?limit=50',
+    );
+    expect(data.task).toBe('请实现登录');
+    expect(data.has_more).toBe(true);
+    expect(data.messages).toHaveLength(3);
+    expect(data.messages[0]).toEqual({
+      seq: 3,
+      kind: undefined,
+      role: 'assistant',
+      name: undefined,
+      content: '已完成',
+      tool_state: undefined,
+      headline: undefined,
+      created_at: '2026-11-08T10:00:00Z',
+    });
+    // Non-string role/content are dropped/defaulted, never thrown.
+    expect(data.messages[2].role).toBeUndefined();
+    expect(data.messages[2].content).toBe('');
+  });
+});
