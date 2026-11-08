@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
-  ChevronDown,
+  ChevronRight,
   Loader2,
   Moon,
   RefreshCw,
@@ -43,8 +43,7 @@ import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
 import { WorkerMcpPanel } from './worker-mcp-panel';
 import { WorkerModelDialog } from './worker-model-dialog';
 import { WorkerPluginsCard } from './worker-plugins-card';
-import { WorkerRestartEffectivePanel } from './worker-restart-effective-panel';
-import { WorkerRuntimeConfigPanel } from './worker-runtime-config-panel';
+import { WorkerRuntimeConfigSurface } from './worker-runtime-config-surface';
 import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerSkillUploadDialog } from './worker-skill-upload-dialog';
 import { WorkerToolsPanel } from './worker-tools-panel';
@@ -62,6 +61,7 @@ import { agentteamsApi, type WorkerResponse } from '@/lib/agentteams-api';
 import { buildStatusNarrative, formatAgoZh } from '@/lib/worker-activity';
 import { fetchWorkerDetail, invalidateWorkerDetail } from '@/lib/worker-detail';
 import { isLegacyCopaw } from '@/lib/runtime-options';
+import { runtimeLabel } from '@/lib/runtime-labels';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
@@ -88,30 +88,33 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Resource card = entry point only. Clicking it opens the full panel in a
+ * dialog (same modal pattern as the workbench plugin); the drawer never
+ * expands panel content inline and never nests a second drawer. */
 function ResourceCard({
   title,
-  expanded,
-  onToggle,
-  children,
+  desc,
+  onOpen,
 }: {
   title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
+  desc: string;
+  onOpen: () => void;
 }) {
   return (
-    <div className="rounded-lg border">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 p-2.5 text-left text-xs font-semibold hover:bg-muted/50"
-      >
-        <span>{title}</span>
-        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
-      </button>
-      {expanded && <div className="border-t p-2.5">{children}</div>}
-    </div>
+    <button
+      type="button"
+      aria-label={title}
+      onClick={onOpen}
+      className="flex min-h-11 w-full items-center gap-2 rounded-lg border p-2.5 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-semibold">{title}</span>
+        <span className="block truncate text-xs text-muted-foreground" title={desc}>
+          {desc}
+        </span>
+      </span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -143,7 +146,7 @@ function WorkerDrawerContent({
   const open = true;
   const workerName = worker.name;
   const [detail, setDetail] = useState<WorkerResponse | null>(worker);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [openCard, setOpenCard] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -177,7 +180,7 @@ function WorkerDrawerContent({
     if (!open || !workerName) return;
     let alive = true;
     setDetail(worker);
-    setExpanded(new Set());
+    setOpenCard(null);
     setEnsureReadyUnsupported(false);
     setLoopStatus(null);
     fetchWorkerDetail(workerName)
@@ -244,14 +247,6 @@ function WorkerDrawerContent({
     ? modelOptions.find((option) => option.alias === view.model)?.binding?.providerName ?? ''
     : '';
 
-  const toggle = useCallback((id: string) => {
-    setExpanded((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   const handleRestart = useCallback(async () => {
     if (!workerName || restarting) return;
@@ -301,6 +296,209 @@ function WorkerDrawerContent({
   const sleeping = view.phase === 'Sleeping' || view.phase === 'Stopped';
   const showEnsureReady = view.phase === 'Pending' || view.phase === 'Stopped';
   const actionPending = wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending;
+
+  // Non-QwenPaw runtimes expose their native config through the controller's
+  // member-config surface; capability cards reuse that surface (bucket filter)
+  // instead of calling QwenPaw-only worker endpoints that answer 400.
+  const nonQwenpaw = Boolean(view.runtime) && view.runtime !== 'qwenpaw';
+  const runtimeName = runtimeLabel(view.runtime);
+  const envCount = Object.keys(view.env ?? {}).length;
+
+  const surface = (bucket: 'config' | 'mcp' | 'tools' | 'skills' | 'channels' | 'approval') => (
+    <WorkerRuntimeConfigSurface
+      key={`surface-${bucket}-${view.name}`}
+      workerName={view.name}
+      runtime={view.runtime}
+      bucket={bucket}
+      canWrite={userLevel >= 3}
+      onChanged={() => {
+        invalidateWorkerDetail(view.name);
+        void refreshDetail(true);
+        onChanged?.();
+      }}
+    />
+  );
+
+  const resourceCards: Array<{
+    id: string;
+    title: string;
+    desc: string;
+    render: () => React.ReactNode;
+  }> = [
+    {
+      id: 'runtime',
+      title: '运行配置',
+      desc: `${runtimeName} · 分组 / 搜索 / 已改计数 / 回滚`,
+      render: () => surface('config'),
+    },
+    {
+      id: 'mcp',
+      title: 'MCP',
+      desc: nonQwenpaw
+        ? `${runtimeName} 配置面（surface 驱动）`
+        : `${view.mcpServers?.length ?? 0} 个声明 server · 声明 + 自注册合并`,
+      render: () =>
+        nonQwenpaw ? (
+          surface('mcp')
+        ) : (
+          <WorkerMcpPanel
+            key={`mcp-${view.name}`}
+            worker={view}
+            workerName={view.name}
+            workerTeam={view.team || undefined}
+            canEdit={userLevel >= 2}
+            onChanged={() => {
+              invalidateWorkerDetail(view.name);
+              void refreshDetail(true);
+              onChanged?.();
+            }}
+          />
+        ),
+    },
+    {
+      id: 'tools',
+      title: '工具',
+      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '内置工具启用列表',
+      render: () =>
+        nonQwenpaw ? (
+          surface('tools')
+        ) : (
+          <WorkerToolsPanel key={`tools-${view.name}`} workerName={view.name} />
+        ),
+    },
+    {
+      id: 'skills',
+      title: '技能',
+      desc: nonQwenpaw
+        ? `${runtimeName} 配置面（surface 驱动）`
+        : `${view.skills?.length ?? 0} 项 · 目录 / 分配矩阵`,
+      render: () =>
+        nonQwenpaw ? (
+          surface('skills')
+        ) : (
+          <div className="space-y-2">
+            <WorkerSkillAssign
+              key={`skills-${view.name}`}
+              worker={view}
+              onSaved={() => {
+                invalidateWorkerDetail(view.name);
+                void refreshDetail(true);
+                onChanged?.();
+              }}
+            />
+            <Button size="sm" variant="outline" className="h-11 text-sm" onClick={() => setUploadOpen(true)}>
+              <Upload className="mr-1 h-4 w-4" />
+              上传技能包
+            </Button>
+          </div>
+        ),
+    },
+    {
+      id: 'channels',
+      title: '频道',
+      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '频道配置 + 二维码授权 + 重启',
+      render: () =>
+        nonQwenpaw ? (
+          surface('channels')
+        ) : (
+          <WorkerChannelsPanel key={`channels-${view.name}`} workerName={view.name} />
+        ),
+    },
+    {
+      id: 'approval',
+      title: '审批模式',
+      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '审批三档 + 保存',
+      render: () =>
+        nonQwenpaw ? (
+          surface('approval')
+        ) : (
+          <WorkerApprovalControl key={`approval-${view.name}`} workerName={view.name} />
+        ),
+    },
+    {
+      id: 'coding-cli',
+      title: 'Coding CLI',
+      desc: '安装 / 升级 / 配置（含 QwenCode 桥）',
+      render: () => (
+        <WorkerCodingCliPanel
+          key={`coding-cli-${view.name}`}
+          workerName={view.name}
+          runtime={view.runtime}
+          onChanged={onChanged}
+        />
+      ),
+    },
+    {
+      id: 'workspace-files',
+      title: '工作区文件',
+      desc: 'MEMORY / memory / digest · 文本可编辑',
+      render: () => (
+        <WorkerWorkspaceFilesPanel key={`ws-${view.name}`} workerName={view.name} />
+      ),
+    },
+    {
+      id: 'env',
+      title: '环境变量与网关',
+      desc: `${envCount} 个变量 · 模型 / MCP 网关探测`,
+      render: () => (
+        <WorkerEnvCard
+          key={`env-${view.name}`}
+          worker={view}
+          onSaved={() => {
+            invalidateWorkerDetail(view.name);
+            void refreshDetail(true);
+            onChanged?.();
+          }}
+        />
+      ),
+    },
+    {
+      id: 'llm',
+      title: 'LLM 调优',
+      desc: '重试 / 限流 + 流式超时',
+      render: () => <WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} />,
+    },
+    {
+      id: 'plugins',
+      title: 'Worker 插件',
+      desc: 'id / 名称 / 版本 / 启用（只读）',
+      render: () => <WorkerPluginsCard key={`plugins-${view.name}`} workerName={view.name} />,
+    },
+  ];
+
+  if (isLegacyCopaw(view.runtime)) {
+    resourceCards.push({
+      id: 'upgrade',
+      title: '运行时升级',
+      desc: 'CoPaw → QwenPaw（二次确认）',
+      render: () => (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。
+          </p>
+          <Button
+            variant="outline"
+            className="h-11 text-sm"
+            onClick={() => {
+              setOpenCard(null);
+              setUpgradeOpen(true);
+            }}
+          >
+            升级到 QwenPaw
+          </Button>
+        </div>
+      ),
+    });
+  }
+
+  resourceCards.push({
+    id: 'checkpoints',
+    title: '检查点',
+    desc: '回迁 / 恢复',
+    render: () => <WorkerCheckpointsCard key={`checkpoints-${view.name}`} workerName={view.name} />,
+  });
+
+  const activeCard = openCard ? resourceCards.find((card) => card.id === openCard) ?? null : null;
 
   return (
     <>
@@ -419,114 +617,16 @@ function WorkerDrawerContent({
               </Button>
             </section>
 
-            {/* 资源区（按插件右栏顺序；折叠时才挂载内容 → 懒加载） */}
+            {/* 资源卡 = 入口：点击打开大弹窗（面板只在弹窗打开时挂载） */}
             <div className="space-y-2">
-              <ResourceCard title="运行配置" expanded={expanded.has('runtime')} onToggle={() => toggle('runtime')}>
-                {view.runtime === 'qwenpaw' ? (
-                  <WorkerRuntimeConfigPanel key={`runtime-${view.name}`} workerName={view.name} />
-                ) : (
-                  <WorkerRestartEffectivePanel key={`apply-${view.name}`} workerName={view.name} />
-                )}
-              </ResourceCard>
-
-              <ResourceCard title="MCP" expanded={expanded.has('mcp')} onToggle={() => toggle('mcp')}>
-                <WorkerMcpPanel
-                  key={`mcp-${view.name}`}
-                  worker={view}
-                  workerName={view.name}
-                  workerTeam={view.team || undefined}
-                  canEdit={userLevel >= 2}
-                  onChanged={() => {
-                    invalidateWorkerDetail(view.name);
-                    void refreshDetail(true);
-                    onChanged?.();
-                  }}
+              {resourceCards.map((card) => (
+                <ResourceCard
+                  key={card.id}
+                  title={card.title}
+                  desc={card.desc}
+                  onOpen={() => setOpenCard(card.id)}
                 />
-              </ResourceCard>
-
-              <ResourceCard title="工具" expanded={expanded.has('tools')} onToggle={() => toggle('tools')}>
-                <WorkerToolsPanel key={`tools-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              <ResourceCard title="技能" expanded={expanded.has('skills')} onToggle={() => toggle('skills')}>
-                <div className="space-y-2">
-                  <WorkerSkillAssign
-                    key={`skills-${view.name}`}
-                    worker={view}
-                    onSaved={() => {
-                      invalidateWorkerDetail(view.name);
-                      void refreshDetail(true);
-                      onChanged?.();
-                    }}
-                  />
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setUploadOpen(true)}>
-                    <Upload className="mr-1 h-3 w-3" />
-                    上传技能包
-                  </Button>
-                </div>
-              </ResourceCard>
-
-              <ResourceCard title="频道" expanded={expanded.has('channels')} onToggle={() => toggle('channels')}>
-                <WorkerChannelsPanel key={`channels-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              <ResourceCard title="审批模式" expanded={expanded.has('approval')} onToggle={() => toggle('approval')}>
-                <WorkerApprovalControl key={`approval-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              <ResourceCard title="Coding CLI" expanded={expanded.has('coding-cli')} onToggle={() => toggle('coding-cli')}>
-                <WorkerCodingCliPanel
-                  key={`coding-cli-${view.name}`}
-                  workerName={view.name}
-                  runtime={view.runtime}
-                  onChanged={onChanged}
-                />
-              </ResourceCard>
-
-              <ResourceCard title="工作区文件" expanded={expanded.has('workspace-files')} onToggle={() => toggle('workspace-files')}>
-                <WorkerWorkspaceFilesPanel key={`ws-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              <ResourceCard title="环境变量与网关" expanded={expanded.has('env')} onToggle={() => toggle('env')}>
-                <WorkerEnvCard
-                  key={`env-${view.name}`}
-                  worker={view}
-                  onSaved={() => {
-                    invalidateWorkerDetail(view.name);
-                    void refreshDetail(true);
-                    onChanged?.();
-                  }}
-                />
-              </ResourceCard>
-
-              <ResourceCard title="LLM 调优" expanded={expanded.has('llm')} onToggle={() => toggle('llm')}>
-                <WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              <ResourceCard title="Worker 插件" expanded={expanded.has('plugins')} onToggle={() => toggle('plugins')}>
-                <WorkerPluginsCard key={`plugins-${view.name}`} workerName={view.name} />
-              </ResourceCard>
-
-              {isLegacyCopaw(view.runtime) && (
-                <ResourceCard title="运行时升级" expanded={expanded.has('upgrade')} onToggle={() => toggle('upgrade')}>
-                  <div className="space-y-2 text-xs">
-                    <p className="text-muted-foreground">
-                      将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。
-                    </p>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setUpgradeOpen(true)}>
-                      升级到 QwenPaw
-                    </Button>
-                  </div>
-                </ResourceCard>
-              )}
-            </div>
-
-            {/* 检查点 */}
-            <div className="rounded-lg border">
-              <div className="border-b p-2.5 text-xs font-semibold">检查点</div>
-              <div className="p-2.5">
-                <WorkerCheckpointsCard key={`checkpoints-${view.name}`} workerName={view.name} />
-              </div>
+              ))}
             </div>
 
             {actionPending && (
@@ -535,6 +635,38 @@ function WorkerDrawerContent({
                 正在下发操作…
               </p>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 卡片弹窗：桌面 960×86vh，移动全屏；Esc/遮罩/关闭按钮都能关 */}
+      <Dialog
+        open={activeCard != null}
+        onOpenChange={(next) => {
+          if (!next) setOpenCard(null);
+        }}
+      >
+        <DialogContent
+          className="flex h-[86vh] w-[min(96vw,960px)] max-w-none flex-col gap-0 overflow-hidden rounded-lg p-0 max-sm:h-[100dvh] max-sm:w-full max-sm:max-w-none max-sm:rounded-none"
+        >
+          <DialogHeader className="flex shrink-0 flex-row items-start gap-2 border-b px-5 py-3 text-left">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-base">{activeCard?.title ?? ''}</DialogTitle>
+              <DialogDescription className="text-xs">
+                {activeCard?.desc ?? ''}
+              </DialogDescription>
+            </div>
+            <Button
+              variant="ghost"
+              className="h-11 w-11 shrink-0 p-0 text-lg"
+              aria-label="关闭弹窗"
+              onClick={() => setOpenCard(null)}
+            >
+              ×
+            </Button>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {activeCard ? activeCard.render() : null}
           </div>
         </DialogContent>
       </Dialog>
