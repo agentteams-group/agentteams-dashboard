@@ -102,6 +102,8 @@ export interface TeamResponse extends LlmTuningFields {
   readyWorkers: number;
   totalWorkers: number;
   message: string;
+  /** 团队成员可互 @（TeamSpec.peerMentions，缺省 = 控制器默认 true；旧控制器不投影）。 */
+  peerMentions?: boolean;
   workerNames: string[];
   workerExposedPorts: Record<string, ExposedPort[]>;
 }
@@ -430,6 +432,14 @@ export interface UpdateTeamRequest extends LlmTuningFields {
   humanMembers?: string[];
   defaultWorkerModel?: RequestModelAlias;
   defaultWorkerRuntime?: WorkerRuntime;
+  /**
+   * TeamSpec.workerIdleTimeout（默认 720m）。注意：controller v1.2.x 的
+   * UpdateTeamRequest 尚未接收该字段（PUT 会忽略）——保存后回读不一致时
+   * 抽屉会明示「服务端未应用」。
+   */
+  workerIdleTimeout?: string;
+  /** TeamSpec.peerMentions（指针语义：省略 = 不改）。 */
+  peerMentions?: boolean;
 }
 
 export type TeamWorkerMember = { name: string; role: 'team_leader' | 'worker' };

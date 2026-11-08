@@ -57,7 +57,14 @@ export function TeamCard({
             <div className="flex items-center gap-2 min-w-0">
               <StatusDot phase={team.phase} />
               <Bot className="w-5 h-5 text-emerald-500 shrink-0" aria-hidden="true" />
-              <span className="font-medium truncate">{team.name}</span>
+              <button
+                type="button"
+                className="font-medium truncate text-left hover:underline"
+                onClick={() => onView(team)}
+                title="打开团队设置"
+              >
+                {team.name}
+              </button>
             </div>
             <PhaseBadge kind="team" phase={team.phase} />
           </div>

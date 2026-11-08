@@ -67,12 +67,27 @@ export function TeamTable({
           {teams.map((team) => {
             const isDeleting = deletingTeamNames.has(team.name);
             return (
-              <TableRow key={team.name}>
+              // 整行点击打开团队设置抽屉（右侧 Sheet）；操作列自行阻断冒泡。
+              <TableRow
+                key={team.name}
+                className="cursor-pointer"
+                data-testid={`team-row-${team.name}`}
+                onClick={() => onView(team)}
+              >
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={team.phase} />
                   <Bot className="w-4 h-4 text-emerald-500 shrink-0" aria-hidden="true" />
-                  <span className="font-medium truncate max-w-[180px]">{team.name}</span>
+                  <button
+                    type="button"
+                    className="font-medium truncate max-w-[180px] text-left hover:underline"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onView(team);
+                    }}
+                  >
+                    {team.name}
+                  </button>
                 </div>
               </TableCell>
               <TableCell>
@@ -107,7 +122,10 @@ export function TeamTable({
               </TableCell>
               <TableCell>
                 {team.teamRoomID ? (
-                  <div className="flex items-center gap-1">
+                  <div
+                    className="flex items-center gap-1"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <span className="font-mono text-xs truncate max-w-[120px]">
                       {team.teamRoomID}
                     </span>
@@ -118,7 +136,10 @@ export function TeamTable({
                 )}
               </TableCell>
               <TableCell>
-                <div className="flex items-center justify-end gap-1">
+                <div
+                  className="flex items-center justify-end gap-1"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <Button
                     variant="ghost"
                     size="sm"

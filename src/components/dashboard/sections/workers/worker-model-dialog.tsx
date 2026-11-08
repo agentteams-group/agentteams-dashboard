@@ -40,7 +40,8 @@ export function WorkerModelDialog({
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
   onOpenChange: (_open: boolean) => void;
-  onSaved?: () => void;
+  /** 保存成功后回传本次写入的 model（团队抽屉用它同步行内基线）。 */
+  onSaved?: (_model?: string) => void;
 }) {
   const [draft, setDraft] = useState(model);
   const [provider, setProvider] = useState(modelProvider ?? '');
@@ -107,7 +108,7 @@ export function WorkerModelDialog({
                 {
                   onSuccess: () => {
                     onOpenChange(false);
-                    onSaved?.();
+                    onSaved?.(draft.trim());
                   },
                 },
               );
