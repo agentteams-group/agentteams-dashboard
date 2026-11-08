@@ -24,6 +24,9 @@ interface StatelessLoginPageProps {
    *  deployments only) — prefills the address on first-time login so the
    *  user does not have to type a deploy constant. Stored config wins. */
   defaultHomeservers?: string[];
+  /** `?reason=unauthorized&from=data401`: the login was fine but the data
+   *  plane rejected the credential — show the actionable cause, not "expired". */
+  fromData401?: boolean;
 }
 
 interface LoginOutcome {
@@ -82,7 +85,7 @@ async function loginWithFailover(
   return { ok: false, message: lastNetworkError };
 }
 
-export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHomeservers }: StatelessLoginPageProps) {
+export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHomeservers, fromData401 = false }: StatelessLoginPageProps) {
   const stored = typeof window !== 'undefined' ? loadClientConfig() : null;
   // First-time login: prefill from the deployment's server-side address
   // list (a deploy constant — §11.10); an existing stored config always
@@ -178,9 +181,13 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
         </CardHeader>
         <CardContent className="space-y-4">
           {reason === 'unauthorized' && (
-            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
+            <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400 text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>登录已过期或设备被撤销，请重新登录</span>
+              <span>
+                {fromData401
+                  ? '登录成功但数据面凭据被拒绝：请检查 Controller 服务账号 token / 网关认证，或使用 Controller token 登录'
+                  : '登录已过期或设备被撤销，请重新登录'}
+              </span>
             </div>
           )}
           {reason === 'invalid' && (

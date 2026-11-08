@@ -110,13 +110,56 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
     expect(lastInit().headers.get('x-agentteams-homeserver')).toBe('http://hs:6867');
   });
 
-  it('on a data-plane 401: clears the matrix credential and bounces to the entry page', async () => {
-    network.mockImplementation(async () => new Response('unauthorized', { status: 401 }));
+  it('on a data-plane 401: clears the server session, then the matrix credential, then bounces once', async () => {
     const replace = (window.location as unknown as { replace: ReturnType<typeof vi.fn> }).replace;
+    let replaceCallsAtLogout = -1;
+    network.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/auth/logout')) replaceCallsAtLogout = replace.mock.calls.length;
+      return new Response('unauthorized', { status: 401 });
+    });
+
     await window.fetch('/api/agentteams/teams');
+
+    const logoutCall = network.mock.calls.find((call: unknown[]) => {
+      const input = call[0] as RequestInfo | URL;
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return url.includes('/api/auth/logout');
+    });
+    expect(logoutCall).toBeDefined();
+    const logoutInit = logoutCall![1] as RequestInit;
+    expect(logoutInit.method).toBe('POST');
+    expect(logoutInit.credentials).toBe('same-origin');
+    // the HttpOnly session cookie is cleared BEFORE the page reloads, else
+    // the reloaded page authenticates again and the bounce loops forever.
+    expect(replaceCallsAtLogout).toBe(0);
     expect(useMatrixStore.getState().isLoggedIn).toBe(false);
     expect(useMatrixStore.getState().accessToken).toBe('');
-    expect(replace).toHaveBeenCalledWith('/?reason=unauthorized');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/?reason=unauthorized&from=data401');
+    expect(window.sessionStorage.getItem('at_auth_bounce_at')).not.toBeNull();
+  });
+
+  it('does not bounce a second time within 10s (hands the 401 back to the caller)', async () => {
+    // Simulates the reloaded page: the in-realm `redirecting` flag is gone,
+    // but the sessionStorage bounce timestamp survives.
+    window.sessionStorage.setItem('at_auth_bounce_at', String(Date.now()));
+    network.mockImplementation(async () => new Response('still unauthorized', { status: 401 }));
+    const replace = window.location.replace;
+
+    const res = await window.fetch('/api/agentteams/teams');
+
+    expect(res.status).toBe(401);
+    expect(replace).not.toHaveBeenCalled();
+    // credentials stay intact: the page decides what to show, we do not
+    // silently log the user out on a repeated 401.
+    expect(useMatrixStore.getState().isLoggedIn).toBe(true);
+    const logoutCalls = network.mock.calls.filter((call: unknown[]) => {
+      const input = call[0] as RequestInfo | URL;
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return url.includes('/api/auth/logout');
+    });
+    expect(logoutCalls).toHaveLength(0);
   });
 
   it('does not bounce on 401 from /api/auth/* (login form keeps its inline error)', async () => {
@@ -140,7 +183,7 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
     useAgentTeamsStore.setState({ sessionUser: 'admin' });
     network.mockImplementation(async () => new Response('unauthorized', { status: 401 }));
     await window.fetch('/api/agentteams/teams');
-    expect(window.location.replace).toHaveBeenCalledWith('/?reason=unauthorized');
+    expect(window.location.replace).toHaveBeenCalledWith('/?reason=unauthorized&from=data401');
   });
 
   it('does not let an anonymous in-flight probe log out a newly authenticated user', async () => {

@@ -101,4 +101,15 @@ describe('LoginPage Controller token-only login', () => {
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({ username: 'admin', password: 'password' });
   });
+
+  it('shows the actionable data-plane 401 notice (and nothing else auto-runs)', () => {
+    const fetchMock = mockLoginResponse(200, { success: true });
+    render(<LoginPage dataPlaneRejected />);
+
+    expect(
+      screen.getByText('登录成功但数据面凭据被拒绝：请检查 Controller 服务账号 token / 网关认证，或使用 Controller token 登录'),
+    ).toBeInTheDocument();
+    // Never retries by itself: no request is issued on mount.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -13,9 +13,13 @@ import { Label } from '@/components/ui/label';
 interface LoginPageProps {
   onLoginSuccess?: () => void;
   defaultUsername?: string;
+  /** The data plane bounced with 401 (`?reason=unauthorized&from=data401`):
+   * the login itself succeeded but the Controller/gateway rejected the
+   * credential. Show an actionable notice — never retry automatically. */
+  dataPlaneRejected?: boolean;
 }
 
-export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPageProps) {
+export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
@@ -129,6 +133,14 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '' }: LoginPagePro
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {dataPlaneRejected && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+              <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" />
+              <span>
+                登录成功但数据面凭据被拒绝：请检查 Controller 服务账号 token / 网关认证，或使用 Controller token 登录
+              </span>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="higress-username">用户名</Label>
             <Input
