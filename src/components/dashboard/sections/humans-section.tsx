@@ -38,7 +38,7 @@ import {
 import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
-import { HumanDetailDialog } from './humans/human-detail-dialog';
+import { HumanDrawer } from './humans/human-drawer';
 import { HumanEditDialog } from './humans/human-edit-dialog';
 import { PhaseDistribution } from './humans/human-phase-distribution';
 
@@ -88,14 +88,14 @@ export function HumansSection() {
   const { data: teams } = useTeams();
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const createHuman = useCreateHuman();
   const deleteHuman = useDeleteHuman();
   const updateHuman = useUpdateHuman();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
+  const [drawerHuman, setDrawerHuman] = useState<HumanResponse | null>(null);
   const [editingHuman, setEditingHuman] = useState<HumanResponse | null>(null);
 
   const [newHuman, setNewHuman] = useState<CreateHumanRequest>({
@@ -240,7 +240,8 @@ export function HumansSection() {
               key={human.name}
               human={human}
               index={i}
-              onView={setDetailHuman}
+              onView={setDrawerHuman}
+              onEdit={setEditingHuman}
               onDelete={setDeleteTarget}
             />
           ))}
@@ -248,7 +249,8 @@ export function HumansSection() {
       ) : (
         <HumanTable
           humans={sortedHumans}
-          onView={setDetailHuman}
+          onView={setDrawerHuman}
+          onEdit={setEditingHuman}
           onDelete={setDeleteTarget}
         />
       )}
@@ -262,10 +264,15 @@ export function HumansSection() {
         onSubmit={handleCreate}
       />
 
-      <HumanDetailDialog
-        human={detailHuman}
-        onOpenChange={(open) => !open && setDetailHuman(null)}
-        onEdit={setEditingHuman}
+      <HumanDrawer
+        human={drawerHuman}
+        teams={(teams ?? []).map((team) => ({
+          name: team.name,
+          humanMembers: team.humanMembers,
+        }))}
+        workers={(workers ?? []).map((worker) => ({ name: worker.name }))}
+        userLevel={userLevel}
+        onOpenChange={(open) => !open && setDrawerHuman(null)}
       />
 
       <HumanEditDialog

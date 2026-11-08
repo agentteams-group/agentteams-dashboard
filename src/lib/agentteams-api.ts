@@ -6,6 +6,12 @@ import { apiUrl, extractErrorDetail } from '@/lib/api-base';
 import { conditionalFetch, currentReadScope } from '@/lib/conditional-fetch';
 import { normalizeWorkerMcpItems, type WorkerMcpResult } from '@/lib/worker-mcp';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
+import {
+  buildWorkspaceAccessPayload,
+  extractWorkspaceAccess,
+  workspaceAccessEqual,
+  type WorkspaceAccess,
+} from '@/lib/workspace-access';
 
 export type { WorkerMcpItem, WorkerMcpResult } from '@/lib/worker-mcp';
 
@@ -181,6 +187,49 @@ export interface HumanResponse {
   groupAllowFrom?: string[];
   email?: string;
   note?: string;
+}
+
+/**
+ * GET /humans/{name}/quota 响应。quotaBytes null = 无限制，0 = 零额度；
+ * quotaFiles 为前向兼容字段（当前 Controller 未实现，缺省 = 不限）。
+ */
+export interface HumanQuotaResponse {
+  usedBytes: number;
+  quotaBytes: number | null;
+  quotaFiles?: number | null;
+}
+
+export interface SetHumanQuotaRequest {
+  quotaBytes: number | null;
+  quotaFiles?: number | null;
+}
+
+/**
+ * 人 CR 的配置面回读：GET /humans/{name} 的 flat 响应（HumanResponse）可能
+ * 额外带 modelAccess / workspaceAccess / capabilities；整体 CR 形状则把
+ * spec 嵌在 spec 下。两形状都兼容，写面按在场形状原样带回。
+ */
+export interface HumanConfigRecord extends HumanResponse {
+  capabilities?: string[];
+  modelAccess?: unknown;
+  workspaceAccess?: unknown;
+  spec?: Record<string, unknown>;
+}
+
+export interface ModelAccessTablesResponse {
+  tables?: string[];
+  items?: unknown[];
+  names?: string[];
+}
+
+export interface SaveHumanConfigResult {
+  method: 'PUT' | 'PATCH';
+}
+
+export interface SaveHumanWorkspaceAccessResult extends SaveHumanConfigResult {
+  /** re-GET 是否回读到所存内容（控制器不回显该字段时为 false）。 */
+  verified: boolean;
+  current: WorkspaceAccess | null;
 }
 
 export interface ManagerResponse {
@@ -781,6 +830,146 @@ async function fetchHumanSyncManifest(name: string): Promise<HumanSyncManifestRe
   return { manifest, etag: res.headers.get('etag') };
 }
 
+// ----- human configuration writes (quota / modelAccess / workspaceAccess) -----
+//
+// PUT /humans/{name} is merge-patch: absent = unchanged, present = replace.
+// The two spec-object fields need read-modify-write (read the record, replace
+// only the target field, send the rest back untouched) so a partially
+// supported controller never loses sibling configuration. PUT 404/405 means
+// the endpoint is missing on an older controller → PATCH merge-patch fallback.
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function isUnsupportedWrite(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 404 || err.status === 405);
+}
+
+async function writeHumanConfig(
+  name: string,
+  buildBody: (_record: Record<string, unknown>) => Record<string, unknown>,
+  buildPatch: (_record: Record<string, unknown>) => Record<string, unknown>,
+): Promise<SaveHumanConfigResult> {
+  const path = `/humans/${encodeURIComponent(name)}`;
+  const record = asRecord(await proxyRequest<unknown>(path));
+  if (!record) throw new Error('人 CR 读取结果非法（期望对象）');
+  try {
+    await proxyRequest<unknown>(path, {
+      method: 'PUT',
+      body: JSON.stringify(buildBody(record)),
+    });
+    return { method: 'PUT' };
+  } catch (err) {
+    if (!isUnsupportedWrite(err)) throw err;
+    await proxyRequest<unknown>(path, {
+      method: 'PATCH',
+      body: JSON.stringify(buildPatch(record)),
+    });
+    return { method: 'PATCH' };
+  }
+}
+
+/**
+ * 保存 spec.modelAccess（读-改-写，只改该字段）。
+ * payload = null（无有效作用域）→ 发送空 scopes：该 Controller 以空 spec
+ * 表示全锁（fail-closed），删键在 merge-patch 下反而不会清空。
+ */
+export async function saveHumanModelAccess(
+  name: string,
+  payload: Record<string, unknown> | null,
+): Promise<SaveHumanConfigResult> {
+  const value = payload ?? { scopes: [] };
+  return writeHumanConfig(
+    name,
+    (record) => {
+      const spec = asRecord(record.spec);
+      return spec
+        ? { ...record, spec: { ...spec, modelAccess: value } }
+        : { ...record, modelAccess: value };
+    },
+    (record) =>
+      asRecord(record.spec)
+        ? { spec: { modelAccess: value } }
+        : { modelAccess: value },
+  );
+}
+
+/**
+ * 保存 spec.workspaceAccess（读-改-写，只改该字段）→ re-GET 验证。
+ * 当前 Controller 的 GET /humans/{name} 不回显 workspaceAccess（write-only）
+ * 时 verified = false，调用方按「未回读」告警而不是断言保存失败。
+ */
+export async function saveHumanWorkspaceAccess(
+  name: string,
+  access: WorkspaceAccess,
+): Promise<SaveHumanWorkspaceAccessResult> {
+  const payload = buildWorkspaceAccessPayload(access); // {} = 清空两列表
+  const result = await writeHumanConfig(
+    name,
+    (record) => {
+      const spec = asRecord(record.spec);
+      return spec
+        ? { ...record, spec: { ...spec, workspaceAccess: payload } }
+        : { ...record, workspaceAccess: payload };
+    },
+    (record) =>
+      asRecord(record.spec)
+        ? { spec: { workspaceAccess: payload } }
+        : { workspaceAccess: payload },
+  );
+  const verify = await proxyRequest<HumanConfigRecord>(
+    `/humans/${encodeURIComponent(name)}`,
+  );
+  const current = extractWorkspaceAccess(verify);
+  return { ...result, verified: workspaceAccessEqual(current, access), current };
+}
+
+/** 共享模型授权表清单（404 / 缺 CRD → supported=false，隐藏表选择器）。 */
+export async function listModelAccessTables(): Promise<{
+  supported: boolean;
+  tables: string[];
+}> {
+  try {
+    const body = await proxyRequest<
+      ModelAccessTablesResponse | string[] | unknown[]
+    >('/model-access-tables');
+    const record = asRecord(body);
+    const list: unknown = Array.isArray(body)
+      ? body
+      : (record?.items ?? record?.tables ?? record?.names);
+    const tables: string[] = [];
+    if (Array.isArray(list)) {
+      for (const item of list) {
+        const entry = asRecord(item);
+        const name =
+          typeof item === 'string'
+            ? item
+            : ((asRecord(entry?.metadata)?.name ?? entry?.name) as unknown);
+        if (typeof name === 'string' && name.trim() !== '' && !tables.includes(name)) {
+          tables.push(name);
+        }
+      }
+    }
+    return { supported: true, tables };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return { supported: false, tables: [] };
+    }
+    if (
+      err instanceof ApiError &&
+      err.status === 500 &&
+      /no matches for kind/i.test(err.message) &&
+      /modelaccesstable/i.test(err.message)
+    ) {
+      return { supported: false, tables: [] };
+    }
+    throw err;
+  }
+}
+
 // ============ API Methods ============
 
 export const agentteamsApi = {
@@ -974,6 +1163,37 @@ export const agentteamsApi = {
 
   updateHuman: (name: string, data: UpdateHumanRequest) =>
     proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // 配置面（详情抽屉四卡）：回读原始人 CR、配额、共享表清单、PATCH 兜底。
+  getHumanConfig: (name: string) =>
+    proxyRequest<HumanConfigRecord>(`/humans/${encodeURIComponent(name)}`),
+
+  getHumanQuota: async (name: string): Promise<HumanQuotaResponse> => {
+    const raw = await proxyRequest<Partial<HumanQuotaResponse> | null>(
+      `/humans/${encodeURIComponent(name)}/quota`,
+    );
+    return {
+      usedBytes: typeof raw?.usedBytes === 'number' ? raw.usedBytes : 0,
+      quotaBytes: typeof raw?.quotaBytes === 'number' ? raw.quotaBytes : null,
+      quotaFiles: typeof raw?.quotaFiles === 'number' ? raw.quotaFiles : null,
+    };
+  },
+
+  setHumanQuota: (name: string, data: SetHumanQuotaRequest) =>
+    proxyRequest<void>(`/humans/${encodeURIComponent(name)}/quota`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  patchHuman: (name: string, data: Record<string, unknown>) =>
+    proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  listModelAccessTables,
+  saveHumanModelAccess,
+  saveHumanWorkspaceAccess,
 
   // Human file sync (read-only; #1499)
   getHumanSyncStatus: (name: string) =>

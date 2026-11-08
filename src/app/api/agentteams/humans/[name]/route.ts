@@ -17,6 +17,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`);
 }
 
+// Merge-patch fallback for the spec-object fields (modelAccess /
+// workspaceAccess) on controllers whose PUT /humans/{name} is missing.
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
+  const { name } = await params;
+  const denied = await enforceServerSideRbac(request, 'update', 'team', name);
+  if (denied) return denied;
+  return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+  });
+}
+
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const denied = await enforceServerSideRbac(request, 'delete', 'team', name);

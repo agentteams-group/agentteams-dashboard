@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -83,11 +82,9 @@ function TagList({ items, label }: { items: string[] | undefined; label: string 
 export function HumanDetailDialog({
   human: summary,
   onOpenChange,
-  onEdit,
 }: {
   human: HumanResponse | null;
   onOpenChange: (_open: boolean) => void;
-  onEdit?: (_human: HumanResponse) => void;
 }) {
   const { data, isFetching, isError, refetch } = useQuery({
     queryKey: ['agentteams-human-detail', summary?.name],
@@ -212,14 +209,6 @@ export function HumanDetailDialog({
             )}
           </TabsContent>
         </Tabs>
-        {human && onEdit && (
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onEdit(human)}>
-              <Pencil className="w-3 h-3 mr-1" aria-hidden="true" />
-              编辑
-            </Button>
-          </DialogFooter>
-        )}
       </DialogContent>
     </Dialog>
   );
