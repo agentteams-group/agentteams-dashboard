@@ -62,8 +62,18 @@ export function assistantTaskNotes(
   const scoped = workflows.filter(workflow => room.agentRole === 'operations' || (workflow.team_id ? teamIds.has(workflow.team_id) : Boolean(workflow.source_room_id && roomIds.has(workflow.source_room_id))));
   for (const workflow of scoped) if (workflow.source_room_id) roomIds.add(workflow.source_room_id);
 
+  const items = workflowTaskNotes(scoped);
+  for (const item of Object.values(confirmations).sort((a, b) => b.timestamp - a.timestamp)) {
+    if (!roomIds.has(item.roomId)) continue;
+    items.push({ id: `confirmation:${item.id}`, confirmationId: item.id, group: 'confirmation', title: item.question || `工具确认 · ${item.toolName}`, roomId: item.roomId });
+  }
+  return items;
+}
+
+/** Preserve raw task status for task summaries and intervention lists. */
+export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskNoteItem[] {
   const items: AssistantTaskNoteItem[] = [];
-  for (const workflow of scoped) {
+  for (const workflow of workflows) {
     const base = { projectId: workflow.project_id, projectTitle: workflow.title, teamId: workflow.team_id };
     const detailById = new Map((workflow.tasks_detail ?? []).map(task => [task.task_id, task]));
     const nodes = new Map((workflow.nodes ?? []).map(node => [node.id, node]));
@@ -82,10 +92,6 @@ export function assistantTaskNotes(
     for (const interrupt of workflow.interrupts ?? []) {
       items.push({ ...base, id: JSON.stringify([workflow.team_id, workflow.project_id, 'interrupt', interrupt.id]), group: 'confirmation', title: interrupt.description || interrupt.value || '项目等待确认' });
     }
-  }
-  for (const item of Object.values(confirmations).sort((a, b) => b.timestamp - a.timestamp)) {
-    if (!roomIds.has(item.roomId)) continue;
-    items.push({ id: `confirmation:${item.id}`, confirmationId: item.id, group: 'confirmation', title: item.question || `工具确认 · ${item.toolName}`, roomId: item.roomId });
   }
   return items;
 }

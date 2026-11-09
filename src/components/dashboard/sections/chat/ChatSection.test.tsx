@@ -46,9 +46,9 @@ vi.mock('@/hooks/use-matrix', async () => {
 const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null }));
 
 vi.mock('./ChatPanel', () => ({
-  ChatPanel: ({ room }: { room: { id: string } }) => {
+  ChatPanel: ({ room, headerTitle, headerLeading }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode }) => {
     chatPanelSpy.lastRoomId = room.id;
-    return <div data-testid="chat-panel-stub">{room.id}</div>;
+    return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{room.id}</div>;
   },
 }));
 
@@ -147,7 +147,7 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
       expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
     });
     expect(useRoomMetaStore.getState().activeRoomId).toBe('!room1:test');
-    expect(screen.getByTestId('chat-panel-stub').textContent).toBe('!room1:test');
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!room1:test');
   });
 
   it('consumes an already-satisfiable deep link on first render', () => {

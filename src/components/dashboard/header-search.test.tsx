@@ -7,6 +7,7 @@ import { DashboardHeader } from './header';
 import { MobileQuickBar } from './mobile-quick-bar';
 
 vi.mock('@/components/theme/theme-provider', () => ({ useTheme: () => ({ resolvedTheme: { id: 'light', base: 'light' }, setTheme: vi.fn(), locked: false }) }));
+vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [], loading: false, degraded: false, partialError: false }) }));
 vi.mock('./notification-popover', () => ({ NotificationPopover: () => null }));
 vi.mock('@/components/plugins/plugin-toolbar-buttons', () => ({ PluginToolbarButtons: () => null }));
 vi.mock('./command-palette', () => ({ useGlobalSearch: () => [], CommandPalette: () => null }));
@@ -20,6 +21,8 @@ it('opens the shared search field from the mobile bar and forwards the query', a
     <DashboardHeader isConnected workerCount={0} teamCount={0} managerCount={0} versionString={undefined} isRefreshingAll={false} searchQuery="" searchInputRef={searchRef} onSearchChange={onSearchChange} onNavClick={vi.fn()} onRefreshAll={vi.fn()} onOpenMobileMenu={vi.fn()} onOpenSettings={vi.fn()} />
     <MobileQuickBar onSearch={() => searchRef.current?.focus()} />
   </TooltipProvider>);
+  expect(screen.queryByRole('group', { name: '资源数量' })).toBeNull();
+  expect(screen.getByRole('group', { name: '工作状态' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '搜索' }));
   const input = screen.getByRole('textbox', { name: '搜索工作区' });
   expect(input).toHaveFocus();

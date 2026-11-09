@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,8 +8,6 @@ import {
   FolderTree,
   ListTodo,
   MessagesSquare,
-  PanelRightClose,
-  PanelRightOpen,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -20,6 +19,10 @@ import type { RoomContextTab } from './RoomContextPanel';
 import type { RoomInfo } from '../room-info';
 
 interface ChatRoomHeaderProps {
+  compact?: boolean;
+  headerActions?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
   agentRole?: RoomInfo['agentRole'];
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
@@ -72,6 +75,10 @@ function ContextChip({
 }
 
 export function ChatRoomHeader({
+  compact = false,
+  headerActions,
+  headerLeading,
+  headerTitle,
   agentRole,
   roomName,
   team,
@@ -89,6 +96,7 @@ export function ChatRoomHeader({
   const teamName = team ? team.teamName || team.name : '';
   return (
     <div data-chat-room-header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden border-b border-border px-4 py-3 sm:h-18 sm:flex-nowrap sm:px-6 sm:py-0">
+      {headerLeading}
       {avatar ? (
         <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
@@ -100,7 +108,7 @@ export function ChatRoomHeader({
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>
+          <div className="min-w-0">{headerTitle ?? <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>}</div>
           {workerMatrixUserIds && workerMatrixUserIds.length > 0
             ? sessionDot.runningOnly
               ? sessionDot.state === 'running'
@@ -147,20 +155,21 @@ export function ChatRoomHeader({
           )
         )}
       </div>
-      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1 max-sm:gap-0.5 sm:w-auto sm:flex-nowrap">
+      <div className={`flex ${compact ? 'w-auto' : 'w-full sm:w-auto'} shrink-0 flex-wrap items-center justify-end gap-1 max-sm:gap-0.5 sm:flex-nowrap`}>
+        {!compact && <>
         <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
           label="任务"
           onClick={() => onTogglePanel('tasks')}
         />
-        <ContextChip
+        {!agentRole && <ContextChip
           active={activePanel === 'members'}
           icon={Users}
           label="成员"
           count={memberCount}
           onClick={() => onTogglePanel('members')}
-        />
+        />}
         <ContextChip
           active={activePanel === 'files'}
           icon={FolderTree}
@@ -174,18 +183,8 @@ export function ChatRoomHeader({
           count={threadCount}
           onClick={() => onTogglePanel('thread')}
         />
-        <Button
-          variant={activePanel === 'overview' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-8 w-8 p-0"
-          onClick={() => onTogglePanel('overview')}
-          title={activePanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
-          aria-pressed={activePanel === 'overview'}
-        >
-          {activePanel === 'overview'
-            ? <PanelRightClose className="h-4 w-4" />
-            : <PanelRightOpen className="h-4 w-4" />}
-        </Button>
+        </>}
+        {headerActions}
       </div>
     </div>
   );
