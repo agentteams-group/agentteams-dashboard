@@ -1,8 +1,9 @@
 'use client';
 
-import { Eye, Pencil, Trash2, UserCheck } from 'lucide-react';
+import { Eye, UserCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
@@ -39,12 +40,9 @@ export function HumanTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead>显示名称</TableHead>
-            <TableHead>阶段</TableHead>
-            <TableHead>权限</TableHead>
-            <TableHead>邮箱</TableHead>
-            <TableHead>房间</TableHead>
+            <TableHead>用户</TableHead>
+            <TableHead>状态</TableHead>
+            <TableHead>角色</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -70,12 +68,12 @@ export function HumanTable({
                         onView(human);
                       }}
                     >
-                      {human.name}
+                      {human.displayName || human.name}
                     </button>
+                    {human.displayName && human.displayName !== human.name && (
+                      <span className="text-xs text-muted-foreground truncate max-w-[180px]" title={human.name}>{human.name}</span>
+                    )}
                   </div>
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs truncate max-w-[120px] block">{human.displayName}</span>
                 </TableCell>
                 <TableCell>
                   <PhaseBadge kind="human" phase={human.phase} />
@@ -87,18 +85,6 @@ export function HumanTable({
                   >
                     {permissionLabel(level)}
                   </Badge>
-                </TableCell>
-                <TableCell>
-                  {human.email ? (
-                    <span className="text-xs truncate max-w-[150px] block">{human.email}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground">
-                    {human.rooms?.length || 0}
-                  </span>
                 </TableCell>
                 <TableCell onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
@@ -112,26 +98,10 @@ export function HumanTable({
                     >
                       <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={ACTION_BUTTON}
-                      onClick={() => onEdit(human)}
-                      title="编辑"
-                      aria-label={`编辑 ${human.name}`}
-                    >
-                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={`${ACTION_BUTTON} text-destructive hover:text-destructive`}
-                      onClick={() => onDelete(human.name)}
-                      title="删除"
-                      aria-label={`删除 ${human.name}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                    </Button>
+                    <ResourceListMenu label={`${human.name} 更多操作`} items={[
+                      { label: '编辑', onSelect: () => onEdit(human) },
+                      { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
+                    ]} />
                   </div>
                 </TableCell>
               </TableRow>

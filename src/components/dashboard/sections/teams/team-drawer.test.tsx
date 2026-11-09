@@ -288,6 +288,8 @@ describe('TeamDrawer · 分区与骨架', () => {
     for (const title of ['基本信息', 'LLM 调优', '团队成员', '团队技能', '加入未归属 Worker', '危险区']) {
       expect(screen.getByRole('button', { name: title })).toBeInTheDocument();
     }
+    expect(screen.getByRole('button', { name: 'LLM 调优' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '危险区' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByPlaceholderText('搜索技能…')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     expect(screen.getByPlaceholderText('搜索技能…')).toBeInTheDocument();
@@ -307,10 +309,12 @@ describe('TeamDrawer · 分区与骨架', () => {
 
   it('危险区删除按钮仅 L1（dashboard level 3）可见', () => {
     const { unmount } = renderDrawer(2);
+    fireEvent.click(screen.getByRole('button', { name: '危险区' }));
     expect(screen.queryByTestId('danger-delete')).toBeNull();
     expect(screen.getByText('删除团队需要管理员（L1）权限。')).toBeInTheDocument();
     unmount();
     renderDrawer(3);
+    fireEvent.click(screen.getByRole('button', { name: '危险区' }));
     expect(screen.getByTestId('danger-delete')).toBeInTheDocument();
   });
 
@@ -341,6 +345,7 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 
   it('团队 LLM 调优随同一次团队 PUT 提交', async () => {
     renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'LLM 调优' }));
     fireEvent.change(screen.getByLabelText('最大重试次数'), { target: { value: '5' } });
     fireEvent.click(screen.getByTestId('basic-save'));
     await waitFor(() =>
@@ -496,6 +501,7 @@ describe('TeamDrawer · 团队技能（独立保存）', () => {
 describe('TeamDrawer · 危险区', () => {
   it('删除需要输入团队名完全一致', async () => {
     renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: '危险区' }));
     fireEvent.click(screen.getByTestId('danger-delete'));
     const confirm = await screen.findByTestId('danger-delete-confirm');
     expect(confirm).toBeDisabled();
@@ -572,9 +578,8 @@ describe('团队详情入口（表格行 / 卡片详情）', () => {
         deletingTeamNames={new Set()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '编辑 alpha' }));
-    expect(onView).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByTestId('team-row-alpha')).getByRole('button', { name: '编辑 alpha' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'alpha 更多操作' }), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }));
     expect(onView).not.toHaveBeenCalled();
   });
 });

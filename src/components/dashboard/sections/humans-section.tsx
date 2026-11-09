@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, UserCheck, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Plus, UserCheck, ArrowUpDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Select,
   SelectContent,
@@ -12,14 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useCreateHuman, useDeleteHuman } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
-import { useViewMode } from '@/lib/use-view-mode';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -27,32 +26,15 @@ import { toast } from 'sonner';
 import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
-  computePhaseStats,
   filterHumans,
   sortHumans,
 } from './humans/human-selectors';
-import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { HumanDrawer } from './humans/human-drawer';
-import { PhaseDistribution } from './humans/human-phase-distribution';
 
-function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
-  if (viewMode === 'card') {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i} className="glass-card">
-            <CardContent className="p-4 space-y-3">
-              <div className="h-5 w-32 rounded shimmer" />
-              <div className="h-4 w-24 rounded shimmer" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
+function HumansSkeleton() {
   return (
     <Card className="glass-card">
       <CardContent className="p-4 space-y-3">
@@ -70,9 +52,9 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
       <CardContent className="p-0">
         <SectionEmptyState
           icon={UserCheck}
-          title={hasQuery ? '没有匹配的 Human' : '暂无 Human'}
+          title={hasQuery ? '没有匹配的用户' : '暂无用户'}
           // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
-          action={hasQuery ? undefined : { label: '创建第一个 Human', onClick: onCreate }}
+          action={hasQuery ? undefined : { label: '创建第一个用户', onClick: onCreate }}
         />
       </CardContent>
     </Card>
@@ -102,7 +84,6 @@ export function HumansSection() {
   });
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
-  const { viewMode, handleViewModeChange } = useViewMode('card');
 
   const filteredHumans = useMemo(
     () => filterHumans(humans, searchQuery),
@@ -112,7 +93,6 @@ export function HumansSection() {
     () => sortHumans(filteredHumans, sortKey),
     [filteredHumans, sortKey],
   );
-  const phaseStats = useMemo(() => computePhaseStats(humans), [humans]);
 
   const handleExport = useCallback(() => {
     if (!humans) return;
@@ -150,88 +130,49 @@ export function HumansSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <SectionHeader
-        title="Humans"
-        description="管理人类用户和权限"
+        title={`用户${humans ? ` · ${humans.length}` : ''}`}
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!humans || humans.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
+          <div className="flex items-center gap-2">
+            {sortedHumans.length > 0 && (
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+                  <SelectTrigger aria-label="用户排序" className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SORT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !humans || humans.length === 0 },
+            ]} />
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Human
+              创建用户
             </Button>
           </div>
         }
       />
 
-      <PhaseDistribution stats={phaseStats} />
-
-      {sortedHumans.length > 0 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
-            <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
-              <SelectTrigger className="w-[140px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-3">
-            <Tabs value={viewMode} onValueChange={handleViewModeChange}>
-              <TabsList className="h-8">
-                <TabsTrigger value="card" className="px-2 py-1 text-xs gap-1">
-                  <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
-                  卡片
-                </TabsTrigger>
-                <TabsTrigger value="table" className="px-2 py-1 text-xs gap-1">
-                  <List className="w-3.5 h-3.5" aria-hidden="true" />
-                  表格
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
-      )}
-
       {isLoading ? (
-        <HumansSkeleton viewMode={viewMode} />
+        <HumansSkeleton />
       ) : sortedHumans.length === 0 ? (
         <EmptyState hasQuery={!!searchQuery} onCreate={() => setCreateOpen(true)} />
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sortedHumans.map((human, i) => (
-            <HumanCard
-              key={human.name}
-              human={human}
-              index={i}
-              onView={setDetailHuman}
-              onEdit={setDrawerHuman}
-              onDelete={setDeleteTarget}
-            />
-          ))}
-        </div>
       ) : (
         <HumanTable
           humans={sortedHumans}

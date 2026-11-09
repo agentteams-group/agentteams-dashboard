@@ -149,7 +149,7 @@ function TeamDrawerContent({
   onDeleted,
 }: TeamDrawerProps & { team: TeamResponse }) {
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(['basic', 'llm', 'members', 'standalone', 'danger']),
+    () => new Set(['basic', 'members']),
   );
   const [basic, setBasic] = useState<TeamBasicDraft>(() => buildBasicDraft(team));
   const [llm, setLlm] = useState<LlmTuningRecord>(() => pickLlmTuning(team));

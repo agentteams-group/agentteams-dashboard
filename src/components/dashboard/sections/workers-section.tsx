@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, LayoutGrid, List, Loader2, Plus, Rows3, Square, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import {
@@ -25,7 +26,6 @@ import { useSearch } from '@/lib/search-context';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
@@ -48,7 +48,6 @@ import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@
 import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
 import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-types';
 import {
-  computeRuntimeDist,
   filterWorkers,
   groupWorkersByTeam,
   paginateWorkers,
@@ -71,24 +70,6 @@ import { WorkerUploadDialog } from './workers/worker-upload-dialog';
 
 const DELETE_REFRESH_INTERVAL_MS = 2_000;
 const DELETE_REFRESH_TIMEOUT_MS = 30_000;
-
-function RuntimeDistribution({ dist }: { dist: Record<string, number> }) {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {Object.entries(RUNTIME_LABELS).map(([key, label]) => (
-        <Card key={key} className="glass-card">
-          <CardContent className="p-3 flex items-center gap-3">
-            <Bot className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
-            <div>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-lg font-bold">{dist[key] || 0}</p>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
 
 function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
@@ -217,7 +198,6 @@ export function WorkersSection() {
     () => paginateWorkers(sorted, currentPage, ITEMS_PER_PAGE),
     [sorted, currentPage]
   );
-  const runtimeDist = useMemo(() => computeRuntimeDist(workers), [workers]);
   const cardGroups = useMemo(() => groupWorkersByTeam(sorted), [sorted]);
 
   // Reset to first page when filters change (adjust state during render)
@@ -727,42 +707,28 @@ export function WorkersSection() {
       )}
 
       <SectionHeader
-        title="Workers"
-        description="管理和监控 AI Agent Workers"
+        title={`Agent${workers ? ` · ${workers.length}` : ''}`}
+        description="管理 Agent 与运行状态"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!workers || workers.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
-              <Upload className="w-4 h-4 mr-1" aria-hidden="true" />
-              上传包
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
-              <FileCode className="w-4 h-4 mr-1" aria-hidden="true" />
-              JSON 应用
-            </Button>
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !workers || workers.length === 0 },
+              { label: '上传包', onSelect: () => setUploadOpen(true) },
+              { label: 'JSON 应用', onSelect: () => setConfigOpen(true) },
+            ]} />
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Worker
+              创建 Agent
             </Button>
           </div>
         }
       />
-
-      <RuntimeDistribution dist={runtimeDist} />
 
       <WorkerBulkBar
         count={selectedWorkers.size}
