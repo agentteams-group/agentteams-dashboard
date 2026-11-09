@@ -47,6 +47,14 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('resolves an L1 Human name directly through Controller without an admin probe', async () => {
+    const calls = mockProbes([
+      { prefix: 'http://127.0.0.1:1/api/v1/me', status: 200, body: { name: 'human-alice', permissionLevel: 1, accessibleTeams: [] } },
+    ]);
+    expect(await resolveStaticIdentity(requestWith('alice-token'))).toEqual({ ok: true, identity: { name: 'human-alice', level: 3, teams: [] } });
+    expect(calls).toEqual(['http://127.0.0.1:1/api/v1/me']);
+  });
+
   it('admin-grade token (humans list 200) → level 3, name admin', async () => {
     mockProbes([
       { prefix: 'http://127.0.0.1:1/api/v1/humans', status: 200, body: { humans: [] } },

@@ -1,7 +1,8 @@
+vi.mock('../controller-helper', () => ({ callControllerGateway: vi.fn() }));
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
-import { callHigressConsole, isFallbackConfigWriteEnabled, prepareAiRoutePayload } from '../proxy-helper';
+import { callControllerGateway as callHigressConsole } from '../controller-helper';
 import { requireHigressConsoleAccess } from '../access';
 
 vi.mock('../proxy-helper', () => ({
@@ -16,18 +17,14 @@ vi.mock('../access', () => ({ requireHigressConsoleAccess: vi.fn() }));
 
 const mockCallHigressConsole = vi.mocked(callHigressConsole);
 const mockRequireAccess = vi.mocked(requireHigressConsoleAccess);
-const mockIsFallbackConfigWriteEnabled = vi.mocked(isFallbackConfigWriteEnabled);
-const mockPrepareAiRoutePayload = vi.mocked(prepareAiRoutePayload);
 
 describe('AI route collection route', () => {
   afterEach(() => {
     vi.resetAllMocks();
     mockRequireAccess.mockResolvedValue(null);
-    mockIsFallbackConfigWriteEnabled.mockReturnValue(true);
   });
 
-  it('lists routes with fallback write capability and forwards the session cookie', async () => {
-    mockIsFallbackConfigWriteEnabled.mockReturnValue(false);
+  it('lists routes with fallback write capability and forwards the user request to Controller', async () => {
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 200 }),
       body: { routes: [{ name: 'team-chat' }] },
@@ -41,16 +38,15 @@ describe('AI route collection route', () => {
       routes: [{ name: 'team-chat' }],
       fallbackConfigWritable: false,
     });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/routes', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/routes', {
       method: 'GET',
-      cookie: 'higress_session=session-value',
     });
   });
 
   it('unwraps the standard Higress data envelope', async () => {
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 200 }),
-      body: { success: true, data: [{ name: 'team-chat' }] },
+      body: { success: true, data: [{ name: 'team-chat' }], fallbackConfigWritable: true },
     });
 
     const response = await GET(new NextRequest('http://dashboard.test/api/higress/ai-routes'));
@@ -77,7 +73,6 @@ describe('AI route collection route', () => {
       pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
       upstreams: [{ provider: 'openai', weight: 100 }],
     };
-    mockPrepareAiRoutePayload.mockReturnValue({ ...route, fallbackConfig: { maxRetries: 2 } });
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 201 }),
       body: { name: 'team-chat' },
@@ -90,11 +85,9 @@ describe('AI route collection route', () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(mockPrepareAiRoutePayload).toHaveBeenCalledWith(route);
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/routes', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/routes', {
       method: 'POST',
-      body: { ...route, fallbackConfig: { maxRetries: 2 } },
-      cookie: 'higress_session=session-value',
+      body: route,
     });
   });
 });

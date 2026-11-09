@@ -37,5 +37,5 @@ export function maskProvider(provider: unknown) {
   const source = isRecord(provider) ? provider : {};
   const tokens = Array.isArray(source.tokens) ? source.tokens : [];
   const { tokens: _, ...rest } = source;
-  return { ...rest, tokenCount: tokens.length };
+  return { ...rest, tokenCount: typeof source.tokenCount === 'number' ? source.tokenCount : tokens.length };
 }

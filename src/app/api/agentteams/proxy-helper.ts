@@ -317,11 +317,15 @@ export async function proxyToAgentTeams(
           targetUrl, fetchOptions.headers, identity?.name, identity?.level,
         ])).digest('hex').slice(0, 32);
         const upstreamHeaders = new Headers(fetchOptions.headers);
-        // 逐地址覆盖凭据（公网网关 Basic / API key 门）：命中该地址已存凭据
-        // 时整体替换 Authorization（插件 headers_with_auth 同语义）。凭据
-        // 只进请求头——不写日志、不回传浏览器。
+        // Saved backend credentials apply only to legacy requests without a
+        // user-bound credential. Human and operational-token sessions retain
+        // the caller's Authorization header through the Controller boundary.
         const perAddressAuth = backendAuthHeader('controller', target).Authorization;
-        if (perAddressAuth) upstreamHeaders.set('authorization', perAddressAuth);
+        const sessionCredential = getSessionFromRequest(request)?.credential.kind;
+        const userBound = isStatelessAuthMode() || sessionCredential === 'matrix' || sessionCredential === 'controller-token';
+        // A saved backend credential must never replace an authenticated user's
+        // token: Controller must authorize the actual caller on every request.
+        if (perAddressAuth && !userBound) upstreamHeaders.set('authorization', perAddressAuth);
         const incoming = /^W\/"([a-f0-9]{32})\.([A-Za-z0-9_-]+)"$/.exec(request.headers.get('If-None-Match') ?? '');
         if (conditionalRead && incoming?.[1] === validatorScope) {
           upstreamHeaders.set('If-None-Match', Buffer.from(incoming[2], 'base64url').toString());

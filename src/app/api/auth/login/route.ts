@@ -1,55 +1,16 @@
-// POST /api/auth/login - Dual-track multi-user authentication (M19 / batch M).
-//
-// Track Console (deployment admin account):
-//   Console /session/login. The Console is single-operator: whoever holds the
-//   admin password IS the deployment admin. Identity = the logged-in username
-//   itself (NO Human CR lookup — the Console admin account is not required to
-//   have a Human CR). The session carries the admin SA credential
-//   (server-side only, level 3). The Higress Console session cookie is still
-//   forwarded so the gateway tab (/api/higress/*) keeps working.
-//
-// Track Matrix (any Human account):
-//   Server-side Matrix password login → own access token → localpart →
-//   SA GET /humans/{localpart}; permissionLevel maps 1→3 (full),
-//   2→2 (scoped to accessibleTeams), 3→1 (observer). Level 3 via this track
-//   additionally requires admin verification (admin account password OR a
-//   pasted Controller admin token) before the session may use admin-grade
-//   data-plane credentials.
-//   The session carries the user's Matrix token (server-side only) as the
-//   Controller credential for level 2/3 — A2 chain scopes reads to
-//   accessibleTeams. Non-Human Matrix accounts (no CR) → generic 401.
-//
-// Track Controller token (no Console/Matrix account at all):
-//   A pasted Controller admin token on its own. Used by single-operator
-//   deployments where neither a Console admin nor a Matrix Human account is
-//   reachable; the token is verified against an admin-only Controller
-//   endpoint and carried server-side as the session credential. It is
-//   admin-grade by definition, so the session is level 3 like Console.
-//
-// Both tracks fail → 401. Session secret missing → login fails closed
-// (dashboard-session throws, logged once).
-//
-// External mode (AGENTTEAMS_HIGRESS_ADAPTER_MODE=external) keeps the upstream
-// #76 semantics: no init, Console-only, no Matrix (remote clients must not
-// receive internal homeserver tokens).
+// Human logins use Matrix identity and Controller authorization.
+// External Console-only deployments retain their existing login path.
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
   callHigressConsole,
-  collectSetCookieHeader,
   forwardCookies,
   getHigressConsoleURL,
   HigressConsoleConfigurationError,
 } from '../../higress/proxy-helper';
-import { getAuthToken, getControllerUrl } from '../../agentteams/proxy-helper';
+import { getControllerUrl } from '../../agentteams/proxy-helper';
 import { createSession, sessionCookieHeader } from '@/lib/dashboard-session';
-import {
-  authForUrl,
-  authHeaderFor,
-  backendAuthHeader,
-  orderedCandidates,
-  pickBackendUrl,
-} from '@/lib/backend-config';
+import { backendAuthHeader, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
 
 // Matrix homeserver for password login — resolved PER LOGIN ATTEMPT
@@ -75,16 +36,6 @@ interface HumanRecord {
   accessibleWorkers?: string[];
 }
 
-/** 直连 Controller 的 Authorization：该地址槽位存有网关凭据（公网 Basic 门 /
- * API key 门）时用它，否则用调用方自己的 Bearer token。与请求层
- * backendAuthHeader 同语义——网关门在服务之前，凭据只进请求头。 */
-function controllerHeaders(request: NextRequest, token: string): Record<string, string> {
-  const gateway = authForUrl('controller', getControllerUrl(request));
-  return gateway ? authHeaderFor(gateway) : { Authorization: `Bearer ${token}` };
-}
-
-/** Controller 候选地址（当前生效/override 优先，其后是配置候选表：内网 →
- * 外网 → env），逐个尝试——内/外网切换期间网关后的候选也能验证。 */
 function controllerProbeTargets(request: NextRequest): string[] {
   const out: string[] = [];
   const add = (url: string | undefined) => {
@@ -96,65 +47,20 @@ function controllerProbeTargets(request: NextRequest): string[] {
   return out;
 }
 
-/**
- * Resolve a Human CR via the admin SA token. Returns null when the controller
- * is unreachable, the token is missing, or the human does not exist.
- */
-async function fetchHumanViaSa(request: NextRequest, name: string): Promise<HumanRecord | null> {
-  const token = await getAuthToken();
-  if (!token) return null;
-  return fetchHumanWithToken(request, name, token);
-}
 
-/** Identity probe with the user's OWN Matrix token. The Controller's
- * Matrix auth only accepts permissionLevel=2 tokens, so a 200 on the
- * status endpoint proves team-user identity WITHOUT reading the Human CR
- * (the plugin's model: the user's own access token is the default
- * identity, admin tokens are an optional channel — agentteams_connector/
- * config.py `controller_token` = "Optional admin token for L1 full view"). */
-async function probeMatrixToken(request: NextRequest, matrixToken: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${getControllerUrl(request)}/api/v1/status`, {
-      headers: controllerHeaders(request, matrixToken),
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
+/** Resolve the caller using only their own token. Older Controllers fail explicitly. */
+async function fetchCurrentHuman(request: NextRequest, token: string): Promise<HumanRecord | null> {
+  for (const base of controllerProbeTargets(request)) {
+    try {
+      const res = await fetch(`${base}/api/v1/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      if (res.status === 401 || res.status === 403) return null;
+      if (res.ok) return await res.json() as HumanRecord;
+    } catch { /* try the next configured Controller */ }
   }
-}
-
-/** Teams visible to the caller's own Matrix token — the Controller
- * filters the list by accessibleTeams server-side (ListTeams), so this is
- * the user's own team scope, not an admin read. */
-async function fetchTeamsWithToken(request: NextRequest, matrixToken: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${getControllerUrl(request)}/api/v1/teams`, {
-      headers: controllerHeaders(request, matrixToken),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { teams?: { name?: string }[] };
-    return (data.teams ?? []).map((t) => t.name ?? '').filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-/** CR lookup with an explicit admin-grade token (SA env or a validated
- * Controller admin token pasted at login — one-person-per-instance
- * deployments may hold no server-side SA credential at all). */
-async function fetchHumanWithToken(request: NextRequest, name: string, token: string): Promise<HumanRecord | null> {
-  try {
-    const res = await fetch(`${getControllerUrl(request)}/api/v1/humans/${encodeURIComponent(name)}`, {
-      headers: controllerHeaders(request, token),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as HumanRecord;
-  } catch {
-    return null;
-  }
+  throw new Error('Controller unavailable or missing /api/v1/me support');
 }
 
 /**
@@ -172,11 +78,7 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
   try {
     const res = await fetch(`${homeserver}/_matrix/client/v3/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // 逐地址覆盖凭据（公网网关 Basic / API key 门）——凭据只进请求头。
-        ...backendAuthHeader('matrix', homeserver),
-      },
+      headers: { 'Content-Type': 'application/json', ...backendAuthHeader('matrix', homeserver) },
       body: JSON.stringify({
         type: 'm.login.password',
         identifier: { type: 'm.id.user', user: username },
@@ -205,49 +107,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { username, password } = body;
-    // Optional admin verification (two alternatives) — only consumed by the
-    // Matrix track for top-permission (CR level 1) accounts; see
-    // attemptMatrixLogin. adminUsername+adminPassword (Console check) OR
-    // controllerToken (Bearer check against the Controller).
-    const adminUsername = typeof body.adminUsername === 'string' ? body.adminUsername.trim() : '';
-    const adminPassword = typeof body.adminPassword === 'string' ? body.adminPassword : '';
-    const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
 
-    // Token-only track: a Controller admin token is admin-grade on its own,
-    // so a deployment with no reachable Console admin AND no Matrix Human
-    // account can still log in. Strictly gated on BOTH credential fields
-    // being absent — any username/password pair keeps the dual-track flow
-    // below byte-for-byte.
-    if (!username && !password && controllerToken) {
+    const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
+    if (!username && !password && controllerToken && !isExternal) {
       return await attemptControllerTokenLogin(request, controllerToken);
     }
-
     if (!username || !password) {
       return NextResponse.json({ success: false, error: 'Username and password are required' }, { status: 400 });
     }
 
-    // Dual track: try the Console (L1) first; on failure fall through to
-    // Matrix (any Human level).
-    // External mode (upstream #76): no init, no Matrix token/URL to the
-    // remote client.
-    const l1 = await attemptConsoleLogin(request, username, password, { allowMatrix: !isExternal });
-    if (l1.kind === 'session') {
-      return l1.response;
-    }
-    if (l1.kind === 'misconfigured') {
-      return l1.response;
-    }
-
-    // External mode (upstream #76): Console credential failure stops here —
-    // falling through to attemptMatrixLogin would probe the internal
-    // homeserver with the remote client's credentials and could return
-    // Matrix-track responses (mode:'matrix' + access token), violating the
-    // no-Matrix-token/URL contract declared at the top of this file.
-    // Response shape mirrors attemptMatrixLogin's credential-failure 401.
     if (isExternal) {
-      return NextResponse.json({ success: false, error: '用户名或密码错误' }, { status: 401 });
+      const result = await attemptConsoleLogin(request, username, password, { allowMatrix: false });
+      return result.kind === 'failed'
+        ? NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 })
+        : result.response;
     }
-    return await attemptMatrixLogin(request, username, password, adminUsername, adminPassword, controllerToken);
+    return await attemptMatrixLogin(request, username, password);
   } catch (err: unknown) {
     // SEC-09: the raw error can carry internal details (session secret
     // config, upstream fetch failures). Log it server-side, return a
@@ -394,55 +269,9 @@ async function attemptConsoleLogin(
 /** Human CRD permissionLevel → dashboard level (E5 inversion). */
 const MATRIX_CR_LEVEL_TO_DASH_LEVEL: Record<number, 1 | 2 | 3> = { 1: 3, 2: 2, 3: 1 };
 
-/**
- * Verify the admin account's Console credentials (deployment admin username +
- * password). Returns true only when the Console accepts them. Used to gate
- * admin-level data-plane access for top-permission accounts logging in via
- * the Matrix track — replaces pasting the raw Controller token: the token
- * never leaves the server (it is the AGENTTEAMS_AUTH_TOKEN env value).
- */
-async function verifyAdminConsoleCredentials(
-  username: string,
-  password: string,
-): Promise<{ response: Response } | null> {
-  try {
-    const { response } = await callHigressConsole('/session/login', {
-      method: 'POST',
-      body: { username, password },
-    });
-    // 12.16: return the response so the caller can bind the verified Console
-    // session server-side (collectSetCookieHeader) — it is still NOT
-    // forwarded to the browser.
-    return response.ok ? { response } : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Verify a user-supplied Controller admin token by calling an ADMIN-ONLY
- * endpoint. GET /api/v1/humans (list) is denied for L2 Matrix tokens by the
- * Controller authorizer (RoleHuman has no "human" case → 403) and accepted
- * for admin/manager tokens, so passing this proves the token is admin-grade,
- * not merely authenticated. The previous check hit GET /api/v1/teams, which
- * an L2 token also returns 200 for (ListTeams filters by accessibleTeams
- * but still succeeds) — a non-admin token would pass verification and be
- * stored as the session's admin data-plane credential (kind
- * 'controller-token').
- *
- * Gateway deployments: a controller address behind a public gateway (Basic
- * door / API-key door) rejects a bare `Bearer <controllerToken>` at the door
- * — the saved per-address credential must be presented as Authorization
- * INSTEAD of the controller token (same semantics as backendAuthHeader at
- * the request layer). Without that, a valid admin token was reported as
- * 无效 on gateway deployments. Candidates are walked in order (working /
- * override address first, then config internal → external → env) so an
- * internal 401 still lets the external candidate verify.
- */
 async function verifyControllerToken(request: NextRequest, token: string): Promise<boolean> {
   for (const url of controllerProbeTargets(request)) {
-    const gateway = authForUrl('controller', url);
-    const headers = gateway ? authHeaderFor(gateway) : { Authorization: `Bearer ${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
     try {
       const res = await fetch(`${url.replace(/\/+$/, '')}/api/v1/humans?limit=1`, {
         headers,
@@ -505,32 +334,11 @@ async function attemptControllerTokenLogin(
   );
 }
 
-/**
- * Matrix track: password login for ANY Human account (top-permission level
- * 1 / operators level 2 / observers level 3) → session carrying server-side
- * credentials. The level is derived from the Human CR's permissionLevel —
- * never from the username string.
- *
- * Credential selection:
- * - Dashboard level 3 via Matrix (CR level 1): the Controller's Matrix auth
- *   only accepts level-2 tokens, so the user's own Matrix token would 401 on
- *   every data-plane call. Admin-level data access is gated on EITHER
- *   verifying the admin account's CONSOLE PASSWORD (adminUsername/
- *   adminPassword → session uses the server's SA token, kind 'sa', which
- *   never leaves the server) OR a pasted Controller admin TOKEN (verified
- *   against the Controller → kind 'controller-token', held server-side only;
- *   same as the workbench plugin's admin-token mode). The Matrix token is
- *   still returned for the chat tab.
- * - Dashboard level 2/3 (CR level 2/3): the user's own Matrix token; A2
- *   scopes level-2 reads to accessibleTeams. Admin verification is ignored.
- */
+
 async function attemptMatrixLogin(
   request: NextRequest,
   username: string,
   password: string,
-  adminUsername: string,
-  adminPassword: string,
-  controllerToken: string,
 ): Promise<NextResponse> {
   const matrix = await tryMatrixLogin(username, password);
   if (!matrix || !matrix.accessToken) {
@@ -539,88 +347,20 @@ async function attemptMatrixLogin(
 
   const userId = typeof matrix.userId === 'string' ? matrix.userId : '';
   const localpart = userId.startsWith('@') ? userId.slice(1).split(':')[0] : username;
-  let human = await fetchHumanViaSa(request, localpart);
-  if (!human && controllerToken) {
-    // One-person-per-instance deployment: the server may hold no admin
-    // credential (no AGENTTEAMS_AUTH_TOKEN). The Controller admin token
-    // pasted at login (existing L1 field) can perform the same level
-    // lookup — validated against the Controller before use. The L2-only
-    // matrix token itself is denied on human reads (controller
-    // authorizeHuman has no "human" case), so without an admin-grade
-    // token here the lookup is impossible; the upstream GET /api/v1/me
-    // (self-scope) would close that gap for L2.
-    if (await verifyControllerToken(request, controllerToken)) {
-      human = await fetchHumanWithToken(request, localpart, controllerToken);
-    } else {
-      return NextResponse.json(
-        { success: false, error: 'Controller 管理员 token 无效' },
-        { status: 401 },
-      );
-    }
+  let human: HumanRecord | null;
+  try {
+    human = await fetchCurrentHuman(request, String(matrix.accessToken));
+  } catch (error) {
+    console.error('[auth/login] identity lookup failed:', error);
+    return NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 });
   }
-  if (!human) {
-    // No admin-grade credential available (SA-less one-person-per-instance):
-    // identify with the user's OWN Matrix token instead of an admin read.
-    // A 200 proves team-user (L2) identity — the Controller's Matrix auth
-    // rejects every other level — and the teams list carries the user's
-    // own accessibleTeams (server-side filtered). Plugin-aligned: own
-    // token = default identity, no admin credential needed for L2.
-    if (await probeMatrixToken(request, String(matrix.accessToken))) {
-      human = {
-        name: localpart,
-        permissionLevel: 2,
-        accessibleTeams: await fetchTeamsWithToken(request, String(matrix.accessToken)),
-      };
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          error: '无法确认该账号的权限级别：请展开「管理员账号验证」提供 Controller 管理员 token，或联系部署管理员检查 Human CR',
-        },
-        { status: 401 },
-      );
-    }
+  if (!human) return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+  const crLevel = human.permissionLevel;
+  const dashLevel = crLevel === undefined ? undefined : MATRIX_CR_LEVEL_TO_DASH_LEVEL[crLevel];
+  if (!human.name || (crLevel !== 1 && crLevel !== 2 && crLevel !== 3) || !dashLevel) {
+    return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
   }
-  const crLevel = human && typeof human.permissionLevel === 'number' ? human.permissionLevel : -1;
-  const dashLevel = MATRIX_CR_LEVEL_TO_DASH_LEVEL[crLevel];
-  if (!human || !dashLevel) {
-    // No Human CR (or unknown level) for this Matrix account → generic 401.
-    return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
-  }
-
-  // Level 3 via Matrix (CR level 1): the data plane needs admin-grade access
-  // (the Controller's Matrix auth rejects level-1 tokens). Gate it on EITHER
-  // the admin account's Console password OR a pasted Controller admin token.
-  let credential: { kind: 'sa' } | { kind: 'matrix'; token: string } | { kind: 'controller-token'; token: string };
-  // 12.16: Console session captured from the admin verification and bound to
-  // the dashboard session server-side (never sent to the browser).
-  let consoleCookie: string | undefined;
-  if (dashLevel === 3) {
-    if (adminUsername && adminPassword) {
-      const adminRes = await verifyAdminConsoleCredentials(adminUsername, adminPassword);
-      if (!adminRes) {
-        return NextResponse.json({ success: false, error: '管理员账号验证失败（账号或密码不正确）' }, { status: 401 });
-      }
-      credential = { kind: 'sa' };
-      consoleCookie = collectSetCookieHeader(adminRes.response.headers);
-    } else if (controllerToken) {
-      const tokenOk = await verifyControllerToken(request, controllerToken);
-      if (!tokenOk) {
-        return NextResponse.json({ success: false, error: 'Controller 管理员 token 无效' }, { status: 401 });
-      }
-      credential = { kind: 'controller-token', token: controllerToken };
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'L1 账号需要管理员验证：请展开「管理员账号验证」填写管理员账号与密码，或 Controller 管理员 token（二选一，由部署管理员提供）',
-        },
-        { status: 400 },
-      );
-    }
-  } else {
-    credential = { kind: 'matrix', token: String(matrix.accessToken) };
-  }
+  const credential = { kind: 'matrix' as const, token: String(matrix.accessToken) };
 
   let cookieValue: string;
   try {
@@ -630,9 +370,6 @@ async function attemptMatrixLogin(
       // Level 3 (full admin) is not team-restricted; L2/L3 users are scoped.
       teams: dashLevel === 3 ? [] : (human.accessibleTeams ?? []),
       credential,
-      // 12.16: server-bound Console session (admin verification) — lets the
-      // operator's own login manage the model gateway (see higress/access).
-      consoleCookie,
     }));
   } catch (err) {
     return NextResponse.json(

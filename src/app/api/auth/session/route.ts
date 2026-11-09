@@ -12,6 +12,7 @@ import { validateHigressCookieString, validateHigressSession } from '@/lib/api-a
 import { getSessionFromRequest } from '@/lib/dashboard-session';
 import { isStatelessAuthMode } from '@/lib/static-mode';
 import { resolveStaticIdentity } from '@/lib/static-identity';
+import { getControllerUrl } from '../../agentteams/proxy-helper';
 
 export async function GET(request: NextRequest) {
   // F7 stateless mode: no server session — resolve the identity from the
@@ -48,6 +49,30 @@ export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 200 });
+  }
+
+  if (session.credential.kind === 'matrix') {
+    try {
+      const response = await fetch(`${getControllerUrl(request)}/api/v1/me`, {
+        headers: { Authorization: `Bearer ${session.credential.token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      if (response.status === 401 || response.status === 403) {
+        return NextResponse.json({ authenticated: false }, { status: 200 });
+      }
+      if (!response.ok) return NextResponse.json({ error: 'Controller identity lookup failed' }, { status: 503 });
+      const human = await response.json() as { name: string; permissionLevel: number; accessibleTeams?: string[] };
+      if (!human.name || ![1, 2, 3].includes(human.permissionLevel)) {
+        return NextResponse.json({ authenticated: false }, { status: 200 });
+      }
+      session.level = human.permissionLevel === 1 ? 3 : human.permissionLevel === 2 ? 2 : 1;
+      session.crLevel = human.permissionLevel;
+      session.teams = human.accessibleTeams ?? [];
+      session.user = human.name;
+      return NextResponse.json({ authenticated: true, username: session.user, level: session.level, mode: 'matrix', higressSession: false });
+    } catch {
+      return NextResponse.json({ error: 'Controller identity lookup failed' }, { status: 503 });
+    }
   }
 
   // 12.15（装验反馈：luo 登录后模型页仍打 /api/higress/* 拿 401）：

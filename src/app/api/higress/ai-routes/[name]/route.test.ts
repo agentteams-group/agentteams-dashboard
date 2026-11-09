@@ -1,7 +1,8 @@
+vi.mock('../../controller-helper', () => ({ callControllerGateway: vi.fn() }));
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { DELETE, PUT } from './route';
-import { callHigressConsole, prepareAiRoutePayload } from '../../proxy-helper';
+import { callControllerGateway as callHigressConsole } from '../../controller-helper';
 import { requireHigressConsoleAccess } from '../../access';
 
 vi.mock('../../proxy-helper', () => ({
@@ -15,7 +16,6 @@ vi.mock('../../access', () => ({ requireHigressConsoleAccess: vi.fn() }));
 
 const mockCallHigressConsole = vi.mocked(callHigressConsole);
 const mockRequireAccess = vi.mocked(requireHigressConsoleAccess);
-const mockPrepareAiRoutePayload = vi.mocked(prepareAiRoutePayload);
 const params = { params: Promise.resolve({ name: 'team/chat' }) };
 const route = {
   name: 'team/chat',
@@ -30,7 +30,6 @@ describe('AI route item route', () => {
   });
 
   it('prepares a valid route update and preserves its session cookie', async () => {
-    mockPrepareAiRoutePayload.mockReturnValue({ ...route, fallbackConfig: { maxRetries: 2 } });
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 200 }),
       body: { name: 'team/chat' },
@@ -43,11 +42,9 @@ describe('AI route item route', () => {
     }), params);
 
     expect(response.status).toBe(200);
-    expect(mockPrepareAiRoutePayload).toHaveBeenCalledWith(route);
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/routes/team%2Fchat', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/routes/team%2Fchat', {
       method: 'PUT',
-      body: { ...route, fallbackConfig: { maxRetries: 2 } },
-      cookie: 'higress_session=session-value',
+      body: route,
     });
   });
 
@@ -82,9 +79,8 @@ describe('AI route item route', () => {
     }), params);
 
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/routes/team%2Fchat', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/routes/team%2Fchat', {
       method: 'DELETE',
-      cookie: null,
     });
   });
 });

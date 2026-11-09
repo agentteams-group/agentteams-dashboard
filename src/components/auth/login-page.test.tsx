@@ -107,7 +107,7 @@ describe('LoginPage Controller token-only login', () => {
     render(<LoginPage dataPlaneRejected />);
 
     expect(
-      screen.getByText('登录成功但数据面凭据被拒绝：请检查 Controller 服务账号 token / 网关认证，或使用 Controller token 登录'),
+      screen.getByText('登录凭据被 Controller 拒绝，请重新登录。若仍无法访问，请联系管理员检查 Human 权限和后端配置。'),
     ).toBeInTheDocument();
     // Never retries by itself: no request is issued on mount.
     expect(fetchMock).not.toHaveBeenCalled();
