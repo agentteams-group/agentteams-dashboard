@@ -80,7 +80,8 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 }
 
 export function HumansSection() {
-  const { data: humans, isLoading, isError, refetch, isRefetching } = useHumans();
+  const { data: allHumans, isLoading, isError, refetch, isRefetching } = useHumans();
+  const humans = useMemo(() => allHumans?.filter(human => !human.systemAdmin), [allHumans]);
   const { data: teams } = useTeams();
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();

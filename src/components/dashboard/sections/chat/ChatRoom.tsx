@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useChatStore } from './ChatStore';
 import { MessageList, type MessageListHandle } from './structures/MessageList';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
@@ -116,12 +116,16 @@ interface ChatRoomProps {
   workerMatrixUserIds?: string[];
   topic?: string;
   avatar?: string;
-  /** All rooms in the workspace — powers the 概览 tab topology. */
+  /** Retained for callers passing workspace rooms. */
   rooms?: RoomInfo[];
   members?: RoomMember[];
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   contextPanel?: ChatContextPanel;
+  integratedSidebar?: boolean;
+  headerActions?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
   onContextPanelChange?: (_panel: ChatContextPanel) => void;
   className?: string;
 }
@@ -137,11 +141,14 @@ export function ChatRoom({
   workerMatrixUserIds,
   topic,
   avatar,
-  rooms = [],
   members: initialMembers = [],
   canSend = true,
   onSendMessage,
   contextPanel: controlledContextPanel,
+  integratedSidebar = false,
+  headerActions,
+  headerLeading,
+  headerTitle,
   onContextPanelChange,
   className = '',
 }: ChatRoomProps) {
@@ -727,6 +734,10 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          compact={integratedSidebar}
+          headerActions={headerActions}
+          headerLeading={headerLeading}
+          headerTitle={headerTitle}
           agentRole={agentRole}
           roomName={roomName}
           team={team}
@@ -909,9 +920,9 @@ export function ChatRoom({
 
       {contextPanel !== null && (
         <RoomContextPanel
+          showMembers={!agentRole}
           roomId={roomId}
           team={team}
-          rooms={rooms}
           activeTab={contextPanel}
           onTabChange={setContextPanel}
           onClose={() => setContextPanel(null)}

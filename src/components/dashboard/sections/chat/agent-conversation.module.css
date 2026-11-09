@@ -1,4 +1,6 @@
 .conversation {
+  --conversation-padding: 1.5rem;
+  --conversation-content-inset: calc(var(--conversation-padding) + 30px + 0.75rem);
   background: var(--background);
   min-width: 0;
 }
@@ -6,11 +8,19 @@
 .conversation :global([data-chat-timeline-item]),
 .conversation :global([data-chat-typing] > div),
 .conversation :global([data-chat-composer] > div) {
-  max-width: 50rem;
+  max-width: none;
+}
+
+.conversation :global([data-chat-timeline-item]) {
+  padding-inline: var(--conversation-padding);
 }
 
 .conversation :global([data-chat-typing]) {
-  padding-inline: 1.5rem;
+  padding-inline: var(--conversation-content-inset) calc(var(--conversation-padding) + 4px);
+}
+
+.conversation :global([data-chat-typing] > div) {
+  padding-inline: 0;
 }
 
 .conversation :global([data-chat-message]) {
@@ -53,6 +63,10 @@
   width: 100%;
 }
 
+.conversation :global([data-chat-bubble] table) {
+  width: 100%;
+}
+
 .conversation :global([data-chat-message='user'] [data-chat-bubble]) {
   background: color-mix(in srgb, var(--primary) 7%, var(--background));
   border-color: transparent;
@@ -82,7 +96,8 @@
 .conversation :global([data-chat-composer]) {
   border-top: 0;
   background: var(--background);
-  padding: 0.5rem 1.5rem 1.25rem;
+  /* Match the timeline's 4px scrollbar gutter. */
+  padding: 0.5rem calc(var(--conversation-padding) + 4px) 1.25rem var(--conversation-content-inset);
 }
 
 .conversation :global([data-chat-composer-frame]) {
@@ -119,11 +134,11 @@
 }
 
 @media (max-width: 767px) {
-  .conversation :global([data-chat-typing]) {
-    padding-inline: 0.75rem;
+  .conversation {
+    --conversation-padding: 0.75rem;
   }
 
   .conversation :global([data-chat-composer]) {
-    padding: 0.5rem 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }

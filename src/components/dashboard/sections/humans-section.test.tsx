@@ -33,6 +33,7 @@ const config: HumanConfigRecord = {
 vi.mock('@/hooks/use-agentteams-humans', () => ({
   useHumans: () => ({
     data: [
+      { name: 'admin', displayName: 'System Admin', phase: 'Active', permissionLevel: 1, matrixUserID: '@admin:test', rooms: [], systemAdmin: true },
       {
         name: 'alice',
         displayName: 'Alice',
@@ -68,6 +69,12 @@ function renderSection() {
     </QueryClientProvider>,
   );
 }
+
+it('hides the built-in admin from the managed user list', () => {
+  renderSection();
+  expect(screen.queryByText('System Admin')).not.toBeInTheDocument();
+  expect(screen.getByText('Alice')).toBeInTheDocument();
+});
 
 beforeEach(() => {
   useAgentTeamsStore.setState({ userLevel: 3, isConnected: true });

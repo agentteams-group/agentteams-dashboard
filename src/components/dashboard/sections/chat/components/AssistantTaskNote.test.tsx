@@ -17,7 +17,7 @@ const wf: WorkflowResponse = { project_id: 'project', title: '网站改版', sta
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><AssistantTaskNote room={room} rooms={[room]} contextOpen={false} onOpen={vi.fn()} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AssistantTaskNote room={room} rooms={[room]} /></QueryClientProvider>);
   return client;
 }
 
@@ -31,80 +31,66 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('assistant task note', () => {
-  it('shows awaiting acceptance and opens the existing team-scoped project detail', async () => {
+describe('human intervention entry', () => {
+  async function open() {
+    const trigger = await screen.findByRole('button', { name: /待我处理，1 项待处理/ });
+    fireEvent.click(trigger);
+  }
+
+  it('starts collapsed and opens submitted task details in the correct team', async () => {
     setup();
-    expect(await screen.findByText('首页设计')).toBeInTheDocument();
+    expect(screen.queryByText('首页设计')).toBeNull();
+    await open();
     expect(screen.getByRole('heading', { name: /待验收/ })).toBeInTheDocument();
     expect(api.getProjectWorkflow).toHaveBeenCalledWith('project', { includeTasks: true, teamId: 'design' });
-    expect(api.getProjectWorkflow).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: '查看任务：首页设计' }));
     expect(useHitlInboxStore.getState().pendingProjectKey).toEqual({ id: 'project', team: 'design' });
     expect(useSectionStore.getState().activeSection).toBe('tasks');
   });
 
-  it('keeps actionable counts after collapsing and reopens without losing tasks', async () => {
-    setup();
-    await screen.findByText('首页设计');
-    fireEvent.click(screen.getByRole('button', { name: '收起任务便签' }));
-    expect(screen.queryByText('首页设计')).toBeNull();
-    const open = screen.getByRole('button', { name: /展开任务便签，1 项待处理/ });
-    fireEvent.click(open);
-    expect(screen.getByText('首页设计')).toBeInTheDocument();
-  });
-
-  it('routes human confirmations to their original conversation without sending approval', async () => {
+  it('routes confirmation to the original conversation without approving it', async () => {
+    api.getProjectWorkflow.mockResolvedValue({ ...wf, tasks_detail: [{ task_id: 'task', status: 'completed' }] });
     useHitlInboxStore.setState({ confirmations: { approval: { id: 'approval', roomId: room.id, eventId: '$approval', sender: '@leader:test', toolName: '发布', question: '现在发布吗？', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
     setup();
-    fireEvent.click(await screen.findByRole('button', { name: '去确认：现在发布吗？' }));
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: '去确认：现在发布吗？' }));
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(room.id);
     expect(useHitlInboxStore.getState().confirmations.approval).toBeDefined();
   });
 
-  it('reminds about newly actionable tasks while collapsed, once per state change', async () => {
+  it('does not mix running or completed tasks into intervention items', async () => {
+    const states = ['failed', 'blocked', 'revision', 'completed', 'in_progress'] as const;
+    api.getProjectWorkflow.mockResolvedValue({ ...wf, nodes: states.map(status => ({ id: status, name: `${status}任务`, status: 'pending' })), tasks_detail: states.map(status => ({ task_id: status, status })) });
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /待我处理，3 项待处理/ }));
+    for (const title of ['失败', '阻塞', '需修订']) expect(screen.getByRole('heading', { name: new RegExp(title) })).toBeInTheDocument();
+    expect(screen.queryByText('completed任务')).toBeNull();
+    expect(screen.queryByText('in_progress任务')).toBeNull();
+  });
+
+  it('shows zero without opening an empty panel', async () => {
+    api.getProjectWorkflow.mockResolvedValue({ ...wf, tasks_detail: [{ task_id: 'task', status: 'completed' }] });
+    setup();
+    await waitFor(() => expect(screen.getByRole('button', { name: /待我处理，0 项待处理/ })).toBeDisabled());
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps update failures visible rather than treating them as an empty inbox', async () => {
+    api.listProjects.mockResolvedValue({ projects: [], total: 0, degraded: true });
+    setup();
+    const trigger = await screen.findByRole('button', { name: /数据待更新/ });
+    expect(trigger).toBeEnabled();
+    fireEvent.click(trigger);
+    expect(screen.getByText(/任务暂时无法更新/)).toBeInTheDocument();
+  });
+
+  it('reminds about newly actionable tasks while closed once per state change', async () => {
     api.getProjectWorkflow.mockResolvedValue({ ...wf, tasks_detail: [{ task_id: 'task', status: 'in_progress' }] });
     const client = setup();
-    await screen.findByText('首页设计');
-    fireEvent.click(screen.getByRole('button', { name: '收起任务便签' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /待我处理，0 项待处理/ })).toBeDisabled());
     act(() => client.setQueryData(['agentteams-project-workflow', 'design', 'project'], wf));
     await waitFor(() => expect(api.notify).toHaveBeenCalledTimes(1));
     act(() => client.setQueryData(['agentteams-project-workflow', 'design', 'project'], { ...wf }));
     expect(api.notify).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows an update problem instead of claiming there are no tasks when the project list degrades', async () => {
-    api.listProjects.mockResolvedValue({ projects: [], total: 0, degraded: true, error: 'unavailable' });
-    setup();
-    expect(await screen.findByText(/任务暂时无法更新/)).toBeInTheDocument();
-    expect(screen.queryByText('暂时没有分配的任务')).toBeNull();
-  });
-
-  it('starts compact on mobile, opens as a note and can dismiss the overlay', async () => {
-    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }) });
-    setup();
-    const open = await screen.findByRole('button', { name: /展开任务便签，1 项待处理/ });
-    expect(screen.queryByRole('complementary', { name: '任务便签' })).toBeNull();
-    fireEvent.click(open);
-    expect(screen.getByText('首页设计')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '收起任务便签遮罩' }));
-    expect(screen.queryByText('首页设计')).toBeNull();
-  });
-
-  it('shows failed, blocked and revision tasks separately from completed tasks', async () => {
-    const states = ['failed', 'blocked', 'revision', 'completed'] as const;
-    api.getProjectWorkflow.mockResolvedValue({ ...wf, nodes: states.map(status => ({ id: status, name: `${status}任务`, status: 'pending' })), tasks_detail: states.map(status => ({ task_id: status, status })) });
-    setup();
-    for (const title of ['失败', '阻塞', '需修订', '已完成']) expect(await screen.findByRole('heading', { name: new RegExp(title) })).toBeInTheDocument();
-    expect(screen.getByText('3 项待处理')).toBeInTheDocument();
-  });
-
-  it('removes resolved confirmations from the compact reminder without hiding unrelated tasks', async () => {
-    useHitlInboxStore.setState({ confirmations: { approval: { id: 'approval', roomId: room.id, eventId: '$approval', sender: '@leader:test', toolName: '发布', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
-    setup();
-    await screen.findByText('首页设计');
-    fireEvent.click(screen.getByRole('button', { name: '收起任务便签' }));
-    expect(screen.getByRole('button', { name: /展开任务便签，2 项待处理/ })).toBeInTheDocument();
-    act(() => useHitlInboxStore.getState().resolveConfirmation('approval', 'reviewer'));
-    expect(screen.getByRole('button', { name: /展开任务便签，1 项待处理/ })).toBeInTheDocument();
   });
 });

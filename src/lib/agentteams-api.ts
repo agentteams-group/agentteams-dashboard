@@ -185,6 +185,7 @@ export interface TeamAttentionResponse {
 }
 
 export interface HumanResponse {
+  systemAdmin?: boolean;
   name: string;
   phase: HumanPhase;
   displayName: string;

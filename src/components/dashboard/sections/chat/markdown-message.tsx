@@ -22,6 +22,7 @@ import {
 } from './format';
 import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { SaveToHumanFiles } from './save-to-human-files';
 
 interface MarkdownMessageProps {
   content: string;
@@ -328,12 +329,12 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(content);
     if (isHtmlFile) {
       return (
-        <HtmlFileMessage
+        <div><HtmlFileMessage
           url={resolvedMediaUrl}
           filename={content}
           downloadUrl={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
           size={mediaInfo?.size}
-        />
+        /><SaveToHumanFiles filename={content} mediaUrl={mediaUrl!} homeserver={resolvedHomeserver} /></div>
       );
     }
     return (
@@ -351,6 +352,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(mediaInfo.size)}</span>
           )}
         </a>
+        <SaveToHumanFiles filename={content} mediaUrl={mediaUrl!} homeserver={resolvedHomeserver} />
       </div>
     );
   }

@@ -7,9 +7,6 @@ import { SCHEDULED_THEME_ID } from '@/lib/theme/schedule';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   Search,
-  Bot,
-  Users,
-  Crown,
   Zap,
   RefreshCw,
   Sun,
@@ -36,6 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { GlobalWorkStatus } from './global-work-status';
 import { NotificationPopover } from './notification-popover';
 import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
@@ -67,9 +65,6 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({
   isConnected,
-  workerCount,
-  teamCount,
-  managerCount,
   versionString,
   isRefreshingAll,
   searchQuery,
@@ -205,13 +200,7 @@ export function DashboardHeader({
         )}
       </div>
 
-      {isConnected && (
-        <div role="group" aria-label="资源数量" className="hidden shrink-0 items-center gap-4 text-sm text-muted-foreground xl:flex">
-          <span className="flex items-center gap-1.5"><Bot className="size-4" aria-hidden="true" />Agent <span className="font-medium tabular-nums text-foreground">{workerCount}</span></span>
-          <span className="flex items-center gap-1.5"><Users className="size-4" aria-hidden="true" />团队 <span className="font-medium tabular-nums text-foreground">{teamCount}</span></span>
-          {userLevel >= 3 && <span className="flex items-center gap-1.5"><Crown className="size-4" aria-hidden="true" />Manager <span className="font-medium tabular-nums text-foreground">{managerCount}</span></span>}
-        </div>
-      )}
+      {isConnected && <GlobalWorkStatus onNavClick={onNavClick} />}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
