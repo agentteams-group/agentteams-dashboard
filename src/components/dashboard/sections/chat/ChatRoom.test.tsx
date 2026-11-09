@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => {
     roomMessagesChunk,
     virtuoso,
     roomMembersChunk,
+    roomState: { data: null as null | { type: string; state_key: string; content: { membership: string } }[] },
     getAgentStatusMap: () => agentStatusMap,
     setAgentStatusMap: (v: Record<string, unknown>) => {
       agentStatusMap = v;
@@ -90,7 +91,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
       fetchNextPage: vi.fn(),
     }),
     useMatrixRoomMembers: () => ({ data: { chunk: mocks.roomMembersChunk }, isSuccess: true }),
-    useMatrixRoomState: () => ({ data: null }),
+    useMatrixRoomState: () => mocks.roomState,
     useMatrixReadMarker: () => ({ data: { event_id: '$old' }, isSuccess: true, isError: false }),
     useMatrixReadReceipts: () => ({}),
     useMatrixSetReadMarker: () => ({ mutate: mocks.setReadMarkerMutate, isPending: false }),
@@ -134,8 +135,17 @@ describe('ChatRoom read-position dual-write', () => {
     cleanup();
     vi.clearAllMocks();
     mocks.roomMembersChunk.length = 0;
+    mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
     mocks.setAgentStatusMap({});
+  });
+
+  it('explains why a visible room cannot be used after the current user left', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomState.data = [{ type: 'm.room.member', state_key: '@me:test', content: { membership: 'leave' } }];
+    renderChatRoom();
+    expect(screen.getByText('你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeDisabled();
   });
 
   it('writes both m.read and m.fully_read when the user reaches the bottom', () => {

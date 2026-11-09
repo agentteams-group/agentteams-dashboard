@@ -88,6 +88,20 @@ const joinedRoom = (overrides: Partial<MatrixJoinedRoom> = {}): MatrixJoinedRoom
 });
 
 describe('useGlobalMatrixSync', () => {
+  it('refreshes resource projections on a new join, without refreshing on every message', async () => {
+    vi.useFakeTimers();
+    resetStores();
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({ '!new:test': joinedRoom({}) }));
+    const queryClient = getQueryClientMock();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['agentteams-teams'] });
+    const count = invalidate.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(invalidate.mock.calls.length).toBe(count);
+    unmount();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     resetStores();

@@ -59,6 +59,19 @@ function seedInbox(timestamp = Date.now()) {
 }
 
 describe('composeAnswerText（降级自然语言回写）', () => {
+  it('requires an explicit dropdown choice and sends the selected Human', async () => {
+    render(<InterventionCard payload={{ ...basePayload, tool_name: 'select_team_admin', options: [{ id: 'alice', label: 'Alice（alice）' }, { id: 'bob', label: 'Bob（bob）' }] }} onAnswer={mockOnAnswer} />);
+    const picker = screen.getByRole('combobox', { name: 'Team Admin' });
+    expect(picker).toHaveValue('');
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    expect(screen.queryByLabelText('自由输入')).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: 'bob' } });
+    expect(picker).toHaveValue('bob');
+    mockOnAnswer.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith(expect.stringContaining('Bob（bob）'), expect.objectContaining({ tool_name: 'select_team_admin', confirmation_id: 'iv-test-1' })));
+    expect(composeAnswerText([{ question: 'Admin', options: [{ id: 'bob', label: 'Bob（bob）' }] }], { selections: { 0: ['bob'] }, freeText: {} })).toContain('Bob（bob）');
+  });
   it('选中项映射为 label，多问题 A1/A2 逐行', () => {
     const text = composeAnswerText(
       [

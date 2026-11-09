@@ -84,6 +84,7 @@ export function useGlobalMatrixSync(): void {
     //   3. 探测记录按会话去重，且从 sync 的 rooms.join 反向补采——会话中途
     //      接受的邀请、初始 sync 之后才加入的房间都不会漏。
     const nameProbed = new Set<string>();
+    const seenJoinedRooms = new Set<string>();
     let nameProbeChain: Promise<void> = Promise.resolve();
 
     /** Fetch m.room.name + joined member count for one room (best effort). */
@@ -351,9 +352,18 @@ export function useGlobalMatrixSync(): void {
         retryDelay = 1000;
 
         let maxEventTs = 0;
+        let resourcesChanged = Object.keys(resp.rooms?.leave ?? {}).length > 0;
         const joinedRooms = resp.rooms?.join;
         if (joinedRooms) {
           for (const [rid, roomData] of Object.entries(joinedRooms)) {
+            const stateEvents = [...(roomData.state?.events ?? []), ...(roomData.timeline?.events ?? [])];
+            if (stateEvents.some((event) => event.type === 'm.room.member' && event.state_key === userId)) {
+              void queryClient.invalidateQueries({ queryKey: ['matrix-state', rid] });
+            }
+            if (!seenJoinedRooms.has(rid) || stateEvents.some((event) => event.type === 'room.meta')) {
+              resourcesChanged = true;
+            }
+            seenJoinedRooms.add(rid);
             ingestEphemeral(rid, (roomData.ephemeral?.events || []) as Parameters<typeof ingestEphemeral>[1]);
             ingestWorkflowEvents(rid, (roomData.timeline?.events || []) as Parameters<typeof ingestWorkflowEvents>[1]);
             ingestHitlTimelineEvents(
@@ -401,6 +411,11 @@ export function useGlobalMatrixSync(): void {
             }
           }
         }
+        if (resourcesChanged) {
+          for (const key of ['agentteams-teams', 'agentteams-workers', 'agentteams-humans']) {
+            void queryClient.invalidateQueries({ queryKey: [key] });
+          }
+        }
         recordSyncSuccess(maxEventTs);
 
         // F-4 / 需求 4.1: ingest new invites after the join loop so the
@@ -416,6 +431,8 @@ export function useGlobalMatrixSync(): void {
         if (leftKeys.length > 0) {
           const inviteState = useInviteStore.getState();
           for (const rid of leftKeys) {
+            seenJoinedRooms.delete(rid);
+            void queryClient.invalidateQueries({ queryKey: ['matrix-state', rid] });
             // The cache hit is gated on the room not being a join we just
             // received in this same response — already covered above.
             inviteState.dropByRoomId(rid);

@@ -1,5 +1,11 @@
 # AgentTeams Dashboard 接口
 
+## Manager 创建团队时选择管理员
+
+Manager 可在普通消息正文中输出 `team-admin` 围栏 JSON，使用已有确认卡回写通道，不要求运行时支持自定义 Matrix 消息字段。JSON 必须包含唯一 `confirmation_id`、`question` 和非空 `options`（每项有 `id`、`label`，可带 `description`）。`id` 为 Human 资源名，`label` 也应包含资源名，便于 Manager 从自然语言答复中准确识别。
+
+Dashboard 将其规范化为 `tool_name: select_team_admin` 的确认卡，以单选下拉框展示，初始不选择任何用户，不提供自由输入。用户选择并点击提交后，沿用 `com.agentteams.answer` 和房间正文回传答案；发送失败时仍可重试。Manager 必须等待答案并重新校验 Human 后，使用 `agt create team --admin <Human资源名>` 创建团队。无效 JSON 或空候选列表保留为普通可见文本。
+
 ## 前端数据层
 
 `src/lib/agentteams-api.ts` 定义 Worker、Team、Human、Manager、基础设施和存储相关类型，并通过 `/api/agentteams/*` 调用 Controller。

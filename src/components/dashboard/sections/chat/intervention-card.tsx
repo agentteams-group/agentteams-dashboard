@@ -113,7 +113,9 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     [payload]
   );
 
-  const [answers, setAnswers] = useState<AnswerState>(() => initialAnswers(questions));
+  const [answers, setAnswers] = useState<AnswerState>(() => payload.tool_name === 'select_team_admin'
+    ? { selections: {}, freeText: {} }
+    : initialAnswers(questions));
   const [page, setPage] = useState(0);
   // 发送中 / 未写入房间：两者一起撑起 C-3 的诚实反馈，避免「点了就算已答复」。
   const [submitting, setSubmitting] = useState(false);
@@ -326,7 +328,24 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       </div>
 
       <div className="px-5 pb-4 space-y-2">
-        <div className="space-y-2" role="radiogroup" aria-label={question.question}>
+        {payload.tool_name === 'select_team_admin' ? (
+          <label className="block space-y-2 text-sm">
+            <span>{question.question}</span>
+            <select
+              aria-label="Team Admin"
+              className="w-full rounded-md border bg-background px-3 py-2"
+              value={selected[0] ?? ''}
+              disabled={locked || forbidden}
+              onChange={(event) => toggleOption(page, event.target.value)}
+            >
+              <option value="" disabled>请选择团队管理员</option>
+              {list.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+            {list.find((option) => option.id === selected[0])?.description && (
+              <span className="block text-xs text-muted-foreground">{list.find((option) => option.id === selected[0])?.description}</span>
+            )}
+          </label>
+        ) : <div className="space-y-2" role="radiogroup" aria-label={question.question}>
           {list.map((option, index) => {
             const checked = selected.includes(option.id);
             return (
@@ -375,9 +394,9 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
               </button>
             );
           })}
-        </div>
+        </div>}
 
-        <div className="pt-2 border-t border-border/60">
+        {payload.tool_name !== 'select_team_admin' && <div className="pt-2 border-t border-border/60">
           <textarea
             id={`intervention-free-${payload.confirmation_id}`}
             aria-label="自由输入"
@@ -388,7 +407,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
             className="mt-3 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60 resize-none"
             placeholder="也可以直接输入你的想法…"
           />
-        </div>
+        </div>}
 
         {forbidden ? (
           <p className="text-xs text-muted-foreground">该提问指定由 {payload.requested_of} 答复（管理员可代答）。</p>

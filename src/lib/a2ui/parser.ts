@@ -229,6 +229,9 @@ export function parseA2uiContent(
     };
   }
 
+  const teamAdminSelection = parseTeamAdminSelection(body);
+  if (teamAdminSelection) return teamAdminSelection;
+
   const confirmation = parseToolGuardConfirmation(body);
   if (confirmation) {
     return {
@@ -249,9 +252,31 @@ export function parseA2uiContent(
       hasToolCall: false,
     };
   }
-
-  // 2. No A2UI markers found: try legacy format parsing.
   return parseLegacyContent(body, formattedBody);
+}
+
+/** Plain-text runtimes can request a dropdown without custom Matrix content. */
+export function parseTeamAdminSelection(body: string): A2uiParseResult | null {
+  const selection = body.match(/```team-admin\s*\n([\s\S]*?)\n```/);
+  if (selection) {
+    try {
+      const request = JSON.parse(selection[1]);
+      const normalized = normalizeConfirmationPayload({ ...request, tool_name: 'select_team_admin' });
+      if (normalized?.payload.options?.length && normalized.payload.question) {
+        const before = body.slice(0, selection.index).trim();
+        const after = body.slice((selection.index ?? 0) + selection[0].length).trim();
+        return {
+          blocks: [
+            ...(before ? [{ type: 'text' as const, text: before }] : []),
+            { type: 'confirmation', payload: normalized.payload },
+            ...(after ? [{ type: 'text' as const, text: after }] : []),
+          ],
+          hasA2ui: false, hasThinking: false, hasToolCall: false,
+        };
+      }
+    } catch { /* Keep malformed requests visible. */ }
+  }
+  return null;
 }
 
 /**
