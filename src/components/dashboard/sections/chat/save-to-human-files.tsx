@@ -8,7 +8,6 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { humanFilesApi } from '@/lib/human-files-api';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
-import { ApiError } from '@/lib/api-error';
 
 export function SaveToHumanFiles({ filename, mediaUrl, homeserver }: { filename: string; mediaUrl: string; homeserver: string }) {
   const queryClient = useQueryClient();
@@ -24,15 +23,13 @@ export function SaveToHumanFiles({ filename, mediaUrl, homeserver }: { filename:
     setSaving(true);
     setError('');
     try {
-      const name = sessionUser.startsWith('@') ? sessionUser.slice(1).split(':')[0] : sessionUser;
+      let name = sessionUser.startsWith('@') ? sessionUser.slice(1).split(':')[0] : sessionUser;
       // Human logins return the verified Human resource name. Global Admin
       // logins may have no Human binding and need an explicit identity check.
       if (userLevel >= 3) {
-        const human = await agentteamsApi.getHuman(name).catch(cause => {
-          if (cause instanceof ApiError && cause.status === 404) throw new Error('当前账号尚未绑定个人文件区，请先创建或绑定 Human');
-          throw cause;
-        });
-        if (human.matrixUserID !== userId) throw new Error('当前账号未绑定对应的 Human 文件区');
+        const human = (await agentteamsApi.listHumans()).find(human => human.matrixUserID === userId);
+        if (!human) throw new Error('当前账号的 Human 个人文件区尚未就绪，请稍后重试');
+        name = human.name;
       }
       const url = mxcToDownloadUrl(mediaUrl, homeserver);
       if (!url) throw new Error('附件地址无效');

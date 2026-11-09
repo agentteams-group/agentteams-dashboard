@@ -12,18 +12,12 @@ import { ThreadPanel } from '../structures/ThreadPanel';
 import { FilesPanel, type WorkerFileOption } from './WorkersFilesSidebar';
 import { MembersPanel } from './MembersSidebar';
 import { RoomTasksPanel } from './RoomTasksPanel';
+import { RoomContextTabs } from './RoomContextTabs';
 
 export type RoomContextTab = 'overview' | 'tasks' | 'members' | 'files' | 'thread';
 
-const TABS: Array<{ id: RoomContextTab; label: string }> = [
-  { id: 'tasks', label: '任务' },
-  { id: 'members', label: '成员' },
-  { id: 'files', label: '文件' },
-  { id: 'thread', label: '话题' },
-  { id: 'overview', label: '概览' },
-];
-
 interface RoomContextPanelProps {
+  onShowNotes?: () => void;
   roomId: string;
   team?: TeamResponse;
   rooms: RoomInfo[];
@@ -66,33 +60,11 @@ export function RoomContextPanel({
   onOpenThread,
   memberMap,
   workerMatrixUserIds,
+  onShowNotes,
 }: RoomContextPanelProps) {
   return (
     <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(20rem,85vw)] max-lg:shadow-xl">
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1.5 custom-scrollbar">
-        {TABS.map((tab) => {
-          const active = activeTab === tab.id;
-          const count =
-            tab.id === 'members' ? roomMembers.length :
-            tab.id === 'thread' ? threadRoots.length :
-            0;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onTabChange(tab.id)}
-              className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
-                active
-                  ? 'border border-border bg-background font-medium text-foreground shadow-sm'
-                  : 'border border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-              {count > 0 && <span className="ml-0.5 font-mono text-xs">{count}</span>}
-            </button>
-          );
-        })}
+      <RoomContextTabs activeTab={activeTab} includeNotes={!!onShowNotes} onTabChange={tab => tab ? onTabChange(tab) : onShowNotes?.()} memberCount={roomMembers.length} threadCount={threadRoots.length}>
         <Button
           variant="ghost"
           size="sm"
@@ -103,7 +75,7 @@ export function RoomContextPanel({
         >
           <PanelRightClose className="h-3.5 w-3.5" />
         </Button>
-      </div>
+      </RoomContextTabs>
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {activeTab === 'tasks' && <RoomTasksPanel roomId={roomId} />}

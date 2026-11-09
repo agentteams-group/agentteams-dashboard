@@ -10,6 +10,8 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import { openChatRoom } from '@/lib/open-chat-room';
 import type { RoomInfo } from '../room-info';
+import { RoomContextTabs } from './RoomContextTabs';
+import type { RoomContextTab } from './RoomContextPanel';
 
 const WIDE_QUERY = '(min-width: 1280px)';
 function subscribeWide(onChange: () => void) {
@@ -28,12 +30,14 @@ function openItem(item: AssistantTaskNoteItem) {
   }
 }
 
-export function AssistantTaskNote({ room, rooms, contextOpen, onOpen, taskFeed }: {
+export function AssistantTaskNote({ room, rooms, contextOpen, onOpen, taskFeed, onTabChange, memberCount }: {
   room: RoomInfo;
   rooms: RoomInfo[];
   contextOpen: boolean;
   onOpen: () => void;
   taskFeed?: AssistantTaskFeed;
+  onTabChange?: (_tab: RoomContextTab) => void;
+  memberCount?: number;
 }) {
   const wide = useSyncExternalStore(subscribeWide, isWide, () => false);
   const [open, setOpen] = useState<boolean | null>(null);
@@ -74,6 +78,7 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen, taskFeed }
           {loading ? <Loader2 className="size-3 animate-spin" aria-label="任务加载中" /> : <span className={`rounded-full px-1.5 py-0.5 text-xs ${actionable.length ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-muted text-muted-foreground'}`}>{actionable.length}</span>}
         </button>
         <span className="sr-only" role="status" aria-live="polite">{summary}</span>
+        {onTabChange && <RoomContextTabs activeTab={null} vertical memberCount={memberCount} onTabChange={tab => { if (tab) onTabChange(tab); }} />}
       </div>
     );
   }
@@ -81,8 +86,9 @@ export function AssistantTaskNote({ room, rooms, contextOpen, onOpen, taskFeed }
   return (
     <>
       {!wide && <button type="button" aria-label="收起任务便签遮罩" className="fixed inset-0 z-40 bg-background/70" onClick={() => setOpen(false)} />}
-      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[88vw] shrink-0 flex-col border-l border-border bg-background xl:static xl:z-auto xl:max-w-none xl:bg-muted/20">
-        <div className="flex h-18 shrink-0 items-center gap-2 border-b border-border px-4">
+      <aside id={panelId} aria-label="任务便签" className="fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] shrink-0 flex-col border-l border-border bg-background xl:static xl:z-auto xl:max-w-none xl:bg-muted/20">
+        {onTabChange && <RoomContextTabs activeTab={null} includeNotes memberCount={memberCount} onTabChange={tab => { if (tab) onTabChange(tab); }} />}
+        <div className={`flex ${onTabChange ? 'h-10' : 'h-18'} shrink-0 items-center gap-2 border-b border-border px-4`}>
           <StickyNote className="size-4 text-primary" aria-hidden="true" />
           <h3 className="flex-1 text-sm font-semibold">任务便签</h3>
           <Button variant="ghost" size="icon" className="size-8" aria-label="刷新任务便签" onClick={refresh}><RefreshCw className="size-3.5" /></Button>

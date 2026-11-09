@@ -6,10 +6,9 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { humanFilesApi } from '@/lib/human-files-api';
-import { ApiError } from '@/lib/api-error';
 import { SaveToHumanFiles } from './save-to-human-files';
 
-vi.mock('@/lib/agentteams-api', () => ({ agentteamsApi: { getHuman: vi.fn() } }));
+vi.mock('@/lib/agentteams-api', () => ({ agentteamsApi: { getHuman: vi.fn(), listHumans: vi.fn() } }));
 vi.mock('@/lib/human-files-api', () => ({ humanFilesApi: { uploadFile: vi.fn() } }));
 
 beforeEach(() => {
@@ -17,6 +16,7 @@ beforeEach(() => {
   useAgentTeamsStore.setState({ sessionUser: 'alice', userLevel: 2 });
   useMatrixStore.setState({ userId: '@alice:test', accessToken: 'matrix-token' });
   vi.mocked(agentteamsApi.getHuman).mockResolvedValue({ name: 'alice', matrixUserID: '@alice:test' } as Awaited<ReturnType<typeof agentteamsApi.getHuman>>);
+  vi.mocked(agentteamsApi.listHumans).mockResolvedValue([{ name: 'owner', matrixUserID: '@alice:test' } as Awaited<ReturnType<typeof agentteamsApi.getHuman>>]);
   vi.mocked(humanFilesApi.uploadFile).mockResolvedValue({ path: '', size: 3, etag: '', via: 'direct' });
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['abc']) }));
 });
@@ -42,7 +42,7 @@ describe('SaveToHumanFiles', () => {
 
   it('does not write to a Human whose Matrix identity differs from the current account', async () => {
     useAgentTeamsStore.setState({ userLevel: 3 });
-    vi.mocked(agentteamsApi.getHuman).mockResolvedValue({ name: 'alice', matrixUserID: '@someone-else:test' } as Awaited<ReturnType<typeof agentteamsApi.getHuman>>);
+    vi.mocked(agentteamsApi.listHumans).mockResolvedValue([{ name: 'alice', matrixUserID: '@someone-else:test' } as Awaited<ReturnType<typeof agentteamsApi.getHuman>>]);
     show();
     fireEvent.click(screen.getByRole('button', { name: '保存到我的文件' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Human');
@@ -74,13 +74,21 @@ describe('SaveToHumanFiles', () => {
     expect(screen.queryByRole('button', { name: '已保存到我的文件' })).toBeNull();
   });
 
-  it('explains when a Global Admin has no personal Human binding', async () => {
+  it('reports an admin personal area that is not ready without asking for manual binding', async () => {
     useAgentTeamsStore.setState({ userLevel: 3 });
-    vi.mocked(agentteamsApi.getHuman).mockRejectedValue(new ApiError('not found', 404, '/humans/alice'));
+    vi.mocked(agentteamsApi.listHumans).mockResolvedValue([]);
     show();
     fireEvent.click(screen.getByRole('button', { name: '保存到我的文件' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('尚未绑定个人文件区');
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚未就绪');
     expect(fetch).not.toHaveBeenCalled();
     expect(humanFilesApi.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('resolves the admin personal area by Matrix identity even when its Human name differs', async () => {
+    useAgentTeamsStore.setState({ userLevel: 3 });
+    show();
+    fireEvent.click(screen.getByRole('button', { name: '保存到我的文件' }));
+    await screen.findByRole('button', { name: '已保存到我的文件' });
+    expect(humanFilesApi.uploadFile).toHaveBeenCalledWith('owner', expect.any(String), expect.any(Blob), { fileName: 'report.md' });
   });
 });

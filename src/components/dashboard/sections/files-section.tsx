@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMatrixStore } from '@/lib/matrix-store';
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -178,6 +179,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   const queryClient = useQueryClient();
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
+  const matrixUserId = useMatrixStore(s => s.userId);
   const { data: humans } = useHumans();
   const canAdmin = userLevel >= 3;
 
@@ -186,13 +188,13 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     if (initialHuman) return;
     if (canAdmin) {
       if (humans && humans.length > 0 && !humans.some((h) => h.name === humanName)) {
-        setHumanName(humans[0].name);
+        setHumanName(humans.find(h => matrixUserId && h.matrixUserID === matrixUserId)?.name ?? humans.find(h => h.name === humanNameFromSession(sessionUser))?.name ?? humans[0].name);
       }
       return;
     }
     const fallback = humanNameFromSession(sessionUser);
     if (fallback && fallback !== humanName) setHumanName(fallback);
-  }, [canAdmin, humans, humanName, initialHuman, sessionUser]);
+  }, [canAdmin, humans, humanName, initialHuman, sessionUser, matrixUserId]);
 
   const [dirPath, setDirPath] = useState('');
   // 全局搜索：输入（原始）→ 250ms 去抖后的 term → 递归平铺客户端过滤。

@@ -122,6 +122,7 @@ interface ChatRoomProps {
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   contextPanel?: ChatContextPanel;
+  integratedSidebar?: boolean;
   onContextPanelChange?: (_panel: ChatContextPanel) => void;
   className?: string;
 }
@@ -142,6 +143,7 @@ export function ChatRoom({
   canSend = true,
   onSendMessage,
   contextPanel: controlledContextPanel,
+  integratedSidebar = false,
   onContextPanelChange,
   className = '',
 }: ChatRoomProps) {
@@ -727,6 +729,7 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          compact={integratedSidebar}
           agentRole={agentRole}
           roomName={roomName}
           team={team}
@@ -909,6 +912,7 @@ export function ChatRoom({
 
       {contextPanel !== null && (
         <RoomContextPanel
+          onShowNotes={integratedSidebar ? () => setContextPanel(null) : undefined}
           roomId={roomId}
           team={team}
           rooms={rooms}
