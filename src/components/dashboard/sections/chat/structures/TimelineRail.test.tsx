@@ -34,6 +34,36 @@ function readMarker(): GroupedMessage {
 }
 
 describe('TimelineRail', () => {
+  it('previews message content and its timestamp without jumping until clicked', () => {
+    const onJump = vi.fn();
+    render(<TimelineRail items={items(8)} onJump={onJump} />);
+    const tick = screen.getByTestId('rail-tick-5');
+    fireEvent.mouseEnter(tick);
+    const preview = screen.getByRole('tooltip');
+    expect(preview).toHaveTextContent('$5');
+    expect(preview).toHaveTextContent('worker');
+    expect(preview.querySelector('time')).toHaveAttribute('datetime', new Date(2026, 9, 26, 10, 5).toISOString());
+    expect(preview.querySelector('time')).toHaveTextContent('10:05:00');
+    expect(onJump).not.toHaveBeenCalled();
+    fireEvent.click(tick);
+    expect(onJump).toHaveBeenCalledWith(5);
+    fireEvent.mouseLeave(tick);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('previews the same first message that a bucket targets, including keyboard focus', () => {
+    const onJump = vi.fn();
+    render(<TimelineRail items={items(500)} onJump={onJump} />);
+    const tick = screen.getByTestId('rail-tick-38');
+    fireEvent.focus(tick);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('$494');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('此处包含 6 条');
+    fireEvent.click(tick);
+    expect(onJump).toHaveBeenCalledWith(494);
+    fireEvent.blur(tick);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   it('stays hidden for a short conversation', () => {
     render(<TimelineRail items={items(5)} onJump={() => {}} />);
     expect(screen.queryByTestId('timeline-rail')).toBeNull();

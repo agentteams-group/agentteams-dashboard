@@ -45,8 +45,7 @@ describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
         onCopy={onCopy}
       />
     );
-    // 操作行平时不在 DOM 里（桌面 hover、移动点一下），先把气泡置成 hover。
-    fireEvent.mouseEnter(container.firstElementChild as Element);
+    fireEvent.mouseEnter(container.querySelector('[data-chat-message-body]')!);
     const button = screen.getByRole('button', { name: '复制' });
     fireEvent.click(button);
     expect(onCopy).toHaveBeenCalledTimes(1);
@@ -63,7 +62,7 @@ describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
         onCopy={onCopy}
       />
     );
-    fireEvent.mouseEnter(container.firstElementChild as Element);
+    fireEvent.mouseEnter(container.querySelector('[data-chat-message-body]')!);
     const button = screen.getByRole('button', { name: '复制' });
     fireEvent.click(button);
     await waitFor(() => expect(button).toHaveAccessibleName('复制失败，请手动选中文字复制'));
@@ -93,6 +92,28 @@ describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
 });
 
 describe('MessageBubble', () => {
+  it.each([false, true])('shows actions below the body without an overlay (isMe=%s)', (isMe) => {
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$actions', sender: '@user:test', senderShort: 'user', content: 'hello', timestamp: 0, type: 'm.text', isMe }}
+        showSender isContinuation={false} onCopy={vi.fn()} onReply={vi.fn()}
+      />
+    );
+    const body = container.querySelector('[data-chat-message-body]')!;
+    const actions = container.querySelector('[aria-label="消息操作"]')!;
+    expect(actions).toHaveClass('invisible');
+    fireEvent.mouseEnter(container.firstElementChild!);
+    expect(actions).toHaveClass('invisible');
+    fireEvent.mouseEnter(body);
+    expect(actions).toHaveClass('visible');
+    expect(body.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions).not.toHaveClass('md:absolute');
+    expect(actions).toHaveClass(isMe ? 'self-end' : 'self-start');
+    fireEvent.mouseLeave(actions.parentElement!);
+    expect(actions).toHaveClass('invisible');
+    expect(actions).toBeInTheDocument();
+  });
+
   it.each([false, true])('keeps sender and time in reading order (isMe=%s)', (isMe) => {
     const timestamp = new Date(2026, 10, 7, 9, 30).getTime();
     const { container } = renderWithProvider(

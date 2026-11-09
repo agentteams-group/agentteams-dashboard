@@ -207,7 +207,7 @@ function ActionIcon({ path, size = 12, label }: { path: string; size?: number; l
 }
 
   const ICON_PATHS = {
-  reply: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  reply: 'M9 10 4 15l5 5M4 15h11a5 5 0 0 0 0-10h-3',
   thread: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   edit: 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z',
@@ -234,11 +234,13 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className={`p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
-      title={title}
+      className={`group/action relative p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
       aria-label={title}
     >
       {iconNode ?? (icon ? <ActionIcon path={icon} label={title} /> : null)}
+      <span aria-hidden="true" className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm ring-1 ring-border group-hover/action:visible group-focus-visible/action:visible">
+        {title}
+      </span>
     </button>
   );
 }
@@ -471,11 +473,9 @@ export function MessageBubble({
     <div
       data-chat-message={message.isMe ? 'user' : 'agent'}
       className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
         // Mobile: tap the message to toggle the action bar (desktop uses hover).
-        setShowActions(v => !v);
+        if (window.matchMedia?.('(hover: none)').matches) setShowActions(v => !v);
       }}
     >
       {/* Avatar column: mirrors the bubble side (own messages on the right).
@@ -515,7 +515,7 @@ export function MessageBubble({
         )}
       </div>
 
-      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`} onMouseLeave={() => setIsHovered(false)}>
         {showAvatar && (
           <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 items-baseline gap-2 ${message.isMe ? 'justify-end' : ''}`}>
             <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
@@ -559,7 +559,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div data-chat-message-body onMouseEnter={() => setIsHovered(true)} className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
             <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea
@@ -823,9 +823,11 @@ export function MessageBubble({
           </button>
         )}
 
-        {actionsVisible && (
           <div
-            className={`z-10 mt-1 flex gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute ${message.isMe ? 'justify-end md:left-1' : 'justify-start md:right-1'} ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
+            role="group"
+            aria-label="消息操作"
+            className={`mt-1 flex min-h-7 items-center gap-1 text-muted-foreground ${actionsVisible ? 'visible' : 'invisible'} ${message.isMe ? 'self-end' : 'self-start'}`}
+            onMouseEnter={() => setIsHovered(true)}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (
@@ -854,7 +856,6 @@ export function MessageBubble({
               <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
             )}
           </div>
-        )}
       </div>
     </div>
   );
