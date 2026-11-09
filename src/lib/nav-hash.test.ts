@@ -12,13 +12,17 @@ import {
 } from './nav-hash';
 
 const allSections = new Set([
-  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
+  'overview', 'chat', 'my-teams', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
   'resources', 'workers', 'managers', 'teams', 'humans', 'skills', 'models',
   'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
 
 describe('isLayeredHash', () => {
+  it('resolves the separate my-teams route and team room deep links', () => {
+    expect(hashForSection('my-teams')).toBe('workbench/teams');
+    expect(resolveHash('workbench/teams/!group:test', isKnown)).toEqual({ section: 'my-teams', roomId: '!group:test', params: undefined });
+  });
   it('accepts workbench and console prefixes', () => {
     expect(isLayeredHash('workbench/space')).toBe(true);
     expect(isLayeredHash('console/resources/workers')).toBe(true);

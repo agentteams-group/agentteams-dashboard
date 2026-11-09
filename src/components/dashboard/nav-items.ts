@@ -78,7 +78,8 @@ export const navItems: NavItem[] = [
   // 我的工作台（F4.2）：聚合「等我」事项（待干预/待审批/@我的）。
   { id: 'my-workbench', label: '待你处理', icon: Inbox, area: 'workbench', group: 'mine' },
   // 协作空间：Matrix 房间升级为「工作单元」（F1.1）。id 仍为 chat。
-  { id: 'chat', label: '全部对话', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
+  { id: 'chat', label: '助手', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
+  { id: 'my-teams', label: '我的团队', icon: Users, area: 'workbench', group: 'space', legacyGroup: 'core' },
   // 任务中心（原「任务看板 + 产物 + 编码执行」收拢，13 项零删减）。
   // The standalone projects section was merged into the task board's 项目
   // view, so there is no longer a separate 'projects' nav item.

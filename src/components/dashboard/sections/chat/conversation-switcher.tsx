@@ -19,8 +19,9 @@ export function TaskAttention({ counts, pending }: { counts?: ConversationAttent
   </span>;
 }
 
-export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, attention, pending }: {
+export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoomId, onSelectRoom, attention, pending }: {
   rooms: RoomInfo[];
+  relatedRooms?: RoomInfo[];
   selectedRoomId: string | null;
   onSelectRoom: (_id: string) => void;
   attention: Record<string, ConversationAttention>;
@@ -31,11 +32,11 @@ export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, atte
     ...sections.operations.map(room => ({ id: room.id, name: room.name, target: room, room })),
     ...sections.teams.map(team => {
       const room = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
-      return { id: team.id, name: team.name, room, target: team.rooms.find(canOpenConversation) };
+      return { id: team.id, name: `${team.name}${room.teamRole ? ` · ${room.teamRole === 'admin' ? '管理员' : '成员'}` : ''}`, room, target: team.rooms.find(canOpenConversation) };
     }),
   ];
   const selected = rooms.find(room => room.id === selectedRoomId);
-  const currentTeam = sections.teams.find(team => team.id === selected?.parentTeam);
+  const currentTeam = conversationSections(relatedRooms).teams.find(team => team.id === selected?.parentTeam);
   const relatedRoom = currentTeam?.rooms.find(room => selected?.type === 'team'
     ? room.agentRole === 'leader' && canOpenConversation(room)
     : room.type === 'team');

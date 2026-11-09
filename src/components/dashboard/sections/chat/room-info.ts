@@ -10,6 +10,7 @@ export interface RoomInfo {
   access?: 'joined' | 'checking' | 'not-joined' | 'error' | 'disconnected';
   members: string[];
   parentTeam?: string;
+  teamRole?: 'admin' | 'member';
   matrixUserId?: string;
   /** Worker MXIDs of this room (worker rooms: [the worker]; team rooms:
    *  the team's workers). Drives the session running dot (A17). */

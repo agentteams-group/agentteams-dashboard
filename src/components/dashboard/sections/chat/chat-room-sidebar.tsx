@@ -253,6 +253,8 @@ export function ChatRoomSidebar({
   footer,
   attention,
   attentionPending,
+  title = '协作空间',
+  showInvites = true,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -265,6 +267,8 @@ export function ChatRoomSidebar({
   footer?: ReactNode;
   attention?: Record<string, ConversationAttention>;
   attentionPending?: string;
+  title?: string;
+  showInvites?: boolean;
 }) {
   const [filter, setFilter] = useState('');
   // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
@@ -365,7 +369,7 @@ export function ChatRoomSidebar({
       {/* 面板头固定 56px：标题 + 三个图标控件（分类/排序/收起）。分类与
           搜索下沉到列表工具条，避免头部堆文字；分隔线与房间头水平对齐。 */}
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span className="whitespace-nowrap text-xs font-semibold tracking-wide">协作空间</span>
+        <span className="whitespace-nowrap text-xs font-semibold tracking-wide">{title}</span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -433,7 +437,7 @@ export function ChatRoomSidebar({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 custom-scrollbar">
-        <InviteInbox />
+        {showInvites && <InviteInbox />}
         {isLoading ? (
           Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />
@@ -461,7 +465,7 @@ export function ChatRoomSidebar({
                   return <div key={team.id}>
                     <button type="button" aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'}团队：${team.name}`} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setCollapsedTeams(current => ({ ...current, [team.id]: expanded }))}>
                       <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
-                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{team.name}</span><TaskAttention counts={attention?.[assistant.id]} pending={attentionPending} /></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{team.name}{assistant.teamRole && <span className="ml-2 text-xs font-normal text-muted-foreground">{assistant.teamRole === 'admin' ? '管理员' : '成员'}</span>}</span><TaskAttention counts={attention?.[assistant.id]} pending={attentionPending} /></span>
                     </button>
                     {expanded && <div className="ml-2 border-l border-border pl-1">{team.rooms.map(renderRoom)}</div>}
                   </div>;

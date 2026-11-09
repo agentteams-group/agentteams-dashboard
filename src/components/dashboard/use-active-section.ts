@@ -31,7 +31,7 @@ function isKnownSection(hash: string): boolean {
 
 /** Apply a resolved hash's deep-link payload (room id) to the target store. */
 function applyDeepLinks(resolved: ReturnType<typeof resolveHash>): void {
-  if (resolved?.section === 'chat' && resolved.roomId) {
+  if ((resolved?.section === 'chat' || resolved?.section === 'my-teams') && resolved.roomId) {
     useHitlInboxStore.getState().setPendingChatRoomId(resolved.roomId);
   }
 }

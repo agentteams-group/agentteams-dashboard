@@ -14,7 +14,7 @@ const hooksMock = vi.hoisted(() => ({
   useHumans: vi.fn(),
   useRoomAccess: vi.fn(),
 }));
-const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test' }));
+const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test', sessionUser: 'alice' }));
 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: hooksMock.useWorkers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams }));
@@ -25,7 +25,7 @@ vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => 
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({
-  useAgentTeamsStore: () => ({ isConnected: true, userLevel: sessionMock.userLevel }),
+  useAgentTeamsStore: () => ({ isConnected: true, userLevel: sessionMock.userLevel, sessionUser: sessionMock.sessionUser }),
 }));
 
 vi.mock('@/lib/matrix-store', () => ({
@@ -74,6 +74,7 @@ import { ChatSection } from './ChatSection';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { conversationStorageKey } from './agent-conversations';
+import { useSectionStore } from '@/lib/section-store';
 
 beforeEach(() => {
   localStorage.clear();
@@ -103,13 +104,13 @@ function loading() {
   hooksMock.useHumans.mockReturnValue({ data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() });
 }
 
-function renderWithQueryClient() {
+function renderWithQueryClient(view: 'all' | 'assistants' | 'teams' = 'all') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <ChatSection />
+      <ChatSection view={view} />
     </QueryClientProvider>,
   );
 }
@@ -248,6 +249,52 @@ describe('role-based assistant landing', () => {
     hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test'], state: 'joined', refetch: vi.fn() });
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+  });
+});
+
+describe('separate assistants and my teams with mixed roles', () => {
+  beforeEach(() => {
+    loaded();
+    sessionMock.userLevel = 2;
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    hooksMock.useWorkers.mockReturnValue({ data: [], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: ['a', 'b', 'c', 'd'].map((name, index) => ({
+      name: `team-${name}`, teamName: `Team ${name.toUpperCase()}`, admin: { name: index < 2 ? 'alice' : 'bob' },
+      teamRoomID: `!group-${name}:test`, leaderDMRoomID: `!dm-${name}:test`,
+    })), isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!dm-a:test', '!dm-b:test', '!group-a:test', '!group-b:test', '!group-c:test', '!group-d:test'], state: 'joined', refetch: vi.fn() });
+  });
+  afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
+
+  it('shows only administered teams as private assistants', () => {
+    renderWithQueryClient('assistants');
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    expect(sidebar.getByRole('button', { name: 'Team A助手' })).toBeInTheDocument();
+    expect(sidebar.getByRole('button', { name: 'Team B助手' })).toBeInTheDocument();
+    expect(sidebar.queryByRole('button', { name: /team-c|team-d/ })).toBeNull();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!dm-a:test');
+    fireEvent.click(screen.getByRole('button', { name: '团队协作' }));
+    expect(useSectionStore.getState().activeSection).toBe('my-teams');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!group-a:test');
+  });
+
+  it('shows every joined team, identifies each role, and opens ordinary member groups', async () => {
+    renderWithQueryClient('teams');
+    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    expect(sidebar.getAllByRole('button', { name: /team-[a-d] 团队房间/ })).toHaveLength(4);
+    expect(screen.getByText('Team A · 管理员 · 团队协作')).toBeInTheDocument();
+    fireEvent.click(sidebar.getByRole('button', { name: 'team-c 团队房间' }));
+    await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group-c:test'));
+    expect(screen.getByText('Team C · 成员 · 团队协作')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
+  });
+
+  it('routes an existing group deep link into my teams without losing the target', () => {
+    useHitlInboxStore.getState().setPendingChatRoomId('!group-c:test');
+    renderWithQueryClient('assistants');
+    expect(useSectionStore.getState().activeSection).toBe('my-teams');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!group-c:test');
   });
 });
 

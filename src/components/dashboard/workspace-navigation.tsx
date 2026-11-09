@@ -11,6 +11,7 @@ import { isNavItemVisible, navItems, type DeploymentMode } from './nav-items';
 
 export const workspaceMenus = [
   { id: 'chat', label: '助手', icon: Bot, sections: ['chat'] },
+  { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
   { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
   { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'teams', 'humans', 'managers'] },
@@ -48,11 +49,11 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
         const active = menu.sections.includes(activeSection);
         const items = menu.sections.flatMap(section => {
           const item = navItems.find(entry => entry.id === section);
-          return item && item.id !== 'chat' && item.id !== 'resources' && isNavItemVisible(item, mode, taskBoardVisible, userLevel) ? [item] : [];
+          return item && item.id !== 'chat' && item.id !== 'my-teams' && item.id !== 'resources' && isNavItemVisible(item, mode, taskBoardVisible, userLevel) ? [item] : [];
         });
-        const grouped = menu.id !== 'chat';
+        const grouped = menu.id !== 'chat' && menu.id !== 'my-teams';
         const expanded = !collapsed && (expandedMenus[menu.id] ?? active);
-        const count = menu.id === 'my-workbench' ? countMap['my-workbench'] ?? 0 : menu.id === 'chat' ? countMap.chat ?? 0 : 0;
+        const count = ['my-workbench', 'chat', 'my-teams'].includes(menu.id) ? countMap[menu.id] ?? 0 : 0;
         const notification = menu.sections.some(section => sectionsWithNotifications.has(section));
         const Icon = menu.icon;
         return (
@@ -68,6 +69,7 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
                   return;
                 }
                 onNavClick(menu.id);
+                if (menu.id !== 'chat') return;
                 const current = useRoomMetaStore.getState().activeRoomId;
                 // ChatSection restores the account's last selection and verifies DM access.
                 const room = agentRooms.find(agent => agent.id === current && canOpenConversation(agent));
