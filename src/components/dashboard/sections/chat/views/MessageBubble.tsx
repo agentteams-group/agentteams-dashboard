@@ -234,11 +234,13 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className={`p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
-      title={title}
+      className={`group/action relative p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
       aria-label={title}
     >
       {iconNode ?? (icon ? <ActionIcon path={icon} label={title} /> : null)}
+      <span aria-hidden="true" className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm ring-1 ring-border group-hover/action:visible group-focus-visible/action:visible">
+        {title}
+      </span>
     </button>
   );
 }
