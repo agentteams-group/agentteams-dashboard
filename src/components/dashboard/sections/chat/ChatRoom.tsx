@@ -124,6 +124,8 @@ interface ChatRoomProps {
   contextPanel?: ChatContextPanel;
   integratedSidebar?: boolean;
   headerActions?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
   onContextPanelChange?: (_panel: ChatContextPanel) => void;
   className?: string;
 }
@@ -145,6 +147,8 @@ export function ChatRoom({
   contextPanel: controlledContextPanel,
   integratedSidebar = false,
   headerActions,
+  headerLeading,
+  headerTitle,
   onContextPanelChange,
   className = '',
 }: ChatRoomProps) {
@@ -732,6 +736,8 @@ export function ChatRoom({
         <ChatRoomHeader
           compact={integratedSidebar}
           headerActions={headerActions}
+          headerLeading={headerLeading}
+          headerTitle={headerTitle}
           agentRole={agentRole}
           roomName={roomName}
           team={team}

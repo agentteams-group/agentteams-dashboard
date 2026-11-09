@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
@@ -18,6 +19,8 @@ interface ChatPanelProps {
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   className?: string;
   taskFeed?: AssistantTaskFeed;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
 }
 
 export function ChatPanel({
@@ -29,11 +32,15 @@ export function ChatPanel({
   onSendMessage,
   className = '',
   taskFeed,
+  headerLeading,
+  headerTitle,
 }: ChatPanelProps) {
   return (
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
+          headerLeading={headerLeading}
+          headerTitle={headerTitle}
           integratedSidebar={!!room.agentRole || room.type === 'team'}
           roomId={room.id}
           roomName={room.agentRole === 'operations' ? '平台助手' : room.name}

@@ -14,6 +14,12 @@ describe('assistant context controls', () => {
     expect(screen.queryByRole('button', { name: /空间概览/ })).toBeNull();
     expect(screen.getByRole('button', { name: '待我处理 · 2' })).toBeInTheDocument();
   });
+  it('uses the conversation switcher as the sole title with a list entry in the same header', () => {
+    render(<ChatRoomHeader compact roomName="平台助手" headerTitle={<button>切换会话</button>} headerLeading={<button>打开空间列表</button>} sessionDot={{ state: 'idle', runningOnly: false }} memberCount={2} threadCount={0} activePanel={null} onTogglePanel={vi.fn()} />);
+    expect(screen.queryByRole('heading', { name: '平台助手' })).toBeNull();
+    expect(screen.getByRole('button', { name: '切换会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开空间列表' })).toBeInTheDocument();
+  });
   it('names counted controls by their purpose and opens the corresponding panel', () => {
     const onTogglePanel = vi.fn();
     render(<ChatRoomHeader roomName="设计团队助手" sessionDot={{ state: 'idle', runningOnly: false }} memberCount={2} threadCount={7} activePanel={null} onTogglePanel={onTogglePanel} />);

@@ -286,6 +286,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {!selectedRoom && (
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
           <Button ref={switcherRef} variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
             <PanelLeftOpen className="size-4" />
@@ -293,6 +294,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
           <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
           <SyncStatusChip />
         </div>
+        )}
         {projectionNotices.map((notice) => (
           <div
             key={notice.key}
@@ -356,6 +358,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
                 taskFeed={taskFeed}
+                headerLeading={<Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
+                headerTitle={<ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
+
               />
             ) : (
               <ChatEmptyState

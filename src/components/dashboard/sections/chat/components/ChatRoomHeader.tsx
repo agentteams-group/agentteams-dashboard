@@ -21,6 +21,8 @@ import type { RoomInfo } from '../room-info';
 interface ChatRoomHeaderProps {
   compact?: boolean;
   headerActions?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
   agentRole?: RoomInfo['agentRole'];
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
@@ -75,6 +77,8 @@ function ContextChip({
 export function ChatRoomHeader({
   compact = false,
   headerActions,
+  headerLeading,
+  headerTitle,
   agentRole,
   roomName,
   team,
@@ -92,6 +96,7 @@ export function ChatRoomHeader({
   const teamName = team ? team.teamName || team.name : '';
   return (
     <div data-chat-room-header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden border-b border-border px-4 py-3 sm:h-18 sm:flex-nowrap sm:px-6 sm:py-0">
+      {headerLeading}
       {avatar ? (
         <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
@@ -103,7 +108,7 @@ export function ChatRoomHeader({
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>
+          <div className="min-w-0">{headerTitle ?? <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>}</div>
           {workerMatrixUserIds && workerMatrixUserIds.length > 0
             ? sessionDot.runningOnly
               ? sessionDot.state === 'running'
