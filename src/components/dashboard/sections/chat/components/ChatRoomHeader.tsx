@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,8 +8,6 @@ import {
   FolderTree,
   ListTodo,
   MessagesSquare,
-  PanelRightClose,
-  PanelRightOpen,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -21,6 +20,7 @@ import type { RoomInfo } from '../room-info';
 
 interface ChatRoomHeaderProps {
   compact?: boolean;
+  headerActions?: ReactNode;
   agentRole?: RoomInfo['agentRole'];
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
@@ -74,6 +74,7 @@ function ContextChip({
 
 export function ChatRoomHeader({
   compact = false,
+  headerActions,
   agentRole,
   roomName,
   team,
@@ -157,13 +158,13 @@ export function ChatRoomHeader({
           label="任务"
           onClick={() => onTogglePanel('tasks')}
         />
-        <ContextChip
+        {!agentRole && <ContextChip
           active={activePanel === 'members'}
           icon={Users}
           label="成员"
           count={memberCount}
           onClick={() => onTogglePanel('members')}
-        />
+        />}
         <ContextChip
           active={activePanel === 'files'}
           icon={FolderTree}
@@ -178,18 +179,7 @@ export function ChatRoomHeader({
           onClick={() => onTogglePanel('thread')}
         />
         </>}
-        <Button
-          variant={activePanel === 'overview' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-8 w-8 p-0"
-          onClick={() => onTogglePanel('overview')}
-          title={activePanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
-          aria-pressed={activePanel === 'overview'}
-        >
-          {activePanel === 'overview'
-            ? <PanelRightClose className="h-4 w-4" />
-            : <PanelRightOpen className="h-4 w-4" />}
-        </Button>
+        {headerActions}
       </div>
     </div>
   );

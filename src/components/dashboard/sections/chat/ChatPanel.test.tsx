@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,7 +9,7 @@ import type { RoomInfo } from './room-info';
 
 const api = vi.hoisted(() => ({ listProjects: vi.fn(), getProjectWorkflow: vi.fn() }));
 vi.mock('@/lib/agentteams-projects-api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/agentteams-projects-api')>(), listProjects: api.listProjects, getProjectWorkflow: api.getProjectWorkflow }));
-vi.mock('./ChatRoom', () => ({ ChatRoom: ({ roomName, integratedSidebar }: { roomName: string; integratedSidebar?: boolean }) => <div data-integrated-sidebar={String(integratedSidebar)}>{roomName}</div> }));
+vi.mock('./ChatRoom', () => ({ ChatRoom: ({ roomName, integratedSidebar, headerActions }: { roomName: string; integratedSidebar?: boolean; headerActions?: ReactNode }) => <div data-integrated-sidebar={String(integratedSidebar)}>{roomName}{headerActions}</div> }));
 
 const teamRoom: RoomInfo = { id: '!team:test', name: '设计群聊', type: 'team', members: [], parentTeam: 'design', team: { name: 'design', teamName: '设计团队' } as RoomInfo['team'] };
 
@@ -32,8 +33,9 @@ describe('chat task note entry points', () => {
     useHitlInboxStore.setState({ confirmations: { approval: { id: 'approval', roomId: teamRoom.id, eventId: '$approval', sender: '@leader:test', toolName: '发布', question: '现在发布吗？', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
     renderChat(teamRoom);
     expect(screen.getByText('设计群聊')).toBeInTheDocument();
-    expect(screen.getByText('设计群聊')).toHaveAttribute('data-integrated-sidebar', 'true');
-    expect(await screen.findByText('首页设计')).toBeInTheDocument();
+    expect(screen.getByText('设计群聊').closest('[data-integrated-sidebar]')).toHaveAttribute('data-integrated-sidebar', 'true');
+    fireEvent.click(await screen.findByRole('button', { name: /待我处理，2 项待处理/ }));
+    expect(screen.getByText('首页设计')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /待验收/ })).toBeInTheDocument();
     expect(api.getProjectWorkflow).toHaveBeenCalledTimes(1);
     expect(api.getProjectWorkflow).toHaveBeenCalledWith('project', { includeTasks: true, teamId: 'design' });
