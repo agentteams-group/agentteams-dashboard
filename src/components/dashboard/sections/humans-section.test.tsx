@@ -85,9 +85,11 @@ afterEach(() => {
 });
 
 describe('HumansSection 详情 / 编辑入口', () => {
-  it('卡片点行 → 只读详情弹窗，且弹窗内没有编辑按钮', async () => {
+  it('列表点行 → 只读详情弹窗，且弹窗内没有编辑按钮', async () => {
     renderSection();
-    fireEvent.click(await screen.findByTestId('human-card'));
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '卡片' })).not.toBeInTheDocument();
+    fireEvent.click((await screen.findByText('alice')).closest('tr') as HTMLElement);
 
     expect(await screen.findByText('Human 详情 - alice')).toBeInTheDocument();
     // 编辑抽屉没被一起打开。
@@ -95,13 +97,13 @@ describe('HumansSection 详情 / 编辑入口', () => {
     expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
   });
 
-  it('卡片「详情」按钮 → 只读详情弹窗', async () => {
+  it('列表「详情」按钮 → 只读详情弹窗', async () => {
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看 alice 详情' }));
     expect(await screen.findByText('Human 详情 - alice')).toBeInTheDocument();
   });
 
-  it('卡片「编辑」按钮 → 右侧编辑抽屉（标题 编辑人员 + 四卡）', async () => {
+  it('列表「更多 → 编辑」 → 右侧编辑抽屉（标题 编辑人员 + 四卡）', async () => {
     renderSection();
     fireEvent.pointerDown(await screen.findByRole('button', { name: 'alice 更多操作' }), { button: 0, ctrlKey: false });
     fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }));
@@ -116,9 +118,7 @@ describe('HumansSection 详情 / 编辑入口', () => {
 
   it('表格行点击 → 只读详情弹窗；表格编辑按钮 → 编辑抽屉', async () => {
     renderSection();
-    // Radix Tabs 在 mousedown 上切换视图。
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: '表格' }));
-    await waitFor(() => expect(screen.queryByTestId('human-card')).not.toBeInTheDocument());
+    expect(await screen.findByRole('table')).toBeInTheDocument();
 
     const row = (await screen.findByText('alice')).closest('tr');
     expect(row).not.toBeNull();

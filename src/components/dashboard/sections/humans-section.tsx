@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, UserCheck, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Plus, UserCheck, ArrowUpDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
@@ -13,14 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useCreateHuman, useDeleteHuman } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
-import { useViewMode } from '@/lib/use-view-mode';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
@@ -31,27 +29,12 @@ import {
   filterHumans,
   sortHumans,
 } from './humans/human-selectors';
-import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { HumanDrawer } from './humans/human-drawer';
 
-function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
-  if (viewMode === 'card') {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i} className="glass-card">
-            <CardContent className="p-4 space-y-3">
-              <div className="h-5 w-32 rounded shimmer" />
-              <div className="h-4 w-24 rounded shimmer" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
+function HumansSkeleton() {
   return (
     <Card className="glass-card">
       <CardContent className="p-4 space-y-3">
@@ -100,7 +83,6 @@ export function HumansSection() {
   });
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
-  const { viewMode, handleViewModeChange } = useViewMode('card');
 
   const filteredHumans = useMemo(
     () => filterHumans(humans, searchQuery),
@@ -187,40 +169,14 @@ export function HumansSection() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-3">
-            <Tabs value={viewMode} onValueChange={handleViewModeChange}>
-              <TabsList className="h-8">
-                <TabsTrigger value="card" className="px-2 py-1 text-xs gap-1">
-                  <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
-                  卡片
-                </TabsTrigger>
-                <TabsTrigger value="table" className="px-2 py-1 text-xs gap-1">
-                  <List className="w-3.5 h-3.5" aria-hidden="true" />
-                  表格
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+
         </div>
       )}
 
       {isLoading ? (
-        <HumansSkeleton viewMode={viewMode} />
+        <HumansSkeleton />
       ) : sortedHumans.length === 0 ? (
         <EmptyState hasQuery={!!searchQuery} onCreate={() => setCreateOpen(true)} />
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sortedHumans.map((human, i) => (
-            <HumanCard
-              key={human.name}
-              human={human}
-              index={i}
-              onView={setDetailHuman}
-              onEdit={setDrawerHuman}
-              onDelete={setDeleteTarget}
-            />
-          ))}
-        </div>
       ) : (
         <HumanTable
           humans={sortedHumans}

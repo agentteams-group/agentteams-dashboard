@@ -40,9 +40,9 @@ export function HumanTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead>阶段</TableHead>
-            <TableHead>权限</TableHead>
+            <TableHead>用户</TableHead>
+            <TableHead>状态</TableHead>
+            <TableHead>角色</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -70,7 +70,9 @@ export function HumanTable({
                     >
                       {human.displayName || human.name}
                     </button>
-                    <span className="text-xs text-muted-foreground truncate max-w-[180px]">{human.name}</span>
+                    {human.displayName && human.displayName !== human.name && (
+                      <span className="text-xs text-muted-foreground truncate max-w-[180px]" title={human.name}>{human.name}</span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -96,10 +98,10 @@ export function HumanTable({
                     >
                       <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
-                  <ResourceListMenu label={`${human.name} 更多操作`} items={[
-                    { label: '编辑', onSelect: () => onEdit(human) },
-                    { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
-                  ]} />
+                    <ResourceListMenu label={`${human.name} 更多操作`} items={[
+                      { label: '编辑', onSelect: () => onEdit(human) },
+                      { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
+                    ]} />
                   </div>
                 </TableCell>
               </TableRow>
