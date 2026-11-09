@@ -129,15 +129,31 @@ export function HumansSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <SectionHeader
         title={`用户${humans ? ` · ${humans.length}` : ''}`}
-        description="管理用户与访问权限"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {sortedHumans.length > 0 && (
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+                  <SelectTrigger aria-label="用户排序" className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SORT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <ResourceListMenu label="列表更多操作" items={[
               { label: '导出 JSON', onSelect: handleExport, disabled: !humans || humans.length === 0 },
             ]} />
@@ -151,27 +167,6 @@ export function HumansSection() {
           </div>
         }
       />
-
-      {sortedHumans.length > 0 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
-            <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
-              <SelectTrigger className="w-[140px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-        </div>
-      )}
 
       {isLoading ? (
         <HumansSkeleton />
