@@ -35,6 +35,13 @@ export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, atte
     }),
   ];
   const selected = rooms.find(room => room.id === selectedRoomId);
+  const currentTeam = sections.teams.find(team => team.id === selected?.parentTeam);
+  const relatedRoom = currentTeam?.rooms.find(room => selected?.type === 'team'
+    ? room.agentRole === 'leader' && canOpenConversation(room)
+    : room.type === 'team');
+  const relatedEntry = relatedRoom && <Button variant="outline" size="sm" className="shrink-0" onClick={() => onSelectRoom(relatedRoom.id)}>
+    {relatedRoom.type === 'team' ? '团队协作' : '团队助手'}
+  </Button>;
   const current = choices.find(choice => choice.id === selected?.parentTeam || choice.id === selected?.id);
   const label = current?.name ?? (selected ? '其他对话' : '选择团队');
   const otherAttention = pending ? 0 : sections.teams.filter(team => team.id !== current?.id).reduce((total, team) => {
@@ -44,9 +51,9 @@ export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, atte
   }, 0);
   if (choices.length <= 1) {
     const only = choices[0];
-    return <div className="min-w-0"><p className="truncate text-sm font-medium">{selected ? label : only?.name ?? label}</p>{only && !only.target && only.room.access && only.room.access !== 'joined' && <p className="truncate text-xs text-muted-foreground">{LEADER_ACCESS_LABELS[only.room.access]}</p>}</div>;
+    return <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{selected ? label : only?.name ?? label}</p>{only && !only.target && only.room.access && only.room.access !== 'joined' && <p className="truncate text-xs text-muted-foreground">{LEADER_ACCESS_LABELS[only.room.access]}</p>}</div>{relatedEntry}</div>;
   }
-  return <DropdownMenu>
+  return <div className="flex min-w-0 items-center gap-2"><DropdownMenu>
     <DropdownMenuTrigger asChild>
       <Button variant="ghost" size="sm" className="h-9 min-w-0 max-w-full gap-2 px-2" aria-label={`切换团队，当前：${label}`}>
         <span className="truncate text-sm">{label}</span>
@@ -67,5 +74,5 @@ export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, atte
         </DropdownMenuRadioItem>)}
       </DropdownMenuRadioGroup>
     </DropdownMenuContent>
-  </DropdownMenu>;
+  </DropdownMenu>{relatedEntry}</div>;
 }
