@@ -471,11 +471,9 @@ export function MessageBubble({
     <div
       data-chat-message={message.isMe ? 'user' : 'agent'}
       className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
         // Mobile: tap the message to toggle the action bar (desktop uses hover).
-        setShowActions(v => !v);
+        if (window.matchMedia?.('(hover: none)').matches) setShowActions(v => !v);
       }}
     >
       {/* Avatar column: mirrors the bubble side (own messages on the right).
@@ -515,7 +513,7 @@ export function MessageBubble({
         )}
       </div>
 
-      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`} onMouseLeave={() => setIsHovered(false)}>
         {showAvatar && (
           <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 items-baseline gap-2 ${message.isMe ? 'justify-end' : ''}`}>
             <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
@@ -559,7 +557,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div data-chat-message-body onMouseEnter={() => setIsHovered(true)} className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
             <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea
@@ -823,9 +821,11 @@ export function MessageBubble({
           </button>
         )}
 
-        {actionsVisible && (
           <div
-            className={`z-10 mt-1 flex gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute ${message.isMe ? 'justify-end md:left-1' : 'justify-start md:right-1'} ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
+            role="group"
+            aria-label="消息操作"
+            className={`mt-1 flex min-h-7 items-center gap-1 text-muted-foreground ${actionsVisible ? 'visible' : 'invisible'} ${message.isMe ? 'self-end' : 'self-start'}`}
+            onMouseEnter={() => setIsHovered(true)}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (
@@ -854,7 +854,6 @@ export function MessageBubble({
               <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
             )}
           </div>
-        )}
       </div>
     </div>
   );
