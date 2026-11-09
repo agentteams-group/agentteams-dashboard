@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { preferredAgentRoom, withLeaderAccess, conversationSections, conversationStorageKey } from './agent-conversations';
 import type { RoomInfo } from './room-info';
 
-const ops: RoomInfo = { id: '!ops:test', name: '平台助手', type: 'manager', members: [], agentRole: 'operations' };
+const ops: RoomInfo = { id: '!ops:test', name: '平台助手', type: 'manager', members: [], agentRole: 'operations', access: 'joined' };
 const leader: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', members: [], agentRole: 'leader', parentTeam: 'design', access: 'joined' };
 const group: RoomInfo = { id: '!group:test', name: '设计团队', type: 'team', members: [] };
 
@@ -34,12 +34,14 @@ describe('preferredAgentRoom', () => {
     expect(preferredAgentRoom([another, leader], 2)?.id).toBe(another.id);
   });
 
-  it('requires confirmed membership for a Leader DM and retains other room entrances', () => {
+  it('requires confirmed membership for every conversation, including team groups', () => {
     const rooms = [ops, leader, group];
     expect(withLeaderAccess(rooms, undefined, 'checking')[1].access).toBe('checking');
     expect(withLeaderAccess(rooms, [], 'joined')[1].access).toBe('not-joined');
     expect(withLeaderAccess(rooms, [leader.id], 'joined')[1].access).toBe('joined');
     expect(withLeaderAccess(rooms, [leader.id], 'error')[1].access).toBe('error');
+    expect(withLeaderAccess(rooms, [], 'joined')[2].access).toBe('not-joined');
+    expect(withLeaderAccess(rooms, [group.id], 'joined')[2].access).toBe('joined');
     expect(preferredAgentRoom(withLeaderAccess(rooms, [], 'joined'), 2)).toBeUndefined();
     expect(withLeaderAccess(rooms, [], 'joined').map(room => room.id)).toEqual(rooms.map(room => room.id));
   });

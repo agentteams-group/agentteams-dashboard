@@ -46,7 +46,7 @@ describe('team switcher', () => {
 
   it('falls back to a team group instead of opening an unjoined Leader DM', async () => {
     const blocked = { ...leader('dev'), access: 'not-joined' as const };
-    const group: RoomInfo = { id: '!dev-group:test', name: 'dev群聊', type: 'team', parentTeam: 'dev', members: [] };
+    const group: RoomInfo = { id: '!dev-group:test', name: 'dev群聊', type: 'team', parentTeam: 'dev', members: [], access: 'joined' };
     const onSelectRoom = vi.fn();
     render(<ConversationSwitcher rooms={[leader('design'), blocked, group]} selectedRoomId={null} attention={{}} onSelectRoom={onSelectRoom} />);
     fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });

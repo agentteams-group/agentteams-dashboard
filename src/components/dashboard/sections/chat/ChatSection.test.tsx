@@ -78,7 +78,7 @@ import { conversationStorageKey } from './agent-conversations';
 beforeEach(() => {
   localStorage.clear();
   sessionMock.userId = '@user:test';
-  hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test'], state: 'joined', refetch: vi.fn() });
+  hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test', '!room1:test'], state: 'joined', refetch: vi.fn() });
 });
 
 const WORKER = {
@@ -183,6 +183,16 @@ describe('role-based assistant landing', () => {
     expect(useRoomMetaStore.getState().activeRoomId).toBe('!ops:test');
   });
 
+  it('does not show a team chat merely because a global admin can list its resource', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'private-team', teamRoomID: '!private-group:test', leaderDMRoomID: '!private-leader:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test'], state: 'joined', refetch: vi.fn() });
+    renderWithQueryClient();
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    expect(screen.queryByText(/private-team/)).toBeNull();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+  });
+
   it('opens the accessible leader DM for a team user without loading global managers', () => {
     sessionMock.userLevel = 2;
     hooksMock.useManagers.mockReturnValue({ data: undefined, isLoading: false });
@@ -219,7 +229,7 @@ describe('role-based assistant landing', () => {
     useHitlInboxStore.getState().setPendingChatRoomId('!leader:test');
     renderWithQueryClient();
     expect(screen.queryByTestId('chat-panel-stub')).toBeNull();
-    expect(screen.getAllByText(/尚未加入私聊/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('design')).toBeNull();
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!leader:test');
   });
 
@@ -230,12 +240,12 @@ describe('role-based assistant landing', () => {
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
     cleanup();
-    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test'], state: 'joined', refetch: vi.fn() });
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
     cleanup();
     sessionMock.userId = '@other:test';
-    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test'], state: 'joined', refetch: vi.fn() });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test'], state: 'joined', refetch: vi.fn() });
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
   });

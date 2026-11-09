@@ -148,6 +148,15 @@ describe('ChatRoom read-position dual-write', () => {
     expect(screen.getByRole('textbox')).toBeDisabled();
   });
 
+  it('addresses the Leader when a user sends an ordinary assistant message', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const onSendMessage = vi.fn();
+    renderChatRoom({ agentRole: 'leader', workerMatrixUserIds: ['@leader:test'], onSendMessage });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '你好' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(onSendMessage).toHaveBeenCalledWith('@leader 你好', undefined, [expect.objectContaining({ userId: '@leader:test' })]);
+  });
+
   it('writes both m.read and m.fully_read when the user reaches the bottom', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     useRoomMetaStore.setState({

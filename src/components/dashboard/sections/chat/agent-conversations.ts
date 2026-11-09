@@ -1,8 +1,8 @@
 import type { RoomInfo } from './room-info';
 
-/** Only use conversations returned by the current user's resource queries. */
+/** Resource visibility alone does not grant access to a Matrix conversation. */
 export function canOpenConversation(room: RoomInfo): boolean {
-  return room.agentRole !== 'leader' || room.access === 'joined';
+  return room.access === 'joined';
 }
 
 export const LEADER_ACCESS_LABELS = {
@@ -14,10 +14,10 @@ export const LEADER_ACCESS_LABELS = {
 
 export function withLeaderAccess(rooms: RoomInfo[], joinedRooms: string[] | undefined, state: NonNullable<RoomInfo['access']>): RoomInfo[] {
   const joined = new Set(joinedRooms);
-  return rooms.map(room => room.agentRole === 'leader' ? {
+  return rooms.map(room => ({
     ...room,
     access: state === 'joined' ? joined.has(room.id) ? 'joined' : 'not-joined' : state,
-  } : room);
+  }));
 }
 
 export function conversationStorageKey(homeserver: string, userId: string): string | null {

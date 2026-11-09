@@ -412,6 +412,7 @@ export function useGlobalMatrixSync(): void {
           }
         }
         if (resourcesChanged) {
+          void queryClient.invalidateQueries({ queryKey: ['chat-room-access'] });
           for (const key of ['agentteams-teams', 'agentteams-workers', 'agentteams-humans']) {
             void queryClient.invalidateQueries({ queryKey: [key] });
           }

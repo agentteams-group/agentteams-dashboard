@@ -439,22 +439,28 @@ export function ChatRoom({
     const parsed = parseOutboundCommand(trimmed);
     if (parsed) trimmed = parsed.body;
     const msgtype = parsed?.msgtype;
+    // Matrix runtimes may classify a two-party Leader room as a group until
+    // m.direct account data converges. Address the assistant explicitly so
+    // a normal chat message also works with requireMention enabled.
+    const addressed = agentRole === 'leader' && !mentions?.length
+      ? buildConfirmationReply(trimmed, workerMatrixUserIds?.[0], workerMatrixUserIds)
+      : { content: trimmed, mentions };
 
     if (onSendMessage) {
-      onSendMessage(trimmed, _options, mentions);
+      onSendMessage(addressed.content, _options, addressed.mentions);
       clearDraft();
       return;
     }
     if (!roomId || !isLoggedIn) return;
 
-    sendOutbound({ content: trimmed, options: _options, mentions, replyTo, msgtype, fileRefs });
+    sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
     clearDraft();
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);

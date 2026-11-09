@@ -43,7 +43,7 @@ export function ConversationSwitcher({ rooms, selectedRoomId, onSelectRoom, atte
     {relatedRoom.type === 'team' ? '团队协作' : '团队助手'}
   </Button>;
   const current = choices.find(choice => choice.id === selected?.parentTeam || choice.id === selected?.id);
-  const label = current?.name ?? (selected ? '其他对话' : '选择团队');
+  const label = current ? `${current.name}${selected?.type === 'team' ? ' · 团队协作' : ''}` : (selected ? '其他对话' : '选择团队');
   const otherAttention = pending ? 0 : sections.teams.filter(team => team.id !== current?.id).reduce((total, team) => {
     const room = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
     const counts = attention[room.id];

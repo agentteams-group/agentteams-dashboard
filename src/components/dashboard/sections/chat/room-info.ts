@@ -6,7 +6,7 @@ export interface RoomInfo {
   type: 'worker' | 'team' | 'manager' | 'human' | 'unknown';
   /** Product role of a direct assistant conversation. */
   agentRole?: 'operations' | 'leader';
-  /** Leader DM membership verified with the current user's own session. */
+  /** Room membership verified with the current user's own Matrix session. */
   access?: 'joined' | 'checking' | 'not-joined' | 'error' | 'disconnected';
   members: string[];
   parentTeam?: string;

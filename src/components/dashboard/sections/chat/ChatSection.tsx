@@ -122,7 +122,7 @@ export function ChatSection() {
   const roomMeta = useRoomMetaStore((s) => s.meta);
   const rooms = useMemo(
     () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)), roomAccess.joinedRooms, roomAccess.state)
-      .filter(room => userLevel >= 3 || room.agentRole !== 'operations'),
+      .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations')),
     [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel],
   );
   const taskFeed = useAssistantTaskFeed(undefined, rooms.some(room => room.agentRole || room.type === 'team'));
@@ -296,7 +296,7 @@ export function ChatSection() {
           </div>
         ))}
 
-        {roomAccess.state === 'error' && rooms.some(room => room.agentRole === 'leader') && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">团队私聊权限暂时无法核验，其他对话仍可使用。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
+        {roomAccess.state === 'error' && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">对话成员身份暂时无法核验，请重试。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
         {pendingChatRoomId && rooms.some(room => room.id === pendingChatRoomId && !canOpenConversation(room)) && <p role="status" className="mx-4 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{LEADER_ACCESS_LABELS[rooms.find(room => room.id === pendingChatRoomId)!.access as keyof typeof LEADER_ACCESS_LABELS]}</p>}
         {/* Login banner */}
         {!isLoggedIn && (
