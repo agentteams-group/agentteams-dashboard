@@ -8,7 +8,9 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { GroupedMessage } from '../grouper/MainGrouper';
 import { formatTime } from '../format';
@@ -39,6 +41,7 @@ interface RailTick {
   count: number;
   label: string;
   unread: boolean;
+  message: DisplayMessage | null;
 }
 
 /**
@@ -80,7 +83,7 @@ function buildTicks(items: GroupedMessage[], tickLimit: number): RailTick[] {
       : first
         ? `${first.senderShort} · ${formatTime(first.timestamp)}${span > 1 ? `（${span} 条）` : ''}`
         : `第 ${start + 1} 条`;
-    ticks.push({ index: start, count: span, label, unread });
+    ticks.push({ index: start, count: span, label, unread, message: first ?? null });
   }
 
   return ticks;
@@ -97,6 +100,8 @@ export const TimelineRail = forwardRef<TimelineRailHandle, TimelineRailProps>(fu
   const [range, setRange] = useState<{ start: number; end: number } | null>(null);
   const [railHeight, setRailHeight] = useState(0);
   const railRef = useRef<HTMLElement>(null);
+  const previewId = useId();
+  const [preview, setPreview] = useState<{ index: number; top: number; right: number } | null>(null);
   const mounted = items.length >= MIN_ITEMS;
 
   useImperativeHandle(ref, () => ({
@@ -124,11 +129,16 @@ export const TimelineRail = forwardRef<TimelineRailHandle, TimelineRailProps>(fu
   const ticks = useMemo(() => buildTicks(items, tickLimitFor(railHeight)), [items, railHeight]);
 
   const jump = useCallback((index: number) => onJump(index), [onJump]);
+  const showPreview = (index: number, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    setPreview({ index, top: Math.min(Math.max(rect.top, 8), window.innerHeight - 180), right: window.innerWidth - rect.left + 12 });
+  };
 
   if (ticks.length === 0) return null;
+  const previewTick = preview ? ticks.find(tick => tick.index === preview.index) : undefined;
 
   return (
-    <nav
+    <><nav
       ref={railRef}
       aria-label="会话导航"
       data-testid="timeline-rail"
@@ -150,14 +160,29 @@ export const TimelineRail = forwardRef<TimelineRailHandle, TimelineRailProps>(fu
             key={tick.index}
             type="button"
             aria-label={tick.label}
-            title={tick.label}
+            aria-describedby={preview?.index === tick.index ? previewId : undefined}
             data-testid={`rail-tick-${tickIndex}`}
             onClick={() => jump(tick.index)}
+            onMouseEnter={(event) => showPreview(tick.index, event.currentTarget)}
+            onMouseLeave={() => setPreview(null)}
+            onFocus={(event) => showPreview(tick.index, event.currentTarget)}
+            onBlur={() => setPreview(null)}
             style={{ height: `${TICK_HEIGHT}px` }}
-            className={`pointer-events-auto shrink-0 cursor-pointer rounded-full transition-all duration-200 ease-out ${tone}`}
+            className={`relative pointer-events-auto shrink-0 cursor-pointer rounded-full transition-all duration-200 ease-out before:absolute before:-inset-y-[5px] before:-inset-x-1 ${tone}`}
           />
         );
       })}
     </nav>
+      {preview && previewTick && createPortal(
+        <div id={previewId} role="tooltip" style={{ top: preview.top, right: preview.right }} className="pointer-events-none fixed z-50 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-md">
+          <div className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <span>{previewTick.message?.senderShort ?? previewTick.label}</span>
+            {previewTick.message && <time dateTime={new Date(previewTick.message.timestamp).toISOString()}>{new Date(previewTick.message.timestamp).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</time>}
+          </div>
+          <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{previewTick.message?.content || previewTick.label}</p>
+          <p className="mt-2 text-xs text-muted-foreground">点击定位{previewTick.count > 1 ? ` · 此处包含 ${previewTick.count} 条` : ''}</p>
+        </div>, document.body,
+      )}
+    </>
   );
 });
