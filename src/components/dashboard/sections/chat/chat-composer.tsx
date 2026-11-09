@@ -215,6 +215,9 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Let the IME handle candidate selection, including Safari's 229 key code.
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+
     if (voiceBusy && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       return;
