@@ -20,6 +20,7 @@ it('counts raw submitted tasks separately and opens the matching team project', 
   fireEvent.click(screen.getByRole('button', { name: /submitted任务/ }));
   expect(useHitlInboxStore.getState().pendingProjectKey).toEqual({ id: 'project', team: 'team' });
   expect(navigate).toHaveBeenCalledWith('tasks');
+  expect(window.location.hash).toBe('#workbench/tasks?project=project');
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 

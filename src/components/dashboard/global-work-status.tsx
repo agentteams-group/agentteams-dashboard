@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { workflowTaskNotes } from '@/lib/assistant-task-notes';
+import { hashForSection } from '@/lib/nav-hash';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -42,6 +43,7 @@ export function GlobalWorkStatus({ onNavClick }: { onNavClick: (_section: string
               useHitlInboxStore.getState().setPendingProjectKey({ id: task.projectId, ...(task.teamId ? { team: task.teamId } : {}) });
               setOpen(null);
               onNavClick('tasks');
+              window.location.hash = `#${hashForSection('tasks')}?project=${encodeURIComponent(task.projectId)}`;
             }}>
               <span className="block font-medium">{task.title}</span>
               <span className="mt-1 block text-xs text-muted-foreground">{[task.projectTitle, task.assignee].filter(Boolean).join(' · ')}</span>
