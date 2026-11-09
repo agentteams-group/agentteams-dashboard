@@ -6,12 +6,17 @@ import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { HealthRing } from '@/components/dashboard/health-ring';
 import { useAgentHealth } from '@/hooks/use-agent-health';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { getRuntimeMeta } from '@/lib/runtime-meta';
+import { countToolCalls24h } from '@/lib/tool-call-counter';
+import { formatAgoZh, formatDurationZh } from '@/lib/worker-activity';
+import { useNowTick } from '@/hooks/use-now-tick';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 
 const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['名称', (w) => w.name],
   ['状态', (w) => w.state],
   ['运行时', (w) => RUNTIME_LABELS[w.runtime] || w.runtime],
+  ['运行时说明', (w) => getRuntimeMeta(w.runtime)?.description || '-'],
   ['模型', (w) => w.model || '-'],
   ['镜像', (w) => w.image || '-'],
   ['团队', (w) => w.team || '-'],
@@ -22,6 +27,7 @@ const DETAIL_FIELDS: Array<[string, (_w: WorkerResponse) => string]> = [
   ['容器管理', (w) => (w.containerManaged ? '是' : '否')],
   ['容器状态', (w) => w.containerState || '-'],
   ['消息', (w) => w.message || '-'],
+  ['最近任务', (w) => w.lastTaskSummary || '-'],
 ];
 
 /**
@@ -35,6 +41,12 @@ export function WorkerDetailDialog({
   worker: WorkerResponse | null;
   onOpenChange: (_open: boolean) => void;
 }) {
+  const now = useNowTick(30_000);
+  const activityFields = worker ? [
+    ['持续时长', worker.stateStartedAt ? formatDurationZh(worker.stateStartedAt, now) || '-' : '-'],
+    ['最近活动', worker.lastActivityAt ? formatAgoZh(worker.lastActivityAt, now) || '-' : '-'],
+    ['工具调用（24 小时）', `${countToolCalls24h(worker.name, now)} 次`],
+  ] : [];
   return (
     <Dialog open={!!worker} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[min(100%-2rem,40rem)] sm:max-w-[min(100%-2rem,40rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
@@ -49,14 +61,14 @@ export function WorkerDetailDialog({
               <RuntimeBadge runtime={worker.runtime} />
             </div>
             <WorkerHealthBreakdown worker={worker} />
-            {DETAIL_FIELDS.map(([label, read]) => (
+            {[...DETAIL_FIELDS.map(([label, read]) => [label, read(worker)]), ...activityFields].map(([label, value]) => (
               <div
                 key={label}
                 className="flex justify-between py-1 border-b border-border/50"
               >
                 <span className="text-muted-foreground">{label}</span>
                 <span className="font-mono text-xs max-w-[75%] text-right break-all">
-                  {read(worker)}
+                  {value}
                 </span>
               </div>
             ))}

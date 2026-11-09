@@ -103,7 +103,8 @@ describe('HumansSection 详情 / 编辑入口', () => {
 
   it('卡片「编辑」按钮 → 右侧编辑抽屉（标题 编辑人员 + 四卡）', async () => {
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: '编辑 alice' }));
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'alice 更多操作' }), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }));
 
     expect(await screen.findByText('编辑人员')).toBeInTheDocument();
     expect(screen.getByText('访问与权限')).toBeInTheDocument();
@@ -130,7 +131,8 @@ describe('HumansSection 详情 / 编辑入口', () => {
       expect(screen.queryByText('Human 详情 - alice')).not.toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑 alice' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'alice 更多操作' }), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }));
     expect(await screen.findByText('编辑人员')).toBeInTheDocument();
     expect(screen.getByText('访问与权限')).toBeInTheDocument();
   });

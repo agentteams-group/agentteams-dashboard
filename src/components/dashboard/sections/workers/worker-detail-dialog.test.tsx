@@ -42,4 +42,19 @@ describe('WorkerDetailDialog（只读详情）', () => {
     expect(screen.queryByText('运行时配置生效状态')).not.toBeInTheDocument();
     expect(screen.queryByText('已分发技能（磁盘文件）')).not.toBeInTheDocument();
   });
+
+  it('keeps activity and diagnostic information available in details', () => {
+    render(<WorkerDetailDialog worker={{ ...worker,
+      lastTaskSummary: '处理工单 #4821',
+      message: 'Skill assignment warning: missing skill',
+      stateStartedAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+      lastActivityAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    }} onOpenChange={() => {}} />);
+    expect(screen.getByText('处理工单 #4821')).toBeInTheDocument();
+    expect(screen.getByText('Skill assignment warning: missing skill')).toBeInTheDocument();
+    expect(screen.getByText('12 分钟')).toBeInTheDocument();
+    expect(screen.getByText('5 分钟前')).toBeInTheDocument();
+    expect(screen.getByText('工具调用（24 小时）')).toBeInTheDocument();
+    expect(screen.getByText('运行时说明')).toBeInTheDocument();
+  });
 });

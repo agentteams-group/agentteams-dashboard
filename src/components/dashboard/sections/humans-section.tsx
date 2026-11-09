@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, UserCheck, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Plus, UserCheck, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Select,
   SelectContent,
@@ -27,7 +28,6 @@ import { toast } from 'sonner';
 import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
-  computePhaseStats,
   filterHumans,
   sortHumans,
 } from './humans/human-selectors';
@@ -36,7 +36,6 @@ import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { HumanDrawer } from './humans/human-drawer';
-import { PhaseDistribution } from './humans/human-phase-distribution';
 
 function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
@@ -70,9 +69,9 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
       <CardContent className="p-0">
         <SectionEmptyState
           icon={UserCheck}
-          title={hasQuery ? '没有匹配的 Human' : '暂无 Human'}
+          title={hasQuery ? '没有匹配的用户' : '暂无用户'}
           // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
-          action={hasQuery ? undefined : { label: '创建第一个 Human', onClick: onCreate }}
+          action={hasQuery ? undefined : { label: '创建第一个用户', onClick: onCreate }}
         />
       </CardContent>
     </Card>
@@ -111,7 +110,6 @@ export function HumansSection() {
     () => sortHumans(filteredHumans, sortKey),
     [filteredHumans, sortKey],
   );
-  const phaseStats = useMemo(() => computePhaseStats(humans), [humans]);
 
   const handleExport = useCallback(() => {
     if (!humans) return;
@@ -151,34 +149,26 @@ export function HumansSection() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Humans"
-        description="管理人类用户和权限"
+        title={`用户${humans ? ` · ${humans.length}` : ''}`}
+        description="管理用户与访问权限"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!humans || humans.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !humans || humans.length === 0 },
+            ]} />
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Human
+              创建用户
             </Button>
           </div>
         }
       />
-
-      <PhaseDistribution stats={phaseStats} />
 
       {sortedHumans.length > 0 && (
         <div className="flex items-center justify-between gap-3 flex-wrap">

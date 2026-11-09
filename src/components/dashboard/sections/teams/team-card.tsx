@@ -1,9 +1,10 @@
 'use client';
 
-import { Bot, Eye, Pencil, Trash2, UserCheck, UserPlus } from 'lucide-react';
+import { Bot, Eye, UserPlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Popover,
   PopoverContent,
@@ -16,7 +17,6 @@ import {
 } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
-import { CopyButton } from '@/components/dashboard/copy-button';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 
 export function TeamCard({
@@ -77,7 +77,7 @@ export function TeamCard({
 
           <div className="space-y-1.5 text-sm">
             {team.description && (
-              <p className="text-muted-foreground text-xs line-clamp-2">{team.description}</p>
+              <p className="text-muted-foreground text-xs truncate">{team.description}</p>
             )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Leader</span>
@@ -94,22 +94,11 @@ export function TeamCard({
               </Tooltip>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Workers</span>
+              <span className="text-muted-foreground">成员就绪</span>
               <span className="text-xs">
                 {team.readyWorkers}/{team.totalWorkers}
               </span>
             </div>
-            {team.teamRoomID && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">房间</span>
-                <div className="flex items-center gap-1 min-w-0 ml-2">
-                  <span className="font-mono text-xs truncate max-w-[60%]">
-                    {team.teamRoomID}
-                  </span>
-                  <CopyButton text={team.teamRoomID} disabled={isDeleting} />
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
@@ -166,39 +155,11 @@ export function TeamCard({
                 </div>
               </PopoverContent>
             </Popover>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => onShowTopology(team)}
-              title="查看拓扑"
-              aria-label={`查看 ${team.name} 拓扑`}
-              disabled={isDeleting}
-            >
-              <UserCheck className="w-3 h-3" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => onEdit(team)}
-              aria-label={`编辑 ${team.name}`}
-              title="编辑"
-              disabled={isDeleting}
-            >
-              <Pencil className="w-3 h-3" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:text-destructive"
-              onClick={() => onDelete(team.name)}
-              aria-label={`删除 ${team.name}`}
-              title="删除"
-              disabled={isDeleting}
-            >
-              <Trash2 className="w-3 h-3" aria-hidden="true" />
-            </Button>
+            <ResourceListMenu label={`${team.name} 更多操作`} disabled={isDeleting} items={[
+              { label: '查看拓扑', onSelect: () => onShowTopology(team) },
+              { label: '编辑', onSelect: () => onEdit(team) },
+              { label: '删除', onSelect: () => onDelete(team.name), destructive: true },
+            ]} />
           </div>
         </CardContent>
       </Card>

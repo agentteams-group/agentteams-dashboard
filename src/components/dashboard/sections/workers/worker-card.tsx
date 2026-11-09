@@ -1,37 +1,14 @@
 'use client';
 
 import { motion, useReducedMotion } from 'framer-motion';
-import { Bot, CheckSquare, Eye, Moon, RefreshCw, Square, Sun } from 'lucide-react';
+import { CheckSquare, Eye, Square } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { WorkerSessionName } from './worker-session-name';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
-import { HealthRingCompact } from '@/components/dashboard/health-ring';
-import { useAgentHealth } from '@/hooks/use-agent-health';
-import { useNowTick } from '@/hooks/use-now-tick';
-import { getRuntimeMeta } from '@/lib/runtime-meta';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
-import { countToolCalls24h } from '@/lib/tool-call-counter';
-import {
-  buildStatusNarrative,
-  formatAgoZh,
-  formatDurationZh,
-  healthTierLabel,
-  NO_DATA,
-  truncateCell,
-} from '@/lib/worker-activity';
 import type { WorkerResponse } from '@/lib/agentteams-api';
-
-function VitalCell({ label, value, fullValue }: { label: string; value: string; fullValue?: string }) {
-  return (
-    <div className="min-w-0" title={fullValue && fullValue !== value ? fullValue : undefined}>
-      <p className="text-xs leading-4 text-muted-foreground">{label}</p>
-      <p className="truncate text-xs leading-5">{value}</p>
-    </div>
-  );
-}
 
 function canSleep(worker: WorkerResponse): boolean {
   return worker.phase === 'Running' || worker.phase === 'Ready';
@@ -70,18 +47,7 @@ export function WorkerCard({
   isRestarting?: boolean;
   isDeleting: boolean;
 }) {
-  const health = useAgentHealth(worker);
-  const now = useNowTick(30_000);
   const reduceMotion = useReducedMotion();
-
-  const runtimeMeta = getRuntimeMeta(worker.runtime);
-  const RuntimeIcon = runtimeMeta?.icon ?? Bot;
-  const narrative = buildStatusNarrative(worker, now);
-
-  const taskText = worker.lastTaskSummary || worker.message || '';
-  const durationText = worker.stateStartedAt ? formatDurationZh(worker.stateStartedAt, now) : null;
-  const activityText = worker.lastActivityAt ? formatAgoZh(worker.lastActivityAt, now) : null;
-  const toolCallCount = countToolCalls24h(worker.name, now);
 
   const sleeping = canWake(worker);
 
@@ -128,7 +94,7 @@ export function WorkerCard({
           </div>
         )}
         <CardContent className={`p-4 ${isDeleting ? 'pointer-events-none' : ''}`}>
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between gap-2 mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={(event) => {
@@ -154,67 +120,21 @@ export function WorkerCard({
               <WorkerSessionName worker={worker} />
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <RuntimeBadge runtime={worker.runtime} withTooltip />
-              {health && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div aria-label={`${healthTierLabel(health.overall, worker.phase)}，${health.overall} 分`}>
-                      <HealthRingCompact score={health.overall} size={24} />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs font-medium">
-                      {healthTierLabel(health.overall, worker.phase)}（{health.overall} 分）
-                    </p>
-                    <p className="text-xs text-muted-foreground">可用性 {health.availability} · 稳定性 {health.stability} · 就绪度 {health.readiness}</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
               <PhaseBadge kind="worker" phase={worker.phase} />
             </div>
           </div>
 
-          {/* Vitals strip: 最近任务 / 持续时长 / 最近活动 / 工具调用 */}
-          <div className="grid grid-cols-4 gap-2 rounded-md bg-muted/40 px-2 py-1.5 mb-2" data-testid="vitals-strip">
-            <VitalCell label="最近任务" value={taskText ? truncateCell(taskText) : NO_DATA} fullValue={taskText || undefined} />
-            <VitalCell label="持续时长" value={durationText ?? NO_DATA} />
-            <VitalCell label="最近活动" value={activityText ?? NO_DATA} />
-            <VitalCell label="工具调用" value={toolCallCount > 0 ? `${toolCallCount} 次` : NO_DATA} />
+          <div className="mb-3 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <RuntimeBadge runtime={worker.runtime} />
+            <span className="shrink-0">团队</span>
+            <span className="truncate" title={worker.team}>{worker.team || '未分组'}</span>
           </div>
-
-          {/* Status narrative: what it is doing, in ops language */}
-          <p className="mb-2 truncate text-xs text-foreground/80" title={narrative} data-testid="status-narrative">
-            {narrative}
-          </p>
-
-          {/* Runtime capability strip */}
-          <div className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="runtime-feature">
-            <RuntimeIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
-            <span className="shrink-0 font-medium">{RUNTIME_LABELS[worker.runtime] || worker.runtime}</span>
-            <span className="truncate" title={runtimeMeta?.description}>
-              {runtimeMeta?.description ?? '未登记的运行时'}
-            </span>
-          </div>
-
-          <div className="space-y-1.5 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">模型</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="font-mono text-xs truncate ml-2 cursor-help">
-                    {worker.model || '-'}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>完整模型名: {worker.model || '未设置'}</TooltipContent>
-              </Tooltip>
-            </div>
-            {worker.team && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">团队</span>
-                <span className="text-xs truncate ml-2">{worker.team}</span>
-              </div>
-            )}
-          </div>
+          {worker.lastTaskSummary && (
+            <p className="mb-3 truncate text-xs" title={worker.lastTaskSummary}>{worker.lastTaskSummary}</p>
+          )}
+          {worker.message && (
+            <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">有运行提示，查看详情</p>
+          )}
 
           <div className="flex items-center gap-1.5 mt-auto pt-3 border-t border-border">
             <Button
@@ -229,37 +149,11 @@ export function WorkerCard({
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs flex-1"
-              onClick={(event) => {
-                event.stopPropagation();
-                onRestart();
-              }}
-              disabled={isActionPending || isRestarting || isDeleting}
-            >
-              <RefreshCw className={`w-3 h-3 mr-1 ${isRestarting ? 'animate-spin' : ''}`} aria-hidden="true" />
-              重启
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs flex-1"
-              onClick={(event) => {
-                event.stopPropagation();
-                if (sleeping) onWake();
-                else onSleep();
-              }}
-              disabled={isActionPending || isDeleting || (!sleeping && !canSleep(worker))}
-            >
-              {sleeping ? (
-                <Sun className="w-3 h-3 mr-1" aria-hidden="true" />
-              ) : (
-                <Moon className="w-3 h-3 mr-1" aria-hidden="true" />
-              )}
-              {sleeping ? '唤醒' : '休眠'}
-            </Button>
+            <ResourceListMenu label={`${worker.name} 更多操作`} disabled={isDeleting} items={[
+              { label: '重启', onSelect: onRestart, disabled: isActionPending || isRestarting },
+              { label: sleeping ? '唤醒' : '休眠', onSelect: sleeping ? onWake : onSleep,
+                disabled: isActionPending || (!sleeping && !canSleep(worker)) },
+            ]} />
           </div>
         </CardContent>
       </Card>

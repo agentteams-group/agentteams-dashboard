@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List, X } from 'lucide-react';
+import { Plus, Users, ArrowUpDown, LayoutGrid, List, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Select,
   SelectContent,
@@ -42,7 +43,6 @@ import { TeamCreateDialog } from './teams/team-create-dialog';
 import { TeamEditDialog, type TeamEditForm } from './teams/team-edit-dialog';
 import { TeamDrawer } from './teams/team-drawer';
 import { TeamTopologyDialog } from './teams/team-topology-dialog';
-import { TopologyOverview } from './teams/team-topology-overview';
 import { PaginationFooter } from './teams/team-pagination';
 
 function TeamsSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
@@ -272,25 +272,17 @@ export function TeamsSection() {
 
   return (
     <div className="space-y-6">
-      <TopologyOverview />
-
       <SectionHeader
-        title="团队"
+        title={`团队${teams ? ` · ${teams.length}` : ''}`}
         description="管理团队和协作配置"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!teams || teams.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !teams || teams.length === 0 },
+            ]} />
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
