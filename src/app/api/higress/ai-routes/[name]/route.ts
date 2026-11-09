@@ -1,9 +1,10 @@
-// PUT/DELETE /api/higress/ai-routes/[name] — Single AI Route operations
+import { callControllerGateway } from '../../controller-helper';
+// PUT/DELETE /api/higress/ai-routes/[name] — Single AI Route operations via Controller
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse, prepareAiRoutePayload } from '../../proxy-helper';
+import { higressErrorResponse, higressProxyErrorResponse } from '../../proxy-helper';
 import { requireHigressConsoleAccess } from '../../access';
 import { validateAiRoutePayload } from '@/lib/higress-api';
-import { getSessionCookie, unwrapData } from '../../helpers';
+import { unwrapData } from '../../helpers';
 
 // PUT — Update an AI route
 export async function PUT(
@@ -14,14 +15,14 @@ export async function PUT(
   try {
     const rejected = await requireHigressConsoleAccess(request);
     if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
+
     const body: unknown = await request.json().catch(() => null);
     const validationErrors = validateAiRoutePayload(body, true);
     if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
-    const { response, body: resBody } = await callHigressConsole(
+    const { response, body: resBody } = await callControllerGateway(request,
       `/v1/ai/routes/${encodeURIComponent(name)}`,
-      { method: 'PUT', body: prepareAiRoutePayload(body as Record<string, unknown>), cookie }
+      { method: 'PUT', body: body as Record<string, unknown> }
     );
 
     if (!response.ok) {
@@ -43,10 +44,10 @@ export async function DELETE(
   try {
     const rejected = await requireHigressConsoleAccess(request);
     if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
-    const { response, body } = await callHigressConsole(
+
+    const { response, body } = await callControllerGateway(request,
       `/v1/ai/routes/${encodeURIComponent(name)}`,
-      { method: 'DELETE', cookie }
+      { method: 'DELETE' }
     );
 
     if (!response.ok) {

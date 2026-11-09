@@ -22,11 +22,7 @@ interface LoginPageProps {
 export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [controllerToken, setControllerToken] = useState('');
   const [tokenOnlyToken, setTokenOnlyToken] = useState('');
-  const [adminVisible, setAdminVisible] = useState(false);
   const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +41,6 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
         body: JSON.stringify({
           username,
           password,
-          ...(adminUsername ? { adminUsername, adminPassword } : {}),
-          ...(controllerToken ? { controllerToken } : {}),
         }),
       });
 
@@ -137,7 +131,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
             <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
               <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" />
               <span>
-                登录成功但数据面凭据被拒绝：请检查 Controller 服务账号 token / 网关认证，或使用 Controller token 登录
+                登录凭据被 Controller 拒绝，请重新登录。若仍无法访问，请联系管理员检查 Human 权限和后端配置。
               </span>
             </div>
           )}
@@ -163,52 +157,6 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               disabled={isLoading}
             />
-          </div>
-          <div className="space-y-1.5">
-            <button
-              type="button"
-              onClick={() => setAdminVisible((v) => !v)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {adminVisible ? '收起高级登录选项' : '高级登录选项'}
-            </button>
-            {adminVisible && (
-              <div className="space-y-2">
-                <Input
-                  id="admin-username"
-                  placeholder="管理员账号"
-                  value={adminUsername}
-                  onChange={(e) => setAdminUsername(e.target.value)}
-                  disabled={isLoading}
-                />
-                <Input
-                  id="admin-password"
-                  type="password"
-                  placeholder="管理员密码"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  disabled={isLoading}
-                />
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <div className="h-px flex-1 bg-border" />
-                  或
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-                <Input
-                  id="controller-token"
-                  type="password"
-                  placeholder="Controller 管理员 token（与上两种方式二选一）"
-                  value={controllerToken}
-                  onChange={(e) => setControllerToken(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  disabled={isLoading}
-                />
-                <p className="text-xs text-muted-foreground">
-                  仅在管理员要求额外验证时填写。普通团队账号无需填写。
-                </p>
-              </div>
-            )}
           </div>
           <div className="space-y-1.5">
             <button

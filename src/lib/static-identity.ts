@@ -220,10 +220,21 @@ export async function resolveStaticIdentity(
   let allNetworkErrors = true;
 
   for (const base of bases) {
-    const controllerAuth = backendAuthHeader('controller', base);
+    const me = await probe(`${base}/api/v1/me`, token);
+    if ('networkError' in me) continue;
+    allNetworkErrors = false;
+    if (me.status === 200) {
+      const human = await me.json() as { name?: string; permissionLevel?: number; accessibleTeams?: string[] } | null;
+      if (human?.name && (human.permissionLevel === 1 || human.permissionLevel === 2 || human.permissionLevel === 3)) {
+        const identity: StaticIdentity = { name: human.name, level: human.permissionLevel === 1 ? 3 : human.permissionLevel === 2 ? 2 : 1, teams: human.accessibleTeams ?? [] };
+        remember(key, identity);
+        return { ok: true, identity };
+      }
+      return { ok: 'invalid', detail: 'Controller 返回了无效的 Human 身份' };
+    }
     // 1) admin-grade probe (list humans: L2/L3 tokens are 403 by the
     //    authorizer — the same discriminator login uses).
-    const humans = await probe(`${base}/api/v1/humans`, token, controllerAuth);
+    const humans = await probe(`${base}/api/v1/humans`, token);
     if ('networkError' in humans) continue; // failover to the next controller
     allNetworkErrors = false;
 
@@ -235,7 +246,7 @@ export async function resolveStaticIdentity(
 
     // 2) team-scope (L2): ListTeams is 200 for team humans and returns the
     //    user's OWN accessibleTeams (server-side filtered).
-    const teams = await probe(`${base}/api/v1/teams`, token, controllerAuth);
+    const teams = await probe(`${base}/api/v1/teams`, token);
     if (!('networkError' in teams) && teams.status === 200) {
       const data = (await teams.json()) as { teams?: { name?: string }[] } | null;
       const names = (data?.teams ?? [])
@@ -257,7 +268,7 @@ export async function resolveStaticIdentity(
     //    scopes to team membership), so a NON-EMPTY /workers list here is
     //    the L3 worker-scope signature (#1220 §2/Q2); an empty list keeps
     //    the (valid) L2 classification with no teams.
-    const workers = await probe(`${base}/api/v1/workers`, token, controllerAuth);
+    const workers = await probe(`${base}/api/v1/workers`, token);
     if (!('networkError' in workers) && workers.status === 200) {
       const data = (await workers.json()) as { workers?: unknown[] } | null;
       const list = Array.isArray(data?.workers) ? data.workers : [];

@@ -1,56 +1,32 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment node
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { requireHigressConsoleWriteAccess } from './access';
-import { validateHigressSession } from '@/lib/api-auth';
-import { getHigressConsoleURL } from './proxy-helper';
+import { createSession, SESSION_COOKIE_NAME, __resetSessionStoreForTests } from '@/lib/dashboard-session';
 
-vi.mock('@/lib/api-auth', () => ({
-  validateHigressSession: vi.fn(),
-}));
-
-vi.mock('./proxy-helper', () => ({
-  getHigressConsoleURL: vi.fn(),
-}));
-
-const mockValidateHigressSession = vi.mocked(validateHigressSession);
-const mockGetHigressConsoleURL = vi.mocked(getHigressConsoleURL);
-
-describe('Higress Console write access', () => {
-  afterEach(() => {
-    vi.resetAllMocks();
+describe('Controller gateway access', () => {
+  beforeEach(() => {
+    vi.stubEnv('DASHBOARD_SESSION_SECRET', 'a'.repeat(64));
+    vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'direct');
+    __resetSessionStoreForTests();
   });
-
-  it('rejects writes when the Console deployment configuration is invalid', async () => {
-    mockGetHigressConsoleURL.mockImplementation(() => {
-      throw new Error('Higress Console deployment configuration error: Console host is not allowed');
-    });
-
-    const result = await requireHigressConsoleWriteAccess(
-      new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST' })
-    );
-
-    expect(result?.status).toBe(503);
+  afterEach(() => { vi.unstubAllEnvs(); });
+  function request(level?: number) {
+    const headers = new Headers();
+    if (level) {
+      const { cookieValue } = createSession({ user: 'alice', crLevel: level, credential: { kind: 'matrix', token: 'own-token' } });
+      headers.set('cookie', `${SESSION_COOKIE_NAME}=${cookieValue}`);
+    }
+    return new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST', headers });
+  }
+  it('rejects unauthenticated requests', async () => {
+    expect((await requireHigressConsoleWriteAccess(request()))?.status).toBe(401);
   });
-
-  it('rejects writes without a valid Console session', async () => {
-    mockGetHigressConsoleURL.mockReturnValue('https://console.example.test');
-    mockValidateHigressSession.mockResolvedValue({ valid: false, user: null });
-
-    const result = await requireHigressConsoleWriteAccess(
-      new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST' })
-    );
-
-    expect(result?.status).toBe(401);
+  it('rejects L2 requests', async () => {
+    expect((await requireHigressConsoleWriteAccess(request(2)))?.status).toBe(403);
   });
-
-  it('allows writes with valid deployment configuration and session', async () => {
-    mockGetHigressConsoleURL.mockReturnValue('https://console.example.test');
-    mockValidateHigressSession.mockResolvedValue({ valid: true, user: { name: 'admin', level: 3 } });
-
-    const result = await requireHigressConsoleWriteAccess(
-      new NextRequest('http://dashboard.test/api/higress/ai-providers', { method: 'POST' })
-    );
-
-    expect(result).toBeNull();
+  it('allows L1 without any Console cookie or Dashboard Console configuration', async () => {
+    vi.stubEnv('AGENTTEAMS_AI_GATEWAY_ADMIN_URL', 'invalid');
+    expect(await requireHigressConsoleWriteAccess(request(1))).toBeNull();
   });
 });

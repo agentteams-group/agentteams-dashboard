@@ -33,6 +33,7 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
   afterEach(() => {
     __resetSessionStoreForTests();
     delete process.env.DASHBOARD_SESSION_SECRET;
+    vi.unstubAllGlobals();
   });
 
   it('reports unauthenticated without a session cookie', async () => {
@@ -53,6 +54,7 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
   });
 
   it('reports the L2 (Matrix) session as level 2 / matrix mode with the human name', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ name: 'bob', permissionLevel: 2, accessibleTeams: ['biz-team'] })));
     const { cookieValue } = createSession({
       user: 'bob',
       crLevel: 2,
@@ -104,5 +106,19 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
   it('ignores unrelated cookies (no session cookie present)', async () => {
     const data = await (await GET(requestWith('_hi_sess=abc'))).json();
     expect(data).toEqual({ authenticated: false });
+  });
+
+  it('refreshes a downgraded Human session from Controller without a Console probe', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ name: 'alice', permissionLevel: 2, accessibleTeams: [] })));
+    const { cookieValue } = createSession({ user: 'alice', crLevel: 1, credential: { kind: 'matrix', token: 'alice-token' } });
+    const data = await (await GET(requestWith(`${SESSION_COOKIE_NAME}=${cookieValue}`))).json();
+    expect(data.level).toBe(2);
+    expect(data.higressSession).toBe(false);
+  });
+
+  it('does not treat a revoked Human identity as authenticated', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 401 })));
+    const { cookieValue } = createSession({ user: 'alice', crLevel: 1, credential: { kind: 'matrix', token: 'alice-token' } });
+    expect(await (await GET(requestWith(`${SESSION_COOKIE_NAME}=${cookieValue}`))).json()).toEqual({ authenticated: false });
   });
 });

@@ -1,8 +1,9 @@
+vi.mock('../controller-helper', () => ({ callControllerGateway: vi.fn() }));
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { createSession, SESSION_COOKIE_NAME, __resetSessionStoreForTests } from '@/lib/dashboard-session';
-import { callHigressConsole } from '../proxy-helper';
+import { callControllerGateway as callHigressConsole } from '../controller-helper';
 import { requireHigressConsoleAccess } from '../access';
 
 vi.mock('../proxy-helper', () => ({
@@ -22,7 +23,7 @@ describe('AI provider collection route', () => {
     mockRequireAccess.mockResolvedValue(null);
   });
 
-  it('masks provider tokens and forwards the session cookie', async () => {
+  it('masks provider tokens and forwards the user request to Controller', async () => {
     mockCallHigressConsole.mockResolvedValue({
       response: new Response(null, { status: 200 }),
       body: { providers: [{ name: 'openai', type: 'openai', tokens: ['secret-a', 'secret-b'] }] },
@@ -36,13 +37,12 @@ describe('AI provider collection route', () => {
     await expect(response.json()).resolves.toEqual({
       providers: [{ name: 'openai', type: 'openai', tokenCount: 2 }],
     });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/providers', {
       method: 'GET',
-      cookie: 'higress_session=session-value',
     });
   });
 
-  it('falls back to the server-bound Console session when the browser cookie has none', async () => {
+  it('does not require a browser Console cookie', async () => {
     vi.stubEnv('DASHBOARD_SESSION_SECRET', 'a'.repeat(64));
     __resetSessionStoreForTests();
     const { cookieValue } = createSession({
@@ -61,9 +61,8 @@ describe('AI provider collection route', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/providers', {
       method: 'GET',
-      cookie: '_hi_sess=bound-1',
     });
   });
 
