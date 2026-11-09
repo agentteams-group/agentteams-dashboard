@@ -10,7 +10,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './sections/chat/room-info';
 
-const labels = ['助手', '工作台', '资产中心', '成员与团队'];
+const labels = ['助手', '我的团队', '工作台', '资产中心', '成员与团队'];
 const props = { activeSection: 'models', countMap: { 'my-workbench': 3 }, sectionsWithNotifications: new Set<string>(), onNavClick: vi.fn(), mode: 'embedded' as const };
 
 beforeEach(() => {
@@ -22,7 +22,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('compact workspace navigation', () => {
-  it('keeps four collapsible desktop groups and opens settings separately', () => {
+  it('separates assistants and my teams while keeping management groups', () => {
     render(<TooltipProvider><Sidebar {...props} collapsed={false} onToggleCollapse={vi.fn()} /></TooltipProvider>);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
     expect(Array.from(nav.querySelectorAll('[data-nav-group]')).map(button => button.getAttribute('aria-label'))).toEqual(labels);
@@ -36,10 +36,10 @@ describe('compact workspace navigation', () => {
     expect(useAgentTeamsStore.getState().settingsOpen).toBe(true);
   });
 
-  it('keeps the same four destinations in the mobile drawer', () => {
+  it('keeps the same five destinations in the mobile drawer', () => {
     render(<MobileSidebar {...props} open onClose={vi.fn()} />);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
-    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(4);
+    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(5);
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
     expect(props.onNavClick).not.toHaveBeenCalled();

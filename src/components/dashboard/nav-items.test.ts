@@ -17,6 +17,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       // 工作台
       'my-workbench',
       'chat',
+      'my-teams',
       'tasks',
       'artifacts',
       'coding-runs',

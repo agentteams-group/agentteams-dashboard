@@ -26,7 +26,7 @@ import {
   type DisplayMessage,
   type RoomMember,
 } from '@/hooks/use-matrix';
-import type { MatrixEvent } from '@/lib/matrix-api';
+import { MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
 import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -191,6 +191,9 @@ export function ChatRoom({
   const messagesQuery = useMatrixRoomMessages(roomId);
   const membersQuery = useMatrixRoomMembers(roomId);
   const stateQuery = useMatrixRoomState(roomId);
+  const ownMembership = stateQuery.data?.find((event) => event.type === 'm.room.member' && event.state_key === userId)?.content?.membership;
+  const membershipDenied = (ownMembership !== undefined && ownMembership !== 'join')
+    || (stateQuery.error instanceof MatrixRequestError && stateQuery.error.status === 403);
 
   // Element-style realtime: messages arrive through the global /sync loop,
   // so a failed initial fetch (or refetch) is the main way the list can go
@@ -426,6 +429,7 @@ export function ChatRoom({
   });
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[], fileRefs?: FileRef[]) => {
+    if (membershipDenied) return;
     const typed = content.trim();
     // A message may carry only file references (#87); it then falls back to a
     // short body so the send route's non-empty body contract still holds.
@@ -435,22 +439,28 @@ export function ChatRoom({
     const parsed = parseOutboundCommand(trimmed);
     if (parsed) trimmed = parsed.body;
     const msgtype = parsed?.msgtype;
+    // Matrix runtimes may classify a two-party Leader room as a group until
+    // m.direct account data converges. Address the assistant explicitly so
+    // a normal chat message also works with requireMention enabled.
+    const addressed = agentRole === 'leader' && !mentions?.length
+      ? buildConfirmationReply(trimmed, workerMatrixUserIds?.[0], workerMatrixUserIds)
+      : { content: trimmed, mentions };
 
     if (onSendMessage) {
-      onSendMessage(trimmed, _options, mentions);
+      onSendMessage(addressed.content, _options, addressed.mentions);
       clearDraft();
       return;
     }
     if (!roomId || !isLoggedIn) return;
 
-    sendOutbound({ content: trimmed, options: _options, mentions, replyTo, msgtype, fileRefs });
+    sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
     clearDraft();
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);
@@ -647,11 +657,12 @@ export function ChatRoom({
   }, [localMessages, patchLocal, sendOutbound]);
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
+    if (membershipDenied) return Promise.resolve(false);
     const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
     // answer 为空时只发自然语言（v1 工具确认 / 启发式卡），非空时额外带
     // com.agentteams.answer，让运行时能按 confirmation_id 对上本次选择。
     return sendOutbound({ ...reply, referenceEventId: eventId, answer });
-  }, [sendOutbound, workerMatrixUserIds]);
+  }, [sendOutbound, workerMatrixUserIds, membershipDenied]);
 
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
     removeLocal(message.id);
@@ -807,7 +818,7 @@ export function ChatRoom({
             isFetchingNextPage={messagesQuery.isFetchingNextPage}
             onLoadMore={loadMore}
             loading={messagesQuery.isLoading}
-            _canSend={canSend && isLoggedIn}
+            _canSend={canSend && isLoggedIn && !membershipDenied}
             _onSend={handleSend}
             onReply={handleReply}
             onCopy={handleCopy}
@@ -861,6 +872,7 @@ export function ChatRoom({
           )}
           <AgentActivityTrack roomId={roomId} />
           <TypingIndicator users={typingUsers} />
+          {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
             roomId={roomId}
             value={inputValue}
@@ -869,7 +881,7 @@ export function ChatRoom({
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
             placeholder={replyTo ? `回复 ${replyTo.senderShort}…` : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
-            disabled={!canSend || !isLoggedIn}
+            disabled={!canSend || !isLoggedIn || membershipDenied}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
             fileRefTarget={fileRefTarget}
             onFileUpload={handleFileUpload}

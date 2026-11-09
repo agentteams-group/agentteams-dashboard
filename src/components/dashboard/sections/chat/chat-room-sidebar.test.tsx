@@ -21,6 +21,7 @@ const room = (overrides: Partial<RoomInfo>): RoomInfo => ({
   name: 'Room',
   type: 'team',
   members: [],
+  access: 'joined',
   ...overrides,
 });
 

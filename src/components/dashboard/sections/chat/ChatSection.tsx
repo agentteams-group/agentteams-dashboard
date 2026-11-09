@@ -7,6 +7,7 @@ import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { useSectionStore } from '@/lib/section-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { AlertTriangle, PanelLeftOpen } from 'lucide-react';
@@ -56,7 +57,7 @@ function projectionHint(label: string, err: unknown): string {
   return `${label} 投影失败：${detail}`;
 }
 
-export function ChatSection() {
+export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 'teams' } = {}) {
   const {
     data: workers,
     isLoading: workersLoading,
@@ -87,7 +88,8 @@ export function ChatSection() {
   } = useHumans();
   const { isConnected, userLevel, sessionUser } = useAgentTeamsStore();
   const { isLoggedIn, userId, homeserver, logout } = useMatrixStore();
-  const selectionKey = conversationStorageKey(homeserver, userId || sessionUser || '');
+  const accountKey = conversationStorageKey(homeserver, userId || sessionUser || '');
+  const selectionKey = accountKey && view !== 'all' ? `${accountKey}:${view}` : accountKey;
   const roomAccess = useChatRoomAccess();
   const switcherRef = useRef<HTMLButtonElement>(null);
 
@@ -95,7 +97,7 @@ export function ChatSection() {
   const selectedRoomId = selection.scope === selectionKey ? selection.id : null;
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
-  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(true);
+  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(view !== 'teams');
   const [mobileRoomListOpen, setMobileRoomListOpen] = useState(false);
 
   // Keep SSR and the first client render consistent; narrow screens use a drawer.
@@ -120,19 +122,26 @@ export function ChatSection() {
   // badge. We don't re-sort on every keystroke — just pass the meta to
   // buildRooms and sort at the boundary.
   const roomMeta = useRoomMetaStore((s) => s.meta);
-  const rooms = useMemo(
+  const availableRooms = useMemo(
     () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)), roomAccess.joinedRooms, roomAccess.state)
-      .filter(room => userLevel >= 3 || room.agentRole !== 'operations'),
-    [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel],
+      .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
+      .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined })),
+    [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
   );
+  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view]);
   const taskFeed = useAssistantTaskFeed(undefined, rooms.some(room => room.agentRole || room.type === 'team'));
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
 
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
-    const room = rooms.find(room => room.id === roomId);
+    const room = availableRooms.find(room => room.id === roomId);
     if (!room || !canOpenConversation(room)) return;
+    if (view !== 'all' && (view === 'teams') !== (room.type === 'team')) {
+      useHitlInboxStore.getState().setPendingChatRoomId(roomId);
+      useSectionStore.getState().setActiveSection(room.type === 'team' ? 'my-teams' : 'chat');
+      return;
+    }
     if (remember) {
       useHitlInboxStore.getState().takePendingChatRoomId();
       if (selectionKey) {
@@ -143,7 +152,7 @@ export function ChatSection() {
     setSelection({ scope: selectionKey, id: roomId });
     setContextPanel(null);
     setMobileRoomListOpen(false);
-  }, [rooms, selectionKey]);
+  }, [availableRooms, selectionKey, view]);
 
 
   const projectionNotices = useMemo(() => {
@@ -226,25 +235,27 @@ export function ChatSection() {
   useEffect(() => {
     if (isLoading) return;
     if (pendingChatRoomId) {
-      const target = rooms.find(room => room.id === pendingChatRoomId);
+      const target = availableRooms.find(room => room.id === pendingChatRoomId);
       if (target && canOpenConversation(target)) {
         useHitlInboxStore.getState().takePendingChatRoomId();
         handleSelectRoom(pendingChatRoomId, false);
       }
       return;
     }
-    if (rooms.some(room => room.id === selectedRoomId && canOpenConversation(room))) return;
+    if (availableRooms.some(room => room.id === selectedRoomId && canOpenConversation(room))) return;
     if (roomAccess.state === 'checking' && rooms.some(room => room.agentRole === 'leader')) return;
     let rememberedId: string | null = null;
     if (selectionKey) {
       try { rememberedId = window.localStorage.getItem(selectionKey); } catch { /* Non-persistent browser. */ }
     }
-    const preferred = preferredAgentRoom(rooms, userLevel ?? 3, rememberedId);
+    const preferred = view === 'teams'
+      ? rooms.find(room => room.id === rememberedId) ?? [...rooms].sort((a, b) => (a.parentTeam ?? '').localeCompare(b.parentTeam ?? ''))[0]
+      : preferredAgentRoom(rooms, userLevel ?? 3, rememberedId);
     if (preferred) handleSelectRoom(preferred.id, false);
-  }, [isLoading, pendingChatRoomId, rooms, selectedRoomId, userLevel, handleSelectRoom, selectionKey, roomAccess.state]);
+  }, [isLoading, pendingChatRoomId, rooms, availableRooms, selectedRoomId, userLevel, handleSelectRoom, selectionKey, roomAccess.state, view]);
   const selectedRoom = useMemo(
-    () => rooms.find((r) => r.id === selectedRoomId && canOpenConversation(r)) || null,
-    [rooms, selectedRoomId],
+    () => availableRooms.find((r) => r.id === selectedRoomId && canOpenConversation(r)) || null,
+    [availableRooms, selectedRoomId],
   );
 
   if (hasError) {
@@ -279,7 +290,7 @@ export function ChatSection() {
           <Button ref={switcherRef} variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
             <PanelLeftOpen className="size-4" />
           </Button>
-          <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
+          <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
           <SyncStatusChip />
         </div>
         {projectionNotices.map((notice) => (
@@ -296,7 +307,7 @@ export function ChatSection() {
           </div>
         ))}
 
-        {roomAccess.state === 'error' && rooms.some(room => room.agentRole === 'leader') && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">团队私聊权限暂时无法核验，其他对话仍可使用。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
+        {roomAccess.state === 'error' && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">对话成员身份暂时无法核验，请重试。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
         {pendingChatRoomId && rooms.some(room => room.id === pendingChatRoomId && !canOpenConversation(room)) && <p role="status" className="mx-4 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{LEADER_ACCESS_LABELS[rooms.find(room => room.id === pendingChatRoomId)!.access as keyof typeof LEADER_ACCESS_LABELS]}</p>}
         {/* Login banner */}
         {!isLoggedIn && (
@@ -309,6 +320,8 @@ export function ChatSection() {
           {!isRoomListCollapsed && !narrowViewport && (
             <ChatRoomSidebar
               rooms={rooms}
+              title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined}
+              showInvites={view !== 'assistants'}
               selectedRoomId={selectedRoomId}
               onSelectRoom={handleSelectRoom}
               isLoggedIn={isLoggedIn}
@@ -326,7 +339,7 @@ export function ChatSection() {
             <DialogContent aria-modal="true" showCloseButton={false} className="inset-y-0 left-0 top-0 flex h-dvh w-fit max-w-[88vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-background p-0 sm:max-w-[88vw] [&>div]:h-full" onCloseAutoFocus={event => { event.preventDefault(); switcherRef.current?.focus(); }}>
               <DialogTitle className="sr-only">切换对话</DialogTitle>
               <DialogDescription className="sr-only">选择平台助手、团队助手或其他对话</DialogDescription>
-              <ChatRoomSidebar rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
+              <ChatRoomSidebar rooms={rooms} title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined} showInvites={view !== 'assistants'} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
             </DialogContent>
           </Dialog>
 
@@ -339,7 +352,7 @@ export function ChatSection() {
               <ChatPanel
                 key={selectedRoom.id}
                 room={selectedRoom}
-                rooms={rooms}
+                rooms={availableRooms}
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
                 taskFeed={taskFeed}
@@ -347,6 +360,7 @@ export function ChatSection() {
             ) : (
               <ChatEmptyState
                 isLoggedIn={isLoggedIn}
+                view={view}
                 onLoginClick={() => setShowLoginDialog(true)}
               />
             )}

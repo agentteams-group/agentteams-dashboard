@@ -8,6 +8,23 @@ afterEach(cleanup);
 const leader = (team: string): RoomInfo => ({ id: `!${team}:test`, name: `${team}助手`, type: 'manager', agentRole: 'leader', parentTeam: team, members: [], access: 'joined' });
 
 describe('team switcher', () => {
+  it('opens the team collaboration room directly and returns to the assistant', () => {
+    const assistant = leader('design');
+    const group: RoomInfo = { id: '!design-group:test', name: 'design团队房间', type: 'team', parentTeam: 'design', members: [] };
+    const onSelectRoom = vi.fn();
+    const { rerender } = render(<ConversationSwitcher rooms={[assistant, group]} selectedRoomId={assistant.id} attention={{}} onSelectRoom={onSelectRoom} />);
+    fireEvent.click(screen.getByRole('button', { name: '团队协作' }));
+    expect(onSelectRoom).toHaveBeenLastCalledWith(group.id);
+    rerender(<ConversationSwitcher rooms={[assistant, group]} selectedRoomId={group.id} attention={{}} onSelectRoom={onSelectRoom} />);
+    fireEvent.click(screen.getByRole('button', { name: '团队助手' }));
+    expect(onSelectRoom).toHaveBeenLastCalledWith(assistant.id);
+  });
+
+  it('does not offer an unjoined assistant from the team room', () => {
+    const group: RoomInfo = { id: '!design-group:test', name: 'design群聊', type: 'team', parentTeam: 'design', members: [] };
+    render(<ConversationSwitcher rooms={[{ ...leader('design'), access: 'not-joined' }, group]} selectedRoomId={group.id} attention={{}} onSelectRoom={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
+  });
   it('shows a single team without an unnecessary menu', () => {
     const room = leader('design');
     render(<ConversationSwitcher rooms={[room]} selectedRoomId={room.id} attention={{}} onSelectRoom={vi.fn()} />);
@@ -29,7 +46,7 @@ describe('team switcher', () => {
 
   it('falls back to a team group instead of opening an unjoined Leader DM', async () => {
     const blocked = { ...leader('dev'), access: 'not-joined' as const };
-    const group: RoomInfo = { id: '!dev-group:test', name: 'dev群聊', type: 'team', parentTeam: 'dev', members: [] };
+    const group: RoomInfo = { id: '!dev-group:test', name: 'dev群聊', type: 'team', parentTeam: 'dev', members: [], access: 'joined' };
     const onSelectRoom = vi.fn();
     render(<ConversationSwitcher rooms={[leader('design'), blocked, group]} selectedRoomId={null} attention={{}} onSelectRoom={onSelectRoom} />);
     fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });

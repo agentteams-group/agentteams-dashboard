@@ -40,6 +40,7 @@ import {
   parseRunEnding,
   parseToolGuardConfirmation,
   parseToolKeywordNotice,
+  parseTeamAdminSelection,
 } from './parser';
 import { isWorkflowPayload } from './workflow';
 
@@ -105,6 +106,11 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // loading placeholder while streaming (see parseA2uiMarkers).
   const markerBlocks = parseA2uiMarkers(body, formattedBody, isStreaming);
   if (markerBlocks) return markerBlocks;
+
+  if (!isMine) {
+    const selection = parseTeamAdminSelection(body);
+    if (selection) return selection.blocks;
+  }
 
   // 4. Tool Guard approval text → confirmation block.
   const confirmation = parseToolGuardConfirmation(body);

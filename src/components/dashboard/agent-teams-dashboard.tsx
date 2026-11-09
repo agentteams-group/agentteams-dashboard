@@ -53,6 +53,8 @@ import {
 } from '@/lib/plugins/types';
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
 import { buildRooms } from './sections/chat/room-builders';
+import { withLeaderAccess } from './sections/chat/agent-conversations';
+import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import styles from './workspace.module.css';
 import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 
@@ -97,11 +99,13 @@ export const sectionMap: Record<string, React.ComponentType> = {
   audit: AuditSection,
   tracing: TracingSection,
   chat: ChatSection,
+  'my-teams': ChatSection,
 };
 
 export function AgentTeamsDashboard() {
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
+  const isConversationSection = activeSection === 'chat' || activeSection === 'my-teams';
   const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -118,6 +122,7 @@ export function AgentTeamsDashboard() {
   const reconnectInterval = useAgentTeamsStore((s) => s.reconnectInterval);
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
+  const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const matrixSyncing = useMatrixStore((s) => s.isSyncing);
   const notifications = useNotificationStore((s) => s.notifications);
@@ -134,7 +139,8 @@ export function AgentTeamsDashboard() {
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
   const { data: humans } = useHumans();
-  const agentRooms = useMemo(() => buildRooms([], teams, managers).filter((room) => room.agentRole && (userLevel >= 3 || room.agentRole !== 'operations')), [teams, managers, userLevel]);
+  const conversationAccess = useChatRoomAccess();
+  const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? room.team?.admin ? room.team.admin.name === sessionUser : userLevel >= 3 : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, conversationAccess.joinedRooms, conversationAccess.state]);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Plugin system: discover + activate plugins once per session.
@@ -282,12 +288,13 @@ export function AgentTeamsDashboard() {
   const managerCount = managers?.length ?? 0;
   const roomMeta = useRoomMetaStore((s) => s.meta);
   const unreadRoomCount = useMemo(
-    () => Object.values(roomMeta).filter((m) => (m.unreadCount ?? 0) > 0).length,
-    [roomMeta],
+    () => agentRooms.filter(room => (roomMeta[room.id]?.unreadCount ?? 0) > 0).length,
+    [roomMeta, agentRooms],
   );
   const invitePending = useInviteStore((s) => s.invites);
   const inviteCount = Object.keys(invitePending).length;
-  const chatCount = unreadRoomCount + inviteCount;
+  const chatCount = unreadRoomCount;
+  const teamChatCount = (teams ?? []).filter(team => conversationAccess.joinedRooms?.includes(team.teamRoomID) && (roomMeta[team.teamRoomID]?.unreadCount ?? 0) > 0).length + inviteCount;
   // 「等我」徽标走统一口径（C-1），与待办横幅、我的工作台同一个数。
   const workbenchCount = usePendingTally().total;
 
@@ -296,8 +303,9 @@ export function AgentTeamsDashboard() {
     teams: teamCount,
     managers: managerCount,
     chat: chatCount,
+    'my-teams': teamChatCount,
     'my-workbench': workbenchCount,
-  }), [workerCount, teamCount, managerCount, chatCount, workbenchCount]);
+  }), [workerCount, teamCount, managerCount, chatCount, teamChatCount, workbenchCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();
@@ -427,9 +435,9 @@ export function AgentTeamsDashboard() {
               full height.
             */}
             <div
-              className={`flex-1 flex flex-col min-h-0 ${activeSection === 'chat' ? '' : 'bg-background'}`}
+              className={`flex-1 flex flex-col min-h-0 ${isConversationSection ? '' : 'bg-background'}`}
             >
-              {activeSection !== 'chat' && (
+              {!isConversationSection && (
                 <div className="px-5 py-3 md:px-6 bg-background">
                   <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Home className="w-3.5 h-3.5" />
@@ -442,11 +450,11 @@ export function AgentTeamsDashboard() {
                 </div>
               )}
 
-              {activeSection === 'chat' ? (
+              {isConversationSection ? (
                 <div className="flex-1 flex flex-col min-h-0">
                   <SectionErrorBoundary sectionName={activeLabel}>
                     <Suspense fallback={<SectionSkeleton />}>
-                      <ChatSection />
+                      <ChatSection key={activeSection} view={activeSection === 'my-teams' ? 'teams' : 'assistants'} />
                     </Suspense>
                   </SectionErrorBoundary>
                 </div>
@@ -476,7 +484,7 @@ export function AgentTeamsDashboard() {
               )}
             </div>
 
-            {activeSection !== 'chat' && (
+            {!isConversationSection && (
               <DashboardFooter
                 isConnected={isConnected}
                 connectionLatency={connectionLatency}
