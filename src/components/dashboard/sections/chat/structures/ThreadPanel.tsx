@@ -14,6 +14,7 @@ import {
   type DisplayMessage,
 } from '@/hooks/use-matrix';
 import { MessageBubble } from '../views/MessageBubble';
+import { useImeGuard } from '../use-ime-guard';
 import { buildAnswerContent, buildConfirmationReply, type ConfirmationAnswerField } from '../confirmation-reply';
 
 interface ThreadPanelProps {
@@ -32,6 +33,7 @@ export function ThreadPanel({
 }: ThreadPanelProps) {
   const { userId, isLoggedIn } = useMatrixStore();
   const [inputValue, setInputValue] = useState('');
+  const { isImeKey, onCompositionStart, onCompositionEnd } = useImeGuard();
   const [actionError, setActionError] = useState<string | null>(null);
 
   const threadQuery = useMatrixThreadMessages(roomId, rootMessage.id);
@@ -111,11 +113,12 @@ export function ThreadPanel({
   }, [isLoggedIn, sendMutation, roomId, rootMessage.id, workerMatrixUserIds]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isImeKey(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend]);
+  }, [handleSend, isImeKey]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -188,6 +191,8 @@ export function ThreadPanel({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={onCompositionStart}
+          onCompositionEnd={onCompositionEnd}
           placeholder={isLoggedIn ? '回复此话题... (Enter 发送, Shift+Enter 换行)' : '请先登录后再回复'}
           disabled={!isLoggedIn}
           rows={1}

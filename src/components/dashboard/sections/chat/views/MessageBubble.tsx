@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useImeGuard } from '../use-ime-guard';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
@@ -320,6 +321,7 @@ export function MessageBubble({
   senderStatus,
 }: MessageBubbleProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const ime = useImeGuard();
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -566,6 +568,7 @@ export function MessageBubble({
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={(e) => {
+                  if (ime.isImeKey(e)) return;
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     submitEdit();
@@ -573,6 +576,8 @@ export function MessageBubble({
                   if (e.key === 'Escape') cancelEdit();
                 }}
                 autoFocus
+                onCompositionStart={ime.onCompositionStart}
+                onCompositionEnd={ime.onCompositionEnd}
                 rows={2}
                 className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />

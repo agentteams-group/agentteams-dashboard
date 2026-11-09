@@ -10,6 +10,7 @@ import { filterEmoji } from './composer-commands';
 import { FileRefPickerDialog } from './components/FileRefPickerDialog';
 import type { FileRef } from '@/lib/file-refs';
 import { VoiceInput } from './voice-input';
+import { useImeGuard } from './use-ime-guard';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -100,6 +101,7 @@ export function ChatComposer({
     onMentionsChange?.(mentions);
   }, [mentions, onMentionsChange]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const ime = useImeGuard();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -215,6 +217,8 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (ime.isImeKey(e)) return;
+
     if (voiceBusy && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       return;
@@ -524,6 +528,8 @@ export function ChatComposer({
           }}
           onSelect={(e) => setCursorPos(e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={ime.onCompositionStart}
+          onCompositionEnd={ime.onCompositionEnd}
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
           aria-label="消息"
