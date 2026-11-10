@@ -66,7 +66,7 @@ function ConfigurationForm({ value, scope, onSave }: { value: ObservabilityView;
     finally { setBusy(false); }
   }
   return <div className="space-y-5">
-    <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">启用 Worker Tracing</p><p className="text-xs text-muted-foreground">默认关闭；开关保存后需应用到 Worker。</p></div><Switch aria-label="启用 Worker Tracing" checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} /></div>
+    <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">启用 Worker Tracing</p><p className="text-xs text-muted-foreground">默认关闭；保存后新建容器自动生效，已有容器需应用配置。</p></div><Switch aria-label="启用 Worker Tracing" checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} /></div>
     <label className="block space-y-1 text-xs">查询后端<Select value={draft.backend} onValueChange={(backend: 'langfuse' | 'agentloop') => update({ backend })}><SelectTrigger aria-label="查询后端" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="langfuse">Langfuse</SelectItem><SelectItem value="agentloop">阿里云 AgentLoop</SelectItem></SelectContent></Select></label>
     {draft.backend === 'langfuse' ? <div className="grid gap-3 sm:grid-cols-2">
       <label className="space-y-1 text-xs">Langfuse 服务端地址<Input aria-label="Langfuse 服务端地址" placeholder="https://langfuse.example.com" value={draft.langfuseUrl} onChange={(e) => update({ langfuseUrl: e.target.value })} /></label>
@@ -81,7 +81,7 @@ function ConfigurationForm({ value, scope, onSave }: { value: ObservabilityView;
     <div className="space-y-3">
       <label className="block space-y-1 text-xs">Collector OTLP/HTTP 地址<Input aria-label="Collector OTLP/HTTP 地址" placeholder="http://otel-collector:4318" value={draft.collectorEndpoint} onChange={(e) => update({ collectorEndpoint: e.target.value })} /></label>
       <label className="block space-y-1 text-xs">Collector Headers<Input aria-label="Collector Headers" type="password" autoComplete="new-password" placeholder={value.collectorHeadersConfigured ? '已配置，留空保留' : '可选：key=value，多项用逗号分隔'} value={draft.collectorHeaders} onChange={(e) => update({ collectorHeaders: e.target.value })} /></label>
-      <p className="text-xs text-muted-foreground">需预先部署已配置目标平台出口的 Collector，地址需从 Worker 网络可达；可配置同时上报 Langfuse 和 AgentLoop。Collector Headers 仅填写采集凭证，查询凭证保留在 Dashboard 服务端。</p>
+      <p className="text-xs text-muted-foreground">配置统一保存在 Controller。需预先部署已配置目标平台出口的 Collector，地址需从 Worker 网络可达。Collector Headers 仅填写采集凭证，查询凭证保留在 Controller。</p>
     </div>
     <label className="flex items-center justify-between gap-3 text-sm">采集模型和工具的输入输出<Switch aria-label="采集模型和工具的输入输出" checked={draft.captureContent} onCheckedChange={(captureContent) => update({ captureContent })} /></label>
     <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => void perform('test')}>测试连接</Button><Button disabled={busy} onClick={() => void perform('save')}>保存配置</Button><span className="self-center text-xs text-muted-foreground">{dirty ? '有未保存的修改' : value.revision === 'environment' ? '尚未保存配置' : '配置已保存'}</span></div>

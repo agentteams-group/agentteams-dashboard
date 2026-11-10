@@ -3,7 +3,7 @@ import { getControllerUrl, proxyToAgentTeams } from '@/app/api/agentteams/proxy-
 import { getSessionFromRequest } from './dashboard-session';
 import { readServerIdentity } from './server-auth';
 import { isStatelessAuthMode } from './static-mode';
-import { TracingError } from './langfuse-server';
+import { TracingError } from './tracing-error';
 import type { TraceScope } from './tracing-types';
 
 export async function getTraceScope(request: NextRequest): Promise<TraceScope> {

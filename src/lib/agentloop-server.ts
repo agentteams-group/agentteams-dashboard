@@ -1,7 +1,7 @@
 // AgentLoop raw traces live in the CMS Workspace's XTrace SLS store, not its trajectory store.
 import { createHmac } from 'node:crypto';
 import Credential from '@alicloud/credentials';
-import { observabilityUrl, readObservabilityConfig, validateAgentLoopConfig, type ObservabilityConfig } from './observability-config';
+import { observabilityUrl, validateAgentLoopConfig, type ObservabilityConfig } from './observability-config';
 import { traceInScope } from './tracing-scope';
 import { TracingError } from './tracing-error';
 import type { TraceDetail, TraceList, TraceObservation, TraceScope, TraceSummary } from './tracing-types';
@@ -121,7 +121,7 @@ async function allRows(config: ObservabilityConfig, query: string, from: number)
   throw new TracingError(503, 'AgentLoop 查询范围过大，请增加筛选；未返回不完整结果');
 }
 
-export async function listTraces(search: URLSearchParams, scope: TraceScope): Promise<TraceList> {
+export async function listTraces(search: URLSearchParams, scope: TraceScope, config: ObservabilityConfig): Promise<TraceList> {
   const current = search.get('page') ?? '1';
   if (!/^[1-9]\d{0,4}$/.test(current)) throw new TracingError(400, '无效页码');
   const worker = search.get('worker'); const team = search.get('team');
@@ -134,7 +134,6 @@ export async function listTraces(search: URLSearchParams, scope: TraceScope): Pr
   const conditions = [workerQuery(allowed), 'attributes.gen_ai.span.kind:"ENTRY"'];
   const fields = { session: 'gen_ai.session.id', runtime: 'agentteams.runtime', task: 'agentteams.task.id', team: 'agentteams.team.id', room: 'agentteams.room.id', project: 'agentteams.project.id' };
   for (const [filter, field] of Object.entries(fields)) if (search.get(filter)) conditions.push(term(`attributes.${field}`, search.get(filter)!));
-  const config = await readObservabilityConfig();
   const rows = await allRows(config, conditions.join(' AND '), search.get('session') ? 0 : Math.floor(Date.now() / 1000) - hours * 3600);
   const unique = new Map<string, TraceSummary>();
   for (const row of rows) {
@@ -147,10 +146,9 @@ export async function listTraces(search: URLSearchParams, scope: TraceScope): Pr
   return { data: data.slice((Number(current) - 1) * 20, Number(current) * 20), meta: { page: Number(current), totalPages: Math.ceil(data.length / 20), totalItems: data.length } };
 }
 
-export async function getTrace(id: string, scope: TraceScope): Promise<TraceDetail> {
+export async function getTrace(id: string, scope: TraceScope, config: ObservabilityConfig): Promise<TraceDetail> {
   if (!/^[a-f0-9]{32}$/i.test(id)) throw new TracingError(400, '无效 Trace ID');
   if (!scope.workers.length) throw new TracingError(404, 'Trace 不存在或无权访问');
-  const config = await readObservabilityConfig();
   const rows = (await allRows(config, `${workerQuery(scope)} AND ${term('traceId', id)}`, 0)).filter((r) => r.traceId === id);
   const root = rows.find((r) => attributes(r)['gen_ai.span.kind'] === 'ENTRY' && traceInScope(summary(r), scope));
   if (!root) throw new TracingError(404, 'Trace 不存在或无权访问');
