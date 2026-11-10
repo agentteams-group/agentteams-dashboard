@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // 9/17 装验反馈回归：任务看板项目视图**右栏详情独立滚动**——
@@ -146,13 +146,32 @@ it('opens the selected task detail and keeps populated groups at a fixed height'
   renderSection();
   const card = screen.getByRole('button', { name: /检查交付文件/ });
   expect(card.closest('[class*="h-[360px]"]')).not.toBeNull();
+  expect(within(card).queryByText('进行中')).toBeNull();
+  expect(within(card).getByLabelText('任务正在执行')).toHaveClass('motion-safe:animate-spin');
+  expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveClass('motion-safe:animate-pulse');
   fireEvent.click(card);
   expect(await screen.findByRole('dialog')).toBeInTheDocument();
   expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();
   expect(screen.getByText('报告.md')).toBeInTheDocument();
-  expect(screen.getByText('待验收')).toBeInTheDocument();
+  expect(within(screen.getByRole('dialog')).getByText('待验收')).toBeInTheDocument();
   cleanup();
   vi.unstubAllGlobals();
+  viewPreference.value = 'projects';
+  viewPreference.tasks = [];
+});
+
+it('separates lifecycle columns from attention states and places submitted tasks in review', () => {
+  viewPreference.value = 'kanban';
+  viewPreference.tasks = [{ runId: 'review-task', title: '待确认的报告', status: 'submitted', assignedTo: '审核', projectId: 'proj-1', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  renderSection();
+  const flow = screen.getByRole('region', { name: '任务流程' });
+  const attention = screen.getByRole('region', { name: '需要关注' });
+  expect(within(flow).getAllByText(/^(待办|已派发|进行中|待验收|已完成)$/).map(el => el.textContent)).toEqual(['待办', '已派发', '进行中', '待验收', '已完成']);
+  expect(within(attention).getAllByText(/^(阻塞|需修订|失败)$/).map(el => el.textContent)).toEqual(['阻塞', '需修订', '失败']);
+  const card = within(flow).getByRole('button', { name: /待确认的报告/ });
+  expect(card.closest('[class*="h-[360px]"]')).toHaveTextContent('待验收');
+  expect(within(card).queryByLabelText('任务正在执行')).toBeNull();
+  cleanup();
   viewPreference.value = 'projects';
   viewPreference.tasks = [];
 });
