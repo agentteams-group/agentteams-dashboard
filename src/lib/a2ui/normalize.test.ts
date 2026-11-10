@@ -544,3 +544,20 @@ describe('normalizeToBlocks missing body (#1436)', () => {
   });
 });
 
+
+describe('readable reference transport display', () => {
+  it('shows user text and a file block without exposing the transport instructions', async () => {
+    const { withFileReferences } = await import('../file-refs');
+    const refs = [{ name: '报告.pptx', key: 'default/docs/报告.pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+    const body = withFileReferences('看下这个', refs);
+    const blocks = normalizeToBlocks({ body, content: { 'com.agentteams.file_refs': { refs } }, isMine: true, isStreaming: false });
+    expect(blocks.filter(block => block.type === 'text').map(block => block.text).join('')).toBe('看下这个');
+    expect(blocks.filter(block => block.type === 'file_refs')).toHaveLength(1);
+    expect(body).toContain('default/docs/报告.pptx');
+  });
+  it('preserves arbitrary message text without matching structured references', () => {
+    const body = '引用的工作空间文件：这段是用户自己输入的';
+    const blocks = normalizeToBlocks({ body, content: {}, isMine: true, isStreaming: false });
+    expect(blocks[0].text).toBe(body);
+  });
+});

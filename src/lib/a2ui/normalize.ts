@@ -29,7 +29,7 @@
  */
 
 import type { ParsedA2uiBlock } from './parser';
-import { FILE_REFS_CONTENT_KEY, parseFileRefs } from '../file-refs';
+import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, parseFileRefs } from '../file-refs';
 import {
   parseA2uiMarkers,
   parseAgentRunBlocks,
@@ -185,8 +185,9 @@ export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // Matrix events with m.relates_to (replies / replaces) or structured
   // org.agentteams.run payloads may omit `body`. Callers historically passed
   // that through, and parser matchAll then crashed the chat timeline (#1436).
-  const rawBody = typeof input.body === 'string' ? input.body : '';
-  const rawFormattedBody = typeof input.formattedBody === 'string' ? input.formattedBody : undefined;
+  const fileRefs = parseFileRefs(input.content[FILE_REFS_CONTENT_KEY]);
+  const rawBody = fileReferenceDisplayBody(typeof input.body === 'string' ? input.body : '', fileRefs);
+  const rawFormattedBody = typeof input.formattedBody === 'string' ? fileReferenceDisplayBody(input.formattedBody, fileRefs) : undefined;
   const longMessage = parseLongMessage(input.content['com.agentteams.long_message']);
   // The F7 truncation note is transport bookkeeping; drop it before dispatch so
   // it never becomes a narration/answer block.
@@ -208,7 +209,6 @@ export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // replacing it: the composer may attach files to any message, so the refs
   // are appended as an extra block (ref-only messages render chips alone
   // because empty text blocks are skipped downstream).
-  const fileRefs = parseFileRefs(input.content[FILE_REFS_CONTENT_KEY]);
   const withRefs = fileRefs.length > 0
     ? [...blocks, { type: 'file_refs', refs: fileRefs, isStreaming: input.isStreaming } satisfies ParsedA2uiBlock]
     : blocks;

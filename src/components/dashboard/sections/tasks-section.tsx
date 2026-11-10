@@ -564,7 +564,6 @@ export function TasksSection() {
   const { setActiveSection } = useActiveSection();
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const clearTasks = useTaskStore((s) => s.clearTasks);
-  const liveCount = useTaskStore(useShallow((s) => Object.keys(s.tasks).length));
 
   // D5 双轨：主源 = Controller projects/workflow API（standardized），
   // 降级 = MinIO 直读看板（API 未部署/Controller 故障时 fallback）。
@@ -777,21 +776,8 @@ export function TasksSection() {
     <div className="space-y-6">
       <SectionHeader
         title="任务看板"
-        description={
-          matrixLoggedIn
-            ? apiBoard.degraded
-              ? 'Controller 项目 API 降级 — 回退 MinIO 持久化 + Matrix 实时双数据源'
-              : '项目/任务实时进度'
-            : '需要先登录 Matrix 才能拉取实时数据'
-        }
         actions={
           <div className="flex items-center gap-2">
-            <span
-              className="text-xs text-muted-foreground hidden sm:inline"
-              title="持久 / 实时 / 项目"
-            >
-              持久 {board.tasks.length - liveCount} · 实时 {liveCount} · 项目 {board.projects.length}
-            </span>
             <div className="flex items-center gap-1">
               {(['kanban', 'projects'] as const).map((v) => (
                 <Button
@@ -832,46 +818,39 @@ export function TasksSection() {
         }
       />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Compact task summary */}
+      <div aria-label="任务状态汇总" className="flex items-center gap-5 overflow-x-auto rounded-lg border border-border px-4 py-2 text-sm">
         {[
           {
             label: '进行中',
             count: counts.running,
             color: 'text-violet-500',
-            bg: 'bg-violet-500/10 border-violet-500/20',
           },
           {
             label: '已完成',
             count: counts.completed,
             color: 'text-emerald-500',
-            bg: 'bg-emerald-500/10 border-emerald-500/20',
           },
           {
             label: '需修订',
             count: counts.revision,
             color: 'text-amber-500',
-            bg: 'bg-amber-500/10 border-amber-500/20',
           },
           {
             label: '阻塞',
             count: counts.blocked,
             color: 'text-orange-500',
-            bg: 'bg-orange-500/10 border-orange-500/20',
           },
           {
             label: '失败',
             count: counts.failed,
             color: 'text-red-500',
-            bg: 'bg-red-500/10 border-red-500/20',
           },
         ].map((s) => (
-          <Card key={s.label} className={`glass-card ${s.bg} border`}>
-            <CardContent className="p-4 text-center">
-              <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-            </CardContent>
-          </Card>
+          <div key={s.label} className="flex shrink-0 items-center gap-2">
+            <span className="text-muted-foreground">{s.label}</span>
+            <span className={`font-mono font-semibold ${s.color}`}>{s.count}</span>
+          </div>
         ))}
       </div>
 

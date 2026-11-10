@@ -72,3 +72,12 @@ export function withFileReferences(body: string, refs?: FileRef[]): string {
   });
   return `${body}\n\n引用的工作空间文件（请读取这些指定文件，不要重新选择文件）：\n${details.join('\n')}`;
 }
+
+/** Hide only the exact transport suffix generated from the attached references. */
+export function fileReferenceDisplayBody(body: string, refs: FileRef[]): string {
+  if (!refs.length) return body;
+  const suffix = withFileReferences('', refs);
+  if (!body.endsWith(suffix)) return body;
+  const text = body.slice(0, -suffix.length);
+  return text === `引用 ${refs.length} 个工作空间文件` ? '' : text;
+}
