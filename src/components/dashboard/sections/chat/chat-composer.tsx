@@ -58,9 +58,9 @@ interface ChatComposerProps {
   placeholder: string;
   disabled: boolean;
   members?: Member[];
-  /** Browsable workspace space for file references (#87). Absent hides the button. */
+  /** Optional workspace space for references; personal files remain available through uploads. */
   fileRefTarget?: { kind: 'worker' | 'team'; ownerName: string };
-  onFileUpload?: (_file: File) => void;
+  onFileUpload?: (_file: File) => void | Promise<void>;
   isUploading?: boolean;
   onSlashCommand?: (_command: string, _args: string) => void;
   /** Called when mentions list changes (for the parent to build m.mentions on send) */
@@ -554,14 +554,14 @@ export function ChatComposer({
             )}
           </Button>
 
-          {fileRefTarget && (
+          {(fileRefTarget || onFileUpload) && (
             <Button
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={() => setPickerOpen(true)}
-              disabled={disabled}
-              title="引用工作空间文件"
+              disabled={disabled || isUploading || isSending}
+              title="选择文件（我的文件或工作空间）"
             >
               <FolderOpen className="w-4 h-4" />
             </Button>
@@ -617,12 +617,13 @@ export function ChatComposer({
       )}
       </div>
 
-      {fileRefTarget && (
+      {pickerOpen && (fileRefTarget || onFileUpload) && (
         <FileRefPickerDialog
           open={pickerOpen}
           onOpenChange={setPickerOpen}
-          kind={fileRefTarget.kind}
-          ownerName={fileRefTarget.ownerName}
+          kind={fileRefTarget?.kind ?? 'worker'}
+          ownerName={fileRefTarget?.ownerName ?? ''}
+          onSendPersonalFile={onFileUpload}
           onConfirm={(refs) => setFileRefs(prev => [...prev, ...refs.filter(r => !prev.some(p => p.key === r.key))])}
         />
       )}
