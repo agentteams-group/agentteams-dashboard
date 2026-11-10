@@ -39,7 +39,7 @@ function toFileRef(object: StorageObject): FileRef {
 export function computeRefPrefix(current: string, relativeKey: string): string {
   const cleanRel = relativeKey.endsWith('/') ? relativeKey.slice(0, -1) : relativeKey;
   if (!cleanRel || cleanRel.includes('//')) return current;
-  return current ? `${current}${cleanRel}/` : `${cleanRel}/`;
+  return current && !`${cleanRel}/`.startsWith(current) ? `${current}${cleanRel}/` : `${cleanRel}/`;
 }
 
 /** Parent directory of a listing prefix ('' at the root). */
@@ -96,7 +96,7 @@ export function FileRefPickerDialog({
       if (next.has(object.key)) {
         next.delete(object.key);
       } else {
-        next.set(object.key, toFileRef(object));
+        next.set(object.key, { ...toFileRef(object), workspace: { kind, ownerName } });
       }
       return next;
     });

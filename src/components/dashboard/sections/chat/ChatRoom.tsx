@@ -34,7 +34,7 @@ import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker
 import { PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
-import type { FileRef } from '@/lib/file-refs';
+import { withFileReferences, type FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
 import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
 import { buildConfirmationReply, type ConfirmationAnswerField } from './confirmation-reply';
@@ -441,7 +441,7 @@ export function ChatRoom({
     // A message may carry only file references (#87); it then falls back to a
     // short body so the send route's non-empty body contract still holds.
     if (!typed && !fileRefs?.length) return;
-    let trimmed = typed || `引用 ${fileRefs?.length ?? 0} 个工作空间文件`;
+    let trimmed = withFileReferences(typed || `引用 ${fileRefs?.length ?? 0} 个工作空间文件`, fileRefs);
     // element-style outbound commands: /me (m.emote) and /shrug
     const parsed = parseOutboundCommand(trimmed);
     if (parsed) trimmed = parsed.body;
