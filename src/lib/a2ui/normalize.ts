@@ -29,7 +29,7 @@
  */
 
 import type { ParsedA2uiBlock } from './parser';
-import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, parseFileRefs } from '../file-refs';
+import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, fileReferencesFromBody, parseFileRefs } from '../file-refs';
 import {
   parseA2uiMarkers,
   parseAgentRunBlocks,
@@ -185,7 +185,8 @@ export function normalizeToBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // Matrix events with m.relates_to (replies / replaces) or structured
   // org.agentteams.run payloads may omit `body`. Callers historically passed
   // that through, and parser matchAll then crashed the chat timeline (#1436).
-  const fileRefs = parseFileRefs(input.content[FILE_REFS_CONTENT_KEY]);
+  const structuredRefs = parseFileRefs(input.content[FILE_REFS_CONTENT_KEY]);
+  const fileRefs = structuredRefs.length ? structuredRefs : fileReferencesFromBody(typeof input.body === 'string' ? input.body : '');
   const rawBody = fileReferenceDisplayBody(typeof input.body === 'string' ? input.body : '', fileRefs);
   const rawFormattedBody = typeof input.formattedBody === 'string' ? fileReferenceDisplayBody(input.formattedBody, fileRefs) : undefined;
   const longMessage = parseLongMessage(input.content['com.agentteams.long_message']);

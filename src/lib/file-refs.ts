@@ -81,3 +81,21 @@ export function fileReferenceDisplayBody(body: string, refs: FileRef[]): string 
   const text = body.slice(0, -suffix.length);
   return text === `引用 ${refs.length} 个工作空间文件` ? '' : text;
 }
+
+/** Recover references emitted before the Matrix request preserved their metadata. */
+export function fileReferencesFromBody(body: string): FileRef[] {
+  const marker = '\n\n引用的工作空间文件（请读取这些指定文件，不要重新选择文件）：\n';
+  const index = body.lastIndexOf(marker);
+  if (index < 0) return [];
+  const jsonString = String.raw`("(?:[^"\\]|\\.)*")`;
+  const pattern = new RegExp(`^- 文件名：${jsonString}；(?:(Worker|团队)工作空间 ${jsonString}；)?文件键：${jsonString}$`);
+  const refs: FileRef[] = [];
+  try {
+    for (const line of body.slice(index + marker.length).split('\n')) {
+      const match = pattern.exec(line);
+      if (!match) return [];
+      refs.push({ name: JSON.parse(match[1]), key: JSON.parse(match[4]), ...(match[2] ? { workspace: { kind: match[2] === '团队' ? 'team' as const : 'worker' as const, ownerName: JSON.parse(match[3]) } } : {}) });
+    }
+  } catch { return []; }
+  return refs.length <= MAX_REFS && withFileReferences(body.slice(0, index), refs) === body ? refs : [];
+}

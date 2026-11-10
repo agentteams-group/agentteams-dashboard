@@ -561,3 +561,11 @@ describe('readable reference transport display', () => {
     expect(blocks[0].text).toBe(body);
   });
 });
+
+it('recovers the file card for already-sent messages that lost structured fields', async () => {
+  const { withFileReferences } = await import('../file-refs');
+  const refs = [{ name: 'COScon26_light+logo开源年会ppt模板(1).pptx', key: 'default/COScon26_light+logo开源年会ppt模板(1).pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+  const blocks = normalizeToBlocks({ body: withFileReferences('分析下这个文档', refs), content: { msgtype: 'm.text' }, isMine: true, isStreaming: false });
+  expect(blocks.find(block => block.type === 'text')?.text).toBe('分析下这个文档');
+  expect(blocks.find(block => block.type === 'file_refs')?.refs).toEqual(refs);
+});
