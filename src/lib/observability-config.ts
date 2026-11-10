@@ -1,7 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { configFilePath, isTestTargetAllowed } from './backend-config';
+import { isTestTargetAllowed } from './backend-config';
 import { TracingError } from './tracing-error';
 
 export interface ObservabilityConfig {
@@ -25,33 +22,6 @@ export type ObservabilityView = Omit<ObservabilityConfig, 'secretKey' | 'collect
   collectorHeadersConfigured: boolean;
 };
 
-function filePath() { return path.join(path.dirname(configFilePath()), 'observability.json'); }
-
-export async function readObservabilityConfig(): Promise<ObservabilityConfig> {
-  const defaults: ObservabilityConfig = {
-    backend: process.env.AGENTTEAMS_TRACING_BACKEND === 'agentloop' ? 'agentloop' : 'langfuse',
-    agentloop: { region: process.env.AGENTLOOP_REGION ?? '', workspace: process.env.AGENTLOOP_WORKSPACE ?? '',
-      project: process.env.AGENTLOOP_SLS_PROJECT ?? '', logstore: process.env.AGENTLOOP_SLS_LOGSTORE ?? '' },
-    enabled: false, captureContent: true, mode: 'collector',
-    langfuseUrl: process.env.LANGFUSE_BASE_URL ?? '', publicUrl: process.env.LANGFUSE_PUBLIC_URL ?? '',
-    projectId: process.env.LANGFUSE_PROJECT_ID ?? '', publicKey: process.env.LANGFUSE_PUBLIC_KEY ?? '',
-    secretKey: process.env.LANGFUSE_SECRET_KEY ?? '', collectorEndpoint: '', collectorHeaders: '', revision: 'environment',
-  };
-  try {
-    const saved = JSON.parse(await fs.readFile(filePath(), 'utf8')) as Partial<ObservabilityConfig>;
-    return { ...defaults, ...saved, agentloop: { ...defaults.agentloop, ...saved.agentloop } };
-  }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new TracingError(503, '可观测配置无法读取');
-  }
-  return defaults;
-}
-
-export function publicObservabilityConfig(config: ObservabilityConfig): ObservabilityView {
-  const { secretKey, collectorHeaders, ...view } = config;
-  return { ...view, secretKeyConfigured: Boolean(secretKey), collectorHeadersConfigured: Boolean(collectorHeaders) };
-}
-
 export function observabilityUrl(value: string, label: string): string {
   let url: URL;
   try { url = new URL(value); } catch { throw new TracingError(400, `${label}地址无效`); }
@@ -61,128 +31,9 @@ export function observabilityUrl(value: string, label: string): string {
   return value.replace(/\/+$/, '');
 }
 
-export function mergeObservabilityConfig(previous: ObservabilityConfig, input: unknown): ObservabilityConfig {
-  if (!input || typeof input !== 'object') throw new TracingError(400, '配置格式无效');
-  const body = input as Record<string, unknown>;
-  const config = { ...previous };
-  if (body.backend != null) {
-    if (body.backend !== 'langfuse' && body.backend !== 'agentloop') throw new TracingError(400, '查询后端无效');
-    config.backend = body.backend;
-  }
-  if (body.agentloop != null) {
-    if (typeof body.agentloop !== 'object' || Array.isArray(body.agentloop)) throw new TracingError(400, 'AgentLoop 配置无效');
-    config.agentloop = { ...previous.agentloop };
-    for (const key of ['region', 'workspace', 'project', 'logstore'] as const) {
-      const value = (body.agentloop as Record<string, unknown>)[key];
-      if (typeof value !== 'string' || value.length > 128 || (value && !/^[a-zA-Z0-9_-]+$/.test(value))) throw new TracingError(400, 'AgentLoop 资源名称无效');
-      config.agentloop[key] = value;
-    }
-  }
-  for (const key of ['enabled', 'captureContent'] as const) {
-    if (typeof body[key] !== 'boolean') throw new TracingError(400, '采集开关格式无效');
-    config[key] = body[key];
-  }
-  if (body.mode !== 'collector') throw new TracingError(400, '请使用 OTLP Collector，项目查询密钥不得下发到 Worker');
-  config.mode = body.mode;
-  for (const key of ['langfuseUrl', 'publicUrl', 'projectId', 'publicKey', 'secretKey', 'collectorEndpoint', 'collectorHeaders'] as const) {
-    if (body[key] == null) continue;
-    if (typeof body[key] !== 'string' || body[key].length > 8192 || /[\r\n\0]/.test(body[key])) throw new TracingError(400, '配置字段格式无效');
-    // Secret fields are write-only. An empty form field retains the saved value.
-    if ((key === 'secretKey' || key === 'collectorHeaders') && !body[key]) continue;
-    config[key] = body[key].trim();
-  }
-  for (const [key, label] of [['langfuseUrl', 'Langfuse'], ['publicUrl', '浏览器访问'], ['collectorEndpoint', 'Collector']] as const) {
-    if (config[key]) config[key] = observabilityUrl(config[key], label);
-  }
-  if (config.enabled && config.backend === 'langfuse' && (!config.langfuseUrl || !config.publicKey || !config.secretKey)) throw new TracingError(400, '请填写 Langfuse 地址和项目密钥');
-  if (config.enabled && config.backend === 'agentloop') validateAgentLoopConfig(config);
-  if (config.enabled && !config.collectorEndpoint) throw new TracingError(400, '请填写 Collector OTLP/HTTP 地址');
-  if (config.collectorHeaders) parseOtlpHeaders(config.collectorHeaders);
-  if (config.projectId && !/^[a-zA-Z0-9_-]+$/.test(config.projectId)) throw new TracingError(400, 'Langfuse Project ID 无效');
-  return config;
-}
-
 export function validateAgentLoopConfig(config: ObservabilityConfig) {
   const { region, workspace, project, logstore } = config.agentloop;
   if (!region || !workspace || !project || !logstore || !/^[a-z0-9-]+$/.test(region) || !/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9_-]+$/.test(logstore)) {
     throw new TracingError(400, '请填写 AgentLoop 地域、CMS Workspace 和已定位的 Trace Project / Logstore');
   }
-}
-
-export async function saveObservabilityConfig(config: ObservabilityConfig): Promise<ObservabilityConfig> {
-  const saved = { ...config, revision: randomUUID() };
-  const file = filePath();
-  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${saved.revision}.tmp`;
-  try {
-    await fs.writeFile(temporary, JSON.stringify(saved), { mode: 0o600, flag: 'wx' });
-    await fs.rename(temporary, file);
-  } catch {
-    await fs.unlink(temporary).catch(() => {});
-    throw new TracingError(503, '可观测配置保存失败');
-  }
-  return saved;
-}
-
-export function parseOtlpHeaders(value: string): Record<string, string> {
-  const headers: Record<string, string> = {};
-  for (const entry of value.split(',').filter(Boolean)) {
-    const separator = entry.indexOf('=');
-    if (separator <= 0) throw new TracingError(400, 'OTLP Headers 格式应为 key=value');
-    try {
-      const key = entry.slice(0, separator).trim();
-      const decoded = decodeURIComponent(entry.slice(separator + 1).trim());
-      new Headers({ [key]: decoded });
-      headers[key] = decoded;
-    } catch { throw new TracingError(400, 'OTLP Headers 格式无效'); }
-  }
-  return headers;
-}
-
-export function workerObservabilityEnv(config: ObservabilityConfig, previous: Record<string, string>) {
-  const env = { ...previous };
-  for (const key of ['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', 'OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_EXPORTER_OTLP_HEADERS', 'OTEL_EXPORTER_OTLP_TRACES_HEADERS', 'AGENTTEAMS_OTEL_CAPTURE_CONTENT']) delete env[key];
-  env.AGENTTEAMS_OTEL_ENABLED = String(config.enabled);
-  env.AGENTTEAMS_OTEL_CONFIG_REVISION = config.revision;
-  if (config.enabled) {
-    const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
-    const headers = config.collectorHeaders;
-    parseOtlpHeaders(headers);
-    Object.assign(env, { AGENTTEAMS_OTEL_CAPTURE_CONTENT: String(config.captureContent),
-      OTEL_EXPORTER_OTLP_ENDPOINT: endpoint, OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: `${endpoint}/v1/traces`,
-      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf', OTEL_EXPORTER_OTLP_HEADERS: headers, OTEL_EXPORTER_OTLP_TRACES_HEADERS: headers });
-  }
-  return env;
-}
-
-export async function testObservabilityConnection(config: ObservabilityConfig) {
-  if (config.backend === 'agentloop') {
-    const { testAgentLoopConnection } = await import('./agentloop-server');
-    const result = await testAgentLoopConnection(config);
-    await testCollector(config);
-    return result;
-  }
-  const base = observabilityUrl(config.langfuseUrl, 'Langfuse');
-  const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString('base64')}`;
-  const request = async (url: string, options: RequestInit = {}) => {
-    try { return await fetch(url, { ...options, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10000) }); }
-    catch { throw new TracingError(502, '无法连接可观测后端，请检查地址和网络'); }
-  };
-  const projects = await request(`${base}/api/public/projects`, { headers: { Authorization: authorization } });
-  if (!projects.ok) throw new TracingError(502, `Langfuse 项目认证失败（HTTP ${projects.status}）`);
-  const data = await projects.json() as { data?: { id: string; name: string }[] };
-  const project = data.data?.find((p) => !config.projectId || p.id === config.projectId);
-  if (!project) throw new TracingError(400, '项目密钥与 Project ID 不匹配');
-  await testCollector(config);
-  return { projectId: project.id, projectName: project.name, source: 'dashboard', message: '项目认证和 OTLP 接收端可达；Worker 网络与实际采集需在应用后验证。' };
-}
-
-async function testCollector(config: ObservabilityConfig) {
-  const endpoint = observabilityUrl(config.collectorEndpoint, 'Collector');
-  let response: Response;
-  try { response = await fetch(`${endpoint}/v1/traces`, { method: 'POST', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10000), headers: {
-    'Content-Type': 'application/json', ...parseOtlpHeaders(config.collectorHeaders),
-  }, body: JSON.stringify({ resourceSpans: [] }) }); }
-  catch { throw new TracingError(502, '无法连接 OTLP Collector'); }
-  if (!response.ok) throw new TracingError(502, `OTLP 接收端测试失败（HTTP ${response.status}）`);
 }
