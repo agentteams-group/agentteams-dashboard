@@ -27,7 +27,7 @@ vi.mock('@/lib/backend-config', async (importOriginal) => {
   };
 });
 
-import { GET, PUT, __resetKbCacheForTests } from './route';
+import { GET, PUT, __resetKbCacheForTests } from './handlers';
 
 // ── 最小 ustar 构造（与 route.ts tarMembers 解析对齐）─────────────────────
 function tarHeader(name: string, size: number, mtime: number, isdir = false): Buffer {
