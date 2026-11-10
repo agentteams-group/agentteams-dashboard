@@ -1,5 +1,17 @@
-// Human logins use Matrix identity and Controller authorization.
-// External Console-only deployments retain their existing login path.
+// POST /api/auth/login — dual-track login (embedded/default mode):
+//   1. Console admin account (Higress Console /session/login) — the Console
+//      admin has no Human CR; success returns a level-3 'sa' session.
+//   2. Matrix Human account — Matrix password login → own token →
+//      GET /api/v1/me (modern Controllers, #214 own-token semantics). On a
+//      pre-1.4 Controller without /me (404/405) the legacy fallback runs:
+//      SA GET /api/v1/humans/{localpart}, else the own-token L2 probe
+//      (GET /api/v1/status + /api/v1/teams). A legacy L1 session rides the
+//      server-side SA credential because the old Controller rejects L1
+//      Matrix tokens on the data plane.
+// The Console track's misconfiguration (503) is surfaced only when the
+// Matrix track also fails.
+// External Console-only deployments retain their existing login path:
+// Console only, no Matrix token/URL to the client.
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
@@ -8,7 +20,7 @@ import {
   getHigressConsoleURL,
   HigressConsoleConfigurationError,
 } from '../../higress/proxy-helper';
-import { getControllerUrl } from '../../agentteams/proxy-helper';
+import { getAuthToken, getControllerUrl } from '../../agentteams/proxy-helper';
 import { createSession, sessionCookieHeader } from '@/lib/dashboard-session';
 import { backendAuthHeader, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
@@ -48,19 +60,105 @@ function controllerProbeTargets(request: NextRequest): string[] {
 }
 
 
-/** Resolve the caller using only their own token. Older Controllers fail explicitly. */
-async function fetchCurrentHuman(request: NextRequest, token: string): Promise<HumanRecord | null> {
+type MeResult =
+  | { kind: 'human'; human: HumanRecord }
+  | { kind: 'rejected' } // 401/403: the token is not a valid Human identity
+  | { kind: 'unsupported' }; // 404/405: this Controller predates /api/v1/me (legacy)
+
+/**
+ * Resolve the caller using only their own token (#214 semantics — the server
+ * SA token is never involved here). Distinguishes a rejected identity
+ * (401/403) from a Controller that lacks /api/v1/me entirely (404/405 → the
+ * pre-1.4 legacy fallback); a network failure walks the remaining candidates
+ * and throws only when none of them can answer.
+ */
+async function fetchCurrentHuman(request: NextRequest, token: string): Promise<MeResult> {
   for (const base of controllerProbeTargets(request)) {
     try {
       const res = await fetch(`${base}/api/v1/me`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(5000), cache: 'no-store',
       });
-      if (res.status === 401 || res.status === 403) return null;
-      if (res.ok) return await res.json() as HumanRecord;
+      if (res.status === 200) return { kind: 'human', human: (await res.json()) as HumanRecord };
+      if (res.status === 401 || res.status === 403) return { kind: 'rejected' };
+      if (res.status === 404 || res.status === 405) return { kind: 'unsupported' };
+      // Any other status: this candidate is up but not helpful — walk on.
     } catch { /* try the next configured Controller */ }
   }
   throw new Error('Controller unavailable or missing /api/v1/me support');
+}
+
+/** A HumanRecord the legacy fallback can build a session from. */
+function isUsableHuman(human: HumanRecord): boolean {
+  return (
+    typeof human.name === 'string' &&
+    human.name.length > 0 &&
+    (human.permissionLevel === 1 || human.permissionLevel === 2 || human.permissionLevel === 3)
+  );
+}
+
+/**
+ * Legacy identity lookup with the server-side SA token (pre-#214 channel):
+ * GET /api/v1/humans/{localpart}. Returns null when no SA credential is
+ * configured, the Controller rejects it, or no Human CR exists.
+ */
+async function fetchHumanViaSa(request: NextRequest, localpart: string): Promise<HumanRecord | null> {
+  const token = await getAuthToken();
+  if (!token) return null;
+  for (const base of controllerProbeTargets(request)) {
+    try {
+      const res = await fetch(`${base}/api/v1/humans/${encodeURIComponent(localpart)}`, {
+        // Per-address door credential may replace the SA bearer (same policy
+        // as the data plane's treatment of 'sa' session credentials).
+        headers: { Authorization: `Bearer ${token}`, ...backendAuthHeader('controller', base) },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      // Any HTTP answer is definitive for this address (proxy-layer
+      // semantics); only a transport error walks to the next candidate.
+      if (res.ok) return (await res.json()) as HumanRecord;
+      return null;
+    } catch { /* unreachable candidate: try the next address */ }
+  }
+  return null;
+}
+
+type LegacyOwnTokenProbe =
+  | { kind: 'l2'; teams: string[] }
+  | { kind: 'rejected' } // the Controller answered: this token is not L2
+  | { kind: 'unavailable' }; // every candidate was unreachable
+
+/**
+ * Legacy L2 probe (pre-#214, plugin model): the old Controller's Matrix auth
+ * accepts only permissionLevel=2 tokens, so a 200 on GET /api/v1/status with
+ * the user's own token proves team-user identity WITHOUT reading the Human
+ * CR. GET /api/v1/teams is server-side filtered to the caller's own scope.
+ */
+async function probeLegacyOwnToken(request: NextRequest, token: string): Promise<LegacyOwnTokenProbe> {
+  for (const base of controllerProbeTargets(request)) {
+    let statusRes: Response;
+    try {
+      statusRes = await fetch(`${base}/api/v1/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+    } catch {
+      continue; // unreachable candidate: try the next address
+    }
+    if (!statusRes.ok) return { kind: 'rejected' };
+    let teams: string[] = [];
+    try {
+      const teamsRes = await fetch(`${base}/api/v1/teams`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      if (teamsRes.ok) {
+        const data = (await teamsRes.json()) as { teams?: { name?: string }[] };
+        teams = (data.teams ?? []).map((t) => t.name ?? '').filter(Boolean);
+      }
+    } catch { /* the scope list is optional — keep an empty scope */ }
+    return { kind: 'l2', teams };
+  }
+  return { kind: 'unavailable' };
 }
 
 /**
@@ -122,7 +220,18 @@ export async function POST(request: NextRequest) {
         ? NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 })
         : result.response;
     }
-    return await attemptMatrixLogin(request, username, password);
+    // Embedded/default: dual track — the Console admin account first (its
+    // failure must never block a Matrix account), then the Matrix Human
+    // track with the pre-1.4 Controller fallback.
+    const consoleResult = await attemptConsoleLogin(request, username, password, { allowMatrix: true });
+    if (consoleResult.kind === 'session') return consoleResult.response;
+    const matrixResult = await attemptMatrixLogin(request, username, password);
+    if (matrixResult.ok) return matrixResult;
+    // A Console deployment misconfiguration (503) is surfaced only when the
+    // Matrix track fails too — a working Matrix login is a login, and the
+    // misconfigured message is about the admin account, not this user.
+    if (consoleResult.kind === 'misconfigured') return consoleResult.response;
+    return matrixResult;
   } catch (err: unknown) {
     // SEC-09: the raw error can carry internal details (session secret
     // config, upstream fetch failures). Log it server-side, return a
@@ -347,20 +456,60 @@ async function attemptMatrixLogin(
 
   const userId = typeof matrix.userId === 'string' ? matrix.userId : '';
   const localpart = userId.startsWith('@') ? userId.slice(1).split(':')[0] : username;
-  let human: HumanRecord | null;
+  const token = String(matrix.accessToken);
+
+  let me: MeResult;
   try {
-    human = await fetchCurrentHuman(request, String(matrix.accessToken));
+    me = await fetchCurrentHuman(request, token);
   } catch (error) {
     console.error('[auth/login] identity lookup failed:', error);
     return NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 });
   }
-  if (!human) return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+
+  let human: HumanRecord;
+  let legacyL1 = false;
+  if (me.kind === 'human') {
+    // Modern Controller: own-token identity, the server SA token is never
+    // involved (#214 semantics).
+    human = me.human;
+  } else if (me.kind === 'rejected') {
+    return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+  } else {
+    // Legacy path: this Controller predates /api/v1/me (404/405).
+    const saHuman = await fetchHumanViaSa(request, localpart);
+    if (saHuman && isUsableHuman(saHuman)) {
+      human = saHuman;
+      legacyL1 = saHuman.permissionLevel === 1;
+    } else {
+      const probe = await probeLegacyOwnToken(request, token);
+      if (probe.kind === 'rejected') {
+        return NextResponse.json(
+          { success: false, error: '旧版 Controller 无法验证该 Matrix 账号的权限：请改用 Controller 管理员 token 登录，或升级 Controller 后重试' },
+          { status: 401 },
+        );
+      }
+      if (probe.kind === 'unavailable') {
+        return NextResponse.json(
+          { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },
+          { status: 502 },
+        );
+      }
+      human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
+    }
+  }
+
   const crLevel = human.permissionLevel;
   const dashLevel = crLevel === undefined ? undefined : MATRIX_CR_LEVEL_TO_DASH_LEVEL[crLevel];
   if (!human.name || (crLevel !== 1 && crLevel !== 2 && crLevel !== 3) || !dashLevel) {
     return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
   }
-  const credential = { kind: 'matrix' as const, token: String(matrix.accessToken) };
+  // Legacy L1: the old Controller's Matrix auth rejects admin-level tokens
+  // on the data plane, so the session rides the server-side SA credential
+  // (the SA lookup that produced the record proves the token is configured).
+  // The Matrix token is still returned to the client for chat only. L2/L3
+  // (modern or legacy) keep their own token — the A2 chain.
+  const credential: { kind: 'sa' } | { kind: 'matrix'; token: string } =
+    legacyL1 ? { kind: 'sa' } : { kind: 'matrix', token };
 
   let cookieValue: string;
   try {
