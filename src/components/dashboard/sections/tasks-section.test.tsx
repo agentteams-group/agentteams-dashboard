@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // 9/17 装验反馈回归：任务看板项目视图**右栏详情独立滚动**——
@@ -146,6 +146,9 @@ it('opens the selected task detail and keeps populated groups at a fixed height'
   renderSection();
   const card = screen.getByRole('button', { name: /检查交付文件/ });
   expect(card.closest('[class*="h-[360px]"]')).not.toBeNull();
+  expect(within(card).queryByText('进行中')).toBeNull();
+  expect(within(card).getByLabelText('任务正在执行')).toHaveClass('motion-safe:animate-spin');
+  expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveClass('motion-safe:animate-pulse');
   fireEvent.click(card);
   expect(await screen.findByRole('dialog')).toBeInTheDocument();
   expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();

@@ -274,6 +274,7 @@ function TaskCard({
   workerTeam,
   highlightProjectId,
   selected,
+  showStatus = true,
   onClick,
 }: {
   task: BoardTask;
@@ -281,6 +282,7 @@ function TaskCard({
   workerTeam?: string;
   highlightProjectId?: string;
   selected?: boolean;
+  showStatus?: boolean;
   onClick?: () => void;
 }) {
   const expanded = selected ?? (highlightProjectId === task.projectId);
@@ -298,8 +300,8 @@ function TaskCard({
       className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
       <CardContent className="space-y-3 p-4">
-        <div className="flex items-start gap-2">
-          <StatusBadge status={task.status} />
+        {(showStatus || task.outcome || task.dependsOn.length > 0) && <div className="flex items-start gap-2">
+          {showStatus && <StatusBadge status={task.status} />}
           {task.outcome && <OutcomeBadge outcome={task.outcome} />}
           {task.dependsOn.length > 0 && (
             <Badge
@@ -311,9 +313,12 @@ function TaskCard({
               ×{task.dependsOn.length}
             </Badge>
           )}
-        </div>
+        </div>}
         <div>
-          <p className="text-sm font-medium leading-6">{task.title}</p>
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 text-sm font-medium leading-6">{task.title}</p>
+            {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
+          </div>
           <p className="text-xs text-muted-foreground font-mono mt-1">
             {shortId(task.runId, 22)}
           </p>
@@ -916,7 +921,7 @@ export function TasksSection() {
                 className="flex h-[360px] flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
               >
                 <div className={`-mx-3 -mt-3 flex items-center gap-2 border-b px-3 py-3 ${col.color}`}>
-                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]}`} />
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]} ${col.key === 'in_progress' && list.length > 0 ? 'motion-safe:animate-pulse' : ''}`} />
                   <p className="text-xs font-semibold">{col.label}</p>
                   <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
@@ -944,6 +949,7 @@ export function TasksSection() {
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
                               selected={selectedTaskId === t.runId}
+                              showStatus={false}
                               onClick={() => setSelectedTaskId(t.runId)}
                             />
                           </motion.div>
