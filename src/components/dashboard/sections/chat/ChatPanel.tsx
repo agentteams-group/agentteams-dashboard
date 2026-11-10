@@ -6,6 +6,7 @@ import styles from './agent-conversation.module.css';
 import { AssistantTaskNote } from './components/AssistantTaskNote';
 import { RoomContextTabs } from './components/RoomContextTabs';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
+import { ManagerModelGate } from './manager-model-gate';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -21,6 +22,7 @@ interface ChatPanelProps {
   taskFeed?: AssistantTaskFeed;
   headerLeading?: ReactNode;
   headerTitle?: ReactNode;
+  managerName?: string;
 }
 
 export function ChatPanel({
@@ -34,8 +36,9 @@ export function ChatPanel({
   taskFeed,
   headerLeading,
   headerTitle,
+  managerName,
 }: ChatPanelProps) {
-  return (
+  const renderPanel = (configured = true) => (
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
@@ -54,7 +57,7 @@ export function ChatPanel({
           headerActions={(room.agentRole || room.type === 'team') ? <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} /> : undefined}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
-          canSend={canSend}
+          canSend={canSend && configured}
           onSendMessage={onSendMessage}
           className="h-full"
         />
@@ -63,4 +66,5 @@ export function ChatPanel({
 
     </div>
   );
+  return managerName ? <ManagerModelGate name={managerName}>{renderPanel}</ManagerModelGate> : renderPanel();
 }

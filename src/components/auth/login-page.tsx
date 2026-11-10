@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, Bot, ShieldCheck, Workflow, Settings2 } from 'lucide-react';
@@ -19,7 +19,7 @@ interface LoginPageProps {
   dataPlaneRejected?: boolean;
 }
 
-export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
+export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlaneRejected = false }: LoginPageProps) {
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [tokenOnlyToken, setTokenOnlyToken] = useState('');
@@ -27,6 +27,10 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setMatrixAuth = useMatrixStore((s) => s.setMatrixAuth);
+  useEffect(() => {
+    const installedUsername = new URLSearchParams(window.location.search).get('username');
+    if (installedUsername && /^[a-zA-Z0-9_.-]+$/.test(installedUsername)) setUsername(installedUsername);
+  }, []);
 
   const handleLogin = async () => {
     if (!username || !password) return;
@@ -139,6 +143,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
             <Label htmlFor="higress-username">用户名</Label>
             <Input
               id="higress-username"
+              autoComplete="username"
               placeholder="admin"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -151,6 +156,8 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
             <Input
               id="higress-password"
               type="password"
+              autoComplete="current-password"
+              autoFocus
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

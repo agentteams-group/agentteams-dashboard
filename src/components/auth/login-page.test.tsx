@@ -36,6 +36,11 @@ afterEach(() => {
 });
 
 describe('LoginPage Controller token-only login', () => {
+  it('prefills admin and focuses the password for a fresh local install', () => {
+    render(<LoginPage />);
+    expect(screen.getByLabelText('用户名')).toHaveValue('admin');
+    expect(screen.getByLabelText('密码')).toHaveFocus();
+  });
   it('keeps the token entry collapsed until expanded', () => {
     render(<LoginPage />);
 
