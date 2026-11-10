@@ -5,10 +5,12 @@
 //      GET /api/v1/me (modern Controllers, #214 own-token semantics). On a
 //      pre-1.4 Controller without /me (404/405) the legacy fallback runs:
 //      SA GET /api/v1/humans/{localpart}, else the own-token L2 probe
-//      (GET /api/v1/status + /api/v1/teams) — a probe-rejected account may
-//      then be admitted as a synthetic L1 by the optional explicit
-//      administrator verification (adminUsername/adminPassword → Console
-//      /session/login). A legacy L1 session rides the
+//      (GET /api/v1/status + /api/v1/teams). Because that probe does not
+//      prove the Human's level, a supplied admin pair is verified FIRST
+//      (adminUsername/adminPassword → Console /session/login): valid →
+//      synthetic L1, invalid → 401. Without an admin pair a probe-accepted
+//      account stays L2, a probe-rejected one is admitted only by the same
+//      verification. A legacy L1 session rides the
 //      server-side SA credential because the old Controller rejects L1
 //      Matrix tokens on the data plane; the verified Console session is
 //      bound server-side for the gateway tab.
@@ -496,8 +498,10 @@ interface AdminCredentials {
  *   gateway tab.
  * - legacy Controller: level 3 rides the server-side SA credential and binds
  *   the Console session; when the SA Human lookup cannot resolve the account,
- *   a successful admin verification admits a synthetic L1 Human.
- * L2/L3 Human identities are never elevated by the admin fields.
+ *   a successful admin verification admits a synthetic L1 Human — including
+ *   when the non-authoritative own-token L2 probe accepted the token.
+ * L2/L3 Human identities resolved authoritatively (modern /me or SA Human)
+ * are never elevated by the admin fields.
  */
 async function attemptMatrixLogin(
   request: NextRequest,
@@ -563,9 +567,22 @@ async function attemptMatrixLogin(
     } else {
       const probe = await probeLegacyOwnToken(request, token);
       if (probe.kind === 'l2') {
-        // The own-token probe proves a real L2 Human: keep it scoped even
-        // when admin credentials were supplied — never elevate.
-        human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
+        // The own-token probe is NOT authoritative about the Human's level:
+        // the old Controller accepts these tokens on the data plane, so an
+        // L1 account passes it too and would be misread as a team L2 user.
+        // An explicitly supplied admin pair is therefore verified here, and
+        // a valid pair admits the account as a synthetic L1 instead. A real
+        // L2 Human never reaches this branch (the SA lookup resolves it
+        // above), and an invalid pair fails closed.
+        if (hasAdminCredentials) {
+          const verified = await verifyAdmin();
+          if (!verified.ok) return adminVerificationFailed();
+          consoleCookie = verified.consoleCookie;
+          human = { name: localpart, permissionLevel: 1, accessibleTeams: [] };
+          legacyL1 = true;
+        } else {
+          human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
+        }
       } else if (probe.kind === 'unavailable') {
         return NextResponse.json(
           { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },

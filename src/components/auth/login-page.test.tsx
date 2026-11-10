@@ -12,7 +12,9 @@ vi.mock('@/lib/matrix-store', () => ({
 
 const TOKEN_ENTRY = '仅用 Controller 管理员 token 登录';
 const ADMIN_ENTRY = 'L1 账号管理员验证（旧 Controller 需要）';
-const ADMIN_HINT = '普通 L2/L3 Matrix 账号无需填写；旧 Controller 的 L1 Matrix 登录需要管理员账号验证。';
+const ADMIN_COLLAPSE = '收起 L1 账号管理员验证';
+const ADMIN_HINT =
+  '旧 Controller 上使用 Matrix 账号登录 L1 时，必须填写这里的 Console 管理员账号/密码；admin 账号本身不需要重复填写。';
 
 function mockLoginResponse(status: number, body: Record<string, unknown>) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), {
@@ -29,7 +31,6 @@ function openTokenEntry() {
 }
 
 function openAdminEntry() {
-  fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
   return screen.getByPlaceholderText('管理员账号');
 }
 
@@ -127,16 +128,20 @@ describe('LoginPage Controller token-only login', () => {
 });
 
 describe('LoginPage L1 admin verification', () => {
-  it('keeps the admin verification section collapsed by default', () => {
+  it('shows the admin verification section expanded by default', () => {
     render(<LoginPage />);
 
-    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
-    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
-    expect(screen.queryByText(ADMIN_HINT)).toBeNull();
-
-    openAdminEntry();
+    // The entry must be obvious: the fields are visible without a click and
+    // the section can still be collapsed.
+    expect(screen.getByPlaceholderText('管理员账号')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('管理员密码')).toBeInTheDocument();
     expect(screen.getByText(ADMIN_HINT)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: ADMIN_COLLAPSE })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_COLLAPSE }));
+    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
+    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
+    expect(screen.getByRole('button', { name: ADMIN_ENTRY })).toBeInTheDocument();
   });
 
   it('sends adminUsername/adminPassword when both are filled', async () => {
@@ -149,8 +154,7 @@ describe('LoginPage L1 admin verification', () => {
 
     fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'luo' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'luo-pass' } });
-    openAdminEntry();
-    fireEvent.change(screen.getByPlaceholderText('管理员账号'), { target: { value: 'admin' } });
+    fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
     fireEvent.change(screen.getByPlaceholderText('管理员密码'), { target: { value: 'admin-pass' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 
@@ -164,6 +168,24 @@ describe('LoginPage L1 admin verification', () => {
     });
   });
 
+  it('keeps the body unchanged while the admin fields are empty', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'admin', level: 3 },
+      mode: 'higress',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    // The section is expanded by default; leaving it empty must not add keys.
+    expect(screen.getByPlaceholderText('管理员账号')).toHaveValue('');
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'admin', password: 'password' });
+  });
+
   it('omits the admin fields when only one side is filled', async () => {
     const fetchMock = mockLoginResponse(200, {
       success: true,
@@ -173,8 +195,7 @@ describe('LoginPage L1 admin verification', () => {
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
-    openAdminEntry();
-    fireEvent.change(screen.getByPlaceholderText('管理员账号'), { target: { value: 'admin' } });
+    fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());

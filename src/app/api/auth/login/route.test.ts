@@ -371,6 +371,91 @@ describe('Human login through Controller', () => {
     );
   });
 
+  it('does not trust the legacy L2 probe over a verified admin pair', async () => {
+    // Field case: the old Controller answers 200 on /api/v1/status for an L1
+    // Matrix account, so the probe alone would misread "luo" as a team L2
+    // user. The explicitly supplied admin pair is authoritative instead.
+    vi.mocked(getAuthToken).mockResolvedValue('sa-token');
+    consoleAdminVerification();
+    const fetchMock = installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 404, body: { error: 'not found' } }, // SA cannot resolve the Human
+      legacyStatus: 200, // L2 probe accepts the L1 token
+      legacyTeams: { status: 200, teams: [{ name: 'team-a' }] },
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.mode).toBe('matrix');
+    expect(data.user).toEqual({ username: 'luo', level: 3 });
+    const session = sessionFrom(res);
+    // Synthetic legacy L1: SA credential, no team scope, Console session bound.
+    expect(session?.crLevel).toBe(1);
+    expect(session?.level).toBe(3);
+    expect(session?.teams).toEqual([]);
+    expect(session?.credential).toEqual({ kind: 'sa' });
+    expect(session?.consoleCookie).toBe(ADMIN_CONSOLE_COOKIE);
+    expect(res.headers.get('set-cookie')).not.toContain('own-matrix-token');
+    expect(callHigressConsole).toHaveBeenCalledWith('/session/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'admin-pass' },
+    });
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain(
+      'http://controller.test:8090/api/v1/teams',
+    );
+  });
+
+  it('rejects an accepted legacy L2 probe when the supplied admin credentials are wrong', async () => {
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 404, body: { error: 'not found' } },
+      legacyStatus: 200,
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'wrong-pass',
+    }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect((await res.json()).error).toBe('管理员账号验证失败（账号或密码不正确）');
+  });
+
+  it('never elevates a legacy L2 Human resolved by the SA lookup', async () => {
+    // Authoritative identity (SA Human permissionLevel 2): the admin fields
+    // are ignored — an accepted probe and a valid admin pair cannot promote it.
+    vi.mocked(getAuthToken).mockResolvedValue('sa-token');
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 200, body: { name: 'luo', permissionLevel: 2, accessibleTeams: ['team-a'] } },
+      legacyStatus: 200,
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    }));
+    expect(res.status).toBe(200);
+    const session = sessionFrom(res);
+    expect(session?.level).toBe(2);
+    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+    expect(session?.consoleCookie).toBeUndefined();
+    // The admin pair is never verified for a real L2 identity.
+    expect(callHigressConsole).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a legacy L1 when the supplied admin credentials are wrong', async () => {
     consoleAdminVerification();
     installFetch({
@@ -428,7 +513,10 @@ describe('Human login through Controller', () => {
     expect(res.headers.get('set-cookie')).toBeNull();
   });
 
-  it('never elevates a legacy L2 Human when admin credentials are supplied', async () => {
+  it('admits the synthetic L1 over an accepted probe even without an SA credential', async () => {
+    // Same override with no SA token configured at all: the SA lookup is
+    // skipped, the probe accepts the token, and the verified admin pair is
+    // still what decides the level.
     consoleAdminVerification();
     installFetch({
       matrixUserId: '@luo:matrix.local',
@@ -443,12 +531,13 @@ describe('Human login through Controller', () => {
       adminPassword: 'admin-pass',
     }));
     expect(res.status).toBe(200);
+    expect((await res.json()).user).toEqual({ username: 'luo', level: 3 });
     const session = sessionFrom(res);
-    expect(session?.level).toBe(2);
-    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
-    expect(session?.consoleCookie).toBeUndefined();
-    // The admin pair is never verified for a real L2 identity.
-    expect(callHigressConsole).toHaveBeenCalledTimes(1);
+    expect(session?.crLevel).toBe(1);
+    expect(session?.credential).toEqual({ kind: 'sa' });
+    expect(session?.consoleCookie).toBe(ADMIN_CONSOLE_COOKIE);
+    // One Console call (the user's own, rejected) + the admin verification.
+    expect(callHigressConsole).toHaveBeenCalledTimes(2);
   });
 
   it('rejects when the old Controller cannot verify the identity (no /me, no SA, status 401)', async () => {

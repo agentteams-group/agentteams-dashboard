@@ -24,7 +24,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlane
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
-  const [adminVisible, setAdminVisible] = useState(false);
+  const [adminVisible, setAdminVisible] = useState(true);
   const [tokenOnlyToken, setTokenOnlyToken] = useState('');
   const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -201,7 +201,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlane
                   disabled={isLoading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  普通 L2/L3 Matrix 账号无需填写；旧 Controller 的 L1 Matrix 登录需要管理员账号验证。
+                  旧 Controller 上使用 Matrix 账号登录 L1 时，必须填写这里的 Console 管理员账号/密码；admin 账号本身不需要重复填写。
                 </p>
               </div>
             )}
