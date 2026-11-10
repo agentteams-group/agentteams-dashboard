@@ -295,9 +295,9 @@ function TaskCard({
             onKeyDown: handleActivate(onClick),
           }
         : {})}
-      className={`rounded-lg border bg-card shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
+      className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
-      <CardContent className="p-3 space-y-2">
+      <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-2">
           <StatusBadge status={task.status} />
           {task.outcome && <OutcomeBadge outcome={task.outcome} />}
@@ -313,8 +313,8 @@ function TaskCard({
           )}
         </div>
         <div>
-          <p className="text-sm font-medium leading-snug">{task.title}</p>
-          <p className="text-xs text-muted-foreground font-mono mt-0.5">
+          <p className="text-sm font-medium leading-6">{task.title}</p>
+          <p className="text-xs text-muted-foreground font-mono mt-1">
             {shortId(task.runId, 22)}
           </p>
         </div>
