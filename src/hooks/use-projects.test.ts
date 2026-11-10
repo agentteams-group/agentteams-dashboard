@@ -116,3 +116,11 @@ describe('workflowToBoard (D5 API primary mapping)', () => {
     expect(projects[0].leader).toBe('@manager:hs');
   });
 });
+
+it('preserves submitted detail status when workflow nodes normalize it to in-progress', () => {
+  const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+    nodes: [{ id: 'review', name: 'Report', status: 'in-progress' }],
+    tasks_detail: [{ task_id: 'review', status: 'submitted' }],
+  })]]));
+  expect(tasks[0].status).toBe('submitted');
+});

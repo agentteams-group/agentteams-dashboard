@@ -105,11 +105,11 @@ const TASK_STATUS_COLUMNS: Array<{
     icon: Loader2,
   },
   {
-    key: 'revision',
-    label: '需修订',
-    description: 'Manager 验收未通过,打回重做',
+    key: 'submitted',
+    label: '待验收',
+    description: '已提交结果，等待验收',
     color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
-    icon: RotateCcw,
+    icon: CircleCheck,
   },
   {
     key: 'completed',
@@ -117,6 +117,13 @@ const TASK_STATUS_COLUMNS: Array<{
     description: 'Worker 报完成,Manager 已确认',
     color: 'text-status-done bg-status-done/5 border-status-done/15',
     icon: CircleCheck,
+  },
+  {
+    key: 'revision',
+    label: '需修订',
+    description: 'Manager 验收未通过,打回重做',
+    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
+    icon: RotateCcw,
   },
   {
     key: 'failed',
@@ -912,13 +919,20 @@ export function TasksSection() {
 
       {/* Neutral columns; state color is limited to the header indicator. */}
       {view === 'kanban' && filteredTasks.length > 0 && (
-        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {TASK_STATUS_COLUMNS.map((col) => {
+        <div className="space-y-5">
+          {[
+            { title: '任务流程', keys: ['pending', 'assigned', 'in_progress', 'submitted', 'completed'], layout: 'grid-cols-1 md:grid-cols-3 xl:grid-cols-5' },
+            { title: '需要关注', keys: ['blocked', 'revision', 'failed', ...(tasksByStatus.get('unknown')?.length ? ['unknown'] : [])], layout: 'grid-cols-1 md:grid-cols-3' },
+          ].map((group) => (
+            <section key={group.title} className="space-y-3" aria-label={group.title}>
+              <h3 className="text-sm font-medium text-muted-foreground">{group.title}</h3>
+              <div className={`grid items-start gap-4 ${group.layout}`}>
+          {group.keys.map((key) => TASK_STATUS_COLUMNS.find((col) => col.key === key)!).map((col) => {
             const list = tasksByStatus.get(col.key) ?? [];
             return (
               <div
                 key={col.key}
-                className="flex h-[360px] flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
+                className="flex h-[360px] min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
               >
                 <div className={`-mx-3 -mt-3 flex items-center gap-2 border-b px-3 py-3 ${col.color}`}>
                   <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]} ${col.key === 'in_progress' && list.length > 0 ? 'motion-safe:animate-pulse' : ''}`} />
@@ -961,6 +975,9 @@ export function TasksSection() {
               </div>
             );
           })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 

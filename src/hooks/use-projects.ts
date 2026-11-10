@@ -198,8 +198,9 @@ function workflowStatusToTaskStatus(status?: string): TaskStatus {
       return 'assigned';
     case 'in-progress':
     case 'in_progress':
-    case 'submitted':
       return 'in_progress';
+    case 'submitted':
+      return 'submitted';
     case 'revision':
       return 'revision';
     case 'completed':
@@ -282,7 +283,7 @@ export function workflowToBoard(
       boardTasks.push({
         runId: node.id,
         title: node.name || node.id,
-        status: workflowStatusToTaskStatus(node.status),
+        status: workflowStatusToTaskStatus(detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',
         projectId: proj.project_id,
         roomId: wf.source_room_id ?? '',
