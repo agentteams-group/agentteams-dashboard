@@ -59,10 +59,11 @@ vi.mock('@/lib/task-store', () => ({
 vi.mock('@/lib/hitl-inbox', () => ({
   useHitlInboxStore: { getState: () => ({ takePendingProjectKey: () => null }) },
 }));
+const viewPreference = vi.hoisted(() => ({ value: 'projects' }));
 // 视图模式/选中项目持久化：直接给 projects 视图 + 选中 proj-1
 vi.mock('@/lib/use-persistent-state', () => ({
   usePersistentState: (key: string, initial: unknown) => {
-    if (key === 'agentteams:tasks-view') return ['projects', vi.fn()];
+    if (key === 'agentteams:tasks-view') return [viewPreference.value, vi.fn()];
     if (key === 'agentteams:tasks-selected-project') return ['proj-1', vi.fn()];
     return [initial, vi.fn()];
   },
@@ -88,6 +89,7 @@ const renderSection = () => {
 describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反馈）', () => {
   afterEach(() => {
     cleanup();
+    viewPreference.value = 'projects';
     vi.unstubAllGlobals();
   });
 
@@ -124,4 +126,14 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
     ) as HTMLElement | null;
     expect(scroller).not.toBeNull();
   });
+});
+
+it('shows one restrained empty board instead of eight colored empty columns', () => {
+  viewPreference.value = 'kanban';
+  renderSection();
+  expect(screen.getByText('暂无任务')).toBeInTheDocument();
+  expect(screen.queryByText('待办')).toBeNull();
+  expect(screen.getByLabelText('任务状态汇总')).toBeInTheDocument();
+  cleanup();
+  viewPreference.value = 'projects';
 });

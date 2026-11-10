@@ -84,56 +84,56 @@ const TASK_STATUS_COLUMNS: Array<{
     key: 'pending',
     label: '待办',
     description: 'Manager 拆分但尚未派发',
-    color: 'text-slate-500 bg-slate-500/10 border-slate-500/30',
+    color: 'text-muted-foreground bg-muted border-border',
     icon: Clock,
   },
   {
     key: 'assigned',
     label: '已派发',
     description: '已发给 Worker,等待首次心跳',
-    color: 'text-blue-500 bg-blue-500/10 border-blue-500/30',
+    color: 'text-foreground bg-muted border-border',
     icon: ChevronUp,
   },
   {
     key: 'in_progress',
     label: '进行中',
     description: 'Worker 正在执行',
-    color: 'text-violet-500 bg-violet-500/10 border-violet-500/30',
+    color: 'text-status-running bg-status-running/5 border-status-running/15',
     icon: Loader2,
   },
   {
     key: 'revision',
     label: '需修订',
     description: 'Manager 验收未通过,打回重做',
-    color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
     icon: RotateCcw,
   },
   {
     key: 'completed',
     label: '已完成',
     description: 'Worker 报完成,Manager 已确认',
-    color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30',
+    color: 'text-status-done bg-status-done/5 border-status-done/15',
     icon: CircleCheck,
   },
   {
     key: 'failed',
     label: '失败',
     description: '执行失败,需要人工介入',
-    color: 'text-red-500 bg-red-500/10 border-red-500/30',
+    color: 'text-status-failed bg-status-failed/5 border-status-failed/15',
     icon: CircleX,
   },
   {
     key: 'blocked',
     label: '阻塞',
     description: '等待依赖项完成或外部解锁',
-    color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
     icon: AlertTriangle,
   },
   {
     key: 'unknown',
     label: '未知',
     description: '状态未知',
-    color: 'text-gray-500 bg-gray-500/10 border-gray-500/30',
+    color: 'text-muted-foreground bg-muted border-border',
     icon: Eye,
   },
 ];
@@ -290,9 +290,7 @@ function TaskCard({
             onKeyDown: handleActivate(onClick),
           }
         : {})}
-      className={`glass-card ${onClick ? INTERACTIVE_CARD_CLASS : 'hover-lift'} ${
-        expanded ? 'border-violet-500/40' : ''
-      }`}
+      className={`rounded-lg border bg-card shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
       <CardContent className="p-3 space-y-2">
         <div className="flex items-start gap-2">
@@ -320,8 +318,8 @@ function TaskCard({
             <span className="flex items-center gap-1">
               {managerName ? (
                 <>
-                  <Crown className="h-3 w-3 text-violet-500" />
-                  <span className="text-violet-600 dark:text-violet-400">{managerName}</span>
+                  <Crown className="h-3 w-3" />
+                  <span>{managerName}</span>
                 </>
               ) : (
                 <>
@@ -431,7 +429,7 @@ function ProjectCard({
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           {project.leader && (
             <span className="flex items-center gap-1">
-              <Crown className="h-3 w-3 text-violet-500" />
+              <Crown className="h-3 w-3" />
               {project.leader}
             </span>
           )}
@@ -773,7 +771,7 @@ export function TasksSection() {
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SectionHeader
         title="任务看板"
         actions={
@@ -824,27 +822,27 @@ export function TasksSection() {
           {
             label: '进行中',
             count: counts.running,
-            color: 'text-violet-500',
+            color: 'text-foreground',
           },
           {
             label: '已完成',
             count: counts.completed,
-            color: 'text-emerald-500',
+            color: 'text-foreground',
           },
           {
             label: '需修订',
             count: counts.revision,
-            color: 'text-amber-500',
+            color: 'text-foreground',
           },
           {
             label: '阻塞',
             count: counts.blocked,
-            color: 'text-orange-500',
+            color: 'text-foreground',
           },
           {
             label: '失败',
             count: counts.failed,
-            color: 'text-red-500',
+            color: 'text-foreground',
           },
         ].map((s) => (
           <div key={s.label} className="flex shrink-0 items-center gap-2">
@@ -895,28 +893,31 @@ export function TasksSection() {
         />
       </div>
 
-      {/* View: Kanban (status columns) — 8 statuses flow into a 4x2 grid
-          on wide screens; one per row on mobile. */}
-      {view === 'kanban' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* One quiet empty state instead of eight oversized empty columns. */}
+      {view === 'kanban' && filteredTasks.length === 0 && <div className="rounded-xl border border-border bg-muted/10">
+        <SectionEmptyState title={board.isLoading ? '正在加载任务…' : (apiBoard.degraded && minioBoard.error) ? '暂时无法读取任务' : search ? '未找到匹配任务' : '暂无任务'} description={(apiBoard.degraded && minioBoard.error) ? '请刷新重试。' : search ? '试试其他关键词。' : '与助手创建任务后，可以在这里跟进执行进度。'} />
+      </div>}
+
+      {/* Neutral columns; state color is limited to the header indicator. */}
+      {view === 'kanban' && filteredTasks.length > 0 && (
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           {TASK_STATUS_COLUMNS.map((col) => {
             const list = tasksByStatus.get(col.key) ?? [];
-            const Icon = col.icon;
             return (
               <div
                 key={col.key}
-                className={`rounded-lg border ${col.color} p-3 h-[560px] flex flex-col gap-2`}
+                className="flex min-h-32 flex-col gap-3 rounded-xl border border-border bg-muted/20 p-3"
               >
-                <div className="flex items-center gap-1.5 pb-1 border-b border-current/10">
-                  <Icon className={`h-3.5 w-3.5 ${col.key === 'in_progress' ? 'animate-spin' : ''}`} />
+                <div className="flex items-center gap-2">
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]}`} />
                   <p className="text-xs font-semibold">{col.label}</p>
-                  <span className="ml-auto text-xs font-mono opacity-70">{list.length}</span>
+                  <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
-                <div className="space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                <div className="max-h-[24rem] min-h-0 space-y-2 overflow-y-auto overscroll-contain">
                   <AnimatePresence initial={false}>
                     {list.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic text-center py-4">
-                        无
+                      <p className="py-4 text-center text-xs text-muted-foreground/70">
+                        暂无任务
                       </p>
                     ) : (
                       list.map((t) => {
