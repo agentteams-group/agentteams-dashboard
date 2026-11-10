@@ -713,7 +713,7 @@ export function MessageBubble({
                 if (block.type === 'file_refs' && block.refs && block.refs.length > 0) {
                   return (
                     <div key={idx} className="w-full">
-                      <FileRefChips refs={block.refs} />
+                      <FileRefChips refs={block.refs} className={message.isMe ? 'items-end' : 'items-start'} />
                     </div>
                   );
                 }
