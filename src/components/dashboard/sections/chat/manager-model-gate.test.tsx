@@ -32,3 +32,10 @@ it('does not misreport a gateway lookup failure as missing credentials', async (
   expect(await screen.findByText(/暂时无法检查模型配置/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '配置模型' })).not.toBeInTheDocument();
 });
+
+it('keeps conversation available for members without model management access', async () => {
+  show(403, {});
+  await waitFor(() => expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled());
+  expect(screen.queryByRole('button', { name: '配置模型' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/暂时无法检查模型配置/)).not.toBeInTheDocument();
+});

@@ -11,8 +11,8 @@ export function ManagerModelGate({ name, children }: { name: string; children: (
     queryKey: ['manager-model-status', name],
     queryFn: async () => {
       const response = await fetch(apiUrl(`/api/agentteams/managers/${encodeURIComponent(name)}/model-status`));
-      // Older Controllers do not expose first-run discovery.
-      if (response.status === 404) return null;
+      // Discovery is optional for older Controllers and non-admin members.
+      if (response.status === 403 || response.status === 404) return null;
       if (!response.ok) throw new Error('暂时无法检查模型配置，请稍后重试。');
       return response.json() as Promise<{ configured: boolean; model: string }>;
     },
