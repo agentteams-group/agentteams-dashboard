@@ -5,9 +5,13 @@
 //      GET /api/v1/me (modern Controllers, #214 own-token semantics). On a
 //      pre-1.4 Controller without /me (404/405) the legacy fallback runs:
 //      SA GET /api/v1/humans/{localpart}, else the own-token L2 probe
-//      (GET /api/v1/status + /api/v1/teams). A legacy L1 session rides the
+//      (GET /api/v1/status + /api/v1/teams) — a probe-rejected account may
+//      then be admitted as a synthetic L1 by the optional explicit
+//      administrator verification (adminUsername/adminPassword → Console
+//      /session/login). A legacy L1 session rides the
 //      server-side SA credential because the old Controller rejects L1
-//      Matrix tokens on the data plane.
+//      Matrix tokens on the data plane; the verified Console session is
+//      bound server-side for the gateway tab.
 // The Console track's misconfiguration (503) is surfaced only when the
 // Matrix track also fails.
 // External Console-only deployments retain their existing login path:
@@ -16,6 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   callHigressConsole,
+  collectSetCookieHeader,
   forwardCookies,
   getHigressConsoleURL,
   HigressConsoleConfigurationError,
@@ -206,6 +211,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { username, password } = body;
 
+    // Optional administrator verification for L1 Matrix logins on the old
+    // Controller (the Console admin account/password is a different account
+    // from the Human CR). Ignored by the Console track, the token-only track
+    // and by L2/L3 Human identities.
+    const adminUsername = typeof body.adminUsername === 'string' ? body.adminUsername.trim() : '';
+    const adminPassword = typeof body.adminPassword === 'string' ? body.adminPassword : '';
+
     const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
     if (!username && !password && controllerToken && !isExternal) {
       return await attemptControllerTokenLogin(request, controllerToken);
@@ -225,7 +237,10 @@ export async function POST(request: NextRequest) {
     // track with the pre-1.4 Controller fallback.
     const consoleResult = await attemptConsoleLogin(request, username, password, { allowMatrix: true });
     if (consoleResult.kind === 'session') return consoleResult.response;
-    const matrixResult = await attemptMatrixLogin(request, username, password);
+    const matrixResult = await attemptMatrixLogin(request, username, password, {
+      username: adminUsername,
+      password: adminPassword,
+    });
     if (matrixResult.ok) return matrixResult;
     // A Console deployment misconfiguration (503) is surfaced only when the
     // Matrix track fails too — a working Matrix login is a login, and the
@@ -444,10 +459,51 @@ async function attemptControllerTokenLogin(
 }
 
 
+/**
+ * Verify the deployment admin's Console credentials (adminUsername +
+ * adminPassword) against the Console session endpoint. Returns the accepted
+ * response so the caller can bind the Console session server-side
+ * (collectSetCookieHeader) — it is never forwarded to the browser.
+ * Reuses callHigressConsole: no parallel Console client, no logging of the
+ * credentials.
+ */
+async function verifyAdminConsoleCredentials(
+  username: string,
+  password: string,
+): Promise<{ response: Response } | null> {
+  try {
+    const { response } = await callHigressConsole('/session/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    return response.ok ? { response } : null;
+  } catch {
+    return null;
+  }
+}
+
+interface AdminCredentials {
+  username: string;
+  password: string;
+}
+
+/**
+ * Matrix track. The identity comes from the user's own Matrix token; the
+ * optional admin credentials are an explicit administrator-verification
+ * channel for L1 (dashboard level 3) accounts:
+ * - modern Controller (/me): level 3 keeps the own-token 'matrix' credential
+ *   (new auth path, #214); the verified Console session is only bound for the
+ *   gateway tab.
+ * - legacy Controller: level 3 rides the server-side SA credential and binds
+ *   the Console session; when the SA Human lookup cannot resolve the account,
+ *   a successful admin verification admits a synthetic L1 Human.
+ * L2/L3 Human identities are never elevated by the admin fields.
+ */
 async function attemptMatrixLogin(
   request: NextRequest,
   username: string,
   password: string,
+  admin: AdminCredentials,
 ): Promise<NextResponse> {
   const matrix = await tryMatrixLogin(username, password);
   if (!matrix || !matrix.accessToken) {
@@ -457,6 +513,29 @@ async function attemptMatrixLogin(
   const userId = typeof matrix.userId === 'string' ? matrix.userId : '';
   const localpart = userId.startsWith('@') ? userId.slice(1).split(':')[0] : username;
   const token = String(matrix.accessToken);
+  const hasAdminCredentials = Boolean(admin.username && admin.password);
+
+  // Verification is lazy and cached: only a level-3 identity (or the legacy
+  // synthetic-L1 admission) consults it, and the Console is called once.
+  let adminCheck: { ok: boolean; consoleCookie?: string } | undefined;
+  const verifyAdmin = async (): Promise<{ ok: boolean; consoleCookie?: string }> => {
+    if (!adminCheck) {
+      if (!hasAdminCredentials) {
+        adminCheck = { ok: false };
+      } else {
+        const verified = await verifyAdminConsoleCredentials(admin.username, admin.password);
+        adminCheck = verified
+          ? { ok: true, consoleCookie: collectSetCookieHeader(verified.response.headers) }
+          : { ok: false };
+      }
+    }
+    return adminCheck;
+  };
+  const adminVerificationFailed = () =>
+    NextResponse.json(
+      { success: false, error: '管理员账号验证失败（账号或密码不正确）' },
+      { status: 401 },
+    );
 
   let me: MeResult;
   try {
@@ -468,6 +547,7 @@ async function attemptMatrixLogin(
 
   let human: HumanRecord;
   let legacyL1 = false;
+  let consoleCookie: string | undefined;
   if (me.kind === 'human') {
     // Modern Controller: own-token identity, the server SA token is never
     // involved (#214 semantics).
@@ -482,19 +562,35 @@ async function attemptMatrixLogin(
       legacyL1 = saHuman.permissionLevel === 1;
     } else {
       const probe = await probeLegacyOwnToken(request, token);
-      if (probe.kind === 'rejected') {
-        return NextResponse.json(
-          { success: false, error: '旧版 Controller 无法验证该 Matrix 账号的权限：请改用 Controller 管理员 token 登录，或升级 Controller 后重试' },
-          { status: 401 },
-        );
-      }
-      if (probe.kind === 'unavailable') {
+      if (probe.kind === 'l2') {
+        // The own-token probe proves a real L2 Human: keep it scoped even
+        // when admin credentials were supplied — never elevate.
+        human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
+      } else if (probe.kind === 'unavailable') {
         return NextResponse.json(
           { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },
           { status: 502 },
         );
+      } else if (hasAdminCredentials) {
+        // Explicit administrator verification: the old Controller cannot
+        // resolve this Matrix account (no SA credential or no Human CR) but a
+        // verified deployment admin vouches for it → synthetic L1 Human.
+        const verified = await verifyAdmin();
+        if (!verified.ok) return adminVerificationFailed();
+        consoleCookie = verified.consoleCookie;
+        human = { name: localpart, permissionLevel: 1, accessibleTeams: [] };
+        legacyL1 = true;
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              '旧版 Controller 无法验证该 Matrix 账号的权限：请在「L1 账号管理员验证」中填写管理员账号与密码，' +
+              '或改用 Controller 管理员 token 登录，或升级 Controller 后重试',
+          },
+          { status: 401 },
+        );
       }
-      human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
     }
   }
 
@@ -503,11 +599,20 @@ async function attemptMatrixLogin(
   if (!human.name || (crLevel !== 1 && crLevel !== 2 && crLevel !== 3) || !dashLevel) {
     return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
   }
+  // Level 3 (full admin): admin credentials, when supplied, must verify —
+  // an invalid pair fails closed instead of silently granting admin access.
+  // L2/L3 Human identities ignore the fields entirely.
+  if (dashLevel === 3 && hasAdminCredentials) {
+    const verified = await verifyAdmin();
+    if (!verified.ok) return adminVerificationFailed();
+    consoleCookie = verified.consoleCookie ?? consoleCookie;
+  }
   // Legacy L1: the old Controller's Matrix auth rejects admin-level tokens
   // on the data plane, so the session rides the server-side SA credential
-  // (the SA lookup that produced the record proves the token is configured).
-  // The Matrix token is still returned to the client for chat only. L2/L3
-  // (modern or legacy) keep their own token — the A2 chain.
+  // (the SA lookup that produced the record proves the token is configured,
+  // or a verified deployment admin vouched for this account). The Matrix
+  // token is still returned to the client for chat only. L2/L3 (modern or
+  // legacy) keep their own token — the A2 chain.
   const credential: { kind: 'sa' } | { kind: 'matrix'; token: string } =
     legacyL1 ? { kind: 'sa' } : { kind: 'matrix', token };
 
@@ -519,6 +624,9 @@ async function attemptMatrixLogin(
       // Level 3 (full admin) is not team-restricted; L2/L3 users are scoped.
       teams: dashLevel === 3 ? [] : (human.accessibleTeams ?? []),
       credential,
+      // Server-bound Console session (administrator verification) — lets the
+      // gateway tab work without sending the Console cookie to the browser.
+      ...(consoleCookie ? { consoleCookie } : {}),
     }));
   } catch (err) {
     return NextResponse.json(

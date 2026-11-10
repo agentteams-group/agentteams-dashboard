@@ -13,6 +13,14 @@ import { __resetSessionStoreForTests, SESSION_COOKIE_NAME, getSessionFromRequest
 vi.mock('../../higress/proxy-helper', () => ({
   callHigressConsole: vi.fn(),
   forwardCookies: vi.fn(),
+  // Same contract as the real helper: Set-Cookie list → request Cookie value.
+  collectSetCookieHeader: (headers: Headers) => {
+    const parts = headers
+      .getSetCookie()
+      .map((c) => c.split(';')[0]?.trim())
+      .filter((c): c is string => Boolean(c && c.includes('=')));
+    return parts.length > 0 ? parts.join('; ') : undefined;
+  },
   getHigressConsoleURL: vi.fn(() => 'http://higress-console:8080'),
   HigressConsoleConfigurationError: class extends Error {},
 }));
@@ -98,6 +106,25 @@ function consoleRejected() {
 function consoleMisconfigured() {
   vi.mocked(getHigressConsoleURL).mockImplementation(() => {
     throw new HigressConsoleConfigurationError('host not on the allowlist');
+  });
+}
+
+const ADMIN_CONS = { username: 'admin', password: 'admin-pass' };
+const ADMIN_CONSOLE_COOKIE = 'hi_console_sess=verified-console-session';
+
+/** Console track: rejects the user's own credentials but accepts the
+ * deployment admin pair (explicit administrator verification). */
+function consoleAdminVerification(consoleCookie = ADMIN_CONSOLE_COOKIE) {
+  vi.mocked(callHigressConsole).mockImplementation(async (_path, options = {}) => {
+    const body = (options.body ?? {}) as Record<string, unknown>;
+    const accepted =
+      body.username === ADMIN_CONS.username && body.password === ADMIN_CONS.password;
+    return {
+      response: accepted
+        ? new Response(null, { status: 200, headers: { 'set-cookie': consoleCookie } })
+        : new Response(null, { status: 401 }),
+      body: {},
+    };
   });
 }
 
@@ -207,6 +234,40 @@ describe('Human login through Controller', () => {
     );
   });
 
+  it('logs in a modern L1 Human without any admin verification (new auth path)', async () => {
+    consoleRejected();
+    installFetch({ me: { status: 200, body: HUMAN(1) } });
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    const session = sessionFrom(res);
+    expect(session?.level).toBe(3);
+    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+    expect(session?.consoleCookie).toBeUndefined();
+  });
+
+  it('keeps the own-token credential for a modern L1 and binds the verified Console session', async () => {
+    consoleAdminVerification();
+    installFetch({ me: { status: 200, body: HUMAN(1) } });
+    const res = await POST(request({ adminUsername: 'admin', adminPassword: 'admin-pass' }));
+    expect(res.status).toBe(200);
+    const session = sessionFrom(res);
+    // New auth (#214): a verified admin pair does not switch the credential
+    // to the server SA token — only the gateway Console cookie is bound.
+    expect(session?.level).toBe(3);
+    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+    expect(session?.consoleCookie).toBe(ADMIN_CONSOLE_COOKIE);
+    expect(res.headers.get('set-cookie')).not.toContain('own-matrix-token');
+  });
+
+  it('fails closed when a modern L1 supplies invalid admin credentials', async () => {
+    consoleAdminVerification();
+    installFetch({ me: { status: 200, body: HUMAN(1) } });
+    const res = await POST(request({ adminUsername: 'admin', adminPassword: 'wrong-pass' }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect((await res.json()).error).toBe('管理员账号验证失败（账号或密码不正确）');
+  });
+
   // ── Pre-1.4 Controller: no /me → legacy fallback ─────────────────────
 
   it('falls back to the SA Human lookup on a Controller without /me (L1)', async () => {
@@ -275,6 +336,121 @@ describe('Human login through Controller', () => {
     expect(sessionFrom(res)?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
   });
 
+  it('admits a legacy L1 Matrix account through explicit admin verification', async () => {
+    consoleAdminVerification();
+    const fetchMock = installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 404, body: { error: 'not found' } },
+      legacyStatus: 401, // the old Controller rejects the L1 Matrix token
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.mode).toBe('matrix');
+    expect(data.user).toEqual({ username: 'luo', level: 3 });
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).not.toContain('own-matrix-token');
+    const session = sessionFrom(res);
+    expect(session?.credential).toEqual({ kind: 'sa' });
+    expect(session?.consoleCookie).toBe(ADMIN_CONSOLE_COOKIE);
+    // The admin pair was checked against the Console session endpoint; the
+    // user's own pair was rejected there first (dual track).
+    expect(callHigressConsole).toHaveBeenCalledWith('/session/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'admin-pass' },
+    });
+    // The L1 token is still probed so a real L2 Human is not elevated.
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain(
+      'http://controller.test:8090/api/v1/status',
+    );
+  });
+
+  it('rejects a legacy L1 when the supplied admin credentials are wrong', async () => {
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 404, body: { error: 'not found' } },
+      legacyStatus: 401,
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'wrong-pass',
+    }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect((await res.json()).error).toBe('管理员账号验证失败（账号或密码不正确）');
+  });
+
+  it('binds the verified Console session for a legacy SA-resolved L1 account', async () => {
+    vi.mocked(getAuthToken).mockResolvedValue('sa-token');
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 200, body: { name: 'luo', permissionLevel: 1 } },
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    }));
+    expect(res.status).toBe(200);
+    const session = sessionFrom(res);
+    expect(session?.credential).toEqual({ kind: 'sa' });
+    expect(session?.consoleCookie).toBe(ADMIN_CONSOLE_COOKIE);
+  });
+
+  it('fails closed when a legacy SA-resolved L1 supplies invalid admin credentials', async () => {
+    vi.mocked(getAuthToken).mockResolvedValue('sa-token');
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      saHuman: { status: 200, body: { name: 'luo', permissionLevel: 1 } },
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'wrong-pass',
+    }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('never elevates a legacy L2 Human when admin credentials are supplied', async () => {
+    consoleAdminVerification();
+    installFetch({
+      matrixUserId: '@luo:matrix.local',
+      me: { status: 404 },
+      legacyStatus: 200,
+      legacyTeams: { status: 200, teams: [{ name: 'team-a' }] },
+    });
+    const res = await POST(request({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    }));
+    expect(res.status).toBe(200);
+    const session = sessionFrom(res);
+    expect(session?.level).toBe(2);
+    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+    expect(session?.consoleCookie).toBeUndefined();
+    // The admin pair is never verified for a real L2 identity.
+    expect(callHigressConsole).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects when the old Controller cannot verify the identity (no /me, no SA, status 401)', async () => {
     consoleRejected();
     installFetch({
@@ -287,8 +463,10 @@ describe('Human login through Controller', () => {
     expect(res.headers.get('set-cookie')).toBeNull();
     const data = await res.json();
     expect(data.success).toBe(false);
-    // Actionable: points at the operational token path or an upgrade.
+    // Actionable: points at administrator verification or the operational
+    // token path / an upgrade.
     expect(data.error).toContain('Controller');
+    expect(data.error).toContain('L1 账号管理员验证');
     expect(data.error).toMatch(/token|升级/);
   });
 
@@ -325,14 +503,17 @@ describe('Human login through Controller', () => {
     expect((await POST(request())).status).toBe(401);
   });
 
-  it('ignores supplied administrator credentials during Human login', async () => {
+  it('ignores supplied administrator credentials for an L2 Human', async () => {
     consoleRejected();
     installFetch({ me: { status: 200, body: HUMAN(2) } });
-    const res = await POST(request({ controllerToken: 'admin-token', adminUsername: 'admin', adminPassword: 'secret' }));
+    const res = await POST(request({ adminUsername: 'admin', adminPassword: 'admin-pass' }));
     expect(res.status).toBe(200);
     expect((await res.json()).user.level).toBe(2);
-    // The Console track still runs exactly once (dual track); the legacy
-    // hidden admin fields grant nothing.
+    const session = sessionFrom(res);
+    expect(session?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+    expect(session?.consoleCookie).toBeUndefined();
+    // The Console track still runs exactly once (dual track); the admin
+    // fields are not even verified for an L2 identity — no elevation.
     expect(callHigressConsole).toHaveBeenCalledTimes(1);
   });
 

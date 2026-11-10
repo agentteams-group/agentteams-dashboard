@@ -11,6 +11,8 @@ vi.mock('@/lib/matrix-store', () => ({
 }));
 
 const TOKEN_ENTRY = '仅用 Controller 管理员 token 登录';
+const ADMIN_ENTRY = 'L1 账号管理员验证（旧 Controller 需要）';
+const ADMIN_HINT = '普通 L2/L3 Matrix 账号无需填写；旧 Controller 的 L1 Matrix 登录需要管理员账号验证。';
 
 function mockLoginResponse(status: number, body: Record<string, unknown>) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), {
@@ -24,6 +26,11 @@ function mockLoginResponse(status: number, body: Record<string, unknown>) {
 function openTokenEntry() {
   fireEvent.click(screen.getByRole('button', { name: TOKEN_ENTRY }));
   return screen.getByPlaceholderText('Controller 管理员 token');
+}
+
+function openAdminEntry() {
+  fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+  return screen.getByPlaceholderText('管理员账号');
 }
 
 beforeEach(() => {
@@ -116,5 +123,62 @@ describe('LoginPage Controller token-only login', () => {
     ).toBeInTheDocument();
     // Never retries by itself: no request is issued on mount.
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoginPage L1 admin verification', () => {
+  it('keeps the admin verification section collapsed by default', () => {
+    render(<LoginPage />);
+
+    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
+    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
+    expect(screen.queryByText(ADMIN_HINT)).toBeNull();
+
+    openAdminEntry();
+    expect(screen.getByPlaceholderText('管理员密码')).toBeInTheDocument();
+    expect(screen.getByText(ADMIN_HINT)).toBeInTheDocument();
+  });
+
+  it('sends adminUsername/adminPassword when both are filled', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'luo', level: 3 },
+      mode: 'matrix',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'luo' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'luo-pass' } });
+    openAdminEntry();
+    fireEvent.change(screen.getByPlaceholderText('管理员账号'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByPlaceholderText('管理员密码'), { target: { value: 'admin-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    });
+  });
+
+  it('omits the admin fields when only one side is filled', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'admin', level: 3 },
+      mode: 'higress',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    openAdminEntry();
+    fireEvent.change(screen.getByPlaceholderText('管理员账号'), { target: { value: 'admin' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'admin', password: 'password' });
   });
 });
