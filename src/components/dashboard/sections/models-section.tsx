@@ -64,6 +64,7 @@ import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
+import { ManagerModelSetup } from './manager-model-setup';
 
 const newProviderForm = (): ProviderForm => ({
   name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [], pathPrefix: '/v1',
@@ -393,6 +394,7 @@ export function ModelsSection() {
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
   return <div className="space-y-6">
     <SectionHeader title="模型管理" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
+    <ManagerModelSetup />
     <RuntimeStatusCard higress={infrastructure?.higress} />
     <Card className="glass-card"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">AI 模型提供商<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个提供商</span></CardTitle><CardDescription>协议、Token 故障转移、模型映射与公开高级配置</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button></CardHeader><CardContent className="space-y-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
     <Card className="glass-card"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同提供商。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同提供商；给不同提供商配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">共 {routes.length} 条路由</span></CardTitle><CardDescription>多上游权重、路径与模型匹配、认证和回退策略</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button></CardHeader><CardContent className="space-y-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>

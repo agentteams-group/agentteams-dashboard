@@ -354,6 +354,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
               <ChatPanel
                 key={selectedRoom.id}
                 room={selectedRoom}
+                managerName={selectedRoom.agentRole === 'operations' ? managers?.find((manager) => manager.roomID === selectedRoom.id)?.name : undefined}
                 rooms={availableRooms}
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
