@@ -358,12 +358,12 @@ export function MessageBubble({
     return normalizeToBlocks({
       body: typeof message.content === 'string' ? message.content : '',
       formattedBody: typeof message.formattedContent === 'string' ? message.formattedContent : undefined,
-      content: message.rawContent ?? {},
+      content: { ...message.rawContent, ...(message.fileRefs?.length ? { 'com.agentteams.file_refs': { refs: message.fileRefs } } : {}) },
       isStreaming: !!message.isStreaming,
       isMine: message.isMe,
       runtime: message.runtime ?? null,
     });
-  }, [message.precomputedBlocks, message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
+  }, [message.precomputedBlocks, message.content, message.formattedContent, message.rawContent, message.fileRefs, message.isStreaming, message.isMe, message.runtime]);
 
   // Worker messages fold their whole process (thinking + tool calls) into one
   // disclosure per contiguous segment: the avatar anchors a compact summary
@@ -595,12 +595,6 @@ export function MessageBubble({
             </div>
           ) : (
             <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
-              {/* Optimistic local sends carry refs directly (no event content yet). */}
-              {message.fileRefs && message.fileRefs.length > 0 && (
-                <div className="w-full">
-                  <FileRefChips refs={message.fileRefs} />
-                </div>
-              )}
               {parsedBlocks.map((block, idx) => {
                 const processRun = processSegments.runs.get(idx);
                 if (processRun) {
@@ -719,7 +713,7 @@ export function MessageBubble({
                 if (block.type === 'file_refs' && block.refs && block.refs.length > 0) {
                   return (
                     <div key={idx} className="w-full">
-                      <FileRefChips refs={block.refs} />
+                      <FileRefChips refs={block.refs} className={message.isMe ? 'items-end' : 'items-start'} />
                     </div>
                   );
                 }

@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatComposer } from './chat-composer';
 
+vi.mock('./components/FileRefPickerDialog', () => ({ FileRefPickerDialog: ({ onSendPersonalFile }: { onSendPersonalFile: (_file: File) => void }) => <button onClick={() => onSendPersonalFile(new File(['hello'], 'mine.txt'))}>发送我的文件</button> }));
+
 vi.mock('./voice-input', () => ({ VoiceInput: () => null }));
 
 afterEach(cleanup);
@@ -47,4 +49,12 @@ describe('ChatComposer keyboard submission', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onSend).toHaveBeenCalledTimes(1);
   });
+});
+
+it('opens personal files without a Worker workspace and forwards the attachment', () => {
+  const upload = vi.fn();
+  render(<ChatComposer value="" onChange={vi.fn()} onSend={vi.fn()} isSending={false} sendError={null} placeholder="消息" disabled={false} onFileUpload={upload} />);
+  fireEvent.click(screen.getByTitle('选择文件（我的文件或工作空间）'));
+  fireEvent.click(screen.getByRole('button', { name: '发送我的文件' }));
+  expect(upload).toHaveBeenCalledWith(expect.objectContaining({ name: 'mine.txt', size: 5 }));
 });

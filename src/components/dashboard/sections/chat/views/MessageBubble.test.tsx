@@ -1167,3 +1167,13 @@ describe('MessageBubble missing body (#1436)', () => {
   });
 });
 
+
+it('renders an optimistic reference once as a file card while keeping the user caption', async () => {
+  const { withFileReferences } = await import('@/lib/file-refs');
+  const refs = [{ name: '演示.pptx', key: 'default/docs/演示.pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+  renderWithProvider(<MessageBubble message={{ id: 'local-ref', sender: '@me:test', senderShort: 'me', timestamp: 0, type: 'm.text', isMe: true, content: withFileReferences('看下这个', refs), fileRefs: refs }} showSender isContinuation={false} />);
+  expect(screen.getByText('看下这个')).toBeInTheDocument();
+  expect(screen.getAllByText('演示.pptx')).toHaveLength(1);
+  expect(screen.queryByText(/不要重新选择文件/)).toBeNull();
+  expect(screen.getByText('查看路径').closest('details')).not.toHaveAttribute('open');
+});

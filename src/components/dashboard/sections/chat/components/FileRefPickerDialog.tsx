@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { PersonalFilePicker } from './PersonalFilePicker';
 import { Button } from '@/components/ui/button';
 import { useWorkerFiles, useTeamFiles } from '@/hooks/use-agentteams-storage';
 import type { StorageObject } from '@/lib/agentteams-api';
@@ -22,6 +23,7 @@ interface FileRefPickerDialogProps {
   /** Worker or team name owning the space (empty disables browsing). */
   ownerName: string;
   onConfirm: (_refs: FileRef[]) => void;
+  onSendPersonalFile?: (_file: File) => void | Promise<void>;
 }
 
 function toFileRef(object: StorageObject): FileRef {
@@ -37,7 +39,7 @@ function toFileRef(object: StorageObject): FileRef {
 export function computeRefPrefix(current: string, relativeKey: string): string {
   const cleanRel = relativeKey.endsWith('/') ? relativeKey.slice(0, -1) : relativeKey;
   if (!cleanRel || cleanRel.includes('//')) return current;
-  return current ? `${current}${cleanRel}/` : `${cleanRel}/`;
+  return current && !`${cleanRel}/`.startsWith(current) ? `${current}${cleanRel}/` : `${cleanRel}/`;
 }
 
 /** Parent directory of a listing prefix ('' at the root). */
@@ -54,12 +56,14 @@ export function FileRefPickerDialog({
   kind,
   ownerName,
   onConfirm,
+  onSendPersonalFile,
 }: FileRefPickerDialogProps) {
+  const [source, setSource] = useState<'personal' | 'workspace'>(onSendPersonalFile ? 'personal' : 'workspace');
   const [prefix, setPrefix] = useState('');
   // Both hooks run unconditionally (Rules of Hooks); the inactive kind is
   // disabled by an empty owner name.
-  const workerQuery = useWorkerFiles(kind === 'worker' && ownerName ? ownerName : '', prefix || undefined);
-  const teamQuery = useTeamFiles(kind === 'team' && ownerName ? ownerName : '', prefix || undefined);
+  const workerQuery = useWorkerFiles(open && source === 'workspace' && kind === 'worker' && ownerName ? ownerName : '', prefix || undefined);
+  const teamQuery = useTeamFiles(open && source === 'workspace' && kind === 'team' && ownerName ? ownerName : '', prefix || undefined);
   const { data: objects, isLoading } = kind === 'worker' ? workerQuery : teamQuery;
 
   const [selected, setSelected] = useState<Map<string, FileRef>>(new Map());
@@ -92,7 +96,7 @@ export function FileRefPickerDialog({
       if (next.has(object.key)) {
         next.delete(object.key);
       } else {
-        next.set(object.key, toFileRef(object));
+        next.set(object.key, { ...toFileRef(object), workspace: { kind, ownerName } });
       }
       return next;
     });
@@ -107,9 +111,14 @@ export function FileRefPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg" data-testid="file-ref-picker">
         <DialogHeader>
-          <DialogTitle>引用工作空间文件</DialogTitle>
+          <DialogTitle>选择文件</DialogTitle>
         </DialogHeader>
 
+        {onSendPersonalFile && <div className="flex gap-2" aria-label="文件来源">
+          <Button variant={source === 'personal' ? 'secondary' : 'ghost'} aria-pressed={source === 'personal'} onClick={() => setSource('personal')}>我的文件</Button>
+          {ownerName && <Button variant={source === 'workspace' ? 'secondary' : 'ghost'} aria-pressed={source === 'workspace'} onClick={() => setSource('workspace')}>工作空间</Button>}
+        </div>}
+        {source === 'personal' && onSendPersonalFile ? <PersonalFilePicker onSend={onSendPersonalFile} onDone={() => onOpenChange(false)} /> : <>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {prefix ? (
             <Button variant="ghost" size="sm" className="h-6 px-2" onClick={navigateUp}>
@@ -186,6 +195,7 @@ export function FileRefPickerDialog({
             插入引用
           </Button>
         </DialogFooter>
+        </>}
       </DialogContent>
     </Dialog>
   );

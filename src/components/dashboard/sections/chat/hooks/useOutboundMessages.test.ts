@@ -6,6 +6,7 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { withFileReferences, FILE_REFS_CONTENT_KEY, type FileRef } from '@/lib/file-refs';
 import { ANSWER_CONTENT_KEY } from '../confirmation-reply';
 import { useOutboundMessages } from './useOutboundMessages';
 
@@ -95,4 +96,14 @@ describe('useOutboundMessages.sendOutbound（方案 v3 C-3）', () => {
     expect(await hook.result.current.sendOutbound({ content: 'x' })).toBe(false);
     expect(sendMutation.mutate).not.toHaveBeenCalled();
   });
+});
+
+it('delivers readable workspace locations together with structured reference chips', async () => {
+  const { hook, mutate } = setup();
+  const refs: FileRef[] = [{ name: 'report.md', key: 'worker/docs/report.md', workspace: { kind: 'worker', ownerName: 'worker' } }];
+  await hook.result.current.sendOutbound({ content: withFileReferences('请总结', refs), fileRefs: refs });
+  const message = mutate.mock.calls[0][0];
+  expect(message.body).toContain('worker/docs/report.md');
+  expect(message.body).toContain('Worker工作空间 "worker"');
+  expect(message.extra[FILE_REFS_CONTENT_KEY]).toEqual({ refs });
 });

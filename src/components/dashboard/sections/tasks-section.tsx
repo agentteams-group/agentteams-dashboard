@@ -25,6 +25,9 @@ import {
   RotateCcw,
   Database,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { apiUrl, requestJson } from '@/lib/api-base';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -84,56 +87,56 @@ const TASK_STATUS_COLUMNS: Array<{
     key: 'pending',
     label: '待办',
     description: 'Manager 拆分但尚未派发',
-    color: 'text-slate-500 bg-slate-500/10 border-slate-500/30',
+    color: 'text-muted-foreground bg-muted border-border',
     icon: Clock,
   },
   {
     key: 'assigned',
     label: '已派发',
     description: '已发给 Worker,等待首次心跳',
-    color: 'text-blue-500 bg-blue-500/10 border-blue-500/30',
+    color: 'text-foreground bg-muted border-border',
     icon: ChevronUp,
   },
   {
     key: 'in_progress',
     label: '进行中',
     description: 'Worker 正在执行',
-    color: 'text-violet-500 bg-violet-500/10 border-violet-500/30',
+    color: 'text-status-running bg-status-running/5 border-status-running/15',
     icon: Loader2,
   },
   {
     key: 'revision',
     label: '需修订',
     description: 'Manager 验收未通过,打回重做',
-    color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
     icon: RotateCcw,
   },
   {
     key: 'completed',
     label: '已完成',
     description: 'Worker 报完成,Manager 已确认',
-    color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30',
+    color: 'text-status-done bg-status-done/5 border-status-done/15',
     icon: CircleCheck,
   },
   {
     key: 'failed',
     label: '失败',
     description: '执行失败,需要人工介入',
-    color: 'text-red-500 bg-red-500/10 border-red-500/30',
+    color: 'text-status-failed bg-status-failed/5 border-status-failed/15',
     icon: CircleX,
   },
   {
     key: 'blocked',
     label: '阻塞',
     description: '等待依赖项完成或外部解锁',
-    color: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
+    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
     icon: AlertTriangle,
   },
   {
     key: 'unknown',
     label: '未知',
     description: '状态未知',
-    color: 'text-gray-500 bg-gray-500/10 border-gray-500/30',
+    color: 'text-muted-foreground bg-muted border-border',
     icon: Eye,
   },
 ];
@@ -270,15 +273,17 @@ function TaskCard({
   managerName,
   workerTeam,
   highlightProjectId,
+  selected,
   onClick,
 }: {
   task: BoardTask;
   managerName?: string;
   workerTeam?: string;
   highlightProjectId?: string;
+  selected?: boolean;
   onClick?: () => void;
 }) {
-  const expanded = highlightProjectId === task.projectId;
+  const expanded = selected ?? (highlightProjectId === task.projectId);
   return (
     <Card
       {...(onClick
@@ -290,11 +295,9 @@ function TaskCard({
             onKeyDown: handleActivate(onClick),
           }
         : {})}
-      className={`glass-card ${onClick ? INTERACTIVE_CARD_CLASS : 'hover-lift'} ${
-        expanded ? 'border-violet-500/40' : ''
-      }`}
+      className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
-      <CardContent className="p-3 space-y-2">
+      <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-2">
           <StatusBadge status={task.status} />
           {task.outcome && <OutcomeBadge outcome={task.outcome} />}
@@ -310,8 +313,8 @@ function TaskCard({
           )}
         </div>
         <div>
-          <p className="text-sm font-medium leading-snug">{task.title}</p>
-          <p className="text-xs text-muted-foreground font-mono mt-0.5">
+          <p className="text-sm font-medium leading-6">{task.title}</p>
+          <p className="text-xs text-muted-foreground font-mono mt-1">
             {shortId(task.runId, 22)}
           </p>
         </div>
@@ -320,8 +323,8 @@ function TaskCard({
             <span className="flex items-center gap-1">
               {managerName ? (
                 <>
-                  <Crown className="h-3 w-3 text-violet-500" />
-                  <span className="text-violet-600 dark:text-violet-400">{managerName}</span>
+                  <Crown className="h-3 w-3" />
+                  <span>{managerName}</span>
                 </>
               ) : (
                 <>
@@ -431,7 +434,7 @@ function ProjectCard({
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           {project.leader && (
             <span className="flex items-center gap-1">
-              <Crown className="h-3 w-3 text-violet-500" />
+              <Crown className="h-3 w-3" />
               {project.leader}
             </span>
           )}
@@ -564,7 +567,6 @@ export function TasksSection() {
   const { setActiveSection } = useActiveSection();
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const clearTasks = useTaskStore((s) => s.clearTasks);
-  const liveCount = useTaskStore(useShallow((s) => Object.keys(s.tasks).length));
 
   // D5 双轨：主源 = Controller projects/workflow API（standardized），
   // 降级 = MinIO 直读看板（API 未部署/Controller 故障时 fallback）。
@@ -627,6 +629,8 @@ export function TasksSection() {
     isTasksViewMode,
   );
   const [search, setSearch] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const selectedTask = board.tasks.find(task => task.runId === selectedTaskId) ?? null;
   const [selectedProjectId, setSelectedProjectId] = usePersistentState<
     string | null
   >(TASKS_PROJECT_KEY, null, isProjectIdOrNone);
@@ -774,24 +778,11 @@ export function TasksSection() {
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SectionHeader
         title="任务看板"
-        description={
-          matrixLoggedIn
-            ? apiBoard.degraded
-              ? 'Controller 项目 API 降级 — 回退 MinIO 持久化 + Matrix 实时双数据源'
-              : '项目/任务实时进度'
-            : '需要先登录 Matrix 才能拉取实时数据'
-        }
         actions={
           <div className="flex items-center gap-2">
-            <span
-              className="text-xs text-muted-foreground hidden sm:inline"
-              title="持久 / 实时 / 项目"
-            >
-              持久 {board.tasks.length - liveCount} · 实时 {liveCount} · 项目 {board.projects.length}
-            </span>
             <div className="flex items-center gap-1">
               {(['kanban', 'projects'] as const).map((v) => (
                 <Button
@@ -832,46 +823,39 @@ export function TasksSection() {
         }
       />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Compact task summary */}
+      <div aria-label="任务状态汇总" className="flex items-center gap-5 overflow-x-auto rounded-lg border border-border px-4 py-2 text-sm">
         {[
           {
             label: '进行中',
             count: counts.running,
-            color: 'text-violet-500',
-            bg: 'bg-violet-500/10 border-violet-500/20',
+            color: 'text-foreground',
           },
           {
             label: '已完成',
             count: counts.completed,
-            color: 'text-emerald-500',
-            bg: 'bg-emerald-500/10 border-emerald-500/20',
+            color: 'text-foreground',
           },
           {
             label: '需修订',
             count: counts.revision,
-            color: 'text-amber-500',
-            bg: 'bg-amber-500/10 border-amber-500/20',
+            color: 'text-foreground',
           },
           {
             label: '阻塞',
             count: counts.blocked,
-            color: 'text-orange-500',
-            bg: 'bg-orange-500/10 border-orange-500/20',
+            color: 'text-foreground',
           },
           {
             label: '失败',
             count: counts.failed,
-            color: 'text-red-500',
-            bg: 'bg-red-500/10 border-red-500/20',
+            color: 'text-foreground',
           },
         ].map((s) => (
-          <Card key={s.label} className={`glass-card ${s.bg} border`}>
-            <CardContent className="p-4 text-center">
-              <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-            </CardContent>
-          </Card>
+          <div key={s.label} className="flex shrink-0 items-center gap-2">
+            <span className="text-muted-foreground">{s.label}</span>
+            <span className={`font-mono font-semibold ${s.color}`}>{s.count}</span>
+          </div>
         ))}
       </div>
 
@@ -916,28 +900,31 @@ export function TasksSection() {
         />
       </div>
 
-      {/* View: Kanban (status columns) — 8 statuses flow into a 4x2 grid
-          on wide screens; one per row on mobile. */}
-      {view === 'kanban' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* One quiet empty state instead of eight oversized empty columns. */}
+      {view === 'kanban' && filteredTasks.length === 0 && <div className="rounded-xl border border-border bg-muted/10">
+        <SectionEmptyState title={board.isLoading ? '正在加载任务…' : (apiBoard.degraded && minioBoard.error) ? '暂时无法读取任务' : search ? '未找到匹配任务' : '暂无任务'} description={(apiBoard.degraded && minioBoard.error) ? '请刷新重试。' : search ? '试试其他关键词。' : '与助手创建任务后，可以在这里跟进执行进度。'} />
+      </div>}
+
+      {/* Neutral columns; state color is limited to the header indicator. */}
+      {view === 'kanban' && filteredTasks.length > 0 && (
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           {TASK_STATUS_COLUMNS.map((col) => {
             const list = tasksByStatus.get(col.key) ?? [];
-            const Icon = col.icon;
             return (
               <div
                 key={col.key}
-                className={`rounded-lg border ${col.color} p-3 h-[560px] flex flex-col gap-2`}
+                className="flex h-[360px] flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
               >
-                <div className="flex items-center gap-1.5 pb-1 border-b border-current/10">
-                  <Icon className={`h-3.5 w-3.5 ${col.key === 'in_progress' ? 'animate-spin' : ''}`} />
+                <div className={`-mx-3 -mt-3 flex items-center gap-2 border-b px-3 py-3 ${col.color}`}>
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]}`} />
                   <p className="text-xs font-semibold">{col.label}</p>
-                  <span className="ml-auto text-xs font-mono opacity-70">{list.length}</span>
+                  <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
-                <div className="space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain custom-scrollbar">
                   <AnimatePresence initial={false}>
                     {list.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic text-center py-4">
-                        无
+                      <p className="py-4 text-center text-xs text-muted-foreground/70">
+                        暂无任务
                       </p>
                     ) : (
                       list.map((t) => {
@@ -956,6 +943,8 @@ export function TasksSection() {
                               managerName={mgr}
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
+                              selected={selectedTaskId === t.runId}
+                              onClick={() => setSelectedTaskId(t.runId)}
                             />
                           </motion.div>
                         );
@@ -968,6 +957,10 @@ export function TasksSection() {
           })}
         </div>
       )}
+
+      <TaskDetailSheet task={selectedTask} teamId={board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
+        if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); setSelectedTaskId(null); }
+      }} />
 
       {/* View: Projects (cards + selected project plan)
           9/17 装验反馈 G4：row 容器固定撑满剩余屏高（round-4 同 220px
@@ -1125,4 +1118,46 @@ export function TasksSection() {
       <div data-reload-key={reloadKey} hidden />
     </div>
   );
+}
+
+interface TaskMetaDetail {
+  status?: string;
+  summary?: string;
+  description?: string;
+  spec_path?: string;
+  result_summary?: string;
+  result_path?: string;
+  deliverables?: Array<string | { name?: string; path?: string; description?: string }>;
+}
+
+function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: BoardTask | null; teamId?: string; onClose: () => void; onOpenProject: () => void }) {
+  const detail = useQuery({
+    queryKey: ['task-detail', task?.runId, teamId],
+    queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
+    enabled: !!task,
+    retry: false,
+    throwOnError: false,
+  });
+  return <Sheet open={!!task} onOpenChange={open => { if (!open) onClose(); }}>
+    <SheetContent className="sm:max-w-lg">
+      <SheetHeader className="border-b border-border pr-12">
+        <SheetTitle>{task?.title ?? '任务详情'}</SheetTitle>
+        <SheetDescription>查看任务状态、执行说明与交付结果</SheetDescription>
+      </SheetHeader>
+      {task && <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 custom-scrollbar">
+        <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
+        <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
+          <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || '未分配'}</dd>
+          <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>
+          {task.projectId && <><dt className="text-muted-foreground">所属项目</dt><dd><button className="text-primary hover:underline" onClick={onOpenProject}>查看项目详情</button></dd></>}
+          {task.dependsOn.length > 0 && <><dt className="text-muted-foreground">前置依赖</dt><dd className="break-all">{task.dependsOn.join('、')}</dd></>}
+        </dl>
+        {detail.isLoading && <p role="status" className="text-sm text-muted-foreground">正在加载详情…</p>}
+        {detail.isError && <div role="alert" className="text-sm text-status-failed">详情暂时无法加载<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></div>}
+        <section className="space-y-2"><h3 className="text-sm font-medium">任务说明</h3><p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detail.data?.description || detail.data?.summary || task.spec || '暂无补充说明'}</p></section>
+        {(detail.data?.result_summary || detail.data?.result_path) && <section className="space-y-2"><h3 className="text-sm font-medium">执行结果</h3><p className="whitespace-pre-wrap break-all text-sm leading-6 text-muted-foreground">{detail.data.result_summary || detail.data.result_path}</p></section>}
+        {!!detail.data?.deliverables?.length && <section className="space-y-2"><h3 className="text-sm font-medium">交付文件</h3><ul className="space-y-2">{detail.data.deliverables.map((file, i) => <li key={i} className="break-all rounded-md border border-border px-3 py-2 text-sm">{typeof file === 'string' ? file : file.name || file.path || file.description || '交付文件'}</li>)}</ul></section>}
+      </div>}
+    </SheetContent>
+  </Sheet>;
 }
