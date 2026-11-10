@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // 9/17 装验反馈回归：任务看板项目视图**右栏详情独立滚动**——
@@ -33,7 +33,7 @@ vi.mock('@/hooks/use-agentteams-workers', () => ({
 vi.mock('@/hooks/use-projects', () => ({
   useApiTaskBoard: () => ({
     projects: [FAKE_PROJECT],
-    tasks: [],
+    tasks: viewPreference.tasks,
     degraded: false,
     refetch: vi.fn(),
   }),
@@ -59,7 +59,7 @@ vi.mock('@/lib/task-store', () => ({
 vi.mock('@/lib/hitl-inbox', () => ({
   useHitlInboxStore: { getState: () => ({ takePendingProjectKey: () => null }) },
 }));
-const viewPreference = vi.hoisted(() => ({ value: 'projects' }));
+const viewPreference = vi.hoisted(() => ({ value: 'projects', tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
 // 视图模式/选中项目持久化：直接给 projects 视图 + 选中 proj-1
 vi.mock('@/lib/use-persistent-state', () => ({
   usePersistentState: (key: string, initial: unknown) => {
@@ -90,6 +90,7 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
   afterEach(() => {
     cleanup();
     viewPreference.value = 'projects';
+    viewPreference.tasks = [];
     vi.unstubAllGlobals();
   });
 
@@ -136,4 +137,22 @@ it('shows one restrained empty board instead of eight colored empty columns', ()
   expect(screen.getByLabelText('任务状态汇总')).toBeInTheDocument();
   cleanup();
   viewPreference.value = 'projects';
+});
+
+it('opens the selected task detail and keeps populated groups at a fixed height', async () => {
+  viewPreference.value = 'kanban';
+  viewPreference.tasks = [{ runId: 'task-demo', title: '检查交付文件', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ summary: '核对分析结论和原始文件', status: 'submitted', deliverables: ['报告.md'] }), { status: 200 })));
+  renderSection();
+  const card = screen.getByRole('button', { name: /检查交付文件/ });
+  expect(card.closest('[class*="h-[360px]"]')).not.toBeNull();
+  fireEvent.click(card);
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();
+  expect(screen.getByText('报告.md')).toBeInTheDocument();
+  expect(screen.getByText('待验收')).toBeInTheDocument();
+  cleanup();
+  vi.unstubAllGlobals();
+  viewPreference.value = 'projects';
+  viewPreference.tasks = [];
 });

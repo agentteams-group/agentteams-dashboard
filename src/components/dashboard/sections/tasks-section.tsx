@@ -25,6 +25,9 @@ import {
   RotateCcw,
   Database,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { apiUrl, requestJson } from '@/lib/api-base';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -270,15 +273,17 @@ function TaskCard({
   managerName,
   workerTeam,
   highlightProjectId,
+  selected,
   onClick,
 }: {
   task: BoardTask;
   managerName?: string;
   workerTeam?: string;
   highlightProjectId?: string;
+  selected?: boolean;
   onClick?: () => void;
 }) {
-  const expanded = highlightProjectId === task.projectId;
+  const expanded = selected ?? (highlightProjectId === task.projectId);
   return (
     <Card
       {...(onClick
@@ -624,6 +629,8 @@ export function TasksSection() {
     isTasksViewMode,
   );
   const [search, setSearch] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const selectedTask = board.tasks.find(task => task.runId === selectedTaskId) ?? null;
   const [selectedProjectId, setSelectedProjectId] = usePersistentState<
     string | null
   >(TASKS_PROJECT_KEY, null, isProjectIdOrNone);
@@ -906,14 +913,14 @@ export function TasksSection() {
             return (
               <div
                 key={col.key}
-                className="flex min-h-32 flex-col gap-3 rounded-xl border border-border bg-muted/20 p-3"
+                className="flex h-[360px] flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
               >
-                <div className="flex items-center gap-2">
+                <div className={`-mx-3 -mt-3 flex items-center gap-2 border-b px-3 py-3 ${col.color}`}>
                   <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]}`} />
                   <p className="text-xs font-semibold">{col.label}</p>
                   <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
-                <div className="max-h-[24rem] min-h-0 space-y-2 overflow-y-auto overscroll-contain">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain custom-scrollbar">
                   <AnimatePresence initial={false}>
                     {list.length === 0 ? (
                       <p className="py-4 text-center text-xs text-muted-foreground/70">
@@ -936,6 +943,8 @@ export function TasksSection() {
                               managerName={mgr}
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
+                              selected={selectedTaskId === t.runId}
+                              onClick={() => setSelectedTaskId(t.runId)}
                             />
                           </motion.div>
                         );
@@ -948,6 +957,10 @@ export function TasksSection() {
           })}
         </div>
       )}
+
+      <TaskDetailSheet task={selectedTask} teamId={board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
+        if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); setSelectedTaskId(null); }
+      }} />
 
       {/* View: Projects (cards + selected project plan)
           9/17 装验反馈 G4：row 容器固定撑满剩余屏高（round-4 同 220px
@@ -1105,4 +1118,46 @@ export function TasksSection() {
       <div data-reload-key={reloadKey} hidden />
     </div>
   );
+}
+
+interface TaskMetaDetail {
+  status?: string;
+  summary?: string;
+  description?: string;
+  spec_path?: string;
+  result_summary?: string;
+  result_path?: string;
+  deliverables?: Array<string | { name?: string; path?: string; description?: string }>;
+}
+
+function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: BoardTask | null; teamId?: string; onClose: () => void; onOpenProject: () => void }) {
+  const detail = useQuery({
+    queryKey: ['task-detail', task?.runId, teamId],
+    queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
+    enabled: !!task,
+    retry: false,
+    throwOnError: false,
+  });
+  return <Sheet open={!!task} onOpenChange={open => { if (!open) onClose(); }}>
+    <SheetContent className="sm:max-w-lg">
+      <SheetHeader className="border-b border-border pr-12">
+        <SheetTitle>{task?.title ?? '任务详情'}</SheetTitle>
+        <SheetDescription>查看任务状态、执行说明与交付结果</SheetDescription>
+      </SheetHeader>
+      {task && <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 custom-scrollbar">
+        <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
+        <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
+          <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || '未分配'}</dd>
+          <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>
+          {task.projectId && <><dt className="text-muted-foreground">所属项目</dt><dd><button className="text-primary hover:underline" onClick={onOpenProject}>查看项目详情</button></dd></>}
+          {task.dependsOn.length > 0 && <><dt className="text-muted-foreground">前置依赖</dt><dd className="break-all">{task.dependsOn.join('、')}</dd></>}
+        </dl>
+        {detail.isLoading && <p role="status" className="text-sm text-muted-foreground">正在加载详情…</p>}
+        {detail.isError && <div role="alert" className="text-sm text-status-failed">详情暂时无法加载<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></div>}
+        <section className="space-y-2"><h3 className="text-sm font-medium">任务说明</h3><p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detail.data?.description || detail.data?.summary || task.spec || '暂无补充说明'}</p></section>
+        {(detail.data?.result_summary || detail.data?.result_path) && <section className="space-y-2"><h3 className="text-sm font-medium">执行结果</h3><p className="whitespace-pre-wrap break-all text-sm leading-6 text-muted-foreground">{detail.data.result_summary || detail.data.result_path}</p></section>}
+        {!!detail.data?.deliverables?.length && <section className="space-y-2"><h3 className="text-sm font-medium">交付文件</h3><ul className="space-y-2">{detail.data.deliverables.map((file, i) => <li key={i} className="break-all rounded-md border border-border px-3 py-2 text-sm">{typeof file === 'string' ? file : file.name || file.path || file.description || '交付文件'}</li>)}</ul></section>}
+      </div>}
+    </SheetContent>
+  </Sheet>;
 }
