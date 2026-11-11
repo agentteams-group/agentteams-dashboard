@@ -57,7 +57,7 @@ export function McpServerDialog({
   onSuccess?: () => void;
 }) {
   const isEdit = !!server;
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<McpServerFormValues>({
+  const { register, handleSubmit, reset, setValue, getValues, formState: { errors } } = useForm<McpServerFormValues>({
     defaultValues: server || { name: '', url: '', transport: 'sse' },
   });
   const createMutation = useCreateMcpServer();
@@ -98,9 +98,7 @@ export function McpServerDialog({
   const handleTest = async () => {
     setTestResult(null);
     const url = (document.getElementById('url') as HTMLInputElement)?.value || '';
-    const transport = (document.getElementById('transport-value') as HTMLInputElement)?.value
-      || server?.transport
-      || 'sse';
+    const transport = getValues('transport');
     if (!url.startsWith('http')) {
       setTestResult({ success: false, message: '请输入有效的 HTTP(S) URL 后再测试' });
       return;
@@ -182,8 +180,7 @@ export function McpServerDialog({
               <Select
                 defaultValue={server?.type || ''}
                 onValueChange={(v) => {
-                  const el = document.getElementById('type') as HTMLSelectElement;
-                  if (el) el.value = v;
+                  setValue('type', v);
                 }}
               >
                 <SelectTrigger id="type" className="w-full min-w-0">
@@ -259,8 +256,7 @@ export function McpServerDialog({
             <Select
               defaultValue={server?.transport || 'sse'}
               onValueChange={(v) => {
-                const el = document.getElementById('transport') as HTMLSelectElement;
-                if (el) el.value = v;
+                setValue('transport', v as McpServerFormValues['transport']);
               }}
             >
               <SelectTrigger id="transport" className="w-full min-w-0">
