@@ -41,6 +41,12 @@
   box-shadow: 0 1px 4px rgb(0 0 0 / 6%);
 }
 
+.conversation :global([aria-label='消息操作'] button > span[aria-hidden='true']) {
+  left: auto;
+  right: 0;
+  translate: none;
+}
+
 .conversation :global([data-chat-message='user'] [data-chat-avatar]) {
   display: none;
 }
