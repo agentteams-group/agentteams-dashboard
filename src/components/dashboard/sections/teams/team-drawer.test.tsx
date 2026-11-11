@@ -172,12 +172,6 @@ vi.mock('./team-detail-dialog', () => ({
   TeamDetailDialog: () => <div>legacy-team-detail</div>,
 }));
 
-// 千锻弹窗单独测（millforge-dialog.test）：这里只验证抽屉入口卡能开弹窗。
-vi.mock('./millforge/millforge-dialog', () => ({
-  MillforgeDialog: ({ open, team }: { open: boolean; team: { name: string } }) =>
-    open ? <div>millforge-dialog:{team.name}</div> : null,
-}));
-
 import { TeamDrawer } from './team-drawer';
 import { TeamTable } from './team-table';
 import { TeamsSection } from '../teams-section';
@@ -338,16 +332,10 @@ describe('TeamDrawer · 分区与骨架', () => {
     expect(screen.getByTestId('danger-delete')).toBeInTheDocument();
   });
 
-  it('千锻入口卡：≥44px，显示 logo，点击打开千锻弹窗', () => {
+  it('千锻入口不在团队设置抽屉（只在「团队与Agent」拓扑头部，对齐插件）', () => {
     renderDrawer();
-    const card = screen.getByTestId('millforge-card');
-    expect(card.className).toContain('min-h-11');
-    expect(card).toHaveTextContent('千锻');
-    expect(card).toHaveTextContent('注入 / 自定义 / 模块更新 / 历史');
-    expect(screen.getByTestId('millforge-logo')).toBeInTheDocument();
-    expect(screen.queryByText('millforge-dialog:alpha')).toBeNull();
-    fireEvent.click(card);
-    expect(screen.getByText('millforge-dialog:alpha')).toBeInTheDocument();
+    expect(screen.queryByTestId('millforge-card')).toBeNull();
+    expect(screen.queryByTestId('millforge-logo')).toBeNull();
   });
 });
 

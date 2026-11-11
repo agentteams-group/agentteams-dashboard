@@ -40,6 +40,7 @@ import type {
 import { ManagerDetailPanel } from '../managers/manager-detail-panel';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
+import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { standaloneWorkers as computeStandaloneWorkers } from '../teams/team-drawer-logic';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
 import { WorkerDetailPanel } from '../workers/worker-detail-panel';
@@ -442,6 +443,7 @@ export function TeamAgentsSection() {
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
+  const [millforgeTeam, setMillforgeTeam] = useState<TeamResponse | null>(null);
 
   // 数据到位后应用一次初始选择（teams → 首个团队；agents → 展开独立行选首个独立 Worker）。
   useEffect(() => {
@@ -577,6 +579,7 @@ export function TeamAgentsSection() {
         searchQuery={searchQuery}
         onOpenWorker={handleSelectWorker}
         onOpenTeamSettings={handleSelectTeam}
+        onOpenMillforge={setMillforgeTeam}
         userLevel={userLevel}
       />
     ) : (
@@ -608,6 +611,7 @@ export function TeamAgentsSection() {
           highlightWorkerName={selectedWorker.name}
           onOpenWorker={handleSelectWorker}
           onOpenTeamSettings={handleSelectTeam}
+          onOpenMillforge={setMillforgeTeam}
           userLevel={userLevel}
         />
       ) : (
@@ -867,6 +871,18 @@ export function TeamAgentsSection() {
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
       />
+
+      {millforgeTeam ? (
+        <MillforgeDialog
+          open
+          team={millforgeTeam}
+          workers={workers ?? []}
+          canInstall={userLevel >= 3}
+          modelAliases={modelOptions.map((option) => option.alias)}
+          onOpenChange={(open) => !open && setMillforgeTeam(null)}
+          onInjected={refresh}
+        />
+      ) : null}
     </div>
   );
 }

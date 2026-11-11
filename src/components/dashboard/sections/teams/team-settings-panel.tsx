@@ -58,8 +58,7 @@ import {
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
-import { MillforgeDialog } from './millforge/millforge-dialog';
-import { MillforgeEntryCard } from './millforge/millforge-entry-card';
+
 import { TeamMembersPanel } from './team-members-panel';
 import { TeamSkillsPanel } from './team-skills-panel';
 import {
@@ -150,7 +149,6 @@ export function TeamSettingsPanel({
   const [confirmName, setConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [joining, setJoining] = useState<string | null>(null);
-  const [millforgeOpen, setMillforgeOpen] = useState(false);
 
   const updateTeam = useUpdateTeam();
   const deleteTeam = useDeleteTeam();
@@ -512,13 +510,7 @@ export function TeamSettingsPanel({
           <TeamSkillsPanel team={team} workers={workers} onChanged={onChanged} />
         </SettingsSection>
 
-        {/* 5. 千锻（注入 / 自定义团队 / 模块更新 / 注入历史）；
-            非 L1 整卡禁用并给出原因（B3，对齐插件 disabledReason）。 */}
-        <MillforgeEntryCard
-          onClick={() => setMillforgeOpen(true)}
-          disabled={userLevel < 3}
-          disabledReason="千锻注入需管理员（L1）权限"
-        />
+        {/* 5. 千锻入口只在「团队与Agent」拓扑头部（对齐插件 TeamSection）。 */}
 
         {/* 6. 加入未归属 Worker */}
         <SettingsSection
@@ -601,16 +593,6 @@ export function TeamSettingsPanel({
           </div>
         </SettingsSection>
       </div>
-
-      <MillforgeDialog
-        open={millforgeOpen}
-        team={team}
-        workers={workers}
-        canInstall={userLevel >= 3}
-        modelAliases={modelOptions.map((option) => option.alias)}
-        onOpenChange={setMillforgeOpen}
-        onInjected={onChanged}
-      />
 
       <Dialog
         open={deleteOpen}

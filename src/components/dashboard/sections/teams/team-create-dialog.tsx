@@ -23,8 +23,8 @@ import {
 import type { CreateTeamRequest, WorkerResponse, WorkerRuntime } from '@/lib/agentteams-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { workerNameError } from '@/lib/resource-name';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { buildModelCandidateCatalog, type ModelSelectionOption } from '@/lib/model-catalog';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { SoulField } from '@/components/dashboard/sections/shared/soul-field';
 import {
   MemberPicker,
@@ -49,6 +49,7 @@ const EMPTY_NEW_WORKER = {
   name: '',
   runtime: 'openclaw' as WorkerRuntime,
   model: '',
+  modelProvider: '',
   soul: '',
   role: 'worker' as 'leader' | 'worker',
 };
@@ -84,6 +85,9 @@ export function TeamCreateDialog({
   onWorkerCreated?: (_name: string) => void;
 }) {
   const workerNames = value.workerNames ?? [];
+  // 内联新建 Worker 走 POST /workers（CreateWorkerRequest 支持 modelProvider），
+  // 因此与 Worker 创建页共用 provider-first 的 ModelPicker。
+  const modelCatalog = buildModelCandidateCatalog(modelOptions ?? []);
 
   // ── 内联新建 Worker（对齐插件：显式 POST /workers 后入队，不靠隐式自动建站）──
   const [nwOpen, setNwOpen] = useState(false);
@@ -142,6 +146,7 @@ export function TeamCreateDialog({
         name,
         runtime: nw.runtime,
         model: nw.model.trim() || undefined,
+        modelProvider: nw.modelProvider.trim() || undefined,
         soul: nw.soul.trim() || undefined,
       });
       // role=leader：新建 Worker 直接成为本团队 Leader（对齐插件成员行 role
@@ -288,21 +293,30 @@ export function TeamCreateDialog({
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center gap-1">
-                    <Label className="text-xs">请求模型别名</Label>
+                    <Label className="text-xs">请求模型</Label>
                     <InfoTip label="模型访问与验证说明">
                       已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。
                     </InfoTip>
                   </div>
-                  {/* API 限制：建队内联新建 Worker 走 CreateTeamRequest，只有
-                      defaultWorkerModel，没有 provider 字段——这里只选 model，
-                      不用 provider-first 的 ModelPicker（避免选了 provider 却下发不了）。 */}
-                  <ModelSelector
-                    value={nw.model}
-                    onChange={(model) => setNw((p) => ({ ...p, model }))}
-                    placeholder="留空 = 跟随集群默认"
-                    options={modelOptions}
-                    sessionIssue={sessionIssue}
+                  {/* 内联新建 Worker 实际走 POST /workers，CreateWorkerRequest 支持
+                      modelProvider；与 Worker 创建页同用 provider-first 选择。 */}
+                  <ModelPicker
+                    providers={modelCatalog.providers}
+                    provider={nw.modelProvider}
+                    model={nw.model}
+                    modelsByProvider={modelCatalog.modelsByProvider}
+                    allModels={modelCatalog.models}
+                    providerPlaceholder="选择或输入 Provider（留空 = 跟随默认）"
+                    modelPlaceholder="留空 = 跟随集群默认"
+                    onChange={(provider, model) =>
+                      setNw((p) => ({ ...p, modelProvider: provider.trim(), model }))
+                    }
                   />
+                  {sessionIssue ? (
+                    <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
+                      模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">SOUL</Label>

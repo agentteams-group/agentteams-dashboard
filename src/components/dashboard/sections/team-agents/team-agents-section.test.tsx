@@ -91,13 +91,14 @@ const mockState = vi.hoisted(() => ({
   userLevel: 3,
   modelOptions: [] as ModelSelectionOption[],
 }));
+const refetchTeams = vi.hoisted(() => vi.fn());
 
 vi.mock('@/hooks/use-agentteams-teams', () => ({
   useTeams: () => ({
     data: teamsFixture,
     isLoading: false,
     isError: false,
-    refetch: vi.fn(),
+    refetch: refetchTeams,
     isRefetching: false,
   }),
 }));
@@ -147,6 +148,34 @@ vi.mock('../teams/team-create-dialog', () => ({
 vi.mock('../workers/worker-create-dialog', () => ({
   WorkerCreateDialog: ({ open }: { open: boolean }) =>
     open ? <div>worker-create-dialog</div> : null,
+}));
+vi.mock('../teams/millforge/millforge-dialog', () => ({
+  MillforgeDialog: ({
+    open,
+    team,
+    workers,
+    onOpenChange,
+    onInjected,
+  }: {
+    open: boolean;
+    team: { name: string };
+    workers: unknown[];
+    onOpenChange: (_open: boolean) => void;
+    onInjected?: () => void;
+  }) =>
+    open ? (
+      <div>
+        <div data-testid="mock-millforge-dialog">
+          millforge-dialog:{team.name}:workers-{workers.length}
+        </div>
+        <button type="button" onClick={onInjected}>
+          mock-injected
+        </button>
+        <button type="button" onClick={() => onOpenChange(false)}>
+          mock-millforge-close
+        </button>
+      </div>
+    ) : null,
 }));
 
 import { TeamAgentsSection } from './team-agents-section';
@@ -237,10 +266,11 @@ describe('TeamAgentsSection · 四栏壳', () => {
     expect(within(list).getByText(/未归属团队的 Worker/)).toBeInTheDocument();
     expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
     const detail = detailRegion();
-    // 默认选中首个团队 → 内联 TeamSettingsPanel（基本信息 + 千锻卡）。
+    // 默认选中首个团队 → 内联 TeamSettingsPanel；千锻入口在拓扑（对齐插件）。
     expect(within(detail).getByText('alpha')).toBeInTheDocument();
     expect(within(detail).getByText('基本信息')).toBeInTheDocument();
-    expect(within(detail).getByText('千锻')).toBeInTheDocument();
+    expect(within(detail).queryByText('千锻')).toBeNull();
+    expect(screen.getByTestId('millforge-card')).toBeInTheDocument();
     expect(within(detail).queryByRole('button', { name: /返回/ })).toBeNull();
     expect(shell().children).toHaveLength(3);
     expect(shell().children[2]).toBe(detail);
@@ -391,7 +421,7 @@ describe('TeamAgentsSection · 内联详情（不再使用抽屉）', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('shows the selected team settings inline (Millforge card, no dialog)', async () => {
+  it('shows the selected team settings inline (no millforge card, no dialog)', async () => {
     renderSection();
     await layoutIs('xwide');
     clickListButton(listRegion(), 'alpha');
@@ -399,9 +429,43 @@ describe('TeamAgentsSection · 内联详情（不再使用抽屉）', () => {
     const detail = detailRegion();
     expect(within(detail).getByText('alpha')).toBeInTheDocument();
     expect(within(detail).getByText('基本信息')).toBeInTheDocument();
-    expect(within(detail).getByText('千锻')).toBeInTheDocument();
+    expect(within(detail).queryByText('千锻')).toBeNull();
     expect(within(detail).getByText('加入未归属 Worker')).toBeInTheDocument();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('team topology hosts the millforge entry: click opens the dialog, injected refreshes', async () => {
+    renderSection();
+    await layoutIs('xwide');
+    // 默认已选中 alpha；显式再点一次团队行，避免依赖初始选择时序。
+    clickListButton(listRegion(), 'alpha');
+
+    const card = screen.getByTestId('millforge-card');
+    expect(card).toHaveTextContent('千锻');
+    expect(screen.queryByTestId('mock-millforge-dialog')).toBeNull();
+    fireEvent.click(card);
+
+    expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent(
+      'millforge-dialog:alpha:workers-4',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'mock-injected' }));
+    expect(refetchTeams).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'mock-millforge-close' }));
+    expect(screen.queryByTestId('mock-millforge-dialog')).toBeNull();
+  });
+
+  it('worker selection keeps the millforge entry on its home team topology', async () => {
+    renderSection();
+    await layoutIs('xwide');
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+
+    await waitFor(() => expect(within(detailRegion()).getByText('w1')).toBeInTheDocument());
+    expect(screen.getByTestId('millforge-card')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('millforge-card'));
+    expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent(
+      'millforge-dialog:alpha:workers-4',
+    );
   });
 
   it.each([

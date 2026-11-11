@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { InteractiveTeamTopology } from './interactive-team-topology';
 
@@ -55,13 +56,15 @@ function renderTopology(patch: Partial<Parameters<typeof InteractiveTeamTopology
   const onOpenWorker = vi.fn();
   const onOpenTeamSettings = vi.fn();
   render(
-    <InteractiveTeamTopology
-      team={alpha}
-      workers={workers}
-      onOpenWorker={onOpenWorker}
-      onOpenTeamSettings={onOpenTeamSettings}
-      {...patch}
-    />,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <InteractiveTeamTopology
+        team={alpha}
+        workers={workers}
+        onOpenWorker={onOpenWorker}
+        onOpenTeamSettings={onOpenTeamSettings}
+        {...patch}
+      />
+    </QueryClientProvider>,
   );
   return { onOpenWorker, onOpenTeamSettings };
 }
@@ -91,6 +94,65 @@ describe('InteractiveTeamTopology · 头部', () => {
     const { onOpenTeamSettings } = renderTopology();
     fireEvent.click(screen.getByRole('button', { name: '团队设置' }));
     expect(onOpenTeamSettings).toHaveBeenCalledWith(alpha);
+  });
+});
+
+describe('InteractiveTeamTopology · 千锻入口', () => {
+  it('渲染千锻入口卡与 logo（header 下、成员列表上）', () => {
+    renderTopology({ onOpenMillforge: vi.fn() });
+    const card = screen.getByTestId('millforge-card');
+    expect(card).toHaveTextContent('千锻');
+    expect(screen.getByTestId('millforge-logo')).toBeInTheDocument();
+    // 位置：拓扑 header 之后、成员列表之前。
+    const header = screen.getByTestId('team-topology-header');
+    const list = screen.getByRole('list', { name: `${alpha.name} 成员` });
+    expect(header.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('点击 → onOpenMillforge(team)', () => {
+    const onOpenMillforge = vi.fn();
+    renderTopology({ onOpenMillforge, userLevel: 3 });
+    fireEvent.click(screen.getByTestId('millforge-card'));
+    expect(onOpenMillforge).toHaveBeenCalledWith(alpha);
+  });
+
+  it('非 L1（<3）禁用并 title 给原因；L1 可用', () => {
+    const onOpenMillforge = vi.fn();
+    const { unmount } = render(
+      <InteractiveTeamTopology
+        team={alpha}
+        workers={workers}
+        onOpenWorker={vi.fn()}
+        onOpenTeamSettings={vi.fn()}
+        onOpenMillforge={onOpenMillforge}
+        userLevel={2}
+      />,
+    );
+    const card = screen.getByTestId('millforge-card');
+    expect(card).toBeDisabled();
+    expect(card).toHaveAttribute('title', '千锻注入需管理员（L1）权限');
+    unmount();
+
+    // L1：卡片可用；此渲染会挂出成员行「拉起就绪」按钮（需要 QueryClient）。
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <InteractiveTeamTopology
+          team={alpha}
+          workers={workers}
+          onOpenWorker={vi.fn()}
+          onOpenTeamSettings={vi.fn()}
+          onOpenMillforge={onOpenMillforge}
+          userLevel={3}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTestId('millforge-card')).toBeEnabled();
+  });
+
+  it('未传 onOpenMillforge 时不渲染千锻入口（老调用方布局不变）', () => {
+    renderTopology();
+    expect(screen.queryByTestId('millforge-card')).toBeNull();
   });
 });
 

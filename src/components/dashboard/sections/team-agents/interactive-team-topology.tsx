@@ -11,6 +11,7 @@ import { StatusDot } from '@/components/dashboard/status-dot';
 import { useEnsureReadyWorker } from '@/hooks/use-agentteams-mutations';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { isUnsupportedEndpointError } from '@/lib/api-error';
+import { MillforgeEntryCard } from '../teams/millforge/millforge-entry-card';
 import {
   ROLE_LABELS,
   isAbnormalPhase,
@@ -31,6 +32,8 @@ export interface InteractiveTeamTopologyProps {
   highlightWorkerName?: string | null;
   onOpenWorker: (_worker: WorkerResponse) => void;
   onOpenTeamSettings: (_team: TeamResponse) => void;
+  /** 拓扑头部的千锻入口（对齐插件 TeamSection：卡在 header 下、成员列表上）。 */
+  onOpenMillforge?: (_team: TeamResponse) => void;
   /** narrow 单栏：返回团队列表。 */
   onBack?: () => void;
   /** Dashboard 会话等级：3 = 管理员（插件侧 L1），行内「拉起就绪」仅 L1 可见。 */
@@ -96,6 +99,7 @@ export function InteractiveTeamTopology({
   highlightWorkerName = null,
   onOpenWorker,
   onOpenTeamSettings,
+  onOpenMillforge,
   onBack,
   userLevel,
 }: InteractiveTeamTopologyProps) {
@@ -181,6 +185,16 @@ export function InteractiveTeamTopology({
             <Settings className="size-4" aria-hidden="true" />
           </Button>
         </header>
+
+        {onOpenMillforge ? (
+          <div className="px-3">
+            <MillforgeEntryCard
+              onClick={() => onOpenMillforge(team)}
+              disabled={(userLevel ?? 0) < 3}
+              disabledReason="千锻注入需管理员（L1）权限"
+            />
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 custom-scrollbar">
           {query && !teamHit && (
