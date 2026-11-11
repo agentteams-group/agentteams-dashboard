@@ -126,7 +126,7 @@ export function TracingSection() {
       e.preventDefault(); setFilters({ worker, runtime: effectiveRuntime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
       <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(120px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(130px,1fr)_auto_auto]">
-      <label className="min-w-0 space-y-1 text-xs">团队<Select value={team || '__all__'} onValueChange={(value) => {
+      <label className="flex min-w-0 flex-col gap-1 text-xs">团队<Select value={team || '__all__'} onValueChange={(value) => {
         const next = value === '__all__' ? '' : value; setTeam(next);
         if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) { setWorker(''); setRuntime(''); }
       }}>
@@ -135,26 +135,26 @@ export function TracingSection() {
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部团队</SelectItem>{resources.data?.teams.map((t) => <SelectItem className="cursor-pointer rounded-lg py-2" key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</SelectItem>)}
         </SelectContent>
       </Select></label>
-      <label className="min-w-0 space-y-1 text-xs">Agent<Select value={worker || '__all__'} onValueChange={(value) => { setWorker(value === '__all__' ? '' : value); setRuntime(''); }}>
+      <label className="flex min-w-0 flex-col gap-1 text-xs">Agent<Select value={worker || '__all__'} onValueChange={(value) => { setWorker(value === '__all__' ? '' : value); setRuntime(''); }}>
         <SelectTrigger aria-label="Agent" className="w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部 Agent</SelectItem>{workerOptions.map((w) => <SelectItem className="cursor-pointer rounded-lg py-2" key={w.name} value={w.name}>{w.name}</SelectItem>)}
         </SelectContent>
       </Select></label>
-      <label className="space-y-1 text-xs">运行时{workerRuntime ? '（自动）' : ''}<Select value={effectiveRuntime || '__all__'} disabled={Boolean(workerRuntime)} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
+      <label className="flex min-w-0 flex-col gap-1 text-xs">运行时{workerRuntime ? '（自动）' : ''}<Select value={effectiveRuntime || '__all__'} disabled={Boolean(workerRuntime)} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
         <SelectTrigger aria-label="运行时" className="w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'copaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
         </SelectContent>
       </Select></label>
-      <label className="space-y-1 text-xs">时间<Select value={hours} onValueChange={setHours}>
+      <label className="flex min-w-0 flex-col gap-1 text-xs">时间<Select value={hours} onValueChange={setHours}>
         <SelectTrigger aria-label="时间" className="w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
           <SelectItem className="cursor-pointer rounded-lg py-2" value="1">最近 1 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="24">最近 24 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="168">最近 7 天</SelectItem>
         </SelectContent>
       </Select></label>
-      <Button type="submit" size="sm">查询</Button>
-      <Button type="button" size="sm" variant="ghost" aria-expanded={advancedFilters} aria-controls="trace-advanced-filters" onClick={() => setAdvancedFilters((value) => !value)}>高级筛选{[task, session, room].filter(Boolean).length ? ` (${[task, session, room].filter(Boolean).length})` : ''}<ChevronDown className={`ml-1 size-4 transition-transform ${advancedFilters ? 'rotate-180' : ''}`} /></Button>
+      <Button type="submit" size="sm" className="h-9 min-h-11 sm:min-h-9">查询</Button>
+      <Button type="button" size="sm" className="h-9 min-h-11 sm:min-h-9" variant="ghost" aria-expanded={advancedFilters} aria-controls="trace-advanced-filters" onClick={() => setAdvancedFilters((value) => !value)}>高级筛选{[task, session, room].filter(Boolean).length ? ` (${[task, session, room].filter(Boolean).length})` : ''}<ChevronDown className={`ml-1 size-4 transition-transform ${advancedFilters ? 'rotate-180' : ''}`} /></Button>
       </div>
       {advancedFilters ? <div id="trace-advanced-filters" className="grid gap-3 border-t pt-3 sm:grid-cols-3">
         <label className="min-w-0 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
