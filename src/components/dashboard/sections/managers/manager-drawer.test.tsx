@@ -46,26 +46,6 @@ vi.mock('@/hooks/use-skill-center', () => ({
   }),
 }));
 
-// ModelSelector is a Radix Select in production; a plain input keeps the
-// dialog assertions focused on the save payload.
-vi.mock('@/components/dashboard/sections/shared/model-selector', () => ({
-  ModelSelector: ({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value?: string;
-    onChange: (_value: string) => void;
-    placeholder?: string;
-  }) => (
-    <input
-      aria-label={placeholder}
-      value={value ?? ''}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  ),
-}));
-
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
@@ -220,7 +200,7 @@ describe('ManagerDrawer', () => {
     renderDrawer();
     fireEvent.click(screen.getByRole('button', { name: '模型配置' }));
 
-    const input = await screen.findByLabelText('例如 team-chat');
+    const input = await screen.findByLabelText('请求模型别名');
     fireEvent.change(input, { target: { value: 'team-chat-v2' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 

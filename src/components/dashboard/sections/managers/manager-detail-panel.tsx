@@ -8,7 +8,7 @@
 //   · 状态卡：唤醒 / 休眠（PUT {state} desired-state 语义）+ 重启
 //     （POST /managers/{name}/restart）+ 健康/心跳摘要；
 //   · 私聊入口（有 MXID 才显示）；
-//   · 模型配置（ModelSelector，保存 updateManagerModel）；
+//   · 模型配置（ModelPicker：Provider → Model，保存 updateManagerModel）；
 //   · SOUL.md / AGENTS.md（查看 + 编辑，PUT 仅非空才写，保存前确认）；
 //   · Skills / MCP Servers / Env（各自整表替换保存）；
 //   · Manager 独有 Config：心跳间隔 / Worker 空闲超时 / 通知频道（整对象替换）；

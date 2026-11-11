@@ -1,7 +1,7 @@
 'use client';
 
-// Manager 模型配置弹窗：主模型（ModelSelector，与 Worker/团队详情同源）+
-// provider（可选，多 provider 部署下决定转发路由）。
+// Manager 模型配置弹窗：Provider → Model（与工作台插件 / Worker 模型卡同一
+// ModelPicker，provider-first）。
 //
 // spawn / sub 子代理模型：Controller 的 UpdateManagerRequest 目前没有
 // subagentModel 字段（只有 Worker 侧有），下发会被静默忽略——这里不下发，
@@ -18,9 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Combobox } from '@/components/ui/combobox';
-import { Label } from '@/components/ui/label';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import {
   buildModelCandidateCatalog,
   type ModelSelectionOption,
@@ -92,34 +90,36 @@ export function ManagerModelDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          <div className="space-y-1.5">
-            <Label>主模型（请求别名）</Label>
-            <ModelSelector
-              value={draft}
-              onChange={setDraft}
-              placeholder="例如 team-chat"
-              options={modelOptions}
-              sessionIssue={sessionIssue}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="manager-model-provider">Provider（可选）</Label>
-            <Combobox
-              id="manager-model-provider"
-              value={provider}
-              options={providerCatalog.providers}
-              onChange={(next) => {
-                setProvider(next);
+          <ModelPicker
+            providers={providerCatalog.providers}
+            provider={provider}
+            model={draft}
+            modelsByProvider={providerCatalog.modelsByProvider}
+            allModels={providerCatalog.models}
+            modelPlaceholder="例如 team-chat"
+            providerPlaceholder={
+              providerHint ? `当前解析：${providerHint}` : '留空 = 保持 Controller 现值'
+            }
+            onChange={(nextProvider, nextModel) => {
+              const providerChanged = nextProvider.trim() !== provider.trim();
+              setDraft(nextModel);
+              if (providerChanged) {
+                setProvider(nextProvider);
                 setProviderTouched(true);
-              }}
-              placeholder={providerHint ? `当前解析：${providerHint}` : '留空 = 保持 Controller 现值'}
-              ariaLabel="Provider（可选）"
-            />
-            <p className="text-xs text-muted-foreground">
-              多 provider 部署下同时下发 model 与 provider；留空则沿用 Controller 现值。
-            </p>
-          </div>
+                return;
+              }
+              setProvider(nextProvider);
+              // 选模型时若该 alias 有网关绑定、且用户没手改 provider → 自动跟随；
+              // 自动填的值不标 touched，未手选就不下发（沿用 Controller 现值）。
+              if (!providerTouched) {
+                const mappedProvider = providerCatalog.providerByModel[nextModel];
+                setProvider(mappedProvider ?? nextProvider);
+              }
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            多 provider 部署下同时下发 model 与 provider；留空则沿用 Controller 现值。
+          </p>
 
           <p className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
             子代理模型（spawn / sub）：当前 Controller 的 Manager 更新接口未接收该字段，
@@ -133,7 +133,17 @@ export function ManagerModelDialog({
           </Button>
           <Button
             disabled={!changed || saving || !draft.trim()}
-            onClick={() => onSubmit(draft.trim(), providerTouched ? provider.trim() : '')}
+            onClick={() => {
+              const trimmedProvider = provider.trim();
+              // 手选优先；未手选但自动跟随 binding 得到了与现值不同的 provider
+              // 也一并下发；与现值相同 / 为空 = 不带（沿用 Controller 现值）。
+              const submittedProvider =
+                providerTouched ||
+                trimmedProvider !== (modelProvider ?? '').trim()
+                  ? trimmedProvider
+                  : '';
+              onSubmit(draft.trim(), submittedProvider);
+            }}
           >
             {saving ? (
               <>

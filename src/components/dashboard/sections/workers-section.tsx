@@ -575,6 +575,7 @@ export function WorkersSection() {
     const hasChanges =
       envChanged ||
       editForm.model !== (editWorker.model || '') ||
+      editForm.modelProvider !== undefined ||
       editForm.runtime !== editWorker.runtime ||
       editForm.image !== (editWorker.image || '') ||
       editForm.agents !== (editWorker.agents || '') ||
@@ -918,6 +919,7 @@ export function WorkersSection() {
         onOpenChange={(open) => !open && closeEdit()}
         onSubmit={handleUpdate}
         modelOptions={modelOptions}
+        modelProvider={editWorker?.modelProvider}
         sessionIssue={sessionIssue}
       />
 

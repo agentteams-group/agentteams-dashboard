@@ -674,6 +674,8 @@ export interface MillforgeRollbackResult {
 export interface CreateWorkerRequest {
   name: string;
   model?: RequestModelAlias;
+  /** APIG Model API name；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime: WorkerRuntime;
   image?: string;
   soul?: string;
@@ -819,6 +821,8 @@ export interface UpdateHumanRequest {
 export interface CreateManagerRequest {
   name: string;
   model?: RequestModelAlias;
+  /** APIG Model API name；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime?: string;
   image?: string;
 }

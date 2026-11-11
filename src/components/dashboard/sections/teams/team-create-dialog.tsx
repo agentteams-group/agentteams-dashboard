@@ -293,6 +293,9 @@ export function TeamCreateDialog({
                       已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。
                     </InfoTip>
                   </div>
+                  {/* API 限制：建队内联新建 Worker 走 CreateTeamRequest，只有
+                      defaultWorkerModel，没有 provider 字段——这里只选 model，
+                      不用 provider-first 的 ModelPicker（避免选了 provider 却下发不了）。 */}
                   <ModelSelector
                     value={nw.model}
                     onChange={(model) => setNw((p) => ({ ...p, model }))}

@@ -22,9 +22,12 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, Check, Loader2, Wand2, X } from 'lucide-react';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
+import {
+  buildModelCandidateCatalog,
+  type ModelSelectionOption,
+} from '@/lib/model-catalog';
 import { workerNameError } from '@/lib/resource-name';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { SoulField } from '@/components/dashboard/sections/shared/soul-field';
 import { validateModelValue, modelVerdictText } from '@/lib/model-verdict';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
@@ -72,6 +75,16 @@ export function WorkerCreateDialog({
   // warn（未命中 alias 组）两步「确认强写」。
   const modelCandidates = (modelOptions ?? []).map((option) => option.alias);
   const modelVerdict = validateModelValue(value.model ?? '', modelCandidates);
+  const modelCatalog = buildModelCandidateCatalog(modelOptions ?? []);
+  // provider/model 失配：该 alias 在网关里绑定的是另一个 provider。只提示不阻塞，
+  // 与插件 providerModelMismatch 语义一致（用户可能有意做跨 provider 覆盖）。
+  const boundProvider = modelCatalog.providerByModel[(value.model ?? '').trim()];
+  const providerMismatch = Boolean(
+    value.modelProvider &&
+      (value.model ?? '').trim() &&
+      boundProvider &&
+      boundProvider !== value.modelProvider,
+  );
   const [confirmForceWrite, setConfirmForceWrite] = useState(false);
   // B7 21.1: catalog 上标记 trusted 的 MCP server 在新建 Worker 时默认勾选
   //（操作员可手动取消）；catalog 不可用（旧 Controller 404）时退化为无默认。
@@ -223,17 +236,31 @@ export function WorkerCreateDialog({
               </InfoTip>
             </div>
             <div className="min-w-0 w-full overflow-hidden">
-              <ModelSelector
-                value={value.model}
-                onChange={(model) => {
+              <ModelPicker
+                providers={modelCatalog.providers}
+                provider={value.modelProvider ?? ''}
+                model={value.model ?? ''}
+                modelsByProvider={modelCatalog.modelsByProvider}
+                allModels={modelCatalog.models}
+                modelPlaceholder="例如 team-chat"
+                providerPlaceholder="选择或输入 Provider（留空 = 跟随默认）"
+                onChange={(provider, model) => {
                   setConfirmForceWrite(false);
-                  onChange({ ...value, model });
+                  onChange({ ...value, model, modelProvider: provider.trim() || undefined });
                 }}
-                placeholder="例如 team-chat"
-                options={modelOptions}
-              sessionIssue={sessionIssue}
               />
             </div>
+            {providerMismatch && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 break-words">
+                模型「{value.model}」在网关中绑定到 Provider「{boundProvider}」，与当前
+                Provider「{value.modelProvider}」不一致；提交仍按当前选择写入。
+              </p>
+            )}
+            {sessionIssue ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
+                模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
+              </p>
+            ) : null}
             <p
               className={`flex items-start gap-1 text-xs break-words ${
                 modelVerdict.level === 'error'

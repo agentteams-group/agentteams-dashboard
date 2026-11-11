@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { WorkerCreateDialog } from './worker-create-dialog';
@@ -39,25 +40,6 @@ vi.mock('@/components/ui/select', () => ({
   SelectValue: () => null,
 }));
 
-vi.mock('@/components/dashboard/sections/shared/model-selector', () => ({
-  ModelSelector: ({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value?: string;
-    onChange: (_v: string) => void;
-    placeholder?: string;
-  }) => (
-    <input
-      data-testid="model-input"
-      value={value ?? ''}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  ),
-}));
-
 vi.mock('@/components/dashboard/sections/skills/skill-selector', () => ({
   SkillSelector: () => null,
 }));
@@ -66,8 +48,23 @@ vi.mock('@/components/dashboard/sections/mcps/mcp-selector', () => ({
   McpSelector: () => null,
 }));
 
+function boundOption(alias: string, providerName: string): ModelSelectionOption {
+  return {
+    alias,
+    kind: 'configured',
+    binding: {
+      requestModelAlias: alias,
+      routeName: `route-${alias}`,
+      providerName,
+      targetModel: `target-${alias}`,
+      available: true,
+    },
+  };
+}
+
 const MODEL_OPTIONS: ModelSelectionOption[] = [
-  { alias: 'team-chat', kind: 'configured' },
+  boundOption('team-chat', 'provider-a'),
+  boundOption('alias-b', 'provider-b'),
   { alias: 'qwen3.6-plus', kind: 'builtin' },
 ];
 
@@ -92,6 +89,105 @@ const renderDialog = (
   return { onChange, onSubmit };
 };
 
+function Harness({
+  initial,
+  onSubmit,
+}: {
+  initial: CreateWorkerRequest;
+  onSubmit: (_form: CreateWorkerRequest) => void;
+}) {
+  const [value, setValue] = useState<CreateWorkerRequest>(initial);
+  return (
+    <TooltipProvider>
+      <WorkerCreateDialog
+        open
+        onOpenChange={() => {}}
+        value={value}
+        onChange={setValue}
+        isPending={false}
+        onSubmit={() => onSubmit(value)}
+        modelOptions={MODEL_OPTIONS}
+      />
+    </TooltipProvider>
+  );
+}
+
+function chooseOption(input: HTMLElement, name: string) {
+  fireEvent.focus(input);
+  fireEvent.mouseDown(
+    within(input.parentElement as HTMLElement).getByRole('option', { name }),
+  );
+}
+
+const providerInput = () => screen.getByLabelText('Provider');
+const modelInput = () => screen.getByLabelText('请求模型别名');
+
+describe('WorkerCreateDialog Provider → Model（provider-first picker）', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('渲染 Provider 与 Model 两个控件，Provider 在上', () => {
+    renderDialog();
+    const provider = providerInput();
+    const model = modelInput();
+    expect(
+      provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('选 Provider 后 Model 候选按 provider 过滤', () => {
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={() => {}} />);
+    chooseOption(providerInput(), 'provider-a');
+
+    fireEvent.focus(modelInput());
+    const listbox = within(modelInput().parentElement as HTMLElement).getByRole('listbox');
+    expect(within(listbox).getByRole('option', { name: 'team-chat' })).toBeInTheDocument();
+    expect(within(listbox).queryByRole('option', { name: 'alias-b' })).toBeNull();
+  });
+
+  it('创建 payload 带 modelProvider（非空）', () => {
+    const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
+
+    chooseOption(providerInput(), 'provider-a');
+    chooseOption(modelInput(), 'team-chat');
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      model: 'team-chat',
+      modelProvider: 'provider-a',
+    });
+  });
+
+  it('空 Provider = 不带 modelProvider（跟随默认）', () => {
+    const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
+
+    chooseOption(modelInput(), 'team-chat');
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].modelProvider).toBeUndefined();
+  });
+
+  it('provider/model 失配 → 黄字提示但不阻塞提交', () => {
+    const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
+    render(
+      <Harness
+        initial={{ name: 'worker-1', runtime: 'openclaw', model: 'alias-b', modelProvider: 'provider-a' }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByText(/与当前\s*Provider「provider-a」不一致/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插件 G2）', () => {
   afterEach(() => {
     cleanup();
@@ -110,7 +206,8 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
 
   it('新建 Worker 的运行时仍可选（暂禁只针对已有对象）', () => {
     renderDialog();
-    expect(screen.getByRole('combobox')).not.toBeDisabled();
+    const runtimeSelect = screen.getByRole('option', { name: 'Hermes' }).closest('select');
+    expect(runtimeSelect).not.toBeDisabled();
     expect(screen.getByRole('option', { name: 'Hermes' })).toBeInTheDocument();
   });
 
