@@ -153,20 +153,29 @@ describe('TeamAgentsSection · 四栏壳', () => {
     expect(within(detail).getByText('alpha')).toBeInTheDocument();
     expect(within(detail).getByText('Leader')).toBeInTheDocument();
     expect(within(detail).getByText('boss')).toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: /返回/ })).toBeNull();
     expect(shell().children).toHaveLength(3);
+    expect(shell().children[2]).toBe(detail);
     expect(shell().className).toContain('minmax(0,1fr)');
   });
 
-  it('wide renders list + topology with a compact inline detail (2 content columns)', async () => {
+  it('wide renders list + topology with a compact inline detail below it (2 content columns)', async () => {
     setWidth(1300);
     renderSection();
     await layoutIs('wide');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
     expect(within(detailRegion()).getByText('alpha')).toBeInTheDocument();
     expect(shell().children).toHaveLength(2);
+
+    const main = shell().children[1] as HTMLElement;
+    const topologyHeader = within(main).getByTestId('team-topology-header');
+    const inlineDetail = within(main).getByRole('region', { name: '详情' });
+    expect(
+      topologyHeader.compareDocumentPosition(inlineDetail) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
-  it('medium renders list + topology with an inline detail, not a drawer', async () => {
+  it('medium renders list + topology with an inline detail below it, not a drawer', async () => {
     setWidth(1100);
     renderSection();
     await layoutIs('medium');
@@ -174,29 +183,65 @@ describe('TeamAgentsSection · 四栏壳', () => {
     expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
     expect(within(detailRegion()).getByText('alpha')).toBeInTheDocument();
     expect(shell().children).toHaveLength(2);
+
+    const main = shell().children[1] as HTMLElement;
+    const topologyHeader = within(main).getByTestId('team-topology-header');
+    const inlineDetail = within(main).getByRole('region', { name: '详情' });
+    expect(
+      topologyHeader.compareDocumentPosition(inlineDetail) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
-  it('narrow starts on the list, opens an inline detail page with an explicit back button', async () => {
+  it('narrow starts on the list only, with no topology underneath', async () => {
     setWidth(900);
     renderSection();
     await layoutIs('narrow');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
-    expect(screen.queryByTestId('team-topology-header')).toBeNull();
     expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
+    expect(screen.queryByTestId('team-topology-header')).toBeNull();
     expect(shell().children).toHaveLength(1);
+  });
+
+  it('narrow team selection opens a standalone full-height detail page, back returns to the list', async () => {
+    setWidth(900);
+    renderSection();
+    await layoutIs('narrow');
 
     fireEvent.click(screen.getByText('alpha').closest('button') as HTMLElement);
-    await waitFor(() => expect(screen.getByRole('region', { name: '详情' })).toBeInTheDocument());
-    expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
-    expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
-
-    const detail = detailRegion();
+    const detail = await screen.findByRole('region', { name: '详情' });
     expect(within(detail).getByText('alpha')).toBeInTheDocument();
-    fireEvent.click(within(detail).getByRole('button', { name: /返回/ }));
+    expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
+    // 只有详情：拓扑不再堆在详情下方，详情独占整页高度。
+    expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    expect(shell().children).toHaveLength(1);
+    expect(shell().firstElementChild).toBe(detail);
+    expect(detail.className).toContain('h-full');
+    expect(detail.className).not.toContain('max-h-[45%]');
+
+    const back = within(detail).getByRole('button', { name: /返回/ });
+    expect(back).toHaveClass('min-h-11', 'min-w-11', 'focus-visible:ring-2');
+    fireEvent.click(back);
 
     await waitFor(() => expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument());
     expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
     expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    expect(shell().children).toHaveLength(1);
+  });
+
+  it('narrow agent selection also enters the standalone detail page', async () => {
+    setWidth(900);
+    setHash('#console/resources/team-agents?tab=agents');
+    renderSection();
+    await layoutIs('narrow');
+    const agentList = screen.getByRole('region', { name: 'Agent 列表' });
+    fireEvent.click(withinRegion(agentList, 'solo'));
+
+    const detail = await screen.findByRole('region', { name: '详情' });
+    expect(within(detail).getByText('solo')).toBeInTheDocument();
+    expect(within(detail).getByText('solo-model')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Agent 列表' })).toBeNull();
+    expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    expect(shell().children).toHaveLength(1);
   });
 });
 

@@ -94,7 +94,7 @@ function PaneHeader({
           <Button
             variant="ghost"
             size="sm"
-            className="min-h-11 shrink-0 gap-1 px-2 text-xs sm:min-h-8"
+            className="min-h-11 min-w-11 shrink-0 gap-1 px-2 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-11 sm:min-w-11"
             onClick={onBack}
           >
             <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -498,7 +498,6 @@ export function TeamAgentsSection() {
       highlightWorkerName={tab === 'agents' ? selectedWorkerName : null}
       onOpenWorker={handleOpenWorker}
       onOpenTeamSettings={handleOpenTeamSettings}
-      onBack={narrow ? () => setNarrowView('list') : undefined}
     />
   ) : (
     <Pane label="团队拓扑">
@@ -523,23 +522,17 @@ export function TeamAgentsSection() {
     </Pane>
   );
 
-  const mainPane = (
+  // narrow 详情是独立整页：只有详情面板，铺满可用高度，不再堆叠拓扑。
+  const mainPane = narrowDetail ? (
+    renderDetailPane({
+      onBack: () => setNarrowView('list'),
+      className: 'h-full min-h-0',
+    })
+  ) : (
     <div className="flex min-h-0 min-w-0 flex-col gap-2">
-      {narrowDetail ? (
-        <>
-          {renderDetailPane({
-            onBack: () => setNarrowView('list'),
-            className: 'max-h-[45%] shrink-0',
-          })}
-          <div className="min-h-0 flex-1">{topology}</div>
-        </>
-      ) : (
-        <>
-          <div className="min-h-0 flex-1">{topology}</div>
-          {(layout === 'wide' || layout === 'medium') &&
-            renderDetailPane({ className: 'max-h-[38%] shrink-0' })}
-        </>
-      )}
+      <div className="min-h-0 flex-1">{topology}</div>
+      {(layout === 'wide' || layout === 'medium') &&
+        renderDetailPane({ className: 'max-h-[38%] shrink-0' })}
     </div>
   );
 
