@@ -26,7 +26,7 @@ import { useAuditEvents } from '@/hooks/use-audit-events';
 import { readDrafts } from './sections/loops-section';
 import { shortUserId } from './sections/chat/format';
 import { highlightSnippet, searchableBody } from '@/lib/matrix-search';
-import { auditHash, loopHash, roomHash, tasksHash } from '@/lib/nav-hash';
+import { auditHash, loopHash, roomHash, tasksHash, teamAgentsHash } from '@/lib/nav-hash';
 
 export interface SearchResult {
   entity:
@@ -303,7 +303,8 @@ export function useGlobalSearch(
           name: w.name,
           subtitle: `${w.runtime} · ${w.model || '无模型'}`,
           phase: w.phase,
-          section: 'workers',
+          section: 'team-agents',
+          hash: teamAgentsHash('agents'),
         });
       }
     });
@@ -320,7 +321,8 @@ export function useGlobalSearch(
           name: t.teamName || t.name,
           subtitle: `${t.readyWorkers}/${t.totalWorkers} Workers · ${t.leaderName}`,
           phase: t.phase,
-          section: 'teams',
+          section: 'team-agents',
+          hash: teamAgentsHash('teams'),
         });
       }
     });

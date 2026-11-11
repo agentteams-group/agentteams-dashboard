@@ -4,29 +4,34 @@ import { Bot, Crown, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
-import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { getWorkersForTeam } from './team-selectors';
 
+/**
+ * 旧「查看拓扑」弹窗里的静态图（兼容 #console/resources 资源容器）。
+ *
+ * Leader 语义修正：`TeamResponse.leaderName` 是 Worker 名，只在 Worker 列表里
+ * 解析；`team.admin` 才是 Manager。新「团队与Agent」页不使用本组件，改用
+ * `sections/team-agents/interactive-team-topology`。
+ */
 export function TeamTopologyDiagram({
   team,
   workers,
-  managers,
 }: {
   team: TeamResponse;
   workers: WorkerResponse[];
-  managers: ManagerResponse[];
 }) {
   const teamWorkers = getWorkersForTeam(workers, team.name);
-  const leaderManager = managers.find((m) => m.name === team.leaderName);
+  const leader = workers.find((worker) => worker.name === team.leaderName) ?? null;
 
   return (
     <div className="flex flex-col items-center gap-0 py-4">
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-purple-500/40 bg-purple-500/10 shadow-sm">
-        <StatusDot phase={leaderManager?.phase || 'Pending'} />
+        <StatusDot phase={leader?.phase ?? team.phase} />
         <Crown className="w-4 h-4 text-purple-500" aria-hidden="true" />
         <span className="text-sm font-medium">{team.leaderName || '未指定'}</span>
         <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-600 dark:text-purple-400">
-          Manager
+          Leader
         </Badge>
       </div>
       <div className="w-0.5 h-6 bg-purple-500/30" />
@@ -35,6 +40,11 @@ export function TeamTopologyDiagram({
         <Users className="w-4 h-4 text-emerald-500" aria-hidden="true" />
         <span className="text-sm font-medium">{team.name}</span>
         <PhaseBadge kind="team" phase={team.phase} />
+        {team.admin?.name && (
+          <Badge variant="outline" className="text-xs">
+            Manager {team.admin.name}
+          </Badge>
+        )}
       </div>
       {teamWorkers.length > 0 && (
         <>

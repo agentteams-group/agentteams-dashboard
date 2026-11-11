@@ -23,6 +23,10 @@ export interface ResolvedHash {
 export const RESOURCE_TABS = ['workers', 'teams', 'humans', 'managers'] as const;
 export type ResourceTabId = (typeof RESOURCE_TABS)[number];
 
+/** 「团队与Agent」合并页的页签；旧 workers/teams 路由按此映射。 */
+export const TEAM_AGENTS_TABS = ['teams', 'agents'] as const;
+export type TeamAgentsTab = (typeof TEAM_AGENTS_TABS)[number];
+
 /** section id -> canonical layered hash path (without the leading '#'). */
 const SECTION_TO_HASH: Record<string, string> = {
   'my-workbench': 'workbench/me',
@@ -33,8 +37,11 @@ const SECTION_TO_HASH: Record<string, string> = {
   'coding-runs': 'workbench/tasks/coding-runs',
   loops: 'workbench/loop',
   resources: 'console/resources',
-  workers: 'console/resources/workers',
-  teams: 'console/resources/teams',
+  'team-agents': 'console/resources/team-agents',
+  // Legacy flat/resource section ids now alias the merged page, keeping their
+  // page tab (notifications still produce `#console/resources/workers`).
+  workers: 'console/resources/team-agents?tab=agents',
+  teams: 'console/resources/team-agents?tab=teams',
   humans: 'console/resources/humans',
   managers: 'console/resources/managers',
   skills: 'console/resources/skills',
@@ -44,6 +51,12 @@ const SECTION_TO_HASH: Record<string, string> = {
   audit: 'console/governance/audit',
   tracing: 'console/governance/tracing',
   overview: 'console/system/overview',
+};
+
+/** 旧 workers/teams 路由落到合并页时选中的页签。 */
+const LEGACY_TEAM_AGENTS_TAB: Record<string, TeamAgentsTab> = {
+  workers: 'agents',
+  teams: 'teams',
 };
 
 /**
@@ -59,8 +72,8 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   tasks: 'tasks',
   artifacts: 'artifacts',
   'coding-runs': 'coding-runs',
-  workers: 'workers',
-  teams: 'teams',
+  workers: 'team-agents',
+  teams: 'team-agents',
   humans: 'humans',
   managers: 'managers',
   skills: 'skills',
@@ -94,6 +107,12 @@ export function hashForSection(sectionId: string): string {
  */
 export function resourceHash(tab: ResourceTabId): string {
   return `#${SECTION_TO_HASH.resources}/${tab}`;
+}
+
+/** 深链：「团队与Agent」合并页并选中页签（`#console/resources/team-agents?tab=agents`）。 */
+export function teamAgentsHash(tab?: TeamAgentsTab): string {
+  const base = `#${SECTION_TO_HASH['team-agents']}`;
+  return tab ? `${base}?tab=${tab}` : base;
 }
 
 /**
@@ -164,6 +183,18 @@ export function hashForActiveSection(sectionId: string, currentHash: string): st
   const query = sep === -1 ? '' : raw.slice(sep);
   const keep = query && (path === canonical || path.startsWith(`${canonical}/`)) ? query : '';
 
+  if (sectionId === 'team-agents') {
+    // Legacy workers/teams hashes must keep their page tab when the shell
+    // rewrites the URL to the canonical merged route (otherwise a
+    // notification pointing at `#console/resources/workers` would land on
+    // the teams tab).
+    const legacyTab =
+      LEGACY_TEAM_AGENTS_TAB[path] ??
+      LEGACY_TEAM_AGENTS_TAB[/^console\/resources\/(workers|teams)$/.exec(path)?.[1] ?? ''];
+    const tab = (new URLSearchParams(query).get('tab') ?? legacyTab) as TeamAgentsTab | undefined;
+    return tab && TEAM_AGENTS_TABS.includes(tab) ? `${canonical}?tab=${tab}` : canonical;
+  }
+
   if (sectionId !== 'resources') return canonical + keep;
 
   const match = /^console\/resources\/([^/]+)$/.exec(path);
@@ -195,6 +226,10 @@ export function resolveHash(
 
   const legacy = LEGACY_HASH_TO_SECTION[hash];
   if (legacy && isKnownSection(legacy)) {
+    const tab = LEGACY_TEAM_AGENTS_TAB[hash];
+    if (tab) {
+      return { section: legacy, params: new URLSearchParams({ tab }) };
+    }
     return { section: legacy };
   }
   return null;
@@ -225,11 +260,12 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Console: resources / governance / system
   if (segments[0] === 'console') {
-    // 成员子页面直接进入原有 section，左侧可展开菜单负责分类切换。
+    // 成员子页面：workers/teams 已合并进 team-agents，保留旧深链并按 tab 落地。
     const consoleMap: Record<string, string> = {
       'resources': 'resources',
-      'resources/workers': 'workers',
-      'resources/teams': 'teams',
+      'resources/team-agents': 'team-agents',
+      'resources/workers': 'team-agents',
+      'resources/teams': 'team-agents',
       'resources/humans': 'humans',
       'resources/managers': 'managers',
       'resources/skills': 'skills',
@@ -242,7 +278,12 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
     };
     const sub = segments.slice(1).join('/');
     const section = consoleMap[sub];
-    return section ? { section, params } : null;
+    if (!section) return null;
+    const legacyTab = LEGACY_TEAM_AGENTS_TAB[segments[2] ?? ''];
+    if (section !== 'team-agents' || !legacyTab) return { section, params };
+    const next = new URLSearchParams(params);
+    if (!next.get('tab')) next.set('tab', legacyTab);
+    return { section, params: next };
   }
 
   return null;

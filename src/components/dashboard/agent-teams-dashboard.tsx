@@ -60,9 +60,8 @@ import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
-const WorkersSection = lazy(() => import('./sections/workers-section').then(m => ({ default: m.WorkersSection })));
 const ResourceCenterSection = lazy(() => import('./sections/resource-center-section').then(m => ({ default: m.ResourceCenterSection })));
-const TeamsSection = lazy(() => import('./sections/teams-section').then(m => ({ default: m.TeamsSection })));
+const TeamAgentsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.TeamAgentsSection })));
 const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
@@ -87,9 +86,11 @@ export const sectionMap: Record<string, React.ComponentType> = {
   loops: LoopsSection,
   'my-workbench': MyWorkbenchSection,
   resources: ResourcesSection,
-  workers: WorkersSection,
+  'team-agents': TeamAgentsSection,
+  // 旧 section id 保留为别名（深链解析现在直接落到 team-agents）。
+  workers: TeamAgentsSection,
   skills: ResourceCenterSection,
-  teams: TeamsSection,
+  teams: TeamAgentsSection,
   managers: ManagersSection,
   humans: HumansSection,
   models: ModelsSection,
@@ -299,8 +300,7 @@ export function AgentTeamsDashboard() {
   const workbenchCount = usePendingTally().total;
 
   const countMap: Record<string, number> = useMemo(() => ({
-    workers: workerCount,
-    teams: teamCount,
+    'team-agents': teamCount + workerCount,
     managers: managerCount,
     chat: chatCount,
     'my-teams': teamChatCount,
@@ -313,8 +313,8 @@ export function AgentTeamsDashboard() {
     notifications.forEach((n) => {
       if (!n.read && n.timestamp > fiveMinutesAgo) {
         const msg = (n.title + ' ' + n.message).toLowerCase();
-        if (msg.includes('worker')) sectionSet.add('workers');
-        if (msg.includes('团队') || msg.includes('team')) sectionSet.add('teams');
+        if (msg.includes('worker')) sectionSet.add('team-agents');
+        if (msg.includes('团队') || msg.includes('team')) sectionSet.add('team-agents');
         if (msg.includes('manager')) sectionSet.add('managers');
         if (msg.includes('matrix') || msg.includes('聊天') || msg.includes('chat')) sectionSet.add('chat');
         if (msg.includes('infra') || msg.includes('基础设施')) { /* ops section removed */ }
