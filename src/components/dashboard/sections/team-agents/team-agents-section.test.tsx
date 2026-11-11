@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -96,16 +96,8 @@ vi.mock('@/lib/search-context', () => ({
 vi.mock('@/lib/agentteams-store', () => ({
   useAgentTeamsStore: () => ({ isConnected: true, userLevel: 3 }),
 }));
-vi.mock('../teams/team-drawer', () => ({
-  TeamDrawer: ({ team }: { team: TeamResponse | null }) =>
-    team ? <div>team-drawer:{team.name}</div> : null,
-}));
 vi.mock('../teams/team-create-dialog', () => ({
   TeamCreateDialog: ({ open }: { open: boolean }) => (open ? <div>team-create-dialog</div> : null),
-}));
-vi.mock('../workers/worker-drawer', () => ({
-  WorkerDrawer: ({ worker }: { worker: WorkerResponse | null }) =>
-    worker ? <div>worker-drawer:{worker.name}</div> : null,
 }));
 vi.mock('../workers/worker-create-dialog', () => ({
   WorkerCreateDialog: ({ open }: { open: boolean }) =>
@@ -134,6 +126,10 @@ function shell() {
   return screen.getByTestId('team-agents-shell');
 }
 
+function detailRegion() {
+  return screen.getByRole('region', { name: '详情' });
+}
+
 async function layoutIs(layout: string) {
   await waitFor(() =>
     expect(screen.getByTestId('team-agents-section')).toHaveAttribute('data-layout', layout),
@@ -148,50 +144,59 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('TeamAgentsSection · 四栏壳', () => {
-  it('xwide renders list + topology + detail (3 content columns)', async () => {
+  it('xwide renders list + topology + inline detail (3 content columns)', async () => {
     renderSection();
     await layoutIs('xwide');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
     expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '详情' })).toBeInTheDocument();
+    const detail = detailRegion();
+    expect(within(detail).getByText('alpha')).toBeInTheDocument();
+    expect(within(detail).getByText('Leader')).toBeInTheDocument();
+    expect(within(detail).getByText('boss')).toBeInTheDocument();
     expect(shell().children).toHaveLength(3);
     expect(shell().className).toContain('minmax(0,1fr)');
   });
 
-  it('wide renders list + topology with a compact detail (2 content columns)', async () => {
+  it('wide renders list + topology with a compact inline detail (2 content columns)', async () => {
     setWidth(1300);
     renderSection();
     await layoutIs('wide');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '详情' })).toBeInTheDocument();
+    expect(within(detailRegion()).getByText('alpha')).toBeInTheDocument();
     expect(shell().children).toHaveLength(2);
   });
 
-  it('medium renders list + topology and leaves detail to the drawers', async () => {
+  it('medium renders list + topology with an inline detail, not a drawer', async () => {
     setWidth(1100);
     renderSection();
     await layoutIs('medium');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
     expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
+    expect(within(detailRegion()).getByText('alpha')).toBeInTheDocument();
     expect(shell().children).toHaveLength(2);
   });
 
-  it('narrow starts on the list, opens the topology with a back affordance', async () => {
+  it('narrow starts on the list, opens an inline detail page with an explicit back button', async () => {
     setWidth(900);
     renderSection();
     await layoutIs('narrow');
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
     expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
     expect(shell().children).toHaveLength(1);
 
     fireEvent.click(screen.getByText('alpha').closest('button') as HTMLElement);
-    await waitFor(() => expect(screen.getByTestId('team-topology-header')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('region', { name: '详情' })).toBeInTheDocument());
     expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
-    expect(screen.getByRole('button', { name: /团队列表/ })).toBeInTheDocument();
+    expect(screen.getByTestId('team-topology-header')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /团队列表/ }));
+    const detail = detailRegion();
+    expect(within(detail).getByText('alpha')).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole('button', { name: /返回/ }));
+
     await waitFor(() => expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument());
+    expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
+    expect(screen.queryByTestId('team-topology-header')).toBeNull();
   });
 });
 
@@ -213,21 +218,44 @@ describe('TeamAgentsSection · 旧路由/页签', () => {
   });
 });
 
-describe('TeamAgentsSection · 抽屉与创建入口', () => {
-  it('opens the existing WorkerDrawer from an Agent row', async () => {
+describe('TeamAgentsSection · 内联详情（不再使用抽屉）', () => {
+  it('shows the selected Agent inline instead of opening a drawer', async () => {
     setHash('#console/resources/team-agents?tab=agents');
     renderSection();
     await layoutIs('xwide');
     const agentList = screen.getByRole('region', { name: 'Agent 列表' });
     fireEvent.click(withinRegion(agentList, 'solo'));
-    await waitFor(() => expect(screen.getByText('worker-drawer:solo')).toBeInTheDocument());
+
+    await waitFor(() => expect(within(detailRegion()).getByText('solo')).toBeInTheDocument());
+    expect(within(detailRegion()).getByText('solo-model')).toBeInTheDocument();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('worker-drawer');
   });
 
-  it('opens the existing TeamDrawer from the list settings button', async () => {
+  it('shows the selected team inline when the list settings button is used', async () => {
     renderSection();
     await layoutIs('xwide');
     fireEvent.click(screen.getByRole('button', { name: '打开 alpha 团队设置' }));
-    await waitFor(() => expect(screen.getByText('team-drawer:alpha')).toBeInTheDocument());
+
+    expect(within(detailRegion()).getByText('alpha')).toBeInTheDocument();
+    expect(within(detailRegion()).queryByText(/打开团队设置/)).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('team-drawer');
+  });
+
+  it.each([
+    [1300, 'wide'],
+    [1100, 'medium'],
+  ])('keeps the selected worker in an inline detail at width %i', async (width, layout) => {
+    setWidth(width);
+    setHash('#console/resources/team-agents?tab=agents');
+    renderSection();
+    await layoutIs(layout);
+    const agentList = screen.getByRole('region', { name: 'Agent 列表' });
+    fireEvent.click(withinRegion(agentList, 'w1'));
+
+    await waitFor(() => expect(within(detailRegion()).getByText('w1')).toBeInTheDocument());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('keeps create-team and create-agent entries on the page', async () => {

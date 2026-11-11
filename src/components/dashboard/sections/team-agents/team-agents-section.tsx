@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ArrowLeft,
   Bot,
-  ChevronRight,
   Plus,
   Settings,
   Users,
@@ -32,9 +32,7 @@ import type {
   WorkerResponse,
 } from '@/lib/agentteams-api';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
-import { TeamDrawer } from '../teams/team-drawer';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
-import { WorkerDrawer } from '../workers/worker-drawer';
 import { InteractiveTeamTopology } from './interactive-team-topology';
 import {
   ROLE_LABELS,
@@ -80,10 +78,31 @@ function Pane({ label, children, className = '' }: { label: string; children: Re
   );
 }
 
-function PaneHeader({ title, meta }: { title: string; meta?: string }) {
+function PaneHeader({
+  title,
+  meta,
+  onBack,
+}: {
+  title: string;
+  meta?: string;
+  onBack?: () => void;
+}) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
-      <h2 className="truncate text-sm font-semibold">{title}</h2>
+      <div className="flex min-w-0 items-center gap-1">
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="min-h-11 shrink-0 gap-1 px-2 text-xs sm:min-h-8"
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            返回
+          </Button>
+        )}
+        <h2 className="truncate text-sm font-semibold">{title}</h2>
+      </div>
       {meta && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{meta}</span>}
     </div>
   );
@@ -197,13 +216,9 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 function TeamAgentsDetail({
   team,
   member,
-  onOpenWorker,
-  onOpenTeam,
 }: {
   team: TeamResponse | null;
   member: TeamAgentMember | null;
-  onOpenWorker: (_worker: WorkerResponse) => void;
-  onOpenTeam: (_team: TeamResponse) => void;
 }) {
   if (member) {
     const { worker, role } = member;
@@ -232,15 +247,6 @@ function TeamAgentsDetail({
           </DetailRow>
           <DetailRow label="会话数">{sessions !== undefined ? `${sessions} 个` : '未上报'}</DetailRow>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="min-h-11 w-full text-xs sm:min-h-9"
-          onClick={() => onOpenWorker(worker)}
-        >
-          打开完整详情
-          <ChevronRight className="size-3.5" aria-hidden="true" />
-        </Button>
       </div>
     );
   }
@@ -262,15 +268,6 @@ function TeamAgentsDetail({
           <DetailRow label="团队房间">{team.teamRoomID || '-'}</DetailRow>
           <DetailRow label="描述">{team.description || '-'}</DetailRow>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="min-h-11 w-full text-xs sm:min-h-9"
-          onClick={() => onOpenTeam(team)}
-        >
-          打开团队设置
-          <ChevronRight className="size-3.5" aria-hidden="true" />
-        </Button>
       </div>
     );
   }
@@ -287,9 +284,11 @@ function TeamAgentsDetail({
  *
  * 四栏壳（含全局侧栏时共四栏）：
  * - xwide ≥1440：团队/Agent 列表 + 交互拓扑 + 右侧详情（3 个内容栏）；
- * - wide 1280–1439：列表 + 拓扑（详情以紧凑卡贴在拓扑下方）；
- * - medium 1024–1279：列表 + 拓扑，详情走既有 WorkerDrawer / TeamDrawer；
- * - narrow <1024：单栏（团队列表 ↔ 拓扑用面包屑返回），详情为全屏侧栏。
+ * - wide 1280–1439：列表 + 拓扑，详情以紧凑卡贴在拓扑下方；
+ * - medium 1024–1279：列表 + 拓扑，详情同样内联在拓扑下方；
+ * - narrow <1024：单栏，进入详情是独立详情页（顶部「返回」）。
+ *
+ * 详情是固定区域，不随点击弹出 Sheet / Drawer；创建团队 / Agent 仍走弹窗。
  *
  * 页面级「团队 / Agent」页签只用于承接旧路由的 tab 语义
  *（#console/resources/workers → Agent，#console/resources/teams → 团队）；
@@ -299,7 +298,7 @@ export function TeamAgentsSection() {
   const { data: teams, isLoading, isError, refetch, isRefetching } = useTeams();
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();
-  const { isConnected, userLevel } = useAgentTeamsStore();
+  const { isConnected } = useAgentTeamsStore();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const queryClient = useQueryClient();
   const layout = useTeamAgentsLayout();
@@ -313,9 +312,6 @@ export function TeamAgentsSection() {
   const [selectedTeamName, setSelectedTeamName] = useState<string | null>(null);
   const [selectedWorkerName, setSelectedWorkerName] = useState<string | null>(null);
   const [narrowView, setNarrowView] = useState<'list' | 'detail'>('list');
-
-  const [drawerWorker, setDrawerWorker] = useState<WorkerResponse | null>(null);
-  const [teamDrawerName, setTeamDrawerName] = useState<string | null>(null);
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -378,6 +374,8 @@ export function TeamAgentsSection() {
   const handleTabChange = useCallback((next: string) => {
     const value: TeamAgentsTab = next === 'agents' ? 'agents' : 'teams';
     setTab(value);
+    setSelectedWorkerName(null);
+    setNarrowView('list');
     const target = `#${TEAM_AGENTS_HASH}?tab=${value}`;
     if (window.location.hash !== target) {
       window.location.hash = target;
@@ -387,21 +385,24 @@ export function TeamAgentsSection() {
   const handleSelectTeam = useCallback(
     (team: TeamResponse) => {
       setSelectedTeamName(team.name);
+      setSelectedWorkerName(null);
       setNarrowView('detail');
     },
     [],
   );
 
   const handleOpenTeamSettings = useCallback((team: TeamResponse) => {
-    setTeamDrawerName(team.name);
+    setSelectedTeamName(team.name);
+    setSelectedWorkerName(null);
+    setNarrowView('detail');
   }, []);
 
   const handleOpenWorker = useCallback((worker: WorkerResponse) => {
     setSelectedWorkerName(worker.name);
     if (worker.team) {
-      setSelectedTeamName((current) => current ?? worker.team);
+      setSelectedTeamName(worker.team);
     }
-    setDrawerWorker(worker);
+    setNarrowView('detail');
   }, []);
 
   const handleCreateTeam = useCallback(() => {
@@ -431,10 +432,9 @@ export function TeamAgentsSection() {
   }
 
   const narrow = layout === 'narrow';
-  const narrowDetail = narrow && tab === 'teams' && narrowView === 'detail';
+  const narrowDetail = narrow && narrowView === 'detail';
   const showList = !narrowDetail;
   const showMain = !narrow || narrowDetail;
-  const liveTeamDrawer = (teams ?? []).find((team) => team.name === teamDrawerName) ?? null;
 
   const listPane = (
     <Pane label={tab === 'teams' ? '团队列表' : 'Agent 列表'}>
@@ -498,7 +498,7 @@ export function TeamAgentsSection() {
       highlightWorkerName={tab === 'agents' ? selectedWorkerName : null}
       onOpenWorker={handleOpenWorker}
       onOpenTeamSettings={handleOpenTeamSettings}
-      onBack={narrowDetail ? () => setNarrowView('list') : undefined}
+      onBack={narrow ? () => setNarrowView('list') : undefined}
     />
   ) : (
     <Pane label="团队拓扑">
@@ -508,38 +508,42 @@ export function TeamAgentsSection() {
     </Pane>
   );
 
+  const renderDetailPane = ({
+    onBack,
+    className = '',
+  }: {
+    onBack?: () => void;
+    className?: string;
+  }) => (
+    <Pane label="详情" className={className}>
+      <PaneHeader title="详情" onBack={onBack} />
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
+        <TeamAgentsDetail team={selectedTeam} member={selectedMember} />
+      </div>
+    </Pane>
+  );
+
   const mainPane = (
     <div className="flex min-h-0 min-w-0 flex-col gap-2">
-      <div className="min-h-0 flex-1">{topology}</div>
-      {layout === 'wide' && (
-        <Pane label="详情" className="max-h-[38%] shrink-0">
-          <PaneHeader title="详情" />
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
-            <TeamAgentsDetail
-              team={selectedTeam}
-              member={selectedMember}
-              onOpenWorker={handleOpenWorker}
-              onOpenTeam={handleOpenTeamSettings}
-            />
-          </div>
-        </Pane>
+      {narrowDetail ? (
+        <>
+          {renderDetailPane({
+            onBack: () => setNarrowView('list'),
+            className: 'max-h-[45%] shrink-0',
+          })}
+          <div className="min-h-0 flex-1">{topology}</div>
+        </>
+      ) : (
+        <>
+          <div className="min-h-0 flex-1">{topology}</div>
+          {(layout === 'wide' || layout === 'medium') &&
+            renderDetailPane({ className: 'max-h-[38%] shrink-0' })}
+        </>
       )}
     </div>
   );
 
-  const detailPane = (
-    <Pane label="详情">
-      <PaneHeader title="详情" />
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
-        <TeamAgentsDetail
-          team={selectedTeam}
-          member={selectedMember}
-          onOpenWorker={handleOpenWorker}
-          onOpenTeam={handleOpenTeamSettings}
-        />
-      </div>
-    </Pane>
-  );
+  const detailPane = renderDetailPane({});
 
   return (
     <div className="space-y-3" data-testid="team-agents-section" data-layout={layout}>
@@ -594,34 +598,6 @@ export function TeamAgentsSection() {
         {showMain && mainPane}
         {layout === 'xwide' && detailPane}
       </div>
-
-      <WorkerDrawer
-        worker={drawerWorker}
-        onOpenChange={(open) => !open && setDrawerWorker(null)}
-        modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
-        userLevel={userLevel}
-        onChanged={refresh}
-        onDeleted={() => {
-          setDrawerWorker(null);
-          refresh();
-        }}
-      />
-
-      <TeamDrawer
-        team={liveTeamDrawer}
-        allTeams={teams ?? []}
-        workers={workers ?? []}
-        modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
-        userLevel={userLevel}
-        onOpenChange={(open) => !open && setTeamDrawerName(null)}
-        onChanged={refresh}
-        onDeleted={() => {
-          setTeamDrawerName(null);
-          refresh();
-        }}
-      />
 
       <TeamCreateDialog
         open={createTeamOpen}
