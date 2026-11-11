@@ -36,6 +36,7 @@ import {
 } from '@/lib/workspace-access';
 import { toast } from 'sonner';
 import { DirectoryPickerDialog } from './directory-picker-dialog';
+import { TeamSourceNotice } from './team-access-field';
 
 const GRANT_MODES: AccessMode[] = ['read', 'readwrite'];
 const RESTRICTION_MODES: AccessMode[] = ['none', 'read'];
@@ -314,6 +315,10 @@ export function HumanWorkspaceAccessDialog({
   record,
   teamNames,
   defaultTeams,
+  teamsLoading,
+  teamsError,
+  teamsErrorMessage,
+  onRetryTeams,
   canManage,
   onOpenChange,
   onSaved,
@@ -323,6 +328,10 @@ export function HumanWorkspaceAccessDialog({
   record: HumanConfigRecord | null;
   teamNames: string[];
   defaultTeams: string[];
+  teamsLoading?: boolean;
+  teamsError?: boolean;
+  teamsErrorMessage?: string;
+  onRetryTeams?: () => void;
   canManage: boolean;
   onOpenChange: (_open: boolean) => void;
   onSaved: () => void;
@@ -337,7 +346,10 @@ export function HumanWorkspaceAccessDialog({
 
   const grants = draft.grants ?? [];
   const restrictions = draft.restrictions ?? [];
-  const issues = validateAccess(draft, teamNames.length > 0 ? teamNames : null);
+  // 团队列表读不到时不做 unknown_team 判定（缓存不完整 ≠ 团队不存在）。
+  const teamCatalog =
+    teamsLoading || teamsError ? null : teamNames.length > 0 ? teamNames : null;
+  const issues = validateAccess(draft, teamCatalog);
   const listIssues = (list: 'grants' | 'restrictions') =>
     issues.filter((issue) => issue.list === list && issue.index === -1);
 
@@ -451,6 +463,18 @@ export function HumanWorkspaceAccessDialog({
             <p role="status" className="break-words rounded-md border border-status-waiting/30 bg-status-waiting/5 p-2 text-xs text-status-waiting">
               {warning}
             </p>
+          )}
+
+          {(teamsError || (teamsLoading && teamNames.length > 0)) && (
+            <TeamSourceNotice
+              source={{
+                names: teamNames,
+                isLoading: teamsLoading,
+                isError: teamsError,
+                errorMessage: teamsErrorMessage,
+                onRetry: onRetryTeams,
+              }}
+            />
           )}
 
           <div className="space-y-1.5 rounded-lg border p-3">

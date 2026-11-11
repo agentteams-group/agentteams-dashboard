@@ -29,6 +29,7 @@ import {
   PERMISSION_LABELS,
   PERMISSION_LEVELS,
 } from './human-types';
+import { TeamAccessField, uniqueTeamNames } from './team-access-field';
 
 function recordList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
@@ -40,6 +41,10 @@ export function HumanAccessDialog({
   record,
   teamNames,
   workerNames,
+  teamsLoading,
+  teamsError,
+  teamsErrorMessage,
+  onRetryTeams,
   canManage,
   onOpenChange,
   onSaved,
@@ -49,13 +54,17 @@ export function HumanAccessDialog({
   record: HumanConfigRecord | null;
   teamNames: string[];
   workerNames: string[];
+  teamsLoading?: boolean;
+  teamsError?: boolean;
+  teamsErrorMessage?: string;
+  onRetryTeams?: () => void;
   canManage: boolean;
   onOpenChange: (_open: boolean) => void;
   onSaved: () => void;
 }) {
   const updateHuman = useUpdateHuman();
   const currentLevel = record?.permissionLevel ?? human.permissionLevel ?? 2;
-  const currentTeams = recordList(record?.accessibleTeams ?? human.accessibleTeams);
+  const currentTeams = uniqueTeamNames(recordList(record?.accessibleTeams ?? human.accessibleTeams));
   const currentWorkers = recordList(record?.accessibleWorkers ?? human.accessibleWorkers);
 
   const [level, setLevel] = useState<number>(currentLevel);
@@ -68,9 +77,12 @@ export function HumanAccessDialog({
     teams.join('|') !== currentTeams.join('|') ||
     workers.join('|') !== currentWorkers.join('|');
   const pending = updateHuman.isPending;
+  // 列表读不到时不判悬空（保留已有值，不做无依据的拦截）。
+  const unavailableTeams =
+    teamsLoading || teamsError ? [] : teams.filter((name) => !teamNames.includes(name));
 
   const save = async () => {
-    if (!canManage || pending) return;
+    if (!canManage || pending || unavailableTeams.length > 0) return;
     setError('');
     try {
       await updateHuman.mutateAsync({
@@ -143,13 +155,19 @@ export function HumanAccessDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>可访问团队</Label>
-            <MemberPicker
-              options={teamNames.map((name) => ({ value: name, label: name }))}
+            <Label htmlFor="human-access-teams">可访问团队</Label>
+            <TeamAccessField
+              triggerId="human-access-teams"
               selected={teams}
-              onAdd={(name) => setTeams((prev) => [...prev, name])}
-              onRemove={(name) => setTeams((prev) => prev.filter((item) => item !== name))}
-              placeholder="选择团队添加…"
+              source={{
+                names: teamNames,
+                isLoading: teamsLoading,
+                isError: teamsError,
+                errorMessage: teamsErrorMessage,
+                onRetry: onRetryTeams,
+              }}
+              onChange={setTeams}
+              disabled={!canManage || pending}
             />
           </div>
 
@@ -177,7 +195,7 @@ export function HumanAccessDialog({
           <Button
             className="min-h-11"
             onClick={() => void save()}
-            disabled={!canManage || pending || !changed}
+            disabled={!canManage || pending || !changed || unavailableTeams.length > 0}
           >
             {pending ? '保存中…' : '保存'}
           </Button>

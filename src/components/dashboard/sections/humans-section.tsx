@@ -22,6 +22,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
+import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
@@ -64,7 +65,16 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 export function HumansSection() {
   const { data: allHumans, isLoading, isError, refetch, isRefetching } = useHumans();
   const humans = useMemo(() => allHumans?.filter(human => !human.systemAdmin), [allHumans]);
-  const { data: teams } = useTeams();
+  const {
+    data: teams,
+    isLoading: teamsLoading,
+    isError: teamsError,
+    error: teamsErrorObject,
+    refetch: refetchTeams,
+  } = useTeams();
+  const teamsErrorMessage = teamsError
+    ? formatErrorMessage(teamsErrorObject, '团队列表加载失败')
+    : undefined;
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();
   const { isConnected, userLevel } = useAgentTeamsStore();
@@ -188,6 +198,13 @@ export function HumansSection() {
         value={newHuman}
         onChange={setNewHuman}
         isPending={createHuman.isPending}
+        teamSource={{
+          names: (teams ?? []).map((team) => team.name),
+          isLoading: teamsLoading,
+          isError: teamsError,
+          errorMessage: teamsErrorMessage,
+          onRetry: () => void refetchTeams(),
+        }}
         onSubmit={handleCreate}
       />
 
@@ -203,6 +220,10 @@ export function HumansSection() {
           humanMembers: team.humanMembers,
         }))}
         workers={(workers ?? []).map((worker) => ({ name: worker.name }))}
+        teamsLoading={teamsLoading}
+        teamsError={teamsError}
+        teamsErrorMessage={teamsErrorMessage}
+        onRetryTeams={() => void refetchTeams()}
         userLevel={userLevel}
         onOpenChange={(open) => !open && setDrawerHuman(null)}
       />

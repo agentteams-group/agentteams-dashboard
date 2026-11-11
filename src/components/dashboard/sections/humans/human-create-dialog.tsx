@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/dialog';
 import type { CreateHumanRequest } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS, PERMISSION_LEVELS } from './human-types';
+import { TeamAccessField, type TeamCandidateSource } from './team-access-field';
 
 export function HumanCreateDialog({
   open,
   value,
   onChange,
   isPending,
+  teamSource,
   onOpenChange,
   onSubmit,
 }: {
@@ -32,6 +34,7 @@ export function HumanCreateDialog({
   value: CreateHumanRequest;
   onChange: (_next: CreateHumanRequest) => void;
   isPending: boolean;
+  teamSource: TeamCandidateSource;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
 }) {
@@ -91,20 +94,21 @@ export function HumanCreateDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="human-create-teams">可访问团队（逗号分隔）</Label>
-            <Input
-              id="human-create-teams"
-              value={value.accessibleTeams?.join(', ') || ''}
-              onChange={(e) =>
+            <Label htmlFor="human-create-teams">可访问团队</Label>
+            <TeamAccessField
+              triggerId="human-create-teams"
+              selected={value.accessibleTeams ?? []}
+              source={teamSource}
+              onChange={(next) =>
                 onChange({
                   ...value,
-                  accessibleTeams: e.target.value
-                    ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                    : undefined,
+                  accessibleTeams: next.length > 0 ? next : undefined,
                 })
               }
-              placeholder="team1, team2, team3"
             />
+            <p className="text-xs text-muted-foreground">
+              只能选择已存在的团队；Controller 会把人拉入对应团队房间。
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="human-create-workers">可访问 Workers（逗号分隔）</Label>

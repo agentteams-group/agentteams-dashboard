@@ -41,6 +41,7 @@ const AUDITED = [
   'sections/humans/human-model-access-dialog.tsx',
   'sections/humans/human-quota-dialog.tsx',
   'sections/humans/human-workspace-access-dialog.tsx',
+  'sections/humans/team-access-field.tsx',
   'sections/shared/member-picker.tsx',
   'settings/backend-tab.tsx',
   'sections/projects/meta-editor.tsx',
