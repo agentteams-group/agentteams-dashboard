@@ -91,12 +91,21 @@ function mappingRules(value: unknown): ModelMappingRule[] {
 
 function providerToForm(provider: LlmProviderResponse): ProviderForm {
   const rawConfigs = provider.rawConfigs ?? {};
+  let baseUrl = typeof rawConfigs.openaiCustomUrl === 'string' ? rawConfigs.openaiCustomUrl : '';
+  // Higress separates a custom URL's port into openaiCustomServicePort.
+  if (baseUrl && typeof rawConfigs.openaiCustomServicePort === 'number') {
+    try {
+      const url = new URL(baseUrl);
+      if (!url.port) url.port = String(rawConfigs.openaiCustomServicePort);
+      baseUrl = url.toString();
+    } catch { /* Preserve the original value for the form to display. */ }
+  }
   return {
     name: provider.name,
     type: provider.type,
     protocol: provider.protocol === 'original' ? 'original' : 'openai/v1',
     tokens: [],
-    baseUrl: typeof rawConfigs.openaiCustomUrl === 'string' ? rawConfigs.openaiCustomUrl : '',
+    baseUrl,
     pathPrefix: typeof rawConfigs.pathPrefix === 'string' ? rawConfigs.pathPrefix : '/v1',
     tokenFailoverConfig: provider.tokenFailoverConfig,
     modelMappings: mappingRules(rawConfigs.modelMapping),
