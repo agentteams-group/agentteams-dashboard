@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import {
   buildRooms,
   extractMessagePreview,
@@ -71,6 +72,17 @@ const human = (overrides: Partial<HumanResponse> = {}): HumanResponse => ({
   initialPassword: '',
   rooms: ['!admin-dm:matrix'],
   message: '',
+  ...overrides,
+});
+
+const workflow = (overrides: Partial<WorkflowResponse> = {}): WorkflowResponse => ({
+  project_id: 'project-1',
+  title: '网站改版',
+  status: 'active',
+  nodes: [],
+  edges: [],
+  next: [],
+  interrupts: [],
   ...overrides,
 });
 
@@ -236,6 +248,75 @@ describe('buildRooms', () => {
     expect(rooms.filter((r) => r.id === '!w1:matrix')).toHaveLength(1);
     expect(rooms[0].type).toBe('worker');
     expect(rooms[0].name).toBe('w1 房间');
+  });
+
+  it('adds a project room from a workflow source_room_id without any Matrix room meta', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix', team_id: 'design' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({
+      id: '!proj:matrix',
+      name: '网站改版',
+      type: 'unknown',
+      members: [],
+      parentTeam: 'design',
+    });
+  });
+
+  it('falls back to 项目 <id> when the workflow has no title', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix', title: '', project_id: 'p-42' }),
+    ]);
+    expect(rooms[0].name).toBe('项目 p-42');
+  });
+
+  it('keeps Matrix roomName over the workflow title and enriches meta', () => {
+    const rooms = buildRooms(
+      undefined,
+      undefined,
+      undefined,
+      { '!proj:matrix': { roomName: '项目群 · 设计', lastMessageTs: 123, unreadCount: 2 } },
+      undefined,
+      [workflow({ source_room_id: '!proj:matrix' })],
+    );
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({
+      id: '!proj:matrix',
+      name: '项目群 · 设计',
+      type: 'unknown',
+      lastMessageTs: 123,
+      unreadCount: 2,
+    });
+  });
+
+  it('dedupes workflows sharing the same source_room_id and skips empty ones', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix' }),
+      workflow({ project_id: 'project-2', title: '二期', source_room_id: '!proj:matrix' }),
+      workflow({ project_id: 'project-3', title: '无房间' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({ id: '!proj:matrix', name: '网站改版' });
+  });
+
+  it('never overwrites real team, worker or manager rooms with a workflow room', () => {
+    const rooms = buildRooms(
+      [worker({ roomID: '!w:matrix' })],
+      [team({ name: 'alpha', teamRoomID: '!team:matrix' })],
+      [manager({ name: 'default', roomID: '!ops:matrix' })],
+      undefined,
+      undefined,
+      [
+        workflow({ source_room_id: '!team:matrix', title: 'Workflow Team' }),
+        workflow({ source_room_id: '!w:matrix', title: 'Workflow Worker' }),
+        workflow({ source_room_id: '!ops:matrix', title: 'Workflow Manager' }),
+      ],
+    );
+    expect(rooms.filter((r) => r.id === '!team:matrix')).toHaveLength(1);
+    expect(rooms.find((r) => r.id === '!team:matrix')).toMatchObject({ type: 'team', name: 'alpha 团队房间' });
+    expect(rooms.find((r) => r.id === '!w:matrix')).toMatchObject({ type: 'worker', name: 'w1 房间' });
+    expect(rooms.find((r) => r.id === '!ops:matrix')).toMatchObject({ type: 'manager', name: '平台助手' });
   });
 });
 

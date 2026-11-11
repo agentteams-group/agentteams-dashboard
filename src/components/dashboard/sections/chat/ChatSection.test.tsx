@@ -15,13 +15,14 @@ const hooksMock = vi.hoisted(() => ({
   useRoomAccess: vi.fn(),
 }));
 const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test', sessionUser: 'alice' }));
+const taskFeedMock = vi.hoisted(() => ({ workflows: [] as unknown[] }));
 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: hooksMock.useWorkers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: hooksMock.useManagers }));
 vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans }));
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: hooksMock.useRoomAccess }));
-vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [], loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
+vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: taskFeedMock.workflows, loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({
@@ -79,6 +80,7 @@ import { useSectionStore } from '@/lib/section-store';
 beforeEach(() => {
   localStorage.clear();
   sessionMock.userId = '@user:test';
+  taskFeedMock.workflows = [];
   hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test', '!room1:test'], state: 'joined', refetch: vi.fn() });
 });
 
@@ -208,6 +210,26 @@ describe('role-based assistant landing', () => {
     useHitlInboxStore.getState().setPendingChatRoomId(WORKER.roomID);
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
+  });
+
+  it('lists controller project rooms by source_room_id even without Matrix room meta', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test', '!project:test'], state: 'joined', refetch: vi.fn() });
+    taskFeedMock.workflows = [{
+      project_id: 'project-1',
+      title: '网站改版',
+      status: 'active',
+      team_id: 'design',
+      source_room_id: '!project:test',
+      nodes: [],
+      edges: [],
+      next: [],
+      interrupts: [],
+    }];
+    renderWithQueryClient();
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    expect(sidebar.getByRole('button', { name: '网站改版' })).toBeInTheDocument();
   });
 
   it('restores the same account selection and gives an explicit deep link priority', () => {

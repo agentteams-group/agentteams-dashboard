@@ -122,14 +122,17 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // badge. We don't re-sort on every keystroke — just pass the meta to
   // buildRooms and sort at the boundary.
   const roomMeta = useRoomMetaStore((s) => s.meta);
+  // Controller 项目工作流是项目群的第二来源：/sync 没采集到 m.room.name 时
+  // source_room_id 仍能补齐侧栏房间。这里始终拉取（enabled=true），同一份
+  // taskFeed 继续驱动 attention 徽标，不额外发起第二套 projects 查询。
+  const taskFeed = useAssistantTaskFeed(undefined, true);
   const availableRooms = useMemo(
-    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)), roomAccess.joinedRooms, roomAccess.state)
+    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows)), roomAccess.joinedRooms, roomAccess.state)
       .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
       .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined })),
-    [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
+    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
   );
   const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view]);
-  const taskFeed = useAssistantTaskFeed(undefined, rooms.some(room => room.agentRole || room.type === 'team'));
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
