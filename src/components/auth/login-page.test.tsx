@@ -44,9 +44,9 @@ afterEach(() => {
 });
 
 describe('LoginPage Controller token-only login', () => {
-  it('prefills admin and focuses the password for a fresh local install', () => {
+  it('starts with an empty username and focuses the password for a fresh local install', () => {
     render(<LoginPage />);
-    expect(screen.getByLabelText('用户名')).toHaveValue('admin');
+    expect(screen.getByLabelText('用户名')).toHaveValue('');
     expect(screen.getByLabelText('密码')).toHaveFocus();
   });
   it('keeps the token entry collapsed until expanded', () => {
@@ -106,7 +106,7 @@ describe('LoginPage Controller token-only login', () => {
     });
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 
@@ -128,11 +128,17 @@ describe('LoginPage Controller token-only login', () => {
 });
 
 describe('LoginPage L1 admin verification', () => {
-  it('shows the admin verification section expanded by default', () => {
+  it('keeps the admin verification section collapsed until expanded', () => {
     render(<LoginPage />);
 
-    // The entry must be obvious: the fields are visible without a click and
-    // the section can still be collapsed.
+    // The legacy-Controller path is an extra: hidden by default, discoverable
+    // through the entry button, and still collapsible once opened.
+    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
+    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
+    expect(screen.queryByText(ADMIN_HINT)).toBeNull();
+    expect(screen.getByRole('button', { name: ADMIN_ENTRY })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
     expect(screen.getByPlaceholderText('管理员账号')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('管理员密码')).toBeInTheDocument();
     expect(screen.getByText(ADMIN_HINT)).toBeInTheDocument();
@@ -152,8 +158,9 @@ describe('LoginPage L1 admin verification', () => {
     });
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'luo' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'luo' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'luo-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
     fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
     fireEvent.change(screen.getByPlaceholderText('管理员密码'), { target: { value: 'admin-pass' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
@@ -171,19 +178,21 @@ describe('LoginPage L1 admin verification', () => {
   it('keeps the body unchanged while the admin fields are empty', async () => {
     const fetchMock = mockLoginResponse(200, {
       success: true,
-      user: { username: 'admin', level: 3 },
+      user: { username: 'alice', level: 2 },
       mode: 'higress',
     });
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
-    // The section is expanded by default; leaving it empty must not add keys.
-    expect(screen.getByPlaceholderText('管理员账号')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'alice' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+    // Expanded but left empty: no admin keys are added to the request body.
+    expect(screen.getByPlaceholderText('管理员账号')).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).toEqual({ username: 'admin', password: 'password' });
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'alice', password: 'password' });
   });
 
   it('omits the admin fields when only one side is filled', async () => {
@@ -194,7 +203,9 @@ describe('LoginPage L1 admin verification', () => {
     });
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
     fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 

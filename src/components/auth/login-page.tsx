@@ -19,12 +19,12 @@ interface LoginPageProps {
   dataPlaneRejected?: boolean;
 }
 
-export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlaneRejected = false }: LoginPageProps) {
+export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
-  const [adminVisible, setAdminVisible] = useState(true);
+  const [adminVisible, setAdminVisible] = useState(false);
   const [tokenOnlyToken, setTokenOnlyToken] = useState('');
   const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
