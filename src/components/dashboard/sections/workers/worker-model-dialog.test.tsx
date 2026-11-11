@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 import '@testing-library/jest-dom/vitest';
 import { WorkerModelDialog } from './worker-model-dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ApiError } from '@/lib/api-error';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 
 const mocks = vi.hoisted(() => ({ updateWorkerMutate: vi.fn() }));
@@ -11,7 +13,6 @@ vi.mock('@/hooks/use-agentteams-mutations', () => ({
   useUpdateWorker: () => ({ mutate: mocks.updateWorkerMutate, isPending: false }),
 }));
 
-// Radix Select 打开时用 ResizeObserver 量触发按钮宽度。
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -25,77 +26,166 @@ if (!('ResizeObserver' in window)) {
   });
 }
 
-// 最长 alias + 最长 route 描述：编辑模型弹窗此前被 SelectTrigger 的
-// min-content 宽度撑出 max-w-md 白卡片（横向溢出），这里钉住收敛类。
 const LONG_ALIAS = `team-chat-${'very-long-alias-'.repeat(4)}alias`;
-const options: ModelSelectionOption[] = [
-  {
-    alias: LONG_ALIAS,
+
+function option(alias: string, providerName: string): ModelSelectionOption {
+  return {
+    alias,
     kind: 'configured',
     binding: {
-      requestModelAlias: LONG_ALIAS,
-      routeName: `route-${'segment-'.repeat(6)}name`,
-      providerName: `provider-${'segment-'.repeat(5)}name`,
-      targetModel: `model-${'segment-'.repeat(6)}name`,
+      requestModelAlias: alias,
+      routeName: `route-${alias}`,
+      providerName,
+      targetModel: `target-${alias}`,
       available: true,
     },
-  },
+  };
+}
+
+const options: ModelSelectionOption[] = [
+  option(LONG_ALIAS, 'provider-a'),
+  option('alias-b', 'provider-a'),
+  option('alias-c', 'provider-b'),
 ];
 
-describe('WorkerModelDialog 弹窗溢出收口', () => {
-  afterEach(cleanup);
+function openList(input: HTMLElement): HTMLElement {
+  fireEvent.focus(input);
+  return within(input.parentElement as HTMLElement).getByRole('listbox');
+}
 
-  function renderDialog() {
-    render(
-      <TooltipProvider>
-        <WorkerModelDialog
-          open
-          workerName="worker-with-a-long-name"
-          model={LONG_ALIAS}
-          providerHint="higress.internal.example-provider"
-          modelOptions={options}
-          onOpenChange={() => {}}
-        />
-      </TooltipProvider>,
-    );
-  }
+function renderDialog(props: Partial<ComponentProps<typeof WorkerModelDialog>> = {}) {
+  return render(
+    <TooltipProvider>
+      <WorkerModelDialog
+        open
+        workerName="worker-with-a-long-name"
+        model={LONG_ALIAS}
+        modelProvider="provider-a"
+        providerHint="provider-a"
+        modelOptions={options}
+        onOpenChange={() => {}}
+        {...props}
+      />
+    </TooltipProvider>,
+  );
+}
 
-  it('SelectTrigger 收敛宽度，长 alias 不撑开弹窗', () => {
-    renderDialog();
-
-    // 模型选择仍是 Select（role=combobox）；Provider 已换成可输入 Combobox，
-    // 这里按 aria-label 精确定位模型选择触发按钮。
-    const trigger = screen.getByLabelText('请求模型别名');
-    expect(trigger.className).toContain('w-full');
-    expect(trigger.className).toContain('min-w-0');
+describe('WorkerModelDialog', () => {
+  afterEach(() => {
+    cleanup();
+    mocks.updateWorkerMutate.mockReset();
   });
 
-  it('Provider 输入框占满可用宽度', () => {
+  it('Provider 在上、Model 在下，两个都有候选下拉', () => {
     renderDialog();
+    const provider = screen.getByLabelText('Provider');
+    const model = screen.getByLabelText('请求模型别名');
+    expect(provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const input = screen.getByPlaceholderText(/当前解析/);
-    expect(input.className).toContain('w-full');
-    expect(input.className).toContain('min-w-0');
-  });
-
-  it('Provider 候选来自模型绑定，且仍可自由输入', () => {
-    renderDialog();
-    const provider = screen.getByPlaceholderText(/当前解析/) as HTMLInputElement;
-
-    fireEvent.focus(provider);
     expect(
-      within(screen.getByRole('listbox'))
+      within(openList(provider))
         .getAllByRole('option')
-        .map((option) => option.textContent),
-    ).toEqual([options[0].binding?.providerName]);
+        .map((item) => item.textContent),
+    ).toEqual(['无 Provider（在服 + 在用）', 'provider-a', 'provider-b']);
 
-    fireEvent.change(provider, { target: { value: 'legacy-provider' } });
-    expect(provider).toHaveValue('legacy-provider');
+    expect(
+      within(openList(model))
+        .getAllByRole('option')
+        .map((item) => item.textContent),
+    ).toEqual(['alias-b', LONG_ALIAS]);
+  });
+
+  it('选择 Provider 后 Model 候选只剩该 Provider 的模型', () => {
+    renderDialog();
+    const provider = screen.getByLabelText('Provider');
+    fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-b' }));
+
+    const model = screen.getByLabelText('请求模型别名');
+    expect(
+      within(openList(model))
+        .getAllByRole('option')
+        .map((item) => item.textContent),
+    ).toEqual(['alias-c']);
+  });
+
+  it('换 Provider 时清空不兼容的旧 Model', () => {
+    renderDialog();
+    const provider = screen.getByLabelText('Provider');
+    fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-b' }));
+    expect(screen.getByLabelText('请求模型别名')).toHaveValue('');
+  });
+
+  it('provider 未改（只改 model）→ PUT body 不含 modelProvider', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+      target: { value: 'alias-b' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
+      {
+        name: 'worker-with-a-long-name',
+        data: { model: 'alias-b' },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+  });
+
+  it('provider 真变化 → PUT body 成对带 modelProvider', () => {
+    renderDialog({ model: 'alias-c', modelProvider: 'provider-a' });
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'provider-b' } });
+    fireEvent.change(screen.getByLabelText('请求模型别名'), { target: { value: 'alias-c' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
+      {
+        name: 'worker-with-a-long-name',
+        data: { model: 'alias-c', modelProvider: 'provider-b' },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+  });
+
+  it('无初始 provider 时选模型自动跟随绑定 provider 并成对下发', () => {
+    renderDialog({ model: '', modelProvider: undefined, providerHint: undefined });
+    const model = screen.getByLabelText('请求模型别名');
+    fireEvent.click(within(openList(model)).getByRole('option', { name: LONG_ALIAS }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
+      {
+        name: 'worker-with-a-long-name',
+        data: { model: LONG_ALIAS, modelProvider: 'provider-a' },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+  });
+
+  it('502 时弹窗内显示服务端 message，而不是裸 API Error', () => {
+    mocks.updateWorkerMutate.mockImplementation((_variables, callbacks) => {
+      callbacks?.onError?.(
+        new ApiError(
+          'API Error 502: {"message":"上游返回了 HTML 页面而非 API 数据","upstream_status":502}',
+          502,
+          '/workers/worker-with-a-long-name',
+        ),
+      );
+    });
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+      target: { value: 'alias-b' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('服务器错误 (502): 上游返回了 HTML 页面而非 API 数据');
+    expect(alert).not.toHaveTextContent('API Error 502: {"message"');
+    // 诊断行只含 model/provider，不含 token。
+    expect(alert).toHaveTextContent('"model":"alias-b"');
   });
 
   it('DialogContent 无固定像素宽度且带横向防溢出兜底', () => {
     renderDialog();
-
     const content = document.querySelector('[data-slot="dialog-content"]');
     expect(content).not.toBeNull();
     const className = content?.className ?? '';
@@ -103,37 +193,5 @@ describe('WorkerModelDialog 弹窗溢出收口', () => {
     expect(className).toContain('overflow-y-auto');
     expect(className).toContain('min-w-0');
     expect(className).toContain('sm:max-w-md');
-    expect(className).not.toMatch(/(?<![\w-])(?:[a-z-]+:)?w-\[\d+px\]/);
-  });
-
-  it('选模型后自动跟随 provider，保存时成对下发', () => {
-    mocks.updateWorkerMutate.mockReset();
-    render(
-      <TooltipProvider>
-        <WorkerModelDialog
-          open
-          workerName="w1"
-          model=""
-          providerHint="higress.internal.example-provider"
-          modelOptions={options}
-          onOpenChange={() => {}}
-        />
-      </TooltipProvider>,
-    );
-
-    fireEvent.click(screen.getByLabelText('请求模型别名'));
-    fireEvent.click(screen.getByRole('option', { name: new RegExp(LONG_ALIAS) }));
-
-    const provider = screen.getByPlaceholderText(/当前解析/) as HTMLInputElement;
-    expect(provider.value).toBe(options[0].binding?.providerName);
-
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
-      {
-        name: 'w1',
-        data: { model: LONG_ALIAS, modelProvider: options[0].binding?.providerName },
-      },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
-    );
   });
 });

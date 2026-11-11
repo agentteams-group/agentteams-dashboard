@@ -17,13 +17,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { WorkerModelDialog } from '@/components/dashboard/sections/workers/worker-model-dialog';
 import { workerPickerLabel } from '@/components/dashboard/sections/shared/member-picker';
 import { useUpdateTeam, useUpdateWorker } from '@/hooks/use-agentteams-mutations';
 import { formatErrorMessage } from '@/lib/api-error';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
+import {
+  buildModelCandidateCatalog,
+  type ModelSelectionOption,
+} from '@/lib/model-catalog';
 import { getAvailableWorkers } from './team-selectors';
 import {
   applyBatchModel,
@@ -53,14 +56,15 @@ export function TeamMembersPanel({
   onChanged?: () => void;
 }) {
   const [rows, setRows] = useState<TeamMemberRow[]>(() => buildMemberRows(team, workers));
-  const [leaderBatch, setLeaderBatch] = useState('');
-  const [workerBatch, setWorkerBatch] = useState('');
+  const [leaderBatch, setLeaderBatch] = useState({ provider: '', model: '' });
+  const [workerBatch, setWorkerBatch] = useState({ provider: '', model: '' });
   const [modelTarget, setModelTarget] = useState<TeamMemberRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const updateTeam = useUpdateTeam();
   const updateWorker = useUpdateWorker();
+  const catalog = useMemo(() => buildModelCandidateCatalog(modelOptions), [modelOptions]);
 
   const missing = missingMemberNames(rows);
   const hasLeader = rows.some((row) => row.role === 'team_leader');
@@ -91,6 +95,7 @@ export function TeamMembersPanel({
         name,
         role: 'worker',
         model: worker.model || '',
+        provider: worker.modelProvider ?? '',
         baseModel: worker.model || '',
         baseProvider: worker.modelProvider,
         missing: false,
@@ -115,7 +120,7 @@ export function TeamMembersPanel({
         await updateTeam.mutateAsync({ name: team.name, data: { workerNames, leader } });
       }
       // 成员变更成功后再逐行写模型：只发改动行，失败行单独报错。
-      // provider 取服务端现值（非空才随写，与插件 doCfg 的 {model, modelProvider} 一致）。
+      // modelProvider 只在行 provider 真变化且非空时携带（未改 = 保持现值）。
       for (const change of modelChanges) {
         await updateWorker.mutateAsync({
           name: change.name,
@@ -125,7 +130,13 @@ export function TeamMembersPanel({
           },
         });
       }
-      setRows((previous) => previous.map((row) => ({ ...row, baseModel: row.model })));
+      setRows((previous) =>
+        previous.map((row) => ({
+          ...row,
+          baseModel: row.model,
+          baseProvider: row.provider.trim() || row.baseProvider,
+        })),
+      );
       onChanged?.();
     } catch (err) {
       setError(formatErrorMessage(err));
@@ -147,15 +158,21 @@ export function TeamMembersPanel({
               Leader 批（{rows.filter((row) => row.role === 'team_leader').length} 人）
             </Label>
             <div className="min-w-0" data-testid="batch-leader">
-              <ModelSelector
-                value={leaderBatch}
-                onChange={(next) => {
-                  setLeaderBatch(next);
-                  setRows((previous) => applyBatchModel(previous, 'team_leader', next));
+              <ModelPicker
+                providers={catalog.providers}
+                provider={leaderBatch.provider}
+                model={leaderBatch.model}
+                modelsByProvider={catalog.modelsByProvider}
+                allModels={catalog.models}
+                providerLabel="Provider"
+                modelLabel="Leader 批模型"
+                modelPlaceholder="Leader 批模型"
+                onChange={(provider, model) => {
+                  setLeaderBatch({ provider, model });
+                  setRows((previous) =>
+                    applyBatchModel(previous, 'team_leader', model, provider),
+                  );
                 }}
-                placeholder="Leader 批模型"
-                options={modelOptions}
-                sessionIssue={sessionIssue}
               />
             </div>
           </div>
@@ -164,19 +181,30 @@ export function TeamMembersPanel({
               Workers 批（{rows.filter((row) => row.role === 'worker').length} 人）
             </Label>
             <div className="min-w-0" data-testid="batch-workers">
-              <ModelSelector
-                value={workerBatch}
-                onChange={(next) => {
-                  setWorkerBatch(next);
-                  setRows((previous) => applyBatchModel(previous, 'worker', next));
+              <ModelPicker
+                providers={catalog.providers}
+                provider={workerBatch.provider}
+                model={workerBatch.model}
+                modelsByProvider={catalog.modelsByProvider}
+                allModels={catalog.models}
+                providerLabel="Provider"
+                modelLabel="Workers 批模型"
+                modelPlaceholder="Workers 批模型"
+                onChange={(provider, model) => {
+                  setWorkerBatch({ provider, model });
+                  setRows((previous) =>
+                    applyBatchModel(previous, 'worker', model, provider),
+                  );
                 }}
-                placeholder="Workers 批模型"
-                options={modelOptions}
-                sessionIssue={sessionIssue}
               />
             </div>
           </div>
         </div>
+        {sessionIssue ? (
+          <p className="mt-2 text-xs text-amber-600 break-words">
+            模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
+          </p>
+        ) : null}
       </div>
 
       {/* 成员行 */}
@@ -321,16 +349,25 @@ export function TeamMembersPanel({
         open={!!modelTarget}
         workerName={modelTarget?.name ?? ''}
         model={modelTarget?.model ?? ''}
+        modelProvider={modelTarget?.provider || modelTarget?.baseProvider || ''}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
         onOpenChange={(open) => !open && setModelTarget(null)}
-        onSaved={(model) => {
-          const next = (model ?? '').trim();
+        onSaved={({ model, provider }) => {
+          const next = model.trim();
           const target = modelTarget?.name;
           if (target && next) {
             setRows((previous) =>
               previous.map((row) =>
-                row.name === target ? { ...row, model: next, baseModel: next } : row,
+                row.name === target
+                  ? {
+                      ...row,
+                      model: next,
+                      baseModel: next,
+                      provider,
+                      baseProvider: provider || row.baseProvider,
+                    }
+                  : row,
               ),
             );
           }

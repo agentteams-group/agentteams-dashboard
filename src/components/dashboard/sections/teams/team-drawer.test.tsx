@@ -257,7 +257,9 @@ function renderDrawer(userLevel = 3) {
 }
 
 function selectAllOptions() {
-  return screen.getAllByRole('combobox') as HTMLSelectElement[];
+  return screen
+    .getAllByRole('combobox')
+    .filter((element): element is HTMLSelectElement => element instanceof HTMLSelectElement);
 }
 
 beforeEach(() => {
@@ -398,7 +400,7 @@ describe('TeamDrawer · 团队成员', () => {
     renderDrawer();
     const rows = screen.getAllByRole('button', { name: '改模型' });
     fireEvent.click(rows[1]);
-    const input = await screen.findByLabelText('例如 team-chat');
+    const input = await screen.findByPlaceholderText('例如 team-chat');
     fireEvent.change(input, { target: { value: 'm1-new' } });
     const dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
