@@ -5,7 +5,6 @@
  * The script only depends on the localStorage format of `theme-store.ts`
  * (zustand persist envelope: {"state":{...},"version":N}).
  */
-import { normalizeThemeSchedule, scheduledThemeId } from './schedule';
 
 export function buildThemeInitScript(storageKey: string): string {
   // Written as a compact IIFE; keep it dependency-free and ES5-ish so it
@@ -13,15 +12,12 @@ export function buildThemeInitScript(storageKey: string): string {
   return `(function(){try{
 var KEY=${JSON.stringify(storageKey)};
 var raw=window.localStorage.getItem(KEY);
-var normalizeSchedule=${normalizeThemeSchedule.toString()};
-var scheduleTheme=${scheduledThemeId.toString()};
-var themeId='scheduled';
+var themeId='light';
 var customs=[];
-var schedule=normalizeSchedule();
-if(raw){var p=JSON.parse(raw);if(p&&p.state){themeId=p.state.themeId||'scheduled';customs=p.state.customThemes||[];schedule=normalizeSchedule(p.state.themeSchedule);}}
+if(raw){var p=JSON.parse(raw);if(p&&p.state){themeId=p.state.themeId||'light';customs=p.state.customThemes||[];}}
+if(themeId==='scheduled')themeId='light';
 var resolved=themeId;
 if(themeId==='system'){resolved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}
-if(themeId==='scheduled'){var now=new Date();resolved=scheduleTheme(schedule,now.getHours()*60+now.getMinutes());}
 var root=document.documentElement;
 root.setAttribute('data-theme',resolved);
 // f6-2: 自定义主题按 base 判定 dark——内置主题 id 与 base 恰好一致
