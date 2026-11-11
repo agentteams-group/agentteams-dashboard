@@ -233,6 +233,7 @@ export function McpServersSection() {
       )}
 
       <McpServerDialog
+        key={dialogOpen ? editingServer?.name ?? 'new' : 'closed'}
         open={dialogOpen}
         onOpenChange={(open) => {
           setDialogOpen(open);

@@ -12,8 +12,8 @@ import { enforceServerSideRbac } from '@/lib/server-auth';
 
 const SYNC_FAILED_NOTE = '技能已上传，Worker 最长约 5 分钟内自动发现';
 
-async function restartWorker(workerName: string): Promise<{ ok: boolean; error?: string }> {
-  return restartWorkerForSkillReload(workerName);
+async function restartWorker(workerName: string, request: NextRequest): Promise<{ ok: boolean; error?: string }> {
+  return restartWorkerForSkillReload(workerName, undefined, request);
 }
 
 export async function GET(
@@ -185,7 +185,7 @@ export async function POST(
 
     let note: string;
     if (shouldRestart) {
-      const restart = await restartWorker(name);
+      const restart = await restartWorker(name, request);
       if (restart.ok) {
         note = '已通知 Worker 加载新技能';
       } else {

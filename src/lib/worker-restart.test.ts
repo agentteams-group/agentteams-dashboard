@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import { restartWorkerForSkillReload } from '@/lib/worker-restart';
 
+const proxy = vi.hoisted(() => vi.fn());
 vi.mock('@/app/api/agentteams/proxy-helper', () => ({
+  proxyToAgentTeams: proxy,
+  getControllerUrl: () => 'http://user-controller:8090',
   getAuthToken: vi.fn().mockResolvedValue('token'),
 }));
 
@@ -20,6 +24,16 @@ describe('restartWorkerForSkillReload', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  it('uses the current authenticated request for every restart step', async () => {
+    proxy.mockImplementation(() => jsonResponse({phase:'Running'}));
+    const request=new NextRequest('http://dashboard.test/api/agentteams/workers/worker-1/restart',{method:'POST'});
+    const result=await restartWorkerForSkillReload('worker-1',fast,request);
+    expect(result.ok).toBe(true);
+    expect(proxy).toHaveBeenCalledTimes(4);
+    for(const call of proxy.mock.calls) expect(call[0]).toBe(request);
+    expect(proxy).toHaveBeenCalledWith(request,'http://user-controller:8090','/api/v1/workers/worker-1/wake',expect.objectContaining({method:'POST'}));
   });
 
   it('returns ok when wake succeeds and phase becomes Running', async () => {

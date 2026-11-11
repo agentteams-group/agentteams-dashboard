@@ -281,6 +281,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
       />
 
       <SkillEditDialog
+        key={editingSkill?.name ?? 'closed'}
         skill={editingSkill}
         open={!!editingSkill}
         onOpenChange={(open) => !open && setEditingSkill(null)}

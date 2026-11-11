@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { LlmProviderResponse } from '@/lib/higress-api';
 import { ModelsSection } from './models-section';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -16,7 +17,7 @@ const mutations = {
   bindConsumer: vi.fn(),
 };
 
-const providers = [
+const providers: LlmProviderResponse[] = [
   { name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 },
   { name: 'deepseek', type: 'deepseek', protocol: 'openai/v1', tokenCount: 1 },
 ];
@@ -97,6 +98,19 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     cleanup();
     vi.clearAllMocks();
     mockRouteOverrides.value = undefined;
+  });
+
+  it('preserves the custom service port when editing a normalized provider', () => {
+    providers[0].rawConfigs = { openaiCustomUrl: 'http://host.docker.internal/v1', openaiCustomServicePort: 58317 };
+    try {
+      render(<TooltipProvider><ModelsSection /></TooltipProvider>);
+      fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
+      expect((screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement).value).toBe('http://host.docker.internal:58317/v1');
+      fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+      expect(mutations.updateProvider).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ rawConfigs: expect.objectContaining({ openaiCustomUrl: 'http://host.docker.internal:58317/v1' }) }) }), expect.any(Object));
+    } finally {
+      delete providers[0].rawConfigs;
+    }
   });
 
   it('retains provider form input when immediate validation fails', () => {

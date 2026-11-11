@@ -116,9 +116,10 @@ function ActionsMenu({ entry, actions }: { entry: HumanFileEntry; actions: Entry
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
+          disabled={entry.type === 'directory'}
           onSelect={() => actions.onDelete(entry)}
         >
-          <Trash2 className="size-4" /> 删除
+          <Trash2 className="size-4" /> {entry.type === 'directory' ? '暂不支持删除文件夹' : '删除'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
