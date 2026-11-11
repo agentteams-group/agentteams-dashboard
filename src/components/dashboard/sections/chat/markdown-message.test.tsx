@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { act, cleanup, render as renderUI, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderUI, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownMessage } from './markdown-message';
@@ -30,6 +30,17 @@ describe('MarkdownMessage', () => {
     const { container } = render(<MarkdownMessage content={'```js\nconst a = 1;\n```'} />);
 
     expect(container.querySelector('pre code')).not.toBeNull();
+  });
+
+  it('preserves highlighted command text for display and copying', () => {
+    const command = 'agt tracing worker demo-hermes --limit 5 --output table';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const { container } = render(<MarkdownMessage content={'```bash\n' + command + '\n```'} />);
+    expect(container.querySelector('pre code')?.textContent?.trim()).toBe(command);
+    expect(screen.getByText('bash')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '复制代码' }));
+    expect(writeText).toHaveBeenCalledWith(command);
   });
 
   it('preserves inline code text in task results and artifact paths', () => {
