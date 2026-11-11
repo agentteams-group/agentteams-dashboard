@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { WorkspaceNavigation } from './workspace-navigation';
@@ -35,12 +35,12 @@ export function Sidebar({ agentRooms, activeSection, countMap, sectionsWithNotif
         <WorkspaceNavigation mode={mode} onExpandSidebar={onToggleCollapse} agentRooms={agentRooms} activeSection={activeSection} countMap={countMap} sectionsWithNotifications={sectionsWithNotifications} collapsed={collapsed} onNavClick={onNavClick} />
       </div>
       <div className="space-y-1 border-t border-border p-3">
-        <Button variant="ghost" className={`min-h-10 w-full ${collapsed ? 'justify-center' : 'justify-start'}`} onClick={openSettings} aria-label="设置" title={collapsed ? '设置' : undefined}>
+        <Button variant="ghost" className={`min-h-10 w-full gap-2.5 ${collapsed ? 'justify-center px-0' : 'justify-start px-3'}`} onClick={openSettings} aria-label="设置" title={collapsed ? '设置' : undefined}>
           <Settings className="size-4 shrink-0" />{!collapsed && <span>设置</span>}
         </Button>
-        <Button variant="ghost" size="sm" className="w-full justify-center" onClick={onToggleCollapse} aria-label={collapsed ? '展开导航' : '收起导航'}>
-          {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
-          {!collapsed && <span className="text-xs text-muted-foreground">收起导航</span>}
+        <Button variant="ghost" className={`min-h-10 w-full gap-2.5 text-muted-foreground ${collapsed ? 'justify-center px-0' : 'justify-start px-3'}`} onClick={onToggleCollapse} aria-label={collapsed ? '展开导航' : '收起导航'} title={collapsed ? '展开左侧导航' : '收起左侧导航'}>
+          {collapsed ? <PanelLeftOpen className="size-4 shrink-0" aria-hidden="true" /> : <PanelLeftClose className="size-4 shrink-0" aria-hidden="true" />}
+          {!collapsed && <span>收起导航</span>}
         </Button>
       </div>
     </aside>
