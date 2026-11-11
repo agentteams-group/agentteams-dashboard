@@ -1,18 +1,22 @@
 'use client';
 
-import { AlertTriangle, ArrowLeft, Bot, Settings, Users } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, ArrowLeft, Bot, Loader2, Play, Settings, Users } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
+import { useEnsureReadyWorker } from '@/hooks/use-agentteams-mutations';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import { isUnsupportedEndpointError } from '@/lib/api-error';
 import {
   ROLE_LABELS,
   isAbnormalPhase,
   leaderWorker,
   memberSessionCount,
+  shouldShowEnsureReady,
   teamAgentCounts,
   teamHealthLabel,
   teamMembers,
@@ -29,6 +33,45 @@ export interface InteractiveTeamTopologyProps {
   onOpenTeamSettings: (_team: TeamResponse) => void;
   /** narrow 单栏：返回团队列表。 */
   onBack?: () => void;
+  /** Dashboard 会话等级：3 = 管理员（插件侧 L1），行内「拉起就绪」仅 L1 可见。 */
+  userLevel?: number;
+}
+
+/**
+ * 行内「拉起就绪」——L1-only，phase 非 Running/Ready 才显（B4）。
+ * 独立子组件：mutation 钩子只在该按钮挂载时才跑（老控制器 404 → 隐藏，
+ * 失败回落的 toast 由 useEnsureReadyWorker 统一发）。
+ */
+function MemberEnsureReadyButton({ workerName }: { workerName: string }) {
+  const ensureReady = useEnsureReadyWorker();
+  const [pending, setPending] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
+  if (unsupported) return null;
+  return (
+    <button
+      type="button"
+      title="拉起就绪"
+      aria-label="拉起就绪"
+      disabled={pending}
+      onClick={(event) => {
+        event.stopPropagation();
+        setPending(true);
+        ensureReady.mutate(workerName, {
+          onError: (err) => {
+            if (isUnsupportedEndpointError(err)) setUnsupported(true);
+          },
+          onSettled: () => setPending(false),
+        });
+      }}
+      className="ml-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+    >
+      {pending ? (
+        <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+      ) : (
+        <Play className="size-3" aria-hidden="true" />
+      )}
+    </button>
+  );
 }
 
 function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
@@ -42,8 +85,9 @@ function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
  *
  * - leader 只从 Worker 列表解析（`team.leaderName` 是 Worker 名，不是 Manager）；
  * - Manager 展示用 `team.admin`；
- * - 成员行是原生 button：点击 / Enter / Space 打开既有 WorkerDrawer；
- * - 头部齿轮打开既有 TeamDrawer（团队设置）。
+ * - 成员行是 div[role=button]（行内「拉起就绪」是嵌套按钮，HTML 不允许
+ *   button 套 button）：点击 / Enter / Space 打开 Worker 详情；
+ * - 头部齿轮打开团队设置（合并页 = 选中该团队，内联设置面板）。
  */
 export function InteractiveTeamTopology({
   team,
@@ -53,6 +97,7 @@ export function InteractiveTeamTopology({
   onOpenWorker,
   onOpenTeamSettings,
   onBack,
+  userLevel,
 }: InteractiveTeamTopologyProps) {
   const allMembers = teamMembers(team, workers);
   const counts = teamAgentCounts(allMembers);
@@ -153,10 +198,12 @@ export function InteractiveTeamTopology({
                 const abnormal = isAbnormalPhase(worker.phase);
                 const sessions = memberSessionCount(worker);
                 const highlighted = highlightWorkerName === worker.name;
+                const showEnsureReady = (userLevel ?? 0) >= 3 && shouldShowEnsureReady(worker.phase);
                 return (
                   <li key={worker.name} className="min-w-0">
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
                       data-worker-name={worker.name}
                       data-role={role}
                       data-highlighted={highlighted || undefined}
@@ -212,7 +259,8 @@ export function InteractiveTeamTopology({
                         <StatusDot phase={worker.phase} />
                         <PhaseBadge kind="worker" phase={worker.phase} />
                       </span>
-                    </button>
+                      {showEnsureReady && <MemberEnsureReadyButton workerName={worker.name} />}
+                    </div>
                   </li>
                 );
               })}

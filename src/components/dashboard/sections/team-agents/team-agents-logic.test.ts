@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import {
+  compareTeamRows,
   contentColumnCount,
   filterTeamRows,
-  filterWorkerRows,
   layoutForWidth,
   leaderWorker,
   memberRole,
   memberSessionCount,
   shellGridClass,
+  shouldShowEnsureReady,
   teamAgentCounts,
-  teamAgentsTabFromHash,
+  teamAgentsInitialIntentFromHash,
   teamHealthLabel,
   teamMemberWorkers,
   teamMembers,
@@ -144,12 +145,37 @@ describe('搜索/筛选', () => {
     expect(rows[0]?.matchedMembers).toEqual([]);
   });
 
-  it('filters agents by name / team / role', () => {
-    const workers = [worker('w1', { team: 'alpha' }), worker('c1', { role: 'critic', team: 'beta' })];
-    expect(filterWorkerRows(workers, 'c1').map((item) => item.name)).toEqual(['c1']);
-    expect(filterWorkerRows(workers, 'beta').map((item) => item.name)).toEqual(['c1']);
-    expect(filterWorkerRows(workers, 'critic').map((item) => item.name)).toEqual(['c1']);
-    expect(filterWorkerRows(workers, '')).toHaveLength(2);
+});
+
+describe('团队行排序（插件口径：leader 名优先，中文排序）', () => {
+  it('sorts by leader name, falling back to first member / team name', () => {
+    const alpha = team({ name: 'alpha', leaderName: 'zeta', workerNames: ['zeta', 'w1'] });
+    const beta = team({ name: 'beta', leaderName: 'alpha-lead', workerNames: ['alpha-lead'] });
+    const workers = [worker('zeta'), worker('alpha-lead'), worker('w1')];
+    // 按团队名排序会是 alpha < beta；按 leader 名应为 alpha-lead < zeta。
+    const sorted = [{ team: alpha }, { team: beta }].sort((a, b) =>
+      compareTeamRows(a, b, workers),
+    );
+    expect(sorted.map((row) => row.team.name)).toEqual(['beta', 'alpha']);
+
+    const noLeader = team({ name: 'gamma', leaderName: '', workerNames: ['b-worker'] });
+    const rows = [{ team: noLeader }, { team: alpha }].sort((a, b) =>
+      compareTeamRows(a, b, [worker('b-worker'), worker('zeta')]),
+    );
+    expect(rows.map((row) => row.team.name)).toEqual(['gamma', 'alpha']);
+  });
+});
+
+describe('拉起就绪显示条件（B4 / 插件 lifecycle 口径）', () => {
+  it('shows for Pending/Stopped/empty and hides for Running/Ready (case-insensitive)', () => {
+    expect(shouldShowEnsureReady('Pending')).toBe(true);
+    expect(shouldShowEnsureReady('Stopped')).toBe(true);
+    expect(shouldShowEnsureReady('Sleeping')).toBe(true);
+    expect(shouldShowEnsureReady('')).toBe(true);
+    expect(shouldShowEnsureReady(undefined)).toBe(true);
+    expect(shouldShowEnsureReady('Running')).toBe(false);
+    expect(shouldShowEnsureReady('running ')).toBe(false);
+    expect(shouldShowEnsureReady('READY')).toBe(false);
   });
 });
 
@@ -175,17 +201,17 @@ describe('响应式断点 / 栅格', () => {
   });
 });
 
-describe('hash → tab（旧路由别名）', () => {
-  it('maps legacy workers/teams paths to the merged page tab', () => {
-    expect(teamAgentsTabFromHash('#console/resources/workers')).toBe('agents');
-    expect(teamAgentsTabFromHash('#console/resources/teams')).toBe('teams');
-    expect(teamAgentsTabFromHash('#workers')).toBe('agents');
-    expect(teamAgentsTabFromHash('#teams')).toBe('teams');
+describe('hash → 初始选择意图（旧路由别名，无页签 UI）', () => {
+  it('maps legacy workers/teams paths to the merged page intent', () => {
+    expect(teamAgentsInitialIntentFromHash('#console/resources/workers')).toBe('agents');
+    expect(teamAgentsInitialIntentFromHash('#console/resources/teams')).toBe('teams');
+    expect(teamAgentsInitialIntentFromHash('#workers')).toBe('agents');
+    expect(teamAgentsInitialIntentFromHash('#teams')).toBe('teams');
   });
 
   it('prefers the explicit tab query and defaults to teams', () => {
-    expect(teamAgentsTabFromHash('#console/resources/team-agents?tab=agents')).toBe('agents');
-    expect(teamAgentsTabFromHash('#console/resources/team-agents')).toBe('teams');
-    expect(teamAgentsTabFromHash('')).toBe('teams');
+    expect(teamAgentsInitialIntentFromHash('#console/resources/team-agents?tab=agents')).toBe('agents');
+    expect(teamAgentsInitialIntentFromHash('#console/resources/team-agents')).toBe('teams');
+    expect(teamAgentsInitialIntentFromHash('')).toBe('teams');
   });
 });

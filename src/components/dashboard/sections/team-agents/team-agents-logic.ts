@@ -8,7 +8,11 @@ import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
  * `TeamResponse.leaderName` 从来不是 Manager 名字。
  */
 
-export type TeamAgentsTab = 'teams' | 'agents';
+/**
+ * 旧 `?tab=` / workers / teams 深链的初始选择意图（页面不再渲染页签，
+ * 只把它翻译成一次性的初始选中：teams → 首个团队，agents → 独立 Worker）。
+ */
+export type TeamAgentsInitialIntent = 'teams' | 'agents';
 export type TeamAgentsLayout = 'xwide' | 'wide' | 'medium' | 'narrow';
 export type TeamMemberRole = 'leader' | 'critic' | 'worker';
 
@@ -125,6 +129,29 @@ export function isAbnormalPhase(phase: string | undefined): boolean {
   return Boolean(phase && ABNORMAL_PHASES.has(phase));
 }
 
+/** 「拉起就绪」显示条件（插件 lifecycle 口径）：phase 不在 Running/Ready 才显，空 phase 视为未就绪。 */
+export function shouldShowEnsureReady(phase: string | undefined | null): boolean {
+  const p = (phase || '').trim().toLowerCase();
+  return p !== 'running' && p !== 'ready';
+}
+
+/**
+ * 团队行排序（插件 buildTeamRows 口径）：leader 名优先（无 leader 取首个
+ * 成员名），再回落到团队名，中文排序。
+ */
+export function compareTeamRows(
+  a: { team: TeamResponse },
+  b: { team: TeamResponse },
+  workers: WorkerResponse[] | undefined,
+): number {
+  const key = (team: TeamResponse): string => {
+    const leader = leaderWorker(team, workers);
+    const first = teamMemberWorkers(team, workers)[0];
+    return (leader?.name || first?.name || team.name || '').toLowerCase();
+  };
+  return key(a.team).localeCompare(key(b.team), 'zh');
+}
+
 /** 团队健康摘要（只按成员状态聚合，不引入第二套成员匹配规则）。 */
 export function teamHealthLabel(counts: TeamAgentCounts): '健康' | '降级' | '异常' | '休眠' {
   if (counts.total === 0) return '降级';
@@ -165,20 +192,6 @@ export function filterTeamRows(
   return rows;
 }
 
-/** Agent 列表搜索：名字 / 团队 / 角色。空查询返回全量。 */
-export function filterWorkerRows(
-  workers: WorkerResponse[] | undefined,
-  query: string,
-): WorkerResponse[] {
-  const list = workers ?? [];
-  const q = query.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter(
-    (worker) =>
-      matches(worker.name, q) || matches(worker.team, q) || matches(worker.role, q),
-  );
-}
-
 export function layoutForWidth(width: number): TeamAgentsLayout {
   if (width >= XWIDE_MIN_WIDTH) return 'xwide';
   if (width >= WIDE_MIN_WIDTH) return 'wide';
@@ -208,8 +221,8 @@ export function shellGridClass(layout: TeamAgentsLayout): string {
   }
 }
 
-/** hash → tab。`?tab=` 优先；旧的 workers/teams 路径别名兜底。 */
-export function teamAgentsTabFromHash(hash: string): TeamAgentsTab {
+/** hash → 初始选择意图。`?tab=` 优先；旧的 workers/teams 路径别名兜底（默认 teams）。 */
+export function teamAgentsInitialIntentFromHash(hash: string): TeamAgentsInitialIntent {
   const raw = hash.replace(/^#/, '');
   const [path, query] = raw.split('?');
   const param = new URLSearchParams(query ?? '').get('tab');

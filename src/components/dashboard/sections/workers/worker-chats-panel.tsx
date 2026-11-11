@@ -11,9 +11,10 @@
 //   · 只读：无发送/编辑面（上游端点只读，本层不造写路径）
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, MessageSquare, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Loader2, MessageSquare, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface ChatSpec {
   id: string;
@@ -26,6 +27,11 @@ interface ChatSpec {
   pinned?: boolean;
   archived?: boolean;
   source?: string;
+  /** 子代理会话判据（QwenPaw ChatSpec 运行时口径，可选；旧 runtime 不投影）。 */
+  meta?: Record<string, unknown> | null;
+  parent_session_id?: string;
+  root_session_id?: string;
+  status?: string;
 }
 
 interface ChatMessage {
@@ -78,7 +84,115 @@ function formatTs(ts?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function WorkerChatsPanel({ workerName }: { workerName: string }) {
+// ── 子代理会话（spawn）——运行时口径（移植自工作台插件 WorkerChatsShared）──
+// QwenPaw 没有 /spawns 运行时路由：spawn 就是普通聊天会话，靠 ChatSpec
+// 的 meta.spawn / source / session_id 前缀 / 父子链接区分（旧 runtime
+// 只有前三种，无父子字段 → 树退化为扁平列表，不虚构层级）。
+
+/** 会话树键：session_id 优先（父子链接都指向它），缺省回退 chat id。 */
+export function spawnChatKey(c: ChatSpec): string {
+  return String(c.session_id || c.id || '');
+}
+
+/** 是否子代理会话（QwenPaw ChatSpec 判据并集）。 */
+export function isSpawnChat(c: ChatSpec): boolean {
+  const meta = c.meta && typeof c.meta === 'object' ? c.meta : {};
+  const sid = spawnChatKey(c);
+  return (
+    meta.spawn === true ||
+    meta.spawn === 'true' ||
+    c.source === 'spawn' ||
+    // QwenPaw SessionSource 枚举实值（models.py:23）：chat | cron | subagent。
+    c.source === 'subagent' ||
+    sid.startsWith('sub-') ||
+    !!c.parent_session_id ||
+    !!c.root_session_id
+  );
+}
+
+/** 树行：chat + 缩进深度 + 是否有子节点（caret 判定）。 */
+export interface SpawnChatRow {
+  chat: ChatSpec;
+  depth: number;
+  hasChildren: boolean;
+}
+
+/** spawn 会话 → 扁平树行。父 session 不在本列表（属普通智能体会话）→
+ * 该 spawn 落根层；无 parent 字段的旧 runtime 全部落根层（扁平列表）。 */
+export function buildSpawnChatRows(
+  chats: ChatSpec[],
+  collapsed: ReadonlySet<string> = new Set<string>(),
+): SpawnChatRow[] {
+  const byKey = new Map<string, ChatSpec>();
+  for (const c of chats) {
+    const k = spawnChatKey(c);
+    if (!byKey.has(k)) byKey.set(k, c);
+  }
+  const kids = new Map<string, ChatSpec[]>();
+  const roots: ChatSpec[] = [];
+  for (const c of chats) {
+    const parentId = c.parent_session_id || '';
+    const parent = parentId ? byKey.get(parentId) : undefined;
+    if (parent && parent !== c) {
+      const k = spawnChatKey(parent);
+      const arr = kids.get(k) ?? [];
+      arr.push(c);
+      kids.set(k, arr);
+    } else {
+      roots.push(c);
+    }
+  }
+  const byUpdated = (a: ChatSpec, b: ChatSpec) =>
+    String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+  roots.sort(byUpdated);
+  for (const arr of kids.values()) arr.sort(byUpdated);
+  const out: SpawnChatRow[] = [];
+  const seen = new Set<string>();
+  // 折叠节点的整棵子树标记为「有意隐藏」——末段兜底不得把它们当孤儿补回。
+  const markHidden = (list: ChatSpec[]): void => {
+    for (const c of list) {
+      const k = spawnChatKey(c);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      markHidden(kids.get(k) ?? []);
+    }
+  };
+  const walk = (list: ChatSpec[], depth: number): void => {
+    for (const c of list) {
+      const k = spawnChatKey(c);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const children = kids.get(k) ?? [];
+      out.push({ chat: c, depth, hasChildren: children.length > 0 });
+      if (children.length > 0) {
+        if (collapsed.has(k)) markHidden(children);
+        else walk(children, depth + 1);
+      }
+    }
+  };
+  walk(roots, 0);
+  // 父链成环/重复键（数据脏）时的兜底：未走到的会话仍以根层展示，不丢行。
+  for (const c of chats) {
+    const k = spawnChatKey(c);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ chat: c, depth: 0, hasChildren: false });
+  }
+  return out;
+}
+
+/** spawn 树缩进（深度 → 静态 class，避免动态内联样式）。 */
+const DEPTH_PAD = ['pl-1.5', 'pl-6', 'pl-[42px]', 'pl-[60px]'];
+
+export function WorkerChatsPanel({
+  workerName,
+  showKindTabs = false,
+}: {
+  workerName: string;
+  /** 顶层「智能体会话 / 子代理会话」双 tab（Worker 详情「会话」卡用；
+   * 默认关闭 = 房间抽屉原行为不变，ChatRoom 等既有消费者不受影响）。 */
+  showKindTabs?: boolean;
+}) {
   const base = `/api/agentteams/workers/${encodeURIComponent(workerName)}/chats`;
 
   const [state, setState] = useState<LoadState>('loading');
@@ -89,6 +203,18 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
   const [detailState, setDetailState] = useState<LoadState>('loading');
   const [detailError, setDetailError] = useState('');
   const [chatStatus, setChatStatus] = useState<ChatStatus>('');
+  // 顶层会话类别（showKindTabs 生效时）：智能体会话 = 非 spawn；子代理 = spawn。
+  const [kind, setKind] = useState<'agent' | 'spawn'>('agent');
+  const [spawnCollapsed, setSpawnCollapsed] = useState<ReadonlySet<string>>(new Set());
+
+  const toggleSpawnCollapsed = useCallback((key: string) => {
+    setSpawnCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -199,6 +325,12 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
     },
     [base, loadStatus],
   );
+
+  // 双 tab 模式按 spawn 标记分流（同一运行时列表，互斥，不重复展示）；
+  // showKindTabs=false（房间抽屉）= 全量走原语义。
+  const agentChats = showKindTabs ? chats.filter((c) => !isSpawnChat(c)) : chats;
+  const spawnChats = showKindTabs ? chats.filter(isSpawnChat) : [];
+  const spawnRows = showKindTabs ? buildSpawnChatRows(spawnChats, spawnCollapsed) : [];
 
   if (state === 'loading') {
     return (
@@ -326,50 +458,174 @@ export function WorkerChatsPanel({ workerName }: { workerName: string }) {
   }
 
   // ── 列表视图 ──
-  return (
-    <div className="space-y-2 pt-2">
-      <div className="flex items-center justify-between">
-        <p className="text-muted-foreground">会话（只读 · Agent 上下文）</p>
-        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void load()}>
-          <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" />
-          刷新
-        </Button>
-      </div>
-      <div className="space-y-1">
-        {chats.length === 0 && (
-          <p className="px-2 py-1 text-xs text-muted-foreground">
-            当前账号在此 Worker 的可见范围内没有会话（L2 仅自己所在房间）。
-          </p>
-        )}
-        {chats.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => void openChat(c.id)}
-            className="flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-left hover:bg-muted/50"
+  const listHeader = (
+    <div className="flex items-center justify-between">
+      <p className="text-muted-foreground">会话（只读 · Agent 上下文）</p>
+      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void load()}>
+        <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" />
+        刷新
+      </Button>
+    </div>
+  );
+
+  const chatRows = (list: ChatSpec[]) => (
+    <div className="space-y-1">
+      {list.length === 0 && (
+        <p className="px-2 py-1 text-xs text-muted-foreground">
+          当前账号在此 Worker 的可见范围内没有会话（L2 仅自己所在房间）。
+        </p>
+      )}
+      {list.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => void openChat(c.id)}
+          className="flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-left hover:bg-muted/50"
+        >
+          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-xs font-medium">
+                {c.name || c.id.slice(0, 8)}
+              </span>
+              {c.pinned && <Badge variant="secondary" className="h-4 px-1 text-xs">置顶</Badge>}
+              {c.archived && (
+                <Badge variant="outline" className="h-4 px-1 text-xs text-muted-foreground">
+                  已归档
+                </Badge>
+              )}
+            </div>
+            <p className="truncate font-mono text-xs text-muted-foreground">
+              {c.id}
+              {c.channel ? ` · ${c.channel}` : ''}
+              {c.updated_at ? ` · ${formatTs(c.updated_at)}` : ''}
+            </p>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+
+  const spawnTree = (
+    <div className="grid gap-1">
+      {spawnRows.length === 0 && (
+        <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+          暂无子代理会话（该 Worker 当前没有子代理会话）。
+        </p>
+      )}
+      {spawnRows.map(({ chat, depth, hasChildren }) => {
+        const rowKey = spawnChatKey(chat);
+        const collapsed = spawnCollapsed.has(rowKey);
+        return (
+          <div
+            key={rowKey}
+            role="button"
+            tabIndex={0}
+            aria-label={`查看会话 ${chat.session_id || chat.id}`}
+            onClick={() => void openChat(chat.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                void openChat(chat.id);
+              }
+            }}
+            className={`flex min-h-11 w-full cursor-pointer items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 py-1 pr-2 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${DEPTH_PAD[Math.min(depth, DEPTH_PAD.length - 1)]}`}
           >
+            {hasChildren ? (
+              <button
+                type="button"
+                aria-expanded={!collapsed}
+                aria-label="展开/收起子会话"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSpawnCollapsed(rowKey);
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                className="flex size-11 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+              >
+                {collapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+            ) : (
+              <span className="w-11 shrink-0" aria-hidden="true" />
+            )}
             <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-xs font-medium">
-                  {c.name || c.id.slice(0, 8)}
+                  {chat.name || chat.id.slice(0, 8)}
                 </span>
-                {c.pinned && <Badge variant="secondary" className="h-4 px-1 text-xs">置顶</Badge>}
-                {c.archived && (
+                {chat.pinned && <Badge variant="secondary" className="h-4 px-1 text-xs">置顶</Badge>}
+                {chat.archived && (
                   <Badge variant="outline" className="h-4 px-1 text-xs text-muted-foreground">
                     已归档
                   </Badge>
                 )}
+                {chat.status && (
+                  <Badge
+                    variant={chat.status === 'running' ? 'default' : 'secondary'}
+                    className="h-4 px-1 text-xs"
+                  >
+                    {chat.status}
+                  </Badge>
+                )}
               </div>
               <p className="truncate font-mono text-xs text-muted-foreground">
-                {c.id}
-                {c.channel ? ` · ${c.channel}` : ''}
-                {c.updated_at ? ` · ${formatTs(c.updated_at)}` : ''}
+                {chat.id}
+                {chat.channel ? ` · ${chat.channel}` : ''}
+                {chat.updated_at ? ` · ${formatTs(chat.updated_at)}` : ''}
               </p>
             </div>
-          </button>
-        ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // 顶层双 tab：智能体会话（非 spawn）/ 子代理会话（spawn）——两个 tab 同一
+  // 数据面（运行时 /workers/{name}/chats），不重叠。
+  if (showKindTabs) {
+    return (
+      <div className="pt-2">
+        <Tabs
+          value={kind}
+          onValueChange={(v) => {
+            setKind(v === 'spawn' ? 'spawn' : 'agent');
+            setOpenId(null);
+            setDetail(null);
+            setDetailState('loading');
+            setDetailError('');
+            setChatStatus('');
+          }}
+        >
+          <TabsList className="h-9 w-fit">
+            <TabsTrigger value="agent" className="text-xs">
+              智能体会话 ({agentChats.length})
+            </TabsTrigger>
+            <TabsTrigger value="spawn" className="text-xs">
+              子代理会话 ({spawnChats.length})
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="agent" className="space-y-2">
+            {listHeader}
+            {chatRows(agentChats)}
+          </TabsContent>
+          <TabsContent value="spawn" className="space-y-2">
+            {listHeader}
+            {spawnTree}
+          </TabsContent>
+        </Tabs>
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 pt-2">
+      {listHeader}
+      {chatRows(chats)}
     </div>
   );
 }

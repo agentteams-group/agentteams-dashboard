@@ -1,59 +1,77 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeft,
   Bot,
+  ChevronDown,
+  ChevronRight,
+  Crown,
+  Info,
   Plus,
-  Settings,
   Users,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { StatusDot } from '@/components/dashboard/status-dot';
+import { WorkerSessionDot } from '@/components/worker-session-dot';
 import { useCreateTeam, useCreateWorker } from '@/hooks/use-agentteams-mutations';
+import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useWorkerSessionState } from '@/hooks/use-worker-session-state';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useSearch } from '@/lib/search-context';
 import { hashForSection } from '@/lib/nav-hash';
+import { agentteamsApi } from '@/lib/agentteams-api';
 import type {
   CreateTeamRequest,
   CreateWorkerRequest,
+  ManagerResponse,
   TeamResponse,
   WorkerResponse,
 } from '@/lib/agentteams-api';
+import { ManagerDetailPanel } from '../managers/manager-detail-panel';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
+import { TeamSettingsPanel } from '../teams/team-settings-panel';
+import { standaloneWorkers as computeStandaloneWorkers } from '../teams/team-drawer-logic';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
+import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { InteractiveTeamTopology } from './interactive-team-topology';
 import {
-  ROLE_LABELS,
+  compareTeamRows,
   filterTeamRows,
-  filterWorkerRows,
-  isAbnormalPhase,
+  leaderWorker,
   layoutForWidth,
-  memberRole,
-  memberSessionCount,
   shellGridClass,
-  teamAgentsTabFromHash,
-  type TeamAgentMember,
+  teamAgentCounts,
+  teamAgentsInitialIntentFromHash,
+  teamMembers,
   type TeamAgentRow,
+  type TeamAgentsInitialIntent,
   type TeamAgentsLayout,
-  type TeamAgentsTab,
 } from './team-agents-logic';
 
 const TEAM_AGENTS_HASH = hashForSection('team-agents');
 
 const EMPTY_TEAM: CreateTeamRequest = { name: '', leader: { name: '' }, workerNames: [] };
 const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'openclaw' };
+
+/**
+ * 统一选择（F1：无页签、无「选择→抽屉」路径）——列表里点谁，详情区就
+ * 内联渲染谁的唯一面板（TeamSettingsPanel / WorkerDetailPanel /
+ * ManagerDetailPanel，F7 单一实现）。
+ */
+type TeamAgentsSelection =
+  | { kind: 'manager'; name: string }
+  | { kind: 'team'; name: string }
+  | { kind: 'worker'; name: string };
 
 function useTeamAgentsLayout(): TeamAgentsLayout {
   // SSR 首帧固定 wide（服务端/客户端一致），挂载后按真实宽度切换。
@@ -67,7 +85,32 @@ function useTeamAgentsLayout(): TeamAgentsLayout {
   return layout;
 }
 
-function Pane({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
+/**
+ * 团队行「待决策」计数（A1）：插件用一次聚合请求（attentionPendingByRoom），
+ * Dashboard 代理只有按团队的 GET /teams/{name}/attention —— 逐队懒查，
+ * 30s 缓存不轮询；404（旧控制器未部署）= 无数据，整枚徽章不显（诚实降级）。
+ */
+function useTeamAttentionCount(teamName: string): number {
+  const { data } = useQuery({
+    queryKey: ['agentteams-team-attention', teamName],
+    queryFn: () => agentteamsApi.getTeamAttention(teamName),
+    enabled: Boolean(teamName),
+    staleTime: 30_000,
+    retry: 1,
+    throwOnError: false,
+  });
+  return data?.count ?? 0;
+}
+
+function Pane({
+  label,
+  children,
+  className = '',
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <section
       aria-label={label}
@@ -94,7 +137,7 @@ function PaneHeader({
           <Button
             variant="ghost"
             size="sm"
-            className="min-h-11 min-w-11 shrink-0 gap-1 px-2 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-11 sm:min-w-11"
+            className="min-h-11 min-w-11 shrink-0 gap-1 px-2 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             onClick={onBack}
           >
             <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -108,197 +151,276 @@ function PaneHeader({
   );
 }
 
-function TeamListRow({
-  row,
+/** A2：Manager 行（与团队「一个等级」；紫 M 头像 + runtime·model + 状态灯）。 */
+function ManagerRow({
+  manager,
   selected,
   onSelect,
-  onOpenSettings,
 }: {
-  row: TeamAgentRow;
+  manager: ManagerResponse;
   selected: boolean;
-  onSelect: (_team: TeamResponse) => void;
-  onOpenSettings: (_team: TeamResponse) => void;
-}) {
-  const { team, matchedMembers } = row;
-  return (
-    <li className="flex min-w-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={() => onSelect(team)}
-        aria-current={selected ? 'true' : undefined}
-        className={`flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-          selected ? 'bg-primary/10' : 'hover:bg-muted/50'
-        }`}
-      >
-        <StatusDot phase={team.phase} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-xs font-medium">{team.name}</span>
-            <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
-          </span>
-          <span className="truncate text-xs text-muted-foreground">
-            成员 {team.workerNames?.length || team.totalWorkers} · 就绪 {team.readyWorkers}/{team.totalWorkers}
-            {team.leaderName ? ` · Leader ${team.leaderName}` : ''}
-          </span>
-          {matchedMembers.length > 0 && (
-            <span className="truncate text-xs text-primary">
-              匹配成员：{matchedMembers.join('、')}
-            </span>
-          )}
-        </span>
-      </button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="min-h-11 min-w-11 shrink-0"
-        aria-label={`打开 ${team.name} 团队设置`}
-        title="团队设置"
-        onClick={() => onOpenSettings(team)}
-      >
-        <Settings className="size-4" aria-hidden="true" />
-      </Button>
-    </li>
-  );
-}
-
-function AgentListRow({
-  worker,
-  role,
-  onOpen,
-}: {
-  worker: WorkerResponse;
-  role: TeamAgentMember['role'];
-  onOpen: (_worker: WorkerResponse) => void;
+  onSelect: (_manager: ManagerResponse) => void;
 }) {
   return (
-    <li className="min-w-0">
-      <button
-        type="button"
-        onClick={() => onOpen(worker)}
-        className="flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <Avatar className="size-7 shrink-0">
-          <AvatarFallback className="text-xs">{worker.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-        </Avatar>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-xs font-medium">{worker.name}</span>
-            <Badge variant="outline" className="shrink-0 text-xs">
-              {ROLE_LABELS[role]}
-            </Badge>
-            {isAbnormalPhase(worker.phase) && (
-              <AlertTriangle className="size-3 shrink-0 text-destructive" aria-label="异常" />
-            )}
-          </span>
-          <span className="truncate text-xs text-muted-foreground">
-            {worker.team || '未归属团队'}
-            {worker.model ? ` · ${worker.model}` : ''}
-          </span>
+    <button
+      type="button"
+      data-manager-name={manager.name}
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(manager)}
+      className={`flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+        selected
+          ? 'border-violet-500/60 bg-violet-500/10'
+          : 'border-border/60 bg-muted/20 hover:bg-muted/50'
+      }`}
+    >
+      <Avatar className="size-7 shrink-0 rounded-md">
+        <AvatarFallback className="rounded-md bg-gradient-to-br from-violet-600 to-violet-400 text-white">
+          <Crown className="size-3.5" aria-hidden="true" />
+        </AvatarFallback>
+      </Avatar>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-xs font-semibold">{manager.name}</span>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-violet-500/40 bg-violet-500/10 text-xs text-violet-600 dark:text-violet-400"
+          >
+            Manager
+          </Badge>
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <StatusDot phase={worker.phase} />
-          <PhaseBadge kind="worker" phase={worker.phase} />
+        <span className="truncate text-xs text-muted-foreground">
+          {manager.runtime || 'qwenpaw'} · {manager.model || '-'}
         </span>
-      </button>
-    </li>
-  );
-}
-
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 truncate text-xs">{children}</span>
-    </div>
-  );
-}
-
-function TeamAgentsDetail({
-  team,
-  member,
-}: {
-  team: TeamResponse | null;
-  member: TeamAgentMember | null;
-}) {
-  if (member) {
-    const { worker, role } = member;
-    const sessions = memberSessionCount(worker);
-    return (
-      <div className="space-y-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <Avatar className="size-9 shrink-0">
-            <AvatarFallback className="text-sm">{worker.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{worker.name}</p>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <StatusDot phase={worker.phase} />
-              <PhaseBadge kind="worker" phase={worker.phase} />
-              <span>{ROLE_LABELS[role]}</span>
-            </p>
-          </div>
-        </div>
-        <div className="space-y-1 rounded-md bg-muted/20 p-2">
-          <DetailRow label="团队">{worker.team || '-'}</DetailRow>
-          <DetailRow label="模型">{worker.model || '未设置'}</DetailRow>
-          <DetailRow label="运行态">{worker.agentStatus || '未上报'}</DetailRow>
-          <DetailRow label="在跑任务">
-            {worker.runningTaskCount != null ? `${worker.runningTaskCount} 个` : '-'}
-          </DetailRow>
-          <DetailRow label="会话数">{sessions !== undefined ? `${sessions} 个` : '未上报'}</DetailRow>
-        </div>
-      </div>
-    );
-  }
-
-  if (team) {
-    return (
-      <div className="space-y-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <Users className="size-4 shrink-0 text-status-done" aria-hidden="true" />
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold">{team.name}</p>
-          <PhaseBadge kind="team" phase={team.phase} />
-        </div>
-        <div className="space-y-1 rounded-md bg-muted/20 p-2">
-          <DetailRow label="Leader">{team.leaderName || '-'}</DetailRow>
-          <DetailRow label="Manager">{team.admin?.name || '-'}</DetailRow>
-          <DetailRow label="成员">
-            {team.readyWorkers}/{team.totalWorkers} 就绪
-          </DetailRow>
-          <DetailRow label="团队房间">{team.teamRoomID || '-'}</DetailRow>
-          <DetailRow label="描述">{team.description || '-'}</DetailRow>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-      选择团队或 Agent 查看详情
-    </p>
+      </span>
+      <StatusDot phase={manager.state} />
+    </button>
   );
 }
 
 /**
- * 「团队与Agent」合并页（第一实现单）。
+ * A1：团队行——头像（leader 首字母兜底）+ 名 + leader 会话灯（A5）+
+ * 待决策徽章 + 成员/休眠/异常计数 + 匹配成员提示 + 选中态。
+ */
+function TeamListRow({
+  row,
+  workers,
+  selected,
+  onSelect,
+}: {
+  row: TeamAgentRow;
+  workers: WorkerResponse[] | undefined;
+  selected: boolean;
+  onSelect: (_team: TeamResponse) => void;
+}) {
+  const { team, matchedMembers } = row;
+  const members = useMemo(() => teamMembers(team, workers), [team, workers]);
+  const counts = useMemo(() => teamAgentCounts(members), [members]);
+  const leader = useMemo(() => leaderWorker(team, workers), [team, workers]);
+  const sessionState = useWorkerSessionState({
+    matrixUserID: leader?.matrixUserID,
+    roomID: leader?.roomID,
+    phase: leader?.phase,
+  });
+  const attentionCount = useTeamAttentionCount(team.name);
+  const memberTotal = team.workerNames?.length || team.totalWorkers;
+
+  return (
+    <li className="min-w-0">
+      <button
+        type="button"
+        aria-current={selected ? 'true' : undefined}
+        onClick={() => onSelect(team)}
+        className={`flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+          selected ? 'bg-primary/10' : 'hover:bg-muted/50'
+        }`}
+      >
+        <Avatar className="size-7 shrink-0">
+          <AvatarFallback className="bg-muted text-xs">
+            {leader ? leader.name.slice(0, 1).toUpperCase() : <Users className="size-3.5" aria-hidden="true" />}
+          </AvatarFallback>
+        </Avatar>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-xs font-medium">{team.name}</span>
+            {leader && <WorkerSessionDot state={sessionState} />}
+            {attentionCount > 0 && (
+              <Badge
+                variant="outline"
+                className="shrink-0 border-amber-500/40 bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400"
+              >
+                待决策 {attentionCount}
+              </Badge>
+            )}
+          </span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+            <span>成员 {memberTotal}</span>
+            {counts.sleeping > 0 && (
+              <Badge variant="outline" className="shrink-0 px-1.5 text-xs">
+                休眠 {counts.sleeping}
+              </Badge>
+            )}
+            {counts.abnormal > 0 && (
+              <Badge
+                variant="outline"
+                className="shrink-0 border-destructive/40 bg-destructive/10 px-1.5 text-xs text-destructive"
+              >
+                异常 {counts.abnormal}
+              </Badge>
+            )}
+            {matchedMembers.length > 0 && (
+              <span className="min-w-0 truncate text-primary">
+                匹配成员：{matchedMembers.join('、')}
+              </span>
+            )}
+          </span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+/** A5：独立 Worker 行（会话灯在名字前；未派生不渲染）。 */
+function StandaloneWorkerRow({
+  worker,
+  selected,
+  onSelect,
+}: {
+  worker: WorkerResponse;
+  selected: boolean;
+  onSelect: (_worker: WorkerResponse) => void;
+}) {
+  const sessionState = useWorkerSessionState({
+    matrixUserID: worker.matrixUserID,
+    roomID: worker.roomID,
+    phase: worker.phase,
+  });
+  return (
+    <button
+      type="button"
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(worker)}
+      className={`flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+        selected ? 'bg-primary/10' : 'hover:bg-muted/50'
+      }`}
+    >
+      {worker.matrixUserID ? <WorkerSessionDot state={sessionState} /> : null}
+      <span className="min-w-0 truncate text-foreground">{worker.name}</span>
+    </button>
+  );
+}
+
+/** A4：列表底部「未归属团队的 Worker（N）」可折叠行（空 = 不渲染）。 */
+function StandaloneWorkersRow({
+  workers,
+  selectedName,
+  expanded,
+  onToggle,
+  onSelect,
+}: {
+  workers: WorkerResponse[];
+  selectedName: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  onSelect: (_worker: WorkerResponse) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed p-1">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="flex min-h-11 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span className="min-w-0 truncate">未归属团队的 Worker（{workers.length}）</span>
+        {expanded ? (
+          <ChevronDown className="ml-auto size-3.5 shrink-0" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="ml-auto size-3.5 shrink-0" aria-hidden="true" />
+        )}
+      </button>
+      {expanded && (
+        <div className="space-y-0.5 p-1.5">
+          <p className="px-1 text-xs text-muted-foreground">
+            独立 Worker——能运行、能被私聊，不参与团队任务；点名字看详情，在团队设置里可加进团队。
+          </p>
+          {workers.map((worker) => (
+            <StandaloneWorkerRow
+              key={worker.name}
+              worker={worker}
+              selected={selectedName === worker.name}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 选中独立 Worker 时的中栏上下文卡（替代「团队不存在」空态）。 */
+function StandaloneWorkerContextCard({ name, onBack }: { name: string; onBack: () => void }) {
+  return (
+    <div className="space-y-2.5 p-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{name}</span>
+        <Badge variant="outline" className="shrink-0 text-xs">
+          未归属团队
+        </Badge>
+      </div>
+      <div className="flex items-start gap-2 rounded-md border bg-muted/20 p-2 text-xs">
+        <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p className="min-w-0">
+          该 Worker 未归属任何团队（独立 Worker）：能运行、能被私聊，但不参与团队任务。
+          <span className="mt-1 block text-muted-foreground">
+            加进团队：打开目标团队 → 团队设置 →「加入 Worker」一键加入。
+          </span>
+        </p>
+      </div>
+      <Button size="sm" variant="outline" className="min-h-11 text-xs sm:min-h-9" onClick={onBack}>
+        回团队列表
+      </Button>
+    </div>
+  );
+}
+
+/** A6：选中项已从数据中消失（刷新后改名/删除）→ 回落引导。 */
+function StaleSelectionState({
+  text,
+  buttonLabel,
+  onBack,
+}: {
+  text: string;
+  buttonLabel: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
+      <AlertTriangle className="size-5 text-muted-foreground" aria-hidden="true" />
+      <p className="text-xs text-muted-foreground">{text}</p>
+      <Button size="sm" variant="outline" className="min-h-11 text-xs sm:min-h-9" onClick={onBack}>
+        {buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * 「团队与Agent」合并页（1:1 移植插件管理页团队域，Dashboard UI 适配）。
  *
- * 四栏壳（含全局侧栏时共四栏）：
- * - xwide ≥1440：团队/Agent 列表 + 交互拓扑 + 右侧详情（3 个内容栏）；
- * - wide 1280–1439：列表 + 拓扑，详情以紧凑卡贴在拓扑下方；
- * - medium 1024–1279：列表 + 拓扑，详情同样内联在拓扑下方；
- * - narrow <1024：单栏，进入详情是独立详情页（顶部「返回」）。
+ * 列表（F1 无页签）：Manager 行（仅 L1 可见）+ 团队行（leader 名排序）+
+ * 底部「未归属团队的 Worker」折叠行；单一选择语义 —— 点谁详情区就内联
+ * 渲染谁的唯一面板（F7）：TeamSettingsPanel / WorkerDetailPanel /
+ * ManagerDetailPanel。
  *
- * 详情是固定区域，不随点击弹出 Sheet / Drawer；创建团队 / Agent 仍走弹窗。
- *
- * 页面级「团队 / Agent」页签只用于承接旧路由的 tab 语义
- *（#console/resources/workers → Agent，#console/resources/teams → 团队）；
- * 左侧全局导航本身已经只有一个「团队与Agent」入口。
+ * 布局：xwide ≥1440 列表+拓扑+详情三栏；wide/medium 列表+（拓扑+内联详情）；
+ * narrow <1024 单栏，详情是独立整页（顶部「返回」，保持选中）。
  */
 export function TeamAgentsSection() {
   const { data: teams, isLoading, isError, refetch, isRefetching } = useTeams();
   const { data: workers } = useWorkers();
+  const { data: managers } = useManagers();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const queryClient = useQueryClient();
   const layout = useTeamAgentsLayout();
@@ -306,31 +428,54 @@ export function TeamAgentsSection() {
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
 
-  const [tab, setTab] = useState<TeamAgentsTab>(() =>
-    typeof window === 'undefined' ? 'teams' : teamAgentsTabFromHash(window.location.hash),
+  // A7：旧 ?tab= / workers / teams 深链 → 一次性初始选择意图（无页签 UI）。
+  const initialIntent = useRef<TeamAgentsInitialIntent>(
+    typeof window === 'undefined' ? 'teams' : teamAgentsInitialIntentFromHash(window.location.hash),
   );
-  const [selectedTeamName, setSelectedTeamName] = useState<string | null>(null);
-  const [selectedWorkerName, setSelectedWorkerName] = useState<string | null>(null);
+  const initialApplied = useRef(false);
+
+  const [selection, setSelection] = useState<TeamAgentsSelection | null>(null);
   const [narrowView, setNarrowView] = useState<'list' | 'detail'>('list');
+  const [standaloneExpanded, setStandaloneExpanded] = useState(false);
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
 
+  // 数据到位后应用一次初始选择（teams → 首个团队；agents → 展开独立行选首个独立 Worker）。
   useEffect(() => {
-    const syncTab = () => setTab(teamAgentsTabFromHash(window.location.hash));
-    window.addEventListener('hashchange', syncTab);
-    return () => window.removeEventListener('hashchange', syncTab);
-  }, []);
+    if (initialApplied.current || !teams) return;
+    const intent = initialIntent.current;
+    if (intent === 'agents') {
+      if (!workers) return;
+      const first = computeStandaloneWorkers(teams, workers)[0] ?? workers[0];
+      if (!first) {
+        initialApplied.current = true;
+        return;
+      }
+      setStandaloneExpanded(true);
+      setSelection({ kind: 'worker', name: first.name });
+      initialApplied.current = true;
+      return;
+    }
+    const first = teams[0];
+    if (!first) {
+      initialApplied.current = true;
+      return;
+    }
+    setSelection({ kind: 'team', name: first.name });
+    initialApplied.current = true;
+  }, [teams, workers]);
 
-  // 默认选中第一个团队，让 xwide/wide/medium 的拓扑栏首屏就有内容；
-  // 选中项被删除（或改名）时回落到第一个。
+  // 选择变化 → 同步 hash（只写合并页基址，不再带 ?tab=）。
   useEffect(() => {
-    if (!teams) return;
-    if (selectedTeamName && teams.some((team) => team.name === selectedTeamName)) return;
-    setSelectedTeamName(teams[0]?.name ?? null);
-  }, [teams, selectedTeamName]);
+    if (typeof window === 'undefined') return;
+    const target = `#${TEAM_AGENTS_HASH}`;
+    if (window.location.hash !== target) {
+      window.location.hash = TEAM_AGENTS_HASH;
+    }
+  }, [selection]);
 
   const refresh = useCallback(() => {
     void refetch();
@@ -339,192 +484,313 @@ export function TeamAgentsSection() {
 
   const teamRows = useMemo(() => {
     const rows = filterTeamRows(teams, workers, searchQuery);
-    return [...rows].sort((a, b) => (a.team.name || '').localeCompare(b.team.name || ''));
+    return [...rows].sort((a, b) => compareTeamRows(a, b, workers));
   }, [teams, workers, searchQuery]);
 
-  const workerRows = useMemo(() => filterWorkerRows(workers, searchQuery), [workers, searchQuery]);
-
-  const selectedTeam = useMemo(
-    () => (teams ?? []).find((team) => team.name === selectedTeamName) ?? null,
-    [teams, selectedTeamName],
+  const standalone = useMemo(
+    () => computeStandaloneWorkers(teams, workers),
+    [teams, workers],
   );
 
-  const selectedMember = useMemo(() => {
-    if (!selectedWorkerName) return null;
-    const worker = (workers ?? []).find((item) => item.name === selectedWorkerName);
-    if (!worker) return null;
-    const homeTeam = (teams ?? []).find(
-      (team) => team.name === worker.team || team.teamName === worker.team,
-    );
-    return { worker, role: memberRole(worker, homeTeam?.leaderName) } satisfies TeamAgentMember;
-  }, [workers, selectedWorkerName, teams]);
+  const selectedTeam = useMemo(
+    () =>
+      selection?.kind === 'team'
+        ? (teams ?? []).find((team) => team.name === selection.name) ?? null
+        : null,
+    [teams, selection],
+  );
+  const selectedWorker = useMemo(
+    () =>
+      selection?.kind === 'worker'
+        ? (workers ?? []).find((item) => item.name === selection.name) ?? null
+        : null,
+    [workers, selection],
+  );
+  const selectedManager = useMemo(
+    () =>
+      selection?.kind === 'manager'
+        ? (managers ?? []).find((item) => item.name === selection.name) ?? null
+        : null,
+    [managers, selection],
+  );
 
-  // Agent 页签的拓扑跟随选中 Agent 所属团队（未归属则回落到当前团队）。
-  const agentTopologyTeam = useMemo(() => {
-    if (!selectedMember?.worker.team) return selectedTeam;
-    return (
-      (teams ?? []).find(
-        (team) => team.name === selectedMember.worker.team || team.teamName === selectedMember.worker.team,
-      ) ?? selectedTeam
-    );
-  }, [selectedMember, selectedTeam, teams]);
-
-  const topologyTeam = tab === 'agents' ? agentTopologyTeam : selectedTeam;
-
-  const handleTabChange = useCallback((next: string) => {
-    const value: TeamAgentsTab = next === 'agents' ? 'agents' : 'teams';
-    setTab(value);
-    setSelectedWorkerName(null);
+  const select = useCallback((next: TeamAgentsSelection) => {
+    setSelection(next);
+    setNarrowView('detail');
+  }, []);
+  const clearSelection = useCallback(() => {
+    setSelection(null);
     setNarrowView('list');
-    const target = `#${TEAM_AGENTS_HASH}?tab=${value}`;
-    if (window.location.hash !== target) {
-      window.location.hash = target;
-    }
   }, []);
 
   const handleSelectTeam = useCallback(
-    (team: TeamResponse) => {
-      setSelectedTeamName(team.name);
-      setSelectedWorkerName(null);
-      setNarrowView('detail');
-    },
-    [],
+    (team: TeamResponse) => select({ kind: 'team', name: team.name }),
+    [select],
   );
-
-  const handleOpenTeamSettings = useCallback((team: TeamResponse) => {
-    setSelectedTeamName(team.name);
-    setSelectedWorkerName(null);
-    setNarrowView('detail');
-  }, []);
-
-  const handleOpenWorker = useCallback((worker: WorkerResponse) => {
-    setSelectedWorkerName(worker.name);
-    if (worker.team) {
-      setSelectedTeamName(worker.team);
-    }
-    setNarrowView('detail');
-  }, []);
+  const handleSelectWorker = useCallback(
+    (worker: WorkerResponse) => select({ kind: 'worker', name: worker.name }),
+    [select],
+  );
+  const handleSelectManager = useCallback(
+    (manager: ManagerResponse) => select({ kind: 'manager', name: manager.name }),
+    [select],
+  );
 
   const handleCreateTeam = useCallback(() => {
     createTeam.mutate(newTeam, {
       onSuccess: (created) => {
         setCreateTeamOpen(false);
         setNewTeam(EMPTY_TEAM);
-        if (created?.name) {
-          setSelectedTeamName(created.name);
-          setTab('teams');
-        }
+        if (created?.name) select({ kind: 'team', name: created.name });
       },
     });
-  }, [createTeam, newTeam]);
+  }, [createTeam, newTeam, select]);
 
   const handleCreateWorker = useCallback(() => {
     createWorker.mutate(newWorker, {
-      onSuccess: () => {
+      onSuccess: (created) => {
         setCreateWorkerOpen(false);
         setNewWorker(EMPTY_WORKER);
+        if (created?.name) select({ kind: 'worker', name: created.name });
       },
     });
-  }, [createWorker, newWorker]);
+  }, [createWorker, newWorker, select]);
 
   if (isError && !isConnected) {
     return <ApiErrorState />;
   }
 
+  const hasSearch = searchQuery.trim().length > 0;
   const narrow = layout === 'narrow';
   const narrowDetail = narrow && narrowView === 'detail';
   const showList = !narrowDetail;
   const showMain = !narrow || narrowDetail;
 
-  const listPane = (
-    <Pane label={tab === 'teams' ? '团队列表' : 'Agent 列表'}>
-      <PaneHeader
-        title={tab === 'teams' ? '团队' : 'Agent'}
-        meta={
-          searchQuery.trim()
-            ? `${(tab === 'teams' ? teamRows.length : workerRows.length)} / ${(tab === 'teams' ? teams?.length : workers?.length) ?? 0}`
-            : `${(tab === 'teams' ? teams?.length : workers?.length) ?? 0}`
-        }
+  // 中栏拓扑：团队选中 → 该团队；成员 Worker → 所属团队（高亮行）；
+  // 独立 Worker → 上下文卡；Manager / 未选 → 引导。
+  let topology: React.ReactNode;
+  if (selection?.kind === 'team') {
+    topology = selectedTeam ? (
+      <InteractiveTeamTopology
+        team={selectedTeam}
+        workers={workers}
+        searchQuery={searchQuery}
+        onOpenWorker={handleSelectWorker}
+        onOpenTeamSettings={handleSelectTeam}
+        userLevel={userLevel}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-1.5 custom-scrollbar">
-        {isLoading ? (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">加载中…</p>
-        ) : tab === 'teams' ? (
-          teamRows.length === 0 ? (
-            <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-              {searchQuery.trim() ? '没有匹配的团队 / 成员' : '暂无团队'}
-            </p>
-          ) : (
-            <ul className="space-y-0.5">
-              {teamRows.map((row) => (
-                <TeamListRow
-                  key={row.team.name}
-                  row={row}
-                  selected={!narrowDetail && row.team.name === selectedTeamName}
-                  onSelect={handleSelectTeam}
-                  onOpenSettings={handleOpenTeamSettings}
-                />
-              ))}
-            </ul>
-          )
-        ) : workerRows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-            {searchQuery.trim() ? '没有匹配的 Agent' : '暂无 Agent'}
-          </p>
-        ) : (
-          <ul className="space-y-0.5">
-            {workerRows.map((worker) => {
-              const team = (teams ?? []).find((item) => item.name === worker.team);
-              return (
-                <AgentListRow
-                  key={worker.name}
-                  worker={worker}
-                  role={memberRole(worker, team?.leaderName)}
-                  onOpen={handleOpenWorker}
-                />
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </Pane>
-  );
+    ) : (
+      <Pane label="团队拓扑">
+        <StaleSelectionState
+          text="所选团队已不在最新数据中"
+          buttonLabel="回列表"
+          onBack={clearSelection}
+        />
+      </Pane>
+    );
+  } else if (selection?.kind === 'worker' && selectedWorker) {
+    if (standalone.some((item) => item.name === selectedWorker.name)) {
+      topology = (
+        <Pane label="团队拓扑">
+          <StandaloneWorkerContextCard name={selectedWorker.name} onBack={clearSelection} />
+        </Pane>
+      );
+    } else {
+      const homeTeam =
+        (teams ?? []).find(
+          (team) => team.name === selectedWorker.team || team.teamName === selectedWorker.team,
+        ) ?? null;
+      topology = homeTeam ? (
+        <InteractiveTeamTopology
+          team={homeTeam}
+          workers={workers}
+          searchQuery={searchQuery}
+          highlightWorkerName={selectedWorker.name}
+          onOpenWorker={handleSelectWorker}
+          onOpenTeamSettings={handleSelectTeam}
+          userLevel={userLevel}
+        />
+      ) : (
+        <Pane label="团队拓扑">
+          <StaleSelectionState
+            text="所选 Worker 已不在最新数据中"
+            buttonLabel="回拓扑"
+            onBack={clearSelection}
+          />
+        </Pane>
+      );
+    }
+  } else if (selection?.kind === 'worker' && !selectedWorker) {
+    topology = (
+      <Pane label="团队拓扑">
+        <StaleSelectionState
+          text="所选 Worker 已不在最新数据中"
+          buttonLabel="回拓扑"
+          onBack={clearSelection}
+        />
+      </Pane>
+    );
+  } else {
+    topology = (
+      <Pane label="团队拓扑">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
+          <p className="text-sm font-semibold">选择团队</p>
+          <p className="text-xs text-muted-foreground">点列表中的团队查看其拓扑</p>
+        </div>
+      </Pane>
+    );
+  }
 
-  const topology = topologyTeam ? (
-    <InteractiveTeamTopology
-      team={topologyTeam}
-      workers={workers}
-      searchQuery={searchQuery}
-      highlightWorkerName={tab === 'agents' ? selectedWorkerName : null}
-      onOpenWorker={handleOpenWorker}
-      onOpenTeamSettings={handleOpenTeamSettings}
-    />
-  ) : (
-    <Pane label="团队拓扑">
-      <p className="px-3 py-10 text-center text-xs text-muted-foreground">
-        {tab === 'teams' ? '选择团队查看拓扑' : '选择 Agent 查看所属团队拓扑'}
-      </p>
-    </Pane>
-  );
-
-  const renderDetailPane = ({
+  // 详情区（内联唯一面板，F7）：团队 → TeamSettingsPanel；Worker →
+  // WorkerDetailPanel；Manager → ManagerDetailPanel；选中项消失 → A6 空态。
+  const renderDetail = ({
     onBack,
     className = '',
   }: {
     onBack?: () => void;
     className?: string;
-  }) => (
-    <Pane label="详情" className={className}>
-      <PaneHeader title="详情" onBack={onBack} />
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
-        <TeamAgentsDetail team={selectedTeam} member={selectedMember} />
+  }) => {
+    let content: React.ReactNode;
+    if (!selection) {
+      content = (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
+          <p className="text-sm font-semibold">选择团队 / Manager / Worker</p>
+          <p className="text-xs text-muted-foreground">点列表中的条目后这里显示详情</p>
+        </div>
+      );
+    } else if (selection.kind === 'team') {
+      content = selectedTeam ? (
+        <TeamSettingsPanel
+          key={selectedTeam.name}
+          team={selectedTeam}
+          allTeams={teams}
+          workers={workers ?? []}
+          modelOptions={modelOptions}
+          sessionIssue={sessionIssue}
+          userLevel={userLevel}
+          onChanged={refresh}
+          onDeleted={clearSelection}
+        />
+      ) : (
+        <StaleSelectionState
+          text="所选团队已不在最新数据中"
+          buttonLabel="回列表"
+          onBack={clearSelection}
+        />
+      );
+    } else if (selection.kind === 'worker') {
+      content = selectedWorker ? (
+        <WorkerDetailPanel
+          key={selectedWorker.name}
+          worker={selectedWorker}
+          modelOptions={modelOptions}
+          sessionIssue={sessionIssue}
+          userLevel={userLevel}
+          className="min-h-0 flex-1"
+          onChanged={refresh}
+          onDeleted={clearSelection}
+        />
+      ) : (
+        <StaleSelectionState
+          text="所选 Worker 已不在最新数据中"
+          buttonLabel="回拓扑"
+          onBack={clearSelection}
+        />
+      );
+    } else {
+      content = selectedManager ? (
+        <ManagerDetailPanel
+          key={selectedManager.name}
+          manager={selectedManager}
+          modelOptions={modelOptions}
+          sessionIssue={sessionIssue}
+          userLevel={userLevel}
+          className="min-h-0 flex-1"
+          onChanged={refresh}
+        />
+      ) : (
+        <StaleSelectionState
+          text="所选 Manager 已不在最新数据中"
+          buttonLabel="回列表"
+          onBack={clearSelection}
+        />
+      );
+    }
+
+    return (
+      <Pane label="详情" className={className}>
+        <PaneHeader title="详情" onBack={onBack} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
+      </Pane>
+    );
+  };
+
+  const listPane = (
+    <Pane label="团队列表">
+      <PaneHeader
+        title="团队与Agent"
+        meta={hasSearch ? `${teamRows.length} / ${teams?.length ?? 0}` : `${teams?.length ?? 0}`}
+      />
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden p-1.5 custom-scrollbar">
+        {isLoading ? (
+          <p className="px-2 py-8 text-center text-xs text-muted-foreground">加载中…</p>
+        ) : (
+          <>
+            {managers && managers.length > 0 && (
+              <div className="space-y-1 p-1">
+                <p className="px-1 text-xs font-semibold text-muted-foreground">Managers</p>
+                {managers.map((manager) => (
+                  <ManagerRow
+                    key={manager.name}
+                    manager={manager}
+                    selected={selection?.kind === 'manager' && selection.name === manager.name}
+                    onSelect={handleSelectManager}
+                  />
+                ))}
+              </div>
+            )}
+            {teamRows.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-2 py-8 text-center">
+                <p className="text-xs text-muted-foreground">
+                  {hasSearch ? '没有匹配的团队 / 成员' : '暂无团队'}
+                </p>
+                {!hasSearch && (
+                  <Button size="sm" variant="outline" className="min-h-11 text-xs sm:min-h-9" onClick={() => setCreateTeamOpen(true)}>
+                    创建团队
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <ul className="space-y-0.5">
+                {teamRows.map((row) => (
+                  <TeamListRow
+                    key={row.team.name}
+                    row={row}
+                    workers={workers}
+                    selected={!narrowDetail && selection?.kind === 'team' && selection.name === row.team.name}
+                    onSelect={handleSelectTeam}
+                  />
+                ))}
+              </ul>
+            )}
+            {standalone.length > 0 && (
+              <StandaloneWorkersRow
+                workers={standalone}
+                selectedName={selection?.kind === 'worker' ? selection.name : null}
+                expanded={standaloneExpanded}
+                onToggle={() => setStandaloneExpanded((value) => !value)}
+                onSelect={handleSelectWorker}
+              />
+            )}
+          </>
+        )}
       </div>
     </Pane>
   );
 
-  // narrow 详情是独立整页：只有详情面板，铺满可用高度，不再堆叠拓扑。
+  // narrow 详情是独立整页：只有详情面板，铺满可用高度，返回保持选中。
   const mainPane = narrowDetail ? (
-    renderDetailPane({
+    renderDetail({
       onBack: () => setNarrowView('list'),
       className: 'h-full min-h-0',
     })
@@ -532,19 +798,19 @@ export function TeamAgentsSection() {
     <div className="flex min-h-0 min-w-0 flex-col gap-2">
       <div className="min-h-0 flex-1">{topology}</div>
       {(layout === 'wide' || layout === 'medium') &&
-        renderDetailPane({ className: 'max-h-[38%] shrink-0' })}
+        renderDetail({ className: 'max-h-[38%] shrink-0' })}
     </div>
   );
 
-  const detailPane = renderDetailPane({});
+  const detailPane = renderDetail({});
 
   return (
     <div className="space-y-3" data-testid="team-agents-section" data-layout={layout}>
       <SectionHeader
         title="团队与Agent"
-        description="团队拓扑、成员状态与 Agent 详情"
+        description="团队 / Manager / Worker 统一管理：拓扑、详情与团队设置"
         isLive={isConnected}
-        onRefresh={() => refetch()}
+        onRefresh={refresh}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2">
@@ -569,23 +835,9 @@ export function TeamAgentsSection() {
         }
       />
 
-      {/* 页签只为承接旧 workers/teams 深链的 tab；全局导航只有一个入口。 */}
-      <Tabs value={tab} onValueChange={handleTabChange}>
-        <TabsList className="h-9">
-          <TabsTrigger value="teams" className="gap-1 text-xs">
-            团队
-            <span className="tabular-nums text-muted-foreground">{teams?.length ?? 0}</span>
-          </TabsTrigger>
-          <TabsTrigger value="agents" className="gap-1 text-xs">
-            Agent
-            <span className="tabular-nums text-muted-foreground">{workers?.length ?? 0}</span>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       <div
         data-testid="team-agents-shell"
-        className={`grid h-[calc(100dvh-17rem)] max-h-[1200px] min-h-[420px] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-hidden ${shellGridClass(layout)}`}
+        className={`grid h-[calc(100dvh-14rem)] max-h-[1200px] min-h-[420px] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-hidden ${shellGridClass(layout)}`}
       >
         {showList && listPane}
         {showMain && mainPane}

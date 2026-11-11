@@ -17,6 +17,8 @@ export interface TeamMemberRow {
   model: string;
   /** 服务端现值（行内弹窗直写成功后同步，用于「只发改动行」判定）。 */
   baseModel: string;
+  /** 服务端现值 modelProvider（列表投影可能缺省；保存模型时非空才随写，与插件一致）。 */
+  baseProvider?: string;
   missing: boolean;
 }
 
@@ -25,6 +27,10 @@ export interface TeamBasicDraft {
   description: string;
   workerIdleTimeout: string;
   peerMentions?: boolean;
+  /** 心跳间隔（如 "10m"）；留空 = 清空回 Controller 默认。 */
+  heartbeatEvery: string;
+  /** 子代理默认模型；留空 = 继承各 Worker 主模型。 */
+  subagentModel: string;
 }
 
 /** 团队 + 在服 Worker 列表 → 成员行（Leader 在前，缺失引用标红）。 */
@@ -37,7 +43,14 @@ export function buildMemberRows(
   const push = (name: string, role: TeamMemberRole) => {
     const worker = byName.get(name);
     const model = worker?.model ?? '';
-    rows.push({ name, role, model, baseModel: model, missing: !worker });
+    rows.push({
+      name,
+      role,
+      model,
+      baseModel: model,
+      baseProvider: worker?.modelProvider,
+      missing: !worker,
+    });
   };
   if (team.leaderName) push(team.leaderName, 'team_leader');
   for (const name of team.workerNames ?? []) {
@@ -61,11 +74,21 @@ export function applyBatchModel(
   return rows.map((row) => (row.role === role ? { ...row, model: next } : row));
 }
 
-/** 只收集「有值且与基线不同」的行——空值 = 不改。 */
-export function changedMemberModels(rows: TeamMemberRow[]): Array<{ name: string; model: string }> {
+/**
+ * 只收集「有值且与基线不同」的行——空值 = 不改。
+ * 携带服务端现值 modelProvider：写模型时非空才随写（与插件
+ * doCfg 的 {model, modelProvider} 同语义；空 provider 永不发送）。
+ */
+export function changedMemberModels(
+  rows: TeamMemberRow[],
+): Array<{ name: string; model: string; modelProvider?: string }> {
   return rows
     .filter((row) => row.model.trim() && row.model.trim() !== row.baseModel.trim())
-    .map((row) => ({ name: row.name, model: row.model.trim() }));
+    .map((row) => ({
+      name: row.name,
+      model: row.model.trim(),
+      modelProvider: row.baseProvider?.trim() ? row.baseProvider.trim() : undefined,
+    }));
 }
 
 /** workerMembers 全量替换载荷：Leader 单独给，workerNames 去重且排除 Leader。 */
@@ -94,6 +117,8 @@ export function buildBasicDraft(team: TeamResponse): TeamBasicDraft {
     description: team.description || '',
     workerIdleTimeout: team.workerIdleTimeout || '',
     peerMentions: typeof team.peerMentions === 'boolean' ? team.peerMentions : undefined,
+    heartbeatEvery: team.heartbeatEvery || '',
+    subagentModel: team.subagentModel || '',
   };
 }
 
@@ -116,6 +141,11 @@ export function buildBasicUpdate(
   ) {
     data.peerMentions = draft.peerMentions;
   }
+  // 心跳间隔 / 子代理默认模型：与插件 doCfg 同语义——trim 后发送，留空 = null（清空）。
+  const heartbeat = draft.heartbeatEvery.trim();
+  if (heartbeat !== (team.heartbeatEvery || '').trim()) data.heartbeatEvery = heartbeat || null;
+  const subagent = draft.subagentModel.trim();
+  if (subagent !== (team.subagentModel || '').trim()) data.subagentModel = subagent || null;
   return { ...data, ...diffLlmTuning(pickLlmTuning(team), llmDraft) };
 }
 
@@ -142,6 +172,7 @@ export function mergeMember(rows: TeamMemberRow[], worker: WorkerResponse): Team
       role: 'worker',
       model: worker.model || '',
       baseModel: worker.model || '',
+      baseProvider: worker.modelProvider,
       missing: false,
     },
   ];

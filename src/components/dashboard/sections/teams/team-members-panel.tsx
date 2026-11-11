@@ -87,7 +87,14 @@ export function TeamMembersPanel({
     if (!worker) return;
     setRows((previous) => [
       ...previous,
-      { name, role: 'worker', model: worker.model || '', baseModel: worker.model || '', missing: false },
+      {
+        name,
+        role: 'worker',
+        model: worker.model || '',
+        baseModel: worker.model || '',
+        baseProvider: worker.modelProvider,
+        missing: false,
+      },
     ]);
     setError(null);
   };
@@ -108,8 +115,15 @@ export function TeamMembersPanel({
         await updateTeam.mutateAsync({ name: team.name, data: { workerNames, leader } });
       }
       // 成员变更成功后再逐行写模型：只发改动行，失败行单独报错。
+      // provider 取服务端现值（非空才随写，与插件 doCfg 的 {model, modelProvider} 一致）。
       for (const change of modelChanges) {
-        await updateWorker.mutateAsync({ name: change.name, data: { model: change.model } });
+        await updateWorker.mutateAsync({
+          name: change.name,
+          data: {
+            model: change.model,
+            ...(change.modelProvider ? { modelProvider: change.modelProvider } : {}),
+          },
+        });
       }
       setRows((previous) => previous.map((row) => ({ ...row, baseModel: row.model })));
       onChanged?.();
