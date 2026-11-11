@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight, Loader2, TriangleAlert } from 'lucide-react';
 import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
@@ -78,7 +78,10 @@ export function RunProcessDisclosure({
   eventId,
   revisionCount,
 }: RunProcessDisclosureProps) {
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const [userOpen, setUserOpen] = useState<{ live: boolean; open: boolean } | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
   const panelId = useId();
 
   const thinkingCount = blocks.filter((block) => block.type === 'thinking').length;
@@ -88,8 +91,23 @@ export function RunProcessDisclosure({
   // A live run that has only produced narration so far (qwenpaw answers by
   // editing its root placeholder at the very end) has no running block and no
   // answer. Without this it renders as a closed "过程" row and looks silent.
-  const live = running || active === true;
-  const open = userOpen ?? live;
+  // A finalized turn is authoritative even when a historical tool step still
+  // carries `running`. Manual expansion belongs only to its current phase.
+  const live = active ?? (running || isStreaming === true);
+  const open = userOpen?.live === live ? userOpen.open : live;
+
+  useEffect(() => {
+    if (!open || !live) return;
+    const follow = () => {
+      const preview = previewRef.current;
+      if (preview && followLatest.current) preview.scrollTop = preview.scrollHeight;
+    };
+    follow();
+    if (!contentRef.current || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(follow);
+    observer.observe(contentRef.current);
+    return () => observer.disconnect();
+  }, [blocks, live, open]);
 
   const parts: string[] = [];
   if (thinkingCount > 0) parts.push(`思考 ${thinkingCount}`);
@@ -109,7 +127,10 @@ export function RunProcessDisclosure({
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        onClick={() => setUserOpen((previous) => !(previous ?? live))}
+        onClick={() => {
+          followLatest.current = true;
+          setUserOpen({ live, open: !open });
+        }}
       >
         {live ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
@@ -129,7 +150,17 @@ export function RunProcessDisclosure({
       </button>
 
       {open && (
-        <div id={panelId} className="space-y-1.5 border-t border-border/40 px-2 py-2">
+        <div
+          id={panelId}
+          ref={previewRef}
+          data-testid="run-process-preview"
+          className="custom-scrollbar max-h-60 overflow-y-auto overscroll-contain border-t border-border/40 px-2 py-2"
+          onScroll={(event) => {
+            const panel = event.currentTarget;
+            followLatest.current = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 32;
+          }}
+        >
+          <div ref={contentRef} className="space-y-1.5">
           {blocks.map((block, idx) => {
             if (block.type === 'thinking') {
               return (
@@ -167,7 +198,7 @@ export function RunProcessDisclosure({
               return (
                 <div
                   key={`text-${idx}`}
-                  className="custom-scrollbar max-h-72 w-full overflow-y-auto px-1 py-0.5 text-sm leading-relaxed"
+                  className="w-full px-1 py-0.5 text-sm leading-relaxed"
                 >
                   <MarkdownMessage content={block.text ?? ''} isStreaming={block.isStreaming ?? isStreaming} />
                 </div>
@@ -182,6 +213,7 @@ export function RunProcessDisclosure({
             }
             return null;
           })}
+          </div>
         </div>
       )}
     </section>

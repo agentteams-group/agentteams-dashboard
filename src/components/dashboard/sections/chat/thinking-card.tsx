@@ -45,7 +45,7 @@ export function ThinkingCard({
             <span className="text-xs text-emerald-500 animate-pulse">思考中...</span>
           )}
         </div>
-        <pre className={`mt-1 max-h-56 overflow-y-auto custom-scrollbar whitespace-pre-wrap font-mono text-xs text-muted-foreground ${isStreaming ? 'animate-pulse' : ''}`}>
+        <pre className={`mt-1 whitespace-pre-wrap font-mono text-xs text-muted-foreground ${isStreaming ? 'animate-pulse' : ''}`}>
           {content || (isStreaming ? '正在思考...' : '')}
         </pre>
         {eventId && (

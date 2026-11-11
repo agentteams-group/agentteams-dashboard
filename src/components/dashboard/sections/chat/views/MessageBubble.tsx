@@ -603,7 +603,7 @@ export function MessageBubble({
                       <RunProcessDisclosure
                         blocks={processRun}
                         isStreaming={!!message.isStreaming}
-                        active={message.turnState === 'pending' || message.turnState === 'running'}
+                        active={message.turnState ? message.turnState === 'pending' || message.turnState === 'running' : undefined}
                         runtime={message.runtime ?? null}
                         eventId={message.eventId}
                         revisionCount={message.revisionCount}
