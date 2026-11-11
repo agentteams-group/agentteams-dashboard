@@ -408,7 +408,11 @@ export function WorkerDetailPanel({
         nonQwenpaw ? (
           surface('tools')
         ) : (
-          <WorkerToolsPanel key={`tools-${view.name}`} workerName={view.name} />
+          <WorkerToolsPanel
+            key={`tools-${view.name}`}
+            workerName={view.name}
+            runtime={view.runtime}
+          />
         ),
     },
     {

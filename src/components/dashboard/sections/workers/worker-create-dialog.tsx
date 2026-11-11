@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Wand2, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Wand2, X } from 'lucide-react';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
@@ -235,7 +235,7 @@ export function WorkerCreateDialog({
               />
             </div>
             <p
-              className={`text-xs break-words ${
+              className={`flex items-start gap-1 text-xs break-words ${
                 modelVerdict.level === 'error'
                   ? 'text-red-600 dark:text-red-400'
                   : modelVerdict.level === 'warn'
@@ -243,8 +243,14 @@ export function WorkerCreateDialog({
                     : 'text-emerald-600 dark:text-emerald-400'
               }`}
             >
-              {modelVerdict.level === 'error' ? '✗ ' : modelVerdict.level === 'warn' ? '⚠ ' : '✓ '}
-              {modelVerdictText(modelVerdict, value.model ?? '', modelCandidates)}
+              {modelVerdict.level === 'error' ? (
+                <X className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              ) : modelVerdict.level === 'warn' ? (
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              )}
+              <span>{modelVerdictText(modelVerdict, value.model ?? '', modelCandidates)}</span>
             </p>
           </div>
 

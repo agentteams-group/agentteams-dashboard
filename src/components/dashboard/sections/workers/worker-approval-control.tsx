@@ -14,7 +14,7 @@
 //   由 BFF l2_hint 给出，区分「端点未上线」与「账号无权限」）。
 
 import { useState } from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Info, Loader2, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkerApproval, APPROVAL_LEVELS, APPROVAL_LEVEL_LABELS } from '@/hooks/use-worker-approval';
@@ -81,8 +81,9 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           <ApprovalLevelIcon lv="AUTO" size={15} color={APPROVAL_COLOR.AUTO} />
           工具执行安全
         </span>
-        <span className="flex-basis-full text-xs text-blue-500">
-          ℹ️ 配置工具调用的审批策略，控制 Agent 执行工具时的安全级别
+        <span className="flex flex-basis-full items-center gap-1 text-xs text-blue-500">
+          <Info className="size-3.5 shrink-0" aria-hidden="true" />
+          配置工具调用的审批策略，控制 Agent 执行工具时的安全级别
         </span>
       </div>
       {loading ? (
@@ -145,7 +146,10 @@ export function WorkerApprovalControl({ workerName }: { workerName: string }) {
           </div>
         </>
       ) : (
-        <p className="py-2 text-xs text-destructive">⚠ {error ?? '该 Worker 未读到工具执行安全级别'}</p>
+        <p className="flex items-center gap-1 py-2 text-xs text-destructive">
+          <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+          {error ?? '该 Worker 未读到工具执行安全级别'}
+        </p>
       )}
       {error && level && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>

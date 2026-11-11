@@ -70,7 +70,10 @@ export function ModelSelector({
   const selectedRouteAuth = describeRouteAuthorization(
     selectedOption?.kind === 'configured' ? selectedOption.routeAuth : undefined,
   );
-  const customActive = customMode || Boolean(value && !known);
+  // 只有用户显式点「自定义别名」才进入输入框；未知当前值保持 Select 可见，
+  // 并在候选顶部补一个“当前值”项（否则 trigger 只显示占位符、候选也看不到）。
+  const unknownValue = Boolean(value && !known);
+  const customActive = customMode;
 
   if (customActive) {
     return (
@@ -126,6 +129,17 @@ export function ModelSelector({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="max-h-[min(60vh,320px,var(--radix-select-content-available-height))] max-w-[min(100vw-2rem,28rem)]">
+          {unknownValue && value && (
+            <SelectGroup>
+              <SelectLabel>当前值（不在候选列表）</SelectLabel>
+              <SelectItem value={value} className="min-w-0">
+                <span className="block min-w-0 truncate font-mono">{value}</span>
+                <span className="block min-w-0 truncate text-xs text-muted-foreground">
+                  仍会按该别名提交；可从下方改选已有模型
+                </span>
+              </SelectItem>
+            </SelectGroup>
+          )}
           {configuredOptions.length > 0 && (
             <SelectGroup>
               <SelectLabel>Higress alias（路由可解析）</SelectLabel>
@@ -191,6 +205,11 @@ export function ModelSelector({
             </SelectGroup>
           )}
 
+          {uniqueOptions.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              暂无可选模型别名；可选择「自定义别名」手动输入。
+            </p>
+          )}
           {uniqueOptions.length > 0 && <SelectSeparator />}
           <SelectItem value={CUSTOM_ALIAS}>
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -213,6 +232,11 @@ export function ModelSelector({
       ) : selectedOption?.kind === 'builtin' ? (
         <p className="text-xs text-amber-600/80 break-words">
           内置模型别名，请求经 AI 网关 Consumer 凭证转发；需先在「模型管理」为其配置路由映射。
+        </p>
+      ) : unknownValue ? (
+        <p className="text-xs text-muted-foreground break-words">
+          当前值「{value}」不在候选列表中，仍会按该别名提交；可从下方列表改选已有模型，
+          或选择「自定义别名」手动编辑。
         </p>
       ) : (
         <p className="text-xs text-muted-foreground break-words">

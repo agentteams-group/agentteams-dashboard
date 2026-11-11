@@ -5,8 +5,10 @@ import { WorkerModelDialog } from './worker-model-dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 
+const mocks = vi.hoisted(() => ({ updateWorkerMutate: vi.fn() }));
+
 vi.mock('@/hooks/use-agentteams-mutations', () => ({
-  useUpdateWorker: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateWorker: () => ({ mutate: mocks.updateWorkerMutate, isPending: false }),
 }));
 
 // Radix Select 打开时用 ResizeObserver 量触发按钮宽度。
@@ -102,5 +104,36 @@ describe('WorkerModelDialog 弹窗溢出收口', () => {
     expect(className).toContain('min-w-0');
     expect(className).toContain('sm:max-w-md');
     expect(className).not.toMatch(/(?<![\w-])(?:[a-z-]+:)?w-\[\d+px\]/);
+  });
+
+  it('选模型后自动跟随 provider，保存时成对下发', () => {
+    mocks.updateWorkerMutate.mockReset();
+    render(
+      <TooltipProvider>
+        <WorkerModelDialog
+          open
+          workerName="w1"
+          model=""
+          providerHint="higress.internal.example-provider"
+          modelOptions={options}
+          onOpenChange={() => {}}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText('请求模型别名'));
+    fireEvent.click(screen.getByRole('option', { name: new RegExp(LONG_ALIAS) }));
+
+    const provider = screen.getByPlaceholderText(/当前解析/) as HTMLInputElement;
+    expect(provider.value).toBe(options[0].binding?.providerName);
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
+      {
+        name: 'w1',
+        data: { model: LONG_ALIAS, modelProvider: options[0].binding?.providerName },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
   });
 });

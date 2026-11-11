@@ -1,11 +1,12 @@
 'use client';
 
-// 团队设置的「千锻」入口卡——整卡即按钮：图标 + 标题 + 一句说明
+// 团队设置的「千锻」入口卡——整卡即按钮：logo + 标题 + 一句说明
 // （注入 / 自定义 / 模块更新 / 历史）+ 右侧 ›，点击打开四 tab 弹窗。
 // disabled + disabledReason：与插件 MillforgeEntryCard 同语义
 // （权限/数据不就绪时整卡禁用并在 title 里给原因）。
 
-import { ChevronRight, Hammer } from 'lucide-react';
+import Image from 'next/image';
+import { ChevronRight } from 'lucide-react';
 
 export function MillforgeEntryCard({
   onClick,
@@ -32,7 +33,15 @@ export function MillforgeEntryCard({
             : 'cursor-pointer hover:bg-muted/50'
         }`}
       >
-        <Hammer className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Image
+          src="/millforge-logo.svg"
+          alt=""
+          width={42}
+          height={30}
+          unoptimized
+          data-testid="millforge-logo"
+          className="h-[30px] w-auto max-w-14 shrink-0"
+        />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-xs font-semibold">千锻</span>
           <span className="truncate text-xs text-muted-foreground">

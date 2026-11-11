@@ -76,7 +76,13 @@ export function WorkerModelDialog({
           </div>
           <ModelSelector
             value={draft}
-            onChange={setDraft}
+            onChange={(next) => {
+              setDraft(next);
+              // 选中的 alias 有网关绑定且用户未手动改过 provider → 自动跟随，
+              // 保证保存时 model / modelProvider 成对下发。
+              const mappedProvider = providerCatalog.providerByModel[next];
+              if (!providerTouched && mappedProvider) setProvider(mappedProvider);
+            }}
             placeholder="例如 team-chat"
             options={modelOptions}
             sessionIssue={sessionIssue}
@@ -108,7 +114,9 @@ export function WorkerModelDialog({
             onClick={() => {
               const data = {
                 model: draft.trim(),
-                ...(providerTouched && provider.trim() ? { modelProvider: provider.trim() } : {}),
+                // provider 非空即随 model 成对下发（含自动跟随得到的值）；
+                // 留空 = 保持控制器现值，不发该字段。
+                ...(provider.trim() ? { modelProvider: provider.trim() } : {}),
               };
               updateWorker.mutate(
                 { name: workerName, data },

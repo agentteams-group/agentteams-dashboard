@@ -187,58 +187,65 @@ export function TeamMembersPanel({
             <div
               key={`${row.role}-${row.name}`}
               data-testid={`member-${row.name}`}
-              className={`flex min-w-0 flex-wrap items-center gap-2 rounded-lg border p-2 ${
+              className={`min-w-0 space-y-1 rounded-lg border p-2 ${
                 row.missing ? 'border-red-400 bg-red-500/10' : ''
               }`}
             >
-              {row.role === 'team_leader' ? (
-                <Crown className="size-3.5 shrink-0 text-purple-500" aria-hidden="true" />
-              ) : (
-                <Bot className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-xs font-medium" title={row.name}>
-                {row.name}
-              </span>
-              <Badge variant="outline" className="shrink-0 text-xs">
-                {ROLE_LABEL[row.role]}
-              </Badge>
-              <span
-                className="max-w-[45%] shrink-0 truncate font-mono text-xs text-muted-foreground"
-                title={row.model || '未设置模型'}
-              >
-                {row.model || '未设置模型'}
-              </span>
-              {changed && (
-                <Badge variant="secondary" className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                  待保存
+              {/* 第一行：图标 + 姓名（占满剩余空间）+ 角色 + 改模型。
+                  姓名 flex-1 truncate，按钮 shrink-0，不再被 flex-wrap 挤成单字。 */}
+              <div className="flex min-w-0 items-center gap-2">
+                {row.role === 'team_leader' ? (
+                  <Crown className="size-3.5 shrink-0 text-purple-500" aria-hidden="true" />
+                ) : (
+                  <Bot className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-xs font-medium" title={row.name}>
+                  {row.name}
+                </span>
+                <Badge variant="outline" className="shrink-0 text-xs">
+                  {ROLE_LABEL[row.role]}
                 </Badge>
-              )}
-              {row.missing && (
-                <Badge variant="destructive" className="shrink-0 text-xs">
-                  不存在
-                </Badge>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                className="min-h-11 shrink-0 text-xs sm:min-h-9"
-                disabled={row.missing}
-                onClick={() => setModelTarget(row)}
-              >
-                改模型
-              </Button>
-              {row.role === 'worker' && (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="min-h-11 shrink-0 px-2 text-xs text-muted-foreground sm:min-h-9"
-                  onClick={() => removeMember(row.name)}
-                  aria-label={`移除 ${row.name}`}
+                  className="min-h-11 shrink-0 text-xs sm:min-h-9"
+                  disabled={row.missing}
+                  onClick={() => setModelTarget(row)}
                 >
-                  <X className="size-3.5" aria-hidden="true" />
-                  移除
+                  改模型
                 </Button>
-              )}
+              </div>
+              {/* 第二行：模型 + 状态徽标 + 移除（仅 Worker）。 */}
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
+                  title={row.model || '未设置模型'}
+                >
+                  {row.model || '未设置模型'}
+                </span>
+                {changed && (
+                  <Badge variant="secondary" className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
+                    待保存
+                  </Badge>
+                )}
+                {row.missing && (
+                  <Badge variant="destructive" className="shrink-0 text-xs">
+                    不存在
+                  </Badge>
+                )}
+                {row.role === 'worker' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="min-h-11 shrink-0 px-2 text-xs text-muted-foreground sm:min-h-9"
+                    onClick={() => removeMember(row.name)}
+                    aria-label={`移除 ${row.name}`}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    移除
+                  </Button>
+                )}
+              </div>
             </div>
           );
         })}
