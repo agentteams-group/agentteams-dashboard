@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ListView, TreeView, type EntryActions } from './file-views';
@@ -160,4 +160,10 @@ describe('树视图轨道与单元格对齐', () => {
       expect(cellsOf(row)).toHaveLength(trackCount);
     }
   });
+});
+
+it('does not offer unsupported directory deletion', () => {
+  renderTree(columnsFor(1200, false));
+  fireEvent.keyDown(screen.getByRole('button', {name:'更多操作 docs'}), {key:'Enter'});
+  expect(screen.getByRole('menuitem', {name:'暂不支持删除文件夹'})).toHaveAttribute('aria-disabled','true');
 });

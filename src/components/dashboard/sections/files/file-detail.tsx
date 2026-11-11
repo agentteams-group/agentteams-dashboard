@@ -273,9 +273,10 @@ export function FileDetailCard({
         <Button
           className="col-span-2 h-11 text-destructive"
           variant="outline"
+          disabled={isDir}
           onClick={() => onDelete(entry)}
         >
-          <Trash2 className="size-4" /> 删除
+          <Trash2 className="size-4" /> {isDir ? '暂不支持删除文件夹' : '删除'}
         </Button>
       </div>
 
