@@ -45,6 +45,61 @@ describe('Controller gateway forwarding', () => {
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('injected-token');
   });
 
+  function saRequest() {
+    const { cookieValue } = createSession({ user: 'admin', crLevel: 1, credential: { kind: 'sa' } });
+    return new NextRequest('http://dashboard.test/api/higress/ai-providers', {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}`, authorization: 'Bearer injected-token' },
+    });
+  }
+
+  it('uses the server SA for an sa session, never the browser token', async () => {
+    vi.stubEnv('AGENTTEAMS_AUTH_TOKEN', 'server-sa-token');
+    vi.spyOn(backendConfig, 'backendAuthHeader').mockReturnValue({});
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ data: [{ name: 'provider' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callControllerGateway(saRequest(), '/v1/ai/providers');
+
+    expect(result.response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://controller.test:8090/api/v1/gateway/ai/providers');
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(headers.get('authorization')).toBe('Bearer server-sa-token');
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('injected-token');
+  });
+
+  it('falls back to the Console for an sa session when the Controller lacks the AI catalog', async () => {
+    vi.stubEnv('AGENTTEAMS_AUTH_TOKEN', 'server-sa-token');
+    vi.spyOn(backendConfig, 'backendAuthHeader').mockReturnValue({});
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ message: 'not found' }, { status: 404 })));
+    consoleMock.mockResolvedValue({
+      response: Response.json({ data: [{ name: 'openai' }] }),
+      body: { data: [{ name: 'openai' }] },
+    });
+
+    const result = await callControllerGateway(saRequest(), '/v1/ai/providers');
+
+    expect(result.response.status).toBe(200);
+    expect(consoleMock).toHaveBeenCalledWith('/v1/ai/providers', expect.objectContaining({ method: 'GET' }));
+  });
+
+  it('keeps the browser bearer in stateless mode instead of the server SA', async () => {
+    vi.stubEnv('DASHBOARD_STATELESS', '1');
+    vi.stubEnv('AGENTTEAMS_AUTH_TOKEN', 'server-sa-token');
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ data: [{ name: 'provider' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callControllerGateway(
+      new NextRequest('http://dashboard.test/api/higress/ai-providers', {
+        headers: { authorization: 'Bearer browser-token' },
+      }),
+      '/v1/ai/providers',
+    );
+
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(headers.get('authorization')).toBe('Bearer browser-token');
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('server-sa-token');
+  });
+
   it('preserves Controller authorization failures', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'permission denied' }, { status: 403 })));
     expect((await callControllerGateway(request(), '/v1/ai/providers')).response.status).toBe(403);

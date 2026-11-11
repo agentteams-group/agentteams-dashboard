@@ -48,9 +48,19 @@ export async function callControllerGateway(
     ? request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
     : session?.credential.kind === 'matrix' || session?.credential.kind === 'controller-token'
       ? session.credential.token : undefined;
-  if (!token) throw new Error('A Controller user credential is required');
+  // An 'sa' session is the legacy admin-password login: the Controller
+  // credential is the server-side SA (AGENTTEAMS_AUTH_TOKEN / token file),
+  // resolved by proxyToAgentTeams — the browser never holds it.
+  const isServerSaSession = session?.credential.kind === 'sa';
+  if (!token && !isServerSaSession) throw new Error('A Controller user credential is required');
   const headers = new Headers(request.headers);
-  headers.set('authorization', `Bearer ${token}`);
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`);
+  } else {
+    // Let proxyToAgentTeams inject the server SA. Drop any browser-supplied
+    // Authorization so it can never be mistaken for the user's credential.
+    headers.delete('authorization');
+  }
   headers.set('content-type', 'application/json');
   const method = options.method ?? 'GET';
   const forwarded = new NextRequest(request.url, {
