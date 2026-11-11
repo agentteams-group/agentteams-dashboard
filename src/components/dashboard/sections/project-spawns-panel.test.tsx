@@ -3,9 +3,12 @@
  *
  * 契约：
  *   · /spawns 404/405 → 整块隐藏（不留空壳、不报错）
+ *   · 整卡标题可折叠（默认展开），收起只隐藏正文，标题/计数/副标题/刷新保留
+ *   · 每个 Worker 分组可独立折叠（默认展开），不影响整卡与其他分组
  *   · 树按 root_session_id 递归，节点显示状态/时间/白名单/子会话数，caret 可折叠
  *   · 节点「消息」懒加载：404 空态、403 无权限、其余失败可重试
  *   · 消息正文超 6 行折叠，「展开」看全文
+ *   · 整卡 / 分组折叠支持 Enter、Space 键盘激活
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -58,8 +61,42 @@ const spawnsResponse: ProjectSpawnsResponse = {
   ],
 };
 
+const twoWorkerSpawns: ProjectSpawnsResponse = {
+  project_id: 'p1',
+  workers: [
+    ...spawnsResponse.workers,
+    {
+      worker: 'bob',
+      spawns: [
+        {
+          session_id: 'sub-bob',
+          name: '巡检日志',
+          status: 'idle',
+          root_session_id: null,
+        },
+      ],
+    },
+  ],
+};
+
 function renderPanel() {
   return render(<ProjectSpawnsPanel projectId="p1" teamId="team-a" />);
+}
+
+function cardToggle() {
+  return screen.getByRole('button', { name: '展开或收起子会话' });
+}
+
+function workerToggle(worker = 'alice') {
+  return screen.getByRole('button', { name: `展开或收起 ${worker}` });
+}
+
+function controlledPanel(toggle: HTMLElement): HTMLElement {
+  const id = toggle.getAttribute('aria-controls');
+  expect(id).toBeTruthy();
+  const panel = document.getElementById(id as string);
+  expect(panel).not.toBeNull();
+  return panel as HTMLElement;
 }
 
 describe('ProjectSpawnsPanel', () => {
@@ -165,5 +202,123 @@ describe('ProjectSpawnsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '展开' }));
     expect(screen.getByText(/line-1/).textContent).toContain('line-8');
     expect(screen.getByRole('button', { name: '收起' })).toBeInTheDocument();
+  });
+
+  it('hides the whole block on 405 as well', async () => {
+    mockSpawns.mockRejectedValue(new ApiError('method not allowed', 405, '/spawns'));
+    const { container } = renderPanel();
+
+    await waitFor(() => expect(mockSpawns).toHaveBeenCalled());
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+  });
+
+  it('starts expanded and folds only the body when the header title is clicked', async () => {
+    mockSpawns.mockResolvedValue(spawnsResponse);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('实现登录')).toBeInTheDocument());
+    const toggle = cardToggle();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(controlledPanel(toggle)).not.toHaveAttribute('hidden');
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(controlledPanel(toggle)).toHaveAttribute('hidden');
+    expect(screen.getByText('实现登录')).not.toBeVisible();
+    // 收起只隐藏正文：副标题、计数与刷新按钮仍在
+    expect(screen.getByText('按 Worker 分组 · 共 2 个')).toBeVisible();
+    expect(screen.getByRole('button', { name: '刷新子会话' })).toBeVisible();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('实现登录')).toBeVisible();
+  });
+
+  it('keeps refresh working while the card is collapsed without re-expanding it', async () => {
+    mockSpawns.mockResolvedValue(spawnsResponse);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('实现登录')).toBeInTheDocument());
+    const toggle = cardToggle();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(mockSpawns).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新子会话' }));
+
+    await waitFor(() => expect(mockSpawns).toHaveBeenCalledTimes(2));
+    expect(mockSpawns).toHaveBeenLastCalledWith('p1', 'team-a', expect.anything());
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('collapses one worker group without collapsing the card or other groups', async () => {
+    mockSpawns.mockResolvedValue(twoWorkerSpawns);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('实现登录')).toBeInTheDocument());
+    const toggle = workerToggle('alice');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(controlledPanel(toggle)).not.toHaveAttribute('hidden');
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(controlledPanel(toggle)).toHaveAttribute('hidden');
+    expect(screen.getByText('实现登录')).not.toBeVisible();
+    expect(screen.getByText('补测试')).not.toBeVisible();
+    // 整卡与其他分组不受影响
+    expect(cardToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('巡检日志')).toBeVisible();
+
+    fireEvent.click(toggle);
+    expect(screen.getByText('实现登录')).toBeVisible();
+  });
+
+  it('keeps node-level collapse and message toggles working inside an open group', async () => {
+    mockSpawns.mockResolvedValue(spawnsResponse);
+    mockMessages.mockRejectedValue(new ApiError('missing', 404, '/messages'));
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('实现登录')).toBeInTheDocument());
+    expect(cardToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(workerToggle()).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: /展开或收起 实现登录/ }));
+    expect(screen.queryByText('补测试')).toBeNull();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /消息/ })[0]);
+    await waitFor(() => expect(screen.getByText('暂无消息')).toBeInTheDocument());
+    expect(mockMessages).toHaveBeenCalledWith('p1', 'sub-root', expect.anything());
+
+    // 节点级操作不改变整卡/分组的展开态
+    expect(cardToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(workerToggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('activates the card and group toggles with Enter and Space', async () => {
+    mockSpawns.mockResolvedValue(twoWorkerSpawns);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('实现登录')).toBeInTheDocument());
+    const card = cardToggle();
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(card).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('实现登录')).not.toBeVisible();
+
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(card).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('实现登录')).toBeVisible();
+
+    const group = workerToggle('alice');
+    fireEvent.keyDown(group, { key: 'Enter' });
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('实现登录')).not.toBeVisible();
+
+    fireEvent.keyDown(group, { key: ' ' });
+    expect(group).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('实现登录')).toBeVisible();
   });
 });

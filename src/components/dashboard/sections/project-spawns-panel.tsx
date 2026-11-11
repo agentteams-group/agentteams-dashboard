@@ -14,7 +14,13 @@
 // - message stream: 404 = 暂无消息, 403 = 无权限查看, rest = retryable,
 //   `has_more` = 仅显示最近 N 条.
 
-import { useEffect, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { ChevronDown, ChevronRight, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,6 +73,16 @@ function fmtSpawnTime(value?: string): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Enter / Space activation for the native toggles; preventDefault stops the
+ *  browser from firing a second synthetic click for the same keystroke. */
+function activationKeyDown(toggle: () => void) {
+  return (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggle();
+  };
 }
 
 type SpawnsState =
@@ -348,8 +364,11 @@ function SpawnWorkerGroup({
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set<string>());
   const [openMessages, setOpenMessages] = useState<Set<string>>(() => new Set<string>());
+  const [open, setOpen] = useState(true);
+  const bodyId = useId();
   const forest = buildSpawnForest(group.spawns);
   const rows = flattenSpawnTree(forest, collapsed);
+  const toggleOpen = () => setOpen((v) => !v);
 
   const toggle = (setter: typeof setCollapsed, id: string) =>
     setter((prev) => {
@@ -361,30 +380,45 @@ function SpawnWorkerGroup({
 
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-1.5 pb-1">
-        <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <button
+        type="button"
+        onClick={toggleOpen}
+        onKeyDown={activationKeyDown(toggleOpen)}
+        aria-expanded={open}
+        aria-controls={bodyId}
+        aria-label={`展开或收起 ${group.worker}`}
+        className="flex min-h-11 w-full min-w-0 flex-wrap items-center gap-1.5 text-left"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        )}
+        <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 truncate text-xs font-semibold">{group.worker}</span>
         <Badge variant="outline" className="text-xs text-muted-foreground">
           {countSpawnNodes(forest)}
         </Badge>
+      </button>
+      <div id={bodyId} hidden={!open}>
+        {rows.length === 0 ? (
+          <p className="pl-1 text-xs text-muted-foreground">该 Worker 暂无子会话</p>
+        ) : (
+          rows.map(({ node, depth, hasChildren }) => (
+            <SpawnNodeRow
+              key={node.session_id}
+              node={node}
+              depth={depth}
+              hasChildren={hasChildren}
+              collapsed={collapsed.has(node.session_id)}
+              onToggleCollapse={() => toggle(setCollapsed, node.session_id)}
+              projectId={projectId}
+              messagesOpen={openMessages.has(node.session_id)}
+              onToggleMessages={() => toggle(setOpenMessages, node.session_id)}
+            />
+          ))
+        )}
       </div>
-      {rows.length === 0 ? (
-        <p className="pl-1 text-xs text-muted-foreground">该 Worker 暂无子会话</p>
-      ) : (
-        rows.map(({ node, depth, hasChildren }) => (
-          <SpawnNodeRow
-            key={node.session_id}
-            node={node}
-            depth={depth}
-            hasChildren={hasChildren}
-            collapsed={collapsed.has(node.session_id)}
-            onToggleCollapse={() => toggle(setCollapsed, node.session_id)}
-            projectId={projectId}
-            messagesOpen={openMessages.has(node.session_id)}
-            onToggleMessages={() => toggle(setOpenMessages, node.session_id)}
-          />
-        ))
-      )}
     </div>
   );
 }
@@ -397,7 +431,10 @@ export function ProjectSpawnsPanel({
   teamId?: string;
 }) {
   const [tick, setTick] = useState(0);
+  const [open, setOpen] = useState(true);
   const [state, setState] = useState<SpawnsState>({ kind: 'loading' });
+  const bodyId = useId();
+  const toggleOpen = () => setOpen((v) => !v);
 
   useEffect(() => {
     if (!projectId) return;
@@ -474,14 +511,29 @@ export function ProjectSpawnsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-1.5 text-sm">
-          <Users className="h-4 w-4" />
-          子会话
-          {total !== null && total > 0 && (
-            <Badge variant="outline" className="text-xs">
-              {total}
-            </Badge>
-          )}
+        <CardTitle className="text-sm">
+          <button
+            type="button"
+            onClick={toggleOpen}
+            onKeyDown={activationKeyDown(toggleOpen)}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            aria-label="展开或收起子会话"
+            className="flex min-h-11 w-full min-w-0 flex-wrap items-center gap-1.5 text-left"
+          >
+            {open ? (
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            )}
+            <Users className="h-4 w-4 shrink-0" aria-hidden />
+            <span>子会话</span>
+            {total !== null && total > 0 && (
+              <Badge variant="outline" className="text-xs">
+                {total}
+              </Badge>
+            )}
+          </button>
         </CardTitle>
         <p className="text-xs text-muted-foreground">{subtitle}</p>
         <CardAction>
@@ -490,14 +542,19 @@ export function ProjectSpawnsPanel({
             size="icon"
             aria-label="刷新子会话"
             title="刷新子会话"
-            onClick={() => setTick((v) => v + 1)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setTick((v) => v + 1);
+            }}
             className="size-11"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="min-w-0">{body}</CardContent>
+      <CardContent id={bodyId} hidden={!open} className="min-w-0">
+        {body}
+      </CardContent>
     </Card>
   );
 }
