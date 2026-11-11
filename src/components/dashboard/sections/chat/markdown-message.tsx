@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -36,11 +36,12 @@ interface MarkdownMessageProps {
   isStreaming?: boolean;
 }
 
-function CodeBlock({ language, children }: { language?: string; children: string }) {
+function CodeBlock({ language, children }: { language?: string; children: ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const codeRef = useRef<HTMLElement>(null);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(children);
+    navigator.clipboard.writeText((codeRef.current?.textContent ?? '').replace(/\n$/, ''));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -60,7 +61,7 @@ function CodeBlock({ language, children }: { language?: string; children: string
         </Button>
       </div>
       <pre className="p-3 overflow-x-auto m-0">
-        <code className={`text-xs ${language ? `language-${language}` : ''}`}>{children}</code>
+        <code ref={codeRef} className={`text-xs ${language ? `language-${language}` : ''}`}>{children}</code>
       </pre>
     </div>
   );
@@ -452,10 +453,9 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
         ]}
         components={{
           code({ className, children, ...props }) {
-            const language = className?.replace('language-', '');
-            const code = String(children).replace(/\n$/, '');
+            const language = /\blanguage-([^\s]+)/.exec(className ?? '')?.[1];
             if (className?.includes('language-')) {
-              return <CodeBlock language={language}>{code}</CodeBlock>;
+              return <CodeBlock language={language}>{children}</CodeBlock>;
             }
             return (
               <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props}>{children}</code>

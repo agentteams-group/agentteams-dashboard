@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Brain, ChevronDown, ChevronRight, Loader2, TriangleAlert } from 'lucide-react';
+import { Lightbulb, ChevronDown, ChevronRight, Loader2, TriangleAlert } from 'lucide-react';
 import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { ThinkingCard } from '../thinking-card';
@@ -135,7 +135,7 @@ export function RunProcessDisclosure({
         {live ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
         ) : (
-          <Brain className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <Lightbulb className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         )}
         <span className="shrink-0 font-medium text-foreground/80">过程</span>
         <span className="min-w-0 truncate">{detail}</span>

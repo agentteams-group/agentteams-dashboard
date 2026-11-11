@@ -18,12 +18,43 @@ afterAll(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 
+it.each([{ admin: true, configured: false }, { admin: false, configured: false }, { admin: true, configured: true }])('guides inactive tracing according to configuration and permissions ($configured, $admin)', async ({ admin, configured }) => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ teams: [], workers: [], canConfigure: admin, tracingConfigured: configured, tracingEnabled: false }));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  await screen.findByRole('heading', { name: configured ? 'Tracing 未启用' : 'Tracing 未配置' });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(screen.queryByText(/暂无 Trace/)).toBeNull();
+  if (admin) expect(screen.getByRole('button', { name: configured ? '启用 Tracing' : '配置 Tracing' })).toBeTruthy();
+  else {
+    expect(screen.queryByRole('button', { name: '配置 Tracing' })).toBeNull();
+    expect(screen.getByText('请联系管理员完成配置。')).toBeTruthy();
+  }
+  view.unmount(); client.clear();
+});
+
 function traceResponse(url: string, data: unknown) {
   return Response.json(url.includes('options=resources') ? {
     teams: [{ name: 'a', label: 'Team A' }, { name: 'b', label: 'Team B' }],
     workers: [{ name: 'hermes-demo', team: 'a', runtime: 'hermes' }, { name: 'qwen-demo', team: 'b', runtime: 'qwenpaw' }],
   } : data);
 }
+
+it('keeps ID filters behind an accessible disclosure and still submits them', async () => {
+  const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(traceResponse(url, { data: [], meta: { page: 1, totalPages: 1, totalItems: 0 } })));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  const advanced = await screen.findByRole('button', { name: '高级筛选' });
+  expect(advanced.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('textbox', { name: 'Session ID' })).toBeNull();
+  fireEvent.click(advanced);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Session ID' }), { target: { value: 'worker:session' } });
+  fireEvent.click(screen.getByRole('button', { name: '查询' }));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('session=worker%3Asession'))).toBe(true));
+  view.unmount(); client.clear();
+});
 
 it('queries server filters, opens a trace, and shows the selected span content', async () => {
   const id = 'a'.repeat(32);
@@ -43,7 +74,7 @@ it('queries server filters, opens a trace, and shows the selected span content',
   await screen.findByRole('button', { name: /hermes \/ worker.turn/ });
   fireEvent.keyDown(screen.getByRole('combobox', { name: '运行时' }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('option', { name: 'openclaw' }));
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Agent' }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('option', { name: 'hermes-demo' }));
   expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('hermes');
   expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(true);
@@ -57,18 +88,18 @@ it('queries server filters, opens a trace, and shows the selected span content',
   expect(within(screen.getByLabelText('Trace 概览')).getByText('500 ms')).toBeTruthy();
   expect(screen.getByText('未计价')).toBeTruthy();
   expect(screen.getByRole('link', { name: /Langfuse/ }).getAttribute('href')).toContain(id);
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Team' }), { key: 'Enter' });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: '团队' }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('option', { name: 'Team B (b)' }));
-  expect(screen.getByRole('combobox', { name: 'Worker' }).textContent).toBe('全部可访问 Worker');
+  expect(screen.getByRole('combobox', { name: 'Agent' }).textContent).toBe('全部 Agent');
   expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('全部运行时');
   expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Agent' }), { key: 'Enter' });
   expect(screen.queryByRole('option', { name: 'hermes-demo' })).toBeNull();
   expect(screen.getByRole('option', { name: 'qwen-demo' })).toBeTruthy();
   fireEvent.click(screen.getByRole('option', { name: 'qwen-demo' }));
   expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('qwenpaw');
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Worker' }), { key: 'Enter' });
-  fireEvent.click(screen.getByRole('option', { name: '全部可访问 Worker' }));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Agent' }), { key: 'Enter' });
+  fireEvent.click(screen.getByRole('option', { name: '全部 Agent' }));
   expect(screen.getByRole('combobox', { name: '运行时' }).textContent).toBe('全部运行时');
   expect((screen.getByRole('combobox', { name: '运行时' }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
@@ -92,7 +123,7 @@ it('shows token totals, input share, model shares and opens the largest call', a
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: /token-breakdown/ }));
-  await screen.findByText('Token 消耗分布');
+  fireEvent.click(await screen.findByText('Token 消耗分布'));
   const overview = within(screen.getByLabelText('Trace 概览'));
   expect(overview.getByText('250')).toBeTruthy();
   expect(overview.getByText('2.40 s')).toBeTruthy();

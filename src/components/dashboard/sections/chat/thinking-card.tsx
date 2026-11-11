@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Brain, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lightbulb, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
 
@@ -38,7 +38,7 @@ export function ThinkingCard({
           {isStreaming ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden="true" />
           ) : (
-            <Brain className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <Lightbulb className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           )}
           <span className="truncate">{resolvedTitle}</span>
           {isStreaming && (
@@ -70,7 +70,7 @@ export function ThinkingCard({
           {isStreaming ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
           ) : (
-            <Brain className="w-3.5 h-3.5" />
+            <Lightbulb className="w-3.5 h-3.5" aria-hidden="true" />
           )}
           <span className="truncate">{resolvedTitle}</span>
           {isStreaming && (

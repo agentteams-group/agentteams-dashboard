@@ -105,7 +105,7 @@ describe('MessageBubble runtime chrome (AC-C7)', () => {
     );
     expandProcess();
     expect(screen.queryByTestId('event-chain-info')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('event-debug-trigger'));
+    fireEvent.click(screen.getByRole('button', { name: '查看消息详情' }));
     expect(screen.getByTestId('event-chain-info')).toHaveTextContent('$root-event-id-1234567890');
     expect(screen.getByText('编辑 2 次')).toBeInTheDocument();
   });

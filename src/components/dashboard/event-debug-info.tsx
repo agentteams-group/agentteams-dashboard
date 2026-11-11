@@ -1,6 +1,6 @@
 'use client';
 
-import { Bug } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CopyButton } from '@/components/dashboard/copy-button';
 
@@ -22,10 +22,11 @@ export function EventDebugInfo({ eventId, revisionCount }: EventDebugInfoProps) 
         <button
           type="button"
           data-testid="event-debug-trigger"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-label="查看消息详情"
+          title="查看消息详情"
+          className="inline-flex items-center rounded p-1 text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <Bug className="h-3 w-3" aria-hidden="true" />
-          调试信息
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[90vw] p-3">
