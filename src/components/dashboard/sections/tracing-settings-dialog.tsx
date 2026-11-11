@@ -20,18 +20,19 @@ async function configuration<T>(method = 'GET', body?: unknown): Promise<T> {
   return data as T;
 }
 
-export function TracingSettingsDialog({ scope }: { scope: TraceScope }) {
+export function TracingSettingsDialog({ scope, triggerLabel = '可观测配置' }: { scope: TraceScope; triggerLabel?: string }) {
   const [open, setOpen] = useState(false);
   const client = useQueryClient();
   const saved = useQuery({ queryKey: ['observability-config'], queryFn: () => configuration<ObservabilityView>(), enabled: open, retry: false });
   return <>
-    <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Settings2 className="mr-2 h-4 w-4" />可观测配置</Button>
+    <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Settings2 className="mr-2 h-4 w-4" />{triggerLabel}</Button>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader><DialogTitle>可观测配置</DialogTitle><DialogDescription>可选功能。先保存连接配置，再应用到所选 Worker；保存后无需重启 Dashboard。</DialogDescription></DialogHeader>
       {saved.isLoading ? <p className="text-sm text-muted-foreground">正在读取配置…</p> : null}
       {saved.error ? <p role="alert" className="text-sm text-destructive">{saved.error.message}</p> : null}
       {saved.data ? <ConfigurationForm key={saved.data.revision} value={saved.data} scope={scope} onSave={(value) => {
         client.setQueryData(['observability-config'], value);
+        void client.invalidateQueries({ queryKey: ['trace-resources'] });
         void client.invalidateQueries({ queryKey: ['traces'] });
         void client.invalidateQueries({ queryKey: ['trace'] });
       }} /> : null}

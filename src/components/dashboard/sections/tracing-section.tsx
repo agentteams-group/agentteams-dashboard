@@ -46,17 +46,19 @@ export function TracingSection() {
   const workerOptions = (resources.data?.workers ?? []).filter((w) => !team || w.team === team);
   const workerRuntime = resources.data?.workers.find((w) => w.name === worker)?.runtime;
   const effectiveRuntime = workerRuntime || runtime;
+  const needsConfiguration = resources.data?.tracingConfigured === false;
+  const tracingReady = !needsConfiguration && resources.data?.tracingEnabled !== false;
   const list = useQuery({
     queryKey: ['traces', filters, page],
     queryFn: ({ signal }) => read<TraceList>(`?${new URLSearchParams({ ...filters, page: String(page) })}`, signal),
     refetchInterval: 10000,
     retry: false,
-    enabled: Boolean(resources.data) && !resources.error,
+    enabled: Boolean(resources.data) && !resources.error && tracingReady,
   });
   const detail = useQuery({
     queryKey: ['trace', selected],
     queryFn: ({ signal }) => read<TraceDetail>(`/${selected}`, signal),
-    enabled: Boolean(selected),
+    enabled: Boolean(selected) && tracingReady,
     retry: false,
   });
   const rows = traceRows(detail.data?.observations ?? []);
@@ -100,10 +102,24 @@ export function TracingSection() {
     finally { setExporting(false); }
   }
 
+  const header = <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
+    <div className="flex gap-2">{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} triggerLabel={needsConfiguration ? '配置 Tracing' : tracingReady ? '可观测配置' : '启用 Tracing'} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); if (tracingReady) { void list.refetch(); if (selected) void detail.refetch(); } }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
+  } />;
+
+  if (resources.data && !tracingReady) return <div className="space-y-5">
+    {header}
+    <section className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-12 text-center">
+      <Activity className="size-8 text-muted-foreground" aria-hidden="true" />
+      <h2 className="text-lg font-medium">{needsConfiguration ? 'Tracing 未配置' : 'Tracing 未启用'}</h2>
+      <p className="max-w-lg text-sm text-muted-foreground">配置可观测后端并启用采集后，即可查看 Worker 的执行链路、模型调用和工具耗时。</p>
+      {resources.data.canConfigure
+        ? <p className="text-sm text-muted-foreground">点击右上方“{needsConfiguration ? '配置 Tracing' : '启用 Tracing'}”，保存连接配置并应用到所选 Worker。</p>
+        : <p className="text-sm text-muted-foreground">请联系管理员完成配置。</p>}
+    </section>
+  </div>;
+
   return <div className="space-y-5">
-    <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
-      <div className="flex gap-2">{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); void list.refetch(); if (selected) void detail.refetch(); }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
-    } />
+    {header}
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="h-4 w-4 text-emerald-500" />OpenTelemetry → Collector → 可观测后端<Badge variant="outline">每 10 秒刷新</Badge></div>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4" onSubmit={(e) => {
       e.preventDefault(); setFilters({ worker, runtime: effectiveRuntime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');

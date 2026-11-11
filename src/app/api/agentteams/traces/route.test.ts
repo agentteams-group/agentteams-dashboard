@@ -25,7 +25,16 @@ it('reads Langfuse traces through the Controller and removes caller-selected Con
 });
 it('returns only the current account resource choices', async () => {
   vi.mocked(getTraceScope).mockResolvedValue({ teams: [], workers: [{ name: 'own', team: '' }] });
+  vi.mocked(controllerObservabilityConfig).mockResolvedValue({ backend: 'langfuse', enabled: true, collectorEndpoint: 'http://collector:4318', langfuseUrl: 'http://langfuse:3000', secretKey: 'must-not-leak' } as Awaited<ReturnType<typeof controllerObservabilityConfig>>);
   const request = new NextRequest('http://localhost/api/agentteams/traces?options=resources', { headers: { 'x-agentteams-user': 'alice', 'x-agentteams-user-level': '1' } });
-  expect(await (await GET(request)).json()).toEqual({ teams: [], workers: [{ name: 'own', team: '' }], canConfigure: false });
+  expect(await (await GET(request)).json()).toEqual({ teams: [], workers: [{ name: 'own', team: '' }], canConfigure: false, tracingConfigured: true, tracingEnabled: true });
+  expect(observabilityController).not.toHaveBeenCalled();
+});
+
+it('reports missing collection configuration without querying the trace backend', async () => {
+  vi.mocked(getTraceScope).mockResolvedValue({ teams: [], workers: [] });
+  vi.mocked(controllerObservabilityConfig).mockResolvedValue({ backend: 'langfuse', enabled: false, collectorEndpoint: '', langfuseUrl: '' } as Awaited<ReturnType<typeof controllerObservabilityConfig>>);
+  const request = new NextRequest('http://localhost/api/agentteams/traces?options=resources', { headers: { 'x-agentteams-user': 'admin', 'x-agentteams-user-level': '3' } });
+  expect(await (await GET(request)).json()).toMatchObject({ canConfigure: true, tracingConfigured: false, tracingEnabled: false });
   expect(observabilityController).not.toHaveBeenCalled();
 });

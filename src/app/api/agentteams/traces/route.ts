@@ -11,8 +11,12 @@ export async function GET(request: NextRequest) {
   if (!identity) return NextResponse.json({ error: '请先登录' }, { status: 401 });
   try {
     const scope = await getTraceScope(request);
-    if (request.nextUrl.searchParams.get('options') === 'resources') return NextResponse.json({ ...scope, canConfigure: identity.level === 3 });
     const config = await controllerObservabilityConfig(request);
+    if (request.nextUrl.searchParams.get('options') === 'resources') return NextResponse.json({
+      ...scope, canConfigure: identity.level === 3,
+      tracingConfigured: Boolean(config.collectorEndpoint && (config.backend === 'agentloop' ? config.agentloop?.project : config.langfuseUrl)),
+      tracingEnabled: config.enabled === true,
+    });
     if (config.backend === 'agentloop') {
       const { listTraces } = await import('@/lib/agentloop-server');
       return NextResponse.json(await listTraces(request.nextUrl.searchParams, scope, config));

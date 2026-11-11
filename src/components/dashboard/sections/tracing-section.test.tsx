@@ -18,6 +18,22 @@ afterAll(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 
+it.each([{ admin: true, configured: false }, { admin: false, configured: false }, { admin: true, configured: true }])('guides inactive tracing according to configuration and permissions ($configured, $admin)', async ({ admin, configured }) => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ teams: [], workers: [], canConfigure: admin, tracingConfigured: configured, tracingEnabled: false }));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  await screen.findByRole('heading', { name: configured ? 'Tracing 未启用' : 'Tracing 未配置' });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(screen.queryByText(/暂无 Trace/)).toBeNull();
+  if (admin) expect(screen.getByRole('button', { name: configured ? '启用 Tracing' : '配置 Tracing' })).toBeTruthy();
+  else {
+    expect(screen.queryByRole('button', { name: '配置 Tracing' })).toBeNull();
+    expect(screen.getByText('请联系管理员完成配置。')).toBeTruthy();
+  }
+  view.unmount(); client.clear();
+});
+
 function traceResponse(url: string, data: unknown) {
   return Response.json(url.includes('options=resources') ? {
     teams: [{ name: 'a', label: 'Team A' }, { name: 'b', label: 'Team B' }],

@@ -22,6 +22,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('compact workspace navigation', () => {
+  it('keeps Tracing in the workbench even before collection is configured', () => {
+    render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const tracing = screen.getByRole('button', { name: 'Tracing' });
+    expect(tracing).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(tracing);
+    expect(props.onNavClick).toHaveBeenCalledWith('tracing');
+  });
   it('separates assistants and my teams while keeping management groups', () => {
     render(<TooltipProvider><Sidebar {...props} collapsed={false} onToggleCollapse={vi.fn()} /></TooltipProvider>);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
