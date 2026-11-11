@@ -189,9 +189,11 @@ describe('横竖屏：375×812 / 812×375 契约', () => {
     const drawer = read('sections/workers/worker-drawer.tsx');
     // 抽屉本体：窄屏全宽，sm+ 才收成 560
     expect(drawer).toMatch(/w-full max-w-none[^"]*sm:w-\[min\(92vw,560px\)\]/);
-    // 资源大弹窗：max-sm 全屏、圆角归零、body 独立滚动
-    expect(drawer).toMatch(/max-sm:h-\[100dvh\] max-sm:w-full max-sm:max-w-none max-sm:rounded-none/);
-    expect(drawer).toMatch(/min-h-0 flex-1 overflow-y-auto px-5 py-4/);
+    // 新 Worker 抽屉：右侧全高、窄屏全宽、圆角归零；滚动移到内联详情面板。
+    expect(drawer).toMatch(/left-auto right-0 top-0 h-full max-h-full w-full max-w-none[^"]*rounded-none/);
+    expect(read('sections/workers/worker-detail-panel.tsx')).toMatch(
+      /min-h-0 flex-1 overflow-y-auto px-5 py-4/,
+    );
   });
 
   it('文件详情浮层：抽屉形态留 92vw 上限，底部表单不留横向溢出', () => {
@@ -253,7 +255,8 @@ describe('鼠标 / 键盘：可点行与焦点可见', () => {
     const views = read('sections/files/file-views.tsx');
     expect(views.match(/label className="flex size-11 items-center justify-center"/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(read('sections/teams/team-skills-panel.tsx')).toMatch(/label className="flex size-11 items-center justify-center"/);
-    expect(read('sections/teams/team-drawer.tsx')).toMatch(/flex min-h-11 items-center gap-2">\s*<Switch/);
+    // 团队设置已内联到 TeamSettingsPanel；drawer 只剩薄壳，Switch 断言跟随实现文件。
+    expect(read('sections/teams/team-settings-panel.tsx')).toMatch(/flex min-h-11 items-center gap-2">\s*<Switch/);
     expect(read('sections/shared/member-picker.tsx')).toMatch(/inline-flex min-h-11/);
   });
 
