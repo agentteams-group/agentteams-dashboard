@@ -375,7 +375,9 @@ async function attemptConsoleLogin(
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   // Dashboard session first, then the Higress Console cookie (gateway tab).
-  responseHeaders.append('set-cookie', sessionCookieHeader(cookieValue));
+  // The request drives the Secure flag: an HTTP localhost login must not
+  // emit a Secure cookie (it would never be sent back → data 401).
+  responseHeaders.append('set-cookie', sessionCookieHeader(cookieValue, request));
   forwardCookies(consoleRes.headers, responseHeaders);
 
   return {
@@ -448,7 +450,7 @@ async function attemptControllerTokenLogin(
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue, request));
 
   return new NextResponse(
     JSON.stringify({
@@ -655,7 +657,7 @@ async function attemptMatrixLogin(
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue, request));
 
   return new NextResponse(
     JSON.stringify({

@@ -660,4 +660,71 @@ describe('Human login through Controller', () => {
     expect((await res.json()).mode).toBe('controller-token');
     expect(fetchMock).toHaveBeenCalledWith('http://controller.test:8090/api/v1/humans?limit=1', expect.objectContaining({ headers: { Authorization: 'Bearer operational-token' } }));
   });
+
+  // ── Set-Cookie follows the request scheme (localhost data-401 fix) ───
+  // The request must reach sessionCookieHeader so a Secure flag never rides
+  // onto a cookie the browser would then refuse to send back over HTTP.
+
+  it('omits Secure from Set-Cookie on an HTTP login even with DASHBOARD_COOKIE_SECURE=1 (Console track)', async () => {
+    vi.stubEnv('DASHBOARD_COOKIE_SECURE', '1');
+    consoleOk();
+    installFetch();
+    const res = await POST(request({ username: 'admin' }));
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+    expect(cookie).not.toContain('Secure');
+    // The request scheme must not have broken the session itself.
+    expect(sessionFrom(res)?.credential).toEqual({ kind: 'sa' });
+  });
+
+  it('adds Secure to Set-Cookie when the login request is HTTPS (Console track, DASHBOARD_COOKIE_SECURE=1)', async () => {
+    vi.stubEnv('DASHBOARD_COOKIE_SECURE', '1');
+    consoleOk();
+    installFetch();
+    const res = await POST(new NextRequest('https://dashboard.test/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'admin', password: 'password' }),
+    }));
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+    expect(cookie).toContain('Secure');
+  });
+
+  it('adds Secure for an HTTPS login request even with DASHBOARD_COOKIE_SECURE unset (scheme-driven)', async () => {
+    consoleOk();
+    installFetch();
+    const res = await POST(new NextRequest('https://dashboard.test/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'admin', password: 'password' }),
+    }));
+    expect(res.status).toBe(200);
+    // Without a request the old behavior would omit Secure — this proves
+    // the login route forwards the request scheme to the cookie header.
+    expect(res.headers.get('set-cookie')).toContain('Secure');
+  });
+
+  it('omits Secure on an HTTP token-only login even with DASHBOARD_COOKIE_SECURE=1', async () => {
+    vi.stubEnv('DASHBOARD_COOKIE_SECURE', '1');
+    const fetchMock = vi.fn(async () => Response.json({ humans: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await POST(request({ username: '', password: '', controllerToken: 'operational-token' }));
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+    expect(cookie).not.toContain('Secure');
+  });
+
+  it('omits Secure on an HTTP Matrix-track login even with DASHBOARD_COOKIE_SECURE=1', async () => {
+    vi.stubEnv('DASHBOARD_COOKIE_SECURE', '1');
+    consoleRejected();
+    installFetch({ me: { status: 200, body: HUMAN(2) } });
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+    expect(cookie).not.toContain('Secure');
+    expect(sessionFrom(res)?.credential).toEqual({ kind: 'matrix', token: 'own-matrix-token' });
+  });
 });
