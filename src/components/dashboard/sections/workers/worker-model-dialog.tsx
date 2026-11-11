@@ -35,6 +35,9 @@ export function WorkerModelDialog({
   providerHint,
   modelOptions,
   sessionIssue,
+  title,
+  saveLabel = '保存',
+  onSave,
   onOpenChange,
   onSaved,
 }: {
@@ -46,6 +49,14 @@ export function WorkerModelDialog({
   providerHint?: string;
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
+  /** 覆盖标题；批量画笔传「批量设置模型 - Leader 批」。 */
+  title?: string;
+  saveLabel?: string;
+  /**
+   * 有值时进入批量模式：保存只回调选中值（由调用方刷本地草稿），
+   * 不发 PUT /workers；单 Worker 的直写逻辑保持不变。
+   */
+  onSave?: (_selection: { provider: string; model: string }) => Promise<void>;
   onOpenChange: (_open: boolean) => void;
   /** 保存成功后回传本次写入的 model/provider（团队抽屉用它同步行内基线）。 */
   onSaved?: (_result: { model: string; provider: string }) => void;
@@ -56,6 +67,7 @@ export function WorkerModelDialog({
   const [providerTouched, setProviderTouched] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastRequestBody, setLastRequestBody] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [initMarker, setInitMarker] = useState(
     `${workerName}\u0000${model}\u0000${initialProvider}`,
   );
@@ -67,17 +79,20 @@ export function WorkerModelDialog({
     setProviderTouched(false);
     setSaveError(null);
     setLastRequestBody(null);
+    setSaving(false);
   }
   const updateWorker = useUpdateWorker();
   const catalog = buildModelCandidateCatalog(modelOptions);
   const changed =
     draft.trim() !== model.trim() || provider.trim() !== initialProvider;
+  const pending = onSave ? saving : updateWorker.isPending;
+  const primaryLabel = pending ? '保存中...' : saveLabel;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-full min-w-0 max-w-[95vw] items-start overflow-x-hidden overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>编辑模型 - {workerName}</DialogTitle>
+          <DialogTitle>{title ?? `编辑模型 - ${workerName}`}</DialogTitle>
         </DialogHeader>
         <div className="min-w-0 space-y-2 py-2">
           <div className="flex items-center gap-1">
@@ -118,8 +133,9 @@ export function WorkerModelDialog({
             </p>
           ) : null}
           <p className="text-xs text-muted-foreground break-words">
-            多 provider 部署下先选 Provider 再选 Model；Provider 只在改动时下发。
-            留空 = 不绑定 provider，沿用控制器现值。
+            {onSave
+              ? '选中的 Provider 与模型会成对刷写到该批全部成员的本地草稿；保存「成员」时才写回。留空 = 不改。'
+              : '多 provider 部署下先选 Provider 再选 Model；Provider 只在改动时下发。留空 = 不绑定 provider，沿用控制器现值。'}
           </p>
           {sessionIssue ? (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
@@ -146,10 +162,23 @@ export function WorkerModelDialog({
             取消
           </Button>
           <Button
-            disabled={!changed || updateWorker.isPending}
+            disabled={!changed || pending}
             onClick={() => {
               const trimmedModel = draft.trim();
               const trimmedProvider = provider.trim();
+              if (onSave) {
+                // 批量模式：只回调选择，由调用方刷本地 rows；不发 PUT。
+                setSaveError(null);
+                setSaving(true);
+                void onSave({ provider: trimmedProvider, model: trimmedModel })
+                  .then(() => {
+                    onOpenChange(false);
+                    onSaved?.({ model: trimmedModel, provider: trimmedProvider });
+                  })
+                  .catch((err) => setSaveError(formatErrorMessage(err)))
+                  .finally(() => setSaving(false));
+                return;
+              }
               const data: { model: string; modelProvider?: string } = {
                 model: trimmedModel,
               };
@@ -183,7 +212,7 @@ export function WorkerModelDialog({
               );
             }}
           >
-            {updateWorker.isPending ? '保存中...' : '保存'}
+            {primaryLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

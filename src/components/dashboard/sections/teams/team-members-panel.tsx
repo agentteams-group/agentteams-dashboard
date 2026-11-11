@@ -6,7 +6,16 @@
 // 缺失/悬空引用红标并禁止提交（Controller 侧会 400，界面先拦）。
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Bot, Check, Crown, Loader2, Plus, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  Crown,
+  Loader2,
+  Plus,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -17,16 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { WorkerModelDialog } from '@/components/dashboard/sections/workers/worker-model-dialog';
 import { workerPickerLabel } from '@/components/dashboard/sections/shared/member-picker';
 import { useUpdateTeam, useUpdateWorker } from '@/hooks/use-agentteams-mutations';
 import { formatErrorMessage } from '@/lib/api-error';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
-import {
-  buildModelCandidateCatalog,
-  type ModelSelectionOption,
-} from '@/lib/model-catalog';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { getAvailableWorkers } from './team-selectors';
 import {
   applyBatchModel,
@@ -41,6 +46,14 @@ const ROLE_LABEL: Record<TeamMemberRow['role'], string> = {
   team_leader: 'Leader',
   worker: '成员',
 };
+
+const BATCH_EMPTY = '未设置（留空 = 不刷）';
+
+/** 批量画笔摘要：provider + model；未选择时提示留空语义。 */
+function batchSummary(batch: { provider: string; model: string }): string {
+  if (!batch.model) return BATCH_EMPTY;
+  return batch.provider ? `${batch.provider} · ${batch.model}` : batch.model;
+}
 
 export function TeamMembersPanel({
   team,
@@ -58,13 +71,13 @@ export function TeamMembersPanel({
   const [rows, setRows] = useState<TeamMemberRow[]>(() => buildMemberRows(team, workers));
   const [leaderBatch, setLeaderBatch] = useState({ provider: '', model: '' });
   const [workerBatch, setWorkerBatch] = useState({ provider: '', model: '' });
+  const [batchDialog, setBatchDialog] = useState<null | 'team_leader' | 'worker'>(null);
   const [modelTarget, setModelTarget] = useState<TeamMemberRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const updateTeam = useUpdateTeam();
   const updateWorker = useUpdateWorker();
-  const catalog = useMemo(() => buildModelCandidateCatalog(modelOptions), [modelOptions]);
 
   const missing = missingMemberNames(rows);
   const hasLeader = rows.some((row) => row.role === 'team_leader');
@@ -85,6 +98,10 @@ export function TeamMembersPanel({
     );
   const dirty = memberChanged || modelChanges.length > 0;
   const blocked = missing.length > 0 || !hasLeader;
+  const leaderCount = rows.filter((row) => row.role === 'team_leader').length;
+  const workerCount = rows.filter((row) => row.role === 'worker').length;
+  const leaderSummary = batchSummary(leaderBatch);
+  const workerSummary = batchSummary(workerBatch);
 
   const addMember = (name: string) => {
     const worker = workers.find((item) => item.name === name);
@@ -145,6 +162,23 @@ export function TeamMembersPanel({
     }
   };
 
+  // 批量弹窗保存：只刷本地草稿（团队保存时才逐行 PUT）；model 留空 = 清空该批选择。
+  const applyBatchSelection = async (
+    role: 'team_leader' | 'worker',
+    selection: { provider: string; model: string },
+  ) => {
+    const model = selection.model.trim();
+    const provider = selection.provider.trim();
+    if (!model) {
+      if (role === 'team_leader') setLeaderBatch({ provider: '', model: '' });
+      else setWorkerBatch({ provider: '', model: '' });
+      return;
+    }
+    if (role === 'team_leader') setLeaderBatch({ provider, model });
+    else setWorkerBatch({ provider, model });
+    setRows((previous) => applyBatchModel(previous, role, model, provider));
+  };
+
   return (
     <div className="space-y-3">
       {/* 批量模型画笔：Leader 批 / Workers 批，选中即刷到该角色全部行 */}
@@ -153,53 +187,51 @@ export function TeamMembersPanel({
           批量设置模型（选中值刷到对应角色全部成员；留空 = 不改）
         </p>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="min-w-0 space-y-1">
-            <Label className="text-xs">
-              Leader 批（{rows.filter((row) => row.role === 'team_leader').length} 人）
-            </Label>
-            <div className="min-w-0" data-testid="batch-leader">
-              <ModelPicker
-                providers={catalog.providers}
-                provider={leaderBatch.provider}
-                model={leaderBatch.model}
-                modelsByProvider={catalog.modelsByProvider}
-                allModels={catalog.models}
-                providerLabel="Provider"
-                modelLabel="Leader 批模型"
-                modelPlaceholder="Leader 批模型"
-                onChange={(provider, model) => {
-                  setLeaderBatch({ provider, model });
-                  setRows((previous) =>
-                    applyBatchModel(previous, 'team_leader', model, provider),
-                  );
-                }}
-              />
+          <div className="min-w-0 space-y-1" data-testid="batch-leader">
+            <Label className="text-xs">Leader 批（{leaderCount} 人）</Label>
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="min-w-0 flex-1 truncate rounded-md border bg-background px-2 py-1.5 font-mono text-xs text-muted-foreground"
+                title={leaderSummary}
+              >
+                {leaderSummary}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-11 shrink-0 text-xs sm:min-h-9"
+                onClick={() => setBatchDialog('team_leader')}
+              >
+                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                设置模型
+              </Button>
             </div>
           </div>
-          <div className="min-w-0 space-y-1">
-            <Label className="text-xs">
-              Workers 批（{rows.filter((row) => row.role === 'worker').length} 人）
-            </Label>
-            <div className="min-w-0" data-testid="batch-workers">
-              <ModelPicker
-                providers={catalog.providers}
-                provider={workerBatch.provider}
-                model={workerBatch.model}
-                modelsByProvider={catalog.modelsByProvider}
-                allModels={catalog.models}
-                providerLabel="Provider"
-                modelLabel="Workers 批模型"
-                modelPlaceholder="Workers 批模型"
-                onChange={(provider, model) => {
-                  setWorkerBatch({ provider, model });
-                  setRows((previous) =>
-                    applyBatchModel(previous, 'worker', model, provider),
-                  );
-                }}
-              />
+          <div className="min-w-0 space-y-1" data-testid="batch-workers">
+            <Label className="text-xs">Workers 批（{workerCount} 人）</Label>
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="min-w-0 flex-1 truncate rounded-md border bg-background px-2 py-1.5 font-mono text-xs text-muted-foreground"
+                title={workerSummary}
+              >
+                {workerSummary}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-11 shrink-0 text-xs sm:min-h-9"
+                onClick={() => setBatchDialog('worker')}
+              >
+                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                设置模型
+              </Button>
             </div>
           </div>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground break-words">
+          画笔语义：选中值立即同步到对应行的「模型」（行内仍可再精修，覆盖刷值）；调整角色/新增行不会自动补刷——对那一批重新选一次即可。Provider
+          与模型成对刷写；留空=不改。
+        </p>
         {sessionIssue ? (
           <p className="mt-2 text-xs text-amber-600 break-words">
             模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
@@ -374,6 +406,30 @@ export function TeamMembersPanel({
           setModelTarget(null);
           onChanged?.();
         }}
+      />
+
+      {/* 批量画笔复用同一个模型弹窗（唯一一套 ModelPicker），保存只刷本地 rows。 */}
+      <WorkerModelDialog
+        open={batchDialog === 'team_leader'}
+        title="批量设置模型 - Leader 批"
+        workerName="Leader 批"
+        model={leaderBatch.model}
+        modelProvider={leaderBatch.provider}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        onOpenChange={(open) => !open && setBatchDialog(null)}
+        onSave={(selection) => applyBatchSelection('team_leader', selection)}
+      />
+      <WorkerModelDialog
+        open={batchDialog === 'worker'}
+        title="批量设置模型 - Workers 批"
+        workerName="Workers 批"
+        model={workerBatch.model}
+        modelProvider={workerBatch.provider}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        onOpenChange={(open) => !open && setBatchDialog(null)}
+        onSave={(selection) => applyBatchSelection('worker', selection)}
       />
     </div>
   );

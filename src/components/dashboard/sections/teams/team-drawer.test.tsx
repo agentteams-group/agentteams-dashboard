@@ -262,6 +262,24 @@ function selectAllOptions() {
     .filter((element): element is HTMLSelectElement => element instanceof HTMLSelectElement);
 }
 
+/** 批量画笔：从角色列打开统一模型弹窗，选模型并保存（只刷本地草稿）。 */
+async function paintBatch(
+  testId: 'batch-leader' | 'batch-workers',
+  dialogTitle: string,
+  model: string,
+) {
+  fireEvent.click(within(screen.getByTestId(testId)).getByRole('button', { name: '设置模型' }));
+  // 抽屉自身也是 role=dialog，按标题锁定嵌套的模型弹窗。
+  const dialog = screen.getByRole('dialog', { name: dialogTitle });
+  fireEvent.change(within(dialog).getByLabelText('请求模型别名'), {
+    target: { value: model },
+  });
+  fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: dialogTitle })).not.toBeInTheDocument(),
+  );
+}
+
 beforeEach(() => {
   // jsdom 无 ResizeObserver；Radix 的 Tooltip/尺寸钩子在布局阶段会用到。
   vi.stubGlobal(
@@ -370,7 +388,8 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 describe('TeamDrawer · 团队成员', () => {
   it('批量 Leader 模型只刷 Leader 行，保存只写该行 updateWorker', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Leader 批模型'), { target: { value: 'leader-batch' } });
+    await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
+    expect(within(screen.getByTestId('batch-leader')).getByText('leader-batch')).toBeInTheDocument();
     expect(screen.getByTestId('member-lead')).toHaveTextContent('leader-batch');
     expect(screen.getByTestId('member-w1')).toHaveTextContent('w1-model');
 
@@ -386,7 +405,7 @@ describe('TeamDrawer · 团队成员', () => {
 
   it('Workers 批量只刷 worker 行', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Workers 批模型'), { target: { value: 'worker-batch' } });
+    await paintBatch('batch-workers', '批量设置模型 - Workers 批', 'worker-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalledTimes(2));
     expect(mocks.updateWorkerAsync.mock.calls.map((call) => call[0].name)).toEqual(['w1', 'w2']);
@@ -462,7 +481,7 @@ describe('TeamDrawer · 团队成员', () => {
 
   it('只改模型时不再重复 PUT 团队成员', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Leader 批模型'), { target: { value: 'leader-batch' } });
+    await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalled());
     expect(mocks.updateTeamAsync).not.toHaveBeenCalled();

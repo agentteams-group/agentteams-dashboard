@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import '@testing-library/jest-dom/vitest';
@@ -182,6 +182,51 @@ describe('WorkerModelDialog', () => {
     expect(alert).not.toHaveTextContent('API Error 502: {"message"');
     // 诊断行只含 model/provider，不含 token。
     expect(alert).toHaveTextContent('"model":"alias-b"');
+  });
+
+  it('有 onSave 时进入批量模式：不发 PUT，保存回调并关闭', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    const onSaved = vi.fn();
+    renderDialog({
+      title: '批量设置模型 - Leader 批',
+      saveLabel: '应用',
+      model: 'alias-c',
+      modelProvider: 'provider-a',
+      onSave,
+      onOpenChange,
+      onSaved,
+    });
+
+    expect(screen.getByText('批量设置模型 - Leader 批')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '应用' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+      target: { value: 'alias-b' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '应用' }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ provider: 'provider-a', model: 'alias-b' }),
+    );
+    expect(mocks.updateWorkerMutate).not.toHaveBeenCalled();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onSaved).toHaveBeenCalledWith({ model: 'alias-b', provider: 'provider-a' });
+  });
+
+  it('批量模式保存失败：留在弹窗内显示错误，不关闭', async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error('批量刷写失败'));
+    const onOpenChange = vi.fn();
+    renderDialog({ onSave, onOpenChange });
+
+    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+      target: { value: 'alias-b' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('批量刷写失败');
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(mocks.updateWorkerMutate).not.toHaveBeenCalled();
   });
 
   it('DialogContent 无固定像素宽度且带横向防溢出兜底', () => {
