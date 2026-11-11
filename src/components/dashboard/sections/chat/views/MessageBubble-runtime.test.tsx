@@ -166,7 +166,7 @@ describe('MessageBubble live run progress', () => {
       }),
     );
     expandProcess();
-    expect(screen.getByTestId('run-process').querySelector('.max-h-72')).not.toBeNull();
+    expect(screen.getByTestId('run-process-preview')).toHaveClass('max-h-60', 'overflow-y-auto');
   });
 
   it('keeps the sender row free of runtime and status chips', () => {
