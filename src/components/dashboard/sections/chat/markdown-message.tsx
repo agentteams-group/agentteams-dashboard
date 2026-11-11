@@ -458,7 +458,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
               return <CodeBlock language={language}>{code}</CodeBlock>;
             }
             return (
-              <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props} />
+              <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props}>{children}</code>
             );
           },
           pre({ children }) {

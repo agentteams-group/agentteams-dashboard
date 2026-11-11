@@ -32,6 +32,13 @@ describe('MarkdownMessage', () => {
     expect(container.querySelector('pre code')).not.toBeNull();
   });
 
+  it('preserves inline code text in task results and artifact paths', () => {
+    const { container } = render(<MarkdownMessage content={'文件：`shared/tasks/demo/result.txt`，结果：`95`'} />);
+
+    expect([...container.querySelectorAll('code')].map(node => node.textContent))
+      .toEqual(['shared/tasks/demo/result.txt', '95']);
+  });
+
   it('streaming + plain text uses the lightweight pre path with a cursor', () => {
     vi.useFakeTimers();
     const { container } = render(<MarkdownMessage content="正在生成答案" isStreaming />);
