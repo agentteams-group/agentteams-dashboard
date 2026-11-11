@@ -16,16 +16,15 @@ import { apiUrl } from '@/lib/api-base';
 import type { EnterpriseThemeConfig, ThemeDefinition } from '@/lib/theme/types';
 import { SYSTEM_THEME_ID } from '@/lib/theme/types';
 import { normalizeThemeDefinition, ThemeConfigError } from '@/lib/theme/config';
-import { SCHEDULED_THEME_ID } from '@/lib/theme/schedule';
 
 export interface UseThemeResult {
-  /** Selected id, or 'system' / 'scheduled' for automatic modes. */
+  /** Selected id, or 'system' to follow the OS preference. */
   theme: string;
   /** The theme definition actually applied right now. */
   resolvedTheme: ThemeDefinition;
   /** All pickable themes (built-in + custom + enterprise). */
   themes: ThemeDefinition[];
-  /** Select a theme, 'system' for the OS, or 'scheduled' for local day/night. */
+  /** Select a theme, or 'system' to follow the OS preference. */
   setTheme: (_id: string) => void;
   /** True when an enterprise config prevents switching. */
   locked: boolean;
@@ -57,26 +56,6 @@ function getSystemPrefersDark(): boolean {
 /** Reactive OS color-scheme preference (no setState-in-effect needed). */
 function useSystemPrefersDark(): boolean {
   return useSyncExternalStore(subscribeToColorScheme, getSystemPrefersDark, () => true);
-}
-
-function getLocalMinute(): number {
-  const now = new Date();
-  return now.getHours() * 60 + now.getMinutes();
-}
-
-function subscribeToClock(callback: () => void): () => void {
-  const tick = () => {
-    timer = setTimeout(tick, 60_000 - Date.now() % 60_000);
-    callback();
-  };
-  let timer = setTimeout(tick, 60_000 - Date.now() % 60_000);
-  window.addEventListener('focus', callback);
-  document.addEventListener('visibilitychange', callback);
-  return () => {
-    clearTimeout(timer);
-    window.removeEventListener('focus', callback);
-    document.removeEventListener('visibilitychange', callback);
-  };
 }
 
 async function fetchEnterpriseConfig(): Promise<EnterpriseThemeConfig | null> {
@@ -118,7 +97,6 @@ export interface ThemeProviderProps {
 export function ThemeProvider({ children, disableEnterprise = false }: ThemeProviderProps) {
   const prefersDark = useSystemPrefersDark();
   const themeId = useThemeStore((s) => s.themeId);
-  const themeSchedule = useThemeStore((s) => s.themeSchedule);
   const customThemes = useThemeStore((s) => s.customThemes);
   const enterpriseThemes = useThemeStore((s) => s.enterpriseThemes);
   const enterpriseLocked = useThemeStore((s) => s.enterpriseLocked);
@@ -126,12 +104,6 @@ export function ThemeProvider({ children, disableEnterprise = false }: ThemeProv
   const enterpriseLoaded = useThemeStore((s) => s.enterpriseLoaded);
   const setThemeId = useThemeStore((s) => s.setThemeId);
   const setEnterpriseConfig = useThemeStore((s) => s.setEnterpriseConfig);
-  const followsSchedule = (enterpriseLocked && enterpriseDefaultTheme ? enterpriseDefaultTheme : themeId) === SCHEDULED_THEME_ID;
-  const subscribeClock = useCallback(
-    (callback: () => void) => followsSchedule ? subscribeToClock(callback) : () => {},
-    [followsSchedule]
-  );
-  const localMinute = useSyncExternalStore(subscribeClock, getLocalMinute, () => null);
 
   const [loadingEnterprise, setLoadingEnterprise] = useState(!disableEnterprise);
 
@@ -159,20 +131,16 @@ export function ThemeProvider({ children, disableEnterprise = false }: ThemeProv
   const resolvedTheme = useMemo(
     () =>
       resolveTheme(
-        { themeId, themeSchedule, customThemes, enterpriseThemes, enterpriseLocked, enterpriseDefaultTheme },
-        prefersDark,
-        localMinute ?? 0
+        { themeId, customThemes, enterpriseThemes, enterpriseLocked, enterpriseDefaultTheme },
+        prefersDark
       ),
-    [themeId, themeSchedule, customThemes, enterpriseThemes, enterpriseLocked, enterpriseDefaultTheme, prefersDark, localMinute]
+    [themeId, customThemes, enterpriseThemes, enterpriseLocked, enterpriseDefaultTheme, prefersDark]
   );
 
   // Apply synchronously whenever the effective theme changes.
-  const clockReady = !followsSchedule || localMinute !== null;
   useEffect(() => {
-    // Preserve the pre-paint scheduled theme until the browser clock hydrates.
-    if (!clockReady) return;
     applyTheme(resolvedTheme);
-  }, [resolvedTheme, clockReady]);
+  }, [resolvedTheme]);
 
   const setTheme = useCallback((id: string) => setThemeId(id), [setThemeId]);
 

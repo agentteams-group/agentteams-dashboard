@@ -33,6 +33,13 @@ function runScript(storageValue: string | null, prefersDark = false) {
 }
 
 describe('buildThemeInitScript', () => {
+  it('keeps fixed light after nightfall for new and retired scheduled preferences', () => {
+    vi.setSystemTime(new Date(2026, 10, 7, 23));
+    runScript(null, true);
+    expect(document.documentElement.dataset.theme).toBe('light');
+    runScript(JSON.stringify({ state: { themeId: 'scheduled' }, version: 0 }), true);
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 7, 12));
@@ -47,20 +54,20 @@ describe('buildThemeInitScript', () => {
     expect(() => new Function(buildThemeInitScript(THEME_STORAGE_KEY))).not.toThrow();
   });
 
-  it('defaults to scheduled light during the local day regardless of OS preference', () => {
+  it('defaults to fixed light regardless of OS preference', () => {
     runScript(null, true);
     expect(document.documentElement.classList.contains('dark')).toBe(false);
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
-  it('pre-paints scheduled dark at the exact night boundary', () => {
+  it('pre-paints fixed light at the night boundary', () => {
     vi.setSystemTime(new Date(2026, 10, 7, 19));
     runScript(null, false);
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
-  it('pre-paints optional warm white as light-based, including a saved daytime schedule', () => {
-    runScript(JSON.stringify({ state: { themeId: 'scheduled', themeSchedule: { lightStart: '08:00', darkStart: '20:00', dayTheme: 'warm' } } }));
+  it('pre-paints an explicit warm-white choice as light-based', () => {
+    runScript(JSON.stringify({ state: { themeId: 'warm' } }));
     expect(document.documentElement.getAttribute('data-theme')).toBe('warm');
     expect(document.documentElement.classList.contains('warm')).toBe(true);
     expect(document.documentElement.classList.contains('dark')).toBe(false);

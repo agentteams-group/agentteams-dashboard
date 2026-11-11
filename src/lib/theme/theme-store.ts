@@ -5,14 +5,12 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { EnterpriseThemeConfig, ThemeDefinition } from './types';
 import { SYSTEM_THEME_ID, THEME_STORAGE_KEY } from './types';
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from './themes';
-import { normalizeThemeSchedule, scheduledThemeId, SCHEDULED_THEME_ID, type ThemeSchedule } from './schedule';
 
 export { THEME_STORAGE_KEY };
 
 interface ThemeState {
   /** Selected theme id; 'system' follows the OS preference. */
   themeId: string;
-  themeSchedule: ThemeSchedule;
   /** User-created themes. */
   customThemes: ThemeDefinition[];
   /** Enterprise themes injected via theme.config.json (not persisted). */
@@ -23,7 +21,6 @@ interface ThemeState {
   enterpriseLoaded: boolean;
 
   setThemeId: (_id: string) => void;
-  setThemeSchedule: (_schedule: ThemeSchedule) => void;
   addCustomTheme: (_theme: ThemeDefinition) => void;
   updateCustomTheme: (_theme: ThemeDefinition) => void;
   removeCustomTheme: (_id: string) => void;
@@ -33,8 +30,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      themeId: SCHEDULED_THEME_ID,
-      themeSchedule: normalizeThemeSchedule(undefined),
+      themeId: DEFAULT_THEME_ID,
       customThemes: [],
       enterpriseThemes: [],
       enterpriseDefaultTheme: null,
@@ -44,11 +40,6 @@ export const useThemeStore = create<ThemeState>()(
       setThemeId: (id: string) => {
         if (get().enterpriseLocked) return;
         set({ themeId: id });
-      },
-
-      setThemeSchedule: (schedule) => {
-        if (get().enterpriseLocked) return;
-        set({ themeSchedule: normalizeThemeSchedule(schedule) });
       },
 
       addCustomTheme: (theme: ThemeDefinition) => {
@@ -80,7 +71,7 @@ export const useThemeStore = create<ThemeState>()(
           const themes = config.themes.map((t) => ({ ...t, enterprise: true }));
           // If the user never picked a theme explicitly, honor the enterprise default.
           const themeId =
-            (state.themeId === SYSTEM_THEME_ID || state.themeId === SCHEDULED_THEME_ID) && config.defaultTheme
+            state.themeId === SYSTEM_THEME_ID && config.defaultTheme
               ? config.defaultTheme
               : state.themeId;
           return {
@@ -98,12 +89,15 @@ export const useThemeStore = create<ThemeState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         themeId: state.themeId,
-        themeSchedule: state.themeSchedule,
         customThemes: state.customThemes,
       }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<ThemeState> | undefined;
-        return { ...current, ...saved, themeSchedule: normalizeThemeSchedule(saved?.themeSchedule) };
+        return {
+          ...current,
+          themeId: saved?.themeId === 'scheduled' ? DEFAULT_THEME_ID : saved?.themeId ?? current.themeId,
+          customThemes: saved?.customThemes ?? current.customThemes,
+        };
       },
     }
   )
@@ -119,9 +113,8 @@ export function selectAvailableThemes(state: Pick<ThemeState, 'customThemes' | '
  * `prefersDark` is the current OS preference, used when themeId = 'system'.
  */
 export function resolveTheme(
-  state: Pick<ThemeState, 'themeId' | 'customThemes' | 'enterpriseThemes' | 'enterpriseLocked' | 'enterpriseDefaultTheme'> & Partial<Pick<ThemeState, 'themeSchedule'>>,
-  prefersDark: boolean,
-  minuteOfDay?: number
+  state: Pick<ThemeState, 'themeId' | 'customThemes' | 'enterpriseThemes' | 'enterpriseLocked' | 'enterpriseDefaultTheme'>,
+  prefersDark: boolean
 ): ThemeDefinition {
   const all = selectAvailableThemes(state);
   const effectiveId =
@@ -131,11 +124,6 @@ export function resolveTheme(
 
   if (effectiveId === SYSTEM_THEME_ID) {
     return BUILTIN_THEMES.find((t) => t.id === (prefersDark ? 'dark' : 'light'))!;
-  }
-  if (effectiveId === SCHEDULED_THEME_ID) {
-    const now = new Date();
-    const minute = minuteOfDay ?? now.getHours() * 60 + now.getMinutes();
-    return BUILTIN_THEMES.find((t) => t.id === scheduledThemeId(normalizeThemeSchedule(state.themeSchedule), minute))!;
   }
   return all.find((t) => t.id === effectiveId) ?? BUILTIN_THEMES.find((t) => t.id === DEFAULT_THEME_ID)!;
 }

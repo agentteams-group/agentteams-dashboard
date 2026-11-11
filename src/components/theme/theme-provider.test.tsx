@@ -7,7 +7,6 @@ import { ThemeProvider, useTheme } from './theme-provider';
 import { useThemeStore } from '@/lib/theme/theme-store';
 import { clearTheme } from '@/lib/theme/apply';
 import type { ThemeDefinition } from '@/lib/theme/types';
-import { normalizeThemeSchedule } from '@/lib/theme/schedule';
 
 function Probe() {
   const { theme, resolvedTheme, setTheme, themes } = useTheme();
@@ -31,7 +30,6 @@ describe('ThemeProvider + useTheme', () => {
     clearTheme();
     useThemeStore.setState({
       themeId: 'system',
-      themeSchedule: normalizeThemeSchedule(undefined),
       customThemes: [],
       enterpriseThemes: [],
       enterpriseDefaultTheme: null,
@@ -47,14 +45,14 @@ describe('ThemeProvider + useTheme', () => {
     vi.useRealTimers();
   });
 
-  it('switches at the exact local-time boundary and stops the clock after manual selection', () => {
+  it('keeps a fixed theme across nightfall without a clock timer', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
-    useThemeStore.setState({ themeId: 'scheduled' });
+    useThemeStore.setState({ themeId: 'light' });
     render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
     expect(document.documentElement.dataset.theme).toBe('light');
     act(() => vi.advanceTimersByTime(1000));
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('light');
     fireEvent.click(screen.getByText('go light'));
     act(() => vi.advanceTimersByTime(0));
     expect(vi.getTimerCount()).toBe(0);
@@ -65,10 +63,10 @@ describe('ThemeProvider + useTheme', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
   });
 
-  it('catches up after sleep and clears warm-mode styling at night', () => {
+  it('keeps an explicit warm theme after sleep at night', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 7, 12));
-    useThemeStore.setState({ themeId: 'scheduled', themeSchedule: { lightStart: '07:00', darkStart: '19:00', dayTheme: 'warm' } });
+    useThemeStore.setState({ themeId: 'warm' });
     render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
     expect(document.documentElement.dataset.theme).toBe('warm');
     expect(document.documentElement.classList.contains('dark')).toBe(false);
@@ -76,18 +74,18 @@ describe('ThemeProvider + useTheme', () => {
       vi.setSystemTime(new Date(2026, 10, 7, 22));
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(document.documentElement.classList.contains('warm')).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe('warm');
+    expect(document.documentElement.classList.contains('warm')).toBe(true);
   });
 
-  it('keeps scheduling when enterprise locking has no default override', () => {
+  it('keeps the fixed theme when enterprise locking has no default override', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
-    useThemeStore.setState({ themeId: 'scheduled' });
+    useThemeStore.setState({ themeId: 'light' });
     render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
     act(() => useThemeStore.getState().setEnterpriseConfig({ themes: [], locked: true }));
     act(() => vi.advanceTimersByTime(1000));
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('light');
   });
 
   it('applies the selected built-in theme to the document', async () => {

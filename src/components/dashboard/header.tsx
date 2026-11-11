@@ -3,7 +3,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTheme } from '@/components/theme/theme-provider';
-import { SCHEDULED_THEME_ID } from '@/lib/theme/schedule';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   Search,
@@ -81,7 +80,7 @@ export function DashboardHeader({
   managers,
   humans,
 }: DashboardHeaderProps) {
-  const { theme, resolvedTheme, setTheme, locked: themeLocked } = useTheme();
+  const { resolvedTheme, setTheme, locked: themeLocked } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
@@ -305,7 +304,7 @@ export function DashboardHeader({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>切换主题（当前：{themeLabel}）{theme === SCHEDULED_THEME_ID ? '；手动切换将关闭自动切换' : ''}</TooltipContent>
+          <TooltipContent>切换主题（当前：{themeLabel}）</TooltipContent>
         </Tooltip>
 
         <Button variant="ghost" size="icon" onClick={onOpenSettings} className="h-9 w-9" aria-label="打开设置">

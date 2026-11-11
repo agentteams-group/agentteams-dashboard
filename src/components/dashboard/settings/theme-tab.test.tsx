@@ -8,7 +8,6 @@ import { ThemeProvider } from '@/components/theme/theme-provider';
 import { useThemeStore } from '@/lib/theme/theme-store';
 import { clearTheme } from '@/lib/theme/apply';
 import { toast } from 'sonner';
-import { normalizeThemeSchedule } from '@/lib/theme/schedule';
 
 vi.mock('sonner', () => ({
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
@@ -27,7 +26,6 @@ describe('ThemeTab (settings → 外观)', () => {
     clearTheme();
     useThemeStore.setState({
       themeId: 'dark',
-      themeSchedule: normalizeThemeSchedule(undefined),
       customThemes: [],
       enterpriseThemes: [],
       enterpriseDefaultTheme: null,
@@ -104,36 +102,16 @@ describe('ThemeTab (settings → 外观)', () => {
     });
   });
 
-  it('lets users enable automatic mode, save its times, and freeze the current palette when disabled', () => {
+  it('does not offer the retired automatic schedule controls', () => {
     renderTab();
-    const automatic = screen.getByRole('switch', { name: '按时间自动切换' });
-    fireEvent.click(automatic);
-    expect(useThemeStore.getState().themeId).toBe('scheduled');
-    fireEvent.change(screen.getByLabelText('白天开始'), { target: { value: '08:30' } });
-    fireEvent.change(screen.getByLabelText('夜间开始'), { target: { value: '20:30' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存切换时间' }));
-    expect(useThemeStore.getState().themeSchedule).toEqual({ lightStart: '08:30', darkStart: '20:30', dayTheme: 'light' });
-    const current = document.documentElement.dataset.theme;
-    fireEvent.click(automatic);
-    expect(useThemeStore.getState().themeId).toBe(current);
-    expect(automatic).not.toBeChecked();
+    expect(screen.queryByRole('switch', { name: '按时间自动切换' })).toBeNull();
+    expect(screen.queryByLabelText('夜间开始')).toBeNull();
   });
 
-  it('rejects equal boundaries without changing the saved schedule', () => {
-    useThemeStore.setState({ themeId: 'scheduled' });
-    renderTab();
-    fireEvent.change(screen.getByLabelText('白天开始'), { target: { value: '19:00' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存切换时间' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('开始时间不能相同');
-    expect(useThemeStore.getState().themeSchedule.lightStart).toBe('07:00');
-  });
-
-  it('manual warm-white selection exits automatic mode', () => {
-    useThemeStore.setState({ themeId: 'scheduled' });
+  it('supports manual warm-white selection', () => {
     renderTab();
     fireEvent.click(screen.getByRole('button', { name: /^暖白/ }));
     expect(useThemeStore.getState().themeId).toBe('warm');
-    expect(screen.getByRole('switch', { name: '按时间自动切换' })).not.toBeChecked();
   });
 
   it('offers export/import actions for custom themes', async () => {
