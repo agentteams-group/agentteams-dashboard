@@ -79,6 +79,10 @@ export function HumanDrawer({
   human,
   teams,
   workers,
+  teamsLoading,
+  teamsError,
+  teamsErrorMessage,
+  onRetryTeams,
   userLevel,
   onOpenChange,
   onDeleted,
@@ -86,6 +90,10 @@ export function HumanDrawer({
   human: HumanResponse | null;
   teams: { name: string; humanMembers?: string[] }[];
   workers: { name: string }[];
+  teamsLoading?: boolean;
+  teamsError?: boolean;
+  teamsErrorMessage?: string;
+  onRetryTeams?: () => void;
   userLevel: number;
   onOpenChange: (_open: boolean) => void;
   onDeleted?: () => void;
@@ -96,6 +104,10 @@ export function HumanDrawer({
       human={human}
       teams={teams}
       workers={workers}
+      teamsLoading={teamsLoading}
+      teamsError={teamsError}
+      teamsErrorMessage={teamsErrorMessage}
+      onRetryTeams={onRetryTeams}
       userLevel={userLevel}
       onOpenChange={onOpenChange}
       onDeleted={onDeleted}
@@ -107,6 +119,10 @@ function HumanDrawerContent({
   human,
   teams,
   workers,
+  teamsLoading,
+  teamsError,
+  teamsErrorMessage,
+  onRetryTeams,
   userLevel,
   onOpenChange,
   onDeleted,
@@ -114,6 +130,10 @@ function HumanDrawerContent({
   human: HumanResponse;
   teams: { name: string; humanMembers?: string[] }[];
   workers: { name: string }[];
+  teamsLoading?: boolean;
+  teamsError?: boolean;
+  teamsErrorMessage?: string;
+  onRetryTeams?: () => void;
   userLevel: number;
   onOpenChange: (_open: boolean) => void;
   onDeleted?: () => void;
@@ -320,6 +340,10 @@ function HumanDrawerContent({
           record={record}
           teamNames={teamNames}
           workerNames={workerNames}
+          teamsLoading={teamsLoading}
+          teamsError={teamsError}
+          teamsErrorMessage={teamsErrorMessage}
+          onRetryTeams={onRetryTeams}
           canManage={canManage}
           onOpenChange={(next) => !next && setAccessOpen(false)}
           onSaved={refreshConfig}
@@ -352,6 +376,10 @@ function HumanDrawerContent({
           record={record}
           teamNames={teamNames}
           defaultTeams={defaultTeams}
+          teamsLoading={teamsLoading}
+          teamsError={teamsError}
+          teamsErrorMessage={teamsErrorMessage}
+          onRetryTeams={onRetryTeams}
           canManage={canManage}
           onOpenChange={(next) => !next && setWorkspaceOpen(false)}
           onSaved={refreshConfig}

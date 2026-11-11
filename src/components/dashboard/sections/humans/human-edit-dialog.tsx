@@ -22,6 +22,7 @@ import {
 import type { HumanResponse, UpdateHumanRequest } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS, PERMISSION_LEVELS } from './human-types';
 import { MemberPicker } from '../shared/member-picker';
+import { TeamAccessField, type TeamCandidateSource } from './team-access-field';
 import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function parseNameList(value: string): string[] {
@@ -91,6 +92,7 @@ export function HumanEditDialog({
   human,
   teams,
   workers,
+  teamSource,
   isPending,
   onOpenChange,
   onSubmit,
@@ -98,6 +100,8 @@ export function HumanEditDialog({
   human: HumanResponse | null;
   teams: string[];
   workers: string[];
+  /** 团队候选来源（含加载/失败态）；缺省时只用 teams 列表。 */
+  teamSource?: TeamCandidateSource;
   isPending: boolean;
   onOpenChange: (_open: boolean) => void;
   onSubmit: (_payload: UpdateHumanRequest) => void;
@@ -112,7 +116,12 @@ export function HumanEditDialog({
 
   // Client-side pre-flight for the server's dangling-reference rejection
   // (#1209: missing team/worker → 400 named) — surface it before submit.
-  const missingTeams = parseNameList(draft.accessibleTeams).filter((t) => !teams.includes(t));
+  // 团队列表读不到时不做悬空判定（不能把"列表不完整"当成"团队不存在"）。
+  const teamCandidates = teamSource ?? { names: teams };
+  const missingTeams =
+    teamCandidates.isLoading || teamCandidates.isError
+      ? []
+      : parseNameList(draft.accessibleTeams).filter((t) => !teamCandidates.names.includes(t));
   const missingWorkers = parseNameList(draft.accessibleWorkers).filter((w) => !workers.includes(w));
   const payload = human ? buildHumanUpdatePayload(human, draft) : {};
   const hasChanges = Object.keys(payload).length > 0;
@@ -165,31 +174,18 @@ export function HumanEditDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>可访问团队（留空 = 清空）</Label>
-              <MemberPicker
-                options={teams.map((team) => ({ value: team, label: team }))}
+              <Label htmlFor="human-edit-teams">可访问团队（留空 = 清空）</Label>
+              <TeamAccessField
+                triggerId="human-edit-teams"
                 selected={parseNameList(draft.accessibleTeams)}
-                onAdd={(team) =>
+                source={teamCandidates}
+                onChange={(next) =>
                   setDraft({
                     ...draft,
-                    accessibleTeams: [...parseNameList(draft.accessibleTeams), team].join(', '),
+                    accessibleTeams: next.join(', '),
                   })
                 }
-                onRemove={(team) =>
-                  setDraft({
-                    ...draft,
-                    accessibleTeams: parseNameList(draft.accessibleTeams)
-                      .filter((name) => name !== team)
-                      .join(', '),
-                  })
-                }
-                placeholder="选择团队添加…"
               />
-              {missingTeams.length > 0 && (
-                <p className="text-xs text-destructive">
-                  以下团队不存在：{missingTeams.join('、')}（服务端拒绝悬空引用，请核对后再保存）
-                </p>
-              )}
             </div>
             <div className="space-y-2">
               <Label>可访问 Workers（留空 = 清空）</Label>
