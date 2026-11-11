@@ -118,6 +118,13 @@ describe('resolveHash — layered hashes', () => {
     });
   });
 
+  it('decodes room ids written by encoded conversation links', () => {
+    for (const section of ['space', 'teams']) {
+      expect(resolveHash(`workbench/${section}/${encodeURIComponent('!room:test:58280')}`, isKnown)?.roomId)
+        .toBe('!room:test:58280');
+    }
+  });
+
   it('resolves task-center hashes', () => {
     expect(resolveHash('workbench/tasks', isKnown)).toEqual({ section: 'tasks' });
     expect(resolveHash('workbench/tasks/artifacts', isKnown)).toEqual({ section: 'artifacts' });
