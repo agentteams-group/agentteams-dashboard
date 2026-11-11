@@ -1,4 +1,5 @@
-import { getAuthToken } from '@/app/api/agentteams/proxy-helper';
+import { NextRequest } from 'next/server';
+import { getAuthToken, getControllerUrl, proxyToAgentTeams } from '@/app/api/agentteams/proxy-helper';
 
 async function getControllerBaseUrl(): Promise<string> {
   return (
@@ -19,13 +20,16 @@ async function postWorkerAction(
   workerName: string,
   action: 'sleep' | 'wake' | 'ensure-ready',
   timeoutMs = 15000,
+  request?: NextRequest,
 ): Promise<{ ok: boolean; status?: number; error?: string; phase?: string }> {
   const baseUrl = await getControllerBaseUrl();
   const headers = await controllerHeaders();
   const url = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}/${action}`;
 
   try {
-    const res = await fetch(url, {
+    const res = request
+      ? await proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/workers/${encodeURIComponent(workerName)}/${action}`, { method: 'POST', forwardBody: false })
+      : await fetch(url, {
       method: 'POST',
       headers,
       signal: AbortSignal.timeout(timeoutMs),
@@ -43,13 +47,15 @@ async function postWorkerAction(
   }
 }
 
-async function getWorkerPhase(workerName: string): Promise<string | null> {
+async function getWorkerPhase(workerName: string, request?: NextRequest): Promise<string | null> {
   const baseUrl = await getControllerBaseUrl();
   const headers = await controllerHeaders();
   const url = `${baseUrl}/api/v1/workers/${encodeURIComponent(workerName)}`;
 
   try {
-    const res = await fetch(url, {
+    const res = request
+      ? await proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/workers/${encodeURIComponent(workerName)}`, { method: 'GET', forwardBody: false })
+      : await fetch(url, {
       method: 'GET',
       headers,
       signal: AbortSignal.timeout(10000),
@@ -92,19 +98,20 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function restartWorkerForSkillReload(
   workerName: string,
   options?: RestartWorkerOptions,
+  request?: NextRequest,
 ): Promise<{ ok: boolean; error?: string; phase?: string | null }> {
   const { settleMs, wakeRetryBaseMs, pollTimeoutMs, pollIntervalMs } = {
     ...DEFAULTS,
     ...options,
   };
 
-  await postWorkerAction(workerName, 'sleep');
+  await postWorkerAction(workerName, 'sleep', 15000, request);
 
   await wait(settleMs);
 
   let lastWakeError: string | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const wake = await postWorkerAction(workerName, 'wake');
+    const wake = await postWorkerAction(workerName, 'wake', 15000, request);
     if (wake.ok) {
       lastWakeError = undefined;
       break;
@@ -114,9 +121,9 @@ export async function restartWorkerForSkillReload(
   }
 
   // ensure-ready is the strongest recovery path when wake is flaky.
-  const ensure = await postWorkerAction(workerName, 'ensure-ready', 30000);
+  const ensure = await postWorkerAction(workerName, 'ensure-ready', 30000, request);
   if (!ensure.ok && lastWakeError) {
-    const finalWake = await postWorkerAction(workerName, 'wake');
+    const finalWake = await postWorkerAction(workerName, 'wake', 15000, request);
     if (!finalWake.ok) {
       return {
         ok: false,
@@ -128,18 +135,18 @@ export async function restartWorkerForSkillReload(
   const deadline = Date.now() + pollTimeoutMs;
   let phase: string | null = null;
   while (Date.now() < deadline) {
-    phase = await getWorkerPhase(workerName);
+    phase = await getWorkerPhase(workerName, request);
     if (isAwakePhase(phase)) {
       return { ok: true, phase };
     }
     if (phase && phase.toLowerCase() === 'sleeping') {
-      await postWorkerAction(workerName, 'wake');
-      await postWorkerAction(workerName, 'ensure-ready', 15000);
+      await postWorkerAction(workerName, 'wake', 15000, request);
+      await postWorkerAction(workerName, 'ensure-ready', 15000, request);
     }
     await wait(pollIntervalMs);
   }
 
-  phase = await getWorkerPhase(workerName);
+  phase = await getWorkerPhase(workerName, request);
   if (isAwakePhase(phase)) {
     return { ok: true, phase };
   }
