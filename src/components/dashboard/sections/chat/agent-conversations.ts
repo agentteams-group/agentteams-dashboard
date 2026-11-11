@@ -37,11 +37,14 @@ export function preferredAgentRoom(rooms: RoomInfo[], userLevel: number, remembe
 
 export function conversationSections(rooms: RoomInfo[]) {
   const operations = rooms.filter(room => room.agentRole === 'operations');
+  const projects: RoomInfo[] = [];
   const teams = new Map<string, { id: string; name: string; rooms: RoomInfo[] }>();
   const other: RoomInfo[] = [];
   for (const room of rooms) {
     if (room.agentRole === 'operations') continue;
-    if (room.parentTeam && (room.agentRole === 'leader' || room.type === 'team')) {
+    if (room.type === 'project') {
+      projects.push(room);
+    } else if (room.parentTeam && (room.agentRole === 'leader' || room.type === 'team')) {
       if (!teams.has(room.parentTeam)) teams.set(room.parentTeam, { id: room.parentTeam, name: room.team?.teamName || room.team?.name || room.parentTeam, rooms: [] });
       teams.get(room.parentTeam)!.rooms.push(room);
     } else other.push(room);
@@ -49,6 +52,7 @@ export function conversationSections(rooms: RoomInfo[]) {
   return {
     operations,
     teams: [...teams.values()].sort((a, b) => a.name.localeCompare(b.name)).map(team => ({ ...team, rooms: team.rooms.sort((a, b) => Number(b.agentRole === 'leader') - Number(a.agentRole === 'leader')) })),
+    projects,
     other,
   };
 }

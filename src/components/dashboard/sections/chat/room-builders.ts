@@ -40,8 +40,8 @@ function managerDisplayName(
  * admin-manager DM vanished as soon as a leader DM existed.
  *
  * `workflows` (Controller project runs) is a second, Matrix-membership
- * independent source for project rooms: every `source_room_id` becomes an
- * "unknown" room when no team/worker/manager/human room already owns that id.
+ * independent source for project rooms: every `source_room_id` becomes a
+ * "project" room when no team/worker/manager/human room already owns that id.
  */
 export function buildRooms(
   workers: WorkerResponse[] | undefined,
@@ -176,17 +176,19 @@ export function buildRooms(
   // Controller 项目工作流自带 source_room_id：项目群不必等 Matrix /sync
   // 采集到 m.room.name 才可见（用户名补采受限时整组项目群会消失）。房间名
   // 仍优先取 /sync 的 m.room.name，其次 workflow.title，最后退回项目 id。
-  // type 固定 unknown（留在「其他对话」）；已由团队/Worker/Manager/Human
-  // 资源推导出的真实房间不会被覆盖。
+  // type=project：项目群属于团队视图（与 team 房间同权展示，但仍各自分组）；
+  // 已由团队/Worker/Manager/Human 资源推导出的真实房间不会被覆盖。
   workflows?.forEach((workflow) => {
     const rid = workflow.source_room_id;
     if (!rid) return;
     pushRoom({
       id: rid,
       name: lookup[rid]?.roomName || workflow.title || `项目 ${workflow.project_id}`,
-      type: 'unknown',
+      type: 'project',
       members: [],
       parentTeam: workflow.team_id,
+      projectId: workflow.project_id,
+      teamId: workflow.team_id,
       ...enrich(rid),
     });
   });
@@ -240,10 +242,11 @@ export function sortRoomsByRecency(rooms: RoomInfo[]): RoomInfo[] {
   });
 }
 
-export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'worker', 'manager', 'human', 'unknown'];
+export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'project', 'worker', 'manager', 'human', 'unknown'];
 
 export const ROOM_TYPE_LABELS: Record<RoomInfo['type'], string> = {
   team: '团队',
+  project: '项目',
   worker: 'Agent',
   manager: 'Manager',
   human: 'Human',

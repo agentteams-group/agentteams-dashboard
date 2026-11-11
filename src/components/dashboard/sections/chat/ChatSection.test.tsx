@@ -320,6 +320,51 @@ describe('separate assistants and my teams with mixed roles', () => {
   });
 });
 
+describe('project rooms in the teams view', () => {
+  const projectWorkflow = {
+    project_id: 'project-1',
+    title: '网站改版',
+    status: 'active',
+    team_id: 'design',
+    source_room_id: '!project:test',
+    nodes: [],
+    edges: [],
+    next: [],
+    interrupts: [],
+  };
+
+  beforeEach(() => {
+    loaded();
+    sessionMock.userLevel = 2;
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', teamName: '设计团队', teamRoomID: '!group:test', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!group:test', '!leader:test', '!project:test'], state: 'joined', refetch: vi.fn() });
+    taskFeedMock.workflows = [projectWorkflow];
+  });
+  afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
+
+  it('includes project rooms in the teams view sidebar', () => {
+    renderWithQueryClient('teams');
+    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    expect(sidebar.getByRole('button', { name: /网站改版/ })).toBeInTheDocument();
+    expect(sidebar.getByRole('button', { name: /design 团队房间/ })).toBeInTheDocument();
+  });
+
+  it('does not list project rooms in the assistants view', () => {
+    renderWithQueryClient('assistants');
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    expect(sidebar.queryByRole('button', { name: /网站改版/ })).toBeNull();
+  });
+
+  it('routes a project deep link from the assistants view into my teams', () => {
+    useHitlInboxStore.getState().setPendingChatRoomId('!project:test');
+    renderWithQueryClient('assistants');
+    expect(useSectionStore.getState().activeSection).toBe('my-teams');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!project:test');
+  });
+});
+
 describe('ChatSection mobile room drawer', () => {
   beforeEach(() => {
     loaded();

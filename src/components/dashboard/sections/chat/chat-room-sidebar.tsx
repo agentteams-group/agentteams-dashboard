@@ -471,6 +471,10 @@ export function ChatRoomSidebar({
                   </div>;
                 })}
               </section>}
+              {sections.projects.length > 0 && <section aria-label="项目群" className="space-y-1">
+                <p className="px-2 py-1 text-xs font-medium text-muted-foreground">项目群</p>
+                {sections.projects.map(renderRoom)}
+              </section>}
               {sections.other.length > 0 && <section aria-label="其他对话"><p className="px-2 py-1 text-xs font-medium text-muted-foreground">其他对话</p>{sections.other.map(renderRoom)}</section>}
             </div>
           ) : sortMode === 'time' ? timeOrdered.map(renderRoom) : groups.map(group => (

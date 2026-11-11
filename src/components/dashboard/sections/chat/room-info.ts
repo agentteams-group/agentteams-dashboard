@@ -3,13 +3,17 @@ import type { TeamResponse } from '@/lib/agentteams-api';
 export interface RoomInfo {
   id: string;
   name: string;
-  type: 'worker' | 'team' | 'manager' | 'human' | 'unknown';
+  type: 'worker' | 'team' | 'project' | 'manager' | 'human' | 'unknown';
   /** Product role of a direct assistant conversation. */
   agentRole?: 'operations' | 'leader';
   /** Room membership verified with the current user's own Matrix session. */
   access?: 'joined' | 'checking' | 'not-joined' | 'error' | 'disconnected';
   members: string[];
   parentTeam?: string;
+  /** Controller project behind a project room (project rooms only). */
+  projectId?: string;
+  /** AgentTeams team owning a project room (project rooms only). */
+  teamId?: string;
   teamRole?: 'admin' | 'member';
   matrixUserId?: string;
   /** Worker MXIDs of this room (worker rooms: [the worker]; team rooms:

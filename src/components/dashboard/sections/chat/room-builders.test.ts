@@ -258,9 +258,11 @@ describe('buildRooms', () => {
     expect(rooms[0]).toMatchObject({
       id: '!proj:matrix',
       name: '网站改版',
-      type: 'unknown',
+      type: 'project',
       members: [],
       parentTeam: 'design',
+      projectId: 'project-1',
+      teamId: 'design',
     });
   });
 
@@ -284,7 +286,7 @@ describe('buildRooms', () => {
     expect(rooms[0]).toMatchObject({
       id: '!proj:matrix',
       name: '项目群 · 设计',
-      type: 'unknown',
+      type: 'project',
       lastMessageTs: 123,
       unreadCount: 2,
     });
@@ -464,6 +466,16 @@ describe('groupRoomsByType', () => {
       make({ id: 'w1', name: 'W1', type: 'worker' }),
     ];
     expect(groupRoomsByType(rooms)[0].rooms.map((r) => r.id)).toEqual(['w2', 'w1']);
+  });
+
+  it('groups project rooms right after teams under a 项目 label', () => {
+    const rooms = [
+      make({ id: 'p', name: 'P', type: 'project' }),
+      make({ id: 'w', name: 'W', type: 'worker' }),
+      make({ id: 't', name: 'T', type: 'team' }),
+    ];
+    expect(groupRoomsByType(rooms).map((g) => g.type)).toEqual(['team', 'project', 'worker']);
+    expect(groupRoomsByType(rooms).map((g) => g.label)).toEqual(['团队', '项目', 'Agent']);
   });
 });
 
