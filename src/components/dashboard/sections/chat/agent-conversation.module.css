@@ -62,7 +62,7 @@
 }
 
 .conversation :global([data-chat-bubble]) {
-  font-size: 1rem;
+  font-size: 0.875rem;
   line-height: 1.65;
 }
 
@@ -132,7 +132,7 @@
 
 .conversation :global([data-chat-composer] textarea) {
   min-height: 4.125rem;
-  font-size: 1rem;
+  font-size: 0.875rem;
   line-height: 1.5;
   padding: 1rem 1rem 0.375rem;
 }
