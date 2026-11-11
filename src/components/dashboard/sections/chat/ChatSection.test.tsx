@@ -5,6 +5,10 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError } from '@/lib/api-error';
+import type { RuntimeMap } from './runtime-map-context';
+import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
+import { formatMatrixEvents } from '@/hooks/use-matrix';
+import type { MatrixEvent } from '@/lib/matrix-api';
 
 // --- Query hooks: controllable loading state -------------------------------
 const hooksMock = vi.hoisted(() => ({
@@ -43,7 +47,7 @@ vi.mock('@/hooks/use-matrix', async () => {
 });
 
 // --- Heavy children: stub, but capture the selection ------------------------
-const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null }));
+const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null, runtimeMap: {} as RuntimeMap }));
 
 vi.mock('./ChatPanel', () => ({
   ChatPanel: ({ room, headerTitle, headerLeading }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode }) => {
@@ -67,7 +71,10 @@ vi.mock('./ChatStore', () => ({
   ChatProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock('./runtime-map-context', () => ({
-  RuntimeMapProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  RuntimeMapProvider: ({ children, map }: { children: ReactNode; map: RuntimeMap }) => {
+    chatPanelSpy.runtimeMap = map;
+    return <>{children}</>;
+  },
 }));
 
 import { ChatSection } from './ChatSection';
@@ -176,6 +183,24 @@ describe('role-based assistant landing', () => {
     useRoomMetaStore.setState({ meta: {}, activeRoomId: null });
   });
   afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
+
+  it('assembles Manager thinking, tools and its edited answer as one turn', () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', runtime: 'qwenpaw', roomID: '!ops:test', matrixUserID: '@manager:test' }], isLoading: false });
+    renderWithQueryClient();
+    const events = [
+      { event_id: 'root', origin_server_ts: 1000, content: { msgtype: 'm.notice', body: '处理中...' } },
+      { event_id: 'think', origin_server_ts: 2000, content: { msgtype: 'm.notice', body: '先查看配置', 'm.relates_to': { rel_type: 'm.thread', event_id: 'root' } } },
+      { event_id: 'tool', origin_server_ts: 3000, content: { msgtype: 'm.text', body: '🔧 **execute_shell_command**\n```json\n{"command":"pwd"}\n```', 'm.relates_to': { rel_type: 'm.thread', event_id: 'root' } } },
+      { event_id: 'answer', origin_server_ts: 4000, content: { msgtype: 'm.text', body: '* 已完成', 'm.relates_to': { rel_type: 'm.replace', event_id: 'root' }, 'm.new_content': { msgtype: 'm.text', body: '已完成' } } },
+    ].map(event => ({ ...event, sender: '@manager:test', type: 'm.room.message' })) as MatrixEvent[];
+    const { messages } = assembleChatTimeline(formatMatrixEvents(events, '@user:test'), events, {
+      currentUserId: '@user:test', runtimeMap: chatPanelSpy.runtimeMap,
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'root', content: '已完成', turnState: 'finalized' });
+    expect(messages[0].precomputedBlocks?.map(block => block.type)).toEqual(['thinking', 'tool_call', 'text']);
+    expect(chatPanelSpy.runtimeMap['@w1:test']).toMatchObject({ workerName: 'w1' });
+  });
 
   it('opens the platform assistant for an admin', () => {
     hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test', matrixUserID: '@manager:test' }], isLoading: false });
