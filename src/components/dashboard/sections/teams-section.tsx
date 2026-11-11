@@ -16,7 +16,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useCreateTeam, useDeleteTeam, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,7 +27,7 @@ import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
 import { formatErrorMessage } from '@/lib/api-error';
-import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse, ManagerResponse } from '@/lib/agentteams-api';
+import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { pickLlmTuningSet } from '@/lib/llm-tuning';
 import { ITEMS_PER_PAGE, SORT_OPTIONS, type SortKey } from './teams/team-types';
 import {
@@ -89,7 +88,6 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 export function TeamsSection() {
   const { data: teams, isLoading, isError, refetch, isRefetching } = useTeams();
   const { data: workers } = useWorkers();
-  const { data: managers } = useManagers();
   const queryClient = useQueryClient();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const { searchQuery } = useSearch();
@@ -260,7 +258,6 @@ export function TeamsSection() {
   );
 
   const workersList: WorkerResponse[] = workers || [];
-  const managersList: ManagerResponse[] = managers || [];
   // 抽屉打开期间跟随列表刷新（成员/阶段/模型保存后立即反映，不必关了重开）。
   const liveDetailTeam = detailTeam
     ? (teams?.find((team) => team.name === detailTeam.name) ?? detailTeam)
@@ -449,7 +446,6 @@ export function TeamsSection() {
       <TeamTopologyDialog
         team={topologyTeam}
         workers={workersList}
-        managers={managersList}
         onOpenChange={(open) => !open && setTopologyTeam(null)}
       />
 

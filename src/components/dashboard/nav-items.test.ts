@@ -22,11 +22,10 @@ describe('Navigation with groups (Workbench IA)', () => {
       'artifacts',
       'coding-runs',
       'loops',
-      // 控制台（workers/teams/humans/managers 已并入 resources 容器，仍保留可达）
+      // 控制台（workers/teams 已合并为 team-agents；humans/managers 保留独立入口）
       'resources',
-      'workers',
+      'team-agents',
       'managers',
-      'teams',
       'humans',
       'skills',
       'models',
@@ -68,14 +67,19 @@ describe('Navigation with groups (Workbench IA)', () => {
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
     expect(byId.get('resources')).toMatchObject({ area: 'console', group: 'resources' });
-    expect(byId.get('workers')?.mergedInto).toBe('resources');
-    expect(byId.get('teams')?.mergedInto).toBe('resources');
+    // 团队与Agent：Workers + 团队合并后的单一入口（不再有 workers/teams 导航项）。
+    expect(byId.get('team-agents')).toMatchObject({
+      area: 'console',
+      group: 'resources',
+      legacyGroup: 'runtime',
+    });
+    expect(byId.get('team-agents')?.mergedInto).toBeUndefined();
+    expect(byId.get('workers')).toBeUndefined();
+    expect(byId.get('teams')).toBeUndefined();
     expect(byId.get('humans')?.mergedInto).toBe('resources');
     expect(byId.get('managers')?.mergedInto).toBe('resources');
     expect(byId.get('skills')?.mergedInto).toBeUndefined(); // 市场/模型/知识库不并入
-    expect(byId.get('workers')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('managers')).toMatchObject({ area: 'console', group: 'resources' });
-    expect(byId.get('teams')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('humans')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('skills')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('models')).toMatchObject({ area: 'console', group: 'resources' });
@@ -109,8 +113,7 @@ describe('UI level gate (M19 dual track)', () => {
     expect(ids).not.toContain('humans');
     expect(ids).toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
-    expect(ids).toContain('workers');
-    expect(ids).toContain('teams');
+    expect(ids).toContain('team-agents');
     expect(ids).toContain('audit');
   });
 

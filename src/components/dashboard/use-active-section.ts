@@ -49,7 +49,12 @@ function resolveInitialSection(): string {
       // Layered hashes stay untouched: they may carry deep-link segments
       // (room id, query params) that must survive in the URL.
       if (needsHashNormalization(hash)) {
-        window.history.replaceState(null, '', `#${hashForSection(resolved.section)}`);
+        const query = resolved.params?.toString();
+        window.history.replaceState(
+          null,
+          '',
+          `#${hashForSection(resolved.section)}${query ? `?${query}` : ''}`,
+        );
       }
       return resolved.section;
     }
