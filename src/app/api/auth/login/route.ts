@@ -168,18 +168,39 @@ async function probeLegacyOwnToken(request: NextRequest, token: string): Promise
   return { kind: 'unavailable' };
 }
 
-/**
- * Attempt Matrix login with the given credentials.
- * Returns the Matrix login result or null if it fails.
- */
-async function tryMatrixLogin(username: string, password: string): Promise<Record<string, unknown> | null> {
-  const homeserver = resolveMatrixHomeserver();
-  try {
-    validateHomeserverUrl(homeserver, { allowPrivateNetwork: true });
-  } catch {
-    return null; // Invalid homeserver URL, skip
-  }
+type MatrixLoginResult =
+  | { kind: 'ok'; data: Record<string, unknown> }
+  | { kind: 'invalid'; detail: string } // 401/403 only — the credentials are wrong
+  | { kind: 'unavailable'; detail: string }; // timeout / network / 429 / 5xx
 
+// Logins are human-paced; a 5s timeout is too tight for a multi-node
+// homeserver under load, and a timeout must never be reported as a bad
+// password.
+const MATRIX_LOGIN_TIMEOUT_MS = 8_000;
+const LOGIN_RETRY_DELAY_MS = 300;
+
+/** The log-safe upstream identity: host only, never the full URL. */
+function upstreamHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'invalid-url';
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** One Matrix password-login round trip (retry/backoff is the caller's job). */
+async function matrixLoginAttempt(
+  username: string,
+  password: string,
+  homeserver: string,
+  attempt: number,
+): Promise<MatrixLoginResult> {
+  const host = upstreamHost(homeserver);
+  const startedAt = Date.now();
   try {
     const res = await fetch(`${homeserver}/_matrix/client/v3/login`, {
       method: 'POST',
@@ -189,21 +210,57 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
         identifier: { type: 'm.id.user', user: username },
         password,
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(MATRIX_LOGIN_TIMEOUT_MS),
     });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    return {
-      accessToken: data.access_token,
-      userId: data.user_id,
-      deviceId: data.device_id,
-      homeserver,
-    };
-  } catch {
-    return null; // Matrix unreachable or login failed, skip silently
+    const elapsed = Date.now() - startedAt;
+    if (res.ok) {
+      const data = await res.json();
+      console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> ok`);
+      return {
+        kind: 'ok',
+        data: {
+          accessToken: data.access_token,
+          userId: data.user_id,
+          deviceId: data.device_id,
+          homeserver,
+        },
+      };
+    }
+    if (res.status === 401 || res.status === 403) {
+      console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> invalid`);
+      return { kind: 'invalid', detail: `HTTP ${res.status}` };
+    }
+    // 429 / 5xx (and anything else non-2xx): the homeserver is reachable but
+    // cannot answer right now — transient, never a credential verdict.
+    console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> transient`);
+    return { kind: 'unavailable', detail: `HTTP ${res.status}` };
+  } catch (err) {
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.warn(`[auth/login] matrix attempt ${attempt} ${host} ${detail} (${Date.now() - startedAt}ms) -> transient`);
+    return { kind: 'unavailable', detail };
   }
+}
+
+/**
+ * Attempt Matrix login with the given credentials.
+ * Only 401/403 mean "wrong credentials". Timeouts, network errors, 429 and
+ * 5xx are transient: retried once, and reported as 503 by the caller so a
+ * temporarily unavailable homeserver is never presented as a bad password.
+ */
+async function tryMatrixLogin(username: string, password: string): Promise<MatrixLoginResult> {
+  const homeserver = resolveMatrixHomeserver();
+  try {
+    validateHomeserverUrl(homeserver, { allowPrivateNetwork: true });
+  } catch {
+    // Deployment configuration gap, not a credential problem — never 401.
+    console.error(`[auth/login] matrix homeserver rejected by the allowlist: ${upstreamHost(homeserver)}`);
+    return { kind: 'unavailable', detail: 'invalid homeserver url' };
+  }
+
+  const first = await matrixLoginAttempt(username, password, homeserver, 1);
+  if (first.kind !== 'unavailable') return first;
+  await sleep(LOGIN_RETRY_DELAY_MS);
+  return matrixLoginAttempt(username, password, homeserver, 2);
 }
 
 export async function POST(request: NextRequest) {
@@ -230,25 +287,50 @@ export async function POST(request: NextRequest) {
 
     if (isExternal) {
       const result = await attemptConsoleLogin(request, username, password, { allowMatrix: false });
-      return result.kind === 'failed'
-        ? NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 })
-        : result.response;
+      if (result.kind === 'failed') {
+        console.warn('[auth/login] final branch: external-invalid-credentials (401)');
+        return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
+      }
+      console.warn(`[auth/login] final branch: external-${result.kind}`);
+      return result.response;
     }
     // Embedded/default: dual track — the Console admin account first (its
     // failure must never block a Matrix account), then the Matrix Human
     // track with the pre-1.4 Controller fallback.
     const consoleResult = await attemptConsoleLogin(request, username, password, { allowMatrix: true });
-    if (consoleResult.kind === 'session') return consoleResult.response;
+    if (consoleResult.kind === 'session') {
+      console.warn('[auth/login] final branch: console-session');
+      return consoleResult.response;
+    }
     const matrixResult = await attemptMatrixLogin(request, username, password, {
       username: adminUsername,
       password: adminPassword,
     });
-    if (matrixResult.ok) return matrixResult;
+    if (matrixResult.kind === 'ok') {
+      console.warn('[auth/login] final branch: matrix-session');
+      return matrixResult.response;
+    }
+    if (matrixResult.kind === 'unavailable') {
+      console.warn('[auth/login] final branch: matrix-transient (503)');
+      return matrixResult.response;
+    }
     // A Console deployment misconfiguration (503) is surfaced only when the
     // Matrix track fails too — a working Matrix login is a login, and the
     // misconfigured message is about the admin account, not this user.
-    if (consoleResult.kind === 'misconfigured') return consoleResult.response;
-    return matrixResult;
+    if (consoleResult.kind === 'misconfigured') {
+      console.error('[auth/login] final branch: console-misconfigured (503)');
+      return consoleResult.response;
+    }
+    // A transient Console failure plus a Matrix credential rejection cannot
+    // prove the password is wrong — the Console may simply be unavailable.
+    if (consoleResult.kind === 'transient' && matrixResult.kind === 'invalid') {
+      console.warn('[auth/login] final branch: console-transient (503)');
+      return consoleResult.response;
+    }
+    console.warn(
+      `[auth/login] final branch: ${matrixResult.kind === 'invalid' ? 'invalid-credentials (401)' : `matrix-${matrixResult.kind} (${matrixResult.response.status})`}`,
+    );
+    return matrixResult.response;
   } catch (err: unknown) {
     // SEC-09: the raw error can carry internal details (session secret
     // config, upstream fetch failures). Log it server-side, return a
@@ -264,7 +346,60 @@ export async function POST(request: NextRequest) {
 type ConsoleAttempt =
   | { kind: 'session'; response: NextResponse }
   | { kind: 'misconfigured'; response: NextResponse }
+  | { kind: 'transient'; response: NextResponse }
   | { kind: 'failed' };
+
+type ConsoleLoginCall =
+  | { kind: 'ok'; response: Response }
+  | { kind: 'rejected'; status: number }
+  | { kind: 'transient'; detail: string };
+
+/**
+ * One Console /session/login round trip. Only 401/403 are credential
+ * rejections; timeouts, network errors, 429 and 5xx are transient so they can
+ * be retried and never collapse into "wrong password".
+ */
+async function consoleLoginAttempt(
+  username: string,
+  password: string,
+  host: string,
+  attempt: number,
+): Promise<ConsoleLoginCall> {
+  const startedAt = Date.now();
+  try {
+    // No consoleUrl option: callHigressConsole resolves the same shared URL
+    // (getHigressConsoleURL).
+    const { response } = await callHigressConsole('/session/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    const elapsed = Date.now() - startedAt;
+    if (response.ok) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> ok`);
+      return { kind: 'ok', response };
+    }
+    if (response.status === 401 || response.status === 403) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> invalid`);
+      return { kind: 'rejected', status: response.status };
+    }
+    if (response.status === 429 || response.status >= 500) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> transient`);
+      return { kind: 'transient', detail: `HTTP ${response.status}` };
+    }
+    // Other 4xx (e.g. a 404 from a misrouted Console) is not retryable, but
+    // it is not a wrong password either — surface it as a track failure.
+    console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> failed`);
+    return { kind: 'rejected', status: response.status };
+  } catch (err) {
+    // F1g: surface the failure in docker logs. A silently-failing Console
+    // track sends admin-password users down the Matrix track into the
+    // confusing "paste a Controller token" error with no trace of WHY the
+    // password path died (install-verify 9/9: only the token worked).
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.warn(`[auth/login] console attempt ${attempt} ${host} ${detail} (${Date.now() - startedAt}ms) -> transient`);
+    return { kind: 'transient', detail };
+  }
+}
 
 /**
  * Console track: admin login → level-3 session with the SA credential.
@@ -321,29 +456,32 @@ async function attemptConsoleLogin(
   // Console admin that the L1 track then accepts as the L1 human. The Console
   // admin account must be provisioned out-of-band (installer / first-time
   // setup only).
-  let consoleRes: Response;
-  try {
-    // No consoleUrl option: callHigressConsole resolves the same shared URL
-    // (getHigressConsoleURL). `consoleUrl` above stays for log messages only.
-    const result = await callHigressConsole('/session/login', {
-      method: 'POST',
-      body: { username, password },
-    });
-    consoleRes = result.response;
-  } catch (err) {
-    // F1g: surface the failure in docker logs. A silently-failing Console
-    // track sends admin-password users down the Matrix track into the
-    // confusing "paste a Controller token" error with no trace of WHY the
-    // password path died (install-verify 9/9: only the token worked).
-    console.error(
-      `Console track fetch failed (${consoleUrl}): ${err instanceof Error ? err.message : String(err)}`,
-    );
+  const consoleHost = upstreamHost(consoleUrl);
+  let consoleCall = await consoleLoginAttempt(username, password, consoleHost, 1);
+  if (consoleCall.kind === 'transient') {
+    // One retry for a timeout/5xx/429; a 401 is never retried.
+    await sleep(LOGIN_RETRY_DELAY_MS);
+    consoleCall = await consoleLoginAttempt(username, password, consoleHost, 2);
+  }
+  if (consoleCall.kind === 'transient') {
+    console.warn(`[auth/login] console track unavailable after retry (${consoleHost}): ${consoleCall.detail}`);
+    return {
+      kind: 'transient',
+      response: NextResponse.json(
+        {
+          success: false,
+          error: '认证服务暂时不可用（Console 登录超时/不可达），请稍后重试',
+          retryable: true,
+        },
+        { status: 503 },
+      ),
+    };
+  }
+  if (consoleCall.kind === 'rejected') {
+    console.error(`[auth/login] console track rejected: HTTP ${consoleCall.status} (${consoleHost})`);
     return { kind: 'failed' };
   }
-  if (!consoleRes.ok) {
-    console.error(`Console track rejected: HTTP ${consoleRes.status} for user "${username}" (${consoleUrl})`);
-    return { kind: 'failed' };
-  }
+  const consoleRes = consoleCall.response;
 
   // Identity = the Console username itself. The Console admin account and the
   // Human CRs are different accounts (the Console admin may have no CR):
@@ -368,8 +506,10 @@ async function attemptConsoleLogin(
 
   // Chat convenience: L1's own Matrix token (client-side, chat only).
   // External mode must not return an internal homeserver URL or Matrix access
-  // token to the remote client (upstream #76).
-  const matrix = opts.allowMatrix ? await tryMatrixLogin(username, password) : null;
+  // token to the remote client (upstream #76). A transient Matrix failure here
+  // is not fatal — the Console session is already established.
+  const matrixAttempt = opts.allowMatrix ? await tryMatrixLogin(username, password) : null;
+  const matrix = matrixAttempt?.kind === 'ok' ? matrixAttempt.data : null;
 
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
@@ -491,6 +631,12 @@ interface AdminCredentials {
   password: string;
 }
 
+type MatrixAttempt =
+  | { kind: 'ok'; response: NextResponse }
+  | { kind: 'invalid'; response: NextResponse } // credentials rejected → 401
+  | { kind: 'unavailable'; response: NextResponse } // transient upstream → 503
+  | { kind: 'failed'; response: NextResponse }; // definitive non-credential failure
+
 /**
  * Matrix track. The identity comes from the user's own Matrix token; the
  * optional admin credentials are an explicit administrator-verification
@@ -510,15 +656,38 @@ async function attemptMatrixLogin(
   username: string,
   password: string,
   admin: AdminCredentials,
-): Promise<NextResponse> {
+): Promise<MatrixAttempt> {
   const matrix = await tryMatrixLogin(username, password);
-  if (!matrix || !matrix.accessToken) {
-    return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
+  if (matrix.kind === 'invalid') {
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 }),
+    };
+  }
+  if (matrix.kind === 'unavailable') {
+    return {
+      kind: 'unavailable',
+      response: NextResponse.json(
+        {
+          success: false,
+          error: '认证服务暂时不可用（Matrix 登录超时/不可达），请稍后重试',
+          retryable: true,
+        },
+        { status: 503 },
+      ),
+    };
+  }
+  const matrixData = matrix.data;
+  if (!matrixData.accessToken) {
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 }),
+    };
   }
 
-  const userId = typeof matrix.userId === 'string' ? matrix.userId : '';
+  const userId = typeof matrixData.userId === 'string' ? matrixData.userId : '';
   const localpart = userId.startsWith('@') ? userId.slice(1).split(':')[0] : username;
-  const token = String(matrix.accessToken);
+  const token = String(matrixData.accessToken);
   const hasAdminCredentials = Boolean(admin.username && admin.password);
 
   // Verification is lazy and cached: only a level-3 identity (or the legacy
@@ -537,18 +706,23 @@ async function attemptMatrixLogin(
     }
     return adminCheck;
   };
-  const adminVerificationFailed = () =>
-    NextResponse.json(
+  const adminVerificationFailed = (): MatrixAttempt => ({
+    kind: 'invalid',
+    response: NextResponse.json(
       { success: false, error: '管理员账号验证失败（账号或密码不正确）' },
       { status: 401 },
-    );
+    ),
+  });
 
   let me: MeResult;
   try {
     me = await fetchCurrentHuman(request, token);
   } catch (error) {
     console.error('[auth/login] identity lookup failed:', error);
-    return NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 });
+    return {
+      kind: 'failed',
+      response: NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 }),
+    };
   }
 
   let human: HumanRecord;
@@ -559,7 +733,10 @@ async function attemptMatrixLogin(
     // involved (#214 semantics).
     human = me.human;
   } else if (me.kind === 'rejected') {
-    return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 }),
+    };
   } else {
     // Legacy path: this Controller predates /api/v1/me (404/405).
     const saHuman = await fetchHumanViaSa(request, localpart);
@@ -586,10 +763,13 @@ async function attemptMatrixLogin(
           human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
         }
       } else if (probe.kind === 'unavailable') {
-        return NextResponse.json(
-          { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },
-          { status: 502 },
-        );
+        return {
+          kind: 'failed',
+          response: NextResponse.json(
+            { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },
+            { status: 502 },
+          ),
+        };
       } else if (hasAdminCredentials) {
         // Explicit administrator verification: the old Controller cannot
         // resolve this Matrix account (no SA credential or no Human CR) but a
@@ -600,15 +780,18 @@ async function attemptMatrixLogin(
         human = { name: localpart, permissionLevel: 1, accessibleTeams: [] };
         legacyL1 = true;
       } else {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              '旧版 Controller 无法验证该 Matrix 账号的权限：请在「L1 账号管理员验证」中填写管理员账号与密码，' +
-              '或改用 Controller 管理员 token 登录，或升级 Controller 后重试',
-          },
-          { status: 401 },
-        );
+        return {
+          kind: 'invalid',
+          response: NextResponse.json(
+            {
+              success: false,
+              error:
+                '旧版 Controller 无法验证该 Matrix 账号的权限：请在「L1 账号管理员验证」中填写管理员账号与密码，' +
+                '或改用 Controller 管理员 token 登录，或升级 Controller 后重试',
+            },
+            { status: 401 },
+          ),
+        };
       }
     }
   }
@@ -616,7 +799,10 @@ async function attemptMatrixLogin(
   const crLevel = human.permissionLevel;
   const dashLevel = crLevel === undefined ? undefined : MATRIX_CR_LEVEL_TO_DASH_LEVEL[crLevel];
   if (!human.name || (crLevel !== 1 && crLevel !== 2 && crLevel !== 3) || !dashLevel) {
-    return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 }),
+    };
   }
   // Level 3 (full admin): admin credentials, when supplied, must verify —
   // an invalid pair fails closed instead of silently granting admin access.
@@ -648,10 +834,13 @@ async function attemptMatrixLogin(
       ...(consoleCookie ? { consoleCookie } : {}),
     }));
   } catch (err) {
-    return NextResponse.json(
-      { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
-      { status: 503 },
-    );
+    return {
+      kind: 'failed',
+      response: NextResponse.json(
+        { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
+        { status: 503 },
+      ),
+    };
   }
 
   const responseHeaders = new Headers();
@@ -659,14 +848,17 @@ async function attemptMatrixLogin(
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue, request));
 
-  return new NextResponse(
-    JSON.stringify({
-      success: true,
-      user: { username: human.name || localpart, level: dashLevel },
-      mode: 'matrix',
-      matrix,
-    }),
-    { status: 200, headers: responseHeaders },
-  );
+  return {
+    kind: 'ok',
+    response: new NextResponse(
+      JSON.stringify({
+        success: true,
+        user: { username: human.name || localpart, level: dashLevel },
+        mode: 'matrix',
+        matrix: matrixData,
+      }),
+      { status: 200, headers: responseHeaders },
+    ),
+  };
 }
 

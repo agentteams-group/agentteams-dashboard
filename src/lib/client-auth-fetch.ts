@@ -13,10 +13,19 @@
  * protection, upstream #89), so an injected browser header there is simply
  * ignored by the server. One code path serves both deployment shapes.
  *
- * 401 handling (data plane only): the middleware / Controller answered 401
- * for a request we authenticated — the credential is expired or revoked.
- * Clear BOTH credential stores, then bounce to the entry page (which shows
- * the login form):
+ * 401 handling (data plane only): a 401 is NOT automatically a dead session.
+ * The Controller also answers 401 for permission denials and upstream/auth
+ * gateway rejections on paths such as /api/agentteams/workers/.../skills;
+ * clearing the session on those made a valid login look broken ("sometimes
+ * clicking never works"). Only a confirmed-dead session is cleared:
+ *   1. ask /api/auth/session (with the same credential) — authenticated:false
+ *      is authoritative; authenticated:true always protects the session, even
+ *      when the data body says "unauthorized";
+ *   2. if the session endpoint cannot answer, fall back to the response body's
+ *      session-invalid semantics (Unauthorized / session / at_dash_sess /
+ *      not authenticated / invalid session).
+ * When the session is dead: clear BOTH credential stores, then bounce to the
+ * entry page (which shows the login form):
  *   1. POST /api/auth/logout/ — the stateful HttpOnly session cookie
  *      (at_dash_sess) lives server-side; clearing only the browser Matrix
  *      store leaves it valid, so the reloaded page authenticates again, the
@@ -107,6 +116,75 @@ async function clearServerSession(fetchImpl: typeof fetch): Promise<void> {
   }
 }
 
+/** Body markers that a *session* layer (not an upstream API) rejected us. */
+const SESSION_INVALID_MARKERS = [
+  'unauthorized',
+  'session',
+  'at_dash_sess',
+  'not authenticated',
+  'invalid session',
+];
+
+/** Does the 401 body carry session-invalid semantics? (read from a clone) */
+async function bodyIndicatesInvalidSession(response: Response): Promise<boolean> {
+  try {
+    const text = (await response.clone().text()).toLowerCase();
+    return SESSION_INVALID_MARKERS.some((marker) => text.includes(marker));
+  } catch {
+    return false;
+  }
+}
+
+type SessionProbe = 'valid' | 'invalid' | 'unknown';
+
+/**
+ * Ask the session endpoint whether the credential behind this browser is
+ * still alive. Sent with the same headers as the failed data request so the
+ * stateless (bearer-token) mode resolves the same identity. A transport
+ * failure or 5xx is 'unknown' — never grounds for a logout.
+ */
+async function probeSessionState(
+  fetchImpl: typeof fetch,
+  headers: Headers,
+): Promise<SessionProbe> {
+  try {
+    const res = await fetchImpl(apiUrl('/api/auth/session'), {
+      headers,
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    if (!res.ok) return 'unknown';
+    const data = (await res.json()) as { authenticated?: boolean; reason?: string };
+    if (data.authenticated === true) return 'valid';
+    if (data.authenticated === false) {
+      // 'unreachable' means the backend could not be asked, and
+      // 'no-credential' means the probe itself carried none — neither proves
+      // the stored session is dead.
+      if (data.reason === 'unreachable' || data.reason === 'no-credential') return 'unknown';
+      return 'invalid';
+    }
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Only a confirmed-dead session may be cleared. An upstream/permission 401
+ * while the session is valid is returned to the page untouched.
+ */
+async function shouldClearSession(
+  fetchImpl: typeof fetch,
+  response: Response,
+  headers: Headers,
+): Promise<boolean> {
+  const bodyInvalid = await bodyIndicatesInvalidSession(response);
+  const probe = await probeSessionState(fetchImpl, headers);
+  if (probe === 'valid') return false;
+  if (probe === 'invalid') return true;
+  return bodyInvalid;
+}
+
 /** Install the patch once (idempotent). Call from a client component effect. */
 export function installClientAuthFetch(): void {
   if (typeof window === 'undefined' || installed) return;
@@ -170,6 +248,9 @@ export function installClientAuthFetch(): void {
       // credential: reloading again would loop forever. Hand the 401 back to
       // the caller so the page renders an actionable error.
       if (bouncedRecently()) return response;
+      // Permission/upstream 401s are not a dead session: keep the response
+      // for the page and leave the credentials alone.
+      if (!(await shouldClearSession(originalFetch, response, headers))) return response;
       redirecting = true;
       markBounced();
       await clearServerSession(originalFetch);

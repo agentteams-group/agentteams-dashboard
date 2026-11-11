@@ -89,6 +89,13 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
     return network.mock.calls[network.mock.calls.length - 1][1] as { headers: Headers };
   }
 
+  function urls(): string[] {
+    return network.mock.calls.map((call: unknown[]) => {
+      const input = call[0] as RequestInfo | URL;
+      return typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    });
+  }
+
   it('injects the bearer into /api/agentteams/* when no header is present', async () => {
     await window.fetch('/api/agentteams/teams');
     expect(lastInit().headers.get('authorization')).toBe('Bearer matrix-tok');
@@ -160,6 +167,57 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
       return url.includes('/api/auth/logout');
     });
     expect(logoutCalls).toHaveLength(0);
+  });
+
+  it('keeps a valid session when an upstream request answers 401 (skills permission)', async () => {
+    network.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/auth/session')) return Response.json({ authenticated: true, username: 'alice', level: 2 });
+      return Response.json({ error: 'forbidden', detail: 'skills are not permitted' }, { status: 401 });
+    });
+    const replace = (window.location as unknown as { replace: ReturnType<typeof vi.fn> }).replace;
+
+    const res = await window.fetch('/api/agentteams/workers/w1/skills');
+
+    // The 401 is handed to the page; the credential stays intact.
+    expect(res.status).toBe(401);
+    expect(replace).not.toHaveBeenCalled();
+    expect(useMatrixStore.getState().isLoggedIn).toBe(true);
+    expect(urls().some((url) => url.includes('/api/auth/logout'))).toBe(false);
+    // The authoritative session probe was consulted before deciding.
+    expect(urls().some((url) => url.includes('/api/auth/session'))).toBe(true);
+  });
+
+  it('clears the session when /api/auth/session confirms the credential is dead', async () => {
+    network.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/auth/session')) return Response.json({ authenticated: false });
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    });
+    const replace = (window.location as unknown as { replace: ReturnType<typeof vi.fn> }).replace;
+
+    await window.fetch('/api/agentteams/teams');
+
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/?reason=unauthorized&from=data401');
+    expect(useMatrixStore.getState().isLoggedIn).toBe(false);
+    expect(urls().some((url) => url.includes('/api/auth/logout'))).toBe(true);
+  });
+
+  it('does not log out when the session probe itself is unavailable and the body is not a session error', async () => {
+    network.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/auth/session')) return new Response('upstream down', { status: 503 });
+      return Response.json({ error: 'forbidden' }, { status: 401 });
+    });
+    const replace = (window.location as unknown as { replace: ReturnType<typeof vi.fn> }).replace;
+
+    const res = await window.fetch('/api/agentteams/workers/w1/skills');
+
+    expect(res.status).toBe(401);
+    expect(replace).not.toHaveBeenCalled();
+    expect(useMatrixStore.getState().isLoggedIn).toBe(true);
+    expect(urls().some((url) => url.includes('/api/auth/logout'))).toBe(false);
   });
 
   it('does not bounce on 401 from /api/auth/* (login form keeps its inline error)', async () => {

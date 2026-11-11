@@ -50,6 +50,8 @@ interface ScenarioOpts {
   legacyTeams?: { status: number; teams: Array<{ name: string }> };
   /** Matrix password login. */
   matrixLoginStatus?: number;
+  /** Per-attempt Matrix login behavior (overrides matrixLoginStatus). */
+  matrixLoginSequence?: Array<number | 'network'>;
 }
 
 const HUMAN = (level: number) => ({
@@ -64,14 +66,21 @@ function installFetch(opts: ScenarioOpts = {}) {
     legacyStatus = 200,
     legacyTeams = { status: 200, teams: [{ name: 'team-a' }] },
     matrixLoginStatus = 200,
+    matrixLoginSequence,
   } = opts;
+
+  const matrixLoginPlan = matrixLoginSequence ?? [matrixLoginStatus];
+  let matrixLoginCalls = 0;
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/_matrix/client/v3/login')) {
+      const attempt = matrixLoginPlan[Math.min(matrixLoginCalls, matrixLoginPlan.length - 1)];
+      matrixLoginCalls += 1;
+      if (attempt === 'network') throw new Error('matrix network down');
       return Response.json(
         { access_token: 'own-matrix-token', user_id: matrixUserId, device_id: 'device' },
-        { status: matrixLoginStatus },
+        { status: attempt },
       );
     }
     if (url.endsWith('/api/v1/me')) {
@@ -101,6 +110,22 @@ function consoleOk() {
 /** Console track answers: credentials rejected. */
 function consoleRejected() {
   vi.mocked(callHigressConsole).mockResolvedValue({ response: new Response(null, { status: 401 }), body: {} });
+}
+/** Console track answers: transient upstream status (429/5xx). */
+function consoleStatus(status: number) {
+  vi.mocked(callHigressConsole).mockResolvedValue({ response: new Response(null, { status }), body: {} });
+}
+/** Console track answers: timeout / network failure. */
+function consoleThrows() {
+  vi.mocked(callHigressConsole).mockRejectedValue(new Error('TimeoutError: The operation was aborted'));
+}
+/** Did the (two-attempt) Console track run twice? */
+function consoleCalls() {
+  return vi.mocked(callHigressConsole).mock.calls.length;
+}
+/** Matrix password-login calls only. */
+function matrixLoginCalls(fetchMock: ReturnType<typeof installFetch>) {
+  return fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/_matrix/client/v3/login')).length;
 }
 /** Console deployment misconfiguration (host not on the allowlist). */
 function consoleMisconfigured() {
@@ -620,6 +645,72 @@ describe('Human login through Controller', () => {
     const res = await POST(request());
     expect(res.status).toBe(401);
     expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  // ── Transient upstream failures are 503, never a false 401 ───────────
+
+  it('answers 503 (retryable) when the Matrix homeserver stays unavailable', async () => {
+    consoleRejected();
+    const fetchMock = installFetch({ matrixLoginSequence: [503, 'network'] });
+    const res = await POST(request());
+    expect(res.status).toBe(503);
+    const data = await res.json();
+    expect(data.success).toBe(false);
+    expect(data.retryable).toBe(true);
+    expect(data.error).toContain('Matrix');
+    expect(res.headers.get('set-cookie')).toBeNull();
+    // 429/5xx/timeout is retried exactly once.
+    expect(matrixLoginCalls(fetchMock)).toBe(2);
+  });
+
+  it('retries a transient Matrix failure once and then logs in', async () => {
+    consoleRejected();
+    const fetchMock = installFetch({
+      matrixLoginSequence: [500, 200],
+      me: { status: 200, body: HUMAN(2) },
+    });
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    expect((await res.json()).mode).toBe('matrix');
+    expect(matrixLoginCalls(fetchMock)).toBe(2);
+  });
+
+  it('never retries a Matrix 401 (a wrong password stays a 401)', async () => {
+    consoleRejected();
+    const fetchMock = installFetch({ matrixLoginSequence: [401, 200] });
+    const res = await POST(request());
+    expect(res.status).toBe(401);
+    expect(matrixLoginCalls(fetchMock)).toBe(1);
+  });
+
+  it('answers 503 when the Console is transiently down and Matrix rejects the password', async () => {
+    consoleStatus(502);
+    installFetch({ matrixLoginStatus: 401 });
+    const res = await POST(request());
+    expect(res.status).toBe(503);
+    const data = await res.json();
+    expect(data.retryable).toBe(true);
+    expect(data.error).toContain('Console');
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(consoleCalls()).toBe(2); // one retry, then give up
+  });
+
+  it('treats a Console timeout as transient and still admits a Matrix login', async () => {
+    consoleThrows();
+    installFetch({ me: { status: 200, body: HUMAN(2) } });
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    expect((await res.json()).mode).toBe('matrix');
+    expect(consoleCalls()).toBe(2);
+  });
+
+  it('answers 401 only when both tracks reject the credentials', async () => {
+    consoleRejected();
+    installFetch({ matrixLoginStatus: 401 });
+    const res = await POST(request());
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toBe('Invalid username or password');
+    expect(consoleCalls()).toBe(1); // a 401 is never retried
   });
 
   // ── External mode (upstream #76) — unchanged ─────────────────────────
