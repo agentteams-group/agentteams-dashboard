@@ -204,14 +204,20 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
   const [path, query] = hash.split('?');
   const segments = path.split('/').filter(Boolean);
   const params = query ? new URLSearchParams(query) : undefined;
+  let roomId = segments[2];
+  try {
+    if (roomId) roomId = decodeURIComponent(roomId);
+  } catch {
+    return null;
+  }
 
   // Workbench: space (chat) / tasks (+ artifacts, coding-runs) / loop
   if (segments[0] === 'workbench') {
     if (segments[1] === 'me') return { section: 'my-workbench' };
-    if (segments[1] === 'teams') return { section: 'my-teams', roomId: segments[2], params };
+    if (segments[1] === 'teams') return { section: 'my-teams', roomId, params };
     if (segments[1] === 'space') {
       // `workbench/space` or `workbench/space/<roomId>`
-      return { section: 'chat', roomId: segments[2], params };
+      return { section: 'chat', roomId, params };
     }
     if (segments[1] === 'tasks') {
       if (segments[2] === 'artifacts') return { section: 'artifacts', params };
