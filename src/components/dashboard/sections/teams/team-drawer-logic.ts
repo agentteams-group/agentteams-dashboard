@@ -15,8 +15,12 @@ export interface TeamMemberRow {
   name: string;
   role: TeamMemberRole;
   model: string;
+  /** 草稿 provider（空 = 不绑定 provider）；批量画笔/行内弹窗都会改它。 */
+  provider: string;
   /** 服务端现值（行内弹窗直写成功后同步，用于「只发改动行」判定）。 */
   baseModel: string;
+  /** 服务端现值 modelProvider（列表投影可能缺省）。 */
+  baseProvider?: string;
   missing: boolean;
 }
 
@@ -25,6 +29,10 @@ export interface TeamBasicDraft {
   description: string;
   workerIdleTimeout: string;
   peerMentions?: boolean;
+  /** 心跳间隔（如 "10m"）；留空 = 清空回 Controller 默认。 */
+  heartbeatEvery: string;
+  /** 子代理默认模型；留空 = 继承各 Worker 主模型。 */
+  subagentModel: string;
 }
 
 /** 团队 + 在服 Worker 列表 → 成员行（Leader 在前，缺失引用标红）。 */
@@ -37,7 +45,15 @@ export function buildMemberRows(
   const push = (name: string, role: TeamMemberRole) => {
     const worker = byName.get(name);
     const model = worker?.model ?? '';
-    rows.push({ name, role, model, baseModel: model, missing: !worker });
+    rows.push({
+      name,
+      role,
+      model,
+      provider: worker?.modelProvider ?? '',
+      baseModel: model,
+      baseProvider: worker?.modelProvider,
+      missing: !worker,
+    });
   };
   if (team.leaderName) push(team.leaderName, 'team_leader');
   for (const name of team.workerNames ?? []) {
@@ -50,22 +66,48 @@ export function missingMemberNames(rows: TeamMemberRow[]): string[] {
   return rows.filter((row) => row.missing).map((row) => row.name);
 }
 
-/** 批量画笔：只刷指定角色的行（留空 = 不改）。 */
+/** 批量画笔：只刷指定角色的行（留空 = 不改）；provider 一并同步到行。 */
 export function applyBatchModel(
   rows: TeamMemberRow[],
   role: TeamMemberRole,
   model: string,
+  provider?: string,
 ): TeamMemberRow[] {
   const next = model.trim();
   if (!next) return rows;
-  return rows.map((row) => (row.role === role ? { ...row, model: next } : row));
+  const nextProvider = provider?.trim();
+  return rows.map((row) =>
+    row.role === role
+      ? { ...row, model: next, ...(nextProvider !== undefined ? { provider: nextProvider } : {}) }
+      : row,
+  );
 }
 
-/** 只收集「有值且与基线不同」的行——空值 = 不改。 */
-export function changedMemberModels(rows: TeamMemberRow[]): Array<{ name: string; model: string }> {
-  return rows
-    .filter((row) => row.model.trim() && row.model.trim() !== row.baseModel.trim())
-    .map((row) => ({ name: row.name, model: row.model.trim() }));
+/**
+ * 只收集「真正需要写」的行：
+ *   · model 有值且与基线不同；或
+ *   · provider 有值且与基线不同（只改 provider 也成对写 model）。
+ * modelProvider 只在「非空且真变化」时携带；未改/空 = 不下发（控制器 merge 保持现值）。
+ */
+export function changedMemberModels(
+  rows: TeamMemberRow[],
+): Array<{ name: string; model: string; modelProvider?: string }> {
+  const changes: Array<{ name: string; model: string; modelProvider?: string }> = [];
+  for (const row of rows) {
+    const model = row.model.trim();
+    if (!model) continue;
+    const provider = row.provider.trim();
+    const baseProvider = (row.baseProvider ?? '').trim();
+    const modelChanged = model !== row.baseModel.trim();
+    const providerChanged = Boolean(provider) && provider !== baseProvider;
+    if (!modelChanged && !providerChanged) continue;
+    changes.push({
+      name: row.name,
+      model,
+      ...(providerChanged ? { modelProvider: provider } : {}),
+    });
+  }
+  return changes;
 }
 
 /** workerMembers 全量替换载荷：Leader 单独给，workerNames 去重且排除 Leader。 */
@@ -94,6 +136,8 @@ export function buildBasicDraft(team: TeamResponse): TeamBasicDraft {
     description: team.description || '',
     workerIdleTimeout: team.workerIdleTimeout || '',
     peerMentions: typeof team.peerMentions === 'boolean' ? team.peerMentions : undefined,
+    heartbeatEvery: team.heartbeatEvery || '',
+    subagentModel: team.subagentModel || '',
   };
 }
 
@@ -116,6 +160,11 @@ export function buildBasicUpdate(
   ) {
     data.peerMentions = draft.peerMentions;
   }
+  // 心跳间隔 / 子代理默认模型：与插件 doCfg 同语义——trim 后发送，留空 = null（清空）。
+  const heartbeat = draft.heartbeatEvery.trim();
+  if (heartbeat !== (team.heartbeatEvery || '').trim()) data.heartbeatEvery = heartbeat || null;
+  const subagent = draft.subagentModel.trim();
+  if (subagent !== (team.subagentModel || '').trim()) data.subagentModel = subagent || null;
   return { ...data, ...diffLlmTuning(pickLlmTuning(team), llmDraft) };
 }
 
@@ -141,7 +190,9 @@ export function mergeMember(rows: TeamMemberRow[], worker: WorkerResponse): Team
       name: worker.name,
       role: 'worker',
       model: worker.model || '',
+      provider: worker.modelProvider ?? '',
       baseModel: worker.model || '',
+      baseProvider: worker.modelProvider,
       missing: false,
     },
   ];

@@ -16,8 +16,8 @@ import {
   standaloneWorkers,
 } from './team-drawer-logic';
 
-const worker = (name: string, model = '', skills: string[] = []) =>
-  ({ name, model, skills, team: 'alpha' }) as unknown as WorkerResponse;
+const worker = (name: string, model = '', skills: string[] = [], modelProvider?: string) =>
+  ({ name, model, skills, team: 'alpha', modelProvider }) as unknown as WorkerResponse;
 
 const team = (patch: Partial<TeamResponse> = {}) =>
   ({
@@ -63,6 +63,18 @@ describe('team-drawer-logic · members', () => {
     const workerOnly = applyBatchModel(rows, 'worker', 'batch-worker');
     expect(workerOnly.map((row) => row.model)).toEqual(['m-lead', 'batch-worker']);
     expect(applyBatchModel(rows, 'worker', '  ')).toBe(rows);
+
+    const withProvider = applyBatchModel(rows, 'worker', 'batch-worker', 'provider-b');
+    expect(withProvider.map((row) => row.provider)).toEqual(['', 'provider-b']);
+  });
+
+  it('carries the server provider as the row baseline', () => {
+    const rows = buildMemberRows(team({ workerNames: ['w1'] }), [
+      worker('lead', 'm-lead', [], 'provider-a'),
+      worker('w1', 'm1'),
+    ]);
+    expect(rows[0]).toMatchObject({ provider: 'provider-a', baseProvider: 'provider-a' });
+    expect(rows[1]).toMatchObject({ provider: '', baseProvider: undefined });
   });
 
   it('collects only changed rows with a non-empty model', () => {
@@ -75,6 +87,34 @@ describe('team-drawer-logic · members', () => {
       row.name === 'w2' ? { ...row, model: 'm2-new' } : row.name === 'w1' ? { ...row, model: '' } : row,
     );
     expect(changedMemberModels(next)).toEqual([{ name: 'w2', model: 'm2-new' }]);
+  });
+
+  it('sends modelProvider only when the row provider really changes', () => {
+    const rows = buildMemberRows(team({ workerNames: ['w1', 'w2'] }), [
+      worker('lead', 'm-lead', [], 'provider-a'),
+      worker('w1', 'm1', [], 'provider-a'),
+      worker('w2', 'm2', [], 'provider-a'),
+    ]);
+
+    // 只改 model → 不带 modelProvider（保持控制器现值）。
+    const modelOnly = rows.map((row) =>
+      row.name === 'w1' ? { ...row, model: 'm1-new' } : row,
+    );
+    expect(changedMemberModels(modelOnly)).toEqual([{ name: 'w1', model: 'm1-new' }]);
+
+    // provider 真变化 → 成对带 modelProvider。
+    const providerChanged = rows.map((row) =>
+      row.name === 'w2' ? { ...row, provider: 'provider-b' } : row,
+    );
+    expect(changedMemberModels(providerChanged)).toEqual([
+      { name: 'w2', model: 'm2', modelProvider: 'provider-b' },
+    ]);
+
+    // 清空 provider 不下发 modelProvider（空 = 不绑定，控制器保持现值）。
+    const providerCleared = rows.map((row) =>
+      row.name === 'w2' ? { ...row, provider: '' } : row,
+    );
+    expect(changedMemberModels(providerCleared)).toEqual([]);
   });
 
   it('builds workerMembers payload with leader kept out of workerNames', () => {

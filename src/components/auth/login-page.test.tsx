@@ -11,6 +11,10 @@ vi.mock('@/lib/matrix-store', () => ({
 }));
 
 const TOKEN_ENTRY = '仅用 Controller 管理员 token 登录';
+const ADMIN_ENTRY = 'L1 账号管理员验证（旧 Controller 需要）';
+const ADMIN_COLLAPSE = '收起 L1 账号管理员验证';
+const ADMIN_HINT =
+  '旧 Controller 上使用 Matrix 账号登录 L1 时，必须填写这里的 Console 管理员账号/密码；admin 账号本身不需要重复填写。';
 
 function mockLoginResponse(status: number, body: Record<string, unknown>) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), {
@@ -26,6 +30,10 @@ function openTokenEntry() {
   return screen.getByPlaceholderText('Controller 管理员 token');
 }
 
+function openAdminEntry() {
+  return screen.getByPlaceholderText('管理员账号');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -36,9 +44,9 @@ afterEach(() => {
 });
 
 describe('LoginPage Controller token-only login', () => {
-  it('prefills admin and focuses the password for a fresh local install', () => {
+  it('starts with an empty username and focuses the password for a fresh local install', () => {
     render(<LoginPage />);
-    expect(screen.getByLabelText('用户名')).toHaveValue('admin');
+    expect(screen.getByLabelText('用户名')).toHaveValue('');
     expect(screen.getByLabelText('密码')).toHaveFocus();
   });
   it('keeps the token entry collapsed until expanded', () => {
@@ -98,7 +106,7 @@ describe('LoginPage Controller token-only login', () => {
     });
     render(<LoginPage onLoginSuccess={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
     fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
 
@@ -116,5 +124,93 @@ describe('LoginPage Controller token-only login', () => {
     ).toBeInTheDocument();
     // Never retries by itself: no request is issued on mount.
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoginPage L1 admin verification', () => {
+  it('keeps the admin verification section collapsed until expanded', () => {
+    render(<LoginPage />);
+
+    // The legacy-Controller path is an extra: hidden by default, discoverable
+    // through the entry button, and still collapsible once opened.
+    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
+    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
+    expect(screen.queryByText(ADMIN_HINT)).toBeNull();
+    expect(screen.getByRole('button', { name: ADMIN_ENTRY })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+    expect(screen.getByPlaceholderText('管理员账号')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('管理员密码')).toBeInTheDocument();
+    expect(screen.getByText(ADMIN_HINT)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: ADMIN_COLLAPSE })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_COLLAPSE }));
+    expect(screen.queryByPlaceholderText('管理员账号')).toBeNull();
+    expect(screen.queryByPlaceholderText('管理员密码')).toBeNull();
+    expect(screen.getByRole('button', { name: ADMIN_ENTRY })).toBeInTheDocument();
+  });
+
+  it('sends adminUsername/adminPassword when both are filled', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'luo', level: 3 },
+      mode: 'matrix',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'luo' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'luo-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+    fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByPlaceholderText('管理员密码'), { target: { value: 'admin-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      username: 'luo',
+      password: 'luo-pass',
+      adminUsername: 'admin',
+      adminPassword: 'admin-pass',
+    });
+  });
+
+  it('keeps the body unchanged while the admin fields are empty', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'alice', level: 2 },
+      mode: 'higress',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+    // Expanded but left empty: no admin keys are added to the request body.
+    expect(screen.getByPlaceholderText('管理员账号')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'alice', password: 'password' });
+  });
+
+  it('omits the admin fields when only one side is filled', async () => {
+    const fetchMock = mockLoginResponse(200, {
+      success: true,
+      user: { username: 'admin', level: 3 },
+      mode: 'higress',
+    });
+    render(<LoginPage onLoginSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: ADMIN_ENTRY }));
+    fireEvent.change(openAdminEntry(), { target: { value: 'admin' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录工作区/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ username: 'admin', password: 'password' });
   });
 });

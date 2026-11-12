@@ -1,4 +1,5 @@
 import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import { managerRoomIds } from '@/lib/task-actors';
 import type { RoomInfo } from './room-info';
 
@@ -37,6 +38,10 @@ function managerDisplayName(
  * A Manager contributes every distinct room in `managerRoomIds` (own room
  * plus leader DM). Previously only one of the two was listed, so the
  * admin-manager DM vanished as soon as a leader DM existed.
+ *
+ * `workflows` (Controller project runs) is a second, Matrix-membership
+ * independent source for project rooms: every `source_room_id` becomes a
+ * "project" room when no team/worker/manager/human room already owns that id.
  */
 export function buildRooms(
   workers: WorkerResponse[] | undefined,
@@ -44,6 +49,7 @@ export function buildRooms(
   managers: ManagerResponse[] | undefined,
   metaByRoomId?: RoomMetaByRoomId,
   humans?: HumanResponse[],
+  workflows?: WorkflowResponse[],
 ): RoomInfo[] {
   const lookup = metaByRoomId ?? {};
   const enrich = (
@@ -167,6 +173,25 @@ export function buildRooms(
       });
     }
   });
+  // Controller 项目工作流自带 source_room_id：项目群不必等 Matrix /sync
+  // 采集到 m.room.name 才可见（用户名补采受限时整组项目群会消失）。房间名
+  // 仍优先取 /sync 的 m.room.name，其次 workflow.title，最后退回项目 id。
+  // type=project：项目群属于团队视图（与 team 房间同权展示，但仍各自分组）；
+  // 已由团队/Worker/Manager/Human 资源推导出的真实房间不会被覆盖。
+  workflows?.forEach((workflow) => {
+    const rid = workflow.source_room_id;
+    if (!rid) return;
+    pushRoom({
+      id: rid,
+      name: lookup[rid]?.roomName || workflow.title || `项目 ${workflow.project_id}`,
+      type: 'project',
+      members: [],
+      parentTeam: workflow.team_id,
+      projectId: workflow.project_id,
+      teamId: workflow.team_id,
+      ...enrich(rid),
+    });
+  });
   // 12.13（装验反馈「看不到项目群」）：/sync 原生房间补齐——资源推导只
   // 覆盖 team/worker/manager 房间；项目群等普通房间此前完全不可见（插件
   // 走全量 /sync 可见，行为不一致）。按 meta.roomName 补「其他」分组。
@@ -217,10 +242,11 @@ export function sortRoomsByRecency(rooms: RoomInfo[]): RoomInfo[] {
   });
 }
 
-export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'worker', 'manager', 'human', 'unknown'];
+export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'project', 'worker', 'manager', 'human', 'unknown'];
 
 export const ROOM_TYPE_LABELS: Record<RoomInfo['type'], string> = {
   team: '团队',
+  project: '项目',
   worker: 'Agent',
   manager: 'Manager',
   human: 'Human',

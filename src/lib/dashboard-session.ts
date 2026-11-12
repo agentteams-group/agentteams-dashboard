@@ -275,11 +275,39 @@ export function getSessionFromRequest(request: { headers: { get(_name: string): 
   return validateSessionToken(token);
 }
 
-/** Build the Set-Cookie header value for a session. */
-export function sessionCookieHeader(cookieValue: string): string {
-  const secure = process.env.DASHBOARD_COOKIE_SECURE === '1' ? '; Secure' : '';
+/** Minimal request shape needed to detect the transport scheme. */
+export interface CookieRequestLike {
+  headers: { get(_name: string): string | null };
+  nextUrl?: { protocol?: string };
+}
+
+function requestIsHttps(request: CookieRequestLike): boolean {
+  // Behind a TLS-terminating proxy the request itself is HTTP but the
+  // forwarded proto is HTTPS — trust that first, then fall back to the URL.
+  const forwarded = request.headers.get('x-forwarded-proto');
+  if (forwarded) return forwarded.split(',')[0]!.trim().toLowerCase() === 'https';
+  return request.nextUrl?.protocol === 'https:';
+}
+
+/**
+ * Build the Set-Cookie header value for a session.
+ *
+ * Secure follows the ACTUAL transport scheme when a request is passed:
+ * DASHBOARD_COOKIE_SECURE=0 never emits Secure; =1 (or unset) emits Secure
+ * only for HTTPS requests (x-forwarded-proto: https or an https: nextUrl).
+ * On plain HTTP (localhost / LAN deployments) Secure is omitted — a Secure
+ * cookie over HTTP is stored but never sent back, which made every
+ * post-login data request 401 despite a successful login.
+ * Without a request (tests / legacy callers) the old env-based behavior is
+ * kept: Secure iff DASHBOARD_COOKIE_SECURE=1.
+ */
+export function sessionCookieHeader(cookieValue: string, request?: CookieRequestLike): string {
+  const secure =
+    request === undefined
+      ? process.env.DASHBOARD_COOKIE_SECURE === '1'
+      : process.env.DASHBOARD_COOKIE_SECURE !== '0' && requestIsHttps(request);
   return (
-    `${SESSION_COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}${secure}`
+    `${SESSION_COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}${secure ? '; Secure' : ''}`
   );
 }
 

@@ -18,8 +18,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { CreateManagerRequest } from '@/lib/agentteams-api';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import {
+  buildModelCandidateCatalog,
+  type ModelSelectionOption,
+} from '@/lib/model-catalog';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { CREATABLE_MANAGER_RUNTIMES } from '@/lib/runtime-options';
 import { InfoTip } from '@/components/dashboard/info-tip';
 
@@ -44,6 +47,7 @@ export function ManagerCreateDialog({
   sessionIssue?: string | null;
 
 }) {
+  const modelCatalog = buildModelCandidateCatalog(modelOptions ?? []);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-w-[95vw]">
@@ -67,13 +71,23 @@ export function ManagerCreateDialog({
                 <span className="mt-1 block">已配置别名仅表示存在模型映射。创建后请在编辑页运行「已保存配置的网关验证」。</span>
               </InfoTip>
             </div>
-            <ModelSelector
-              value={value.model}
-              onChange={(model) => onChange({ ...value, model })}
-              placeholder="例如 team-chat"
-              options={modelOptions}
-              sessionIssue={sessionIssue}
+            <ModelPicker
+              providers={modelCatalog.providers}
+              provider={value.modelProvider ?? ''}
+              model={value.model ?? ''}
+              modelsByProvider={modelCatalog.modelsByProvider}
+              allModels={modelCatalog.models}
+              modelPlaceholder="例如 team-chat"
+              providerPlaceholder="选择或输入 Provider（留空 = 跟随默认）"
+              onChange={(provider, model) =>
+                onChange({ ...value, model, modelProvider: provider.trim() || undefined })
+              }
             />
+            {sessionIssue ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
+                模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-1">

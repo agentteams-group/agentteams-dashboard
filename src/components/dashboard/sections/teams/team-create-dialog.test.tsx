@@ -191,15 +191,55 @@ describe('TeamCreateDialog 内联新建 Worker（9/13 装验反馈：参考插�
         name: 'new-w',
         runtime: 'openclaw',
         model: undefined,
+        modelProvider: undefined,
         soul: undefined,
       }),
     );
+    // 空 provider 不携带实际值（跟随默认）。
+    expect(vi.mocked(agentteamsApi.createWorker).mock.calls[0][0].modelProvider).toBeUndefined();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ workerNames: ['new-w'] }),
     );
     expect(onWorkerCreated).toHaveBeenCalledWith('new-w');
     // 成功后收起折叠区并重置表单
     expect(screen.queryByPlaceholderText('worker-name')).toBeNull();
+  });
+
+  it('展开 → Provider 在 Model 之前（provider-first 内联新建）', () => {
+    renderDialog({ name: 't', leader: { name: 'lead-1' } }, [worker('lead-1')]);
+    expand();
+    const provider = screen.getByLabelText('Provider');
+    const model = screen.getByLabelText('请求模型别名');
+    expect(
+      provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText('Provider')).toBeInTheDocument();
+    expect(screen.getByText('请求模型别名')).toBeInTheDocument();
+  });
+
+  it('选 Provider/Model 后创建 Worker 的 payload 含 modelProvider', async () => {
+    const createWorker = vi
+      .mocked(agentteamsApi.createWorker)
+      .mockResolvedValue({ name: 'new-w' } as WorkerResponse);
+    renderDialog({ name: 't', leader: { name: 'lead-1' } }, [worker('lead-1')]);
+
+    expand();
+    fireEvent.change(nameInput(), { target: { value: 'new-w' } });
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'provider-a' } });
+    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+      target: { value: 'team-chat' },
+    });
+    fireEvent.click(createButton());
+
+    await waitFor(() =>
+      expect(createWorker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'new-w',
+          model: 'team-chat',
+          modelProvider: 'provider-a',
+        }),
+      ),
+    );
   });
 
   it('名字已存在为 Worker → 按钮禁用（请从列表选择）', () => {

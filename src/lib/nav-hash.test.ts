@@ -9,11 +9,12 @@ import {
   needsHashNormalization,
   resolveHash,
   tasksHash,
+  teamAgentsHash,
 } from './nav-hash';
 
 const allSections = new Set([
   'overview', 'chat', 'my-teams', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
-  'resources', 'workers', 'managers', 'teams', 'humans', 'skills', 'models',
+  'resources', 'team-agents', 'managers', 'humans', 'skills', 'models',
   'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
@@ -49,10 +50,12 @@ describe('hashForSection', () => {
     expect(hashForSection('loops')).toBe('workbench/loop');
     expect(hashForSection('my-workbench')).toBe('workbench/me');
     expect(hashForSection('resources')).toBe('console/resources');
-    expect(hashForSection('workers')).toBe('console/resources/workers');
-    expect(hashForSection('managers')).toBe('console/resources/managers');
-    expect(hashForSection('teams')).toBe('console/resources/teams');
+    expect(hashForSection('team-agents')).toBe('console/resources/team-agents');
+    // 旧 workers/teams section id 现在带 tab 落到合并页（通知 actionUrl 仍用旧路径）。
+    expect(hashForSection('workers')).toBe('console/resources/team-agents?tab=agents');
+    expect(hashForSection('teams')).toBe('console/resources/team-agents?tab=teams');
     expect(hashForSection('humans')).toBe('console/resources/humans');
+    expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('skills')).toBe('console/resources/skills');
     expect(hashForSection('models')).toBe('console/resources/models');
     expect(hashForSection('knowledge')).toBe('console/resources/knowledge');
@@ -66,8 +69,8 @@ describe('hashForActiveSection', () => {
     expect(hashForActiveSection('resources', '#console/resources/humans')).toBe(
       'console/resources/humans'
     );
-    expect(hashForActiveSection('resources', '#console/resources/workers')).toBe(
-      'console/resources/workers'
+    expect(hashForActiveSection('resources', '#console/resources/managers')).toBe(
+      'console/resources/managers'
     );
   });
 
@@ -81,6 +84,24 @@ describe('hashForActiveSection', () => {
 
   it('never preserves a third segment for non-resource sections', () => {
     expect(hashForActiveSection('chat', '#console/resources/humans')).toBe('workbench/space');
+  });
+
+  it('keeps the team-agents tab when rewriting legacy workers/teams routes', () => {
+    expect(hashForActiveSection('team-agents', '#console/resources/workers')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/teams')).toBe(
+      'console/resources/team-agents?tab=teams',
+    );
+    expect(hashForActiveSection('team-agents', '#workers')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/team-agents?tab=agents')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/team-agents')).toBe(
+      'console/resources/team-agents',
+    );
   });
 
   it('keeps the deep-link query that belongs to the section we land on', () => {
@@ -143,11 +164,24 @@ describe('resolveHash — layered hashes', () => {
 
   it('resolves console hashes (附录 A；F7.1 资源路径进容器)', () => {
     expect(resolveHash('console/resources', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/workers', isKnown)?.section).toBe('workers');
+    expect(resolveHash('console/resources/team-agents', isKnown)?.section).toBe('team-agents');
     expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('humans');
     expect(resolveHash('console/resources/skills', isKnown)?.section).toBe('skills');
     expect(resolveHash('console/governance/audit', isKnown)?.section).toBe('audit');
     expect(resolveHash('console/system/overview', isKnown)?.section).toBe('overview');
+  });
+
+  it('aliases the old workers/teams routes to the merged page with their tab', () => {
+    const workers = resolveHash('console/resources/workers', isKnown);
+    expect(workers?.section).toBe('team-agents');
+    expect(workers?.params?.get('tab')).toBe('agents');
+    const teams = resolveHash('console/resources/teams', isKnown);
+    expect(teams?.section).toBe('team-agents');
+    expect(teams?.params?.get('tab')).toBe('teams');
+    // 已规范化的合并页深链原样保留 tab。
+    expect(resolveHash('console/resources/team-agents?tab=agents', isKnown)?.params?.get('tab')).toBe(
+      'agents',
+    );
   });
 
   it('returns null for unknown layered paths', () => {
@@ -160,12 +194,21 @@ describe('resolveHash — legacy flat hashes stay reachable (PRD §5.4)', () => 
   it('resolves every legacy flat hash', () => {
     const legacy = [
       'overview', 'chat', 'tasks', 'artifacts', 'coding-runs',
-      'workers', 'managers', 'teams', 'humans', 'skills', 'models',
-      'knowledge', 'audit',
+      'humans', 'managers', 'skills', 'models', 'knowledge', 'audit',
     ];
     for (const hash of legacy) {
       expect(resolveHash(hash, isKnown)?.section).toBe(hash);
     }
+  });
+
+  it('aliases legacy flat workers/teams to the merged page with their tab', () => {
+    expect(resolveHash('workers', isKnown)).toMatchObject({
+      section: 'team-agents',
+      params: expect.any(URLSearchParams),
+    });
+    expect(resolveHash('workers', isKnown)?.params?.get('tab')).toBe('agents');
+    expect(resolveHash('teams', isKnown)?.section).toBe('team-agents');
+    expect(resolveHash('teams', isKnown)?.params?.get('tab')).toBe('teams');
   });
 
   it('keeps the projects alias resolving to the task board', () => {
@@ -189,6 +232,8 @@ describe('深链构造器与参数读取（方案 v3 C-2）', () => {
     expect(tasksHash()).toBe('#workbench/tasks');
     expect(loopHash()).toBe('#workbench/loop');
     expect(auditHash()).toBe('#console/governance/audit');
+    expect(teamAgentsHash()).toBe('#console/resources/team-agents');
+    expect(teamAgentsHash('agents')).toBe('#console/resources/team-agents?tab=agents');
     expect(resolveHash('workbench/tasks', isKnown)?.params).toBeUndefined();
   });
 

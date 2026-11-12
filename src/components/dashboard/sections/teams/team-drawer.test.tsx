@@ -172,12 +172,6 @@ vi.mock('./team-detail-dialog', () => ({
   TeamDetailDialog: () => <div>legacy-team-detail</div>,
 }));
 
-// 千锻弹窗单独测（millforge-dialog.test）：这里只验证抽屉入口卡能开弹窗。
-vi.mock('./millforge/millforge-dialog', () => ({
-  MillforgeDialog: ({ open, team }: { open: boolean; team: { name: string } }) =>
-    open ? <div>millforge-dialog:{team.name}</div> : null,
-}));
-
 import { TeamDrawer } from './team-drawer';
 import { TeamTable } from './team-table';
 import { TeamsSection } from '../teams-section';
@@ -257,7 +251,27 @@ function renderDrawer(userLevel = 3) {
 }
 
 function selectAllOptions() {
-  return screen.getAllByRole('combobox') as HTMLSelectElement[];
+  return screen
+    .getAllByRole('combobox')
+    .filter((element): element is HTMLSelectElement => element instanceof HTMLSelectElement);
+}
+
+/** 批量画笔：从角色列打开统一模型弹窗，选模型并保存（只刷本地草稿）。 */
+async function paintBatch(
+  testId: 'batch-leader' | 'batch-workers',
+  dialogTitle: string,
+  model: string,
+) {
+  fireEvent.click(within(screen.getByTestId(testId)).getByRole('button', { name: '设置模型' }));
+  // 抽屉自身也是 role=dialog，按标题锁定嵌套的模型弹窗。
+  const dialog = screen.getByRole('dialog', { name: dialogTitle });
+  fireEvent.change(within(dialog).getByLabelText('请求模型别名'), {
+    target: { value: model },
+  });
+  fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: dialogTitle })).not.toBeInTheDocument(),
+  );
 }
 
 beforeEach(() => {
@@ -318,15 +332,10 @@ describe('TeamDrawer · 分区与骨架', () => {
     expect(screen.getByTestId('danger-delete')).toBeInTheDocument();
   });
 
-  it('千锻入口卡：≥44px，点击打开千锻弹窗', () => {
+  it('千锻入口不在团队设置抽屉（只在「团队与Agent」拓扑头部，对齐插件）', () => {
     renderDrawer();
-    const card = screen.getByTestId('millforge-card');
-    expect(card.className).toContain('min-h-11');
-    expect(card).toHaveTextContent('千锻');
-    expect(card).toHaveTextContent('注入 / 自定义 / 模块更新 / 历史');
-    expect(screen.queryByText('millforge-dialog:alpha')).toBeNull();
-    fireEvent.click(card);
-    expect(screen.getByText('millforge-dialog:alpha')).toBeInTheDocument();
+    expect(screen.queryByTestId('millforge-card')).toBeNull();
+    expect(screen.queryByTestId('millforge-logo')).toBeNull();
   });
 });
 
@@ -367,7 +376,8 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 describe('TeamDrawer · 团队成员', () => {
   it('批量 Leader 模型只刷 Leader 行，保存只写该行 updateWorker', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Leader 批模型'), { target: { value: 'leader-batch' } });
+    await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
+    expect(within(screen.getByTestId('batch-leader')).getByText('leader-batch')).toBeInTheDocument();
     expect(screen.getByTestId('member-lead')).toHaveTextContent('leader-batch');
     expect(screen.getByTestId('member-w1')).toHaveTextContent('w1-model');
 
@@ -383,7 +393,7 @@ describe('TeamDrawer · 团队成员', () => {
 
   it('Workers 批量只刷 worker 行', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Workers 批模型'), { target: { value: 'worker-batch' } });
+    await paintBatch('batch-workers', '批量设置模型 - Workers 批', 'worker-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalledTimes(2));
     expect(mocks.updateWorkerAsync.mock.calls.map((call) => call[0].name)).toEqual(['w1', 'w2']);
@@ -397,7 +407,7 @@ describe('TeamDrawer · 团队成员', () => {
     renderDrawer();
     const rows = screen.getAllByRole('button', { name: '改模型' });
     fireEvent.click(rows[1]);
-    const input = await screen.findByLabelText('例如 team-chat');
+    const input = await screen.findByPlaceholderText('例如 team-chat');
     fireEvent.change(input, { target: { value: 'm1-new' } });
     const dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
@@ -459,7 +469,7 @@ describe('TeamDrawer · 团队成员', () => {
 
   it('只改模型时不再重复 PUT 团队成员', async () => {
     renderDrawer();
-    fireEvent.change(screen.getByLabelText('Leader 批模型'), { target: { value: 'leader-batch' } });
+    await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalled());
     expect(mocks.updateTeamAsync).not.toHaveBeenCalled();

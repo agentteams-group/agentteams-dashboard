@@ -1,14 +1,33 @@
-// Human logins use Matrix identity and Controller authorization.
-// External Console-only deployments retain their existing login path.
+// POST /api/auth/login — dual-track login (embedded/default mode):
+//   1. Console admin account (Higress Console /session/login) — the Console
+//      admin has no Human CR; success returns a level-3 'sa' session.
+//   2. Matrix Human account — Matrix password login → own token →
+//      GET /api/v1/me (modern Controllers, #214 own-token semantics). On a
+//      pre-1.4 Controller without /me (404/405) the legacy fallback runs:
+//      SA GET /api/v1/humans/{localpart}, else the own-token L2 probe
+//      (GET /api/v1/status + /api/v1/teams). Because that probe does not
+//      prove the Human's level, a supplied admin pair is verified FIRST
+//      (adminUsername/adminPassword → Console /session/login): valid →
+//      synthetic L1, invalid → 401. Without an admin pair a probe-accepted
+//      account stays L2, a probe-rejected one is admitted only by the same
+//      verification. A legacy L1 session rides the
+//      server-side SA credential because the old Controller rejects L1
+//      Matrix tokens on the data plane; the verified Console session is
+//      bound server-side for the gateway tab.
+// The Console track's misconfiguration (503) is surfaced only when the
+// Matrix track also fails.
+// External Console-only deployments retain their existing login path:
+// Console only, no Matrix token/URL to the client.
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
   callHigressConsole,
+  collectSetCookieHeader,
   forwardCookies,
   getHigressConsoleURL,
   HigressConsoleConfigurationError,
 } from '../../higress/proxy-helper';
-import { getControllerUrl } from '../../agentteams/proxy-helper';
+import { getAuthToken, getControllerUrl } from '../../agentteams/proxy-helper';
 import { createSession, sessionCookieHeader } from '@/lib/dashboard-session';
 import { backendAuthHeader, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
 import { validateHomeserverUrl } from '@/lib/homeserver-allowlist';
@@ -48,33 +67,140 @@ function controllerProbeTargets(request: NextRequest): string[] {
 }
 
 
-/** Resolve the caller using only their own token. Older Controllers fail explicitly. */
-async function fetchCurrentHuman(request: NextRequest, token: string): Promise<HumanRecord | null> {
+type MeResult =
+  | { kind: 'human'; human: HumanRecord }
+  | { kind: 'rejected' } // 401/403: the token is not a valid Human identity
+  | { kind: 'unsupported' }; // 404/405: this Controller predates /api/v1/me (legacy)
+
+/**
+ * Resolve the caller using only their own token (#214 semantics — the server
+ * SA token is never involved here). Distinguishes a rejected identity
+ * (401/403) from a Controller that lacks /api/v1/me entirely (404/405 → the
+ * pre-1.4 legacy fallback); a network failure walks the remaining candidates
+ * and throws only when none of them can answer.
+ */
+async function fetchCurrentHuman(request: NextRequest, token: string): Promise<MeResult> {
   for (const base of controllerProbeTargets(request)) {
     try {
       const res = await fetch(`${base}/api/v1/me`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(5000), cache: 'no-store',
       });
-      if (res.status === 401 || res.status === 403) return null;
-      if (res.ok) return await res.json() as HumanRecord;
+      if (res.status === 200) return { kind: 'human', human: (await res.json()) as HumanRecord };
+      if (res.status === 401 || res.status === 403) return { kind: 'rejected' };
+      if (res.status === 404 || res.status === 405) return { kind: 'unsupported' };
+      // Any other status: this candidate is up but not helpful — walk on.
     } catch { /* try the next configured Controller */ }
   }
   throw new Error('Controller unavailable or missing /api/v1/me support');
 }
 
-/**
- * Attempt Matrix login with the given credentials.
- * Returns the Matrix login result or null if it fails.
- */
-async function tryMatrixLogin(username: string, password: string): Promise<Record<string, unknown> | null> {
-  const homeserver = resolveMatrixHomeserver();
-  try {
-    validateHomeserverUrl(homeserver, { allowPrivateNetwork: true });
-  } catch {
-    return null; // Invalid homeserver URL, skip
-  }
+/** A HumanRecord the legacy fallback can build a session from. */
+function isUsableHuman(human: HumanRecord): boolean {
+  return (
+    typeof human.name === 'string' &&
+    human.name.length > 0 &&
+    (human.permissionLevel === 1 || human.permissionLevel === 2 || human.permissionLevel === 3)
+  );
+}
 
+/**
+ * Legacy identity lookup with the server-side SA token (pre-#214 channel):
+ * GET /api/v1/humans/{localpart}. Returns null when no SA credential is
+ * configured, the Controller rejects it, or no Human CR exists.
+ */
+async function fetchHumanViaSa(request: NextRequest, localpart: string): Promise<HumanRecord | null> {
+  const token = await getAuthToken();
+  if (!token) return null;
+  for (const base of controllerProbeTargets(request)) {
+    try {
+      const res = await fetch(`${base}/api/v1/humans/${encodeURIComponent(localpart)}`, {
+        // Per-address door credential may replace the SA bearer (same policy
+        // as the data plane's treatment of 'sa' session credentials).
+        headers: { Authorization: `Bearer ${token}`, ...backendAuthHeader('controller', base) },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      // Any HTTP answer is definitive for this address (proxy-layer
+      // semantics); only a transport error walks to the next candidate.
+      if (res.ok) return (await res.json()) as HumanRecord;
+      return null;
+    } catch { /* unreachable candidate: try the next address */ }
+  }
+  return null;
+}
+
+type LegacyOwnTokenProbe =
+  | { kind: 'l2'; teams: string[] }
+  | { kind: 'rejected' } // the Controller answered: this token is not L2
+  | { kind: 'unavailable' }; // every candidate was unreachable
+
+/**
+ * Legacy L2 probe (pre-#214, plugin model): the old Controller's Matrix auth
+ * accepts only permissionLevel=2 tokens, so a 200 on GET /api/v1/status with
+ * the user's own token proves team-user identity WITHOUT reading the Human
+ * CR. GET /api/v1/teams is server-side filtered to the caller's own scope.
+ */
+async function probeLegacyOwnToken(request: NextRequest, token: string): Promise<LegacyOwnTokenProbe> {
+  for (const base of controllerProbeTargets(request)) {
+    let statusRes: Response;
+    try {
+      statusRes = await fetch(`${base}/api/v1/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+    } catch {
+      continue; // unreachable candidate: try the next address
+    }
+    if (!statusRes.ok) return { kind: 'rejected' };
+    let teams: string[] = [];
+    try {
+      const teamsRes = await fetch(`${base}/api/v1/teams`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000), cache: 'no-store',
+      });
+      if (teamsRes.ok) {
+        const data = (await teamsRes.json()) as { teams?: { name?: string }[] };
+        teams = (data.teams ?? []).map((t) => t.name ?? '').filter(Boolean);
+      }
+    } catch { /* the scope list is optional — keep an empty scope */ }
+    return { kind: 'l2', teams };
+  }
+  return { kind: 'unavailable' };
+}
+
+type MatrixLoginResult =
+  | { kind: 'ok'; data: Record<string, unknown> }
+  | { kind: 'invalid'; detail: string } // 401/403 only — the credentials are wrong
+  | { kind: 'unavailable'; detail: string }; // timeout / network / 429 / 5xx
+
+// Logins are human-paced; a 5s timeout is too tight for a multi-node
+// homeserver under load, and a timeout must never be reported as a bad
+// password.
+const MATRIX_LOGIN_TIMEOUT_MS = 8_000;
+const LOGIN_RETRY_DELAY_MS = 300;
+
+/** The log-safe upstream identity: host only, never the full URL. */
+function upstreamHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'invalid-url';
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** One Matrix password-login round trip (retry/backoff is the caller's job). */
+async function matrixLoginAttempt(
+  username: string,
+  password: string,
+  homeserver: string,
+  attempt: number,
+): Promise<MatrixLoginResult> {
+  const host = upstreamHost(homeserver);
+  const startedAt = Date.now();
   try {
     const res = await fetch(`${homeserver}/_matrix/client/v3/login`, {
       method: 'POST',
@@ -84,21 +210,57 @@ async function tryMatrixLogin(username: string, password: string): Promise<Recor
         identifier: { type: 'm.id.user', user: username },
         password,
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(MATRIX_LOGIN_TIMEOUT_MS),
     });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    return {
-      accessToken: data.access_token,
-      userId: data.user_id,
-      deviceId: data.device_id,
-      homeserver,
-    };
-  } catch {
-    return null; // Matrix unreachable or login failed, skip silently
+    const elapsed = Date.now() - startedAt;
+    if (res.ok) {
+      const data = await res.json();
+      console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> ok`);
+      return {
+        kind: 'ok',
+        data: {
+          accessToken: data.access_token,
+          userId: data.user_id,
+          deviceId: data.device_id,
+          homeserver,
+        },
+      };
+    }
+    if (res.status === 401 || res.status === 403) {
+      console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> invalid`);
+      return { kind: 'invalid', detail: `HTTP ${res.status}` };
+    }
+    // 429 / 5xx (and anything else non-2xx): the homeserver is reachable but
+    // cannot answer right now — transient, never a credential verdict.
+    console.warn(`[auth/login] matrix attempt ${attempt} ${host} HTTP ${res.status} (${elapsed}ms) -> transient`);
+    return { kind: 'unavailable', detail: `HTTP ${res.status}` };
+  } catch (err) {
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.warn(`[auth/login] matrix attempt ${attempt} ${host} ${detail} (${Date.now() - startedAt}ms) -> transient`);
+    return { kind: 'unavailable', detail };
   }
+}
+
+/**
+ * Attempt Matrix login with the given credentials.
+ * Only 401/403 mean "wrong credentials". Timeouts, network errors, 429 and
+ * 5xx are transient: retried once, and reported as 503 by the caller so a
+ * temporarily unavailable homeserver is never presented as a bad password.
+ */
+async function tryMatrixLogin(username: string, password: string): Promise<MatrixLoginResult> {
+  const homeserver = resolveMatrixHomeserver();
+  try {
+    validateHomeserverUrl(homeserver, { allowPrivateNetwork: true });
+  } catch {
+    // Deployment configuration gap, not a credential problem — never 401.
+    console.error(`[auth/login] matrix homeserver rejected by the allowlist: ${upstreamHost(homeserver)}`);
+    return { kind: 'unavailable', detail: 'invalid homeserver url' };
+  }
+
+  const first = await matrixLoginAttempt(username, password, homeserver, 1);
+  if (first.kind !== 'unavailable') return first;
+  await sleep(LOGIN_RETRY_DELAY_MS);
+  return matrixLoginAttempt(username, password, homeserver, 2);
 }
 
 export async function POST(request: NextRequest) {
@@ -107,6 +269,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { username, password } = body;
+
+    // Optional administrator verification for L1 Matrix logins on the old
+    // Controller (the Console admin account/password is a different account
+    // from the Human CR). Ignored by the Console track, the token-only track
+    // and by L2/L3 Human identities.
+    const adminUsername = typeof body.adminUsername === 'string' ? body.adminUsername.trim() : '';
+    const adminPassword = typeof body.adminPassword === 'string' ? body.adminPassword : '';
 
     const controllerToken = typeof body.controllerToken === 'string' ? body.controllerToken.trim() : '';
     if (!username && !password && controllerToken && !isExternal) {
@@ -118,11 +287,50 @@ export async function POST(request: NextRequest) {
 
     if (isExternal) {
       const result = await attemptConsoleLogin(request, username, password, { allowMatrix: false });
-      return result.kind === 'failed'
-        ? NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 })
-        : result.response;
+      if (result.kind === 'failed') {
+        console.warn('[auth/login] final branch: external-invalid-credentials (401)');
+        return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
+      }
+      console.warn(`[auth/login] final branch: external-${result.kind}`);
+      return result.response;
     }
-    return await attemptMatrixLogin(request, username, password);
+    // Embedded/default: dual track — the Console admin account first (its
+    // failure must never block a Matrix account), then the Matrix Human
+    // track with the pre-1.4 Controller fallback.
+    const consoleResult = await attemptConsoleLogin(request, username, password, { allowMatrix: true });
+    if (consoleResult.kind === 'session') {
+      console.warn('[auth/login] final branch: console-session');
+      return consoleResult.response;
+    }
+    const matrixResult = await attemptMatrixLogin(request, username, password, {
+      username: adminUsername,
+      password: adminPassword,
+    });
+    if (matrixResult.kind === 'ok') {
+      console.warn('[auth/login] final branch: matrix-session');
+      return matrixResult.response;
+    }
+    if (matrixResult.kind === 'unavailable') {
+      console.warn('[auth/login] final branch: matrix-transient (503)');
+      return matrixResult.response;
+    }
+    // A Console deployment misconfiguration (503) is surfaced only when the
+    // Matrix track fails too — a working Matrix login is a login, and the
+    // misconfigured message is about the admin account, not this user.
+    if (consoleResult.kind === 'misconfigured') {
+      console.error('[auth/login] final branch: console-misconfigured (503)');
+      return consoleResult.response;
+    }
+    // A transient Console failure plus a Matrix credential rejection cannot
+    // prove the password is wrong — the Console may simply be unavailable.
+    if (consoleResult.kind === 'transient' && matrixResult.kind === 'invalid') {
+      console.warn('[auth/login] final branch: console-transient (503)');
+      return consoleResult.response;
+    }
+    console.warn(
+      `[auth/login] final branch: ${matrixResult.kind === 'invalid' ? 'invalid-credentials (401)' : `matrix-${matrixResult.kind} (${matrixResult.response.status})`}`,
+    );
+    return matrixResult.response;
   } catch (err: unknown) {
     // SEC-09: the raw error can carry internal details (session secret
     // config, upstream fetch failures). Log it server-side, return a
@@ -138,7 +346,60 @@ export async function POST(request: NextRequest) {
 type ConsoleAttempt =
   | { kind: 'session'; response: NextResponse }
   | { kind: 'misconfigured'; response: NextResponse }
+  | { kind: 'transient'; response: NextResponse }
   | { kind: 'failed' };
+
+type ConsoleLoginCall =
+  | { kind: 'ok'; response: Response }
+  | { kind: 'rejected'; status: number }
+  | { kind: 'transient'; detail: string };
+
+/**
+ * One Console /session/login round trip. Only 401/403 are credential
+ * rejections; timeouts, network errors, 429 and 5xx are transient so they can
+ * be retried and never collapse into "wrong password".
+ */
+async function consoleLoginAttempt(
+  username: string,
+  password: string,
+  host: string,
+  attempt: number,
+): Promise<ConsoleLoginCall> {
+  const startedAt = Date.now();
+  try {
+    // No consoleUrl option: callHigressConsole resolves the same shared URL
+    // (getHigressConsoleURL).
+    const { response } = await callHigressConsole('/session/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    const elapsed = Date.now() - startedAt;
+    if (response.ok) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> ok`);
+      return { kind: 'ok', response };
+    }
+    if (response.status === 401 || response.status === 403) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> invalid`);
+      return { kind: 'rejected', status: response.status };
+    }
+    if (response.status === 429 || response.status >= 500) {
+      console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> transient`);
+      return { kind: 'transient', detail: `HTTP ${response.status}` };
+    }
+    // Other 4xx (e.g. a 404 from a misrouted Console) is not retryable, but
+    // it is not a wrong password either — surface it as a track failure.
+    console.warn(`[auth/login] console attempt ${attempt} ${host} HTTP ${response.status} (${elapsed}ms) -> failed`);
+    return { kind: 'rejected', status: response.status };
+  } catch (err) {
+    // F1g: surface the failure in docker logs. A silently-failing Console
+    // track sends admin-password users down the Matrix track into the
+    // confusing "paste a Controller token" error with no trace of WHY the
+    // password path died (install-verify 9/9: only the token worked).
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.warn(`[auth/login] console attempt ${attempt} ${host} ${detail} (${Date.now() - startedAt}ms) -> transient`);
+    return { kind: 'transient', detail };
+  }
+}
 
 /**
  * Console track: admin login → level-3 session with the SA credential.
@@ -195,29 +456,32 @@ async function attemptConsoleLogin(
   // Console admin that the L1 track then accepts as the L1 human. The Console
   // admin account must be provisioned out-of-band (installer / first-time
   // setup only).
-  let consoleRes: Response;
-  try {
-    // No consoleUrl option: callHigressConsole resolves the same shared URL
-    // (getHigressConsoleURL). `consoleUrl` above stays for log messages only.
-    const result = await callHigressConsole('/session/login', {
-      method: 'POST',
-      body: { username, password },
-    });
-    consoleRes = result.response;
-  } catch (err) {
-    // F1g: surface the failure in docker logs. A silently-failing Console
-    // track sends admin-password users down the Matrix track into the
-    // confusing "paste a Controller token" error with no trace of WHY the
-    // password path died (install-verify 9/9: only the token worked).
-    console.error(
-      `Console track fetch failed (${consoleUrl}): ${err instanceof Error ? err.message : String(err)}`,
-    );
+  const consoleHost = upstreamHost(consoleUrl);
+  let consoleCall = await consoleLoginAttempt(username, password, consoleHost, 1);
+  if (consoleCall.kind === 'transient') {
+    // One retry for a timeout/5xx/429; a 401 is never retried.
+    await sleep(LOGIN_RETRY_DELAY_MS);
+    consoleCall = await consoleLoginAttempt(username, password, consoleHost, 2);
+  }
+  if (consoleCall.kind === 'transient') {
+    console.warn(`[auth/login] console track unavailable after retry (${consoleHost}): ${consoleCall.detail}`);
+    return {
+      kind: 'transient',
+      response: NextResponse.json(
+        {
+          success: false,
+          error: '认证服务暂时不可用（Console 登录超时/不可达），请稍后重试',
+          retryable: true,
+        },
+        { status: 503 },
+      ),
+    };
+  }
+  if (consoleCall.kind === 'rejected') {
+    console.error(`[auth/login] console track rejected: HTTP ${consoleCall.status} (${consoleHost})`);
     return { kind: 'failed' };
   }
-  if (!consoleRes.ok) {
-    console.error(`Console track rejected: HTTP ${consoleRes.status} for user "${username}" (${consoleUrl})`);
-    return { kind: 'failed' };
-  }
+  const consoleRes = consoleCall.response;
 
   // Identity = the Console username itself. The Console admin account and the
   // Human CRs are different accounts (the Console admin may have no CR):
@@ -242,14 +506,18 @@ async function attemptConsoleLogin(
 
   // Chat convenience: L1's own Matrix token (client-side, chat only).
   // External mode must not return an internal homeserver URL or Matrix access
-  // token to the remote client (upstream #76).
-  const matrix = opts.allowMatrix ? await tryMatrixLogin(username, password) : null;
+  // token to the remote client (upstream #76). A transient Matrix failure here
+  // is not fatal — the Console session is already established.
+  const matrixAttempt = opts.allowMatrix ? await tryMatrixLogin(username, password) : null;
+  const matrix = matrixAttempt?.kind === 'ok' ? matrixAttempt.data : null;
 
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   // Dashboard session first, then the Higress Console cookie (gateway tab).
-  responseHeaders.append('set-cookie', sessionCookieHeader(cookieValue));
+  // The request drives the Secure flag: an HTTP localhost login must not
+  // emit a Secure cookie (it would never be sent back → data 401).
+  responseHeaders.append('set-cookie', sessionCookieHeader(cookieValue, request));
   forwardCookies(consoleRes.headers, responseHeaders);
 
   return {
@@ -322,7 +590,7 @@ async function attemptControllerTokenLogin(
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue, request));
 
   return new NextResponse(
     JSON.stringify({
@@ -335,32 +603,223 @@ async function attemptControllerTokenLogin(
 }
 
 
+/**
+ * Verify the deployment admin's Console credentials (adminUsername +
+ * adminPassword) against the Console session endpoint. Returns the accepted
+ * response so the caller can bind the Console session server-side
+ * (collectSetCookieHeader) — it is never forwarded to the browser.
+ * Reuses callHigressConsole: no parallel Console client, no logging of the
+ * credentials.
+ */
+async function verifyAdminConsoleCredentials(
+  username: string,
+  password: string,
+): Promise<{ response: Response } | null> {
+  try {
+    const { response } = await callHigressConsole('/session/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    return response.ok ? { response } : null;
+  } catch {
+    return null;
+  }
+}
+
+interface AdminCredentials {
+  username: string;
+  password: string;
+}
+
+type MatrixAttempt =
+  | { kind: 'ok'; response: NextResponse }
+  | { kind: 'invalid'; response: NextResponse } // credentials rejected → 401
+  | { kind: 'unavailable'; response: NextResponse } // transient upstream → 503
+  | { kind: 'failed'; response: NextResponse }; // definitive non-credential failure
+
+/**
+ * Matrix track. The identity comes from the user's own Matrix token; the
+ * optional admin credentials are an explicit administrator-verification
+ * channel for L1 (dashboard level 3) accounts:
+ * - modern Controller (/me): level 3 keeps the own-token 'matrix' credential
+ *   (new auth path, #214); the verified Console session is only bound for the
+ *   gateway tab.
+ * - legacy Controller: level 3 rides the server-side SA credential and binds
+ *   the Console session; when the SA Human lookup cannot resolve the account,
+ *   a successful admin verification admits a synthetic L1 Human — including
+ *   when the non-authoritative own-token L2 probe accepted the token.
+ * L2/L3 Human identities resolved authoritatively (modern /me or SA Human)
+ * are never elevated by the admin fields.
+ */
 async function attemptMatrixLogin(
   request: NextRequest,
   username: string,
   password: string,
-): Promise<NextResponse> {
+  admin: AdminCredentials,
+): Promise<MatrixAttempt> {
   const matrix = await tryMatrixLogin(username, password);
-  if (!matrix || !matrix.accessToken) {
-    return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
+  if (matrix.kind === 'invalid') {
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 }),
+    };
+  }
+  if (matrix.kind === 'unavailable') {
+    return {
+      kind: 'unavailable',
+      response: NextResponse.json(
+        {
+          success: false,
+          error: '认证服务暂时不可用（Matrix 登录超时/不可达），请稍后重试',
+          retryable: true,
+        },
+        { status: 503 },
+      ),
+    };
+  }
+  const matrixData = matrix.data;
+  if (!matrixData.accessToken) {
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 }),
+    };
   }
 
-  const userId = typeof matrix.userId === 'string' ? matrix.userId : '';
+  const userId = typeof matrixData.userId === 'string' ? matrixData.userId : '';
   const localpart = userId.startsWith('@') ? userId.slice(1).split(':')[0] : username;
-  let human: HumanRecord | null;
+  const token = String(matrixData.accessToken);
+  const hasAdminCredentials = Boolean(admin.username && admin.password);
+
+  // Verification is lazy and cached: only a level-3 identity (or the legacy
+  // synthetic-L1 admission) consults it, and the Console is called once.
+  let adminCheck: { ok: boolean; consoleCookie?: string } | undefined;
+  const verifyAdmin = async (): Promise<{ ok: boolean; consoleCookie?: string }> => {
+    if (!adminCheck) {
+      if (!hasAdminCredentials) {
+        adminCheck = { ok: false };
+      } else {
+        const verified = await verifyAdminConsoleCredentials(admin.username, admin.password);
+        adminCheck = verified
+          ? { ok: true, consoleCookie: collectSetCookieHeader(verified.response.headers) }
+          : { ok: false };
+      }
+    }
+    return adminCheck;
+  };
+  const adminVerificationFailed = (): MatrixAttempt => ({
+    kind: 'invalid',
+    response: NextResponse.json(
+      { success: false, error: '管理员账号验证失败（账号或密码不正确）' },
+      { status: 401 },
+    ),
+  });
+
+  let me: MeResult;
   try {
-    human = await fetchCurrentHuman(request, String(matrix.accessToken));
+    me = await fetchCurrentHuman(request, token);
   } catch (error) {
     console.error('[auth/login] identity lookup failed:', error);
-    return NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 });
+    return {
+      kind: 'failed',
+      response: NextResponse.json({ success: false, error: 'Controller 无法验证用户身份，请确认已升级 Controller 并配置对应 Human' }, { status: 502 }),
+    };
   }
-  if (!human) return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+
+  let human: HumanRecord;
+  let legacyL1 = false;
+  let consoleCookie: string | undefined;
+  if (me.kind === 'human') {
+    // Modern Controller: own-token identity, the server SA token is never
+    // involved (#214 semantics).
+    human = me.human;
+  } else if (me.kind === 'rejected') {
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 }),
+    };
+  } else {
+    // Legacy path: this Controller predates /api/v1/me (404/405).
+    const saHuman = await fetchHumanViaSa(request, localpart);
+    if (saHuman && isUsableHuman(saHuman)) {
+      human = saHuman;
+      legacyL1 = saHuman.permissionLevel === 1;
+    } else {
+      const probe = await probeLegacyOwnToken(request, token);
+      if (probe.kind === 'l2') {
+        // The own-token probe is NOT authoritative about the Human's level:
+        // the old Controller accepts these tokens on the data plane, so an
+        // L1 account passes it too and would be misread as a team L2 user.
+        // An explicitly supplied admin pair is therefore verified here, and
+        // a valid pair admits the account as a synthetic L1 instead. A real
+        // L2 Human never reaches this branch (the SA lookup resolves it
+        // above), and an invalid pair fails closed.
+        if (hasAdminCredentials) {
+          const verified = await verifyAdmin();
+          if (!verified.ok) return adminVerificationFailed();
+          consoleCookie = verified.consoleCookie;
+          human = { name: localpart, permissionLevel: 1, accessibleTeams: [] };
+          legacyL1 = true;
+        } else {
+          human = { name: localpart, permissionLevel: 2, accessibleTeams: probe.teams };
+        }
+      } else if (probe.kind === 'unavailable') {
+        return {
+          kind: 'failed',
+          response: NextResponse.json(
+            { success: false, error: 'Controller 不可达，无法验证用户身份：请检查 Controller 地址配置，或升级 Controller 后重试' },
+            { status: 502 },
+          ),
+        };
+      } else if (hasAdminCredentials) {
+        // Explicit administrator verification: the old Controller cannot
+        // resolve this Matrix account (no SA credential or no Human CR) but a
+        // verified deployment admin vouches for it → synthetic L1 Human.
+        const verified = await verifyAdmin();
+        if (!verified.ok) return adminVerificationFailed();
+        consoleCookie = verified.consoleCookie;
+        human = { name: localpart, permissionLevel: 1, accessibleTeams: [] };
+        legacyL1 = true;
+      } else {
+        return {
+          kind: 'invalid',
+          response: NextResponse.json(
+            {
+              success: false,
+              error:
+                '旧版 Controller 无法验证该 Matrix 账号的权限：请在「L1 账号管理员验证」中填写管理员账号与密码，' +
+                '或改用 Controller 管理员 token 登录，或升级 Controller 后重试',
+            },
+            { status: 401 },
+          ),
+        };
+      }
+    }
+  }
+
   const crLevel = human.permissionLevel;
   const dashLevel = crLevel === undefined ? undefined : MATRIX_CR_LEVEL_TO_DASH_LEVEL[crLevel];
   if (!human.name || (crLevel !== 1 && crLevel !== 2 && crLevel !== 3) || !dashLevel) {
-    return NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 });
+    return {
+      kind: 'invalid',
+      response: NextResponse.json({ success: false, error: 'Invalid Human identity' }, { status: 401 }),
+    };
   }
-  const credential = { kind: 'matrix' as const, token: String(matrix.accessToken) };
+  // Level 3 (full admin): admin credentials, when supplied, must verify —
+  // an invalid pair fails closed instead of silently granting admin access.
+  // L2/L3 Human identities ignore the fields entirely.
+  if (dashLevel === 3 && hasAdminCredentials) {
+    const verified = await verifyAdmin();
+    if (!verified.ok) return adminVerificationFailed();
+    consoleCookie = verified.consoleCookie ?? consoleCookie;
+  }
+  // Legacy L1: the old Controller's Matrix auth rejects admin-level tokens
+  // on the data plane, so the session rides the server-side SA credential
+  // (the SA lookup that produced the record proves the token is configured,
+  // or a verified deployment admin vouched for this account). The Matrix
+  // token is still returned to the client for chat only. L2/L3 (modern or
+  // legacy) keep their own token — the A2 chain.
+  const credential: { kind: 'sa' } | { kind: 'matrix'; token: string } =
+    legacyL1 ? { kind: 'sa' } : { kind: 'matrix', token };
 
   let cookieValue: string;
   try {
@@ -370,27 +829,36 @@ async function attemptMatrixLogin(
       // Level 3 (full admin) is not team-restricted; L2/L3 users are scoped.
       teams: dashLevel === 3 ? [] : (human.accessibleTeams ?? []),
       credential,
+      // Server-bound Console session (administrator verification) — lets the
+      // gateway tab work without sending the Console cookie to the browser.
+      ...(consoleCookie ? { consoleCookie } : {}),
     }));
   } catch (err) {
-    return NextResponse.json(
-      { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
-      { status: 503 },
-    );
+    return {
+      kind: 'failed',
+      response: NextResponse.json(
+        { success: false, error: `Session store unavailable: ${err instanceof Error ? err.message : 'unknown'}` },
+        { status: 503 },
+      ),
+    };
   }
 
   const responseHeaders = new Headers();
   responseHeaders.set('content-type', 'application/json');
   responseHeaders.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue));
+  responseHeaders.set('set-cookie', sessionCookieHeader(cookieValue, request));
 
-  return new NextResponse(
-    JSON.stringify({
-      success: true,
-      user: { username: human.name || localpart, level: dashLevel },
-      mode: 'matrix',
-      matrix,
-    }),
-    { status: 200, headers: responseHeaders },
-  );
+  return {
+    kind: 'ok',
+    response: new NextResponse(
+      JSON.stringify({
+        success: true,
+        user: { username: human.name || localpart, level: dashLevel },
+        mode: 'matrix',
+        matrix: matrixData,
+      }),
+      { status: 200, headers: responseHeaders },
+    ),
+  };
 }
 

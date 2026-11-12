@@ -131,6 +131,23 @@ describe('ChatRoomSidebar', () => {
     expect(screen.getByText('QwenPaw')).toBeInTheDocument();
   });
 
+  it('renders a dedicated 项目群 section after 我的团队 in workspace mode', () => {
+    const leader = room({ id: '!design:test', name: '设计助手', type: 'manager', agentRole: 'leader', parentTeam: 'design' });
+    renderSidebar({
+      rooms: [
+        leader,
+        room({ id: '!group:test', name: '设计群聊', parentTeam: 'design' }),
+        room({ id: '!proj:test', name: '网站改版', type: 'project', parentTeam: 'design' }),
+      ],
+    });
+    const heading = screen.getByText('项目群');
+    expect(heading).toBeInTheDocument();
+    // Team list keeps its own heading and project rooms are not folded into it.
+    expect(screen.getByText('我的团队').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('网站改版')).toBeInTheDocument();
+    expect(screen.queryByText('其他对话')).toBeNull();
+  });
+
   it('filters by kind through the category menu', async () => {
     renderSidebar({
       rooms: [

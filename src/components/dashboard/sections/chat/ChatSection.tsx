@@ -14,6 +14,7 @@ import { AlertTriangle, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
+import type { RoomInfo } from './room-info';
 import { ChatAuthBadge } from './chat-auth-badge';
 import { SyncStatusChip } from './sync-status-chip';
 import { ServerCapabilityPopover } from './server-capability-popover';
@@ -129,14 +130,20 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // badge. We don't re-sort on every keystroke — just pass the meta to
   // buildRooms and sort at the boundary.
   const roomMeta = useRoomMetaStore((s) => s.meta);
+  // Controller 项目工作流是项目群的第二来源：/sync 没采集到 m.room.name 时
+  // source_room_id 仍能补齐侧栏房间。这里始终拉取（enabled=true），同一份
+  // taskFeed 继续驱动 attention 徽标，不额外发起第二套 projects 查询。
+  const taskFeed = useAssistantTaskFeed(undefined, true);
   const availableRooms = useMemo(
-    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans)), roomAccess.joinedRooms, roomAccess.state)
+    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows)), roomAccess.joinedRooms, roomAccess.state)
       .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
       .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined })),
-    [workers, teams, managers, humans, roomMeta, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
+    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
   );
-  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view]);
-  const taskFeed = useAssistantTaskFeed(undefined, rooms.some(room => room.agentRole || room.type === 'team'));
+  // 项目群与团队房间同属「我的团队」视图：两者都是团队工作单元，只是
+  // 侧栏分组不同（我的团队 / 项目群）。
+  const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project', []);
+  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? isTeamViewRoom(room) : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view, isTeamViewRoom]);
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
@@ -144,9 +151,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
     const room = availableRooms.find(room => room.id === roomId);
     if (!room || !canOpenConversation(room)) return;
-    if (view !== 'all' && (view === 'teams') !== (room.type === 'team')) {
+    if (view !== 'all' && (view === 'teams') !== isTeamViewRoom(room)) {
       useHitlInboxStore.getState().setPendingChatRoomId(roomId);
-      useSectionStore.getState().setActiveSection(room.type === 'team' ? 'my-teams' : 'chat');
+      useSectionStore.getState().setActiveSection(isTeamViewRoom(room) ? 'my-teams' : 'chat');
       return;
     }
     if (remember) {
@@ -159,7 +166,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     setSelection({ scope: selectionKey, id: roomId });
     setContextPanel(null);
     setMobileRoomListOpen(false);
-  }, [availableRooms, selectionKey, view]);
+  }, [availableRooms, selectionKey, view, isTeamViewRoom]);
 
 
   const projectionNotices = useMemo(() => {

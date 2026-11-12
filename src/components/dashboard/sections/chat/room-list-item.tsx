@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bot, Crown, MessageSquare, UserCheck, Users } from 'lucide-react';
+import { Bot, Crown, FolderKanban, MessageSquare, UserCheck, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { WorkerSessionDot, WorkerSessionRunningDot } from '@/components/worker-session-dot';
 import {
@@ -21,6 +21,8 @@ function roomTypeIcon(type: RoomInfo['type']) {
   switch (type) {
     case 'team':
       return <Users className="w-4 h-4 text-muted-foreground" />;
+    case 'project':
+      return <FolderKanban className="w-4 h-4 text-sky-500" />;
     case 'worker':
       return <Bot className="w-4 h-4 text-muted-foreground" />;
     case 'manager':
@@ -131,7 +133,7 @@ export function RoomListItem({
               </Badge>
             ) : null}
             <p className="text-xs text-muted-foreground truncate min-w-0">
-              {accessLabel || room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : '暂无消息')}
+              {accessLabel || room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : room.type === 'project' ? '项目协作群聊' : '暂无消息')}
             </p>
           </div>
           {room.agentRole && <TaskAttention counts={attention} pending={attentionPending} />}

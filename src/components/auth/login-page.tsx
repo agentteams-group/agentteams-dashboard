@@ -19,9 +19,12 @@ interface LoginPageProps {
   dataPlaneRejected?: boolean;
 }
 
-export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlaneRejected = false }: LoginPageProps) {
+export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminVisible, setAdminVisible] = useState(false);
   const [tokenOnlyToken, setTokenOnlyToken] = useState('');
   const [tokenOnlyVisible, setTokenOnlyVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +48,10 @@ export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlane
         body: JSON.stringify({
           username,
           password,
+          // Optional L1 administrator verification for the old Controller:
+          // sent only when both fields are filled, so the body for ordinary
+          // L2/L3 accounts stays exactly {username, password}.
+          ...(adminUsername && adminPassword ? { adminUsername, adminPassword } : {}),
         }),
       });
 
@@ -164,6 +171,40 @@ export function LoginPage({ onLoginSuccess, defaultUsername = 'admin', dataPlane
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               disabled={isLoading}
             />
+          </div>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setAdminVisible((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {adminVisible ? '收起 L1 账号管理员验证' : 'L1 账号管理员验证（旧 Controller 需要）'}
+            </button>
+            {adminVisible && (
+              <div className="space-y-2">
+                <Input
+                  id="admin-username"
+                  placeholder="管理员账号"
+                  autoComplete="username"
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value)}
+                  disabled={isLoading}
+                />
+                <Input
+                  id="admin-password"
+                  type="password"
+                  placeholder="管理员密码"
+                  autoComplete="current-password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  disabled={isLoading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  旧 Controller 上使用 Matrix 账号登录 L1 时，必须填写这里的 Console 管理员账号/密码；admin 账号本身不需要重复填写。
+                </p>
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <button

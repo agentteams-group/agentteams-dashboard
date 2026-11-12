@@ -49,11 +49,21 @@ describe('preferredAgentRoom', () => {
   it('groups each team separately while retaining ordinary and sync-only conversations', () => {
     const teamGroup = { ...group, parentTeam: 'design' };
     const worker: RoomInfo = { id: '!worker:test', name: 'Worker', type: 'worker', members: [], parentTeam: 'design' };
-    const other: RoomInfo = { id: '!project:test', name: '项目群', type: 'unknown', members: [] };
+    const other: RoomInfo = { id: '!other:test', name: '普通房间', type: 'unknown', members: [] };
     const sections = conversationSections([worker, leader, ops, other, teamGroup]);
     expect(sections.operations.map(room => room.id)).toEqual([ops.id]);
     expect(sections.teams[0].rooms.map(room => room.id)).toEqual([leader.id, group.id]);
     expect(sections.other.map(room => room.id)).toEqual([worker.id, other.id]);
+    expect(sections.projects).toEqual([]);
+  });
+
+  it('gives project rooms their own section instead of 其他对话', () => {
+    const teamGroup = { ...group, parentTeam: 'design' };
+    const project: RoomInfo = { id: '!project:test', name: '网站改版', type: 'project', members: [], parentTeam: 'design', projectId: 'project-1', teamId: 'design' };
+    const sections = conversationSections([leader, teamGroup, project]);
+    expect(sections.projects.map(room => room.id)).toEqual([project.id]);
+    expect(sections.teams[0].rooms.map(room => room.id)).toEqual([leader.id, teamGroup.id]);
+    expect(sections.other).toEqual([]);
   });
 
   it('separates remembered selections by account and homeserver without credentials', () => {

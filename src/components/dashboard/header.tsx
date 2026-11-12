@@ -216,7 +216,11 @@ export function DashboardHeader({
             return (
               <DropdownMenuItem
                 key={action.id}
-                onClick={() => onNavClick(action.section)}
+                onClick={() => {
+                  // 精确深链（如团队与Agent 的 tab）优先；其余仍走 section 导航。
+                  if (action.hash) window.location.hash = action.hash;
+                  else onNavClick(action.section);
+                }}
                 className="cursor-pointer"
               >
                 <ActionIcon className="w-4 h-4" />

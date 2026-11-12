@@ -74,6 +74,26 @@ describe('formatErrorMessage', () => {
     expect(formatErrorMessage('plain string', '自定义')).toBe('自定义');
     expect(formatErrorMessage(null)).toBe('操作失败');
   });
+
+  it('surfaces the proxy message instead of raw API Error JSON', () => {
+    const err = new ApiError(
+      'API Error 502: {"message":"上游返回了 HTML 页面而非 API 数据","upstream_status":502}',
+      502,
+      '/workers/w1'
+    );
+    expect(formatErrorMessage(err)).toBe(
+      '服务器错误 (502): 上游返回了 HTML 页面而非 API 数据'
+    );
+  });
+
+  it('prefers message over error and notes a differing upstream status', () => {
+    const err = new ApiError(
+      'API Error 502: {"error":"fallback text","message":"真实原因","upstream_status":503}',
+      502,
+      '/workers/w1'
+    );
+    expect(formatErrorMessage(err)).toBe('服务器错误 (502): 真实原因（upstream 503）');
+  });
 });
 
 describe('describeWorkerDeleteError', () => {

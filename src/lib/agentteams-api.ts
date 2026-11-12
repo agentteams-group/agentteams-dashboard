@@ -115,6 +115,10 @@ export interface TeamResponse extends LlmTuningFields {
   peerMentions?: boolean;
   workerNames: string[];
   workerExposedPorts: Record<string, ExposedPort[]>;
+  /** 团队心跳间隔（TeamSpec.heartbeatEvery，如 "10m"；旧控制器不投影）。 */
+  heartbeatEvery?: string;
+  /** 子代理默认模型（TeamSpec.subagentModel；留空 = 继承各 Worker 主模型）。 */
+  subagentModel?: string;
 }
 
 // ----- team attention inbox (upstream #1503) -----
@@ -670,6 +674,8 @@ export interface MillforgeRollbackResult {
 export interface CreateWorkerRequest {
   name: string;
   model?: RequestModelAlias;
+  /** APIG Model API name；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime: WorkerRuntime;
   image?: string;
   soul?: string;
@@ -710,6 +716,12 @@ export interface CreateTeamRequest extends LlmTuningFields {
   defaultWorkerModel?: RequestModelAlias;
   /** Default runtime for newly provisioned worker members. */
   defaultWorkerRuntime?: WorkerRuntime;
+  /** TeamSpec.heartbeatEvery（如 "10m"）。 */
+  heartbeatEvery?: string;
+  /** TeamSpec.subagentModel（子代理默认模型；留空 = 继承各 Worker 主模型）。 */
+  subagentModel?: string;
+  /** TeamSpec.peerMentions（删除撤销按快照重建时保留原值）。 */
+  peerMentions?: boolean;
 }
 
 export interface UpdateTeamRequest extends LlmTuningFields {
@@ -729,6 +741,10 @@ export interface UpdateTeamRequest extends LlmTuningFields {
   workerIdleTimeout?: string;
   /** TeamSpec.peerMentions（指针语义：省略 = 不改）。 */
   peerMentions?: boolean;
+  /** TeamSpec.heartbeatEvery；null = 清空回 Controller 默认（与插件 doCfg 同语义）。 */
+  heartbeatEvery?: string | null;
+  /** TeamSpec.subagentModel；null = 清空（继承各 Worker 主模型）。 */
+  subagentModel?: string | null;
 }
 
 export type TeamWorkerMember = { name: string; role: 'team_leader' | 'worker' };
@@ -805,6 +821,8 @@ export interface UpdateHumanRequest {
 export interface CreateManagerRequest {
   name: string;
   model?: RequestModelAlias;
+  /** APIG Model API name；空 = 跟随默认。 */
+  modelProvider?: string;
   runtime?: string;
   image?: string;
 }

@@ -329,6 +329,7 @@ export function ManagersSection() {
         onOpenChange={(open) => !open && closeEdit()}
         onSubmit={handleUpdate}
         modelOptions={modelOptions}
+        modelProvider={editManager?.modelProvider}
         sessionIssue={sessionIssue}
       />
 

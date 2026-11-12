@@ -15,20 +15,27 @@ import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { WorkerToolIcon } from './tool-icons';
 
 interface ToolEntry {
   name: string;
   enabled: boolean;
   description?: string;
   asyncExecution?: boolean;
-  icon?: string;
   requiresConfig?: boolean;
 }
 
 type LoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 type ToolField = 'enabled' | 'asyncExecution';
 
-export function WorkerToolsPanel({ workerName }: { workerName: string }) {
+export function WorkerToolsPanel({
+  workerName,
+  runtime,
+}: {
+  workerName: string;
+  /** Worker 运行时；驱动工具图标表（未知/空 → 分组图标，不回退 emoji）。 */
+  runtime?: string;
+}) {
   const [state, setState] = useState<LoadState>('loading');
   const [tools, setTools] = useState<ToolEntry[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -199,9 +206,11 @@ export function WorkerToolsPanel({ workerName }: { workerName: string }) {
             key={t.name}
             className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5"
           >
-            <span className="w-5 text-center text-sm" aria-hidden="true">
-              {t.icon || '🔧'}
-            </span>
+            <WorkerToolIcon
+              name={t.name}
+              runtime={runtime}
+              className="size-4 text-muted-foreground"
+            />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate font-mono text-xs">{t.name}</span>

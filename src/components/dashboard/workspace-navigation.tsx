@@ -14,7 +14,7 @@ export const workspaceMenus = [
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
   { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops', 'tracing'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
-  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'teams', 'humans', 'managers'] },
+  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'team-agents', 'humans', 'managers'] },
 ];
 
 export function workspaceMenuFor(section: string) {
@@ -85,10 +85,10 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
             {grouped && !collapsed && (
               <div id={`${id}-${menu.id}`} role="group" aria-label={`${menu.label}分类`} hidden={!expanded} className="ml-5 mt-0.5 space-y-0.5 pl-3">
                 {items.map(item => (
-                  <button key={item.id} type="button" aria-label={item.id === 'workers' ? 'Agent' : item.id === 'humans' ? '用户' : item.label} data-nav-section={item.id} aria-current={activeSection === item.id ? 'page' : undefined}
+                  <button key={item.id} type="button" aria-label={item.id === 'humans' ? '用户' : item.label} data-nav-section={item.id} aria-current={activeSection === item.id ? 'page' : undefined}
                     onClick={() => onNavClick(item.id)}
                     className={`flex min-h-11 w-full items-center md:min-h-9 gap-2 rounded-md px-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary ${activeSection === item.id ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
-                    <span>{item.id === 'workers' ? 'Agent' : item.id === 'humans' ? '用户' : item.label}</span>
+                    <span>{item.id === 'humans' ? '用户' : item.label}</span>
                     {(countMap[item.id] ?? 0) > 0 && <span className="ml-auto text-xs tabular-nums">{countMap[item.id] > 99 ? '99+' : countMap[item.id]}</span>}
                   </button>
                 ))}

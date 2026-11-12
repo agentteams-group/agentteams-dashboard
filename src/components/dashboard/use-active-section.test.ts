@@ -49,8 +49,23 @@ describe('useActiveSection', () => {
     it('resolves a legacy flat hash and normalizes the URL in place', () => {
       setHash('#workers');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('workers');
-      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#console/resources/workers');
+      expect(result.current.activeSection).toBe('team-agents');
+      expect(replaceStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
+        '#console/resources/team-agents?tab=agents',
+      );
+    });
+
+    it('normalizes #teams to the merged page teams tab', () => {
+      setHash('#teams');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('team-agents');
+      expect(replaceStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
+        '#console/resources/team-agents?tab=teams',
+      );
     });
 
     it('normalizes #chat to the layered space hash', () => {
@@ -131,13 +146,13 @@ describe('useActiveSection', () => {
   });
 
   describe('setActiveSection', () => {
-    it('writes the canonical layered hash for workers', () => {
+    it('writes the canonical layered hash for team-agents', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       act(() => {
-        result.current.setActiveSection('workers');
+        result.current.setActiveSection('team-agents');
       });
-      expect(window.location.hash).toBe('#console/resources/workers');
+      expect(window.location.hash).toBe('#console/resources/team-agents');
     });
 
     it('writes the canonical layered hash for the collaboration space', () => {
