@@ -38,7 +38,6 @@ export function ManagerModelDialog({
   model,
   modelProvider,
   modelOptions,
-  sessionIssue,
   saving,
   onCancel,
   onSubmit,

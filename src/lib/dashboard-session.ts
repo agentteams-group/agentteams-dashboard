@@ -277,7 +277,7 @@ export function getSessionFromRequest(request: { headers: { get(_name: string): 
 
 /** Minimal request shape needed to detect the transport scheme. */
 export interface CookieRequestLike {
-  headers: { get(name: string): string | null };
+  headers: { get(_name: string): string | null };
   nextUrl?: { protocol?: string };
 }
 
