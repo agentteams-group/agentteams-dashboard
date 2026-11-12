@@ -149,7 +149,7 @@ export function WorkerModelDialog({
             >
               <p className="break-words">{saveError}</p>
               {lastRequestBody ? (
-                <p className="break-words font-mono text-[11px] text-muted-foreground">
+                <p className="break-words font-mono text-xs text-muted-foreground">
                   请求：PUT /api/agentteams/workers/{encodeURIComponent(workerName)} · body{' '}
                   {lastRequestBody}
                 </p>
