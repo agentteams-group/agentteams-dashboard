@@ -112,7 +112,7 @@ Worker polling supports slim list projections and private ETag revalidation, wit
 The [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer starts Dashboard by default alongside the Controller/Manager. The default local flow opens Dashboard and copies the login password to the clipboard; paste it into the login page with `admin` prefilled. A model API key is optional during installation: the Manager conversation links to model management when configuration is missing. Installer changes are contributed to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
 - **Dashboard release target**: `v1.4.0`. The app version source of truth is `version` in `package.json` (`1.4.0`); the matching release tag is `v1.4.0`.
-- **Installer default**: `v1.4.0`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
+- **Installer default**: `v1.4.1`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
