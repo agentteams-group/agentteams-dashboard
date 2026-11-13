@@ -13,7 +13,6 @@ import {
   ChevronUp,
   MessageSquare,
   Crown,
-  User,
   Users,
   Eye,
   FolderTree,
@@ -316,8 +315,7 @@ function TaskCard({
               className="text-xs gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400"
               title={`依赖 ${task.dependsOn.length} 个前置任务`}
             >
-              <Layers className="h-2.5 w-2.5" />
-              ×{task.dependsOn.length}
+              依赖 {task.dependsOn.length}
             </Badge>
           )}
         </div>}
@@ -330,27 +328,17 @@ function TaskCard({
             {shortId(task.runId, 22)}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+        <div className="min-w-0 space-y-1.5 text-xs text-muted-foreground">
           {task.assignedTo && (
-            <span className="flex items-center gap-1">
-              {managerName ? (
-                <>
-                  <Crown className="h-3 w-3" />
-                  <span>{managerName}</span>
-                </>
-              ) : (
-                <>
-                  <User className="h-3 w-3" />
-                  {task.assignedTo}
-                </>
-              )}
-              {workerTeam && <span className="text-muted-foreground/60">· {workerTeam}</span>}
-            </span>
+            <div className="min-w-0" title={task.assignedTo}>
+              <p className="truncate">{managerName || task.assignedTo.replace(/^@([^:]+):.*$/, '$1')}</p>
+              {workerTeam && <p className="mt-1 truncate text-muted-foreground/70" title={workerTeam}>{workerTeam}</p>}
+            </div>
           )}
-          <span className="flex items-center gap-1">
+          {task.createdAt > 0 && <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {displayTime(task.createdAt)}
-          </span>
+          </span>}
         </div>
         {task.roomId && (
           <button
@@ -363,8 +351,7 @@ function TaskCard({
             title="打开来源空间会话"
             className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
           >
-            <MessageSquare className="h-2.5 w-2.5" />
-            <span className="font-mono truncate">{shortId(task.roomId, 24)}</span>
+            查看来源会话
           </button>
         )}
       </CardContent>
@@ -777,14 +764,16 @@ export function TasksSection() {
     let failed = 0;
     let blocked = 0;
     let revision = 0;
+    let submitted = 0;
     for (const t of board.tasks) {
       if (t.status === 'in_progress' || t.status === 'assigned') running++;
       else if (t.status === 'completed') completed++;
       else if (t.status === 'revision') revision++;
       else if (t.status === 'failed') failed++;
       else if (t.status === 'blocked') blocked++;
+      else if (t.status === 'submitted') submitted++;
     }
-    return { running, completed, failed, blocked, revision, total: board.tasks.length };
+    return { running, submitted, completed, failed, blocked, revision, total: board.tasks.length };
   }, [board.tasks]);
 
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
@@ -793,6 +782,20 @@ export function TasksSection() {
     <div className="space-y-4">
       <SectionHeader
         title="任务看板"
+        meta={
+          <div aria-label="任务状态汇总" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {[
+              ['进行中', counts.running], ['待验收', counts.submitted],
+              ['已完成', counts.completed], ['需修订', counts.revision],
+              ['阻塞', counts.blocked], ['失败', counts.failed],
+            ].map(([label, count]) => (
+              <span key={label} className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">{label}</span>
+                <span className="font-medium tabular-nums">{count}</span>
+              </span>
+            ))}
+          </div>
+        }
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
@@ -834,42 +837,6 @@ export function TasksSection() {
           </div>
         }
       />
-
-      {/* Compact task summary */}
-      <div aria-label="任务状态汇总" className="flex items-center gap-5 overflow-x-auto rounded-lg border border-border px-4 py-2 text-sm">
-        {[
-          {
-            label: '进行中',
-            count: counts.running,
-            color: 'text-foreground',
-          },
-          {
-            label: '已完成',
-            count: counts.completed,
-            color: 'text-foreground',
-          },
-          {
-            label: '需修订',
-            count: counts.revision,
-            color: 'text-foreground',
-          },
-          {
-            label: '阻塞',
-            count: counts.blocked,
-            color: 'text-foreground',
-          },
-          {
-            label: '失败',
-            count: counts.failed,
-            color: 'text-foreground',
-          },
-        ].map((s) => (
-          <div key={s.label} className="flex shrink-0 items-center gap-2">
-            <span className="text-muted-foreground">{s.label}</span>
-            <span className={`font-mono font-semibold ${s.color}`}>{s.count}</span>
-          </div>
-        ))}
-      </div>
 
       {/* Diagnostic banner (MinIO fallback only — the API primary source
           reports its own degraded state via the projects section). */}

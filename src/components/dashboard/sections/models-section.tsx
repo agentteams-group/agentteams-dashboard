@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -387,6 +388,7 @@ export function ModelsSection() {
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
   const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
+  const [activeTab, setActiveTab] = useState('usage');
   const providers = providersQuery.data ?? [];
   const routes = routesQuery.data ?? [];
   const providerNames = providers.map((provider) => provider.name);
@@ -401,16 +403,50 @@ export function ModelsSection() {
     else deleteRoute.mutate(deleteTarget.name, { onSuccess, onError });
   };
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
-  return <div className="space-y-6">
-    <SectionHeader title="模型管理" description="管理 Higress 提供商、路由、模型别名与 Consumer 凭证" />
+  return <div className="space-y-4">
+    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个提供商 · {routes.length} 条路由 · {modelBindings.length} 个模型映射</span>} />
     <ManagerModelSetup />
     <RuntimeStatusCard higress={infrastructure?.higress} />
-    <Card className="glass-card"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">AI 模型提供商<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个提供商</span></CardTitle><CardDescription>协议、Token 故障转移、模型映射与公开高级配置</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}><Plus className="mr-1 size-3.5" />添加提供商</Button></CardHeader><CardContent className="space-y-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
-    <Card className="glass-card"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同提供商。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同提供商；给不同提供商配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">共 {routes.length} 条路由</span></CardTitle><CardDescription>多上游权重、路径与模型匹配、认证和回退策略</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}><Plus className="mr-1 size-3.5" />添加路由</Button></CardHeader><CardContent className="space-y-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
-    <Card className="glass-card"><CardHeader><CardTitle className="flex items-center gap-1 text-base">请求模型别名绑定<InfoTip label="可用状态说明">已配置别名仅表示存在模型映射，尚未验证 Worker 的授权和调用结果。登录后可在 Worker 编辑页运行「已保存配置的网关验证」确认。</InfoTip></CardTitle><CardDescription>Manager 和 Worker 的模型别名将由 Higress 路由解析为具体提供商模型</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>请求模型别名</TableHead><TableHead>路由</TableHead><TableHead>提供商</TableHead><TableHead>目标模型</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无请求模型别名绑定</TableCell></TableRow> : modelBindings.map((binding) => <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}><TableCell className="font-mono text-xs">{binding.requestModelAlias}</TableCell><TableCell>{binding.routeName || '-'}</TableCell><TableCell>{binding.providerName || '-'}</TableCell><TableCell className="font-mono text-xs">{binding.targetModel || '-'}</TableCell><TableCell className="flex flex-wrap gap-1">{binding.conflict ? <Badge variant="destructive" className="text-xs" title="同一别名匹配了多个路由，请删除多余路由或调整匹配规则">冲突</Badge> : binding.available ? <Badge variant="default" className="text-xs" title="已配置别名仅表示存在模型映射，尚未验证该 Worker 的授权和调用结果。登录后可在 Worker 编辑页运行「已保存配置的网关验证」确认。">可用</Badge> : binding.passthrough ? <Badge variant="secondary" className="text-xs" title="路由未配置模型映射和匹配规则，直接转发原始模型名。请在路由中添加模型映射规则">未配置</Badge> : binding.providerName && !binding.targetModel ? <Badge variant="secondary" className="text-xs" title="模型映射未匹配。请检查路由的模型映射是否包含此别名">未匹配</Badge> : <Badge variant="secondary" className="text-xs" title="未找到对应的路由或提供商。请创建路由并将提供商加入上游">未绑定</Badge>}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
-    <ConsumerSection />
-    <RateLimitSection routes={routes} />
-    <HigressReferencePanel />
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+      <TabsList aria-label="模型配置分类" className="max-w-full overflow-x-auto">
+        <TabsTrigger value="usage">使用概览</TabsTrigger>
+        <TabsTrigger value="providers">模型提供商</TabsTrigger>
+        <TabsTrigger value="routes">AI 路由</TabsTrigger>
+        <TabsTrigger value="access">访问凭证</TabsTrigger>
+        <TabsTrigger value="limits">限流与参考</TabsTrigger>
+      </TabsList>
+      <TabsContent value="usage" className="space-y-4">
+        <ResourceError error={providersQuery.error} />
+        <ResourceError error={routesQuery.error} />
+        <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+          <p className="font-medium">Agent 选模型名称 → 路由决定发给谁 → 提供商调用实际模型</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">模型名称就是请求别名，可与实际模型同名。提供商保存地址、协议和密钥；路由负责模型匹配、上游分发与授权。AT 用这些配置给 Manager / Worker 选择模型并管理访问范围。</p>
+        </div>
+        <div className="overflow-hidden rounded-lg border">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"><h2 className="text-sm font-semibold">Agent 使用的模型</h2><span className="text-xs text-muted-foreground">配置状态不代表已通过实际调用验证</span></div>
+          <Table><TableHeader><TableRow><TableHead>模型名称 / 请求别名</TableHead><TableHead>实际模型</TableHead><TableHead>提供商 / 路由</TableHead><TableHead>使用者</TableHead><TableHead>配置状态</TableHead></TableRow></TableHeader><TableBody>
+            {modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">暂无 Agent 模型配置，请先添加提供商并为 Agent 选择模型。</TableCell></TableRow> : modelBindings.map((binding) => {
+              const users = [...(managers ?? []).map((agent) => ({ ...agent, roleLabel: 'Manager' })), ...(workers ?? []).map((agent) => ({ ...agent, roleLabel: 'Worker' }))].filter((agent) => agent.model === binding.requestModelAlias);
+              return <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}>
+                <TableCell className="font-medium">{binding.requestModelAlias}</TableCell>
+                <TableCell>{binding.targetModel || (binding.passthrough ? binding.requestModelAlias : '未匹配')}</TableCell>
+                <TableCell><div>{binding.providerName || '未绑定'}</div><button className="mt-1 text-xs text-muted-foreground hover:underline" onClick={() => setActiveTab('routes')}>{binding.routeName || '配置路由'}</button></TableCell>
+                <TableCell><div className="flex max-w-md flex-wrap gap-x-3 gap-y-1">{users.map((agent, index) => <span key={`${agent.roleLabel}-${agent.name}-${index}`} className="text-xs" title={`${agent.roleLabel} · ${agent.name || '默认'}`}>{agent.name || agent.roleLabel}</span>)}</div></TableCell>
+                <TableCell><Badge variant={binding.conflict ? 'destructive' : 'secondary'}>{binding.conflict ? '冲突' : binding.available ? '已配置' : binding.passthrough ? '原名转发' : '待配置'}</Badge></TableCell>
+              </TableRow>;
+            })}
+          </TableBody></Table>
+        </div>
+      </TabsContent>
+      <TabsContent value="providers">
+    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">AI 模型提供商<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个提供商</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加提供商</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
+      </TabsContent>
+      <TabsContent value="routes">
+    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同提供商。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同提供商；给不同提供商配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">{routes.length} 条</span></CardTitle><CardDescription>决定请求由哪个提供商处理，以及哪些 Agent 可以访问</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}>添加路由</Button></CardHeader><CardContent className="space-y-4 p-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
+      </TabsContent>
+      <TabsContent value="access"><ConsumerSection /></TabsContent>
+      <TabsContent value="limits" className="space-y-4"><RateLimitSection routes={routes} /><HigressReferencePanel /></TabsContent>
+    </Tabs>
     <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} /><RouteProviderSwitchDialog key={`switch-${switchRoute?.name ?? 'none'}`} open={switchRoute !== null} route={switchRoute} providers={providers} onOpenChange={(open) => !open && setSwitchRoute(null)} />
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '提供商' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该提供商：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
