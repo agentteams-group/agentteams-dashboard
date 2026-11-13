@@ -65,7 +65,7 @@ export function MessageReadStatus({ message }: { message: DisplayMessage }) {
       </PopoverTrigger>
       <PopoverContent side="bottom" align={message.isMe ? 'end' : 'start'} avoidCollisions={false} onMouseEnter={showMembers} onMouseLeave={hideMembers} onClick={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()} className="w-max max-w-[calc(100vw-2rem)] border border-border/50 p-1.5 shadow-none">
         <ul aria-label="阅读成员" className="max-h-64 space-y-1.5 overflow-y-auto">
-          {members.map((member) => <li key={member.userId} className="flex min-w-0 items-center gap-2 text-xs"><span className="max-w-40 truncate">{member.displayName}</span><span className={`shrink-0 ${member.state === 'read' ? 'text-emerald-600' : 'text-muted-foreground'}`}>{member.state === 'read' ? '已读' : '未读'}</span></li>)}
+          {members.map((member) => <li key={member.userId} className="flex min-w-0 items-center gap-2 text-xs"><span className="w-[4em] shrink-0 truncate" title={member.displayName}>{member.displayName}</span><span className={`shrink-0 ${member.state === 'read' ? 'text-emerald-600' : 'text-muted-foreground'}`}>{member.state === 'read' ? '已读' : '未读'}</span></li>)}
         </ul>
       </PopoverContent>
     </Popover>
