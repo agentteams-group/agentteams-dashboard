@@ -131,6 +131,21 @@ function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
 }
 
 describe('ChatRoom read-position dual-write', () => {
+  it('targets Stop and supplementary input at the advertised execution', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomMembersChunk.push(...['@me:test', '@peer:test'].map(id => ({
+      type: 'm.room.member', state_key: id, content: { membership: 'join' },
+    })));
+    mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
+      content: { msgtype: 'm.notice', body: '正在工作', 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    renderChatRoom({ workerMatrixUserIds: ['@peer:test'] });
+    expect(screen.queryByText('正在工作')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '停止执行' }));
+    expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'stop', run_id: '$run', agent_id: '@peer:test' });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '只看杭州' } });
+    fireEvent.click(screen.getByRole('button', { name: '补充信息并继续' }));
+    expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'steer', run_id: '$run', agent_id: '@peer:test' });
+  });
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();

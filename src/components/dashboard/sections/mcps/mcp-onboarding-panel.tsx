@@ -20,7 +20,7 @@ export function McpOnboardingPanel() {
         aria-expanded={open}
       >
         <Info className="size-3.5 shrink-0" />
-        <span>接入与授权流程（登记 ≠ 可用）</span>
+        <span>接入服务 → 验证工具 → 授权 Agent</span>
         {open ? <ChevronDown className="size-3.5 ml-auto" /> : <ChevronRight className="size-3.5 ml-auto" />}
       </button>
       {open && (
@@ -28,27 +28,25 @@ export function McpOnboardingPanel() {
           <ol className="space-y-1 list-decimal list-inside">
             <li>
               <span className="font-medium text-foreground">网关接入</span>
-              ：在 Manager / Higress 创建 MCP 服务与路由，数据面端点为
+              ：点击「接入 MCP」，选择已有 MCP、HTTP API 或数据库。配置保存后会创建网关服务，数据面端点为
               <code className="font-mono mx-1">POST /mcp-servers/{'{name}'}/mcp</code>
-              （Streamable HTTP）。本页的登记不会创建网关服务。
+              （实际地址以详情页为准）。
             </li>
             <li>
-              <span className="font-medium text-foreground">Consumer 授权</span>
-              ：在「模型管理 → Consumers」确认目标 Worker 的 Consumer 已进入该服务的
-              <code className="font-mono mx-1">allowedConsumers</code>
-              。授权由管理员执行，范围明确。
+              <span className="font-medium text-foreground">验证工具</span>
+              ：以网关验证身份完成 MCP 初始化并读取工具列表，不执行业务工具。新配置可能需要几十秒生效，失败后可重试。
             </li>
             <li>
-              <span className="font-medium text-foreground">登记地址</span>
-              ：回到本页登记网关地址，并在 Worker 的新建 / 编辑页把服务分配给该 Worker。自定义 Headers 保存在登记中，不下发给 Worker。
+              <span className="font-medium text-foreground">Agent 授权</span>
+              ：在详情中选择 Agent 并保存，同时写入 Agent 配置和网关授权。后端凭证、Header 与 Query 由网关管理。
             </li>
             <li>
               <span className="font-medium text-foreground">调用验证</span>
-              ：在 Worker 编辑页底部运行「已保存配置的网关验证」，以该 Worker 的 Consumer 身份完成 MCP 初始化，这才是可用性结论。
+              ：点击「验证权限」，使用该 Agent 的真实 Consumer 身份验证已保存配置。工具调试页的「运行工具」会执行真实业务调用。
             </li>
           </ol>
           <p>
-            四态相互独立：已登记、已分配到 Worker、Consumer 已授权、验证通过。本页的「测试连接」以 Dashboard 身份直连登记地址，只验证地址可达，不能替代第 4 步。
+            「登记已有网关地址」只记录外部服务地址，保留原有接入和授权方式；它与本页创建的受管服务分别展示。
           </p>
         </div>
       )}

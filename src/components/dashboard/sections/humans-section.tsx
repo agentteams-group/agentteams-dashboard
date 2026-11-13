@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { Plus, UserCheck, ArrowUpDown } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { UserCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,9 @@ import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { HumanDrawer } from './humans/human-drawer';
+import { currentHashParams } from '@/lib/nav-hash';
+import { PhaseBadge } from '@/components/dashboard/phase-badge';
+import { PERMISSION_LABELS } from './humans/human-types';
 
 function HumansSkeleton() {
   return (
@@ -86,6 +89,17 @@ export function HumansSection() {
   // 详情 = 只读弹窗；编辑 = 右侧抽屉（四卡）。
   const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
   const [drawerHuman, setDrawerHuman] = useState<HumanResponse | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const profileHuman = allHumans?.find((human) => human.name === profileName);
+
+  useEffect(() => {
+    const openProfile = () => {
+      setProfileName(currentHashParams()?.get('human') ?? null);
+    };
+    openProfile();
+    window.addEventListener('hashchange', openProfile);
+    return () => window.removeEventListener('hashchange', openProfile);
+  }, []);
 
   const [newHuman, setNewHuman] = useState<CreateHumanRequest>({
     name: '',
@@ -141,6 +155,23 @@ export function HumansSection() {
 
   return (
     <div className="space-y-3">
+      {profileName ? <>
+        <SectionHeader title="用户主页" actions={<>
+          <Button size="sm" variant="outline" asChild><a href="#console/resources/humans">返回用户列表</a></Button>
+          {profileHuman && !profileHuman.systemAdmin && <Button size="sm" onClick={() => setDrawerHuman(profileHuman)}>编辑用户</Button>}
+        </>} />
+        {profileHuman ? <Card className="max-w-3xl gap-0 py-0 shadow-none"><CardContent className="space-y-5 p-5">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">{profileHuman.displayName || profileHuman.name}</h2><PhaseBadge kind="human" phase={profileHuman.phase} /></div>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-8 gap-y-4 text-sm">
+            <dt className="text-muted-foreground">账号</dt><dd>{profileHuman.name}</dd>
+            <dt className="text-muted-foreground">角色</dt><dd>{PERMISSION_LABELS[profileHuman.permissionLevel ?? 2]}</dd>
+            <dt className="text-muted-foreground">邮箱</dt><dd>{profileHuman.email || '未填写'}</dd>
+            <dt className="text-muted-foreground">可访问团队</dt><dd className="break-words">{profileHuman.accessibleTeams?.join('、') || '未配置'}</dd>
+            <dt className="text-muted-foreground">可访问 Agent</dt><dd className="break-words">{profileHuman.accessibleWorkers?.join('、') || '未配置'}</dd>
+            <dt className="text-muted-foreground">Matrix 账号</dt><dd className="break-all text-muted-foreground">{profileHuman.matrixUserID || '未配置'}</dd>
+          </dl>
+        </CardContent></Card> : <p className="py-8 text-sm text-muted-foreground">{isLoading ? '正在加载用户…' : '未找到该用户，或当前账号无权查看。'}</p>}
+      </> : <>
       <SectionHeader
         title={`用户${humans ? ` · ${humans.length}` : ''}`}
         isLive={isConnected}
@@ -150,7 +181,6 @@ export function HumansSection() {
           <div className="flex items-center gap-2">
             {sortedHumans.length > 0 && (
               <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
                 <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
                   <SelectTrigger aria-label="用户排序" className="w-[140px] h-8 text-xs">
                     <SelectValue />
@@ -172,7 +202,6 @@ export function HumansSection() {
               size="sm"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
               创建用户
             </Button>
           </div>
@@ -192,6 +221,8 @@ export function HumansSection() {
         />
       )}
 
+      </>}
+
       <HumanCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -210,7 +241,11 @@ export function HumansSection() {
 
       <HumanDetailDialog
         human={detailHuman}
-        onOpenChange={(open) => !open && setDetailHuman(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDetailHuman(null);
+          if (currentHashParams()?.has('human')) window.history.replaceState(null, '', '#console/resources/humans');
+        }}
       />
 
       <HumanDrawer

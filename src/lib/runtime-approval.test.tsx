@@ -4,15 +4,15 @@ import '@testing-library/jest-dom/vitest';
 import { normalizeToBlocks } from './a2ui/normalize';
 import { parseRuntimeApprovalConfirmation } from './a2ui/parser';
 import { ingestHitlTimelineEvents, useHitlInboxStore } from './hitl-inbox';
-import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY, type RuntimeApproval } from './runtime-approval';
+import { parseRuntimeApproval, runtimeApprovalPayload, RUNTIME_APPROVAL_KEY, type RuntimeApproval } from './runtime-approval';
 import { ConfirmationCard, toConfirmationCardPayload } from '@/components/dashboard/sections/chat/confirmation-card';
 import type { MatrixEvent } from './matrix-api';
 
 vi.mock('@/lib/matrix-store', () => ({ useMatrixStore: (select: (_s: { userId: string }) => unknown) => select({ userId: '@me:test' }) }));
 const room = '!room:test';
 const sender = '@agent:test';
-function approval(runtime: 'qwenpaw' | 'codex', request_id = 'req-1'): RuntimeApproval {
-  return { version: 1, runtime, request_id, status: 'pending', tool_name: 'Bash', parameters: '{"command":"echo probe"}', ...(runtime === 'codex' ? { context_id: 'thread-1:turn-1' } : {}) };
+function approval(runtime: RuntimeApproval['runtime'], request_id = 'req-1'): RuntimeApproval {
+  return { version: 1, runtime, request_id, status: 'pending', tool_name: 'Bash', parameters: '{"command":"echo probe"}', ...(runtime === 'codex' ? { context_id: 'thread-1:turn-1' } : ['hermes', 'deepseek-harness', 'openhuman'].includes(runtime) ? { context_id: 'context-1' } : {}) };
 }
 function event(id: string, data: RuntimeApproval, author = sender, timestamp = 1): MatrixEvent {
   return { type: 'm.room.message', event_id: id, sender: author, origin_server_ts: timestamp, content: { msgtype: 'm.text', body: 'Approval', [RUNTIME_APPROVAL_KEY]: data } };
@@ -20,7 +20,39 @@ function event(id: string, data: RuntimeApproval, author = sender, timestamp = 1
 beforeEach(() => useHitlInboxStore.setState({ confirmations: {}, resolutions: {} }));
 afterEach(cleanup);
 
-describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) => {
+describe.each(['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'] as const)('%s approval lifecycle', (runtime) => {
+  it('retains the original command and risk context after rejection', async () => {
+    const data = { ...approval(runtime), risk_details: '需要人工确认此操作' };
+    const input = event('$pending', data);
+    ingestHitlTimelineEvents(room, [input], '@me:test');
+    const block = normalizeToBlocks({ body: '', content: input.content, isStreaming: false })[0];
+    render(<ConfirmationCard payload={{ ...toConfirmationCardPayload(block.payload!), resolutionKey: '$pending' }} onApprove={vi.fn()} onReject={() => true} />);
+    fireEvent.click(screen.getByRole('button', { name: '拒绝本次' }));
+    await screen.findByText('已提交，等待运行时确认');
+    ingestHitlTimelineEvents(room, [event('$receipt', { ...data, status: 'rejected' }, sender, 2)], '@me:test');
+    await waitFor(() => expect(screen.getByText('已拒绝')).toHaveClass('text-red-700'));
+    expect(screen.getByText('echo probe')).toBeVisible();
+    expect(screen.getByText('需要人工确认此操作')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '拒绝本次' })).not.toBeInTheDocument();
+  });
+  it('applies receipts in the same history batch as their request', () => {
+    const data = approval(runtime);
+    ingestHitlTimelineEvents(room, [event('$pending', data), event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    expect(useHitlInboxStore.getState().resolutions['$pending'].answer).toBe('approved');
+    expect(useHitlInboxStore.getState().confirmations['$pending']).toBeUndefined();
+  });
+  it('allows a runtime receipt after the displayed deadline', async () => {
+    const data = { ...approval(runtime), expires_at: Date.now() - 1000 };
+    const input = event('$pending', data);
+    ingestHitlTimelineEvents(room, [input], '@me:test');
+    const blocks = normalizeToBlocks({ body: '', content: input.content, isStreaming: false });
+    render(<ConfirmationCard payload={{ ...toConfirmationCardPayload(blocks[0].payload!), resolutionKey: '$pending' }} onApprove={vi.fn()} onReject={vi.fn()} />);
+    expect(screen.getByText('已超时')).toBeInTheDocument();
+    expect(useHitlInboxStore.getState().resolutions['$pending']).toBeUndefined();
+    ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    await waitFor(() => expect(screen.getByText('已批准')).toBeInTheDocument());
+    expect(screen.getByText('已批准')).toHaveClass('text-emerald-700');
+  });
   it('renders the runtime contract and binds the exact request command', async () => {
     const data = approval(runtime);
     const input = event('$pending', data);
@@ -30,11 +62,13 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
     const payload = { ...toConfirmationCardPayload(blocks[0].payload!), resolutionKey: '$pending' };
     render(<ConfirmationCard payload={payload} onApprove={send} onReject={send} />);
     fireEvent.click(screen.getByRole('button', { name: /批准本次/ }));
-    await screen.findByText('已提交，等待运行时确认 - Bash');
-    expect(send).toHaveBeenCalledWith(runtime === 'codex' ? '/approve req-1 thread-1:turn-1' : '/approval approve req-1', expect.objectContaining({ confirmation_id: 'req-1' }));
+    await screen.findByText('已提交，等待运行时确认');
+    expect(send).toHaveBeenCalledWith(runtimeApprovalPayload(data).approveReply, expect.objectContaining({ confirmation_id: 'req-1' }));
     expect(useHitlInboxStore.getState().confirmations['$pending']).toBeDefined();
     ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
-    await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('已批准')).toBeInTheDocument());
+    expect(screen.getByText('echo probe')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(useHitlInboxStore.getState().confirmations['$pending']).toBeUndefined();
   });
   it('leaves failed delivery retryable', async () => {
@@ -68,7 +102,7 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
   it('tracks a manually targeted decision as submitted without removing another request', () => {
     const first = approval(runtime, 'req-1'), second = approval(runtime, 'req-2');
     ingestHitlTimelineEvents(room, [event('$one', first), event('$two', second)], '@me:test');
-    const reply: MatrixEvent = { type: 'm.room.message', event_id: '$reply', sender: '@me:test', origin_server_ts: 2, content: { msgtype: 'm.text', body: runtime === 'codex' ? '/approve req-2' : '/approval approve req-2' } };
+    const reply: MatrixEvent = { type: 'm.room.message', event_id: '$reply', sender: '@me:test', origin_server_ts: 2, content: { msgtype: 'm.text', body: runtimeApprovalPayload(second).approveReply as string } };
     ingestHitlTimelineEvents(room, [reply], '@me:test');
     expect(Object.keys(useHitlInboxStore.getState().confirmations)).toEqual(['$one', '$two']);
     expect(useHitlInboxStore.getState().resolutions['$one']).toBeUndefined();

@@ -302,7 +302,7 @@ d('§3.3.4 #8 MCP config CRUD (mcp-servers/ prefix)', () => {
     );
     expect([200, 201]).toContain(created.status);
 
-    const list = await mcpsGET();
+    const list = await mcpsGET(jsonReq('http://localhost/api/agentteams/mcps', 'GET'));
     expect(list.status).toBe(200);
     const body = (await list.json()) as { servers: Array<{ name: string }> };
     expect(body.servers.some((s) => s.name === name)).toBe(true);

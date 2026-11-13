@@ -37,6 +37,7 @@ import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
 import { MessageReadStatus } from '../message-read-status';
 import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
+import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
@@ -83,6 +84,14 @@ function TurnStateNote({
   state: DisplayMessage['turnState'];
   hasBlocks: boolean;
 }) {
+  if (state === 'stopped') {
+    return (
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" data-turn-state="stopped">
+        <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
+        已停止
+      </p>
+    );
+  }
   if (state === 'detached') {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground/70" data-turn-state="detached">
@@ -491,6 +500,11 @@ export function MessageBubble({
     return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
   }
 
+  const activity = interactionActivity(message.content, message.rawContent, message.isMe);
+  if (activity) {
+    return <div role="status" className="flex items-center gap-2 py-2 pl-11 text-xs text-muted-foreground"><Check className="size-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message.isMe ? '你' : senderLabel} · {activity}</span><MessageTime timestamp={message.timestamp} />{message.status === 'sending' && <span>发送中…</span>}{message.status === 'error' && <Button size="sm" variant="ghost" className="h-6 text-xs text-destructive" onClick={() => onResend?.(message)}>发送失败，重试</Button>}</div>;
+  }
+
   return (
     <div
       data-chat-message={message.isMe ? 'user' : 'agent'}
@@ -804,10 +818,11 @@ export function MessageBubble({
                 }
                 return null;
               })}
+              {message.turnState === 'stopped' && <TurnStateNote state="stopped" hasBlocks={parsedBlocks.length > 0} />}
             </div>
           )}
 
-          <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />
+          {message.turnState !== 'stopped' && <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />}
         </div>
 
         {/* Continuations keep metadata below the content, including on touch screens. */}

@@ -401,11 +401,13 @@ the updated environment. Values are literal strings, and system-owned keys canno
 be overridden. Lower-privilege Dashboard sessions cannot read or update these
 values. Older Controllers show the environment editor as unavailable.
 
-The MCP page registers endpoint metadata; it does not provision a Higress MCP
-service or grant Worker access. First configure the gateway endpoint and Consumer
-permissions through Manager/Higress, then save the Worker binding. AI route
-Consumer allowlists can be edited in model management. Neither selecting a model
-nor binding an MCP endpoint proves that the Worker is authorized.
+Administrators can use the MCP page to provision native MCP proxies, HTTP APIs
+exposed as tools, and database MCP services through Higress. The setup flow
+configures backend credentials and request parameters, discovers tools, and grants
+selected Workers access while saving their MCP bindings. Database MCP requires
+deployment support. Existing endpoint-only registrations remain metadata until
+imported into managed configuration. AI route Consumer allowlists can be edited
+in model management. Verify saved Worker access after configuring either service.
 
 Verification uses the saved Worker's Consumer credential inside the Controller.
 Model verification sends one small inference request (up to 8 requested output

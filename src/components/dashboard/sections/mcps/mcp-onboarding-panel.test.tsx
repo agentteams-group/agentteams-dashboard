@@ -4,17 +4,17 @@ import { McpOnboardingPanel } from './mcp-onboarding-panel';
 
 afterEach(cleanup);
 
-it('collapses by default and spells out the four independent states when expanded', () => {
+it('keeps setup, discovery, Agent authorization and legacy registration distinct', () => {
   render(<McpOnboardingPanel />);
 
   expect(screen.queryByText(/网关接入/)).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: /接入与授权流程/ }));
+  fireEvent.click(screen.getByRole('button', { name: /接入服务 → 验证工具 → 授权 Agent/ }));
 
   expect(screen.getByText(/网关接入/)).toBeTruthy();
-  expect(screen.getByText(/Consumer 授权/)).toBeTruthy();
-  expect(screen.getAllByText(/登记地址/).length).toBeGreaterThan(0);
+  expect(screen.getByText('Agent 授权')).toBeTruthy();
+  expect(screen.getByText('验证工具')).toBeTruthy();
   expect(screen.getByText(/调用验证/)).toBeTruthy();
   // The guide must keep the registered/available distinction explicit (#132).
-  expect(screen.getByText(/已登记、已分配到 Worker、Consumer 已授权、验证通过/)).toBeTruthy();
+  expect(screen.getByText(/只记录外部服务地址/)).toBeTruthy();
 });

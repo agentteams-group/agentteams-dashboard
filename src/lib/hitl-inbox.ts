@@ -179,9 +179,10 @@ export const useHitlInboxStore = create<HitlInboxState>()(
     if (!kind) return;
 
     const pending = Object.values(get().confirmations).filter((item) => item.roomId === roomId);
-    const explicit = stripLeadingMentions(body).match(/^\/(?:approval\s+(?:approve|deny|cancel)|approve|reject)\s+([\w.-]+)(?:\s|$)/i)?.[1];
+    const explicit = stripLeadingMentions(body).match(/^\/(?:(?:approval|agentteams-approval)\s+(?:approve|deny|cancel)|approve|reject)\s+([\w.:-]+)(?:\s|$)/i)?.[1];
     if (explicit) {
-      const context = stripLeadingMentions(body).match(/^\/(?:approve|reject)\s+[\w.-]+\s+([\w.:-]+)$/i)?.[1];
+      const rawContext = stripLeadingMentions(body).match(/^\/(?:agentteams-approval\s+(?:approve|deny)|approve|reject)\s+[\w.:-]+\s+([\w.:-]+)$/i)?.[1];
+      const context = rawContext === 'allow-once' || rawContext === 'deny' ? undefined : rawContext;
       const matches = pending.filter((item) => item.requestId === explicit
         && (!context || item.contextId === context)
         && (!relatedEventId || item.eventId === relatedEventId)
@@ -333,7 +334,8 @@ export function hitlResolutionKind(body: string): HitlResolutionKind | null {
   // /approval 命令族：取消同样让请求离开待办态（运行时按 id 作废），
   // 因此与批准/拒绝同归 verdict，由 sameKind 池解掉对应工具审批卡。
   if (APPROVAL_COMMAND_RE.test(text)) return 'verdict';
-  if (/^\/(?:approve|reject)\s+[\w.-]+(?:\s+[\w.:-]+)?$/.test(text)) return 'verdict';
+  if (/^\/agentteams-approval (approve|deny) [\w.-]+ [\w.-]+$/.test(text)) return 'verdict';
+  if (/^\/(?:approve|reject)\s+[\w.:-]+(?:\s+[\w.:-]+)?$/.test(text)) return 'verdict';
   return null;
 }
 
@@ -452,7 +454,7 @@ export function ingestHitlTimelineEvents(
     const content = resolveEventContent(event);
     const approval = event.sender !== currentUserId && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
     if (approval && approval.status !== 'pending') {
-      for (const item of Object.values(store.confirmations)) {
+      for (const item of Object.values(useHitlInboxStore.getState().confirmations)) {
         if (item.roomId !== roomId || item.sender !== event.sender || item.requestId !== approval.request_id || item.contextId !== approval.context_id) continue;
         if (approval.status === 'expired') store.expireConfirmation(item.id, event.sender);
         else store.resolveConfirmation(item.id, event.sender, approval.status);

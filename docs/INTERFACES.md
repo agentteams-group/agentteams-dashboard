@@ -18,7 +18,7 @@ Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须
 
 ## Higress 数据面端点（对外接口）
 
-以下是 Higress Gateway 暴露给 Manager/Worker/外部客户端的数据面端点，Dashboard 不直接代理这些端点，但其健康检查与模型绑定逻辑以其口径为准：
+以下是 Higress Gateway 暴露给 Manager/Worker/外部客户端的数据面端点，Dashboard 的健康检查、MCP 调试与资源绑定逻辑以其口径为准：
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
@@ -26,6 +26,7 @@ Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须
 | `/v1/embeddings` | POST | 向量化（配置 memorySearch 时使用） |
 | `/v1/models` | GET | **不是**完整的 OpenAI 模型列表端点；ai-proxy 仅匹配 chat/completions 与 embeddings。`/v1/models` 仅作为认证/连通性探测（401/403=key 或 allowedConsumers 有误，404=非 ai-proxy 路由） |
 | `/mcp-servers/{name}/mcp` | POST | MCP Server 端点（Streamable HTTP），name 为 MCP Server 名（内置 GitHub 为 `mcp-github`），按 `consumerAuthInfo` 做 per-consumer 授权 |
+| `/mcp-servers/{name}` | GET/POST | Dashboard 受管 MCP 的入口；代理模式按选定的 Streamable HTTP 或 SSE 协议接入，HTTP API 和数据库模式由网关提供 MCP 工具，按 Consumer 授权 |
 | `worker-{name}-{port}-local.agentteams.io` | * | 暴露的 Worker 端口（服务发布），**无认证**（公开访问），域名绑定在网关端口 |
 
 AI 路由默认 `default-ai-route`，路径前缀 `/v1`，上游由 `AGENTTEAMS_LLM_PROVIDER` 决定。嵌入模式下容器内网关地址为 `http://aigw-local.agentteams.io:8080`（宿主机 `:18080`），Console 容器内 `http://agentteams-controller:8001`（宿主机 `:18001`）。
@@ -42,16 +43,16 @@ AI 路由默认 `default-ai-route`，路径前缀 `/v1`，上游由 `AGENTTEAMS_
 
 ## Higress 控制面 Console API（参照）
 
-Dashboard 仅代理其中的 ai-providers 与 ai-routes 子集；完整控制面口径如下（路径前缀 `/v1`，session-cookie 认证，`POST /system/init` 初始化 admin、`POST /session/login` 获取 cookie）：
+Dashboard 代理模型管理接口，并通过受管 MCP 流程调用所需的控制面接口；完整控制面口径如下（路径前缀 `/v1`，session-cookie 认证，`POST /system/init` 初始化 admin、`POST /session/login` 获取 cookie）：
 
 | 端点 | 方法 | 用途 | Dashboard 是否代理 |
 |---|---|---|---|
 | `/v1/ai/providers` + `/{name}` | GET/POST/PUT/DELETE | LLM Provider 管理 | 是（`/api/higress/ai-providers`） |
 | `/v1/ai/routes` + `/{name}` | GET/POST/PUT/DELETE | AI 路由管理（含 `authConfig.allowedConsumers`） | 是（`/api/higress/ai-routes`） |
-| `/v1/consumers` + `/{name}` | GET/POST/DELETE | key-auth Consumer 管理 | 否（经 Controller `/api/v1/gateway/consumers`） |
-| `/v1/domains`、`/v1/service-sources`、`/v1/routes` | GET/POST/PUT/DELETE | 域名、服务源、经典路由 | 否 |
+| `/v1/consumers` + `/{name}` | GET/POST/DELETE | key-auth Consumer 管理 | 受管 MCP 诊断身份；Worker Consumer 经 Controller 管理 |
+| `/v1/domains`、`/v1/service-sources`、`/v1/routes` | GET/POST/PUT/DELETE | 域名、服务源、经典路由 | 受管 MCP 使用服务源，其他接口不开放通用代理 |
 | `/v1/routes/{name}/plugin-instances/{plugin}` | PUT | 路由插件配置（如 basic-auth） | 否 |
-| `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT | MCP Server 与 Consumer 授权 | 否 |
+| `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT/DELETE | MCP Server 与 Consumer 授权 | 是（受管 MCP 流程） |
 | `/system/higress-config` | GET/PUT | 网关配置（如 stream idleTimeout） | 否 |
 
 ## 技能中心与 Nacos 集成契约
@@ -102,6 +103,8 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | `/api/higress/ai-routes` | Higress Console | AI Route 列表和创建 |
 | `/api/higress/ai-routes/[name]` | Higress Console | 单个 AI Route 读取、更新和删除 |
 | `/api/agentteams/skills` | MinIO | 技能列表（支持 source、search、分页）与上传（支持 overwrite 覆盖） |
+| `/api/agentteams/mcps`、`/api/agentteams/mcps/[name]` | MinIO | MCP 目录与旧版端点元数据；低权限会话仅返回受管服务概要 |
+| `/api/agentteams/mcps/manage` | Higress + MinIO + Controller | 管理员专用：能力查询、接入保存、工具发现和调用、Agent 授权、导入与删除；详见 `docs/design/mcp-onboarding.md` |
 | `/api/agentteams/skills/[name]` | MinIO | 单个技能元数据读取、更新与删除 |
 | `/api/agentteams/skills/[name]/download` | MinIO | 下载技能 ZIP 包 |
 | `/api/agentteams/skills/nacos/config` | 本地配置 | Nacos 注册中心配置的读取与写入 |

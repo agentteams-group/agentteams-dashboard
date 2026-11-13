@@ -9,6 +9,30 @@ vi.mock('./voice-input', () => ({ VoiceInput: () => null }));
 
 afterEach(cleanup);
 
+it('keeps supplementary input enabled and exposes Stop during a direct execution', () => {
+  const onStop = vi.fn(), onSend = vi.fn();
+  render(<ChatComposer value="只看杭州" onChange={vi.fn()} onSend={onSend}
+    isSending={false} sendError={null} placeholder="消息" disabled={false}
+    execution={{ runId: '$run', agentId: '@agent:test', status: 'running' }} onStop={onStop} />);
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(false);
+  const stop = screen.getByRole('button', { name: '停止执行' });
+  expect(stop.textContent).toBe('');
+  expect(stop.querySelector('circle')).not.toBeNull();
+  expect(stop.querySelector('rect')).not.toBeNull();
+  expect(screen.getByRole('button', { name: '补充信息并继续' }).textContent).toBe('补充');
+  fireEvent.click(stop);
+  expect(onStop).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '补充信息并继续' }));
+  expect(onSend).toHaveBeenCalledOnce();
+});
+
+it('does not show Stop for ordinary chats', () => {
+  render(<ChatComposer value="" onChange={vi.fn()} onSend={vi.fn()}
+    isSending={false} sendError={null} placeholder="消息" disabled={false} />);
+  expect(screen.queryByRole('button', { name: '停止执行' })).toBeNull();
+  expect(screen.getByRole('button', { name: '发送消息' }).textContent).toBe('发送');
+});
+
 describe('ChatComposer keyboard submission', () => {
   it('does not send when composition ends before the confirming Enter', () => {
     const onSend = vi.fn();

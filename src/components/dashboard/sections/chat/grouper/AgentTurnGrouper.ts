@@ -3,6 +3,7 @@ import type { ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { parseWorkerLifecycleNotice } from '@/lib/chat-lifecycle-notice';
 import { parseWorkflowNotice } from '@/lib/chat-workflow-notice';
 import type { DisplayMessage } from '@/hooks/use-matrix';
+import { interactionActivity } from '../confirmation-reply';
 
 /**
  * Workers (Hermes/QwenPaw especially) stream a single turn as many Matrix
@@ -66,6 +67,7 @@ function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
   if (message.mediaUrl) return null;
   if (message.fileRefs && message.fileRefs.length > 0) return null;
   if (message.type !== 'm.text' && message.type !== 'm.notice') return null;
+  if (interactionActivity(message.content, message.rawContent, message.isMe)) return null;
   // Lifecycle announcements render as a dedicated status row, not as a turn.
   if (parseWorkerLifecycleNotice(message.content)) return null;
   if (parseWorkflowNotice(message.content, message.runtime)) return null;
@@ -144,6 +146,7 @@ function buildTurnMessage(entries: TurnEntry[]): DisplayMessage {
 
   return {
     ...first,
+    turnState: entries.some(entry => entry.message.turnState === 'stopped') ? 'stopped' : first.turnState,
     // The root event stays canonical for replies, read markers and the thread
     // panel; the folded event ids are matched separately by the timeline.
     id: canonical.id,
