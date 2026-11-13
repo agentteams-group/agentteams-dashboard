@@ -415,7 +415,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         {expired && (
           <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400" role="alert">
             <Clock className="h-3 w-3" aria-hidden="true" />
-            超过 {formatInterventionTimeout(timeoutMs)}未答复：卡片已置灰，任务保持 blocked，已升级通知。
+            超过 {formatInterventionTimeout(timeoutMs)}未答复，此请求已超时。请查看 Agent 的后续消息。
           </p>
         )}
 
