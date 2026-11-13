@@ -12,6 +12,7 @@ import { MessageSquare, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import type { MentionEntry } from '../chat-composer';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
 import type { DirectControl } from '@/lib/direct-execution';
+import { buildAnswerContent } from '../confirmation-reply';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { CHAT_COLUMN_CLASS } from '../layout';
 
@@ -111,6 +112,8 @@ function SystemNoticeItem({
  */
 export interface LocalOutboundMessage {
   control?: DirectControl;
+  answer?: ConfirmationAnswerField;
+  referenceEventId?: string;
   clientId: string;
   sender: string;
   senderShort: string;
@@ -139,6 +142,7 @@ export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessa
     isMe: true,
     status: local.status,
     fileRefs: local.fileRefs,
+    rawContent: buildAnswerContent(local.answer),
   };
 }
 

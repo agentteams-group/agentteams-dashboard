@@ -4,10 +4,25 @@ import {
   ANSWER_CONTENT_KEY,
   buildAnswerContent,
   buildConfirmationReply,
+  interactionActivity,
 } from './confirmation-reply';
 
 const WORKER = '@ceshi:matrix-local.agentteams.io:18080';
 const WORKER_2 = '@other:matrix-local.agentteams.io:18080';
+
+describe('interaction activity presentation', () => {
+  it('shows decisions without leaking transport syntax and preserves ordinary prose', () => {
+    expect(interactionActivity('/approve 0 thread:turn', undefined, true)).toBe('已提交批准');
+    expect(interactionActivity('@worker /approval deny req-1', undefined, true)).toBe('已提交拒绝');
+    expect(interactionActivity('请解释 /approve 0', undefined, true)).toBeUndefined();
+    expect(interactionActivity('/approve 0', undefined, false)).toBeUndefined();
+  });
+  it('distinguishes a submitted choice from an authoritative receipt', () => {
+    expect(interactionActivity('/approve req-1', { [ANSWER_CONTENT_KEY]: { confirmation_id: 'req-1', answer: 'approved' } }, true)).toBe('已提交批准');
+    expect(interactionActivity('raw', { 'org.agentteams.approval': { version: 1, runtime: 'qwenpaw', request_id: 'req-1', status: 'approved' } })).toBe('Agent 已确认批准');
+    expect(interactionActivity('raw', { [ANSWER_CONTENT_KEY]: { confirmation_id: 'choice-1', answer: '【干预答复】\nA1：先运行测试' } }, true)).toBe('已提交选择：先运行测试');
+  });
+});
 
 describe('buildConfirmationReply', () => {
   it('Worker 房间默认 @ 发起卡片的 Agent', () => {

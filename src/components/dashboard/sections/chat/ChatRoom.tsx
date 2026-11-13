@@ -679,6 +679,8 @@ export function ChatRoom({
       replyTo: local.replyTo,
       clientId: local.clientId,
       control: local.control,
+      answer: local.answer,
+      referenceEventId: local.referenceEventId,
     });
   }, [localMessages, patchLocal, sendOutbound]);
 

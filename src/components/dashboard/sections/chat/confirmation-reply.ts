@@ -1,4 +1,30 @@
 import type { MentionEntry } from './chat-composer';
+import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
+
+/** Keep transport commands in Matrix; show the interaction, not its wire syntax. */
+export function interactionActivity(body: string, content?: Record<string, unknown>, isHuman = false): string | undefined {
+  const approval = parseRuntimeApproval(content?.[RUNTIME_APPROVAL_KEY]);
+  if (approval && approval.status !== 'pending') {
+    return { approved: 'Agent 已确认批准', rejected: 'Agent 已确认拒绝', cancelled: 'Agent 已确认取消', expired: '审批请求已超时' }[approval.status];
+  }
+  const answer = content?.[ANSWER_CONTENT_KEY] as ConfirmationAnswerField | undefined;
+  if (answer && typeof answer.confirmation_id === 'string' && typeof answer.answer === 'string') {
+    const label = { approved: '已提交批准', rejected: '已提交拒绝', cancelled: '已提交取消' }[answer.answer];
+    return label ?? `已提交选择：${answer.answer.replace(/^【干预答复】\s*/, '').replace(/A\d+：/g, '').replace(/\n/g, '；')}`;
+  }
+  if (isHuman) {
+    const native = body.trim().replace(/^(?:@\S+\s+)+/, '');
+    if (/^\/agentteams-approval (approve|deny) [\w.-]+ [\w.-]+$/.test(native)) {
+      return native.startsWith('/agentteams-approval approve ') ? '已提交批准' : '已提交拒绝';
+    }
+    if (/^\/approve [\w.:-]+ (allow-once|deny)$/.test(native)) {
+      return native.endsWith(' deny') ? '已提交拒绝' : '已提交批准';
+    }
+    const match = body.trim().match(/^(?:@\S+\s+)?\/(?:approval\s+(approve|deny|cancel)|(approve|reject))\s+[A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_:-]+)?$/);
+    if (match) return ({ approve: '已提交批准', deny: '已提交拒绝', reject: '已提交拒绝', cancel: '已提交取消' })[match[1] ?? match[2]];
+  }
+  return undefined;
+}
 
 export interface ConfirmationReply {
   content: string;
@@ -22,6 +48,8 @@ export interface ConfirmationAnswerField {
   /** 提交人的 Matrix 用户 id。 */
   actor?: string;
   tool_name?: string;
+  /** Lossless answers for native multi-question and multi-select waiters. */
+  responses?: Array<{ id: string; selected: string[]; custom?: string }>;
 }
 
 /**
