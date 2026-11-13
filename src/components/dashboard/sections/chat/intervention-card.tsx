@@ -309,8 +309,8 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         locked ? 'opacity-60' : ''
       }`}
     >
-      <p className="flex items-center gap-2 px-5 pt-4 text-xs text-muted-foreground"><MessageSquare className="size-3.5" aria-hidden="true" />需要你的选择</p>
-      <div className="px-5 pt-2 pb-3 flex items-start justify-between gap-3">
+      <p className="flex items-center gap-2 px-4 pt-4 text-xs text-muted-foreground"><MessageSquare className="size-3.5" aria-hidden="true" />需要你的选择</p>
+      <div className="px-4 pt-2 pb-3 flex items-start justify-between gap-3">
         <h3 className="text-sm font-semibold leading-snug">{question.question}</h3>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           {expired && (
@@ -322,13 +322,13 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         </div>
       </div>
 
-      <div className="px-5 pb-4 space-y-2">
+      <div className="px-4 pb-4 space-y-3">
         {payload.tool_name === 'select_team_admin' ? (
-          <label className="block space-y-2 text-sm">
+          <label className="block space-y-3 text-sm">
             <span>{question.question}</span>
             <select
               aria-label="Team Admin"
-              className="w-full rounded-md border bg-background px-3 py-2"
+              className="w-full rounded-md border bg-background p-3"
               value={selected[0] ?? ''}
               disabled={locked || forbidden}
               onChange={(event) => toggleOption(page, event.target.value)}
@@ -340,7 +340,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
               <span className="block text-xs text-muted-foreground">{list.find((option) => option.id === selected[0])?.description}</span>
             )}
           </label>
-        ) : <div className="space-y-2" role={question.multi_select ? 'group' : 'radiogroup'} aria-label={question.question}>
+        ) : <div className="space-y-3" role={question.multi_select ? 'group' : 'radiogroup'} aria-label={question.question}>
           {list.map((option, index) => {
             const checked = selected.includes(option.id);
             return (
@@ -351,7 +351,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                 aria-checked={checked}
                 disabled={locked || forbidden}
                 onClick={() => toggleOption(page, option.id)}
-                className={`w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+                className={`w-full flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
                   checked
                     ? 'border-foreground/60 bg-muted/70'
                     : 'border-border hover:border-foreground/30 hover:bg-accent/40'
@@ -389,8 +389,8 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
           })}
         </div>}
 
-        {payload.tool_name !== 'select_team_admin' && <div className="pt-2 border-t border-border/60">
-          <label className="mt-3 block text-xs font-medium" htmlFor={`intervention-free-${payload.confirmation_id}`}>补充说明</label>
+        {payload.tool_name !== 'select_team_admin' && <div className="space-y-3 border-t border-border/60 pt-3">
+          <label className="block text-xs font-medium" htmlFor={`intervention-free-${payload.confirmation_id}`}>补充说明</label>
           <textarea
             id={`intervention-free-${payload.confirmation_id}`}
             aria-label="自由输入"
@@ -398,7 +398,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
             disabled={locked || forbidden}
             onChange={(e) => setFreeText(page, e.target.value)}
             rows={2}
-            className="mt-2 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 resize-none"
+            className="block w-full rounded-lg border border-border/60 bg-background p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 resize-none"
             placeholder="也可以直接输入你的想法…"
           />
         </div>}
@@ -414,7 +414,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
           </p>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-3">
           {/* 左下：分页指示（Codex 同款「1 / 1」） */}
           <span className="text-xs text-muted-foreground tabular-nums">
             {page + 1} / {questions.length}

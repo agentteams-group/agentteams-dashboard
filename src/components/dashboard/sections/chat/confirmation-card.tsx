@@ -209,7 +209,7 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
           : <ApprovalSeverityBadge severity={payload.severity} />}
       </div>
       <div className="space-y-3 px-4 pb-4 pt-3">
-        {command && <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/60 px-3 py-2.5 font-mono text-xs leading-relaxed">{command}</pre>}
+        {command && <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/60 p-3 font-mono text-xs leading-relaxed">{command}</pre>}
         {directory && <p className="flex items-start gap-2 break-all text-xs text-muted-foreground"><Terminal className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" /><span>{directory}</span></p>}
         {payload.riskDetails && <div className="flex items-start gap-2 rounded-lg bg-muted/35 p-3"><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /><p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{payload.riskDetails}</p></div>}
         {payload.triggeredBy && <p className="text-xs text-muted-foreground">触发来源：{payload.triggeredBy}</p>}
@@ -220,10 +220,10 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-4 py-3">
         {complete
           ? <p className={`flex items-center gap-1.5 text-xs ${outcomeTone}`}><Icon className={`size-3.5 ${waiting ? 'animate-spin' : ''}`} aria-hidden="true" />{waiting ? '正在等待 Agent 确认，请稍候' : outcome === 'approved' ? '已允许本次操作，执行进展见后续回复' : outcome === 'rejected' ? '本次操作未获允许' : expired ? '此请求已不可操作' : '此请求已处理'}</p>
-          : <><span className="text-xs text-muted-foreground">授权仅对本次操作生效</span><div className="flex items-center gap-2">
+          : <><span className="text-xs text-muted-foreground">授权仅对本次操作生效</span><div className="flex flex-wrap items-center gap-3">
             {payload.cancelReply && onCancel && <Button size="sm" variant="ghost" disabled={submitting || !actionable} onClick={() => void submit('cancel')}>取消</Button>}
-            <Button size="sm" variant="outline" disabled={submitting || !actionable} onClick={() => void submit('reject')}><X className="mr-1.5 size-3.5" />拒绝本次</Button>
-            <Button size="sm" disabled={submitting || !actionable} onClick={() => void submit('approve')}><Check className="mr-1.5 size-3.5" />{submitting ? '提交中…' : '批准本次'}</Button>
+            <Button size="sm" variant="outline" className="min-w-24" disabled={submitting || !actionable} onClick={() => void submit('reject')}><X className="mr-1.5 size-3.5" />拒绝本次</Button>
+            <Button size="sm" className="min-w-24" disabled={submitting || !actionable} onClick={() => void submit('approve')}><Check className="mr-1.5 size-3.5" />{submitting ? '提交中…' : '批准本次'}</Button>
           </div></>}
       </div>
     </section>
