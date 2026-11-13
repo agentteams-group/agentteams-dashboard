@@ -75,7 +75,7 @@ export function composeAnswerText(
       .map((id) => q.options?.find((o) => o.id === id)?.label ?? id)
       .join('、');
     const free = (answers.freeText[i] ?? '').trim();
-    const answer = picked || free || '（未作答）';
+    const answer = [picked, free].filter(Boolean).join('；') || '（未作答）';
     return `A${i + 1}：${answer}`;
   });
   return `【干预答复】\n${lines.join('\n')}`;
@@ -259,6 +259,11 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
           confirmation_id: payload.confirmation_id,
           answer: text,
           tool_name: payload.tool_name,
+          responses: questions.map((question, index) => ({
+            id: question.id ?? String(index),
+            selected: answers.selections[index] ?? [],
+            ...(answers.freeText[index]?.trim() ? { custom: answers.freeText[index].trim() } : {}),
+          })),
           ...(currentUserId ? { actor: currentUserId } : {}),
         };
     setSubmitting(true);

@@ -168,6 +168,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
       answer: expect.stringContaining('【干预答复】'),
       tool_name: 'ask_human',
       actor: '@me:example.org',
+      responses: [{ id: '0', selected: ['module'] }],
     });
     // 只读态 + 提交人
     expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();

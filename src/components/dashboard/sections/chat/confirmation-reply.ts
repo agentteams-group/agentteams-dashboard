@@ -13,6 +13,13 @@ export function interactionActivity(body: string, content?: Record<string, unkno
     return label ?? `已提交选择：${answer.answer.replace(/^【干预答复】\s*/, '').replace(/A\d+：/g, '').replace(/\n/g, '；')}`;
   }
   if (isHuman) {
+    const native = body.trim().replace(/^(?:@\S+\s+)+/, '');
+    if (/^\/agentteams-approval (approve|deny) [\w.-]+ [\w.-]+$/.test(native)) {
+      return native.startsWith('/agentteams-approval approve ') ? '已提交批准' : '已提交拒绝';
+    }
+    if (/^\/approve [\w.:-]+ (allow-once|deny)$/.test(native)) {
+      return native.endsWith(' deny') ? '已提交拒绝' : '已提交批准';
+    }
     const match = body.trim().match(/^(?:@\S+\s+)?\/(?:approval\s+(approve|deny|cancel)|(approve|reject))\s+[A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_:-]+)?$/);
     if (match) return ({ approve: '已提交批准', deny: '已提交拒绝', reject: '已提交拒绝', cancel: '已提交取消' })[match[1] ?? match[2]];
   }
@@ -41,6 +48,8 @@ export interface ConfirmationAnswerField {
   /** 提交人的 Matrix 用户 id。 */
   actor?: string;
   tool_name?: string;
+  /** Lossless answers for native multi-question and multi-select waiters. */
+  responses?: Array<{ id: string; selected: string[]; custom?: string }>;
 }
 
 /**
