@@ -32,11 +32,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('message read interaction', () => {
-  it('opens separate read/unread lists and omits unsupported members', () => {
+  it('shows a plain footer and opens a concise member list on hover', () => {
     show();
-    fireEvent.click(screen.getByRole('button', { name: '消息阅读状态：已读 1 · 未读 1' }));
-    expect(screen.getByRole('region', { name: '已读成员' })).toHaveTextContent('Alice');
-    expect(screen.getByRole('region', { name: '未读成员' })).toHaveTextContent('Bob');
+    const trigger = screen.getByRole('button', { name: '消息阅读状态：已读 1 · 未读 1' });
+    expect(trigger.querySelector('svg')).toBeNull();
+    fireEvent.mouseEnter(trigger);
+    fireEvent.click(trigger);
+    const list = screen.getByRole('list', { name: '阅读成员' });
+    const rows = screen.getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual(['Alice已读', 'Bob未读']);
+    expect(rows[0].lastElementChild).toHaveClass('text-emerald-600');
+    expect(rows[1].lastElementChild).toHaveClass('text-muted-foreground');
+    expect(list.closest('[data-slot="popover-content"]')).toHaveClass('w-max', 'border-0', 'shadow-none');
+    expect(rows[0]).not.toHaveClass('justify-between');
+    expect(list.closest('[data-slot="popover-content"]')).toHaveAttribute('data-side', 'bottom');
+    expect(screen.queryByText('消息阅读状态')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agent 加入会话后记为已读')).not.toBeInTheDocument();
     expect(screen.queryByText('旧 Agent')).not.toBeInTheDocument();
     expect(screen.queryByText('状态未知')).not.toBeInTheDocument();
   });

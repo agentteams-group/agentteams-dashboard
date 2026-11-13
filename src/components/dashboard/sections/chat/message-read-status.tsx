@@ -1,8 +1,7 @@
 'use client';
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCheck } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { matrixApi, type MatrixEvent } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -13,6 +12,18 @@ import { useHumanMatrixIds, useRuntimeMap } from './runtime-map-context';
 export const MessageReadRoomContext = createContext('');
 
 export function MessageReadStatus({ message }: { message: DisplayMessage }) {
+  const [open, setOpen] = useState(false);
+  const openedByClick = useRef(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const showMembers = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+  const hideMembers = () => {
+    if (openedByClick.current) return;
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
   const roomId = useContext(MessageReadRoomContext);
   const { homeserver, accessToken, userId, isLoggedIn } = useMatrixStore();
   const positions = useMatrixReadReceipts(roomId);
@@ -46,28 +57,16 @@ export function MessageReadStatus({ message }: { message: DisplayMessage }) {
     : `已读 ${read.length} · 未读 ${unread.length}`;
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={(nextOpen) => { openedByClick.current = false; setOpen(nextOpen); }}>
       <PopoverTrigger asChild>
-        <button type="button" className="mt-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`消息阅读状态：${summary}`}>
-          <CheckCheck className={`h-3.5 w-3.5 shrink-0 ${read.length ? 'text-emerald-600' : ''}`} aria-hidden="true" />
-          <span className="truncate">{summary}</span>
+        <button type="button" onMouseEnter={showMembers} onMouseLeave={hideMembers} onClick={(event) => { event.preventDefault(); event.stopPropagation(); openedByClick.current = true; showMembers(); }} className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`消息阅读状态：${summary}`}>
+          {members.length === 1 ? <span className={`truncate ${read.length ? 'text-emerald-600' : ''}`}>{summary}</span> : <><span className="text-emerald-600">已读 {read.length}</span><span>·</span><span>未读 {unread.length}</span></>}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" collisionPadding={12} className="w-72 max-w-[calc(100vw-2rem)] p-3">
-        <p className="text-sm font-semibold">消息阅读状态</p>
-        <p className="mt-1 text-xs text-muted-foreground">Agent 加入会话后记为已读</p>
-        <div className="mt-3 max-h-64 space-y-3 overflow-y-auto">
-          {([{ title: '已读', items: read }, { title: '未读', items: unread }]).map(({ title, items }) => (
-            <section key={title} aria-label={`${title}成员`}>
-              <p className="text-xs font-medium text-muted-foreground">{title} {items.length}</p>
-              {items.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">暂无</p> : (
-                <ul className="mt-1 space-y-1.5">
-                  {items.map((member) => <li key={member.userId} className="flex min-w-0 items-center justify-between gap-3 text-sm"><span className="truncate" title={member.userId}>{member.displayName}</span><span className="shrink-0 text-xs text-muted-foreground">{member.kind === 'agent' ? 'Agent' : '成员'}</span></li>)}
-                </ul>
-              )}
-            </section>
-          ))}
-        </div>
+      <PopoverContent side="bottom" align={message.isMe ? 'end' : 'start'} avoidCollisions={false} onMouseEnter={showMembers} onMouseLeave={hideMembers} onClick={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()} className="w-max max-w-[calc(100vw-2rem)] border-0 p-1.5 shadow-none">
+        <ul aria-label="阅读成员" className="max-h-64 space-y-1.5 overflow-y-auto">
+          {members.map((member) => <li key={member.userId} className="flex min-w-0 items-center gap-2 text-xs"><span className="max-w-40 truncate">{member.displayName}</span><span className={`shrink-0 ${member.state === 'read' ? 'text-emerald-600' : 'text-muted-foreground'}`}>{member.state === 'read' ? '已读' : '未读'}</span></li>)}
+        </ul>
       </PopoverContent>
     </Popover>
   );
