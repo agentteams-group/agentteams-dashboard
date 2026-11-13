@@ -194,6 +194,13 @@ describe('MessageBubble live run progress', () => {
 });
 
 describe('MessageBubble run-ending states (AC-C6)', () => {
+  it('shows confirmed stopped status while preserving the partial response', () => {
+    renderBubble(makeMessage({ content: '已经完成第一步', turnState: 'stopped', isStreaming: false }));
+    expect(screen.getByText('已经完成第一步')).toBeInTheDocument();
+    expect(screen.getByText('已停止')).toBeInTheDocument();
+    expect(screen.queryByText('正在处理')).toBeNull();
+  });
+
   it('renders 已取消 as a warning strip', () => {
     renderBubble(makeMessage({ content: '已取消' }));
     expect(screen.getByTestId('run-ending-cancelled')).toHaveTextContent('任务已取消');

@@ -142,6 +142,7 @@ function buildTurnMessage(entries: TurnEntry[]): DisplayMessage {
 
   return {
     ...first,
+    turnState: entries.some(entry => entry.message.turnState === 'stopped') ? 'stopped' : first.turnState,
     // The root event stays canonical for replies, read markers and the thread
     // panel; the folded event ids are matched separately by the timeline.
     id: canonical.id,

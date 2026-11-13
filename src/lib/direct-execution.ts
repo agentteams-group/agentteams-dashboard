@@ -1,4 +1,5 @@
 import type { MatrixEvent } from './matrix-api';
+import type { DisplayMessage } from '@/hooks/use-matrix';
 
 export const EXECUTION_KEY = 'com.agentteams.execution';
 export const CONTROL_KEY = 'com.agentteams.control';
@@ -48,4 +49,32 @@ export function getDirectExecution(
 
 export function executionControl(execution: DirectExecution, action: DirectControl['action']): DirectControl {
   return { action, run_id: execution.runId, agent_id: execution.agentId };
+}
+
+/** A Stop request is not an acknowledgement. Only the Agent's stopped event marks a message. */
+export function markStoppedMessages(messages: DisplayMessage[], events: MatrixEvent[], agentIds: string[] = []): DisplayMessage[] {
+  const result = [...messages];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.type !== 'm.room.message' || !agentIds.includes(event.sender)) continue;
+    const data = event.content[EXECUTION_KEY] as Record<string, unknown> | undefined;
+    if (!data || data.status !== 'stopped' || typeof data.run_id !== 'string') continue;
+    const key = `${event.sender}:${data.run_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const index = typeof data.message_id === 'string' ? result.findIndex(message =>
+      message.sender === event.sender && [message.id, message.eventId, message.turnId,
+        ...(message.sourceEventIds ?? [])].includes(data.message_id as string)) : -1;
+    if (index >= 0) {
+      result[index] = { ...result[index], turnState: 'stopped', isStreaming: false };
+    } else {
+      // Cancellation can precede the first response, or its root may be outside
+      // the loaded page. Show an acknowledgement without marking another run.
+      result.push({ id: event.event_id, eventId: event.event_id, sender: event.sender,
+        senderShort: event.sender.split(':')[0].slice(1), content: '', type: 'm.text',
+        timestamp: event.origin_server_ts, isMe: false, turnState: 'stopped',
+        sourceEventIds: [event.event_id], runId: data.run_id });
+    }
+  }
+  return result.sort((a, b) => a.timestamp - b.timestamp);
 }

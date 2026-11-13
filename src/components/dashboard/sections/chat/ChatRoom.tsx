@@ -34,7 +34,7 @@ import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker
 import { PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
-import { getDirectExecution, executionControl, EXECUTION_KEY } from '@/lib/direct-execution';
+import { getDirectExecution, executionControl, EXECUTION_KEY, markStoppedMessages } from '@/lib/direct-execution';
 import { withFileReferences, type FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
 import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
@@ -286,7 +286,9 @@ export function ChatRoom({
     ),
     [allEvents, currentUserId, runtimeMap, workerMatrixUserIds],
   );
-  const formattedMessages = chatIr.messages;
+  const formattedMessages = useMemo(() => markStoppedMessages(
+    chatIr.messages, allEvents, workerMatrixUserIds,
+  ), [chatIr.messages, allEvents, workerMatrixUserIds]);
 
   // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
   // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里

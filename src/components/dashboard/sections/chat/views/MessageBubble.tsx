@@ -80,6 +80,14 @@ function TurnStateNote({
   state: DisplayMessage['turnState'];
   hasBlocks: boolean;
 }) {
+  if (state === 'stopped') {
+    return (
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" data-turn-state="stopped">
+        <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
+        已停止
+      </p>
+    );
+  }
   if (state === 'detached') {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground/70" data-turn-state="detached">
@@ -784,10 +792,11 @@ export function MessageBubble({
                 }
                 return null;
               })}
+              {message.turnState === 'stopped' && <TurnStateNote state="stopped" hasBlocks={parsedBlocks.length > 0} />}
             </div>
           )}
 
-          <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />
+          {message.turnState !== 'stopped' && <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />}
         </div>
 
         {/* Continuations keep metadata below the content, including on touch screens. */}
