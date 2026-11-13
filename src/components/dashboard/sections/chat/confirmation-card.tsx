@@ -26,6 +26,8 @@ export interface ConfirmationCardPayload {
    * 缺失时禁绑按钮——无 ID 的命令会命中运行时队列首的任意请求。
    */
   requestId?: string;
+  runtimeApproval?: boolean;
+  resolutionKey?: string;
   /** #235：取消命令（`/approval cancel <id>`），运行时提供时才出现。 */
   cancelReply?: string;
   /** #235：过期时间戳（毫秒）；过期后只读并标「已超时」。 */
@@ -62,6 +64,7 @@ export function toConfirmationCardPayload(payload: Record<string, unknown>): Con
     riskDetails: str(payload.riskDetails) ?? str(payload.risk_details),
     findings: typeof payload.findings === 'number' ? payload.findings : undefined,
     requestId: confirmationId,
+    ...(payload.runtimeApproval === true ? { runtimeApproval: true } : {}),
     cancelReply: str(payload.cancelReply),
     expiresAt: typeof payload.expiresAt === 'number'
       ? payload.expiresAt
@@ -81,9 +84,11 @@ const DECISION_LABEL: Record<Decision, string> = {
 
 export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: ConfirmationCardProps) {
   const currentUserId = useMatrixStore((s) => s.userId);
+  const resolutionKey = payload.resolutionKey ?? payload.requestId;
+  const awaitsReceipt = payload.runtimeApproval === true || /^\/approval\s/.test(payload.approveReply);
   // 带请求 ID 时与收件箱互通：别处（或别的客户端）处理掉，本卡同步只读。
   const resolution = useHitlInboxStore((s) =>
-    payload.requestId ? s.resolutions[payload.requestId] : undefined,
+    resolutionKey ? s.resolutions[resolutionKey] : undefined,
   );
 
   const [expanded, setExpanded] = useState(true);
@@ -93,23 +98,23 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
   const [sendFailed, setSendFailed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const actionable = Boolean(payload.requestId);
-  const settled = decision !== null || resolution?.status === 'answered';
+  const actionable = Boolean(payload.requestId) || !/^\/approval\s/.test(payload.approveReply);
+  const settled = decision !== null || resolution?.status === 'answered' || resolution?.status === 'submitted';
   const expired = resolution?.status === 'expired'
-    || (decision === null && resolution?.status !== 'answered' && typeof payload.expiresAt === 'number' && now >= payload.expiresAt);
+    || (resolution?.status !== 'answered' && typeof payload.expiresAt === 'number' && now >= payload.expiresAt);
 
   // 过期把收件箱条目一起收掉（与 InterventionCard 同一口径），只做一次。
   useEffect(() => {
-    if (!expired || resolution || !payload.requestId) return;
-    useHitlInboxStore.getState().expireConfirmation(payload.requestId, currentUserId ?? undefined);
-  }, [expired, resolution, payload.requestId, currentUserId]);
+    if (!expired || resolution?.status === 'expired' || resolution?.status === 'answered' || !resolutionKey) return;
+    useHitlInboxStore.getState().expireConfirmation(resolutionKey, currentUserId ?? undefined);
+  }, [expired, resolution, resolutionKey, currentUserId]);
 
   // 过期置灰只需要分钟级节拍，不做高频 tick。
   useEffect(() => {
-    if (typeof payload.expiresAt !== 'number' || settled) return;
+    if (typeof payload.expiresAt !== 'number' || resolution?.status === 'answered') return;
     const timer = setInterval(() => setNow(Date.now()), 15000);
     return () => clearInterval(timer);
-  }, [payload.expiresAt, settled]);
+  }, [payload.expiresAt, resolution?.status]);
 
   const submit = async (kind: Decision) => {
     const reply = kind === 'approve'
@@ -117,7 +122,7 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
       : kind === 'reject'
         ? payload.rejectReply
         : payload.cancelReply;
-    if (!reply || submitting || settled || expired) return;
+    if (!reply || submitting || settled || expired || (typeof payload.expiresAt === 'number' && Date.now() >= payload.expiresAt)) return;
     const answer: ConfirmationAnswerField | undefined = payload.requestId
       ? {
         confirmation_id: payload.requestId,
@@ -147,17 +152,24 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
       return;
     }
     setDecision(kind);
-    if (payload.requestId) {
-      useHitlInboxStore.getState().resolveConfirmation(
-        payload.requestId,
+    if (resolutionKey) {
+      const settle = awaitsReceipt
+        ? useHitlInboxStore.getState().submitConfirmation
+        : useHitlInboxStore.getState().resolveConfirmation;
+      settle(
+        resolutionKey,
         currentUserId ?? undefined,
         reply,
       );
     }
   };
 
-  const settledLabel = decision
-    ? DECISION_LABEL[decision]
+  const settledLabel = expired ? '已超时'
+    : resolution?.status === 'answered' && awaitsReceipt
+      ? ({ approved: '已批准', rejected: '已拒绝', cancelled: '已取消' }[resolution.answer ?? ''] ?? '已处理')
+    : awaitsReceipt && (decision || resolution?.status === 'submitted')
+      ? '已提交，等待运行时确认'
+    : decision ? DECISION_LABEL[decision]
     : resolution?.status === 'expired'
       ? '已超时'
       : resolution?.actor

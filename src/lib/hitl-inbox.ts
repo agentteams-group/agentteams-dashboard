@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
+import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from './runtime-approval';
 
 export interface HitlConfirmation {
   id: string;
@@ -22,12 +23,14 @@ export interface HitlConfirmation {
   riskDetails?: string;
   /** #235：运行时请求 ID（`/approval approve <id>` 的绑定目标）。 */
   requestId?: string;
+  runtimeApproval?: boolean;
+  contextId?: string;
   timestamp: number;
 }
 
 export interface HitlResolution {
   id: string;
-  status: 'answered' | 'expired';
+  status: 'submitted' | 'answered' | 'expired';
   actor?: string;
   timestamp: number;
   answer?: string;
@@ -50,6 +53,7 @@ interface HitlInboxState {
   upsertConfirmation: (_item: HitlConfirmation) => void;
   dropConfirmation: (_id: string) => void;
   resolveConfirmation: (_id: string, _actor?: string, _answer?: string) => void;
+  submitConfirmation: (_id: string, _actor?: string, _answer?: string) => void;
   expireConfirmation: (_id: string, _actor?: string) => void;
   dropByEventId: (_roomId: string, _eventId: string) => void;
   resolveRoomReply: (
@@ -79,8 +83,8 @@ function applyResolution(
   resolution: HitlResolution,
 ): Pick<HitlInboxState, 'confirmations' | 'resolutions'> {
   const confirmations = { ...state.confirmations };
-  delete confirmations[resolution.id];
-  if (state.resolutions[resolution.id]) {
+  if (resolution.status !== 'submitted') delete confirmations[resolution.id];
+  if (state.resolutions[resolution.id] && state.resolutions[resolution.id].status !== 'submitted') {
     return { confirmations, resolutions: state.resolutions };
   }
 
@@ -105,7 +109,7 @@ export const useHitlInboxStore = create<HitlInboxState>()(
 
   upsertConfirmation: (item) =>
     set((state) => {
-      if (item.id in state.resolutions) return state;
+      if (state.resolutions[item.id]?.status !== undefined && state.resolutions[item.id]?.status !== 'submitted') return state;
       const isNew = !(item.id in state.confirmations);
       // hitl.request 审计（F2.4）：仅新条目上报一次（m.replace 修订
       // 静默 upsert，不重复计审计）。
@@ -131,6 +135,11 @@ export const useHitlInboxStore = create<HitlInboxState>()(
       delete next[id];
       return { confirmations: next };
     }),
+
+  submitConfirmation: (id, actor, answer) =>
+    set((state) => applyResolution(state, {
+      id, status: 'submitted', timestamp: Date.now(), actor, answer,
+    })),
 
   resolveConfirmation: (id, actor, answer) =>
     set((state) =>
@@ -170,18 +179,34 @@ export const useHitlInboxStore = create<HitlInboxState>()(
     if (!kind) return;
 
     const pending = Object.values(get().confirmations).filter((item) => item.roomId === roomId);
+    const explicit = stripLeadingMentions(body).match(/^\/(?:approval\s+(?:approve|deny|cancel)|approve|reject)\s+([\w.-]+)(?:\s|$)/i)?.[1];
+    if (explicit) {
+      const matches = pending.filter((item) => item.requestId === explicit
+        && (!relatedEventId || item.eventId === relatedEventId)
+        && (!body.trim().startsWith('@') || body.includes(item.sender) || body.includes(`@${item.sender.slice(1).split(':')[0]} `)));
+      if (matches.length === 1) {
+        const target = matches[0];
+        if (target.runtimeApproval) get().submitConfirmation(target.id, sender, body);
+        else get().resolveConfirmation(target.id, sender, body);
+      }
+      return;
+    }
     if (relatedEventId) {
       const linked = pending.find((item) => item.eventId === relatedEventId);
-      if (linked) get().resolveConfirmation(linked.id, sender, body);
+      if (linked) {
+        if (linked.runtimeApproval) get().submitConfirmation(linked.id, sender, body);
+        else get().resolveConfirmation(linked.id, sender, body);
+      }
       // 显式指向某张卡片时不再猜测其它卡片：目标可能已在本地处理过。
       return;
     }
 
     // 干预答复只对应带 question 的干预条目；/approve 一类裁决优先对应
     // 工具确认。找不到同类条目时才回退到全部待办（单条待办场景）。
-    const sameKind = pending.filter((item) => (kind === 'intervention' ? item.question : !item.question));
+    const sameKind = pending.filter((item) => !item.runtimeApproval && (kind === 'intervention' ? item.question : !item.question));
     if (kind === 'intervention' && sameKind.length === 0) return;
-    const pool = sameKind.length > 0 ? sameKind : pending;
+    if (APPROVAL_COMMAND_RE.test(stripLeadingMentions(body))) return;
+    const pool = sameKind.length > 0 ? sameKind : pending.filter((item) => !item.runtimeApproval);
     const target = pool.sort((a, b) => a.timestamp - b.timestamp)[0];
     if (target) get().resolveConfirmation(target.id, sender, body);
   },
@@ -306,6 +331,7 @@ export function hitlResolutionKind(body: string): HitlResolutionKind | null {
   // /approval 命令族：取消同样让请求离开待办态（运行时按 id 作废），
   // 因此与批准/拒绝同归 verdict，由 sameKind 池解掉对应工具审批卡。
   if (APPROVAL_COMMAND_RE.test(text)) return 'verdict';
+  if (/^\/(?:approve|reject)\s+[\w.-]+$/.test(text)) return 'verdict';
   return null;
 }
 
@@ -361,6 +387,7 @@ function asString(value: unknown): string | undefined {
 export function extractConfirmationFromEvent(
   event: MatrixEvent,
   roomId: string,
+  currentUserId?: string,
 ): HitlConfirmation | null {
   if (event.type !== 'm.room.message') return null;
   const content = resolveEventContent(event);
@@ -372,6 +399,7 @@ export function extractConfirmationFromEvent(
     formattedBody,
     content,
     isStreaming: false,
+    isMine: event.sender === currentUserId,
   });
   const confirmation = blocks.find((block) => block.type === 'confirmation');
   if (!confirmation) return null;
@@ -389,7 +417,7 @@ export function extractConfirmationFromEvent(
       : undefined);
 
   return {
-    id: confirmationId ?? `${roomId}:${eventId}`,
+    id: payload.runtimeApproval === true ? eventId : confirmationId ?? `${roomId}:${eventId}`,
     roomId,
     eventId,
     sender: event.sender,
@@ -404,6 +432,8 @@ export function extractConfirmationFromEvent(
       ? { riskDetails: asString(payload.riskDetails) ?? asString(payload.risk_details) }
       : {}),
     ...(confirmationId ? { requestId: confirmationId } : {}),
+    ...(payload.runtimeApproval === true ? { runtimeApproval: true } : {}),
+    ...(asString(payload.contextId) ? { contextId: asString(payload.contextId) } : {}),
     timestamp: event.origin_server_ts,
   };
 }
@@ -417,14 +447,23 @@ export function ingestHitlTimelineEvents(
   const ordered = [...events].sort((a, b) => a.origin_server_ts - b.origin_server_ts);
   for (const event of ordered) {
     if (event.type !== 'm.room.message') continue;
-    const confirmation = extractConfirmationFromEvent(event, roomId);
+    const content = resolveEventContent(event);
+    const approval = event.sender !== currentUserId && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
+    if (approval && approval.status !== 'pending') {
+      for (const item of Object.values(store.confirmations)) {
+        if (item.roomId !== roomId || item.sender !== event.sender || item.requestId !== approval.request_id || item.contextId !== approval.context_id) continue;
+        if (approval.status === 'expired') store.expireConfirmation(item.id, event.sender);
+        else store.resolveConfirmation(item.id, event.sender, approval.status);
+      }
+      continue;
+    }
+    const confirmation = extractConfirmationFromEvent(event, roomId, currentUserId);
     if (confirmation) {
       store.upsertConfirmation(confirmation);
       continue;
     }
     // Non-confirmation message: resolve any pending approval, then drop by
     // event id if this is an m.replace revision (streaming finalization).
-    const content = resolveEventContent(event);
     const body = typeof content.body === 'string' ? content.body : '';
     store.resolveRoomReply(roomId, event.sender, body, currentUserId, relatedEventIdOf(event));
     const relatesTo = event.content?.['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;

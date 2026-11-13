@@ -211,7 +211,7 @@ describe('extractConfirmationFromEvent', () => {
     });
     const item = extractConfirmationFromEvent(event, '!room:test');
     expect(item?.requestId).toBe('req-abc-123');
-    expect(item?.id).toBe('req-abc-123');
+    expect(item?.id).toBe('$a2');
     expect(item?.approveReply).toBe('/approval approve req-abc-123');
     expect(item?.rejectReply).toBe('/approval deny req-abc-123');
   });
@@ -297,7 +297,7 @@ describe('useHitlInboxStore', () => {
     expect(remaining[0].eventId).toBe('$c2');
   });
 
-  it('resolves a pending QwenPaw runtime approval on /approval approve (#235)', () => {
+  it('does not guess which request an ID-less QwenPaw command resolves', () => {
     ingestHitlTimelineEvents(
       '!r1',
       [
@@ -313,8 +313,7 @@ describe('useHitlInboxStore', () => {
       '@user:test',
     );
     const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].eventId).toBe('$a1');
+    expect(remaining).toHaveLength(2);
   });
 
   it('does not let /approval list consume a pending approval', () => {

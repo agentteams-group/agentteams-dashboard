@@ -491,7 +491,7 @@ export function parseRuntimeApprovalConfirmation(body: string): Record<string, u
   )?.[1];
 
   const command = (label: string) => {
-    const match = body.match(
+    const match = body.replace(/```[\s\S]*?```/g, ' ').match(
       new RegExp(`\\*{0,2}${label}\\*{0,2}\\s*[:：]\\s*\`?(\/approval\\s+[^\`\\n]*)\`?`, 'i'),
     );
     return match?.[1]?.trim();
@@ -514,9 +514,9 @@ export function parseRuntimeApprovalConfirmation(body: string): Record<string, u
     ...(findingsRaw ? { findings: Number(findingsRaw) } : {}),
     ...(riskDetails ? { riskDetails } : {}),
     ...(parameters ? { parameters } : {}),
-    ...(requestId ? { requestId } : {}),
-    approveReply: withId(command('Approve')) ?? '/approval approve',
-    rejectReply: withId(command('Deny')) ?? '/approval deny',
+    ...(requestId ? { requestId, runtimeApproval: true } : {}),
+    approveReply: requestId ? `/approval approve ${requestId}` : '/approval approve',
+    rejectReply: requestId ? `/approval deny ${requestId}` : '/approval deny',
     ...(withId(command('Cancel')) ? { cancelReply: withId(command('Cancel')) } : {}),
   };
 }
@@ -524,16 +524,16 @@ export function parseRuntimeApprovalConfirmation(body: string): Record<string, u
 /**
  * Request id from a template variant that carries one: an explicit
  * `request[ _]?id` field, an id argument already present on the documented
- * `/approval approve <id>` command, or a bare UUID outside the parameters
- * fence (a UUID inside tool arguments is data, not the request id).
+ * `/approval approve <id>` action line. Tool arguments and unrelated UUIDs
+ * are never treated as approval identifiers.
  */
 function extractApprovalRequestId(body: string): string | undefined {
-  const explicit = body.match(/request[ _]?id\*{0,2}\s*[:：]\s*`?([0-9a-zA-Z][\w.-]*)`?/i)?.[1];
-  if (explicit) return explicit;
-  const withArg = body.match(/\/approval\s+(?:approve|deny|cancel)\s+([0-9a-zA-Z][\w.-]*)/i)?.[1];
-  if (withArg) return withArg;
   const withoutFences = body.replace(/```[\s\S]*?```/g, ' ');
-  return withoutFences.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i)?.[0];
+  const explicit = withoutFences.match(/^[ \t]*[•*-]?[ \t]*\*{0,2}request[ _]?id\*{0,2}\s*[:：]\s*`?([0-9a-zA-Z][\w.-]*)`?[ \t]*$/im)?.[1];
+  if (explicit) return explicit;
+  const withArg = withoutFences.match(/^[ \t]*[-•]?[ \t]*(?:Approve|Deny|Cancel):\s*`?\/approval\s+(?:approve|deny|cancel)\s+([0-9a-zA-Z][\w.-]*)`?[ \t]*$/im)?.[1];
+  if (withArg) return withArg;
+  return undefined;
 }
 
 /** Bullet lines between `Risk Details:` and the next section (or the fence). */

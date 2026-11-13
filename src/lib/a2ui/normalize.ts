@@ -30,6 +30,7 @@
  */
 
 import type { ParsedA2uiBlock } from './parser';
+import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY, runtimeApprovalPayload } from '../runtime-approval';
 import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, fileReferencesFromBody, parseFileRefs } from '../file-refs';
 import {
   parseA2uiMarkers,
@@ -93,6 +94,11 @@ function stripLongMessageHtmlFooter(html: string): string {
 
 function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   const { body, formattedBody, content, isStreaming, isMine, runtime } = input;
+
+  const approval = !isMine && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
+  if (approval && approval.status === 'pending') {
+    return [{ type: 'confirmation', payload: runtimeApprovalPayload(approval) }];
+  }
 
   // 1. agentteams.workflow → workflow block (highest priority).
   if (isWorkflowPayload(content['agentteams.workflow'])) {

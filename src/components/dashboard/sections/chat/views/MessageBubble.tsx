@@ -628,7 +628,9 @@ export function MessageBubble({
                   return (
                     <div key={idx} className="w-full">
                       <ConfirmationCard
-                        payload={toConfirmationCardPayload(block.payload ?? {})}
+                        payload={{ ...toConfirmationCardPayload(block.payload ?? {}),
+                          ...(block.payload?.runtimeApproval === true ? { resolutionKey: message.eventId } : {}),
+                        }}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}
                         onCancel={handleConfirmationReject}

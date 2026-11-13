@@ -138,7 +138,7 @@ describe('ConfirmationCard（#235 审批交互）', () => {
         actor: '@me:example.org',
       }),
     );
-    expect(await screen.findByText(/已批准/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交，等待运行时确认/)).toBeInTheDocument();
   });
 
   it('sends the id-bound deny command on reject', async () => {
@@ -152,7 +152,7 @@ describe('ConfirmationCard（#235 审批交互）', () => {
         actor: '@me:example.org',
       }),
     );
-    expect(await screen.findByText(/已拒绝/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交，等待运行时确认/)).toBeInTheDocument();
   });
 
   it('sends the cancel command when the runtime offers one', async () => {
@@ -166,7 +166,7 @@ describe('ConfirmationCard（#235 审批交互）', () => {
         actor: '@me:example.org',
       }),
     );
-    expect(await screen.findByText(/已取消/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交，等待运行时确认/)).toBeInTheDocument();
   });
 
   it('stays retryable and shows a hint when the reply was not written to the room', async () => {
@@ -178,7 +178,7 @@ describe('ConfirmationCard（#235 审批交互）', () => {
     expect(screen.getByRole('button', { name: /批准本次/ })).toBeEnabled();
     mockOnApprove.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole('button', { name: /批准本次/ }));
-    expect(await screen.findByText(/已批准/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交，等待运行时确认/)).toBeInTheDocument();
   });
 
   it('treats a rejected send promise as a failure', async () => {
