@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationTaskTips } from './ConversationTaskTips';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { extractConfirmationFromEvent, useHitlInboxStore } from '@/lib/hitl-inbox';
+import type { MatrixEvent } from '@/lib/matrix-api';
 import { useSectionStore } from '@/lib/section-store';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
@@ -81,6 +82,30 @@ describe('conversation task tips', () => {
     fireEvent.click(screen.getByRole('button', { name: /首页设计，待审批，进入协作空间/ }));
     expect(useHitlInboxStore.getState().confirmations.approval).toBeDefined();
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(execution.id);
+  });
+
+  it.each(['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'])('shows the pending tool approval from %s in the task panel', runtime => {
+    const native = runtime === 'qwenpaw' || runtime === 'codex';
+    const event = {
+      event_id: '$approval', sender: 'designer', type: 'm.room.message', origin_server_ts: 1,
+      content: { msgtype: 'm.text', body: 'Tool approval', ...(native
+        ? { 'org.agentteams.approval': { version: 1, runtime, request_id: 'approval', context_id: 'ctx-1', status: 'pending', tool_name: 'bash' } }
+        : { 'org.agentteams.run': { version: '1', blocks: [{ type: 'confirmation', confirmation_id: 'approval', tool_name: 'bash' }] } }) },
+    } as MatrixEvent;
+    const confirmation = extractConfirmationFromEvent(event, execution.id)!;
+    expect(confirmation).not.toBeNull();
+    useHitlInboxStore.setState({ confirmations: { [confirmation.id]: confirmation } });
+    render(view());
+    expect(screen.getByText('待审批')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /首页设计，待审批，进入协作空间/ }));
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(execution.id);
+    expect(useHitlInboxStore.getState().confirmations[confirmation.id]).toEqual(confirmation);
+  });
+
+  it('does not label an intervention question as a tool approval', () => {
+    useHitlInboxStore.setState({ confirmations: { question: { id: 'question', roomId: execution.id, eventId: '$question', sender: 'designer', toolName: 'intervention', question: '请选择方案', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
+    render(view());
+    expect(screen.queryByText('待审批')).toBeNull();
   });
 
   it.each([['!unrelated:test', 'designer'], [execution.id, 'other-worker']])('does not attribute an unrelated approval to this task (%s, %s)', (roomId, sender) => {

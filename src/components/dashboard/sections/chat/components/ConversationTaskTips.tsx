@@ -24,7 +24,7 @@ export function ConversationTaskTips({ room, rooms, taskFeed }: {
   const items = conversationTaskNotes(room, workflows).filter(item => item.group !== 'completed').map(item => ({
     ...item,
     needsApproval: item.group !== 'cancelled' && Object.values(confirmations).some(confirmation =>
-      confirmation.runtimeApproval && confirmation.roomId === item.roomId
+      !confirmation.question && confirmation.roomId === item.roomId
       && confirmation.sender === item.assignee),
   }));
   if (!items.length) return null;
