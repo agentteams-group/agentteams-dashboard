@@ -114,6 +114,8 @@ export function useOutboundMessages({
         mentions,
         replyTo,
         fileRefs,
+        answer,
+        referenceEventId,
         timestamp: Date.now(),
         status: 'sending' as const,
       }]);

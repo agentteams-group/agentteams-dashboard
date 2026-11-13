@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { Clock, AlertTriangle, Info, Check } from 'lucide-react';
+import { Clock, AlertTriangle, MessageSquare, Check, ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   type RuntimeConfirmationBlock,
@@ -14,7 +15,6 @@ import { useNotificationStore } from '@/lib/notification-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { recordHitlAudit } from '@/lib/hitl-audit';
-import { statusBadgeClass } from '@/lib/status-tokens';
 import {
   type AnswerSendResult,
   type ConfirmationAnswerField,
@@ -100,6 +100,7 @@ function orderedOptions(question: RuntimeConfirmationQuestion) {
  * 与时间；超时（expires_at 或可配置等待窗口，默认 30 分钟）置灰禁答并升级通知。
  */
 export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
+  const [open, setOpen] = useState(false);
   const currentUserId = useMatrixStore((s) => s.userId);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const addNotification = useNotificationStore((s) => s.addNotification);
@@ -225,23 +226,17 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
 
   if (submitted) {
     return (
-      <div className={`my-2 rounded-lg border px-3 py-2 text-xs ${statusBadgeClass('done')}`}>
+      <div role="status" className="my-2 w-full max-w-2xl rounded-xl border bg-card px-4 py-3 text-sm">
         <div className="flex items-center gap-2">
           <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          已答复 — {payload.tool_name}
+          已提交选择
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          提交人 {submitted.by || '我'} · {new Date(submitted.at).toLocaleString('zh-CN', { hour12: false })}
+          {resolution?.answer?.replace(/^【干预答复】\s*/, '').replace(/A\d+：/g, '').replace(/\n/g, '；')}
         </p>
         {/* 降级可见（方案 v3 C-3）：答复进的是房间，而运行时至今没有确认通道，
             所以「已答复」不等于「任务已按所选继续跑」——这一条得写在卡上。 */}
-        <Badge
-          variant="outline"
-          className={`mt-2 ${statusBadgeClass('waiting')}`}
-          title="答案已写入房间，但没有运行时确认收到；任务是否按此继续请看 Agent 侧状态"
-        >
-          本次选择未回写运行时
-        </Badge>
+        <p className="mt-2 text-xs text-muted-foreground">答案已发送，等待 Agent 继续处理。</p>
       </div>
     );
   }
@@ -306,12 +301,22 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     // Codex 风格（交互选项卡 · 2026-10 反馈）：白底圆角大卡 + 充足留白 +
     // 序号键提示 + 底部自由输入与深色提交按钮；交互逻辑（推荐默认选中/
     // 快捷键/互斥/分页/权限/超时/审计）不变。
+    <Dialog open={open} onOpenChange={setOpen}>
+      <div className="my-2 w-full max-w-2xl overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="flex items-start gap-3 p-4">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/5 text-foreground"><MessageSquare className="size-4" aria-hidden="true" /></span>
+          <div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">{expired ? '选择请求已超时' : '需要你的选择'}</p><h3 className="mt-1 text-sm font-medium leading-relaxed">{questions[0].question}</h3></div>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-4 py-3"><p className="text-xs text-muted-foreground">{questions.length > 1 ? `${questions.length} 个问题` : questions[0].multi_select ? '可选择多项，也可补充说明' : '选择一个选项，或补充说明'}</p><Button size="sm" variant="outline" onClick={() => setOpen(true)}>{expired ? '查看详情' : '查看并选择'}<ArrowUpRight className="ml-1.5 size-3.5" aria-hidden="true" /></Button></div>
+      </div>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="border-b px-6 py-5"><DialogTitle>请确认你的选择</DialogTitle><DialogDescription>你的答复将发送给 Agent，帮助它继续当前工作。</DialogDescription></DialogHeader>
     <div
       role="group"
       aria-label="干预请求"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className={`my-2 w-[min(100%,42rem)] max-w-full rounded-xl border bg-card shadow-sm overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 ${
+      className={`max-h-[70dvh] overflow-y-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
         locked ? 'opacity-60' : ''
       }`}
     >
@@ -345,7 +350,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
               <span className="block text-xs text-muted-foreground">{list.find((option) => option.id === selected[0])?.description}</span>
             )}
           </label>
-        ) : <div className="space-y-2" role="radiogroup" aria-label={question.question}>
+        ) : <div className="space-y-2" role={question.multi_select ? 'group' : 'radiogroup'} aria-label={question.question}>
           {list.map((option, index) => {
             const checked = selected.includes(option.id);
             return (
@@ -358,26 +363,24 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                 onClick={() => toggleOption(page, option.id)}
                 className={`w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
                   checked
-                    ? 'border-sky-500 bg-sky-500/[0.06]'
-                    : 'border-border hover:border-sky-500/40 hover:bg-accent/40'
+                    ? 'border-foreground/60 bg-muted/70'
+                    : 'border-border hover:border-foreground/30 hover:bg-accent/40'
                 } ${locked || forbidden ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 {/* 单选圆钮 / 多选方钮 */}
                 <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${
-                    question.multi_select ? '[4px]' : 'full'
-                  } border-2 transition-colors ${
-                    checked ? 'border-sky-500' : 'border-zinc-300 dark:border-zinc-600'
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center ${question.multi_select ? 'rounded' : 'rounded-full'} border transition-colors ${
+                    checked ? 'border-foreground bg-foreground text-background' : 'border-zinc-300 dark:border-zinc-600'
                   }`}
                   aria-hidden="true"
                 >
-                  {checked && <span className="h-2 w-2 rounded-full bg-sky-500" />}
+                  {checked && <Check className="size-3" />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">
                     {option.label}
                     {option.recommended && (
-                      <span className="ml-1.5 text-xs font-normal text-sky-600 dark:text-sky-400">（推荐）</span>
+                      <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">推荐</span>
                     )}
                   </span>
                   {option.description && (
@@ -397,6 +400,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         </div>}
 
         {payload.tool_name !== 'select_team_admin' && <div className="pt-2 border-t border-border/60">
+          <label className="mt-3 block text-xs font-medium" htmlFor={`intervention-free-${payload.confirmation_id}`}>补充说明</label>
           <textarea
             id={`intervention-free-${payload.confirmation_id}`}
             aria-label="自由输入"
@@ -404,7 +408,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
             disabled={locked || forbidden}
             onChange={(e) => setFreeText(page, e.target.value)}
             rows={2}
-            className="mt-3 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60 resize-none"
+            className="mt-2 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 resize-none"
             placeholder="也可以直接输入你的想法…"
           />
         </div>}
@@ -460,11 +464,10 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
             答复未写入房间，请重试（发送失败详见房间底部提示）
           </p>
         )}
-        <p className="flex items-center gap-1 text-xs text-muted-foreground/70">
-          <Info className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
-          答复将以一条消息发回房间（{payload.tool_name}）· 本次选择未回写运行时状态
-        </p>
+        <p className="text-xs text-muted-foreground/70">提交后可在对话中查看 Agent 的后续回复。</p>
       </div>
     </div>
+      </DialogContent>
+    </Dialog>
   );
 }

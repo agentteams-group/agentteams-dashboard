@@ -35,6 +35,7 @@ import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
 
@@ -469,6 +470,11 @@ export function MessageBubble({
 
   if (lifecycleNotice) {
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
+  }
+
+  const activity = interactionActivity(message.content, message.rawContent, message.isMe);
+  if (activity) {
+    return <div role="status" className="flex items-center gap-2 py-2 pl-11 text-xs text-muted-foreground"><Check className="size-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message.isMe ? '你' : senderLabel} · {activity}</span><MessageTime timestamp={message.timestamp} />{message.status === 'sending' && <span>发送中…</span>}{message.status === 'error' && <Button size="sm" variant="ghost" className="h-6 text-xs text-destructive" onClick={() => onResend?.(message)}>发送失败，重试</Button>}</div>;
   }
 
   return (

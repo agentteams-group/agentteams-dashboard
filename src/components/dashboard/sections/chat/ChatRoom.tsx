@@ -660,6 +660,8 @@ export function ChatRoom({
       mentions: local.mentions,
       replyTo: local.replyTo,
       clientId: local.clientId,
+      answer: local.answer,
+      referenceEventId: local.referenceEventId,
     });
   }, [localMessages, patchLocal, sendOutbound]);
 

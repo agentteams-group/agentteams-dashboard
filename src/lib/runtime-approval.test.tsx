@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+function render(ui: ReactElement) {
+  const result = renderView(ui);
+  const trigger = screen.queryByRole('button', { name: '查看并处理' });
+  if (trigger) fireEvent.click(trigger);
+  return result;
+}
 import '@testing-library/jest-dom/vitest';
 import { normalizeToBlocks } from './a2ui/normalize';
 import { parseRuntimeApprovalConfirmation } from './a2ui/parser';
@@ -37,6 +44,7 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
     expect(useHitlInboxStore.getState().resolutions['$pending']).toBeUndefined();
     ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
     await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
+    expect(screen.getByText('已批准 - Bash')).toHaveClass('text-emerald-600');
   });
   it('renders the runtime contract and binds the exact request command', async () => {
     const data = approval(runtime);

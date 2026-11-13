@@ -1,9 +1,22 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+function render(ui: ReactElement) {
+  const result = renderView(ui);
+  const trigger = screen.queryByRole('button', { name: /查看并选择|查看并处理/ });
+  if (trigger) fireEvent.click(trigger);
+  return result;
+}
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+
+it('shows a decision activity instead of exposing its transport command', () => {
+  renderWithProvider(<MessageBubble message={{ id: '$decision', sender: '@me:test', senderShort: 'me', content: '/approve 0 thread:turn', timestamp: 0, type: 'm.text', isMe: true, rawContent: { 'com.agentteams.answer': { confirmation_id: '0', answer: 'approved' } } }} showSender isContinuation={false} />);
+  expect(screen.getByText(/你.*已提交批准/)).toBeInTheDocument();
+  expect(screen.queryByText('/approve 0 thread:turn')).not.toBeInTheDocument();
+});
 
 // WorkflowCard（v11 live overlay）内含 useQuery → 渲染需 QueryClientProvider。
 function renderWithProvider(ui: Parameters<typeof render>[0]) {
@@ -267,9 +280,9 @@ describe('MessageBubble', () => {
       />
     );
 
-    expect(screen.getAllByText('请选择一种方案？')).toHaveLength(1);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(screen.getAllByRole('radio')).toHaveLength(2);
-    expect(screen.getAllByText('补充说明')).toHaveLength(1);
+    expect(screen.getAllByLabelText('自由输入')).toHaveLength(1);
   });
 
   it('uses the command renderer and safely displays invalid JSON arguments', () => {
@@ -356,7 +369,7 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
     // Preserve the pre-existing Tool Guard interaction; QwenPaw's queue
     // commands require exact request IDs through the new contract.
     expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
@@ -505,7 +518,7 @@ Parameters / 参数:
 Type /approve to approve, or send any message to deny.`,
       assertRendered: () => {
         // Legacy rendering remains compatible; no new CoPaw integration.
-        expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
+        expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
       },
     },
@@ -929,7 +942,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       />,
     );
     // 卡片标题（问题原句）
-    expect(screen.getByText('你希望先实现哪一种交互？')).toBeInTheDocument();
+    expect(screen.getAllByText('你希望先实现哪一种交互？')[0]).toBeInTheDocument();
     // 选项进入卡内（radio 形态）
     expect(screen.getByRole('radio', { name: /消息内嵌卡片/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /底部快捷操作/ })).toBeInTheDocument();
@@ -980,7 +993,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('页面类型：想要哪种？')).toBeInTheDocument();
+    expect(screen.getAllByText('页面类型：想要哪种？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /落地页/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
@@ -1004,7 +1017,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('问题 1/6：你想要哪种页面？')).toBeInTheDocument();
+    expect(screen.getAllByText('问题 1/6：你想要哪种页面？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /宣传落地页/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
@@ -1029,7 +1042,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('第 1 个问题：飞机页面还想加点什么？')).toBeInTheDocument();
+    expect(screen.getAllByText('第 1 个问题：飞机页面还想加点什么？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /尾焰特效/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /夜间星空模式/ })).toBeInTheDocument();
     expect(screen.getByText('也可以直接输入你的想法：')).toBeInTheDocument();

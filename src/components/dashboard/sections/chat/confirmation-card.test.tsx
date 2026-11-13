@@ -4,7 +4,14 @@
  * 过期只读、蛇形 v1 payload 适配。
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+function render(ui: ReactElement) {
+  const result = renderView(ui);
+  const trigger = screen.queryByRole('button', { name: '查看并处理' });
+  if (trigger) fireEvent.click(trigger);
+  return result;
+}
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,10 +115,10 @@ describe('toConfirmationCardPayload（蛇形 v1 → 卡片契约）', () => {
 describe('ConfirmationCard（#235 审批交互）', () => {
   it('renders the severity badge, risk details and request id', () => {
     renderCard(boundPayload);
-    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
+    expect(screen.getAllByText('CRITICAL').length).toBeGreaterThan(0);
     expect(screen.getByText('- [CRITICAL] 递归删除高危命令')).toBeInTheDocument();
-    expect(screen.getByText('req-abc-123')).toBeInTheDocument();
-    expect(screen.getByText(/execute_shell_command/)).toBeInTheDocument();
+    expect(screen.getByText('请求 ID：req-abc-123')).toBeInTheDocument();
+    expect(screen.getAllByText(/execute_shell_command/).length).toBeGreaterThan(0);
   });
 
   it('renders no badge for an unrecognised severity word', () => {
@@ -121,10 +128,10 @@ describe('ConfirmationCard（#235 审批交互）', () => {
 
   it('does not bind buttons without a request id (no guessing the queue head)', () => {
     renderCard(unboundPayload);
-    expect(screen.queryByRole('button', { name: /批准本次/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /拒绝本次/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /批准本次/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /拒绝本次/ })).toBeDisabled();
     expect(screen.getByText(/无法精确绑定本次请求/)).toBeInTheDocument();
-    expect(screen.getByText('/approval approve')).toBeInTheDocument();
+    expect(screen.queryByText('/approval approve')).not.toBeInTheDocument();
   });
 
   it('sends the id-bound command plus the structured answer field on approve', async () => {
@@ -201,7 +208,7 @@ describe('ConfirmationCard（#235 审批交互）', () => {
       },
     });
     renderCard(boundPayload);
-    expect(screen.getByText(/已处理/)).toBeInTheDocument();
+    expect(screen.getAllByText(/已处理/).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: /批准本次/ })).not.toBeInTheDocument();
   });
 
@@ -211,12 +218,15 @@ describe('ConfirmationCard（#235 审批交互）', () => {
     expect(screen.queryByRole('button', { name: /批准本次/ })).not.toBeInTheDocument();
   });
 
-  it('collapses and expands the detail section', () => {
-    renderCard(boundPayload);
+  it('opens a focused dialog only after the user chooses to review', () => {
+    renderView(<ConfirmationCard payload={boundPayload} onApprove={mockOnApprove} onReject={mockOnReject} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看并处理' }));
+    expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
     expect(screen.getByText('- [CRITICAL] 递归删除高危命令')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /工具审批/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByText('- [CRITICAL] 递归删除高危命令')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /工具审批/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看并处理' }));
     expect(screen.getByText('- [CRITICAL] 递归删除高危命令')).toBeInTheDocument();
   });
 });
