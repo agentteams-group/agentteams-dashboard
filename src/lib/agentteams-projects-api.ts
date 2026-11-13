@@ -135,6 +135,9 @@ export interface TaskTransition {
 export interface WorkflowTaskDetail {
   task_id: string;
   project_id?: string;
+  /** Matrix execution room, distinct from the conversation that requested it. */
+  room_id?: string;
+  source_room_id?: string;
   status?: string;
   spec_path?: string;
   assigned_to?: string;

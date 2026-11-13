@@ -32,12 +32,13 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
+import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle, ListChecks, Paperclip, AlertTriangle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
 import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
+import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -118,6 +119,27 @@ function MessageTime({ timestamp }: { timestamp: number }) {
       {time}
     </span>
   );
+}
+
+function WorkflowNoticeRow({ notice, sender, timestamp }: { notice: WorkflowNotice; sender: string; timestamp: number }) {
+  const Icon = notice.attention ? AlertTriangle : notice.kind === 'artifact' ? Paperclip : notice.kind === 'submitted' ? Check : ListChecks;
+  return <div role="note" aria-label={notice.title} data-workflow-notice={notice.kind} className="mx-9 my-2 max-w-xl rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
+    <div className="flex items-start gap-2">
+      <Icon aria-hidden="true" className={notice.attention ? 'mt-0.5 size-3.5 shrink-0 text-status-waiting' : 'mt-0.5 size-3.5 shrink-0 text-muted-foreground'} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-xs font-medium text-foreground">{notice.title}</p>
+        {notice.subject && <p className="text-sm leading-5 text-foreground/85">{notice.subject}</p>}
+        {notice.description && <p className="text-xs leading-5 text-muted-foreground">{notice.description}</p>}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground/70">
+          <span>{sender}</span><MessageTime timestamp={timestamp} />
+          <details className="w-full">
+            <summary className="w-fit cursor-pointer text-xs text-muted-foreground/70 hover:text-foreground">原始通知</summary>
+            <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 pt-2 font-mono text-xs leading-5">{notice.body}</pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>;
 }
 
 /**
@@ -339,6 +361,9 @@ export function MessageBubble({
     || senderShort
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
+  const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
+    && (message.workerName || message.runtime || isManagerSender(message.sender, senderLabel))
+    ? parseWorkflowNotice(message.content, message.runtime) : null;
 
   // The manager bot's container lifecycle lines are rendered as a status
   // notice rather than a conversation bubble.
@@ -470,6 +495,9 @@ export function MessageBubble({
 
   if (lifecycleNotice) {
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
+  }
+  if (workflowNotice && parsedBlocks.every(block => block.type === 'text')) {
+    return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
   }
 
   const activity = interactionActivity(message.content, message.rawContent, message.isMe);

@@ -29,6 +29,15 @@ function notice(id: string, content: string, timestamp: number, threadId?: strin
 }
 
 describe('coalesceWorkerTurns', () => {
+  it('leaves workflow notifications outside the ordinary answer', () => {
+    const result = coalesceWorkerTurns([
+      workerMessage({ id: 'answer', content: '项目已启动', timestamp: 1 }),
+      workerMessage({ id: 'flow', content: '[ProjectFlow] plan_dag: 计划已创建', timestamp: 2 }),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0].content).toBe('项目已启动');
+    expect(result[1].id).toBe('flow');
+  });
   it('folds a QwenPaw step stream into one message with a single process run', () => {
     const messages: DisplayMessage[] = [
       notice('root', '处理中...', 1_000),

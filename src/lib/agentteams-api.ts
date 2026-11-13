@@ -28,7 +28,7 @@ export type { MetaReadResult } from '@/lib/meta-api';
 
 export type WorkerPhase = 'Pending' | 'Running' | 'Sleeping' | 'Updating' | 'Stopped' | 'Failed' | 'Ready';
 export type WorkerState = 'Running' | 'Sleeping' | 'Stopped';
-export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness';
+export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex';
 export type TeamPhase = 'Pending' | 'Active' | 'Degraded' | 'Failed';
 export type HumanPhase = 'Pending' | 'Active' | 'Failed';
 export type ManagerPhase = 'Running' | 'Pending' | 'Failed';
