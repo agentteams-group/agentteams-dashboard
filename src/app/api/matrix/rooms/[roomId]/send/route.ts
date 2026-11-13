@@ -1,6 +1,7 @@
 // PUT /api/matrix/rooms/[roomId]/send - Send message to room
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatrixHomeserver, getAccessToken } from '../../../proxy-helper';
+import { CONTROL_KEY } from '@/lib/direct-execution';
 
 export async function PUT(
   request: NextRequest,
@@ -18,6 +19,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Missing message body' }, { status: 400 });
     }
 
+    const control = body[CONTROL_KEY];
+    if (control !== undefined && (!control || typeof control !== 'object'
+      || !['stop', 'steer'].includes(control.action)
+      || typeof control.run_id !== 'string' || !control.run_id
+      || typeof control.agent_id !== 'string' || !control.agent_id)) {
+      return NextResponse.json({ error: 'Invalid execution control' }, { status: 400 });
+    }
+
     const txnId = `agentteams_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const encodedRoomId = encodeURIComponent(roomId);
     const targetUrl = `${homeserver}/_matrix/client/v3/rooms/${encodedRoomId}/send/m.room.message/${txnId}`;
@@ -25,6 +34,9 @@ export async function PUT(
     const messageContent: Record<string, unknown> = {
       msgtype,
       body: messageBody,
+    };
+    if (control) messageContent[CONTROL_KEY] = {
+      action: control.action, run_id: control.run_id, agent_id: control.agent_id,
     };
 
     if (format && formattedBody) {

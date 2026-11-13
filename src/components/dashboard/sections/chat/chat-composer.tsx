@@ -11,6 +11,7 @@ import { FileRefPickerDialog } from './components/FileRefPickerDialog';
 import type { FileRef } from '@/lib/file-refs';
 import { VoiceInput } from './voice-input';
 import { useImeGuard } from './use-ime-guard';
+import type { DirectExecution } from '@/lib/direct-execution';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -48,6 +49,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 interface ChatComposerProps {
+  execution?: DirectExecution | null;
+  onStop?: () => void;
   roomId?: string;
   value: string;
   onChange: (_value: string) => void;
@@ -74,6 +77,8 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  execution,
+  onStop,
   roomId,
   value,
   onChange,
@@ -93,6 +98,7 @@ export function ChatComposer({
   onCancelEdit,
   onRequestEditLast,
 }: ChatComposerProps) {
+  const working = execution?.status === 'running' || execution?.status === 'stopping';
   const [voiceBusy, setVoiceBusy] = useState(false);
   // Track @mentions that were inserted
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
@@ -506,6 +512,17 @@ export function ChatComposer({
         </div>
       )}
 
+      {execution && !editSession && (
+        <p role="status" className="flex items-center gap-2 px-1 pb-2 text-xs text-muted-foreground">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${working ? 'bg-amber-500' : 'bg-muted-foreground/50'}`} />
+          {execution.status === 'running' ? 'Agent 正在工作，发送补充后将调整执行。'
+            : execution.status === 'stopping' ? '正在停止执行，等待当前工具清理完成…'
+              : execution.status === 'stopped' ? '已停止。对话和已完成的结果会保留，可以继续补充。'
+                : execution.status === 'unavailable' ? '目标执行已结束或不可用，可以继续对话。'
+                  : execution.status === 'failed' ? '本轮执行已结束，请查看对话中的处理结果。' : '本轮已完成，可以继续对话。'}
+        </p>
+      )}
+
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
       <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-ring">
@@ -585,6 +602,16 @@ export function ChatComposer({
             Enter 发送 · Shift+Enter 换行
           </p>
 
+          {working && onStop && !editSession && (
+            <Button variant="ghost" size="sm" className="ml-auto h-8 w-8 shrink-0 rounded-full p-0"
+              aria-label="停止执行" title={execution?.status === 'stopping' ? '正在停止执行' : '停止执行'} onClick={onStop}
+              disabled={disabled || isSending || execution?.status === 'stopping'}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <circle cx="12" cy="12" r="9" />
+                <rect x="9" y="9" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" />
+              </svg>
+            </Button>
+          )}
           {editSession ? (
             <Button
               size="sm"
@@ -600,14 +627,14 @@ export function ChatComposer({
             <Button
               size="sm"
               data-chat-send
-              aria-label="发送消息"
-              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+              aria-label={working ? '补充信息并继续' : '发送消息'}
+              className={`${working && onStop ? '' : 'ml-auto'} h-7 shrink-0 gap-1.5 px-2.5 text-xs`}
               onClick={handleSend}
               disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
-              title="发送 (Enter)"
+              title={working ? '补充 (Enter)' : '发送 (Enter)'}
             >
               {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">发送</span>
+              <span>{working ? '补充' : '发送'}</span>
             </Button>
           )}
         </div>
