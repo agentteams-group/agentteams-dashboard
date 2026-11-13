@@ -55,6 +55,7 @@ export const HUMAN_PHASE_LABELS: Record<string, string> = {
 };
 
 export const RUNTIME_LABELS: Record<string, string> = {
+  codex: 'Codex',
   openclaw: 'OpenClaw',
   copaw: 'CoPaw',
   hermes: 'Hermes',
