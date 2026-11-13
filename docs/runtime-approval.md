@@ -26,7 +26,8 @@ card and routes the decision back to the sending Agent as a normal Matrix reply.
   same Agent in the same room. The Matrix request event ID identifies the card.
 
 QwenPaw buttons send `/approval approve ID` or `/approval deny ID`. Codex
-buttons send `/approve ID` or `/reject ID`. Delivery to Matrix displays
+buttons send `/approve ID CONTEXT` or `/reject ID CONTEXT`; the Harness checks
+the context before accepting the decision. Delivery to Matrix displays
 “已提交，等待运行时确认”; a runtime receipt completes the card. Sending a decision
 does not itself mean the tool ran or succeeded. Failed delivery remains retryable.
 

@@ -20,7 +20,7 @@ export function parseRuntimeApproval(value: unknown): RuntimeApproval | undefine
     || typeof data.request_id !== 'string' || !/^[\w.-]+$/.test(data.request_id)
     || !['pending', 'approved', 'rejected', 'cancelled', 'expired'].includes(data.status)) return;
   if (data.status === 'pending' && (typeof data.tool_name !== 'string' || !data.tool_name)) return;
-  if (data.runtime === 'codex' && (typeof data.context_id !== 'string' || !data.context_id)) return;
+  if (data.runtime === 'codex' && (typeof data.context_id !== 'string' || !/^[\w.:-]+$/.test(data.context_id))) return;
   return data;
 }
 
@@ -35,7 +35,7 @@ export function runtimeApprovalPayload(data: RuntimeApproval): Record<string, un
     severity: typeof data.severity === 'string' ? data.severity : undefined,
     riskDetails: typeof data.risk_details === 'string' ? data.risk_details : undefined,
     expiresAt: typeof data.expires_at === 'number' ? data.expires_at : undefined,
-    approveReply: data.runtime === 'codex' ? `/approve ${id}` : `/approval approve ${id}`,
-    rejectReply: data.runtime === 'codex' ? `/reject ${id}` : `/approval deny ${id}`,
+    approveReply: data.runtime === 'codex' ? `/approve ${id} ${data.context_id}` : `/approval approve ${id}`,
+    rejectReply: data.runtime === 'codex' ? `/reject ${id} ${data.context_id}` : `/approval deny ${id}`,
   };
 }

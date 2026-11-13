@@ -31,7 +31,7 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
     render(<ConfirmationCard payload={payload} onApprove={send} onReject={send} />);
     fireEvent.click(screen.getByRole('button', { name: /批准本次/ }));
     await screen.findByText('已提交，等待运行时确认 - Bash');
-    expect(send).toHaveBeenCalledWith(runtime === 'codex' ? '/approve req-1' : '/approval approve req-1', expect.objectContaining({ confirmation_id: 'req-1' }));
+    expect(send).toHaveBeenCalledWith(runtime === 'codex' ? '/approve req-1 thread-1:turn-1' : '/approval approve req-1', expect.objectContaining({ confirmation_id: 'req-1' }));
     expect(useHitlInboxStore.getState().confirmations['$pending']).toBeDefined();
     ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
     await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
@@ -92,4 +92,10 @@ it('rejects malformed and unsupported runtime contracts', () => {
   expect(parseRuntimeApproval({ ...approval('codex'), context_id: undefined })).toBeUndefined();
   expect(parseRuntimeApproval({ ...approval('qwenpaw'), request_id: 'req-1; rm' })).toBeUndefined();
   expect(parseRuntimeApproval({ ...approval('qwenpaw'), runtime: 'copaw' })).toBeUndefined();
+});
+
+it('does not submit the current Codex card for a stale turn command', () => {
+  ingestHitlTimelineEvents(room, [event('$new', approval('codex'))], '@me:test');
+  useHitlInboxStore.getState().resolveRoomReply(room, '@me:test', '/approve req-1 old:turn', '@me:test');
+  expect(useHitlInboxStore.getState().resolutions['$new']).toBeUndefined();
 });
