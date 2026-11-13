@@ -32,9 +32,11 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle, ListChecks, Paperclip, AlertTriangle } from 'lucide-react';
+import { Check, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle, ListChecks, Paperclip, AlertTriangle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import { MessageReadStatus } from '../message-read-status';
+import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
 import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
@@ -452,9 +454,9 @@ export function MessageBubble({
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
-  // sending → spinner, sent → single ✓, read by another member → double ✓✓.
+  // sending → spinner, sent → gray ✓, read by another member → green ✓.
   const isReadByOthers =
-    message.isMe && !message.status && !!readReceipts
+    !message.rawContent?.[READ_AUDIENCE_KEY] && message.isMe && !message.status && !!readReceipts
       ? isMessageReadByOthers(message, currentUserId, readReceipts)
       : false;
 
@@ -482,21 +484,11 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
-  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。
-  // 配色沿用 2026-10 装验口径：自己=emerald 浅底，Agent=中性浅底，无阴影。
-  // 同组续接消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
+  // 文本保持贴合内容的阅读宽度，不加底色、边框或阴影。
   const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
     'break-words text-sm leading-relaxed text-foreground',
-    isTextBubble
-      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
-      : 'w-full',
-    isTextBubble && !isContinuation ? (message.isMe ? 'rounded-tr-md' : 'rounded-tl-md') : '',
-    isTextBubble
-      ? message.isMe
-        ? 'bg-primary/5 text-foreground border-primary/10'
-        : 'bg-muted/60 text-foreground border-border/40'
-      : '',
+    isTextBubble ? 'w-fit max-w-full' : 'w-full',
     message.status === 'error' ? 'ring-1 ring-status-failed/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
@@ -594,7 +586,7 @@ export function MessageBubble({
               )}
               {message.isMe && !message.status && (
                 isReadByOthers ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+                  <Check className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
                 ) : (
                   <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
                 )
@@ -846,13 +838,15 @@ export function MessageBubble({
             )}
             {message.isMe && !message.status && (
               isReadByOthers ? (
-                <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+                <Check className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
               ) : (
                 <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
               )
             )}
           </div>
         )}
+
+        {!!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button

@@ -1,6 +1,7 @@
 // PUT /api/matrix/rooms/[roomId]/send - Send message to room
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatrixHomeserver, getAccessToken } from '../../../proxy-helper';
+import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
 import { CONTROL_KEY } from '@/lib/direct-execution';
 
 export async function PUT(
@@ -38,6 +39,35 @@ export async function PUT(
     if (control) messageContent[CONTROL_KEY] = {
       action: control.action, run_id: control.run_id, agent_id: control.agent_id,
     };
+
+    if (body.track_read_status === true && relatesTo?.rel_type !== 'm.replace') {
+      // Capture membership before sending; historical messages never consult
+      // today's room membership. Failure only omits this optional status.
+      try {
+        const response = await fetch(`${homeserver}/_matrix/client/v3/rooms/${encodedRoomId}/joined_members`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(5000),
+          cache: 'no-store',
+        });
+        if (response.ok) {
+          const { joined } = await response.json();
+          const agents = new Set(Array.isArray(body.agent_user_ids) ? body.agent_user_ids : []);
+          const humans = new Set(Array.isArray(body.human_user_ids) ? body.human_user_ids : []);
+          if (joined && typeof joined === 'object') {
+            messageContent[READ_AUDIENCE_KEY] = {
+              version: 1,
+              members: Object.entries(joined).map(([userId, profile]) => ({
+                user_id: userId,
+                display_name: (profile as { display_name?: string }).display_name || userId.split(':')[0].slice(1),
+                kind: agents.has(userId) ? 'agent' : humans.has(userId) ? 'human' : 'member',
+              })),
+            };
+          }
+        }
+      } catch {
+        console.warn('Could not capture the message read audience');
+      }
+    }
 
     if (format && formattedBody) {
       messageContent.format = format;

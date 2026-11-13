@@ -3,6 +3,38 @@ import { NextRequest } from 'next/server';
 import { PUT } from './route';
 
 describe('Matrix room message send route', () => {
+  it('captures joined members and their identities before sending', async () => {
+    const matrixFetch = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ joined: { '@a:hs': { display_name: 'Alice' }, '@me:hs': { display_name: 'Me' } } }))
+      .mockResolvedValueOnce(Response.json({ event_id: '$m' }));
+    const request = new NextRequest('http://dashboard.test/api/matrix/rooms/r/send?homeserver=http%3A%2F%2F127.0.0.1%3A6167', {
+      method: 'PUT', headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'hello', track_read_status: true, agent_user_ids: ['@a:hs'], human_user_ids: ['@me:hs'], 'm.mentions': { user_ids: ['@a:hs'] } }),
+    });
+    const response = await PUT(request, { params: Promise.resolve({ roomId: '!room:test' }) });
+    expect(response.status).toBe(200);
+    expect(matrixFetch.mock.calls[0][0]).toContain('/joined_members');
+    const content = JSON.parse(matrixFetch.mock.calls[1][1]?.body as string);
+    expect(content['com.agentteams.read_audience']).toEqual({ version: 1, members: [
+      { user_id: '@a:hs', display_name: 'Alice', kind: 'agent' },
+      { user_id: '@me:hs', display_name: 'Me', kind: 'human' },
+    ] });
+    expect(content['m.mentions']).toEqual({ user_ids: ['@a:hs'] });
+    expect(content.track_read_status).toBeUndefined();
+  });
+
+  it('still sends without a status when the membership snapshot is unavailable', async () => {
+    const matrixFetch = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ event_id: '$m' }));
+    const request = new NextRequest('http://dashboard.test/api/matrix/rooms/r/send?homeserver=http%3A%2F%2F127.0.0.1%3A6167', {
+      method: 'PUT', headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'hello', track_read_status: true }),
+    });
+    expect((await PUT(request, { params: Promise.resolve({ roomId: '!room:test' }) })).status).toBe(200);
+    expect(JSON.parse(matrixFetch.mock.calls[1][1]?.body as string)['com.agentteams.read_audience']).toBeUndefined();
+  });
+
   it.each(['stop', 'steer'])('forwards a scoped %s control to the homeserver', async action => {
     const upstream = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ event_id: '$event' })));
     const control = { action, run_id: '$run', agent_id: '@agent:test' };

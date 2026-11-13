@@ -443,9 +443,7 @@ Type /approve to approve, or send any message to deny.`,
     const textBubble = screen.getByText('宽内容').parentElement;
     expect(textBubble).toHaveClass('w-fit');
     expect(textBubble).toHaveClass('max-w-full');
-    expect(textBubble).toHaveClass('rounded-2xl');
-    expect(textBubble).toHaveClass('bg-muted/60');
-    expect(textBubble).toHaveClass('border-border/40');
+    expect(textBubble).not.toHaveClass('rounded-2xl', 'bg-muted/60', 'border');
     expect(textBubble).not.toHaveClass('shadow-sm');
     textMessage.unmount();
 
@@ -478,7 +476,7 @@ Type /approve to approve, or send any message to deny.`,
     ).toBeInTheDocument();
   });
 
-  it('tints own text bubbles emerald without a drop shadow', () => {
+  it('renders own text without a shaded message box', () => {
     renderWithProvider(
       <MessageBubble
         message={{
@@ -496,8 +494,7 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     const ownBubble = screen.getByText('我的消息').parentElement;
-    expect(ownBubble).toHaveClass('bg-primary/5');
-    expect(ownBubble).toHaveClass('border-primary/10');
+    expect(ownBubble).not.toHaveClass('bg-primary/5', 'border', 'rounded-2xl');
     expect(ownBubble).not.toHaveClass('shadow-sm');
   });
 
@@ -828,7 +825,7 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.queryByLabelText('已读')).toBeNull();
   });
 
-  it('shows a double check when another user has read my message', () => {
+  it('shows a single green check when another user has read my message', () => {
     renderWithProvider(
       <MessageBubble
         message={{
@@ -850,6 +847,7 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     expect(screen.getByLabelText('已读')).toBeInTheDocument();
+    expect(screen.getByLabelText('已读')).not.toHaveClass('lucide-check-check');
     expect(screen.queryByLabelText('已发送')).toBeNull();
   });
 
@@ -1119,7 +1117,7 @@ describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）'
     const column = screen.getByText('我发的').closest('.flex.flex-col');
     expect(column?.className).toContain('items-end');
     const bubble = screen.getByText('我发的').parentElement;
-    expect(bubble?.className).toContain('rounded-tr-md');
+    expect(bubble?.className).not.toContain('rounded-tr-md');
   });
 
   it('他人（Agent）的消息保持左侧：不镜像、items-start', () => {
@@ -1144,7 +1142,7 @@ describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）'
     const column = screen.getByText('Agent 回复').closest('.flex.flex-col');
     expect(column?.className).toContain('items-start');
     const bubble = screen.getByText('Agent 回复').parentElement;
-    expect(bubble?.className).toContain('rounded-tl-md');
+    expect(bubble?.className).not.toContain('rounded-tl-md');
   });
 });
 

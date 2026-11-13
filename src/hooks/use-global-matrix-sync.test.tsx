@@ -88,6 +88,23 @@ const joinedRoom = (overrides: Partial<MatrixJoinedRoom> = {}): MatrixJoinedRoom
 });
 
 describe('useGlobalMatrixSync', () => {
+  it('hydrates exact receipts without rendering them or reordering the room', async () => {
+    const rid = '!receipt:test';
+    const queryClient = getQueryClientMock();
+    setRoomCache(queryClient, rid, [msgEvent('$message', 100)]);
+    useRoomMetaStore.getState().setRoomMeta(rid, { lastMessageTs: 100 });
+    const receipt: MatrixEvent = {
+      event_id: '$ack', sender: '@agent:test', type: 'com.agentteams.session_receipt', origin_server_ts: 9999,
+      content: { version: 1, status: 'read', 'm.relates_to': { rel_type: 'com.agentteams.session_receipt', event_id: '$message' } },
+    };
+    vi.mocked(matrixApi.sync).mockResolvedValueOnce(syncWith({ [rid]: joinedRoom({ timeline: { events: [receipt], limited: false, prev_batch: 'p' } }) }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useRoomMetaStore.getState().meta[rid].lastMessageTs).toBe(100);
+    expect(queryClient.getQueryData(['message-read-status', 'https://matrix.test', '@user:test', rid, '$message'])).toEqual([receipt]);
+    expect(queryClient.getQueryData<{ pages: Array<{ chunk: MatrixEvent[] }> }>(['matrix-messages', rid])?.pages[0].chunk.map((event) => event.event_id)).toEqual(['$message']);
+    unmount();
+  });
   it('refreshes resource projections on a new join, without refreshing on every message', async () => {
     vi.useFakeTimers();
     resetStores();

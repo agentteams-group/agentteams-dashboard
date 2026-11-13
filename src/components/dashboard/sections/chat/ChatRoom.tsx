@@ -56,6 +56,7 @@ import {
 import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import type { RoomInfo } from './room-info';
+import { MessageReadRoomContext } from './message-read-status';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -738,6 +739,7 @@ export function ChatRoom({
   }, [contextPanel, setContextPanel]);
 
   return (
+    <MessageReadRoomContext.Provider value={roomId}>
     <div
       ref={chatLayoutRef}
       className={`flex h-full relative ${className}`}
@@ -966,5 +968,6 @@ export function ChatRoom({
         />
       )}
     </div>
+    </MessageReadRoomContext.Provider>
   );
 }

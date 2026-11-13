@@ -298,7 +298,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
 
   return (
     <ChatProvider>
-      <RuntimeMapProvider map={runtimeMap}>
+      <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map((human) => human.matrixUserID)}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {!selectedRoom && (
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">

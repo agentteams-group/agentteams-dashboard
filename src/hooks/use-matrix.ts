@@ -11,6 +11,8 @@ import type { ChatTurnState } from '@/lib/chat-ir/types';
 import { create } from 'zustand';
 import { consumeBufferedEvents } from '@/lib/matrix-sync-buffer';
 import { recordSearchProbe } from '@/lib/matrix-capabilities';
+import { useRuntimeMap, useHumanMatrixIds } from '@/components/dashboard/sections/chat/runtime-map-context';
+import { READ_AUDIENCE_KEY, SESSION_RECEIPT_TYPE } from '@/lib/message-read-status';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -62,6 +64,8 @@ export const useTypingStore = create<TypingStore>()((set, get) => ({
 export interface ReadReceiptEntry {
   eventId: string;
   ts: number;
+  eventTimestamp?: number;
+  threadId?: string;
 }
 
 interface ReceiptStore {
@@ -353,6 +357,7 @@ export function useMatrixRoomMessages(roomId: string | null) {
         limit: 50,
         from: pageParam as string | undefined,
       });
+      data.chunk = data.chunk.filter((event) => event.type !== SESSION_RECEIPT_TYPE);
       // Element-style realtime: replay the /sync events that arrived while
       // this room had no message cache (buffered by useGlobalMatrixSync).
       // Only the first page (latest events) participates — history pages
@@ -409,14 +414,19 @@ export function useMatrixRoomState(roomId: string | null) {
 export function useMatrixSendMessage() {
   const queryClient = useQueryClient();
   const { homeserver, accessToken } = useMatrixParams();
+  const runtimeMap = useRuntimeMap();
+  const humanUserIds = useHumanMatrixIds();
 
   return useMutation({
     mutationFn: async ({ roomId, body, formattedBody, extra, mentions, relatesTo }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } } }) => {
       if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
       return matrixApi.sendMessage(homeserver, accessToken, roomId, body, {
+        trackReadStatus: true,
+        agentUserIds: Object.keys(runtimeMap),
+        humanUserIds,
         format: formattedBody ? 'org.matrix.custom.html' : undefined,
         formattedBody,
-        mentions,
+        mentions: mentions ?? extra?.['m.mentions'] as { user_ids: string[] } | undefined,
         relatesTo,
         ...extra,
       });
@@ -1029,6 +1039,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
         messages.set(rootId, {
           ...formatted,
           id: rootId,
+          rawContent: { ...formatted.rawContent, [READ_AUDIENCE_KEY]: root.rawContent?.[READ_AUDIENCE_KEY] },
           eventId: rootId,
           canonicalEventId: rootId,
           latestEventId: event.event_id,
@@ -1092,6 +1103,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
         ? {
             ...revision.message,
             id: event.event_id,
+            rawContent: { ...revision.message.rawContent, [READ_AUDIENCE_KEY]: formatted.rawContent?.[READ_AUDIENCE_KEY] },
             eventId: event.event_id,
             revisionCount: revision.count,
             // Same policy as the in-place merge above: agent answers sort at
