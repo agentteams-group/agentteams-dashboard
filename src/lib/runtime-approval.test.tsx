@@ -21,6 +21,23 @@ beforeEach(() => useHitlInboxStore.setState({ confirmations: {}, resolutions: {}
 afterEach(cleanup);
 
 describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) => {
+  it('applies receipts in the same history batch as their request', () => {
+    const data = approval(runtime);
+    ingestHitlTimelineEvents(room, [event('$pending', data), event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    expect(useHitlInboxStore.getState().resolutions['$pending'].answer).toBe('approved');
+    expect(useHitlInboxStore.getState().confirmations['$pending']).toBeUndefined();
+  });
+  it('allows a runtime receipt after the displayed deadline', async () => {
+    const data = { ...approval(runtime), expires_at: Date.now() - 1000 };
+    const input = event('$pending', data);
+    ingestHitlTimelineEvents(room, [input], '@me:test');
+    const blocks = normalizeToBlocks({ body: '', content: input.content, isStreaming: false });
+    render(<ConfirmationCard payload={{ ...toConfirmationCardPayload(blocks[0].payload!), resolutionKey: '$pending' }} onApprove={vi.fn()} onReject={vi.fn()} />);
+    expect(screen.getByText('已超时 - Bash')).toBeInTheDocument();
+    expect(useHitlInboxStore.getState().resolutions['$pending']).toBeUndefined();
+    ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
+  });
   it('renders the runtime contract and binds the exact request command', async () => {
     const data = approval(runtime);
     const input = event('$pending', data);
