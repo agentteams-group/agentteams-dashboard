@@ -357,8 +357,12 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument();
+    // 模板不带请求 ID：禁绑按钮（裸命令会命中运行时队列首的任意请求），
+    // 卡片改为提示手动发送 /approve（#235）。
+    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '拒绝' })).not.toBeInTheDocument();
+    expect(screen.getByText(/无法精确绑定本次请求/)).toBeInTheDocument();
+    expect(screen.getByText('/approve')).toBeInTheDocument();
   });
 
   it('renders AgentTeams workflow details from a structured message payload', () => {
@@ -501,7 +505,12 @@ Parameters / 参数:
 { "command": "pwd" }
 
 Type /approve to approve, or send any message to deny.`,
-      assertRendered: () => expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument(),
+      assertRendered: () => {
+        // 无请求 ID 的旧模板渲染成审批卡，但只提示手动 /approve，不绑按钮（#235）。
+        expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+        expect(screen.getByText('/approve')).toBeInTheDocument();
+      },
     },
     {
       runtime: 'QwenPaw',

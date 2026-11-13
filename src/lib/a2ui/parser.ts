@@ -434,6 +434,125 @@ export function parseToolGuardConfirmation(body: string): Record<string, unknown
 }
 
 /**
+ * Recognize the QwenPaw tool-guard channel approval notification
+ * (`format_channel_approval_body`). Unlike the Tool Guard prompt above this
+ * one is markdown with bullet fields and an explicit action list:
+ *
+ *   🛡️ **Approval Required**
+ *
+ *   • **Tool**: `execute_shell_command`
+ *   • **Severity**: 🔴 CRITICAL
+ *   • **Findings**: 3
+ *
+ *   **Risk Details:**
+ *   - [CRITICAL] ...
+ *
+ *   **Parameters:**
+ *   ```json
+ *   { "command": "rm 123" }
+ *   ```
+ *
+ *   💡 **Actions**
+ *   - Approve: `/approval approve`
+ *   - Deny: `/approval deny`
+ *
+ * The request id is NOT part of the shipped template (and the Matrix channel
+ * does not forward the `tool_guard_approval` event metadata), so callers must
+ * treat a missing `requestId` as "cannot target this request precisely" and
+ * must not bind the no-id commands to arbitrary queue-head requests.
+ */
+export function parseRuntimeApprovalConfirmation(body: string): Record<string, unknown> | null {
+  if (
+    !/(?:🛡️?\s*)?\*{0,2}\s*Approval Required\s*\*{0,2}/i.test(body) ||
+    !/\/approval\s+(approve|deny)/i.test(body)
+  ) {
+    return null;
+  }
+
+  const field = (label: string) => {
+    const match = body.match(
+      new RegExp(`^[ \\t]*[•\\-*]?[ \\t]*\\*{0,2}${label}\\*{0,2}[ \\t]*[:：][ \\t]*(.+?)[ \\t]*$`, 'mi'),
+    );
+    return match?.[1]?.replace(/^`|`$/g, '').trim();
+  };
+
+  const parameters =
+    body.match(/\*{0,2}Parameters\*{0,2}\s*[:：]\s*\**\s*\n?```(?:json|JSON)?\s*\n([\s\S]*?)```/)?.[1]?.trim()
+    ?? field('Parameters');
+
+  const riskDetails = extractApprovalRiskDetails(body)
+    // No-findings variant drops the header and states it inline.
+    ?? body.match(/^[ \t]*No specific risk rules matched\.[ \t]*$/mi)?.[0]?.trim();
+  // Severity carries a leading emoji (🔴 CRITICAL); match the known level word
+  // instead of stripping emoji so any runtime glyph stays harmless.
+  const severity = field('Severity')?.match(/CRITICAL|HIGH|MEDIUM|LOW|INFO|WARN(?:ING)?/i)?.[0]?.toUpperCase();
+  const findingsRaw = body.match(
+    /^[ \t]*[•\-*]?[ \t]*\*{0,2}Findings\*{0,2}[ \t]*[:：][ \t]*(\d+)/mi,
+  )?.[1];
+
+  const command = (label: string) => {
+    const match = body.match(
+      new RegExp(`\\*{0,2}${label}\\*{0,2}\\s*[:：]\\s*\`?(\/approval\\s+[^\`\\n]*)\`?`, 'i'),
+    );
+    return match?.[1]?.trim();
+  };
+
+  // The shipped template documents id-less commands. When a request id is
+  // present anywhere in the body (template variant / forwarded metadata) the
+  // commands are re-targeted at that id so coexisting requests stay isolated.
+  const requestId = extractApprovalRequestId(body);
+  const withId = (cmd: string | undefined) => {
+    if (!cmd) return undefined;
+    if (!requestId) return cmd;
+    return /\/approval\s+\w+\s+\S/.test(cmd) ? cmd : `${cmd} ${requestId}`;
+  };
+
+  return {
+    runtime: 'Tool Guard',
+    toolName: field('Tool') || '未知工具',
+    ...(severity ? { severity } : {}),
+    ...(findingsRaw ? { findings: Number(findingsRaw) } : {}),
+    ...(riskDetails ? { riskDetails } : {}),
+    ...(parameters ? { parameters } : {}),
+    ...(requestId ? { requestId } : {}),
+    approveReply: withId(command('Approve')) ?? '/approval approve',
+    rejectReply: withId(command('Deny')) ?? '/approval deny',
+    ...(withId(command('Cancel')) ? { cancelReply: withId(command('Cancel')) } : {}),
+  };
+}
+
+/**
+ * Request id from a template variant that carries one: an explicit
+ * `request[ _]?id` field, an id argument already present on the documented
+ * `/approval approve <id>` command, or a bare UUID outside the parameters
+ * fence (a UUID inside tool arguments is data, not the request id).
+ */
+function extractApprovalRequestId(body: string): string | undefined {
+  const explicit = body.match(/request[ _]?id\*{0,2}\s*[:：]\s*`?([0-9a-zA-Z][\w.-]*)`?/i)?.[1];
+  if (explicit) return explicit;
+  const withArg = body.match(/\/approval\s+(?:approve|deny|cancel)\s+([0-9a-zA-Z][\w.-]*)/i)?.[1];
+  if (withArg) return withArg;
+  const withoutFences = body.replace(/```[\s\S]*?```/g, ' ');
+  return withoutFences.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i)?.[0];
+}
+
+/** Bullet lines between `Risk Details:` and the next section (or the fence). */
+function extractApprovalRiskDetails(body: string): string | undefined {
+  // 冒号后的 `**` 是 Markdown 加粗收尾，一并吃掉，否则首行残留星号。
+  const start = body.match(/\*{0,2}Risk Details\*{0,2}\s*[:：]\s*\**\s*/i);
+  if (!start || start.index === undefined) return undefined;
+  const rest = body.slice(start.index + start[0].length);
+  const stop = rest.search(/\*{0,2}Parameters\*{0,2}\s*[:：]|\*{0,2}Actions\*{0,2}\s*[:：]|💡|\n```/);
+  const section = (stop >= 0 ? rest.slice(0, stop) : rest).trim();
+  if (!section) return undefined;
+  const lines = section
+    .split('\n')
+    .map((line) => line.replace(/^\s*[•\-*]+\s*/, '').trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
+/**
  * Parse the upstream F7 long-message fallback metadata. When a reply exceeds
  * the 64KB safety threshold the runtime uploads the full text as a Matrix
  * attachment and tags the event with `com.agentteams.long_message`:

@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ApprovalSeverityBadge } from '@/components/dashboard/approval-severity-badge';
 import { useHitlInboxStore, selectConfirmationList } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
 import { openChatRoom } from '@/lib/open-chat-room';
@@ -140,7 +141,10 @@ export function MyWorkbenchSection() {
               className="w-full text-left rounded-lg border border-status-blocked/20 bg-status-blocked/5 hover:bg-status-blocked/10 px-3 py-2 transition-colors"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium truncate">工具审批 · {item.toolName}</span>
+                <span className="text-sm font-medium truncate flex items-center gap-1.5">
+                  工具审批 · {item.toolName}
+                  <ApprovalSeverityBadge severity={item.severity} />
+                </span>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
                   {formatRelative(item.timestamp)}
                 </span>

@@ -9,6 +9,7 @@
  *   2. org.agentteams.run structured key  → structured blocks (opt-in channel)
  *   3. A2UI protocol markers              → a2ui block (A2UI v0.9 surfaces)
  *   4. Tool Guard approval text           → confirmation block
+ *   4.5 QwenPaw channel approval text     → confirmation block (#235, own messages excluded)
  *   5. runtime run-ending sentinel        → error block (已取消/处理异常/已处理)
  *   6. agentscope repr dump               → text/thinking/tool_call (copaw)
  *   7. "Thinking:" prefix                 → thinking block (qwenpaw; skipped for copaw)
@@ -38,6 +39,7 @@ import {
   parseLegacyContent,
   parseLongMessage,
   parseRunEnding,
+  parseRuntimeApprovalConfirmation,
   parseToolGuardConfirmation,
   parseToolKeywordNotice,
   parseTeamAdminSelection,
@@ -115,6 +117,14 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // 4. Tool Guard approval text → confirmation block.
   const confirmation = parseToolGuardConfirmation(body);
   if (confirmation) return [{ type: 'confirmation', payload: confirmation }];
+
+  // 4.5 QwenPaw tool-guard channel approval (🛡️ Approval Required) →
+  // confirmation block (#235)。与 Tool Guard 提示互斥格式，同样只认其他
+  // 成员的消息：用户引用/转贴的审批示例保持普通聊天展示，不变可执行卡片。
+  if (!isMine) {
+    const runtimeApproval = parseRuntimeApprovalConfirmation(body);
+    if (runtimeApproval) return [{ type: 'confirmation', payload: runtimeApproval }];
+  }
 
   // 5. Runtime run-ending sentinels (copaw/qwenpaw m.replace finals). Guarded
   // to other members' whole-body exact matches so an operator typing "已取消"

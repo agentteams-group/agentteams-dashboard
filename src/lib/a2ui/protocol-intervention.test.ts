@@ -98,3 +98,30 @@ describe('normalizeConfirmationPayload — v2 干预字段（F2.1 消费侧）',
     expect(isInterventionConfirmation(block)).toBe(true);
   });
 });
+
+describe('normalizeConfirmationPayload — #235 审批风险等级字段', () => {
+  it('severity / risk_details 透传，缺失不带键', () => {
+    const block = confirm({
+      tool_name: 'execute_shell_command',
+      confirmation_id: 'a1',
+      severity: 'CRITICAL',
+      risk_details: '- [CRITICAL] 递归删除高危命令',
+    });
+    expect(block.payload.severity).toBe('CRITICAL');
+    expect(block.payload.risk_details).toBe('- [CRITICAL] 递归删除高危命令');
+    const plain = confirm({ tool_name: 'bash', confirmation_id: 'a2' });
+    expect(plain.payload.severity).toBeUndefined();
+    expect(plain.payload.risk_details).toBeUndefined();
+  });
+
+  it('空串与数字不会污染 payload', () => {
+    const block = confirm({
+      tool_name: 'bash',
+      confirmation_id: 'a3',
+      severity: '',
+      risk_details: 42,
+    });
+    expect(block.payload.severity).toBeUndefined();
+    expect(block.payload.risk_details).toBeUndefined();
+  });
+});

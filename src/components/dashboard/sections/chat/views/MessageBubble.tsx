@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
-import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { ConfirmationCard, toConfirmationCardPayload } from '../confirmation-card';
 import { InterventionCard } from '../intervention-card';
 import { ReviewReportCard } from '../review-report-card';
 import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
@@ -411,9 +411,9 @@ export function MessageBubble({
     return onSendConfirmation(reply, message.sender, message.eventId, answer);
   }, [onSendConfirmation, message.sender, message.eventId]);
 
-  const handleConfirmationReject = useCallback((reply: string) => {
-    if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender, message.eventId);
+  const handleConfirmationReject = useCallback((reply: string, answer?: ConfirmationAnswerField): AnswerSendResult => {
+    if (!onSendConfirmation) return false;
+    return onSendConfirmation(reply, message.sender, message.eventId, answer);
   }, [onSendConfirmation, message.sender, message.eventId]);
   const actionsVisible = isHovered || showActions;
 
@@ -628,9 +628,10 @@ export function MessageBubble({
                   return (
                     <div key={idx} className="w-full">
                       <ConfirmationCard
-                        payload={block.payload as unknown as ConfirmationCardPayload}
+                        payload={toConfirmationCardPayload(block.payload ?? {})}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}
+                        onCancel={handleConfirmationReject}
                       />
                     </div>
                   );
