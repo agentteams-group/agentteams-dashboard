@@ -102,6 +102,62 @@ describe('normalizeToBlocks rule 4: Tool Guard confirmation', () => {
   });
 });
 
+describe('normalizeToBlocks rule 4.5: QwenPaw runtime approval (#235)', () => {
+  const RUNTIME_APPROVAL = [
+    '\u{1F6E1}\u{FE0F} **Approval Required**',
+    '',
+    '\u2022 **Tool**: `execute_shell_command`',
+    '\u2022 **Severity**: \u{1F534} CRITICAL',
+    '\u2022 **Findings**: 2',
+    '',
+    '**Risk Details:**',
+    '- [CRITICAL] 递归删除高危命令',
+    '',
+    '**Parameters:**',
+    '```json',
+    '{ "command": "rm -rf /tmp/build" }',
+    '```',
+    '',
+    '\u{1F4A1} **Actions**',
+    '- Approve: `/approval approve`',
+    '- Deny: `/approval deny`',
+    '- Cancel: `/approval cancel`',
+  ].join('\n');
+
+  it('produces a confirmation block with severity and risk details', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: RUNTIME_APPROVAL }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('confirmation');
+    const payload = blocks[0].payload as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      toolName: 'execute_shell_command',
+      severity: 'CRITICAL',
+      findings: 2,
+      riskDetails: '[CRITICAL] 递归删除高危命令',
+      approveReply: '/approval approve',
+      rejectReply: '/approval deny',
+      cancelReply: '/approval cancel',
+    });
+    expect(String(payload.parameters)).toContain('rm -rf /tmp/build');
+  });
+
+  it('keeps the user quoted example as plain text', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: RUNTIME_APPROVAL, isMine: true }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('text');
+  });
+
+  it('runs before the legacy Tool Guard heuristic without disturbing it', () => {
+    const legacy = normalizeToBlocks(makeInput({
+      body: '\u23F3 Waiting for approval / 等待审批\n\n**Agent** wants to run a command.\n\nType /approve to approve, or send any message to deny.',
+    }));
+    expect(legacy[0].type).toBe('confirmation');
+    const legacyPayload = legacy[0].payload as Record<string, unknown>;
+    // 旧模板路径保持原状：不注入 severity 等新字段。
+    expect(legacyPayload.severity).toBeUndefined();
+  });
+});
+
 describe('normalizeToBlocks rule 6: agentscope repr dump', () => {
   const REASONING_REPR =
     "sequence_number=12 object='message' status='completed' error=None id='msg_aaa' " +

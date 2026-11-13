@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import {
   extractConfirmationFromEvent,
+  hitlResolutionKind,
   ingestHitlTimelineEvents,
   isHitlResolutionReply,
   selectConfirmationList,
@@ -18,6 +19,27 @@ Parameters / 参数:
 
 💡 Triggered by tool guardrails
 Type /approve to approve, or send any message to deny.`;
+
+// #235：QwenPaw 工具护栏通道审批模板（format_channel_approval_body）。
+const RUNTIME_APPROVAL_BODY = `\u{1F6E1}\u{FE0F} **Approval Required**
+
+\u2022 **Tool**: \`execute_shell_command\`
+\u2022 **Severity**: \u{1F534} CRITICAL
+\u2022 **Findings**: 2
+
+**Risk Details:**
+- [CRITICAL] 递归删除高危命令
+
+**Parameters:**
+\`\`\`json
+{ "command": "rm -rf /tmp/build" }
+\`\`\`
+
+\u{1F4A1} **Actions**
+- Approve: \`/approval approve\`
+- Deny: \`/approval deny\`
+- Cancel: \`/approval cancel\`
+- List: \`/approval list\``;
 
 function msg(
   eventId: string,
@@ -91,6 +113,18 @@ describe('isHitlResolutionReply', () => {
     expect(isHitlResolutionReply('@质检员:test 拒绝')).toBe(true);
     expect(isHitlResolutionReply('@worker 请批准这个方案')).toBe(false);
   });
+
+  it('recognises the /approval command family as a verdict (#235)', () => {
+    expect(hitlResolutionKind('/approval approve')).toBe('verdict');
+    expect(hitlResolutionKind('/approval deny 证据不足')).toBe('verdict');
+    expect(hitlResolutionKind('/approval cancel req-1')).toBe('verdict');
+    expect(isHitlResolutionReply('/approval approve req-abc-123')).toBe(true);
+    expect(isHitlResolutionReply('@worker /approval deny req-abc-123')).toBe(true);
+    expect(isHitlResolutionReply('/APPROVAL Approve')).toBe(true);
+    // 查询类命令不是裁决：list 不得收掉待办。
+    expect(hitlResolutionKind('/approval list')).toBeNull();
+    expect(isHitlResolutionReply('/approval list')).toBe(false);
+  });
 });
 
 describe('extractConfirmationFromEvent', () => {
@@ -151,6 +185,63 @@ describe('extractConfirmationFromEvent', () => {
     const event = msg('$n', '@agent:test', 1000, { body: 'hello' });
     expect(extractConfirmationFromEvent(event, '!room:test')).toBeNull();
   });
+
+  it('extracts the QwenPaw runtime approval template with severity and risk details (#235)', () => {
+    const event = msg('$a1', '@agent:test', 4000, { body: RUNTIME_APPROVAL_BODY });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item).toEqual(
+      expect.objectContaining({
+        // 模板不带请求 ID：id 回落 room:event，requestId 为空。
+        id: '!room:test:$a1',
+        toolName: 'execute_shell_command',
+        severity: 'CRITICAL',
+        riskDetails: '[CRITICAL] 递归删除高危命令',
+        approveReply: '/approval approve',
+        rejectReply: '/approval deny',
+      }),
+    );
+    expect(item?.requestId).toBeUndefined();
+    expect(item?.parameters).toContain('rm -rf /tmp/build');
+  });
+
+  it('keeps the request id of a runtime approval variant for precise binding (#235)', () => {
+    const event = msg('$a2', '@agent:test', 4100, {
+      body: RUNTIME_APPROVAL_BODY
+        .replace('\u2022 **Findings**: 2', '\u2022 **Findings**: 2\n\u2022 **Request ID**: `req-abc-123`'),
+    });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item?.requestId).toBe('req-abc-123');
+    expect(item?.id).toBe('$a2');
+    expect(item?.approveReply).toBe('/approval approve req-abc-123');
+    expect(item?.rejectReply).toBe('/approval deny req-abc-123');
+  });
+
+  it('passes v1 severity / risk_details through to the inbox item (#235)', () => {
+    const event = msg('$a3', '@agent:test', 4200, {
+      body: 'irrelevant',
+      'org.agentteams.run': {
+        version: '1',
+        blocks: [
+          {
+            type: 'confirmation',
+            tool_name: 'bash',
+            confirmation_id: 'conf-sev',
+            severity: 'HIGH',
+            risk_details: '- [HIGH] 写系统路径',
+          },
+        ],
+      },
+    });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item).toEqual(
+      expect.objectContaining({
+        id: 'conf-sev',
+        requestId: 'conf-sev',
+        severity: 'HIGH',
+        riskDetails: '- [HIGH] 写系统路径',
+      }),
+    );
+  });
 });
 
 describe('useHitlInboxStore', () => {
@@ -204,6 +295,31 @@ describe('useHitlInboxStore', () => {
     const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].eventId).toBe('$c2');
+  });
+
+  it('does not guess which request an ID-less QwenPaw command resolves', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$c1', '@agent:test', 1000, { body: TOOL_GUARD_BODY }),
+        msg('$a1', '@agent:test', 2000, { body: RUNTIME_APPROVAL_BODY }),
+      ],
+      '@user:test',
+    );
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(2);
+    ingestHitlTimelineEvents(
+      '!r1',
+      [msg('$reply', '@user:test', 3000, { body: '@agent:test /approval approve' })],
+      '@user:test',
+    );
+    const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
+    expect(remaining).toHaveLength(2);
+  });
+
+  it('does not let /approval list consume a pending approval', () => {
+    ingestHitlTimelineEvents('!r1', [msg('$a1', '@agent:test', 1000, { body: RUNTIME_APPROVAL_BODY })], '@user:test');
+    ingestHitlTimelineEvents('!r1', [msg('$q', '@user:test', 2000, { body: '/approval list' })], '@user:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(1);
   });
 
   it('resolves a pending confirmation from a cross-client intervention reply', () => {

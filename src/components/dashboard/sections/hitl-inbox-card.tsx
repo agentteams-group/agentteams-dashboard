@@ -17,6 +17,7 @@ import {
   type PendingProjectKey,
 } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
+import { ApprovalSeverityBadge } from '@/components/dashboard/approval-severity-badge';
 import {
   INTERVENTION_TIMEOUT_PRESETS,
   formatInterventionTimeout,
@@ -211,9 +212,10 @@ function ConfirmationRow({ item, roomLabel }: { item: HitlConfirmation; roomLabe
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium truncate">
+        <span className="text-sm font-medium truncate flex items-center gap-1.5">
           {isIntervention ? '执行中提问 · ' : '工具审批 · '}
           {isIntervention ? item.question : item.toolName}
+          {!isIntervention && <ApprovalSeverityBadge severity={item.severity} />}
         </span>
         <span className="text-xs text-muted-foreground whitespace-nowrap">{formatRelativeTime(item.timestamp)}</span>
       </div>

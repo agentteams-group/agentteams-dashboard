@@ -85,6 +85,13 @@ export interface RuntimeConfirmationBlock {
     /** Stable id used to correlate approve / deny replies. */
     confirmation_id: string;
     expires_at?: number;
+    /**
+     * 工具护栏风险等级（#235）：CRITICAL / HIGH / MEDIUM / LOW / INFO。
+     * 通道适配层把运行时原生审批事件映射到本协议时透传，卡片按等级着色。
+     */
+    severity?: string;
+    /** 风险明细（findings 摘要）；与 severity 配套展示。 */
+    risk_details?: string;
     /** v2 干预：问题文本（单问题形态）。 */
     question?: string;
     /** v2 干预：选项列表（与 question 配套）。 */
@@ -284,6 +291,9 @@ export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationB
   if (typeof source.parameters === 'string') payload.parameters = source.parameters;
   if (typeof source.external_files === 'string') payload.external_files = source.external_files;
   if (typeof source.expires_at === 'number') payload.expires_at = source.expires_at;
+  // #235 工具护栏风险信息：字符串才收，空串丢弃（卡片按有无字段降级）。
+  if (typeof source.severity === 'string' && source.severity.trim()) payload.severity = source.severity.trim();
+  if (typeof source.risk_details === 'string' && source.risk_details.trim()) payload.risk_details = source.risk_details.trim();
   // ── v2 intervention fields (additive, forward compatible) ──
   if (typeof source.question === 'string' && source.question.length > 0) {
     payload.question = source.question;

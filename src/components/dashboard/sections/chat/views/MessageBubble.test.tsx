@@ -357,8 +357,10 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument();
+    // Preserve the pre-existing Tool Guard interaction; QwenPaw's queue
+    // commands require exact request IDs through the new contract.
+    expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /拒绝/ })).toBeInTheDocument();
   });
 
   it('renders AgentTeams workflow details from a structured message payload', () => {
@@ -501,7 +503,11 @@ Parameters / 参数:
 { "command": "pwd" }
 
 Type /approve to approve, or send any message to deny.`,
-      assertRendered: () => expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument(),
+      assertRendered: () => {
+        // Legacy rendering remains compatible; no new CoPaw integration.
+        expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+      },
     },
     {
       runtime: 'QwenPaw',
