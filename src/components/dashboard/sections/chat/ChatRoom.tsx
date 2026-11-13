@@ -883,7 +883,7 @@ export function ChatRoom({
               </button>
             </div>
           )}
-          <AgentActivityTrack roomId={roomId} onReveal={handleRevealEvent} />
+          <AgentActivityTrack roomId={roomId} />
           <TypingIndicator users={typingUsers} />
           {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
