@@ -3,6 +3,10 @@ import { RUNTIME_META, getRuntimeMeta } from './runtime-meta';
 import { RUNTIME_LABELS } from './phase-colors';
 
 describe('runtime metadata', () => {
+  it('recognises Codex without falling back to an unknown runtime', () => {
+    expect(RUNTIME_LABELS.codex).toBe('Codex');
+    expect(getRuntimeMeta('codex')?.description).toContain('Codex');
+  });
   it('exposes a Chinese label for every supported runtime', () => {
     for (const [runtime, label] of Object.entries(RUNTIME_LABELS)) {
       expect(typeof label, `label for ${runtime}`).toBe('string');

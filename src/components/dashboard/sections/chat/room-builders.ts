@@ -40,7 +40,7 @@ function managerDisplayName(
  * admin-manager DM vanished as soon as a leader DM existed.
  *
  * `workflows` (Controller project runs) is a second, Matrix-membership
- * independent source for project rooms: every `source_room_id` becomes a
+ * independent source for project rooms: source and task execution rooms become a
  * "project" room when no team/worker/manager/human room already owns that id.
  */
 export function buildRooms(
@@ -173,24 +173,24 @@ export function buildRooms(
       });
     }
   });
-  // Controller 项目工作流自带 source_room_id：项目群不必等 Matrix /sync
-  // 采集到 m.room.name 才可见（用户名补采受限时整组项目群会消失）。房间名
-  // 仍优先取 /sync 的 m.room.name，其次 workflow.title，最后退回项目 id。
-  // type=project：项目群属于团队视图（与 team 房间同权展示，但仍各自分组）；
-  // 已由团队/Worker/Manager/Human 资源推导出的真实房间不会被覆盖。
+  // TaskMeta.room_id is the execution room; source_room_id can be an assistant
+  // DM or an external conversation. Keep existing resource rooms authoritative.
   workflows?.forEach((workflow) => {
-    const rid = workflow.source_room_id;
-    if (!rid) return;
-    pushRoom({
-      id: rid,
-      name: lookup[rid]?.roomName || workflow.title || `项目 ${workflow.project_id}`,
-      type: 'project',
-      members: [],
-      parentTeam: workflow.team_id,
-      projectId: workflow.project_id,
-      teamId: workflow.team_id,
-      ...enrich(rid),
-    });
+    const roomIds = [workflow.source_room_id, ...(workflow.tasks_detail ?? []).map(task => task.room_id)];
+    for (const rawId of roomIds) {
+      const rid = rawId?.replace(/^room:/, '');
+      if (!rid || !/^![^:]+:.+$/.test(rid)) continue;
+      pushRoom({
+        id: rid,
+        name: lookup[rid]?.roomName || workflow.title || `项目 ${workflow.project_id}`,
+        type: 'project',
+        members: [],
+        parentTeam: workflow.team_id,
+        projectId: workflow.project_id,
+        teamId: workflow.team_id,
+        ...enrich(rid),
+      });
+    }
   });
   // 12.13（装验反馈「看不到项目群」）：/sync 原生房间补齐——资源推导只
   // 覆盖 team/worker/manager 房间；项目群等普通房间此前完全不可见（插件

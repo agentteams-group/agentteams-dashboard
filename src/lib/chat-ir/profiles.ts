@@ -21,6 +21,8 @@ export interface RuntimeProfileRules {
 }
 
 const PROFILES: Record<ChatRuntimeProfile, RuntimeProfileRules> = {
+  codex: { foldsTopLevelProcess: true, answer: 'last-text' },
+  'deepseek-harness': { foldsTopLevelProcess: true, answer: 'last-text' },
   openclaw: { foldsTopLevelProcess: false, answer: 'single' },
   qwenpaw: { foldsTopLevelProcess: false, answer: 'root' },
   hermes: { foldsTopLevelProcess: true, answer: 'last-text' },
@@ -32,6 +34,10 @@ const PROFILES: Record<ChatRuntimeProfile, RuntimeProfileRules> = {
 
 export function resolveRuntimeProfile(runtime?: string | null): ChatRuntimeProfile {
   switch ((runtime ?? '').toLowerCase()) {
+    case 'codex':
+      return 'codex';
+    case 'deepseek-harness':
+      return 'deepseek-harness';
     case 'openclaw':
       return 'openclaw';
     case 'qwenpaw':

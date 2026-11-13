@@ -23,6 +23,7 @@ import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { parseLongMessage, parseEmbeddedAgentReprBlocks } from '@/lib/a2ui/parser';
 import { isAgentPlaceholderBody, normalizeToBlocks } from '@/lib/a2ui/normalize';
 import { parseWorkerLifecycleNotice } from '@/lib/chat-lifecycle-notice';
+import { parseWorkflowNotice } from '@/lib/chat-workflow-notice';
 import type { ChatRuntimeProfile, ChatTurn, ChatTurnState } from './types';
 import { resolveRuntimeProfile, rulesFor } from './profiles';
 
@@ -218,6 +219,7 @@ function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
   if (message.fileRefs && message.fileRefs.length > 0) return null;
   if (message.type !== 'm.text' && message.type !== 'm.notice') return null;
   if (parseWorkerLifecycleNotice(message.content)) return null;
+  if (parseWorkflowNotice(message.content, message.runtime)) return null;
   const blocks = normalizeToBlocks(blockInput(message));
   if (blocks.length === 0) return null;
   return blocks.every((block) => FOLDABLE_BLOCK_TYPES.has(block.type)) ? blocks : null;

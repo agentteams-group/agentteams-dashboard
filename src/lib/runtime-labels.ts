@@ -7,6 +7,8 @@
 
 export function runtimeLabel(runtime: string | null | undefined): string {
   switch ((runtime || '').toLowerCase()) {
+    case 'codex':
+      return 'Codex';
     case 'qwenpaw':
       return 'QwenPaw';
     case 'openclaw':

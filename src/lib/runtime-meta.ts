@@ -2,7 +2,7 @@
 // Shared by the Worker card (feature strip), the RuntimeBadge and the Chat
 // corner badges so the same runtime looks identical everywhere.
 
-import { Boxes, CircleUser, MessageSquare, PawPrint, Sparkles, Workflow, type LucideIcon } from 'lucide-react';
+import { Boxes, CircleUser, MessageSquare, PawPrint, Sparkles, Terminal, Workflow, type LucideIcon } from 'lucide-react';
 import type { WorkerRuntime } from '@/lib/agentteams-api';
 
 export interface RuntimeMeta {
@@ -15,6 +15,11 @@ export interface RuntimeMeta {
 }
 
 export const RUNTIME_META: Record<WorkerRuntime, RuntimeMeta> = {
+  codex: {
+    icon: Terminal,
+    badgeClass: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30',
+    description: 'Codex Harness，支持 Matrix 任务消息与运行时审批回执',
+  },
   openclaw: {
     icon: PawPrint,
     badgeClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
