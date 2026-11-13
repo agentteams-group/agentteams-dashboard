@@ -3,6 +3,7 @@
 
 import { FILE_REFS_CONTENT_KEY, type FileRefsPayload } from '@/lib/file-refs';
 import { apiUrl } from '@/lib/api-base';
+import { CONTROL_KEY, type DirectControl } from './direct-execution';
 import {
   detectSearchUnsupported,
   parseRoomSearchResponse,
@@ -442,7 +443,7 @@ export const matrixApi = {
     accessToken: string,
     roomId: string,
     body: string,
-    options: { [FILE_REFS_CONTENT_KEY]?: FileRefsPayload; msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown> } = {}
+    options: { [CONTROL_KEY]?: DirectControl; [FILE_REFS_CONTENT_KEY]?: FileRefsPayload; msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown> } = {}
   ): Promise<{ event_id: string }> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, { homeserver });
     const messageBody: Record<string, unknown> = {
@@ -453,6 +454,7 @@ export const matrixApi = {
     if (options.formattedBody) messageBody.formatted_body = options.formattedBody;
     if (options.url) messageBody.url = options.url;
     if (options.info) messageBody.info = options.info;
+    if (options[CONTROL_KEY]) messageBody[CONTROL_KEY] = options[CONTROL_KEY];
     if (options[FILE_REFS_CONTENT_KEY]) messageBody[FILE_REFS_CONTENT_KEY] = options[FILE_REFS_CONTENT_KEY];
     if (options.mentions) messageBody['m.mentions'] = options.mentions;
     // Thread replies carry an m.thread relation pointing at the root event.

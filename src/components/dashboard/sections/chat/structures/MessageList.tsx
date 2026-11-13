@@ -11,6 +11,7 @@ import type { FileRef } from '@/lib/file-refs';
 import { MessageSquare, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import type { MentionEntry } from '../chat-composer';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import type { DirectControl } from '@/lib/direct-execution';
 import { buildAnswerContent } from '../confirmation-reply';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { CHAT_COLUMN_CLASS } from '../layout';
@@ -28,7 +29,7 @@ export interface ChatSystemNotice {
   /** Rate limits: when an auto-retry is scheduled to fire. */
   retryAfterMs?: number;
   autoRetry: boolean;
-  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField };
+  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField; control?: DirectControl };
 }
 
 function SystemNoticeItem({
@@ -110,6 +111,7 @@ function SystemNoticeItem({
  * grouping of the server-backed messages.
  */
 export interface LocalOutboundMessage {
+  control?: DirectControl;
   answer?: ConfirmationAnswerField;
   referenceEventId?: string;
   clientId: string;

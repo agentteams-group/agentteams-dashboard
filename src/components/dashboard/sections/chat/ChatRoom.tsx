@@ -34,6 +34,7 @@ import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker
 import { PanelRightClose, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
+import { getDirectExecution, executionControl, EXECUTION_KEY, markStoppedMessages } from '@/lib/direct-execution';
 import { withFileReferences, type FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
 import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
@@ -275,13 +276,19 @@ export function ChatRoom({
   // states and attachment placement on top of the formatted timeline.
   const chatIr = useMemo(
     () => assembleChatTimeline(
-      formatMatrixEvents(allEvents, currentUserId),
+      // Execution notices drive the composer; keep them out of the runtime's
+      // thought/tool timeline while retaining raw events for read receipts.
+      formatMatrixEvents(allEvents.filter(event => !(
+        workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
+      )), currentUserId),
       allEvents,
       { currentUserId, runtimeMap },
     ),
-    [allEvents, currentUserId, runtimeMap],
+    [allEvents, currentUserId, runtimeMap, workerMatrixUserIds],
   );
-  const formattedMessages = chatIr.messages;
+  const formattedMessages = useMemo(() => markStoppedMessages(
+    chatIr.messages, allEvents, workerMatrixUserIds,
+  ), [chatIr.messages, allEvents, workerMatrixUserIds]);
 
   // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
   // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里
@@ -330,6 +337,11 @@ export function ChatRoom({
     }
     return initialMembers;
   }, [membersQuery.data, stateQuery.data, initialMembers]);
+
+  const directExecution = useMemo(() => getDirectExecution(
+    allEvents, userId, roomMembers.map(member => member.userId), workerMatrixUserIds,
+  ), [allEvents, userId, roomMembers, workerMatrixUserIds]);
+  const canRedirect = directExecution?.status === 'running' || directExecution?.status === 'stopping';
 
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
@@ -460,14 +472,20 @@ export function ChatRoom({
     }
     if (!roomId || !isLoggedIn) return;
 
-    sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs });
+    sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs,
+      control: canRedirect && directExecution && !trimmed.startsWith('/') ? executionControl(directExecution, 'steer') : undefined });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
     clearDraft();
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds, canRedirect, directExecution]);
+
+  const handleStopExecution = useCallback(() => {
+    if (!directExecution || !canRedirect || !canSend || membershipDenied) return;
+    void sendOutbound({ content: '停止当前执行', control: executionControl(directExecution, 'stop') });
+  }, [directExecution, canRedirect, canSend, membershipDenied, sendOutbound]);
 
   const handleInputChange = useCallback((content: string) => {
     setInputValue(content);
@@ -660,6 +678,7 @@ export function ChatRoom({
       mentions: local.mentions,
       replyTo: local.replyTo,
       clientId: local.clientId,
+      control: local.control,
       answer: local.answer,
       referenceEventId: local.referenceEventId,
     });
@@ -887,6 +906,8 @@ export function ChatRoom({
           <TypingIndicator users={typingUsers} />
           {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
+            execution={directExecution}
+            onStop={handleStopExecution}
             roomId={roomId}
             value={inputValue}
             onChange={handleInputChange}

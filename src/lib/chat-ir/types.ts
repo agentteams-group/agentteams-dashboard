@@ -9,7 +9,7 @@
  *  interrupted – no answer and the run is no longer live (timeout/lifecycle)
  *  detached    – thread replies whose root is outside the loaded window
  */
-export type ChatTurnState = 'pending' | 'running' | 'finalized' | 'interrupted' | 'detached';
+export type ChatTurnState = 'pending' | 'running' | 'finalized' | 'interrupted' | 'stopped' | 'detached';
 
 export type ChatRuntimeProfile =
   | 'codex'

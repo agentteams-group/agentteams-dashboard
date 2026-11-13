@@ -10,6 +10,7 @@ import { FILE_REFS_CONTENT_KEY, type FileRef } from '@/lib/file-refs';
 import { buildAnswerContent, type ConfirmationAnswerField } from '../confirmation-reply';
 import { type LocalOutboundMessage, type ChatSystemNotice } from '../structures/MessageList';
 import type { MentionEntry } from '../chat-composer';
+import { CONTROL_KEY, type DirectControl } from '@/lib/direct-execution';
 
 interface UseOutboundMessagesParams {
   roomId: string;
@@ -60,6 +61,7 @@ export function useOutboundMessages({
   }, []);
 
   const sendOutbound = useCallback((params: {
+    control?: DirectControl;
     content: string;
     options?: { html?: boolean };
     mentions?: MentionEntry[];
@@ -77,7 +79,7 @@ export function useOutboundMessages({
     // 所以未登录 / 没有房间时也必须是明确的 false，而不是 undefined。
     if (!roomId || !isLoggedIn || !userId) return Promise.resolve(false);
     const {
-      content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId, answer,
+      content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId, answer, control,
     } = params;
 
     // Only mentions that still appear in the final text are sent (the user may
@@ -114,6 +116,7 @@ export function useOutboundMessages({
         mentions,
         replyTo,
         fileRefs,
+        control,
         answer,
         referenceEventId,
         timestamp: Date.now(),
@@ -132,6 +135,7 @@ export function useOutboundMessages({
           ...(msgtype ? { msgtype } : {}),
           ...(fileRefs && fileRefs.length > 0 ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
           ...buildAnswerContent(answer),
+          ...(control ? { [CONTROL_KEY]: control } : {}),
         },
         relatesTo: replyTo
           ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } }
@@ -148,7 +152,7 @@ export function useOutboundMessages({
         },
         onError: (err) => {
           patchLocal(cid, { status: 'error', error: err.message });
-          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo, referenceEventId, answer }, ++noticeCounterRef.current));
+          pushSystemNotice(buildSystemNoticeFromError(err, { content, mentions, replyTo, referenceEventId, answer, control }, ++noticeCounterRef.current));
           // 失败不 reject：调用方都是 fire-and-forget，reject 会变成未处理的
           // Promise rejection；用 false 让干预卡能显示「未写入房间」并允许重试。
           resolve(false);
@@ -166,7 +170,7 @@ export function useOutboundMessages({
     const payload = notice.retryPayload;
     setSystemNotices(prev => prev.filter(n => n.id !== notice.id));
     if (payload && roomId && isLoggedIn && userId) {
-      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo, referenceEventId: payload.referenceEventId, answer: payload.answer });
+      sendOutbound({ content: payload.content, mentions: payload.mentions, replyTo: payload.replyTo, referenceEventId: payload.referenceEventId, answer: payload.answer, control: payload.control });
     }
   }, [sendOutbound, roomId, isLoggedIn, userId]);
 
@@ -186,7 +190,7 @@ export function useOutboundMessages({
 
 function buildSystemNoticeFromError(
   err: unknown,
-  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField },
+  payload: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField; control?: DirectControl },
   id: number
 ): ChatSystemNotice {
   const retryAfterMs = getRateLimitRetryDelay(err);
