@@ -1,6 +1,7 @@
 // GET /api/matrix/rooms/[roomId]/messages - Get room messages
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatrixHomeserver, getAccessToken, proxyToMatrix } from '../../../proxy-helper';
+import { SESSION_RECEIPT_TYPE } from '@/lib/message-read-status';
 
 export async function GET(
   request: NextRequest,
@@ -17,6 +18,7 @@ export async function GET(
 
     const encodedRoomId = encodeURIComponent(roomId);
     let path = `/_matrix/client/v3/rooms/${encodedRoomId}/messages?dir=${dir}&limit=${limit}`;
+    path += `&filter=${encodeURIComponent(JSON.stringify({ not_types: [SESSION_RECEIPT_TYPE] }))}`;
     if (from) path += `&from=${encodeURIComponent(from)}`;
 
     return await proxyToMatrix(request, homeserver, path, accessToken, {
