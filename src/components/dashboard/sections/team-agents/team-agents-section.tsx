@@ -6,9 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { useCreateTeam, useCreateWorker } from '@/hooks/use-agentteams-mutations';
 import { useHumans } from '@/hooks/use-agentteams-humans';
@@ -27,7 +25,10 @@ import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
 import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { filterTeamRows, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
-import { PERMISSION_LABELS } from '../humans/human-types';
+import { MemberPreview } from './member-preview';
+import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
+
+const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
 const EMPTY_TEAM: CreateTeamRequest = { name: '', leader: { name: '' }, workerNames: [] };
 const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'openclaw' };
@@ -43,19 +44,6 @@ function readLocation() {
     team: params?.get('team') ?? null, agent: params?.get('agent') ?? null,
     manager: params?.get('manager') ?? null, edit: params?.get('edit') === 'true',
   };
-}
-
-function MemberLink({ name, label, summary, onOpen }: {
-  name: string; label?: string; summary: string[]; onOpen: () => void;
-}) {
-  return <Tooltip><TooltipTrigger asChild>
-    <button type="button" onClick={onOpen} className="inline-flex max-w-full items-center rounded-md border bg-muted/20 px-2 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`查看 ${name} 的主页`}>
-      <span className="truncate">{label || name}</span>
-    </button>
-  </TooltipTrigger><TooltipContent side="bottom" className="max-w-72 space-y-1 p-3 text-xs">
-    <p className="font-medium">{label || name}</p>{summary.map((line) => <p key={line}>{line}</p>)}
-    <p className="pt-1 opacity-70">点击查看主页</p>
-  </TooltipContent></Tooltip>;
 }
 
 export function TeamAgentsSection() {
@@ -102,11 +90,11 @@ export function TeamAgentsSection() {
   const workers = workersQuery.data ?? [];
   const query = `${searchQuery} ${search}`.trim().toLowerCase();
   const teamRows = filterTeamRows(teams, workers, query);
-  const agents = [
+  const allAgents = [
     ...managers.map((manager) => ({ ...manager, kind: 'manager' as const, team: '', label: '平台助手 · Manager' })),
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
-  ].filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)))
-    .sort((a, b) => Number(b.kind === 'manager') - Number(a.kind === 'manager') || a.name.localeCompare(b.name));
+  ].sort((a, b) => Number(b.kind === 'manager') - Number(a.kind === 'manager') || a.name.localeCompare(b.name));
+  const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
   const selectedTeam = teams.find((team) => team.name === location.team);
   const selectedWorker = workers.find((worker) => worker.name === location.agent);
   const selectedManager = managers.find((manager) => manager.name === location.manager);
@@ -115,15 +103,18 @@ export function TeamAgentsSection() {
 
   function humanChip(name: string) {
     const human = humans?.find((item) => item.name === name);
-    return <MemberLink key={name} name={name} label={human?.displayName}
-      summary={[name, human?.email || '', human?.permissionLevel ? PERMISSION_LABELS[human.permissionLevel] : '人类成员'].filter(Boolean)}
-      onOpen={() => openResource(`${hashForSection('humans')}?human=${encodeURIComponent(name)}`)} />;
+    const onView = () => openResource(`${hashForSection('humans')}?human=${encodeURIComponent(name)}`);
+    return <MemberPreview key={name} name={name} label={human?.displayName} onOpen={onView}>
+      <HumanSummaryCard name={name} human={human} onView={onView} />
+    </MemberPreview>;
   }
   function agentChip(name: string) {
-    const worker = workers.find((item) => item.name === name);
-    return <MemberLink key={name} name={name}
-      summary={[`模型 · ${worker?.model || '未设置'}`, `运行时 · ${worker?.runtime || '未知'}`, `状态 · ${worker?.phase || '未知'}`]}
-      onOpen={() => navigate('agents', 'agent', name)} />;
+    const agent = allAgents.find((item) => item.kind === 'agent' && item.name === name)
+      ?? { name, model: '', runtime: '', phase: '', team: '', kind: 'agent' as const, label: 'Worker' };
+    const onView = () => navigate('agents', 'agent', name);
+    return <MemberPreview key={name} name={name} onOpen={onView}>
+      <AgentSummaryCard agent={agent} onView={onView} onEdit={() => navigate('agents', 'agent', name, true)} />
+    </MemberPreview>;
   }
 
   if ((teamsQuery.isError || workersQuery.isError) && !isConnected) return <ApiErrorState />;
@@ -152,16 +143,13 @@ export function TeamAgentsSection() {
         <span className="text-xs text-muted-foreground">{location.tab === 'teams' ? '人类成员与 Agent 分别展示 · 悬停查看概要' : 'Manager 与 Worker · 点击查看主页或编辑配置'}</span>
       </div>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
-        location.tab === 'teams' ? <div className="grid gap-4 xl:grid-cols-2" aria-label="团队卡片">
+        location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
           {teamRows.map(({ team }) => {
             const members = [...new Set([...(team.humanMembers ?? []), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
-            return <Card key={team.name} className="gap-0 rounded-xl py-0 shadow-none"><CardContent className="space-y-4 p-5">
-              <div className="flex items-start justify-between gap-3"><div className="min-w-0">
-                <button onClick={() => navigate('teams', 'team', team.name)} className="text-left font-semibold hover:underline">{team.teamName || team.name}</button>
-                {team.teamName && team.teamName !== team.name && <p className="mt-1 text-xs text-muted-foreground">{team.name}</p>}
-              </div><PhaseBadge kind="team" phase={team.phase} /></div>
-              {team.description && <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{team.description}</p>}
+            return <Card key={team.name} className="w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
+              <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} Agent`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
+              {team.description && <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{team.description}</p>}
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm">
                 <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd>{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
                 <dt className="pt-1 text-muted-foreground">普通成员 · {members.length}</dt><dd className="flex flex-wrap gap-1.5">{members.length ? members.map(humanChip) : <span className="text-muted-foreground">暂无普通成员</span>}</dd>
@@ -172,12 +160,10 @@ export function TeamAgentsSection() {
             </CardContent></Card>;
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
-        </div> : <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Agent 卡片">
-          {agents.map((agent) => <Card key={`${agent.kind}-${agent.name}`} className="gap-0 rounded-xl py-0 shadow-none"><CardContent className="space-y-4 p-5">
-            <div className="flex items-center justify-between gap-3"><h2 className="truncate font-semibold">{agent.name}</h2><PhaseBadge kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} /></div>
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm"><dt className="text-muted-foreground">角色</dt><dd>{agent.label}</dd><dt className="text-muted-foreground">模型</dt><dd className="break-all font-medium">{agent.model || '未设置'}</dd><dt className="text-muted-foreground">运行时</dt><dd>{agent.runtime}</dd><dt className="text-muted-foreground">所属团队</dt><dd className="truncate">{agent.kind === 'manager' ? '平台' : agent.team || '独立 Agent'}</dd></dl>
-            <div className="flex justify-end gap-2 border-t pt-3"><Button variant="ghost" size="sm" onClick={() => navigate('agents', agent.kind, agent.name)}>查看详情</Button><Button variant="outline" size="sm" onClick={() => navigate('agents', agent.kind, agent.name, true)}>编辑</Button></div>
-          </CardContent></Card>)}
+        </div> : <div className={RESOURCE_CARD_GRID} aria-label="Agent 卡片">
+          {agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+            onView={() => navigate('agents', agent.kind, agent.name)}
+            onEdit={() => navigate('agents', agent.kind, agent.name, true)} />)}
           {agents.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的 Agent' : '暂无 Agent'}</p>}
         </div>}
     </>}

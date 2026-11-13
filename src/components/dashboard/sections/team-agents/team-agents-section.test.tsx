@@ -209,6 +209,32 @@ beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
 describe('Team and Agent resource cards', () => {
+  it('opens an interactive Agent card on hover and keeps it open while entering the card', async () => {
+    renderSection();
+    const member = screen.getByRole('button', { name: '查看 w1 的主页' });
+    fireEvent.mouseEnter(member);
+    const preview = await screen.findByRole('dialog', { name: 'w1 资料卡' });
+    expect(within(preview).getByText('w1-model')).toBeInTheDocument();
+    expect(within(preview).getByText('QwenPaw')).toBeInTheDocument();
+    expect(within(preview).getByText('alpha')).toBeInTheDocument();
+    expect(within(preview).getByRole('button', { name: '编辑' })).toBeInTheDocument();
+    fireEvent.mouseLeave(member);
+    fireEvent.mouseEnter(preview);
+    expect(preview).toBeInTheDocument();
+    fireEvent.click(within(preview).getByRole('button', { name: '查看详情' }));
+    expect(screen.getByText('agent-profile:w1')).toBeInTheDocument();
+  });
+
+  it('shows a human profile card on focus and closes it with Escape', async () => {
+    renderSection();
+    fireEvent.focus(screen.getByRole('button', { name: '查看 reviewer 的主页' }));
+    const preview = await screen.findByRole('dialog', { name: '评审成员 资料卡' });
+    expect(within(preview).getByRole('heading', { name: '评审成员' })).toBeInTheDocument();
+    expect(within(preview).getByText('团队成员')).toBeInTheDocument();
+    fireEvent.keyDown(preview, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('separates humans from agents and excludes the admin and leader from member counts', () => {
     renderSection();
     const cards = screen.getByLabelText('团队卡片');
