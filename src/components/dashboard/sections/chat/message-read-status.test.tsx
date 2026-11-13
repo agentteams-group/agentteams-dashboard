@@ -43,7 +43,7 @@ describe('message read interaction', () => {
     expect(rows.map((row) => row.textContent)).toEqual(['Alice已读', 'Bob未读']);
     expect(rows[0].lastElementChild).toHaveClass('text-emerald-600');
     expect(rows[1].lastElementChild).toHaveClass('text-muted-foreground');
-    expect(list.closest('[data-slot="popover-content"]')).toHaveClass('w-max', 'border-0', 'shadow-none');
+    expect(list.closest('[data-slot="popover-content"]')).toHaveClass('w-max', 'border', 'border-border/50', 'shadow-none');
     expect(rows[0]).not.toHaveClass('justify-between');
     expect(list.closest('[data-slot="popover-content"]')).toHaveAttribute('data-side', 'bottom');
     expect(screen.queryByText('消息阅读状态')).not.toBeInTheDocument();
