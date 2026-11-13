@@ -92,7 +92,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
         <InfoTip label="MCP 分配与授权说明">
           <span className="block">仅分配已登记的 MCP 地址，不会创建网关服务或授予权限。</span>
           <span className="mt-1 block">
-            请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。
+            受管服务请到「MCP 工具 → 详情 → Agent 授权」分配；外部地址请先通过 Manager / Higress 接入并授权。后端凭证与自定义 Headers 在网关配置。
           </span>
           <span className="mt-1 block">
             分配后请通过「已保存配置的网关验证」确认该 Worker 的 Consumer 已获授权。

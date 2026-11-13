@@ -452,7 +452,7 @@ export function ingestHitlTimelineEvents(
     const content = resolveEventContent(event);
     const approval = event.sender !== currentUserId && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
     if (approval && approval.status !== 'pending') {
-      for (const item of Object.values(store.confirmations)) {
+      for (const item of Object.values(useHitlInboxStore.getState().confirmations)) {
         if (item.roomId !== roomId || item.sender !== event.sender || item.requestId !== approval.request_id || item.contextId !== approval.context_id) continue;
         if (approval.status === 'expired') store.expireConfirmation(item.id, event.sender);
         else store.resolveConfirmation(item.id, event.sender, approval.status);

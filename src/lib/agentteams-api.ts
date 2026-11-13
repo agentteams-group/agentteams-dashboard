@@ -28,7 +28,7 @@ export type { MetaReadResult } from '@/lib/meta-api';
 
 export type WorkerPhase = 'Pending' | 'Running' | 'Sleeping' | 'Updating' | 'Stopped' | 'Failed' | 'Ready';
 export type WorkerState = 'Running' | 'Sleeping' | 'Stopped';
-export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness';
+export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex';
 export type TeamPhase = 'Pending' | 'Active' | 'Degraded' | 'Failed';
 export type HumanPhase = 'Pending' | 'Active' | 'Failed';
 export type ManagerPhase = 'Running' | 'Pending' | 'Failed';
@@ -944,6 +944,15 @@ export interface McpServerConfig {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  managed?: boolean;
+  kind?: import('@/lib/mcp-management').McpKind;
+  toolCount?: number;
+  authorizedWorkerCount?: number;
+  connection?: import('@/lib/mcp-management').McpConnection;
+  gatewayState?: 'ready' | 'error';
+  authorizedWorkers?: string[];
+  pendingRemovalWorkers?: string[];
+  verification?: import('@/lib/mcp-management').McpVerification;
 }
 
 export interface McpTestResult {

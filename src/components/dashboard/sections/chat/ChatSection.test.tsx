@@ -388,6 +388,18 @@ describe('project rooms in the teams view', () => {
     expect(useSectionStore.getState().activeSection).toBe('my-teams');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!project:test');
   });
+
+  it('opens an execution room from task details even when its origin is the assistant DM', () => {
+    taskFeedMock.workflows = [{ ...projectWorkflow, source_room_id: '!leader:test', tasks_detail: [{ task_id: 'task', room_id: '!project:test' }] }];
+    useHitlInboxStore.getState().setPendingChatRoomId('!project:test');
+    renderWithQueryClient('assistants');
+    expect(useSectionStore.getState().activeSection).toBe('my-teams');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!project:test');
+    cleanup();
+    renderWithQueryClient('teams');
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!project:test');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
+  });
 });
 
 describe('ChatSection mobile room drawer', () => {

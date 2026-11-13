@@ -1,11 +1,9 @@
 'use client';
 
-import { Eye, UserCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
-import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import {
@@ -22,8 +20,6 @@ function permissionLabel(level: number): string {
   return PERMISSION_LABELS[level] || `L${level}`;
 }
 
-const ACTION_BUTTON = 'h-8 w-8 p-0 max-sm:h-11 max-sm:w-11';
-
 export function HumanTable({
   humans,
   onView,
@@ -36,7 +32,7 @@ export function HumanTable({
   onDelete: (_name: string) => void;
 }) {
   return (
-    <Card className="glass-card overflow-hidden">
+    <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
       <Table>
         <TableHeader>
           <TableRow>
@@ -58,8 +54,6 @@ export function HumanTable({
               >
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <StatusDot phase={human.phase} />
-                    <UserCheck className="w-4 h-4 text-teal-500 shrink-0" aria-hidden="true" />
                     <button
                       type="button"
                       className="max-w-[180px] truncate text-left font-medium hover:underline"
@@ -91,12 +85,11 @@ export function HumanTable({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={ACTION_BUTTON}
                       onClick={() => onView(human)}
                       title="查看详情"
                       aria-label={`查看 ${human.name} 详情`}
                     >
-                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                      详情
                     </Button>
                     <ResourceListMenu label={`${human.name} 更多操作`} items={[
                       { label: '编辑', onSelect: () => onEdit(human) },

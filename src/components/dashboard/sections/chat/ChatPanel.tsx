@@ -4,6 +4,7 @@ import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 import styles from './agent-conversation.module.css';
 import { AssistantTaskNote } from './components/AssistantTaskNote';
+import { ConversationTaskTips } from './components/ConversationTaskTips';
 import { RoomContextTabs } from './components/RoomContextTabs';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { ManagerModelGate } from './manager-model-gate';
@@ -62,6 +63,7 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
+      {contextPanel === null && (room.agentRole || room.type === 'team' || taskFeed) && <ConversationTaskTips key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
       {contextPanel === null && (room.agentRole || room.type === 'team') && <div className="w-10 shrink-0 border-l border-border bg-muted/20"><RoomContextTabs activeTab={null} vertical showMembers={!room.agentRole} onTabChange={onContextPanelChange} /></div>}
 
     </div>

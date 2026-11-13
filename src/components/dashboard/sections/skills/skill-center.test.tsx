@@ -14,7 +14,7 @@ vi.mock('./skill-distribute-to-worker-dialog', () => ({SkillDistributeToWorkerDi
 afterEach(cleanup);
 it('loads existing fields when opening the editor and discards cancelled edits', () => {
  render(<SkillCenter />);
- const open = () => fireEvent.click(within(screen.getByRole('row',{name:/test-skill/})).getAllByRole('button')[2]);
+ const open = () => fireEvent.click(within(screen.getByRole('row',{name:/test-skill/})).getByRole('button', {name:'编辑'}));
  open();
  const description=screen.getByPlaceholderText('输入技能描述...') as HTMLInputElement;
  expect(description.value).toBe('Existing description');

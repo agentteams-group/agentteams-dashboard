@@ -12,6 +12,8 @@
 export type ChatTurnState = 'pending' | 'running' | 'finalized' | 'interrupted' | 'stopped' | 'detached';
 
 export type ChatRuntimeProfile =
+  | 'codex'
+  | 'deepseek-harness'
   | 'openclaw'
   | 'qwenpaw'
   | 'hermes'

@@ -64,6 +64,14 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  it('keeps protocol notifications separate from the assistant answer and retains their event ids', () => {
+    const body = '[ProjectFlow] create_project + plan_dag: 项目「基线交付」已创建';
+    const events = [ev('answer', '@w:server', '项目已正式启动并完成交接。', 0), ev('flow', '@w:server', body, 1_000)];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(2);
+    expect(messages.find(message => message.id === 'flow')).toMatchObject({ content: body, eventId: 'flow' });
+    expect(messages.find(message => message.id === 'answer')?.content).not.toContain('[ProjectFlow]');
+  });
   it('assembles a qwenpaw turn: root edit is the answer, thread steps are process', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),

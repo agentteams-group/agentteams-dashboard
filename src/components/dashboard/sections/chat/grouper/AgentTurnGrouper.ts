@@ -1,6 +1,7 @@
 import { isAgentPlaceholderBody, normalizeToBlocks } from '@/lib/a2ui/normalize';
 import type { ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { parseWorkerLifecycleNotice } from '@/lib/chat-lifecycle-notice';
+import { parseWorkflowNotice } from '@/lib/chat-workflow-notice';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 
 /**
@@ -67,6 +68,7 @@ function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
   if (message.type !== 'm.text' && message.type !== 'm.notice') return null;
   // Lifecycle announcements render as a dedicated status row, not as a turn.
   if (parseWorkerLifecycleNotice(message.content)) return null;
+  if (parseWorkflowNotice(message.content, message.runtime)) return null;
 
   const blocks = normalizeToBlocks({
     body: typeof message.content === 'string' ? message.content : '',

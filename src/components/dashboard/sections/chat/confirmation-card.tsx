@@ -105,9 +105,9 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
 
   // 过期把收件箱条目一起收掉（与 InterventionCard 同一口径），只做一次。
   useEffect(() => {
-    if (!expired || resolution?.status === 'expired' || resolution?.status === 'answered' || !resolutionKey) return;
+    if (awaitsReceipt || !expired || resolution?.status === 'expired' || resolution?.status === 'answered' || !resolutionKey) return;
     useHitlInboxStore.getState().expireConfirmation(resolutionKey, currentUserId ?? undefined);
-  }, [expired, resolution, resolutionKey, currentUserId]);
+  }, [awaitsReceipt, expired, resolution, resolutionKey, currentUserId]);
 
   // 过期置灰只需要分钟级节拍，不做高频 tick。
   useEffect(() => {
