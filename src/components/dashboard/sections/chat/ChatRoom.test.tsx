@@ -323,7 +323,6 @@ describe('ChatRoom HITL reply correlation', () => {
     });
 
     renderChatRoom();
-    fireEvent.click(screen.getByRole('button', { name: '查看并选择' }));
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
 
     expect(mocks.sendMutate).toHaveBeenCalledWith(

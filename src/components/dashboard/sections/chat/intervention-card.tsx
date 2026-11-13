@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { Clock, AlertTriangle, MessageSquare, Check, ArrowUpRight } from 'lucide-react';
+import { Clock, AlertTriangle, MessageSquare, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   type RuntimeConfirmationBlock,
@@ -100,7 +99,6 @@ function orderedOptions(question: RuntimeConfirmationQuestion) {
  * 与时间；超时（expires_at 或可配置等待窗口，默认 30 分钟）置灰禁答并升级通知。
  */
 export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
-  const [open, setOpen] = useState(false);
   const currentUserId = useMatrixStore((s) => s.userId);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const addNotification = useNotificationStore((s) => s.addNotification);
@@ -227,7 +225,8 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   if (submitted) {
     return (
       <div role="status" className="my-2 w-full max-w-2xl rounded-xl border bg-card px-4 py-3 text-sm">
-        <div className="flex items-center gap-2">
+        <h3 className="mb-2 text-sm font-medium">{questions[0].question}</h3>
+        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
           <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           已提交选择
         </div>
@@ -301,26 +300,17 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     // Codex 风格（交互选项卡 · 2026-10 反馈）：白底圆角大卡 + 充足留白 +
     // 序号键提示 + 底部自由输入与深色提交按钮；交互逻辑（推荐默认选中/
     // 快捷键/互斥/分页/权限/超时/审计）不变。
-    <Dialog open={open} onOpenChange={setOpen}>
-      <div className="my-2 w-full max-w-2xl overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="flex items-start gap-3 p-4">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/5 text-foreground"><MessageSquare className="size-4" aria-hidden="true" /></span>
-          <div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">{expired ? '选择请求已超时' : '需要你的选择'}</p><h3 className="mt-1 text-sm font-medium leading-relaxed">{questions[0].question}</h3></div>
-        </div>
-        <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-4 py-3"><p className="text-xs text-muted-foreground">{questions.length > 1 ? `${questions.length} 个问题` : questions[0].multi_select ? '可选择多项，也可补充说明' : '选择一个选项，或补充说明'}</p><Button size="sm" variant="outline" onClick={() => setOpen(true)}>{expired ? '查看详情' : '查看并选择'}<ArrowUpRight className="ml-1.5 size-3.5" aria-hidden="true" /></Button></div>
-      </div>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
-        <DialogHeader className="border-b px-6 py-5"><DialogTitle>请确认你的选择</DialogTitle><DialogDescription>你的答复将发送给 Agent，帮助它继续当前工作。</DialogDescription></DialogHeader>
     <div
       role="group"
       aria-label="干预请求"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className={`max-h-[70dvh] overflow-y-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+      className={`my-2 w-full max-w-2xl overflow-hidden rounded-xl border bg-card shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
         locked ? 'opacity-60' : ''
       }`}
     >
-      <div className="px-5 pt-4 pb-1 flex items-start justify-between gap-3">
+      <p className="flex items-center gap-2 px-5 pt-4 text-xs text-muted-foreground"><MessageSquare className="size-3.5" aria-hidden="true" />需要你的选择</p>
+      <div className="px-5 pt-2 pb-3 flex items-start justify-between gap-3">
         <h3 className="text-sm font-semibold leading-snug">{question.question}</h3>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           {expired && (
@@ -467,7 +457,5 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
         <p className="text-xs text-muted-foreground/70">提交后可在对话中查看 Agent 的后续回复。</p>
       </div>
     </div>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -1,13 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
-import type { ReactElement } from 'react';
-function render(ui: ReactElement) {
-  const result = renderView(ui);
-  const trigger = screen.queryByRole('button', { name: /查看并选择|查看并处理/ });
-  if (trigger) fireEvent.click(trigger);
-  return result;
-}
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
@@ -280,7 +273,7 @@ describe('MessageBubble', () => {
       />
     );
 
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getAllByRole('group', { name: '干预请求' })).toHaveLength(1);
     expect(screen.getAllByRole('radio')).toHaveLength(2);
     expect(screen.getAllByLabelText('自由输入')).toHaveLength(1);
   });
@@ -369,7 +362,7 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
     // Preserve the pre-existing Tool Guard interaction; QwenPaw's queue
     // commands require exact request IDs through the new contract.
     expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
@@ -518,7 +511,7 @@ Parameters / 参数:
 Type /approve to approve, or send any message to deny.`,
       assertRendered: () => {
         // Legacy rendering remains compatible; no new CoPaw integration.
-        expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
       },
     },

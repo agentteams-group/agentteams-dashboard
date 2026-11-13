@@ -4,14 +4,7 @@
  * 超时置灰 + 升级通知、requested_of 权限门；回写结果决定卡片状态（C-3）。
  */
 
-import { cleanup, fireEvent, render as renderView, screen } from '@testing-library/react';
-import type { ReactElement } from 'react';
-function render(ui: ReactElement) {
-  const result = renderView(ui);
-  const triggers = screen.queryAllByRole('button', { name: /查看并选择|查看详情/ });
-  if (triggers[0]) fireEvent.click(triggers[0]);
-  return result;
-}
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -142,7 +135,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
       </>
     );
     fireEvent.keyDown(window, { key: '2' });
-    expect(screen.getAllByRole('radio', { name: /按角色/ })).toHaveLength(1);
+    expect(screen.getAllByRole('radio', { name: /按角色/ })).toHaveLength(2);
     for (const radio of screen.getAllByRole('radio', { name: /按角色/ })) {
       expect(radio).toHaveAttribute('aria-checked', 'true');
     }

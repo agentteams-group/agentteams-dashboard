@@ -4,14 +4,7 @@
  * 过期只读、蛇形 v1 payload 适配。
  */
 
-import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
-import type { ReactElement } from 'react';
-function render(ui: ReactElement) {
-  const result = renderView(ui);
-  const trigger = screen.queryByRole('button', { name: '查看并处理' });
-  if (trigger) fireEvent.click(trigger);
-  return result;
-}
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -218,15 +211,11 @@ describe('ConfirmationCard（#235 审批交互）', () => {
     expect(screen.queryByRole('button', { name: /批准本次/ })).not.toBeInTheDocument();
   });
 
-  it('opens a focused dialog only after the user chooses to review', () => {
-    renderView(<ConfirmationCard payload={boundPayload} onApprove={mockOnApprove} onReject={mockOnReject} />);
+  it('keeps approval controls inline without opening a dialog', () => {
+    render(<ConfirmationCard payload={boundPayload} onApprove={mockOnApprove} onReject={mockOnReject} />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '查看并处理' }));
-    expect(screen.getByRole('dialog', { name: '允许执行这项操作？' })).toBeInTheDocument();
-    expect(screen.getByText('- [CRITICAL] 递归删除高危命令')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(screen.queryByText('- [CRITICAL] 递归删除高危命令')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '查看并处理' }));
+    expect(screen.getByRole('button', { name: '批准本次' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '拒绝本次' })).toBeVisible();
     expect(screen.getByText('- [CRITICAL] 递归删除高危命令')).toBeInTheDocument();
   });
 });

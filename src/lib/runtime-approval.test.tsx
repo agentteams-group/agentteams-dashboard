@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
-import type { ReactElement } from 'react';
-function render(ui: ReactElement) {
-  const result = renderView(ui);
-  const trigger = screen.queryByRole('button', { name: '查看并处理' });
-  if (trigger) fireEvent.click(trigger);
-  return result;
-}
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { normalizeToBlocks } from './a2ui/normalize';
 import { parseRuntimeApprovalConfirmation } from './a2ui/parser';
@@ -28,6 +21,20 @@ beforeEach(() => useHitlInboxStore.setState({ confirmations: {}, resolutions: {}
 afterEach(cleanup);
 
 describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) => {
+  it('retains the original command and risk context after rejection', async () => {
+    const data = { ...approval(runtime), risk_details: '需要人工确认此操作' };
+    const input = event('$pending', data);
+    ingestHitlTimelineEvents(room, [input], '@me:test');
+    const block = normalizeToBlocks({ body: '', content: input.content, isStreaming: false })[0];
+    render(<ConfirmationCard payload={{ ...toConfirmationCardPayload(block.payload!), resolutionKey: '$pending' }} onApprove={vi.fn()} onReject={() => true} />);
+    fireEvent.click(screen.getByRole('button', { name: '拒绝本次' }));
+    await screen.findByText('已提交，等待运行时确认');
+    ingestHitlTimelineEvents(room, [event('$receipt', { ...data, status: 'rejected' }, sender, 2)], '@me:test');
+    await waitFor(() => expect(screen.getByText('已拒绝')).toHaveClass('text-red-700'));
+    expect(screen.getByText('echo probe')).toBeVisible();
+    expect(screen.getByText('需要人工确认此操作')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '拒绝本次' })).not.toBeInTheDocument();
+  });
   it('applies receipts in the same history batch as their request', () => {
     const data = approval(runtime);
     ingestHitlTimelineEvents(room, [event('$pending', data), event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
@@ -40,11 +47,11 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
     ingestHitlTimelineEvents(room, [input], '@me:test');
     const blocks = normalizeToBlocks({ body: '', content: input.content, isStreaming: false });
     render(<ConfirmationCard payload={{ ...toConfirmationCardPayload(blocks[0].payload!), resolutionKey: '$pending' }} onApprove={vi.fn()} onReject={vi.fn()} />);
-    expect(screen.getByText('已超时 - Bash')).toBeInTheDocument();
+    expect(screen.getByText('已超时')).toBeInTheDocument();
     expect(useHitlInboxStore.getState().resolutions['$pending']).toBeUndefined();
     ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
-    await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
-    expect(screen.getByText('已批准 - Bash')).toHaveClass('text-emerald-600');
+    await waitFor(() => expect(screen.getByText('已批准')).toBeInTheDocument());
+    expect(screen.getByText('已批准')).toHaveClass('text-emerald-700');
   });
   it('renders the runtime contract and binds the exact request command', async () => {
     const data = approval(runtime);
@@ -55,11 +62,13 @@ describe.each(['qwenpaw', 'codex'] as const)('%s approval lifecycle', (runtime) 
     const payload = { ...toConfirmationCardPayload(blocks[0].payload!), resolutionKey: '$pending' };
     render(<ConfirmationCard payload={payload} onApprove={send} onReject={send} />);
     fireEvent.click(screen.getByRole('button', { name: /批准本次/ }));
-    await screen.findByText('已提交，等待运行时确认 - Bash');
+    await screen.findByText('已提交，等待运行时确认');
     expect(send).toHaveBeenCalledWith(runtime === 'codex' ? '/approve req-1 thread-1:turn-1' : '/approval approve req-1', expect.objectContaining({ confirmation_id: 'req-1' }));
     expect(useHitlInboxStore.getState().confirmations['$pending']).toBeDefined();
     ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
-    await waitFor(() => expect(screen.getByText('已批准 - Bash')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('已批准')).toBeInTheDocument());
+    expect(screen.getByText('echo probe')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(useHitlInboxStore.getState().confirmations['$pending']).toBeUndefined();
   });
   it('leaves failed delivery retryable', async () => {
