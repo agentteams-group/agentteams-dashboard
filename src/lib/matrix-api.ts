@@ -308,6 +308,13 @@ export const matrixApi = {
     return parseRoomSearchResponse(body);
   },
 
+  getRoomEvent: async (homeserver: string, accessToken: string, roomId: string, eventId: string): Promise<MatrixEvent> => {
+    const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/event/${encodeURIComponent(eventId)}`, { homeserver });
+    const response = await fetch(url, { headers: buildHeaders(accessToken) });
+    await throwIfNotOk(response, 'Failed to get event');
+    return response.json();
+  },
+
   getRoomRelations: async (
     homeserver: string,
     accessToken: string,
@@ -442,13 +449,18 @@ export const matrixApi = {
     accessToken: string,
     roomId: string,
     body: string,
-    options: { [FILE_REFS_CONTENT_KEY]?: FileRefsPayload; msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown> } = {}
+    options: { [FILE_REFS_CONTENT_KEY]?: FileRefsPayload; msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown>; trackReadStatus?: boolean; agentUserIds?: string[]; humanUserIds?: string[] } = {}
   ): Promise<{ event_id: string }> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, { homeserver });
     const messageBody: Record<string, unknown> = {
       msgtype: options.msgtype || 'm.text',
       body,
     };
+    if (options.trackReadStatus) {
+      messageBody.track_read_status = true;
+      messageBody.agent_user_ids = options.agentUserIds || [];
+      messageBody.human_user_ids = options.humanUserIds || [];
+    }
     if (options.format) messageBody.format = options.format;
     if (options.formattedBody) messageBody.formatted_body = options.formattedBody;
     if (options.url) messageBody.url = options.url;

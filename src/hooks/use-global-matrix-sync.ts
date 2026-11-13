@@ -9,6 +9,7 @@ import { isWorkflowPayload } from '@/lib/a2ui/workflow';
 import { matrixApi } from '@/lib/matrix-api';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { useInviteStore } from '@/lib/matrix-invite-store';
+import { SESSION_RECEIPT_TYPE, sessionReceiptTarget, messageReadStatusKey } from '@/lib/message-read-status';
 import {
   mergeTimelineEvents,
   useReceiptStore,
@@ -226,7 +227,7 @@ export function useGlobalMatrixSync(): void {
         } else if (event.type === 'm.receipt') {
           const content = (event.content ?? {}) as Record<
             string,
-            Record<string, Record<string, { ts?: number }> | undefined>
+            Record<string, Record<string, { ts?: number; thread_id?: string }> | undefined>
           >;
           const existing = useReceiptStore.getState().receipts[rid] ?? {};
           const next = { ...existing };
@@ -234,10 +235,26 @@ export function useGlobalMatrixSync(): void {
             const readBy = relations?.['m.read'];
             if (!readBy) continue;
             for (const [uId, info] of Object.entries(readBy)) {
-              next[uId] = {
+              const receiptKey = info.thread_id ? `${uId}|${info.thread_id}` : uId;
+              next[receiptKey] = {
                 eventId,
                 ts: typeof info?.ts === 'number' ? info.ts : Date.now(),
+                threadId: info.thread_id,
               };
+              // Receipt ts is when it was sent, not the position it covers.
+              void queryClient.fetchQuery({
+                queryKey: ['matrix-event', homeserver, userId, rid, eventId],
+                queryFn: () => matrixApi.getRoomEvent(homeserver, accessToken, rid, eventId),
+                staleTime: Infinity,
+              }).then((target) => {
+                if (cancelled || isStale()) return;
+                const current = useReceiptStore.getState().receipts[rid] ?? {};
+                if (current[receiptKey]?.eventId !== eventId) return;
+                useReceiptStore.getState().setRoomReceipts(rid, {
+                  ...current,
+                  [receiptKey]: { ...current[receiptKey], eventTimestamp: target.origin_server_ts },
+                });
+              }).catch(() => { /* An unresolved position never proves read. */ });
             }
           }
           useReceiptStore.getState().setRoomReceipts(rid, next);
@@ -264,6 +281,7 @@ export function useGlobalMatrixSync(): void {
       const unread = roomData.unread_notifications;
       let lastEvent: (typeof timelineEvents)[number] | undefined;
       for (const event of timelineEvents) {
+        if (event.type === SESSION_RECEIPT_TYPE) continue;
         if (typeof event.origin_server_ts !== 'number') continue;
         if (!lastEvent || event.origin_server_ts >= (lastEvent.origin_server_ts ?? 0)) {
           lastEvent = event;
@@ -356,6 +374,18 @@ export function useGlobalMatrixSync(): void {
         const joinedRooms = resp.rooms?.join;
         if (joinedRooms) {
           for (const [rid, roomData] of Object.entries(joinedRooms)) {
+            const receiptEvents = roomData.timeline?.events ?? [];
+            for (const event of receiptEvents) {
+              const target = sessionReceiptTarget(event);
+              if (!target) continue;
+              const key = messageReadStatusKey(homeserver, userId, rid, target);
+              queryClient.setQueryData<MatrixEvent[]>(key, (previous = []) =>
+                previous.some((e) => e.event_id === event.event_id) ? previous : [...previous, event]);
+              void queryClient.invalidateQueries({ queryKey: key });
+            }
+            if (roomData.timeline) {
+              roomData.timeline = { ...roomData.timeline, events: receiptEvents.filter((event) => event.type !== SESSION_RECEIPT_TYPE) };
+            }
             const stateEvents = [...(roomData.state?.events ?? []), ...(roomData.timeline?.events ?? [])];
             if (stateEvents.some((event) => event.type === 'm.room.member' && event.state_key === userId)) {
               void queryClient.invalidateQueries({ queryKey: ['matrix-state', rid] });

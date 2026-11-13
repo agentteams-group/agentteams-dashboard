@@ -35,6 +35,8 @@ import { recordToolCalls } from '@/lib/tool-call-counter';
 import { Check, CheckCheck, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import { MessageReadStatus } from '../message-read-status';
+import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
 
@@ -420,7 +422,7 @@ export function MessageBubble({
   // element-web style delivery state for my own messages:
   // sending → spinner, sent → single ✓, read by another member → double ✓✓.
   const isReadByOthers =
-    message.isMe && !message.status && !!readReceipts
+    !message.rawContent?.[READ_AUDIENCE_KEY] && message.isMe && !message.status && !!readReceipts
       ? isMessageReadByOthers(message, currentUserId, readReceipts)
       : false;
 
@@ -810,6 +812,8 @@ export function MessageBubble({
             )}
           </div>
         )}
+
+        {!!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button
