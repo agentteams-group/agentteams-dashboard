@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { BucketItem, Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { publicMcpRecord, readMcpRecord, type ManagedMcpRecord } from '@/lib/server/mcp-management';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -57,7 +58,7 @@ export async function GET() {
         });
         const config = JSON.parse(data.toString('utf-8')) as McpServerConfig;
         if (config.name && config.url && config.transport) {
-          servers.push(config);
+          servers.push((config as unknown as ManagedMcpRecord).managed ? publicMcpRecord(config as unknown as ManagedMcpRecord) : config);
         }
       } catch {
         // skip corrupted entries
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
   if (!transport || !['sse', 'streaminghttp'].includes(transport)) {
     return NextResponse.json({ error: 'transport 须为 "sse" 或 "streaminghttp"' }, { status: 400 });
   }
+
+  if ((await readMcpRecord(name))?.managed) return NextResponse.json({ error: '名称已被受管 MCP 服务占用。' }, { status: 409 });
 
   const now = new Date().toISOString();
   const config: McpServerConfig = {

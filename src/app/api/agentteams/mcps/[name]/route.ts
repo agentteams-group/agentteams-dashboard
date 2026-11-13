@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { publicMcpRecord, readMcpRecord, type ManagedMcpRecord } from '@/lib/server/mcp-management';
+import { requireHigressConsoleAccess } from '@/app/api/higress/access';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -46,6 +48,11 @@ export async function GET(
       stream.on('error', reject);
     });
     const config = JSON.parse(data.toString('utf-8')) as McpServerConfig;
+    if ((config as unknown as ManagedMcpRecord).managed) {
+      const denied = await requireHigressConsoleAccess(_request);
+      if (denied) return denied;
+      return NextResponse.json(publicMcpRecord(config as unknown as ManagedMcpRecord));
+    }
     return NextResponse.json(config);
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes('NoSuchKey')) {
@@ -100,6 +107,8 @@ export async function PUT(
     return NextResponse.json({ error: '读取失败' }, { status: 502 });
   }
 
+  if ((existing as unknown as ManagedMcpRecord).managed) return NextResponse.json({ error: '请通过 MCP 接入流程更新受管服务。' }, { status: 409 });
+
   const url = body.url ?? existing.url;
   const transport = body.transport ?? existing.transport;
   const description = body.description !== undefined ? body.description : existing.description;
@@ -151,6 +160,8 @@ export async function DELETE(
 
   const denied = await enforceLevelOnlyRbac(request, 'delete', 'mcp', name);
   if (denied) return denied;
+
+  if ((await readMcpRecord(name))?.managed) return NextResponse.json({ error: '请通过 MCP 服务详情删除受管服务。' }, { status: 409 });
 
   const key = `${MCP_SERVERS_PREFIX}${name}.json`;
 

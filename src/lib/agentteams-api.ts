@@ -944,6 +944,11 @@ export interface McpServerConfig {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  managed?: boolean;
+  connection?: import('@/lib/mcp-management').McpConnection;
+  gatewayState?: 'ready' | 'error';
+  authorizedWorkers?: string[];
+  verification?: import('@/lib/mcp-management').McpVerification;
 }
 
 export interface McpTestResult {

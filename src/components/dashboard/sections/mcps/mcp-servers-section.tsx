@@ -24,11 +24,19 @@ import { useMcpCatalog } from '@/hooks/use-mcp-catalog';
 import type { McpServerConfig } from '@/lib/agentteams-api';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
+import { McpSetupDialog } from './mcp-setup-dialog';
+import { McpDetailDialog } from './mcp-detail-dialog';
+import { mcpManagementApi } from '@/lib/mcp-management-api';
+import { MCP_KIND_LABELS } from '@/lib/mcp-management';
 
 export function McpServersSection() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServerConfig | undefined>();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [managedEdit, setManagedEdit] = useState<McpServerConfig>();
+  const [detail, setDetail] = useState<McpServerConfig>();
+  const [actionError, setActionError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [testingServer, setTestingServer] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
@@ -56,20 +64,25 @@ export function McpServersSection() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    await deleteMutation.mutateAsync(deleteTarget);
-    setDeleteTarget(null);
-  }, [deleteTarget, deleteMutation]);
+    setActionError('');
+    try {
+      if (servers.find((s) => s.name === deleteTarget)?.managed) { await mcpManagementApi.remove(deleteTarget); refetch(); }
+      else await deleteMutation.mutateAsync(deleteTarget);
+      setDeleteTarget(null);
+    } catch (e) { setActionError(e instanceof Error ? e.message : '删除失败。'); setDeleteTarget(null); }
+  }, [deleteTarget, deleteMutation, servers, refetch]);
 
   const handleTest = useCallback(async (server: McpServerConfig) => {
     setTestingServer(server.name);
     try {
       const { agentteamsApi } = await import('@/lib/agentteams-api');
-      const result = await agentteamsApi.testMcpServer({
+      const result = server.managed ? await mcpManagementApi.verify(server.name) : await agentteamsApi.testMcpServer({
         url: server.url,
         transport: server.transport,
         headers: server.headers,
         timeout: server.timeout,
       });
+      if (server.managed) refetch();
       setTestResults((prev) => ({
         ...prev,
         [server.name]: { success: result.success, message: result.message },
@@ -82,14 +95,15 @@ export function McpServersSection() {
     } finally {
       setTestingServer(null);
     }
-  }, []);
+  }, [refetch]);
 
   return (
     <div className="space-y-4">
       <SectionHeader title={`MCP 工具 · ${servers.length}`} onRefresh={handleRefresh} isRefreshing={isRefetching}
         meta={<Input aria-label="搜索 MCP" placeholder="搜索 MCP 服务器..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-72" />}
-        actions={<Button size="sm" onClick={() => { setEditingServer(undefined); setDialogOpen(true); }}>登记 MCP 地址</Button>} />
+        actions={<><Button size="sm" onClick={() => { setManagedEdit(undefined); setSetupOpen(true); }}>接入 MCP</Button><ResourceListMenu label="MCP 更多操作" items={[{ label: '登记已有网关地址', onSelect: () => { setEditingServer(undefined); setDialogOpen(true); } }]} /></>} />
       <McpOnboardingPanel />
+      {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
 
       {filteredServers.length === 0 ? (
         <Card>
@@ -98,15 +112,15 @@ export function McpServersSection() {
               icon={Wifi}
               title={servers.length === 0 ? '暂无 MCP 服务器配置' : '没有匹配的 MCP 服务器'}
               description={
-                servers.length === 0 ? '登记一条网关上的 MCP 地址，Worker 才能引用它' : undefined
+                servers.length === 0 ? '接入已有 MCP、HTTP API 或数据库，再分配给需要使用的 Agent。' : undefined
               }
               action={
                 servers.length === 0
                   ? {
-                      label: '登记 MCP 地址',
+                      label: '接入 MCP',
                       onClick: () => {
-                        setEditingServer(undefined);
-                        setDialogOpen(true);
+                        setManagedEdit(undefined);
+                        setSetupOpen(true);
                       },
                     }
                   : undefined
@@ -117,18 +131,18 @@ export function McpServersSection() {
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
-            <thead><tr className="border-b bg-muted/40 text-left"><th className="px-4 py-3 font-medium">名称 / 用途</th><th className="px-4 py-3 font-medium">服务地址</th><th className="px-4 py-3 font-medium">传输方式</th>{!catalog.off && <th className="px-4 py-3 font-medium">已配置 Worker</th>}<th className="px-4 py-3 text-right font-medium">操作</th></tr></thead>
+            <thead><tr className="border-b bg-muted/40 text-left"><th className="px-4 py-3 font-medium">名称 / 用途</th><th className="px-4 py-3 font-medium">接入方式</th><th className="px-4 py-3 font-medium">网关状态</th><th className="px-4 py-3 font-medium">Agent</th><th className="px-4 py-3 text-right font-medium">操作</th></tr></thead>
             <tbody>{filteredServers.map((server) => <tr key={server.name} className="border-b last:border-0 hover:bg-muted/20">
-              <td className="px-4 py-4"><p className="font-medium">{server.name}</p><p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{server.description}</p>
+              <td className="px-4 py-4"><button type="button" className={`font-medium ${server.managed ? 'hover:underline underline-offset-4' : ''}`} onClick={() => { if (server.managed) setDetail(server); }}>{server.name}</button><p className="mt-1 line-clamp-1 max-w-sm text-xs leading-5 text-muted-foreground" title={server.description}>{server.description}</p>
                 {testResults[server.name] && <p className={`mt-2 text-xs ${testResults[server.name].success ? 'text-emerald-600' : 'text-destructive'}`}>{testResults[server.name].success ? '连接成功' : '连接失败'}：{testResults[server.name].message}</p>}
               </td>
-              <td className="px-4 py-4"><p className="max-w-sm truncate text-xs text-muted-foreground" title={server.url}>{server.url}</p></td>
-              <td className="px-4 py-4"><Badge variant="outline">{server.transport}</Badge></td>
-              {!catalog.off && <td className="px-4 py-4 text-xs text-muted-foreground">{(catalog.workersByServer.get(server.name) ?? []).map((worker) => worker.name).join('、') || '尚未分配'}<span className="block pt-1">配置关系，未验证调用</span></td>}
+              <td className="px-4 py-4"><Badge variant="outline">{server.connection ? MCP_KIND_LABELS[server.connection.kind] : '地址登记'}</Badge><p className="mt-1.5 text-xs text-muted-foreground">{server.transport === 'sse' ? 'SSE' : 'Streamable HTTP'}</p></td>
+              <td className="px-4 py-4"><span className={`text-xs ${server.verification?.success ? 'text-emerald-600' : server.gatewayState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{server.gatewayState === 'error' ? '接入失败' : server.verification?.success ? `已验证 · ${server.verification.tools?.length ?? 0} 个工具` : server.managed ? '已启用 · 待验证' : '未验证网关'}</span><p className="mt-1.5 max-w-xs truncate text-xs text-muted-foreground" title={server.url}>{server.url}</p></td>
+              <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">{server.managed ? `${server.authorizedWorkers?.length ?? 0} 个已授权` : catalog.off ? '待分配' : `${(catalog.workersByServer.get(server.name) ?? []).length} 个已配置`}</td>
               <td className="px-4 py-4"><div className="flex items-center justify-end gap-1 whitespace-nowrap">
                 <Button variant="ghost" size="sm" disabled={testingServer === server.name} onClick={() => handleTest(server)}>{testingServer === server.name ? '测试中…' : '测试'}</Button>
-                <Button variant="ghost" size="sm" onClick={() => { setEditingServer(server); setDialogOpen(true); }}>编辑</Button>
-                <ResourceListMenu label={`更多操作 ${server.name}`} items={[{ label: '删除登记', onSelect: () => setDeleteTarget(server.name) }]} />
+                <Button variant="ghost" size="sm" onClick={() => { if (server.managed) setDetail(server); else { setEditingServer(server); setDialogOpen(true); } }}>{server.managed ? '详情' : '编辑'}</Button>
+                <ResourceListMenu label={`更多操作 ${server.name}`} items={[{ label: server.managed ? '删除服务' : '删除登记', onSelect: () => setDeleteTarget(server.name) }]} />
               </div></td>
             </tr>)}</tbody>
           </table>
@@ -160,12 +174,15 @@ export function McpServersSection() {
         }}
       />
 
+      <McpSetupDialog key={setupOpen ? managedEdit?.name ?? 'new-managed' : 'closed-managed'} open={setupOpen} onOpenChange={setSetupOpen} server={managedEdit} onSaved={(saved) => { refetch(); setDetail(saved); }} />
+      {detail && <McpDetailDialog server={servers.find((s) => s.name === detail.name) ?? detail} onClose={() => setDetail(undefined)} onChanged={() => { refetch(); }} onEdit={() => { setManagedEdit(servers.find((s) => s.name === detail.name) ?? detail); setDetail(undefined); setSetupOpen(true); }} />}
+
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>仅删除目录登记，不撤销网关授权，也不修改 Worker 配置。受影响 Worker：{deleteTarget ? (catalog.workersByServer.get(deleteTarget) ?? []).map((worker) => worker.name).join("、") || "未查询到，请核对 Worker 配置" : ""}。
-              确定要删除 MCP 服务器"{deleteTarget}"吗？此操作不可撤销。
+            <AlertDialogDescription>{servers.find((s) => s.name === deleteTarget)?.managed ? '将删除网关服务和目录记录。请先移除已授权 Agent，服务仍有 Agent 使用时无法删除。' : '仅删除目录登记，不撤销网关授权，也不修改 Worker 配置。'}
+              确定要删除 MCP 服务器“{deleteTarget}”吗？
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
