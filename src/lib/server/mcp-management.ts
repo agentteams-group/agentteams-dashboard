@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { parse, stringify } from 'yaml';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { pickBackendUrl } from '@/lib/backend-config';
-import { callHigressConsole, collectSetCookieHeader } from '@/app/api/higress/proxy-helper';
+import { callHigressConsole, collectSetCookieHeader, getHigressConsoleURL } from '@/app/api/higress/proxy-helper';
 import { getSessionCookie, isRecord, unwrapData } from '@/app/api/higress/helpers';
 import { getControllerUrl, proxyToAgentTeams } from '@/app/api/agentteams/proxy-helper';
 import { mergeMcpSecrets, publicMcpConnection, validateMcpInput, type McpConnection, type McpManagedInput, type McpVerification } from '@/lib/mcp-management';
@@ -17,6 +17,8 @@ export interface ManagedMcpRecord extends McpManagedInput {
   updatedAt: string;
   gatewayState: 'ready' | 'error';
   authorizedWorkers: string[];
+  pendingRemovalWorkers?: string[];
+  workerConsumers?: Record<string, string>;
   verification?: McpVerification;
   probe: { name: string; key: string };
 }
@@ -27,11 +29,27 @@ export class McpManagementError extends Error {
 }
 
 const PARAMETER_PLUGIN = 'agentteams-mcp-headers';
-let adminCookie: string | undefined;
+let adminSession: { url: string; cookie: string } | undefined;
+// Next bundles legacy and managed routes separately; share the same lock map
+// across their module instances, just like the Dashboard session store.
+const processState = globalThis as typeof globalThis & { __agentteamsMcpWrites?: Map<string, Promise<void>> };
+const writes = processState.__agentteamsMcpWrites ??= new Map<string, Promise<void>>();
+
+/** Serialize this Dashboard process's writes, including legacy registration. */
+export async function withMcpRecordLock<T>(name: string, action: () => Promise<T>): Promise<T> {
+  const previous = writes.get(name);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  writes.set(name, current);
+  await previous;
+  try { return await action(); }
+  finally { release(); if (writes.get(name) === current) writes.delete(name); }
+}
 
 async function consoleApi(request: NextRequest, path: string, method = 'GET', body?: Record<string, unknown>): Promise<unknown> {
   let cookie = getSessionCookie(request);
-  let result = await callHigressConsole(path, { method, body, cookie: adminCookie || cookie });
+  const url = getHigressConsoleURL();
+  let result = await callHigressConsole(path, { method, body, cookie: adminSession?.url === url ? adminSession.cookie : cookie });
   if (result.response.status === 401 || result.response.status === 403) {
     // Only called behind the level-3 gate. These are operator-configured,
     // server-only credentials; a Controller token is never sent to Console.
@@ -41,10 +59,10 @@ async function consoleApi(request: NextRequest, path: string, method = 'GET', bo
     const login = await callHigressConsole('/session/login', { method: 'POST', body: { username, password } });
     cookie = login.response.ok ? collectSetCookieHeader(login.response.headers) ?? null : null;
     if (!cookie) throw new McpManagementError('无法连接网关管理会话，请检查部署中的管理员凭证。', 503);
-    adminCookie = cookie;
+    adminSession = { url, cookie };
     result = await callHigressConsole(path, { method, body, cookie });
   }
-  if (method === 'GET' && result.response.status === 404 && /^\/v1\/(consumers|wasm-plugins|service-sources)\/[^/]+$/.test(path)) return null;
+  if (method === 'GET' && result.response.status === 404 && /^\/v1\/(consumers|mcpServer|wasm-plugins|service-sources)\/[^/]+$/.test(path)) return null;
   if (method === 'DELETE' && result.response.status === 404 && /^\/v1\/(consumers|mcpServer)\/[^/]+$/.test(path)) return null;
   if (!result.response.ok || (isRecord(result.body) && result.body.success === false)) {
     throw new McpManagementError(`网关操作失败（HTTP ${result.response.status}）。请检查服务来源、插件与网关配置后重试。`, result.response.status === 409 ? 409 : 502);
@@ -76,9 +94,12 @@ async function writeRecord(record: ManagedMcpRecord) {
   await createMinioClient().putObject(bucket(), `mcp-servers/${record.name}.json`, data, data.length, { 'Content-Type': 'application/json' });
 }
 
-export function publicMcpRecord(record: ManagedMcpRecord) {
-  const { probe: _, ...rest } = record;
-  return { ...rest, connection: publicMcpConnection(record.connection) };
+export function publicMcpRecord(record: ManagedMcpRecord, includeConnection = true) {
+  const { probe: _, connection, verification, authorizedWorkers, pendingRemovalWorkers, workerConsumers: __, ...rest } = record;
+  const active = authorizedWorkers.filter((name) => !pendingRemovalWorkers?.includes(name));
+  const summary = { ...rest, kind: connection.kind, toolCount: verification?.tools?.length ?? 0, authorizedWorkerCount: active.length,
+    verification: verification ? { success: verification.success, message: verification.message, checkedAt: verification.checkedAt } : undefined };
+  return includeConnection ? { ...summary, connection: publicMcpConnection(connection), authorizedWorkers: active, pendingRemovalWorkers, verification } : summary;
 }
 
 function gatewayBase(): URL {
@@ -166,7 +187,7 @@ async function applyGateway(request: NextRequest, record: ManagedMcpRecord) {
       await consoleApi(request, `/v1/service-sources/${service.name}`, 'PUT', { ...source, ...service });
     }
   }
-  const consumers = [record.probe.name, ...record.authorizedWorkers.map((name) => `worker-${name}`)];
+  const consumers = [record.probe.name, ...record.authorizedWorkers.filter((name) => !record.pendingRemovalWorkers?.includes(name)).map((name) => record.workerConsumers?.[name] ?? `worker-${name}`)];
   const consumer = await consoleApi(request, `/v1/consumers/${record.probe.name}`);
   if (!consumer) await consoleApi(request, '/v1/consumers', 'POST', { name: record.probe.name, credentials: [{ type: 'key-auth', source: 'BEARER', values: [record.probe.key] }] });
   const payload: Record<string, unknown> = { name: record.name, description: record.description || '', domains: [gateway.hostname],
@@ -198,12 +219,17 @@ async function applyGateway(request: NextRequest, record: ManagedMcpRecord) {
 }
 
 export async function saveManagedMcp(request: NextRequest, input: McpManagedInput) {
+  return withMcpRecordLock(input?.name ?? '', () => saveManagedMcpLocked(request, input));
+}
+
+async function saveManagedMcpLocked(request: NextRequest, input: McpManagedInput) {
   if (!isRecord(input) || typeof input.name !== 'string' || !isRecord(input.connection)) throw new McpManagementError('服务配置格式不正确。');
   const validation = validateMcpInput(input);
   if (validation) throw new McpManagementError(validation);
   const existing = await readMcpRecord(input.name);
   if (existing && !existing.managed) throw new McpManagementError('名称已被地址登记占用，请使用其他名称。', 409);
   if (existing && existing.connection.kind !== input.connection.kind) throw new McpManagementError('已启用服务不能切换接入方式，请创建新服务。', 409);
+  if (existing?.authorizedWorkers.length && input.connection.kind === 'proxy' && existing.connection.transport !== input.connection.transport) throw new McpManagementError('请先移除 Agent 授权，再修改后端传输协议。', 409);
   const now = new Date().toISOString();
   const connection = mergeMcpSecrets(input.connection, existing?.connection);
   const mergedValidation = validateMcpInput({ ...input, connection });
@@ -213,9 +239,15 @@ export async function saveManagedMcp(request: NextRequest, input: McpManagedInpu
   const record: ManagedMcpRecord = { ...input, connection, managed: true, url,
     transport: connection.kind === 'proxy' ? connection.transport : 'streaminghttp',
     authorizedWorkers: existing?.authorizedWorkers ?? [], gatewayState: 'error', createdAt: existing?.createdAt ?? now, updatedAt: now,
+    pendingRemovalWorkers: existing?.pendingRemovalWorkers, workerConsumers: existing?.workerConsumers,
     probe: existing?.probe ?? { name: `at-mcp-check-${randomBytes(6).toString('hex')}`, key: randomBytes(32).toString('hex') },
   };
   if (connection.kind === 'rest') compileRestConfig(record); // preflight before any gateway mutation
+  if (!existing) {
+    const gatewayRecord = await consoleApi(request, `/v1/mcpServer/${input.name}`);
+    const source = await consoleApi(request, `/v1/service-sources/at-mcp-${input.name}`);
+    if (gatewayRecord || source) throw new McpManagementError('网关已有同名服务或服务来源，请选择其他名称，原配置不会被覆盖。', 409);
+  }
   // Persist retry data before touching remote resources; failures remain
   // editable and are never displayed as ready.
   await writeRecord(record);
@@ -256,44 +288,73 @@ export async function verifyManagedMcp(name: string, tool?: string, args?: Recor
     });
     const toolFailed = 'result' in result && isRecord(result.result) && result.result.isError === true;
     const verification = redact(record, { success: !toolFailed, message: `${tool ? toolFailed ? '工具返回业务错误' : '工具调用完成' : `网关验证通过，发现 ${result.tools.length} 个工具`} · ${Date.now() - started} ms`, ...result, checkedAt: new Date().toISOString() }) as McpVerification;
-    if (!tool) { record.verification = verification; await writeRecord(record); }
-    return verification;
+    return tool ? verification : persistVerification(record, verification);
   } catch (error) {
     if (tool) throw error;
     const message = record.connection.kind === 'database'
       ? '数据库 MCP 验证未通过，请检查网关是否已开启数据库 MCP 能力，以及数据库连接、TLS 和账号权限。'
       : error instanceof Error ? error.message : 'MCP 验证失败。';
     const verification: McpVerification = { success: false, message, checkedAt: new Date().toISOString() };
-    record.verification = verification; await writeRecord(record);
-    return verification;
+    return persistVerification(record, verification);
   }
+}
+
+async function persistVerification(record: ManagedMcpRecord, verification: McpVerification): Promise<McpVerification> {
+  return withMcpRecordLock(record.name, async () => {
+    const latest = await readMcpRecord(record.name);
+    if (!latest?.managed || latest.updatedAt !== record.updatedAt) return { success: false, message: '验证期间服务配置已更新，请使用最新配置重新验证。' };
+    await writeRecord({ ...latest, verification });
+    return verification;
+  });
 }
 
 async function controllerApi(request: NextRequest, path: string, method = 'GET', body?: Record<string, unknown>) {
   const headers = new Headers(request.headers); headers.set('content-type', 'application/json');
   const forwarded = new NextRequest(request.url, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
   const res = await proxyToAgentTeams(forwarded, getControllerUrl(request), `/api/v1${path}`, { method, forwardBody: Boolean(body) });
-  if (!res.ok) throw new McpManagementError(`Agent 配置更新失败（HTTP ${res.status}），请重试。`, 502);
+  if (!res.ok) throw new McpManagementError(`Agent 配置更新失败（HTTP ${res.status}），请重试。`, res.status === 404 ? 404 : 502);
   return res.json();
 }
 
 export async function authorizeManagedMcp(request: NextRequest, name: string, workers: string[]) {
+  return withMcpRecordLock(name, () => authorizeManagedMcpLocked(request, name, workers));
+}
+
+async function authorizeManagedMcpLocked(request: NextRequest, name: string, workers: string[]) {
   if (!Array.isArray(workers) || workers.length > 100 || workers.some((w) => typeof w !== 'string' || !/^[a-zA-Z0-9][\w.-]*$/.test(w))) throw new McpManagementError('Agent 选择不合法。');
   const record = await requireManagedMcp(name);
   if (record.gatewayState !== 'ready') throw new McpManagementError('请先启用网关配置。', 409);
   const desired = [...new Set(workers)];
   const previous = record.authorizedWorkers;
   const results: { name: string; success: boolean; message: string }[] = [];
-  for (const workerName of new Set([...previous, ...desired])) {
+  for (const workerName of new Set([...previous, ...desired, ...(record.pendingRemovalWorkers ?? [])])) {
+    const enable = desired.includes(workerName);
+    let revoked = false;
     try {
-      const worker = await controllerApi(request, `/workers/${encodeURIComponent(workerName)}`);
+      const knownConsumer = record.workerConsumers?.[workerName] ?? `worker-${workerName}`;
+      // Persist revocation before touching Controller: a failed spec update
+      // must never cause a later connection edit to restore gateway access.
+      if (!enable) {
+        record.pendingRemovalWorkers = [...new Set([...(record.pendingRemovalWorkers ?? []), workerName])];
+        await writeRecord(record); // durable intent before the remote permission change
+        await consoleApi(request, '/v1/mcpServer/consumers', 'DELETE', { mcpServerName: name, consumers: [knownConsumer] });
+        revoked = true;
+        record.authorizedWorkers = record.authorizedWorkers.filter((n) => n !== workerName);
+        await writeRecord(record);
+      }
+      let worker;
+      try { worker = await controllerApi(request, `/workers/${encodeURIComponent(workerName)}`); }
+      catch (error) {
+        if (enable || !(error instanceof McpManagementError) || error.status !== 404) throw error;
+        // The Worker no longer exists; gateway revocation is still required.
+        worker = { name: workerName, mcpServers: [] };
+      }
       const consumerName = `worker-${worker.workerName || worker.name || workerName}`;
-      const enable = desired.includes(workerName);
       const servers = Array.isArray(worker.mcpServers) ? worker.mcpServers.filter((s: { name: string }) => s.name !== name) : [];
       if (enable) servers.push({ name, url: record.url, transport: record.transport === 'streaminghttp' ? 'http' : 'sse' });
-      // Revoke gateway access first; grant only after the Worker spec is saved.
-      if (!enable) await consoleApi(request, '/v1/mcpServer/consumers', 'DELETE', { mcpServerName: name, consumers: [consumerName] });
-      await controllerApi(request, `/workers/${encodeURIComponent(workerName)}`, 'PUT', { mcpServers: servers });
+      if (!enable && knownConsumer !== consumerName) await consoleApi(request, '/v1/mcpServer/consumers', 'DELETE', { mcpServerName: name, consumers: [consumerName] });
+      // A missing Worker needs no spec cleanup.
+      if (enable || (Array.isArray(worker.mcpServers) && worker.mcpServers.length)) await controllerApi(request, `/workers/${encodeURIComponent(workerName)}`, 'PUT', { mcpServers: servers });
       if (enable) {
         try { await consoleApi(request, '/v1/mcpServer/consumers', 'PUT', { mcpServerName: name, consumers: [consumerName] }); }
         catch {
@@ -302,16 +363,31 @@ export async function authorizeManagedMcp(request: NextRequest, name: string, wo
         }
       }
       record.authorizedWorkers = enable ? [...new Set([...record.authorizedWorkers, workerName])] : record.authorizedWorkers.filter((n) => n !== workerName);
+      record.pendingRemovalWorkers = (record.pendingRemovalWorkers ?? []).filter((n) => n !== workerName);
+      record.workerConsumers = { ...record.workerConsumers, [workerName]: consumerName };
       await writeRecord(record);
       results.push({ name: workerName, success: true, message: enable ? '已保存配置并提交授权；网关生效后可验证实际调用权限。' : '已移除配置并提交撤销授权。' });
-    } catch (error) { results.push({ name: workerName, success: false, message: error instanceof Error ? error.message : '更新失败。' }); }
+    } catch (error) { results.push({ name: workerName, success: false, message: revoked ? '网关权限已撤销，Agent 配置尚未移除，请重试同步。' : error instanceof Error ? error.message : '更新失败。' }); }
   }
-  return { success: results.every((r) => r.success), results, authorizedWorkers: record.authorizedWorkers };
+  return { success: results.every((r) => r.success), results, authorizedWorkers: record.authorizedWorkers.filter((name) => !record.pendingRemovalWorkers?.includes(name)), pendingRemovalWorkers: record.pendingRemovalWorkers ?? [] };
 }
 
 export async function deleteManagedMcp(request: NextRequest, name: string) {
+  return withMcpRecordLock(name, () => deleteManagedMcpLocked(request, name));
+}
+
+async function deleteManagedMcpLocked(request: NextRequest, name: string) {
   const record = await requireManagedMcp(name);
-  if (record.authorizedWorkers.length) throw new McpManagementError('请先在 Agent 授权中移除所有 Agent，再删除服务。', 409);
+  if (record.authorizedWorkers.length || record.pendingRemovalWorkers?.length) throw new McpManagementError('请先在 Agent 授权中移除所有 Agent 并完成配置同步，再删除服务。', 409);
+  const workers = await controllerApi(request, '/workers');
+  const workerList = Array.isArray(workers) ? workers : workers.workers;
+  if (!Array.isArray(workerList)) throw new McpManagementError('无法确认 Agent 的 MCP 使用情况，请稍后重试。', 502);
+  let managers;
+  try { managers = await controllerApi(request, '/managers'); }
+  catch (error) { if (error instanceof McpManagementError && error.status === 404) managers = []; else throw error; }
+  const managerList = Array.isArray(managers) ? managers : managers.managers;
+  if (!Array.isArray(managerList)) throw new McpManagementError('无法确认 Manager 的 MCP 使用情况，请稍后重试。', 502);
+  if ([...workerList, ...managerList].some((agent) => Array.isArray(agent.mcpServers) && agent.mcpServers.some((server: { name: string }) => server.name === name))) throw new McpManagementError('仍有 Agent 配置引用此服务，请先移除对应 MCP 配置。', 409);
   await consoleApi(request, `/v1/mcpServer/${name}`, 'DELETE');
   await consoleApi(request, `/v1/consumers/${record.probe.name}`, 'DELETE');
   // DNS sources are left in place: other gateway routes may reference them.

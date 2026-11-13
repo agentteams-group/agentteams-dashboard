@@ -14,7 +14,7 @@ export const mcpManagementApi = {
   save: (input: McpManagedInput) => request<McpServerConfig>({ action: 'save', input }),
   verify: (name: string) => request<McpVerification>({ action: 'verify', name }),
   call: (name: string, tool: string, args: Record<string, unknown>) => request<McpVerification>({ action: 'call', name, tool, arguments: args }),
-  authorize: (name: string, workers: string[]) => request<{ success: boolean; authorizedWorkers: string[]; results: { name: string; success: boolean; message: string }[] }>({ action: 'authorize', name, workers }),
+  authorize: (name: string, workers: string[]) => request<{ success: boolean; authorizedWorkers: string[]; pendingRemovalWorkers?: string[]; results: { name: string; success: boolean; message: string }[] }>({ action: 'authorize', name, workers }),
   remove: (name: string) => request<{ success: boolean }>({ action: 'delete', name }),
   importOpenApi: (content: string) => request<{ rawConfig: string; toolCount: number }>({ action: 'import', content }),
 };

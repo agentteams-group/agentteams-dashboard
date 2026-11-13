@@ -68,6 +68,7 @@ function AgentAccess({ server, onChanged }: { server: McpServerConfig; onChanged
   const { data: workers = [], isLoading, error: loadError } = useWorkers();
   const [selected, setSelected] = useState(server.authorizedWorkers ?? []);
   const [saved, setSaved] = useState(server.authorizedWorkers ?? []);
+  const [pendingRemovalWorkers, setPendingRemovalWorkers] = useState(server.pendingRemovalWorkers ?? []);
   const [search, setSearch] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -76,7 +77,7 @@ function AgentAccess({ server, onChanged }: { server: McpServerConfig; onChanged
   const dirty = [...selected].sort().join() !== [...saved].sort().join();
   async function save() {
     setPending(true); setError('');
-    try { const result = await mcpManagementApi.authorize(server.name, selected); setSaved(result.authorizedWorkers); setSelected(result.authorizedWorkers); setResults(Object.fromEntries(result.results.map((r) => [r.name, r]))); onChanged(); }
+    try { const result = await mcpManagementApi.authorize(server.name, selected); setSaved(result.authorizedWorkers); setSelected(result.authorizedWorkers); setPendingRemovalWorkers(result.pendingRemovalWorkers ?? []); setResults(Object.fromEntries(result.results.map((r) => [r.name, r]))); onChanged(); }
     catch (e) { setError(e instanceof Error ? e.message : '保存授权失败。'); }
     finally { setPending(false); }
   }
@@ -99,7 +100,8 @@ function AgentAccess({ server, onChanged }: { server: McpServerConfig; onChanged
     finally { setProbing(undefined); }
   }
   const filtered = workers.filter((w) => `${w.name} ${w.team ?? ''}`.toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium">选择可使用此服务的 Agent</p><p className="mt-1 text-xs text-muted-foreground">保存时同步 Agent 配置与网关授权；取消勾选会撤销权限。</p></div><Button size="sm" disabled={pending || !dirty || server.gatewayState !== 'ready'} onClick={() => void save()}>{pending ? '正在保存…' : `保存授权${dirty ? ` · ${selected.length} 个` : ''}`}</Button></div>
+  return <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium">选择可使用此服务的 Agent</p><p className="mt-1 text-xs text-muted-foreground">保存时同步 Agent 配置与网关授权；取消勾选会撤销权限。</p></div><Button size="sm" disabled={pending || (!dirty && !pendingRemovalWorkers.length) || server.gatewayState !== 'ready'} onClick={() => void save()}>{pending ? '正在保存…' : !dirty && pendingRemovalWorkers.length ? '重试同步' : `保存授权${dirty ? ` · ${selected.length} 个` : ''}`}</Button></div>
+    {pendingRemovalWorkers.length > 0 && <p role="status" className="text-xs leading-5 text-amber-700">仍有 {pendingRemovalWorkers.length} 个 Agent 的撤权或配置清理待完成。点击「重试同步」继续处理。</p>}
     <Input aria-label="搜索授权 Agent" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索 Agent 名称" />
     <div className="divide-y rounded-lg border">{isLoading ? <p className="p-4 text-sm text-muted-foreground">正在加载 Agent…</p> : loadError ? <p role="alert" className="p-4 text-sm text-destructive">Agent 列表加载失败，请刷新后重试。</p> : !filtered.length ? <p className="p-4 text-sm text-muted-foreground">{workers.length ? '没有匹配的 Agent' : '还没有可授权的 Agent，请先创建 Agent。'}</p> : filtered.map((w) => <div key={w.name} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><label className="flex min-w-0 cursor-pointer items-center gap-3"><input type="checkbox" disabled={pending} checked={selected.includes(w.name)} onChange={(e) => setSelected(e.target.checked ? [...selected, w.name] : selected.filter((n) => n !== w.name))} /><span className="min-w-0"><span className="block truncate text-sm font-medium">{w.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{w.role === 'leader' ? 'Leader' : 'Worker'}{w.team ? ` · ${w.team}` : ''}</span></span></label><div className="flex shrink-0 items-center gap-2"><span className="text-xs text-muted-foreground">{saved.includes(w.name) ? '已授权' : '未授权'}</span>{saved.includes(w.name) && <Button variant="outline" size="sm" disabled={Boolean(probing) || dirty || server.transport === 'sse'} onClick={() => void probe(w.name)}>{probing === w.name ? '验证中…' : '验证权限'}</Button>}</div></div>{results[w.name] && <p className={`ml-7 mt-2 text-xs leading-5 ${results[w.name].success ? 'text-emerald-600' : 'text-destructive'}`}>{results[w.name].message}</p>}</div>)}</div>
     {server.transport === 'sse' && <p className="text-xs text-muted-foreground">当前 Controller 的 Agent 身份探测使用 Streamable HTTP；SSE 服务可在工具页验证连接并调试。</p>}

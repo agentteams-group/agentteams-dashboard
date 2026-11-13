@@ -36,3 +36,13 @@ it('does not show a failed Agent authorization as granted', async () => {
   expect(screen.getByText('未授权')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '验证权限' })).not.toBeInTheDocument();
 });
+
+it('allows retrying revoked access cleanup even when no Agent remains selected', async () => {
+  vi.mocked(mcpManagementApi.authorize).mockResolvedValue({ success: true, authorizedWorkers: [], pendingRemovalWorkers: [], results: [] });
+  render(<McpDetailDialog server={{ ...server, pendingRemovalWorkers: ['docs-worker'] }} onClose={() => {}} onEdit={() => {}} onChanged={() => {}} />);
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agent 授权' }), { button: 0, ctrlKey: false });
+  expect(await screen.findByRole('button', { name: '重试同步' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: '重试同步' }));
+  await waitFor(() => expect(mcpManagementApi.authorize).toHaveBeenCalledWith('docs', []));
+  expect(screen.getByRole('button', { name: '保存授权' })).toBeDisabled();
+});

@@ -29,4 +29,10 @@ describe('MCP connection validation and credential updates', () => {
     expect(mergeMcpSecrets({ ...visible, auth: { type: 'none' }, headers: [] }, previous).headers).toEqual([]);
     expect(mergeMcpSecrets({ ...visible, auth: { type: 'none' } }, previous).auth.secret).toBe('');
   });
+
+  it('keeps Query names case-sensitive when retaining private values', () => {
+    const previous = { ...input().connection, query: [{ name: 'Token', value: 'upper-secret', secret: true }, { name: 'token', value: 'lower-secret', secret: true }] };
+    const merged = mergeMcpSecrets(publicMcpConnection(previous), previous);
+    expect(merged.query.map((row) => row.value)).toEqual(['upper-secret', 'lower-secret']);
+  });
 });

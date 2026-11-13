@@ -66,13 +66,13 @@ export function emptyMcpConnection(): McpConnection {
 
 /** Empty secret inputs mean keep the stored value; deleting the row removes it. */
 export function mergeMcpSecrets(next: McpConnection, previous?: McpConnection): McpConnection {
-  const mergeRows = (rows: McpFixedParameter[], old: McpFixedParameter[] = []) => rows.map((row) => ({ ...row,
-    value: row.secret && !row.value ? old.find((item) => item.name.toLowerCase() === row.name.toLowerCase() && item.secret)?.value ?? '' : row.value,
+  const mergeRows = (rows: McpFixedParameter[], old: McpFixedParameter[] = [], caseInsensitive = false) => rows.map((row) => ({ ...row,
+    value: row.secret && !row.value ? old.find((item) => (caseInsensitive ? item.name.toLowerCase() === row.name.toLowerCase() : item.name === row.name) && item.secret)?.value ?? '' : row.value,
     configured: undefined,
   }));
   return { ...next,
     auth: { ...next.auth, secret: next.auth.secret || (next.auth.type === previous?.auth.type ? previous.auth.secret : ''), configured: undefined },
-    headers: mergeRows(next.headers, previous?.headers), query: mergeRows(next.query, previous?.query),
+    headers: mergeRows(next.headers, previous?.headers, true), query: mergeRows(next.query, previous?.query),
     database: next.database ? { ...next.database, password: next.database.password || previous?.database?.password || '', configured: undefined } : undefined,
   };
 }
