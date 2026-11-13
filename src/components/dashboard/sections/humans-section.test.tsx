@@ -77,6 +77,7 @@ it('hides the built-in admin from the managed user list', () => {
 });
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '#console/resources/humans');
   useAgentTeamsStore.setState({ userLevel: 3, isConnected: true });
   vi.spyOn(agentteamsApi, 'getHuman').mockResolvedValue(human);
   vi.spyOn(agentteamsApi, 'getHumanConfig').mockResolvedValue(config);
@@ -92,6 +93,15 @@ afterEach(() => {
 });
 
 describe('HumansSection 详情 / 编辑入口', () => {
+  it('opens a linked human homepage with a separate edit action', async () => {
+    window.history.replaceState({}, '', '#console/resources/humans?human=alice');
+    renderSection();
+    expect(await screen.findByRole('heading', { name: '用户主页' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Alice' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '返回用户列表' })).toHaveAttribute('href', '#console/resources/humans');
+    fireEvent.click(screen.getByRole('button', { name: '编辑用户' }));
+    expect(await screen.findByText('编辑人员')).toBeInTheDocument();
+  });
   it('列表点行 → 只读详情弹窗，且弹窗内没有编辑按钮', async () => {
     renderSection();
     expect(await screen.findByRole('table')).toBeInTheDocument();

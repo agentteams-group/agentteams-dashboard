@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Edit, Trash2, RefreshCw, TestTube, Wifi, AlertCircle } from 'lucide-react';
+import { Wifi } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,8 @@ import { McpOnboardingPanel } from './mcp-onboarding-panel';
 import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useMcpCatalog } from '@/hooks/use-mcp-catalog';
 import type { McpServerConfig } from '@/lib/agentteams-api';
-import { InfoTip } from '@/components/dashboard/info-tip';
+import { SectionHeader } from '@/components/dashboard/section-header';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 
 export function McpServersSection() {
   const [search, setSearch] = useState('');
@@ -85,36 +86,10 @@ export function McpServersSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <span>登记已接入的 MCP 地址</span>
-        <InfoTip label="MCP 登记说明">
-          <span className="block">这里只登记已有地址，不会在网关创建服务。请先通过 Manager 或 Higress 接入并授权 Worker，再登记网关地址。</span>
-          <span className="mt-1 block">「已配置 Worker」只表示配置关系；实际可用性请在 Worker 编辑页验证。修改或删除登记不会同步修改已有 Worker 或撤销网关授权。</span>
-        </InfoTip>
-      </div>
+      <SectionHeader title={`MCP 工具 · ${servers.length}`} onRefresh={handleRefresh} isRefreshing={isRefetching}
+        meta={<Input aria-label="搜索 MCP" placeholder="搜索 MCP 服务器..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-72" />}
+        actions={<Button size="sm" onClick={() => { setEditingServer(undefined); setDialogOpen(true); }}>登记 MCP 地址</Button>} />
       <McpOnboardingPanel />
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefetching}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
-            刷新
-          </Button>
-        </div>
-        <Button onClick={() => { setEditingServer(undefined); setDialogOpen(true); }}>
-          <Plus className="h-4 w-4 mr-1" />
-          登记 MCP 地址
-        </Button>
-      </div>
-
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="搜索 MCP 服务器..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
 
       {filteredServers.length === 0 ? (
         <Card>
@@ -140,95 +115,23 @@ export function McpServersSection() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filteredServers.map((server) => (
-            <Card key={server.name} className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0" title="已在目录登记；网关接入、授权与可用性需在 Worker 编辑页验证">
-                      <Wifi className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{server.name}</span>
-                        <Badge variant="outline" className="text-xs">{server.transport}</Badge>
-                        {server.type && (
-                          <Badge variant="secondary" className="text-xs">{server.type}</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground font-mono truncate max-w-[400px]" title={server.url}>
-                        {server.url}
-                      </p>
-                      {server.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[400px]">
-                          {server.description}
-                        </p>
-                      )}
-                      {!catalog.off && (catalog.workersByServer.get(server.name) ?? []).length > 0 && (
-                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs text-muted-foreground shrink-0">已配置 Worker（未验证）：</span>
-                          {(catalog.workersByServer.get(server.name) ?? []).map((w, wi) => (
-                            <Badge key={`${server.name}-w-${w.name}-${w.team ?? ''}-${wi}`} variant="secondary" className="text-xs">
-                              {w.name}{w.team ? ` · ${w.team}` : ''}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleTest(server)}
-                      disabled={testingServer === server.name}
-                      title="测试连接"
-                    >
-                      {testingServer === server.name ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <TestTube className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => { setEditingServer(server); setDialogOpen(true); }}
-                      title="编辑"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(server.name)}
-                      title="删除"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                {testResults[server.name] && (
-                  <div className={`mt-3 text-xs flex items-center gap-1 ${
-                    testResults[server.name].success ? 'text-emerald-600' : 'text-red-600'
-                  }`}>
-                    {testResults[server.name].success ? (
-                      <span>连接成功: {testResults[server.name].message}</span>
-                    ) : (
-                      <>
-                        <AlertCircle className="h-3 w-3" />
-                        <span>连接失败: {testResults[server.name].message}</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b bg-muted/40 text-left"><th className="px-4 py-3 font-medium">名称 / 用途</th><th className="px-4 py-3 font-medium">服务地址</th><th className="px-4 py-3 font-medium">传输方式</th>{!catalog.off && <th className="px-4 py-3 font-medium">已配置 Worker</th>}<th className="px-4 py-3 text-right font-medium">操作</th></tr></thead>
+            <tbody>{filteredServers.map((server) => <tr key={server.name} className="border-b last:border-0 hover:bg-muted/20">
+              <td className="px-4 py-4"><p className="font-medium">{server.name}</p><p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{server.description}</p>
+                {testResults[server.name] && <p className={`mt-2 text-xs ${testResults[server.name].success ? 'text-emerald-600' : 'text-destructive'}`}>{testResults[server.name].success ? '连接成功' : '连接失败'}：{testResults[server.name].message}</p>}
+              </td>
+              <td className="px-4 py-4"><p className="max-w-sm truncate text-xs text-muted-foreground" title={server.url}>{server.url}</p></td>
+              <td className="px-4 py-4"><Badge variant="outline">{server.transport}</Badge></td>
+              {!catalog.off && <td className="px-4 py-4 text-xs text-muted-foreground">{(catalog.workersByServer.get(server.name) ?? []).map((worker) => worker.name).join('、') || '尚未分配'}<span className="block pt-1">配置关系，未验证调用</span></td>}
+              <td className="px-4 py-4"><div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                <Button variant="ghost" size="sm" disabled={testingServer === server.name} onClick={() => handleTest(server)}>{testingServer === server.name ? '测试中…' : '测试'}</Button>
+                <Button variant="ghost" size="sm" onClick={() => { setEditingServer(server); setDialogOpen(true); }}>编辑</Button>
+                <ResourceListMenu label={`更多操作 ${server.name}`} items={[{ label: '删除登记', onSelect: () => setDeleteTarget(server.name) }]} />
+              </div></td>
+            </tr>)}</tbody>
+          </table>
         </div>
       )}
 
