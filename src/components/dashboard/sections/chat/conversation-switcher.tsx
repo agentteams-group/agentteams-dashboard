@@ -35,7 +35,7 @@ export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoom
       return { id: team.id, name: `${team.name}${room.teamRole ? ` · ${room.teamRole === 'admin' ? '管理员' : '成员'}` : ''}`, room, target: team.rooms.find(canOpenConversation) };
     }),
   ];
-  const selected = rooms.find(room => room.id === selectedRoomId);
+  const selected = relatedRooms.find(room => room.id === selectedRoomId);
   const currentTeam = conversationSections(relatedRooms).teams.find(team => team.id === selected?.parentTeam);
   const relatedRoom = currentTeam?.rooms.find(room => selected?.type === 'team'
     ? room.agentRole === 'leader' && canOpenConversation(room)
@@ -44,7 +44,7 @@ export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoom
     {relatedRoom.type === 'team' ? '团队协作' : '团队助手'}
   </Button>;
   const current = choices.find(choice => choice.id === selected?.parentTeam || choice.id === selected?.id);
-  const label = current ? `${current.name}${selected?.type === 'team' ? ' · 团队协作' : ''}` : (selected ? selected.name : '选择团队');
+  const label = selected?.type === 'project' || selected?.type === 'worker' ? selected.name : current ? `${current.name}${selected?.type === 'team' ? ' · 团队协作' : ''}` : (selected ? selected.name : '选择团队');
   const otherAttention = pending ? 0 : sections.teams.filter(team => team.id !== current?.id).reduce((total, team) => {
     const room = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
     const counts = attention[room.id];

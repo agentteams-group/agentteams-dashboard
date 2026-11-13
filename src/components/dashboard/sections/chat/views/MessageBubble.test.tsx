@@ -26,6 +26,26 @@ beforeEach(() => {
   useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
 });
 
+describe('workflow notification presentation', () => {
+  const body = '[ProjectFlow] create_project + plan_dag: 项目「基线交付」（projectId=p-01）已创建，room=!private:server';
+  const message = { id: '$flow', sender: '@lead:server', senderShort: 'lead', workerName: 'lead', runtime: 'qwenpaw' as const, content: body, timestamp: 0, type: 'm.text' as const, isMe: false };
+
+  it('shows a readable event and keeps protocol fields inside expandable details', () => {
+    renderWithProvider(<MessageBubble message={message} showSender isContinuation={false} />);
+    expect(screen.getByRole('note', { name: '项目已启动' })).toBeVisible();
+    expect(screen.getByText('基线交付')).toBeVisible();
+    expect(screen.getByText(body)).not.toBeVisible();
+    fireEvent.click(screen.getByText('原始通知'));
+    expect(screen.getByText(body)).toBeVisible();
+  });
+
+  it('does not reformat a human message containing the same protocol prefix', () => {
+    renderWithProvider(<MessageBubble message={{ ...message, isMe: true }} showSender isContinuation={false} />);
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.getByText(body)).toBeVisible();
+  });
+});
+
 describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
   const base = {
     sender: '@me:example.com',

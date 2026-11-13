@@ -1,6 +1,7 @@
 import type { WorkflowResponse } from './agentteams-projects-api';
 import type { HitlConfirmation } from './hitl-inbox';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
+import { formatDurationZh } from './worker-activity';
 
 export const TASK_NOTE_GROUPS = [
   { id: 'confirmation', label: '待人工确认', attention: true },
@@ -24,6 +25,9 @@ export interface AssistantTaskNoteItem {
   teamId?: string;
   assignee?: string;
   roomId?: string;
+  status?: string;
+  startedAt?: string;
+  finishedAt?: string;
   confirmationId?: string;
 }
 
@@ -81,12 +85,22 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
     for (const taskId of taskIds) {
       const node = nodes.get(taskId);
       const detail = detailById.get(taskId);
+      const status = detail?.status || node?.status;
+      const history = detail?.history ?? [];
+      const startedAt = history.find(event => ['in_progress', 'in-progress', 'running'].includes(event.to))?.ts
+        ?? history.find(event => ['assigned', 'delegated'].includes(event.to))?.ts;
+      const finishedAt = ['submitted', 'completed', 'failed', 'error', 'cancelled', 'canceled'].includes(status ?? '')
+        ? [...history].reverse().find(event => event.to === status)?.ts : undefined;
       items.push({
         ...base,
         id: JSON.stringify([workflow.team_id, workflow.project_id, taskId]),
-        group: taskGroup(detail?.status || node?.status),
+        group: taskGroup(status),
+        status,
+        startedAt,
+        finishedAt,
         title: node?.name || taskId,
         assignee: detail?.assigned_to || node?.assignee,
+        roomId: detail?.room_id?.replace(/^room:/, ''),
       });
     }
     for (const interrupt of workflow.interrupts ?? []) {
@@ -94,4 +108,32 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
     }
   }
   return items;
+}
+
+/** Execution time stops on submission; acceptance waiting is not execution. */
+export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
+  if (!item.startedAt) return item.group === 'pending' ? '未开始' : '耗时待同步';
+  const finished = ['review', 'completed', 'failed', 'cancelled'].includes(item.group);
+  if (finished && !item.finishedAt) return '耗时待同步';
+  const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
+  return Number.isFinite(end) ? formatDurationZh(item.startedAt, end) ?? '耗时待同步' : '耗时待同步';
+}
+
+/** Conversation tips use explicit origin links, not platform/team-wide scope. */
+export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowResponse[]): AssistantTaskNoteItem[] {
+  const matches = (value: unknown) => typeof value === 'string' && value.replace(/^room:/, '') === room.id;
+  return workflows.flatMap(workflow => {
+    const fromConversation = matches(workflow.source_room_id)
+      || workflow.reply_route?.channel === 'matrix' && matches(workflow.reply_route.target_session);
+    const taskIds = new Set((workflow.tasks_detail ?? []).filter(task => matches(task.source_room_id)).map(task => task.task_id));
+    const scoped = fromConversation ? workflow : {
+      ...workflow,
+      nodes: workflow.nodes.filter(node => taskIds.has(node.id)),
+      tasks_detail: workflow.tasks_detail?.filter(task => taskIds.has(task.task_id)),
+    };
+    return workflowTaskNotes([{ ...scoped, interrupts: [] }]).map(item => ({
+      ...item,
+      roomId: item.roomId === room.id ? undefined : item.roomId,
+    }));
+  });
 }

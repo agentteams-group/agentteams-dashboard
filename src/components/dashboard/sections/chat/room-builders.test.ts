@@ -266,6 +266,18 @@ describe('buildRooms', () => {
     });
   });
 
+  it('projects actual task execution rooms even when the origin is an external conversation', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: 'dingtalk-session', tasks_detail: [
+        { task_id: 'task-1', room_id: '!execution:matrix' },
+        { task_id: 'task-2', room_id: '!execution:matrix' },
+        { task_id: 'task-3', room_id: '!another:matrix' },
+      ] }),
+    ]);
+    expect(rooms.map(room => room.id)).toEqual(['!execution:matrix', '!another:matrix']);
+    expect(rooms[0]).toMatchObject({ type: 'project', projectId: 'project-1' });
+  });
+
   it('falls back to 项目 <id> when the workflow has no title', () => {
     const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
       workflow({ source_room_id: '!proj:matrix', title: '', project_id: 'p-42' }),

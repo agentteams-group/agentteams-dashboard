@@ -8,6 +8,18 @@ afterEach(cleanup);
 const leader = (team: string): RoomInfo => ({ id: `!${team}:test`, name: `${team}助手`, type: 'manager', agentRole: 'leader', parentTeam: team, members: [], access: 'joined' });
 
 describe('team switcher', () => {
+  it('names the task collaboration space separately from its parent team', () => {
+    const project: RoomInfo = { id: '!task:test', name: 'TASK：基线交付', type: 'project', parentTeam: 'design', members: [], access: 'joined' };
+    render(<ConversationSwitcher rooms={[leader('design'), project]} selectedRoomId={project.id} attention={{}} onSelectRoom={vi.fn()} />);
+    expect(screen.getByText('TASK：基线交付')).toBeInTheDocument();
+  });
+
+  it('keeps a directly opened Worker conversation named when it is outside the filtered list', () => {
+    const worker: RoomInfo = { id: '!worker:test', name: 'coscon-lead 房间', type: 'worker', members: [], access: 'joined' };
+    render(<ConversationSwitcher rooms={[leader('design')]} relatedRooms={[leader('design'), worker]} selectedRoomId={worker.id} attention={{}} onSelectRoom={vi.fn()} />);
+    expect(screen.getByText('coscon-lead 房间')).toBeInTheDocument();
+  });
+
   it('opens the team collaboration room directly and returns to the assistant', () => {
     const assistant = leader('design');
     const group: RoomInfo = { id: '!design-group:test', name: 'design团队房间', type: 'team', parentTeam: 'design', members: [] };
