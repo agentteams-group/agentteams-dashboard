@@ -168,12 +168,13 @@ describe('InterventionCard（F2.1 交互契约）', () => {
       answer: expect.stringContaining('【干预答复】'),
       tool_name: 'ask_human',
       actor: '@me:example.org',
+      responses: [{ id: '0', selected: ['module'] }],
     });
     // 只读态 + 提交人
-    expect(await screen.findByText(/已答复/)).toBeInTheDocument();
-    expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
     // 降级可见：进了房间不等于回了运行时，卡上得标出来。
-    expect(screen.getByText('本次选择未回写运行时')).toBeInTheDocument();
+    expect(screen.getByText('答案已发送，等待 Agent 继续处理。')).toBeInTheDocument();
     // F2.3 收件箱互通
     expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeUndefined();
     expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toEqual(
@@ -188,7 +189,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('答复未写入房间');
-    expect(screen.queryByText(/已答复/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已提交选择/)).not.toBeInTheDocument();
     expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeDefined();
     expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toBeUndefined();
     // 卡片保持可再次提交
@@ -204,7 +205,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     );
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
-    expect(await screen.findByText(/已答复/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
     expect(mockOnAnswer.mock.calls[0][1]).toBeUndefined();
   });
 
@@ -213,12 +214,12 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     const first = render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
     // 回写结果在下一个微任务里才回到卡片，等它落定再卸载。
-    expect(await screen.findByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
     first.unmount();
 
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
-    expect(screen.getByText(/已答复/)).toBeInTheDocument();
-    expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /提交选择/ })).not.toBeInTheDocument();
   });
 

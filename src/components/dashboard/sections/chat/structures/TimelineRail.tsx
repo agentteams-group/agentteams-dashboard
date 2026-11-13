@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { GroupedMessage } from '../grouper/MainGrouper';
 import { formatTime } from '../format';
+import { interactionActivity } from '../confirmation-reply';
 
 export interface TimelineRailHandle {
   /** Reports the data indices currently rendered in the viewport. */
@@ -179,7 +180,7 @@ export const TimelineRail = forwardRef<TimelineRailHandle, TimelineRailProps>(fu
             <span>{previewTick.message?.senderShort ?? previewTick.label}</span>
             {previewTick.message && <time dateTime={new Date(previewTick.message.timestamp).toISOString()}>{new Date(previewTick.message.timestamp).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</time>}
           </div>
-          <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{previewTick.message?.content || previewTick.label}</p>
+          <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{previewTick.message ? interactionActivity(previewTick.message.content, previewTick.message.rawContent, previewTick.message.isMe) ?? previewTick.message.content : previewTick.label}</p>
           <p className="mt-2 text-xs text-muted-foreground">点击定位{previewTick.count > 1 ? ` · 此处包含 ${previewTick.count} 条` : ''}</p>
         </div>, document.body,
       )}
