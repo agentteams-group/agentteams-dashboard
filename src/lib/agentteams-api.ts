@@ -1912,6 +1912,13 @@ export const agentteamsApi = {
   },
 
   // Logs
+  getMonitoring: (options: { page: number; limit: number; search: string }) =>
+    proxyRequest<import('./runtime-monitoring').RuntimeSnapshot>(`/monitoring?${new URLSearchParams({ page: String(options.page), limit: String(options.limit), search: options.search })}`),
+  getMonitoringLogs: (kind: string, name: string, options: { tail: number; since?: string }) => {
+    const query = new URLSearchParams({ tail: String(options.tail) });
+    if (options.since) query.set('since', options.since);
+    return proxyRequest<import('./runtime-monitoring').RuntimeLogs>(`/monitoring/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/logs?${query}`);
+  },
   getLogs: (component: string, options?: { tail?: number; since?: string; level?: string }) => {
     const params = new URLSearchParams();
     if (options?.tail) params.set('tail', String(options.tail));

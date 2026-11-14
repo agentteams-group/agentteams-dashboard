@@ -198,6 +198,8 @@ export interface PluginDashboardServices {
   toast: (_message: string, _type?: 'info' | 'success' | 'warning' | 'error') => void;
   getClusterStatus: () => Promise<unknown>;
   getVersion: () => Promise<unknown>;
+  getMonitoring: (_options: { page: number; limit: number; search: string }) => Promise<import('../runtime-monitoring').RuntimeSnapshot>;
+  getMonitoringLogs: (_kind: string, _name: string, _options: { tail: number; since?: string }) => Promise<import('../runtime-monitoring').RuntimeLogs>;
   listWorkers: () => Promise<unknown>;
   listTeams: () => Promise<unknown>;
   listManagers: () => Promise<unknown>;
