@@ -318,6 +318,7 @@ export function TeamSettingsPanel({
                   <PhaseBadge kind="team" phase={team.phase} />
                 </span>
               </SummaryRow>
+              {team.phase === 'Failed' && team.message ? <SummaryRow label="失败原因"><span className="break-words text-destructive">{team.message}</span></SummaryRow> : null}
               <SummaryRow label="Leader">
                 <span className="font-mono">{team.leaderName || '-'}</span>
               </SummaryRow>
@@ -349,7 +350,7 @@ export function TeamSettingsPanel({
               <SummaryRow label="健康度">
                 <span className="flex flex-wrap items-center gap-1.5">
                   <Badge
-                    variant={analytics.trend === 'healthy' ? 'secondary' : 'outline'}
+                    variant={analytics.trend === 'critical' ? 'destructive' : analytics.trend === 'healthy' ? 'secondary' : 'outline'}
                     className="text-xs"
                   >
                     {analytics.label}

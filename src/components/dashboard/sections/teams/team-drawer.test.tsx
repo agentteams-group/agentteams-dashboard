@@ -297,6 +297,15 @@ afterEach(() => {
 });
 
 describe('TeamDrawer · 分区与骨架', () => {
+  it('shows the team failure reason and never labels a failed team healthy when members are ready', () => {
+    const team = { ...teamFixture, phase: 'Failed', message: 'Matrix admin login: connection refused' } as TeamResponse;
+    renderWithClient(<TeamDrawer team={team} allTeams={[team]} workers={workersFixture} modelOptions={[]} userLevel={3} onOpenChange={vi.fn()} />);
+    expect(screen.getByText(team.message)).toBeInTheDocument();
+    const healthRow = screen.getByText('健康度').parentElement!;
+    expect(within(healthRow).getByText('异常')).toBeInTheDocument();
+    expect(within(healthRow).queryByText('健康')).not.toBeInTheDocument();
+  });
+
   it('渲染四分区（+未归属/危险区），团队技能默认收起', () => {
     renderDrawer();
     for (const title of ['基本信息', 'LLM 调优', '团队成员', '团队技能', '加入未归属 Worker', '危险区']) {
