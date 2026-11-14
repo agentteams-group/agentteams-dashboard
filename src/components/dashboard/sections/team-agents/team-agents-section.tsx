@@ -12,7 +12,6 @@ import { ListPagination, useListPagination } from '@/components/dashboard/list-p
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { useCreateTeam, useCreateWorker } from '@/hooks/use-agentteams-mutations';
 import { useHumans } from '@/hooks/use-agentteams-humans';
-import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
@@ -20,7 +19,6 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useSearch } from '@/lib/search-context';
 import { currentHashParams, hashForSection, type TeamAgentsTab } from '@/lib/nav-hash';
 import type { CreateTeamRequest, CreateWorkerRequest } from '@/lib/agentteams-api';
-import { ManagerDetailPanel } from '../managers/manager-detail-panel';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
@@ -44,14 +42,16 @@ function readLocation() {
   return {
     tab: (typeof window === 'undefined' ? 'teams' : teamAgentsInitialIntentFromHash(window.location.hash)) as TeamAgentsTab,
     team: params?.get('team') ?? null, agent: params?.get('agent') ?? null,
-    manager: params?.get('manager') ?? null, edit: params?.get('edit') === 'true',
+    edit: params?.get('edit') === 'true',
   };
 }
 
-export function TeamAgentsSection() {
+export function AgentsSection() { return <TeamAgentsSection view="agents" />; }
+export function TeamsSection() { return <TeamAgentsSection view="teams" />; }
+
+export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const teamsQuery = useTeams();
   const workersQuery = useWorkers();
-  const { data: managers = [] } = useManagers();
   const { data: humans } = useHumans();
   const { searchQuery } = useSearch();
   const { isConnected, userLevel } = useAgentTeamsStore();
@@ -59,7 +59,7 @@ export function TeamAgentsSection() {
   const queryClient = useQueryClient();
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
-  const [location, setLocation] = useState<ReturnType<typeof readLocation>>({ tab: 'teams', team: null, agent: null, manager: null, edit: false });
+  const [location, setLocation] = useState<ReturnType<typeof readLocation>>({ tab: view ?? 'teams', team: null, agent: null, edit: false });
   const [search, setSearch] = useState('');
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
@@ -68,22 +68,22 @@ export function TeamAgentsSection() {
   const [millforgeTeam, setMillforgeTeam] = useState<string | null>(null);
 
   useEffect(() => {
-    const sync = () => setLocation(readLocation());
+    const sync = () => setLocation({ ...readLocation(), ...(view ? { tab: view } : {}) });
     sync();
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
-  }, []);
+  }, [view]);
 
-  function navigate(tab: TeamAgentsTab, kind?: 'team' | 'agent' | 'manager', name?: string, edit = false) {
-    const params = new URLSearchParams({ tab });
+  function navigate(tab: TeamAgentsTab, kind?: 'team' | 'agent', name?: string, edit = false) {
+    const params = new URLSearchParams();
     if (kind && name) params.set(kind, name);
     if (edit) params.set('edit', 'true');
-    openResource(`${hashForSection('team-agents')}?${params}`);
+    openResource(`${hashForSection(tab === 'agents' ? 'workers' : 'teams')}${params.size ? `?${params}` : ''}`);
     setLocation(readLocation());
   }
   function refresh() {
     void teamsQuery.refetch();
-    for (const key of ['agentteams-workers', 'agentteams-managers', 'agentteams-humans']) {
+    for (const key of ['agentteams-workers', 'agentteams-humans']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   }
@@ -93,16 +93,14 @@ export function TeamAgentsSection() {
   const query = `${searchQuery} ${search}`.trim().toLowerCase();
   const teamRows = filterTeamRows(teams, workers, query);
   const allAgents = [
-    ...managers.map((manager) => ({ ...manager, kind: 'manager' as const, team: '', label: '平台助手 · Manager' })),
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
-  ].sort((a, b) => Number(b.kind === 'manager') - Number(a.kind === 'manager') || a.name.localeCompare(b.name));
+  ].sort((a, b) => a.name.localeCompare(b.name));
   const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
   const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
   const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
   const selectedTeam = teams.find((team) => team.name === location.team);
   const selectedWorker = workers.find((worker) => worker.name === location.agent);
-  const selectedManager = managers.find((manager) => manager.name === location.manager);
-  const isDetail = Boolean(location.team || location.agent || location.manager);
+  const isDetail = Boolean(location.team || location.agent);
   const forgingTeam = teams.find((team) => team.name === millforgeTeam);
 
   function humanChip(name: string) {
@@ -132,27 +130,26 @@ export function TeamAgentsSection() {
   if ((teamsQuery.isError || workersQuery.isError) && !isConnected) return <ApiErrorState />;
 
   return <div className="space-y-4" data-testid="team-agents-section">
-    <SectionHeader title="团队与 Agent" onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
-      meta={<Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
+    <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
+      meta={view ? <span className="text-sm text-muted-foreground">{view === 'agents' ? `${workers.length} 个 Agent` : `${teams.length} 个团队`}</span> : <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
         <TabsTrigger value="teams">团队 <span className="text-muted-foreground tabular-nums">{teams.length}</span></TabsTrigger>
-        <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length + managers.length}</span></TabsTrigger>
+        <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
       actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
         <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
 
     {isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
       <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-        <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent || location.manager}`} /></h2>
+        <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent}`} /></h2>
         {selectedTeam && <Button size="sm" variant="outline" onClick={() => setMillforgeTeam(selectedTeam.name)}>千锻 · 团队配置</Button>}
       </div>
       {selectedTeam ? <TeamSettingsPanel key={selectedTeam.name} team={selectedTeam} allTeams={teams} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} onChanged={refresh} onDeleted={() => navigate('teams')} /> :
         selectedWorker ? <WorkerDetailPanel key={selectedWorker.name} worker={selectedWorker} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} className="min-h-0 flex-1" onChanged={refresh} onDeleted={() => navigate('agents')} /> :
-          selectedManager ? <ManagerDetailPanel key={selectedManager.name} manager={selectedManager} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} className="min-h-0 flex-1" onChanged={refresh} /> :
             <p className="p-6 text-sm text-muted-foreground">{teamsQuery.isLoading || workersQuery.isLoading ? '正在加载…' : '未找到该资源，请返回列表刷新。'}</p>}
     </div> : <>
       <div className="flex flex-wrap items-center gap-3">
         <Input className="h-9 w-full sm:max-w-sm" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
-        <span className="text-xs text-muted-foreground">{location.tab === 'teams' ? '人类成员与 Agent 分别展示 · 悬停查看概要' : 'Manager 与 Worker · 点击查看主页或编辑配置'}</span>
+        <span className="text-xs text-muted-foreground">{location.tab === 'teams' ? '人类成员与 Agent 分别展示 · 悬停查看概要' : '执行成员与团队负责人 · 点击查看主页或编辑配置'}</span>
       </div>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">

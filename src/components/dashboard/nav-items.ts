@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Bot,
   Users,
-  Crown,
   UserCheck,
   MessageSquare,
   Brain,
@@ -94,17 +93,15 @@ export const navItems: NavItem[] = [
   { id: 'loops', label: '自动化', icon: RefreshCcw, area: 'workbench', group: 'loop' },
 
   // ── 控制台（二级：资源与治理合并） ──
-  // 资源：Agent 目录（F7.1 资源收敛容器：Workers/团队/Humans/Managers
-  // 以二级 tab 呈现）+ 市场 + 模型 + 知识库。
+  // 成员管理：Agent、用户、团队独立页面；Manager 设置由平台助手进入。
   { id: 'resources', label: '成员与团队', icon: Users, area: 'console', group: 'resources' },
-  // 团队与Agent（第一实现单）：Workers + 团队合并为一个入口；旧 workers/teams
-  // section id 只作为 hash 别名存在（nav-hash 重定向到本页的 tab）。
-  { id: 'team-agents', label: '团队与Agent', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
+  { id: 'workers', label: 'Agent', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
   // (initialPassword) that must not be visible to team-level users.
-  { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
-  { id: 'humans', label: 'Humans', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
+  { id: 'humans', label: '用户', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3 },
+  { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
+  { id: 'platform-assistant-settings', label: '平台助手设置', icon: Bot, area: 'workbench', group: 'space', minLevel: 3 },
   { id: 'skills', label: '技能', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'tools', label: '工具', icon: Wrench, area: 'console', group: 'resources', legacyGroup: 'resource' },
@@ -180,8 +177,8 @@ export interface CreateAction {
 }
 
 export const createActions: readonly CreateAction[] = [
-  { id: 'create-worker', label: '创建 Worker', icon: Bot, section: 'team-agents', hash: '#console/resources/team-agents?tab=agents', group: 'resources' },
-  { id: 'create-team', label: '创建团队', icon: Users, section: 'team-agents', hash: '#console/resources/team-agents?tab=teams', group: 'resources' },
+  { id: 'create-worker', label: '创建 Agent', icon: Bot, section: 'workers', hash: '#console/resources/workers', group: 'resources' },
+  { id: 'create-team', label: '创建团队', icon: Users, section: 'teams', hash: '#console/resources/teams', group: 'resources' },
   { id: 'create-human', label: '创建 Human', icon: UserCheck, section: 'humans', group: 'resources', minLevel: 3 },
   { id: 'open-chat', label: '打开协作空间', icon: MessageSquare, section: 'chat', group: 'space' },
 ] as const;

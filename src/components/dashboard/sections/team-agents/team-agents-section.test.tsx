@@ -179,6 +179,7 @@ vi.mock('../teams/millforge/millforge-dialog', () => ({
 }));
 
 import { TeamAgentsSection } from './team-agents-section';
+import type { TeamAgentsTab } from '@/lib/nav-hash';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/hooks/use-agentteams-humans', () => ({
@@ -197,10 +198,10 @@ vi.mock('../managers/manager-detail-panel', () => ({
   ManagerDetailPanel: ({ manager }: { manager: ManagerResponse }) => <div>manager-profile:{manager.name}</div>,
 }));
 
-function renderSection(hash = '#console/resources/team-agents?tab=teams') {
+function renderSection(hash = '#console/resources/team-agents?tab=teams', view?: TeamAgentsTab) {
   window.history.replaceState({}, '', hash);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><TooltipProvider><TeamAgentsSection /></TooltipProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><TooltipProvider><TeamAgentsSection view={view} /></TooltipProvider></QueryClientProvider>);
 }
 function selectTab(name: RegExp) {
   fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0, ctrlKey: false });
@@ -209,6 +210,21 @@ beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
 describe('Team and Agent resource cards', () => {
+  it('shows the independent Agent page without page tabs or Managers', () => {
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.getByRole('heading', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByText('4 个 Agent')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'boss' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+  });
+  it('shows an independent team page and preserves a selected team on refresh', () => {
+    renderSection('#console/resources/teams?team=alpha&edit=true', 'teams');
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+    expect(window.location.hash).toBe('#console/resources/teams');
+  });
   it('paginates cards and resets the page when searching or switching tabs', () => {
     const scrollIntoView = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -219,7 +235,7 @@ describe('Team and Agent resource cards', () => {
       const cards = () => within(screen.getByLabelText('Agent 卡片')).getAllByRole('heading', { level: 2 });
       expect(cards()).toHaveLength(12);
       fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
-      expect(cards()).toHaveLength(7);
+      expect(cards()).toHaveLength(6);
       fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: 'solo' } });
       expect(cards()).toHaveLength(1);
       expect(screen.getByText('共 1 个Agent · 第 1 / 1 页')).toBeInTheDocument();
@@ -298,10 +314,11 @@ describe('Team and Agent resource cards', () => {
     renderSection();
     selectTab(/^Agent/);
     const cards = screen.getByLabelText('Agent 卡片');
-    for (const name of ['lead', 'w1', 'lead2', 'solo', 'boss']) expect(within(cards).getByRole('heading', { name })).toBeInTheDocument();
+    for (const name of ['lead', 'w1', 'lead2', 'solo']) expect(within(cards).getByRole('heading', { name })).toBeInTheDocument();
+    expect(within(cards).queryByRole('heading', { name: 'boss' })).not.toBeInTheDocument();
     expect(within(cards).getByText('w1-model')).toBeInTheDocument();
-    expect(within(cards).getAllByRole('button', { name: '编辑' })).toHaveLength(5);
-    expect(window.location.hash).toContain('tab=agents');
+    expect(within(cards).getAllByRole('button', { name: '编辑' })).toHaveLength(4);
+    expect(window.location.hash).toContain('console/resources/workers');
   });
 
   it('opens the clicked member homepage and restores the Agent list', () => {

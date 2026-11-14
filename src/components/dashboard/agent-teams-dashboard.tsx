@@ -61,8 +61,9 @@ import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
 const ResourceCenterSection = lazy(() => import('./sections/resource-center-section').then(m => ({ default: m.ResourceCenterSection })));
-const TeamAgentsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.TeamAgentsSection })));
-const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
+const AgentsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.AgentsSection })));
+const TeamsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.TeamsSection })));
+const PlatformAssistantSettingsSection = lazy(() => import('./sections/platform-assistant-settings-section').then(m => ({ default: m.PlatformAssistantSettingsSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
 const ChatSection = lazy(() => import('./sections/chat/ChatSection').then(m => ({ default: m.ChatSection })));
@@ -71,7 +72,6 @@ const ArtifactsSection = lazy(() => import('./sections/artifacts-section').then(
 const CodingRunsSection = lazy(() => import('./sections/coding-runs-section').then(m => ({ default: m.CodingRunsSection })));
 const LoopsSection = lazy(() => import('./sections/loops-section').then(m => ({ default: m.LoopsSection })));
 const MyWorkbenchSection = lazy(() => import('./sections/my-workbench-section').then(m => ({ default: m.MyWorkbenchSection })));
-const ResourcesSection = lazy(() => import('./sections/resources-section').then(m => ({ default: m.ResourcesSection })));
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const TracingSection = lazy(() => import('./sections/tracing-section').then(m => ({ default: m.TracingSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
@@ -85,13 +85,12 @@ export const sectionMap: Record<string, React.ComponentType> = {
   'coding-runs': CodingRunsSection,
   loops: LoopsSection,
   'my-workbench': MyWorkbenchSection,
-  resources: ResourcesSection,
-  'team-agents': TeamAgentsSection,
-  // 旧 section id 保留为别名（深链解析现在直接落到 team-agents）。
-  workers: TeamAgentsSection,
+  resources: AgentsSection,
+  'team-agents': TeamsSection,
+  workers: AgentsSection,
   skills: ResourceCenterSection,
-  teams: TeamAgentsSection,
-  managers: ManagersSection,
+  teams: TeamsSection,
+  'platform-assistant-settings': PlatformAssistantSettingsSection,
   humans: HumansSection,
   models: ModelsSection,
   tools: McpServersSection,
@@ -210,7 +209,7 @@ export function AgentTeamsDashboard() {
       const modeHidden = !known || (!!known.modes && !!mode && !known.modes.includes(mode));
       const levelHidden = !!known?.minLevel && userLevel < known.minLevel;
       if (modeHidden || levelHidden) {
-        setActiveSection(levelHidden ? 'resources' : 'overview');
+        setActiveSection(levelHidden ? 'workers' : 'overview');
       }
     }
   }, [activeSection, visibleNavItems, setActiveSection, mode, modeLoading, isPluginSection, pluginsReady, pluginRoutes, userLevel]);
@@ -268,7 +267,7 @@ export function AgentTeamsDashboard() {
 
   const activeItem = navItems.find((n) => n.id === activeSection);
   const ActiveSectionComponent = activeItem?.minLevel && userLevel < activeItem.minLevel
-    ? ResourcesSection
+    ? AgentsSection
     : sectionMap[activeSection] || OverviewSection;
   const activePluginRoute = useMemo(() => {
     const parsed = parsePluginSectionId(activeSection);
@@ -300,12 +299,12 @@ export function AgentTeamsDashboard() {
   const workbenchCount = usePendingTally().total;
 
   const countMap: Record<string, number> = useMemo(() => ({
-    'team-agents': teamCount + workerCount,
-    managers: managerCount,
+    workers: workerCount,
+    teams: teamCount,
     chat: chatCount,
     'my-teams': teamChatCount,
     'my-workbench': workbenchCount,
-  }), [workerCount, teamCount, managerCount, chatCount, teamChatCount, workbenchCount]);
+  }), [workerCount, teamCount, chatCount, teamChatCount, workbenchCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();
@@ -313,9 +312,9 @@ export function AgentTeamsDashboard() {
     notifications.forEach((n) => {
       if (!n.read && n.timestamp > fiveMinutesAgo) {
         const msg = (n.title + ' ' + n.message).toLowerCase();
-        if (msg.includes('worker')) sectionSet.add('team-agents');
-        if (msg.includes('团队') || msg.includes('team')) sectionSet.add('team-agents');
-        if (msg.includes('manager')) sectionSet.add('managers');
+        if (msg.includes('worker')) sectionSet.add('workers');
+        if (msg.includes('团队') || msg.includes('team')) sectionSet.add('teams');
+        if (msg.includes('manager')) sectionSet.add('chat');
         if (msg.includes('matrix') || msg.includes('聊天') || msg.includes('chat')) sectionSet.add('chat');
         if (msg.includes('infra') || msg.includes('基础设施')) { /* ops section removed */ }
         if (msg.includes('k8s') || msg.includes('kubernetes')) { /* ops section removed */ }

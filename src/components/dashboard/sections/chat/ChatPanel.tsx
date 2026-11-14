@@ -1,4 +1,10 @@
+'use client';
+
 import type { ReactNode } from 'react';
+import { Settings } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { platformAssistantSettingsHash } from '@/lib/nav-hash';
 import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
@@ -39,6 +45,7 @@ export function ChatPanel({
   headerTitle,
   managerName,
 }: ChatPanelProps) {
+  const userLevel = useAgentTeamsStore(state => state.userLevel);
   const renderPanel = (configured = true) => (
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
@@ -47,7 +54,7 @@ export function ChatPanel({
           headerTitle={headerTitle}
           integratedSidebar={!!room.agentRole || room.type === 'team'}
           roomId={room.id}
-          roomName={room.agentRole === 'operations' ? '平台助手' : room.name}
+          roomName={room.name}
           agentRole={room.agentRole}
           team={room.team}
           defaultWorkerName={room.workerName}
@@ -55,7 +62,11 @@ export function ChatPanel({
           roomPhase={room.phase}
           roomRuntime={room.runtime}
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
-          headerActions={(room.agentRole || room.type === 'team') ? <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} /> : undefined}
+          headerActions={<>
+            {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
+              onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
+            {(room.agentRole || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
+          </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
           canSend={canSend && configured}

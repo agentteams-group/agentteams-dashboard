@@ -6,20 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from './ChatPanel';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import type { RoomInfo } from './room-info';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 const api = vi.hoisted(() => ({ listProjects: vi.fn(), getProjectWorkflow: vi.fn() }));
 vi.mock('@/lib/agentteams-projects-api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/agentteams-projects-api')>(), listProjects: api.listProjects, getProjectWorkflow: api.getProjectWorkflow }));
 vi.mock('./ChatRoom', () => ({ ChatRoom: ({ roomName, integratedSidebar, headerActions }: { roomName: string; integratedSidebar?: boolean; headerActions?: ReactNode }) => <div data-integrated-sidebar={String(integratedSidebar)}>{roomName}{headerActions}</div> }));
+vi.mock('./manager-model-gate', () => ({ ManagerModelGate: ({ children }: { children: (_configured: boolean) => ReactNode }) => children(true) }));
 
 const teamRoom: RoomInfo = { id: '!team:test', name: '设计群聊', type: 'team', members: [], parentTeam: 'design', team: { name: 'design', teamName: '设计团队' } as RoomInfo['team'] };
 
-function renderChat(room: RoomInfo) {
+function renderChat(room: RoomInfo, managerName?: string) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
-    <ChatPanel room={room} rooms={[room]} contextPanel={null} onContextPanelChange={vi.fn()} />
+    <ChatPanel room={room} rooms={[room]} contextPanel={null} onContextPanelChange={vi.fn()} managerName={managerName} />
   </QueryClientProvider>);
 }
 
 beforeEach(() => {
+  useAgentTeamsStore.setState({ userLevel: 3 });
   vi.clearAllMocks();
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }) });
   useHitlInboxStore.setState({ confirmations: {}, pendingChatRoomId: null });
@@ -29,6 +32,21 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('chat task note entry points', () => {
+  it('opens settings for the selected platform assistant and preserves its instance name', () => {
+    renderChat({ id: '!ops:test', name: '平台助手 · second', type: 'manager', agentRole: 'operations', members: [] }, 'second');
+    expect(screen.getByText('平台助手 · second')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '平台助手设置' }));
+    expect(window.location.hash).toBe('#workbench/assistant/settings?manager=second');
+  });
+  it('hides platform settings from Team accounts and Leader conversations', () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    const view = renderChat({ id: '!ops:test', name: '平台助手', type: 'manager', agentRole: 'operations', members: [] }, 'default');
+    expect(screen.queryByRole('button', { name: '平台助手设置' })).toBeNull();
+    view.unmount();
+    useAgentTeamsStore.setState({ userLevel: 3 });
+    renderChat({ id: '!leader:test', name: '团队助手', type: 'manager', agentRole: 'leader', members: [] }, 'lead');
+    expect(screen.queryByRole('button', { name: '平台助手设置' })).toBeNull();
+  });
   it('shows a scoped task note in a Team group without changing it into an assistant DM', async () => {
     useHitlInboxStore.setState({ confirmations: { approval: { id: 'approval', roomId: teamRoom.id, eventId: '$approval', sender: '@leader:test', toolName: '发布', question: '现在发布吗？', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
     renderChat(teamRoom);

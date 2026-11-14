@@ -14,11 +14,11 @@ import { pluginSectionId } from '@/lib/plugins/types';
 export const OBSERVABILITY_PLUGIN_IDS: readonly string[] = ['monitor-panel'];
 
 export const workspaceMenus = [
-  { id: 'chat', label: '助手', icon: Bot, sections: ['chat'] },
+  { id: 'chat', label: '助手', icon: Bot, sections: ['chat', 'platform-assistant-settings'] },
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
   { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
-  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'team-agents', 'humans', 'managers'] },
+  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'humans', 'teams'] },
   { id: 'tracing', label: '观测与治理', icon: Activity, sections: ['plugin-route:monitor-panel/monitor', 'tracing', 'audit'] },
 ];
 
