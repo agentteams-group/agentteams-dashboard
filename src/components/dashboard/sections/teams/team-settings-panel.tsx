@@ -29,6 +29,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -155,6 +156,9 @@ export function TeamSettingsPanel({
   const createTeam = useCreateTeam();
 
   const analytics = useMemo(() => computeTeamAnalytics(team, workers), [team, workers]);
+  const failureSummary = /matrix/i.test(team.message) && /connection refused|ECONNREFUSED/i.test(team.message)
+    ? '暂时无法连接对话服务，请检查服务状态。'
+    : '展开技术详情，查看具体失败原因。';
   const standalone = useMemo(() => standaloneWorkers(allTeams, workers), [allTeams, workers]);
   const showPeerMentions = typeof team.peerMentions === 'boolean';
   const llmError = findLlmTuningError(llm);
@@ -311,6 +315,22 @@ export function TeamSettingsPanel({
           onToggle={() => toggle('basic')}
         >
           <div className="space-y-2">
+            {team.phase === 'Failed' && team.message ? (
+              <Alert className="min-w-0 border-destructive/20 bg-destructive/5 px-3 py-2.5 text-destructive">
+                <AlertTriangle aria-hidden="true" />
+                <AlertTitle className="text-xs">团队暂未就绪</AlertTitle>
+                <AlertDescription className="min-w-0 w-full gap-2 text-xs">
+                  <p>{failureSummary}</p>
+                  <details className="w-full min-w-0 border-t border-destructive/10 pt-2">
+                    <summary className="cursor-pointer rounded-sm text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">技术详情</summary>
+                    <div className="mt-2 flex min-w-0 items-start gap-2 rounded-md border bg-background/80 p-2">
+                      <pre className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono text-[11px] leading-5 break-all whitespace-pre-wrap">{team.message}</pre>
+                      <CopyButton text={team.message} label="复制失败详情" className="shrink-0" />
+                    </div>
+                  </details>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <div className="space-y-1 rounded-md bg-muted/20 p-2">
               <SummaryRow label="阶段">
                 <span className="flex items-center gap-1.5">
@@ -318,7 +338,6 @@ export function TeamSettingsPanel({
                   <PhaseBadge kind="team" phase={team.phase} />
                 </span>
               </SummaryRow>
-              {team.phase === 'Failed' && team.message ? <SummaryRow label="失败原因"><span className="break-words text-destructive">{team.message}</span></SummaryRow> : null}
               <SummaryRow label="Leader">
                 <span className="font-mono">{team.leaderName || '-'}</span>
               </SummaryRow>
