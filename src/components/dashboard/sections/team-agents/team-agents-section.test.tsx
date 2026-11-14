@@ -209,6 +209,28 @@ beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
 describe('Team and Agent resource cards', () => {
+  it('paginates cards and resets the page when searching or switching tabs', () => {
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const extra = Array.from({ length: 26 }, (_, index) => worker(`paged-${index}`, 'alpha'));
+    workersFixture.push(...extra);
+    try {
+      renderSection('#console/resources/team-agents?tab=agents');
+      const cards = () => within(screen.getByLabelText('Agent 卡片')).getAllByRole('heading', { level: 2 });
+      expect(cards()).toHaveLength(12);
+      fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
+      expect(cards()).toHaveLength(7);
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: 'solo' } });
+      expect(cards()).toHaveLength(1);
+      expect(screen.getByText('共 1 个Agent · 第 1 / 1 页')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      selectTab(/^团队/);
+      selectTab(/^Agent/);
+      expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
+    } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
+  });
+
   it('keeps large member lists collapsed and opens hidden Agent details from the overflow list', async () => {
     const extra = Array.from({ length: 30 }, (_, index) => worker(`extra-${index}`, 'alpha'));
     const originalNames = teamsFixture[0].workerNames;

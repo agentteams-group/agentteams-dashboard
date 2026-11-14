@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { OverflowText } from '@/components/dashboard/overflow-text';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { useCreateTeam, useCreateWorker } from '@/hooks/use-agentteams-mutations';
 import { useHumans } from '@/hooks/use-agentteams-humans';
@@ -96,6 +97,8 @@ export function TeamAgentsSection() {
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
   ].sort((a, b) => Number(b.kind === 'manager') - Number(a.kind === 'manager') || a.name.localeCompare(b.name));
   const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
+  const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
+  const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
   const selectedTeam = teams.find((team) => team.name === location.team);
   const selectedWorker = workers.find((worker) => worker.name === location.agent);
   const selectedManager = managers.find((manager) => manager.name === location.manager);
@@ -153,7 +156,7 @@ export function TeamAgentsSection() {
       </div>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
-          {teamRows.map(({ team }) => {
+          {teamPage.items.map(({ team }) => {
             const members = [...new Set([...(team.humanMembers ?? []), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
             return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
@@ -169,11 +172,12 @@ export function TeamAgentsSection() {
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
         </div> : <div className={RESOURCE_CARD_GRID} aria-label="Agent 卡片">
-          {agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+          {agentPage.items.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
             onView={() => navigate('agents', agent.kind, agent.name)}
             onEdit={() => navigate('agents', agent.kind, agent.name, true)} />)}
           {agents.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的 Agent' : '暂无 Agent'}</p>}
         </div>}
+      {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : 'Agent'} />}
     </>}
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}

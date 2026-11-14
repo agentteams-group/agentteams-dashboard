@@ -24,6 +24,7 @@ import { useMcpServers, useDeleteMcpServer } from '@/hooks/use-agentteams-mcps';
 import { useMcpCatalog } from '@/hooks/use-mcp-catalog';
 import type { McpServerConfig } from '@/lib/agentteams-api';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { McpSetupDialog } from './mcp-setup-dialog';
 import { McpDetailDialog } from './mcp-detail-dialog';
@@ -62,6 +63,7 @@ export function McpServersSection() {
         (s.description || '').toLowerCase().includes(q)
     );
   }, [servers, search]);
+  const pagination = useListPagination(filteredServers, 20, search);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -133,7 +135,7 @@ export function McpServersSection() {
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full min-w-[940px] table-fixed text-sm">
             <thead><tr className="border-b bg-muted/40 text-left"><th className="w-[28%] px-4 py-3 font-medium">名称 / 用途</th><th className="w-[160px] px-4 py-3 font-medium">接入方式</th><th className="px-4 py-3 font-medium">网关状态</th><th className="w-[100px] px-4 py-3 font-medium">Agent</th><th className="w-[190px] px-4 py-3 text-right font-medium">操作</th></tr></thead>
-            <tbody>{filteredServers.map((server) => <tr key={server.name} className="border-b last:border-0 hover:bg-muted/20">
+            <tbody>{pagination.items.map((server) => <tr key={server.name} className="border-b last:border-0 hover:bg-muted/20">
               <td className="px-4 py-4"><button type="button" disabled={server.managed && !server.connection} title={server.name} className={`block max-w-full truncate font-medium ${server.managed && server.connection ? 'hover:underline underline-offset-4' : ''}`} onClick={() => { if (server.managed && server.connection) setDetail(server); }}>{server.name}</button><OverflowText text={server.description || ''} className="mt-1 text-xs leading-5 text-muted-foreground" />
                 {testResults[server.name] && <p className={`mt-2 text-xs ${testResults[server.name].success ? 'text-emerald-600' : 'text-destructive'}`}>{testResults[server.name].success ? '连接成功' : '连接失败'}：{testResults[server.name].message}</p>}
               </td>
@@ -150,6 +152,7 @@ export function McpServersSection() {
         </div>
       )}
 
+      <ListPagination {...pagination} label="MCP" />
       <McpServerDialog
         key={dialogOpen ? editingServer?.name ?? 'new' : 'closed'}
         open={dialogOpen}
