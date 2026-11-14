@@ -209,6 +209,32 @@ beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
 describe('Team and Agent resource cards', () => {
+  it('keeps large member lists collapsed and opens hidden Agent details from the overflow list', async () => {
+    const extra = Array.from({ length: 30 }, (_, index) => worker(`extra-${index}`, 'alpha'));
+    const originalNames = teamsFixture[0].workerNames;
+    const originalMembers = teamsFixture[0].humanMembers;
+    workersFixture.push(...extra);
+    teamsFixture[0].workerNames = [...originalNames, ...extra.map((item) => item.name)];
+    teamsFixture[0].humanMembers = Array.from({ length: 30 }, (_, index) => `member-${index}`);
+    try {
+      renderSection();
+      expect(screen.queryByRole('button', { name: '查看 extra-29 的主页' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '查看 member-29 的主页' })).not.toBeInTheDocument();
+      fireEvent.mouseEnter(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      const list = await screen.findByRole('dialog', { name: 'Alpha的 Workers 资料卡' });
+      expect(within(list).getByRole('heading', { name: 'Workers · 31' })).toBeInTheDocument();
+      fireEvent.focus(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      fireEvent.click(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      expect(list).toBeInTheDocument();
+      fireEvent.click(within(list).getByRole('button', { name: '查看 extra-29 的主页' }));
+      expect(screen.getByText('agent-profile:extra-29')).toBeInTheDocument();
+    } finally {
+      workersFixture.splice(-extra.length);
+      teamsFixture[0].workerNames = originalNames;
+      teamsFixture[0].humanMembers = originalMembers;
+    }
+  });
+
   it('opens an interactive Agent card on hover and keeps it open while entering the card', async () => {
     renderSection();
     const member = screen.getByRole('button', { name: '查看 w1 的主页' });

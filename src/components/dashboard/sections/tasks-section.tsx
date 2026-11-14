@@ -28,6 +28,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiUrl, requestJson } from '@/lib/api-base';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
+import { OverflowText } from '@/components/dashboard/overflow-text';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -321,7 +322,7 @@ function TaskCard({
         </div>}
         <div>
           <div className="flex items-start gap-2">
-            <p className="min-w-0 flex-1 text-sm font-medium leading-6">{task.title}</p>
+            <OverflowText text={task.title} multiline className="h-12 min-w-0 flex-1 text-sm font-medium leading-6" />
             {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
           </div>
           <p className="text-xs text-muted-foreground font-mono mt-1">
@@ -331,8 +332,8 @@ function TaskCard({
         <div className="min-w-0 space-y-1.5 text-xs text-muted-foreground">
           {task.assignedTo && (
             <div className="min-w-0" title={task.assignedTo}>
-              <p className="truncate">{managerName || task.assignedTo.replace(/^@([^:]+):.*$/, '$1')}</p>
-              {workerTeam && <p className="mt-1 truncate text-muted-foreground/70" title={workerTeam}>{workerTeam}</p>}
+              <OverflowText text={managerName || task.assignedTo.replace(/^@([^:]+):.*$/, '$1')} />
+              {workerTeam && <OverflowText text={workerTeam} className="mt-1 text-muted-foreground/70" />}
             </div>
           )}
           {task.createdAt > 0 && <span className="flex items-center gap-1">

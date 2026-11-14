@@ -1,5 +1,6 @@
 'use client';
 
+import { OverflowText } from '@/components/dashboard/overflow-text';
 import { useState, useMemo, useCallback } from 'react';
 import { Wifi } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -130,14 +131,14 @@ export function McpServersSection() {
         </Card>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b bg-muted/40 text-left"><th className="px-4 py-3 font-medium">名称 / 用途</th><th className="px-4 py-3 font-medium">接入方式</th><th className="px-4 py-3 font-medium">网关状态</th><th className="px-4 py-3 font-medium">Agent</th><th className="px-4 py-3 text-right font-medium">操作</th></tr></thead>
+          <table className="w-full min-w-[940px] table-fixed text-sm">
+            <thead><tr className="border-b bg-muted/40 text-left"><th className="w-[28%] px-4 py-3 font-medium">名称 / 用途</th><th className="w-[160px] px-4 py-3 font-medium">接入方式</th><th className="px-4 py-3 font-medium">网关状态</th><th className="w-[100px] px-4 py-3 font-medium">Agent</th><th className="w-[190px] px-4 py-3 text-right font-medium">操作</th></tr></thead>
             <tbody>{filteredServers.map((server) => <tr key={server.name} className="border-b last:border-0 hover:bg-muted/20">
-              <td className="px-4 py-4"><button type="button" disabled={server.managed && !server.connection} className={`font-medium ${server.managed && server.connection ? 'hover:underline underline-offset-4' : ''}`} onClick={() => { if (server.managed && server.connection) setDetail(server); }}>{server.name}</button><p className="mt-1 line-clamp-1 max-w-sm text-xs leading-5 text-muted-foreground" title={server.description}>{server.description}</p>
+              <td className="px-4 py-4"><button type="button" disabled={server.managed && !server.connection} title={server.name} className={`block max-w-full truncate font-medium ${server.managed && server.connection ? 'hover:underline underline-offset-4' : ''}`} onClick={() => { if (server.managed && server.connection) setDetail(server); }}>{server.name}</button><OverflowText text={server.description || ''} className="mt-1 text-xs leading-5 text-muted-foreground" />
                 {testResults[server.name] && <p className={`mt-2 text-xs ${testResults[server.name].success ? 'text-emerald-600' : 'text-destructive'}`}>{testResults[server.name].success ? '连接成功' : '连接失败'}：{testResults[server.name].message}</p>}
               </td>
               <td className="px-4 py-4"><Badge variant="outline">{server.kind ? MCP_KIND_LABELS[server.kind] : server.connection ? MCP_KIND_LABELS[server.connection.kind] : '地址登记'}</Badge><p className="mt-1.5 text-xs text-muted-foreground">{server.transport === 'sse' ? 'SSE' : 'Streamable HTTP'}</p></td>
-              <td className="px-4 py-4"><span className={`text-xs ${server.verification?.success ? 'text-emerald-600' : server.gatewayState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{server.gatewayState === 'error' ? '接入失败' : server.verification?.success ? `已验证 · ${server.toolCount ?? server.verification.tools?.length ?? 0} 个工具` : server.managed ? '已启用 · 待验证' : '未验证网关'}</span><p className="mt-1.5 max-w-xs truncate text-xs text-muted-foreground" title={server.url}>{server.url}</p></td>
+              <td className="px-4 py-4"><span className={`text-xs ${server.verification?.success ? 'text-emerald-600' : server.gatewayState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{server.gatewayState === 'error' ? '接入失败' : server.verification?.success ? `已验证 · ${server.toolCount ?? server.verification.tools?.length ?? 0} 个工具` : server.managed ? '已启用 · 待验证' : '未验证网关'}</span><OverflowText text={server.url} className="mt-1.5 text-xs text-muted-foreground" /></td>
               <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">{server.managed ? `${server.authorizedWorkerCount ?? server.authorizedWorkers?.length ?? 0} 个已授权` : catalog.off ? '待分配' : `${(catalog.workersByServer.get(server.name) ?? []).length} 个已配置`}</td>
               <td className="px-4 py-4"><div className="flex items-center justify-end gap-1 whitespace-nowrap">
                 {server.managed && !server.connection ? <span className="text-xs text-muted-foreground">管理员可管理</span> : <><Button variant="ghost" size="sm" disabled={testingServer === server.name} onClick={() => handleTest(server)}>{testingServer === server.name ? '测试中…' : '测试'}</Button>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
+import { OverflowText } from '@/components/dashboard/overflow-text';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import {
   Table,
@@ -33,10 +34,10 @@ export function HumanTable({
 }) {
   return (
     <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-      <Table>
+      <Table className="min-w-[640px] table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>用户</TableHead>
+            <TableHead className="w-[40%]">用户</TableHead>
             <TableHead>状态</TableHead>
             <TableHead>角色</TableHead>
             <TableHead className="text-right">操作</TableHead>
@@ -53,10 +54,11 @@ export function HumanTable({
                 onClick={() => onView(human)}
               >
                 <TableCell>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <button
                       type="button"
                       className="max-w-[180px] truncate text-left font-medium hover:underline"
+                      title={human.displayName || human.name}
                       onClick={(event) => {
                         event.stopPropagation();
                         onView(human);
@@ -65,7 +67,7 @@ export function HumanTable({
                       {human.displayName || human.name}
                     </button>
                     {human.displayName && human.displayName !== human.name && (
-                      <span className="text-xs text-muted-foreground truncate max-w-[180px]" title={human.name}>{human.name}</span>
+                      <OverflowText text={human.name} className="text-xs text-muted-foreground" />
                     )}
                   </div>
                 </TableCell>
