@@ -58,11 +58,12 @@ function RuntimeCard({ target, now, onLogs }: { target: RuntimeTarget; now: numb
   const m = target.metrics;
   const message = runtimeSourceMessage(target);
   const state = m?.state;
+  const stateLabel = state ? states[state] || state : ({ unsupported: '未接入', missing: '无容器', error: '暂不可用', available: '未知' }[target.availability]);
   const title = target.kind === 'component' ? target.name === 'controller' ? 'Controller' : 'Dashboard' : target.name;
   return <Card className="min-w-0 gap-0 rounded-xl p-4 shadow-none">
     <div className="flex min-w-0 items-center gap-3">
       <div className="min-w-0 flex-1"><h2 className="min-w-0 text-sm font-semibold"><OverflowText text={title} /></h2><p className="mt-1 truncate text-xs text-muted-foreground">{kinds[target.kind]}{target.runtime ? ` · ${target.runtime}` : ''}</p></div>
-      <Badge variant="outline" className="shrink-0 gap-1.5 text-xs"><span aria-hidden="true" className={`size-1.5 rounded-full ${state === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />{state ? states[state] || state : target.phase || '不可用'}</Badge>
+      <Badge variant="outline" className="shrink-0 gap-1.5 text-xs"><span aria-hidden="true" className={`size-1.5 rounded-full ${state === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />{stateLabel}</Badge>
     </div>
     <div className="mt-3 flex h-5 min-w-0 gap-2 text-xs"><span className="shrink-0 text-muted-foreground">{target.kind === 'component' ? '范围' : '模型'}</span><OverflowText text={target.kind === 'component' ? target.name === 'controller' ? 'Controller 与内置基础服务' : 'Dashboard 服务' : target.model || '—'} /></div>
     <div className="my-4 grid grid-cols-2 gap-4 border-y py-4">
@@ -97,7 +98,7 @@ function RuntimeLogSheet({ target, dashboard, onClose }: { target: RuntimeTarget
       <div className="flex flex-wrap items-center gap-2">
         <Select value={range} onValueChange={setRange}><SelectTrigger aria-label="日志时间范围" className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">最近日志</SelectItem><SelectItem value="15">最近 15 分钟</SelectItem><SelectItem value="60">最近 1 小时</SelectItem></SelectContent></Select>
         <Input aria-label="筛选已加载日志" placeholder="筛选已加载日志…" value={keyword} onChange={event => setKeyword(event.target.value)} className="min-w-0 flex-1 basis-40" />
-        <Button variant="outline" size="sm" disabled={logs.isFetching} onClick={() => void logs.refetch()}>刷新日志</Button>
+        <Button variant="outline" size="sm" className="h-9" disabled={logs.isFetching} onClick={() => void logs.refetch()}>刷新日志</Button>
       </div>
       {logs.isError ? <p role="alert" className="text-sm text-destructive">日志加载失败：{logs.error.message}</p> : logs.isPending ? <Skeleton aria-label="加载日志" className="h-64" /> : <>
         <p className="text-xs text-muted-foreground">已显示 {lines.length} 行 · 更新于 {dateTime(logs.data.sampledAt)}{logs.data.truncated ? ' · 日志较大，内容已截断，请缩小时间范围' : ''}</p>
