@@ -15,7 +15,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 
 /** 「无 Provider（在服 + 在用）」哨兵：UI 展示为无 provider（= 跟随默认/全量）。 */
-export const LOCAL_PROVIDER = '无 Provider（在服 + 在用）';
+export const LOCAL_PROVIDER = '跟随默认连接';
 
 export interface ModelPickerProps {
   /** 网关 provider 名（来自 buildModelCandidateCatalog(...).providers）。 */
@@ -70,12 +70,12 @@ export function ModelPicker({
   onChange,
   localProviderLabel = LOCAL_PROVIDER,
   disabled,
-  providerLabel = 'Provider',
-  modelLabel = '请求模型别名',
-  providerPlaceholder = '选择或输入 Provider',
+  providerLabel = '模型连接',
+  modelLabel = '模型',
+  providerPlaceholder = '选择或输入连接名称',
   modelPlaceholder = '选择或输入模型',
-  providerAriaLabel = 'Provider',
-  modelAriaLabel = '请求模型别名',
+  providerAriaLabel = '模型连接',
+  modelAriaLabel = '模型',
 }: ModelPickerProps) {
   const providerId = useId();
   const modelId = useId();

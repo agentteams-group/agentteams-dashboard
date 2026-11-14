@@ -120,8 +120,8 @@ function chooseOption(input: HTMLElement, name: string) {
   );
 }
 
-const providerInput = () => screen.getByLabelText('Provider');
-const modelInput = () => screen.getByLabelText('请求模型别名');
+const providerInput = () => screen.getByLabelText('模型连接');
+const modelInput = () => screen.getByLabelText('模型');
 
 const runtimeSelect = () => screen.getByLabelText('运行时') as HTMLSelectElement;
 

@@ -21,6 +21,6 @@ export function OverflowText({ text, className, multiline = false, onClick }: {
     <TooltipTrigger asChild>
       {onClick ? <button type="button" {...props} onClick={onClick}>{text}</button> : <span {...props} tabIndex={0}>{text}</span>}
     </TooltipTrigger>
-    <TooltipContent sideOffset={6} className="max-h-64 max-w-[min(28rem,calc(100vw-2rem))] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border bg-popover p-3 text-left text-popover-foreground shadow-md [&>svg]:bg-popover [&>svg]:fill-popover">{text}</TooltipContent>
+    <TooltipContent hideArrow sideOffset={6} className="max-h-64 max-w-[min(28rem,calc(100vw-2rem))] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border bg-popover p-3 text-left text-popover-foreground shadow-md">{text}</TooltipContent>
   </Tooltip>;
 }

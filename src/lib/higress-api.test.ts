@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  modelProviderType,
   serializeProviderForm,
   serializeRouteForm,
   normalizeMatchTypeForApi,
@@ -13,6 +14,21 @@ import {
   type ProviderForm,
   type RouteForm,
 } from './higress-api';
+
+describe('MiniMax OpenAI-compatible transport', () => {
+  it.each(['https://api.minimax.cn/v1', 'https://api.minimax.io/v1'])('uses the current endpoint %s and preserves MiniMax in the UI', (baseUrl) => {
+    const payload = serializeProviderForm({ name: 'minimax', type: 'minimax', protocol: 'openai/v1', tokens: ['test-key'], baseUrl, modelMappings: [{ pattern: 'MiniMax-M3', targetModel: 'MiniMax-M3' }] });
+    expect(payload).toMatchObject({ type: 'openai', rawConfigs: { openaiCustomUrl: baseUrl, modelMapping: { 'MiniMax-M3': 'MiniMax-M3' } } });
+    expect(modelProviderType({ name: 'minimax', type: 'openai', tokenCount: 1, rawConfigs: payload.rawConfigs })).toBe('minimax');
+  });
+
+  it('defaults M3 to the current China endpoint without rewriting legacy MiniMax configs', () => {
+    const form = { name: 'minimax', type: 'minimax', protocol: 'openai/v1' as const, tokens: ['test-key'], modelMappings: [{ pattern: 'MiniMax-M3.1-Flash', targetModel: 'MiniMax-M3.1-Flash' }] };
+    expect(serializeProviderForm(form)).toMatchObject({ type: 'openai', rawConfigs: { openaiCustomUrl: 'https://api.minimax.cn/v1' } });
+    expect(serializeProviderForm({ ...form, modelMappings: [] }, true)).toMatchObject({ type: 'minimax' });
+    expect(serializeProviderForm({ ...form, protocol: 'original' })).toMatchObject({ type: 'minimax' });
+  });
+});
 
 describe('Higress form serialization', () => {
   const provider: ProviderForm = {
@@ -39,6 +55,33 @@ describe('Higress form serialization', () => {
 
   it('omits empty tokens from provider updates', () => {
     expect(serializeProviderForm({ ...provider, tokens: [] }, true)).not.toHaveProperty('tokens');
+  });
+
+  it('saves actual request overrides while preserving unrelated provider options', () => {
+    const originalRawConfigs = { id: 'openai', type: 'qwen', protocol: 'original', providerTimeout: 120, customSettings: [{ name: 'temperature', value: 0.5 }], modelMapping: { stale: 'old-model' } };
+    const payload = serializeProviderForm({ ...provider, originalRawConfigs, modelMappings: [], requestParameters: { maxTokens: '8192', outputTokenParameter: 'max_completion_tokens', reasoningEffort: 'max' } }, true);
+    expect(payload.rawConfigs).toMatchObject({ providerTimeout: 120, modelMapping: {}, customSettings: [
+      { name: 'temperature', value: 0.5 },
+      { name: 'max_completion_tokens', value: 8192, mode: 'raw', overwrite: true },
+      { name: 'reasoning_effort', value: 'max', mode: 'raw', overwrite: true },
+    ] });
+    expect(originalRawConfigs.modelMapping).toEqual({ stale: 'old-model' });
+    expect(payload.rawConfigs).not.toHaveProperty('type');
+    expect(payload.rawConfigs).not.toHaveProperty('protocol');
+  });
+
+  it('routes an explicit custom endpoint through the OpenAI-compatible adapter and infers its platform on edit', () => {
+    const baseUrl = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
+    const payload = serializeProviderForm({ ...provider, type: 'tokenplan', baseUrl });
+    expect(payload).toMatchObject({ type: 'openai', rawConfigs: { openaiCustomUrl: baseUrl } });
+    expect(modelProviderType({ name: 'personal', type: 'openai', tokenCount: 1, rawConfigs: payload.rawConfigs })).toBe('tokenplan');
+    expect(serializeProviderForm({ ...provider, type: 'qwen', baseUrl: 'https://custom.example/v1' }).type).toBe('openai');
+  });
+
+  it('requires an endpoint for custom and Token Plan connections and rejects incompatible protocol choices', () => {
+    expect(validateProviderForm({ ...provider, type: 'tokenplan', baseUrl: '' })).toContain('此连接必须填写 API 地址');
+    expect(validateProviderForm({ ...provider, type: 'custom', baseUrl: '' })).toContain('此连接必须填写 API 地址');
+    expect(validateProviderForm({ ...provider, type: 'qwen', protocol: 'original' })).toContain('自定义 API 地址请使用 OpenAI 兼容协议');
   });
 
   it('keeps a configured token failover policy in provider payloads', () => {

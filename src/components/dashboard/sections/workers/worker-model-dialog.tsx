@@ -108,7 +108,7 @@ export function WorkerModelDialog({
             modelsByProvider={catalog.modelsByProvider}
             allModels={catalog.models}
             providerPlaceholder={
-              providerHint ? `当前解析：${providerHint}` : '选择或输入 Provider'
+              providerHint ? `当前解析：${providerHint}` : '选择或输入连接名称'
             }
             modelPlaceholder="例如 team-chat"
             onChange={(nextProvider, nextModel) => {
@@ -134,8 +134,8 @@ export function WorkerModelDialog({
           ) : null}
           <p className="text-xs text-muted-foreground break-words">
             {onSave
-              ? '选中的 Provider 与模型会成对刷写到该批全部成员的本地草稿；保存「成员」时才写回。留空 = 不改。'
-              : '多 provider 部署下先选 Provider 再选 Model；Provider 只在改动时下发。留空 = 不绑定 provider，沿用控制器现值。'}
+              ? '所选连接和模型应用到本批成员的草稿，保存成员时生效。留空保持原设置。'
+              : '先选择模型连接，再选择模型；未指定连接时沿用当前设置。模型名称也可以使用连接中配置的调用别名。'}
           </p>
           {sessionIssue ? (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">

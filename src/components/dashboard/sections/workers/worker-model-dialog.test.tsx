@@ -78,15 +78,15 @@ describe('WorkerModelDialog', () => {
 
   it('Provider 在上、Model 在下，两个都有候选下拉', () => {
     renderDialog();
-    const provider = screen.getByLabelText('Provider');
-    const model = screen.getByLabelText('请求模型别名');
+    const provider = screen.getByLabelText('模型连接');
+    const model = screen.getByLabelText('模型');
     expect(provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     expect(
       within(openList(provider))
         .getAllByRole('option')
         .map((item) => item.textContent),
-    ).toEqual(['无 Provider（在服 + 在用）', 'provider-a', 'provider-b']);
+    ).toEqual(['跟随默认连接', 'provider-a', 'provider-b']);
 
     expect(
       within(openList(model))
@@ -97,10 +97,10 @@ describe('WorkerModelDialog', () => {
 
   it('选择 Provider 后 Model 候选只剩该 Provider 的模型', () => {
     renderDialog();
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-b' }));
 
-    const model = screen.getByLabelText('请求模型别名');
+    const model = screen.getByLabelText('模型');
     expect(
       within(openList(model))
         .getAllByRole('option')
@@ -110,14 +110,14 @@ describe('WorkerModelDialog', () => {
 
   it('换 Provider 时清空不兼容的旧 Model', () => {
     renderDialog();
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-b' }));
-    expect(screen.getByLabelText('请求模型别名')).toHaveValue('');
+    expect(screen.getByLabelText('模型')).toHaveValue('');
   });
 
   it('provider 未改（只改 model）→ PUT body 不含 modelProvider', () => {
     renderDialog();
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'alias-b' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -133,8 +133,8 @@ describe('WorkerModelDialog', () => {
 
   it('provider 真变化 → PUT body 成对带 modelProvider', () => {
     renderDialog({ model: 'alias-c', modelProvider: 'provider-a' });
-    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'provider-b' } });
-    fireEvent.change(screen.getByLabelText('请求模型别名'), { target: { value: 'alias-c' } });
+    fireEvent.change(screen.getByLabelText('模型连接'), { target: { value: 'provider-b' } });
+    fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'alias-c' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     expect(mocks.updateWorkerMutate).toHaveBeenCalledWith(
@@ -148,7 +148,7 @@ describe('WorkerModelDialog', () => {
 
   it('无初始 provider 时选模型自动跟随绑定 provider 并成对下发', () => {
     renderDialog({ model: '', modelProvider: undefined, providerHint: undefined });
-    const model = screen.getByLabelText('请求模型别名');
+    const model = screen.getByLabelText('模型');
     fireEvent.click(within(openList(model)).getByRole('option', { name: LONG_ALIAS }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
@@ -172,7 +172,7 @@ describe('WorkerModelDialog', () => {
       );
     });
     renderDialog();
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'alias-b' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -201,7 +201,7 @@ describe('WorkerModelDialog', () => {
     expect(screen.getByText('批量设置模型 - Leader 批')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '应用' })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'alias-b' },
     });
     fireEvent.click(screen.getByRole('button', { name: '应用' }));
@@ -219,7 +219,7 @@ describe('WorkerModelDialog', () => {
     const onOpenChange = vi.fn();
     renderDialog({ onSave, onOpenChange });
 
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'alias-b' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
