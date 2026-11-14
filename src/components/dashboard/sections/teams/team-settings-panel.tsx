@@ -324,7 +324,7 @@ export function TeamSettingsPanel({
                   <details className="w-full min-w-0 border-t border-destructive/10 pt-2">
                     <summary className="cursor-pointer rounded-sm text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">技术详情</summary>
                     <div className="mt-2 flex min-w-0 items-start gap-2 rounded-md border bg-background/80 p-2">
-                      <pre className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono text-[11px] leading-5 break-all whitespace-pre-wrap">{team.message}</pre>
+                      <pre className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono text-xs leading-5 break-all whitespace-pre-wrap">{team.message}</pre>
                       <CopyButton text={team.message} label="复制失败详情" className="shrink-0" />
                     </div>
                   </details>
