@@ -41,7 +41,7 @@ export function ResourceIdentity({ name, role, kind, phase, onView }: {
 export function AgentSummaryCard({ agent, onView, onEdit }: {
   agent: AgentSummary; onView: () => void; onEdit: () => void;
 }) {
-  return <Card className="h-[280px] min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md">
+  return <Card className="h-[300px] min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md sm:h-[280px]">
     <CardContent className="flex flex-1 flex-col gap-5 p-5">
       <ResourceIdentity name={agent.name} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onView} />
       <div className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3">
@@ -53,9 +53,9 @@ export function AgentSummaryCard({ agent, onView, onEdit }: {
         <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '独立 Agent'} className="text-right leading-5" /></dd>
       </dl>
     </CardContent>
-    <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3">
-      <Button variant="ghost" size="sm" onClick={onView}>查看详情</Button>
-      <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>
+    <div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-border/60 px-5 py-3">
+      <Button variant="outline" size="sm" className="w-full" onClick={onView}>详情</Button>
+      <Button variant="outline" size="sm" className="w-full" onClick={onEdit}>编辑</Button>
     </div>
   </Card>;
 }
@@ -72,6 +72,6 @@ export function HumanSummaryCard({ name, human, onView }: {
         <dt className="text-muted-foreground">邮箱</dt><dd className="min-w-0"><OverflowText text={human?.email || '未填写'} className="text-right" /></dd>
       </dl>
     </CardContent>
-    <div className="flex justify-end border-t border-border/60 px-4 py-3"><Button variant="outline" size="sm" onClick={onView}>查看主页</Button></div>
+    <div className="flex items-center justify-end border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={onView}>详情</Button></div>
   </Card>;
 }

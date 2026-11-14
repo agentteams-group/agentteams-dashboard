@@ -247,7 +247,7 @@ describe('Team and Agent resource cards', () => {
     fireEvent.mouseLeave(member);
     fireEvent.mouseEnter(preview);
     expect(preview).toBeInTheDocument();
-    fireEvent.click(within(preview).getByRole('button', { name: '查看详情' }));
+    fireEvent.click(within(preview).getByRole('button', { name: '详情' }));
     expect(screen.getByText('agent-profile:w1')).toBeInTheDocument();
   });
 
@@ -308,7 +308,7 @@ describe('Team and Agent resource cards', () => {
 
   it('opens the team settings and retains the team configuration tool', () => {
     renderSection();
-    fireEvent.click(screen.getAllByRole('button', { name: '编辑团队' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '千锻 · 团队配置' }));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent('millforge-dialog:alpha');
