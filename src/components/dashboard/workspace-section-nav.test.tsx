@@ -18,7 +18,7 @@ it('switches among all five asset categories using their existing routes', () =>
 
 it('keeps work views available and honours the existing task-board flag', () => {
   const view = render(<WorkspaceNavigation activeSection="coding-runs" countMap={{}} sectionsWithNotifications={new Set()} onNavClick={vi.fn()} />);
-  expect(within(screen.getByRole('group', { name: '工作台分类' })).getAllByRole('button').map(button => button.textContent)).toEqual(['待你处理', '任务看板', '产物', '编码执行', '自动化', 'Tracing']);
+  expect(within(screen.getByRole('group', { name: '工作台分类' })).getAllByRole('button').map(button => button.textContent)).toEqual(['待你处理', '任务看板', '产物', '编码执行', '自动化']);
   useAgentTeamsStore.setState({ taskBoardVisible: false });
   view.rerender(<WorkspaceNavigation activeSection="coding-runs" countMap={{}} sectionsWithNotifications={new Set()} onNavClick={vi.fn()} />);
   expect(screen.queryByRole('button', { name: '任务看板' })).toBeNull();

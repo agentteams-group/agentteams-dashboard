@@ -20,6 +20,13 @@ function ev(overrides: Partial<ControllerAuditEvent> = {}): ControllerAuditEvent
 }
 
 describe('kindToEntityType', () => {
+  it('classifies deployed resource and file events instead of hiding them under system', () => {
+    expect(kindToEntityType('human_created')).toBe('human');
+    expect(kindToEntityType('human_file_write')).toBe('human');
+    expect(kindToEntityType('worker_updated')).toBe('worker');
+    expect(kindToEntityType('team_created')).toBe('team');
+    expect(kindToEntityType('manager_updated')).toBe('manager');
+  });
   it('maps capability/approval_level to human, channel to worker, source to system', () => {
     expect(kindToEntityType('capability')).toBe('human');
     expect(kindToEntityType('approval_level')).toBe('human');

@@ -1,20 +1,25 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import { Bot, ChevronDown, Hammer, Library, Users } from 'lucide-react';
+import { Activity, Bot, ChevronDown, Hammer, Library, Users } from 'lucide-react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { canOpenConversation } from './sections/chat/agent-conversations';
 import type { RoomInfo } from './sections/chat/room-info';
 import { isNavItemVisible, navItems, type DeploymentMode } from './nav-items';
+import { usePluginMenuItems } from '@/lib/plugins/extension-store';
+import { pluginSectionId } from '@/lib/plugins/types';
+
+export const OBSERVABILITY_PLUGIN_IDS: readonly string[] = ['monitor-panel'];
 
 export const workspaceMenus = [
   { id: 'chat', label: '助手', icon: Bot, sections: ['chat'] },
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
-  { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops', 'tracing'] },
+  { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
   { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'team-agents', 'humans', 'managers'] },
+  { id: 'tracing', label: '观测与治理', icon: Activity, sections: ['plugin-route:monitor-panel/monitor', 'tracing', 'audit'] },
 ];
 
 export function workspaceMenuFor(section: string) {
@@ -35,6 +40,7 @@ interface WorkspaceNavigationProps {
 export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotifications, onNavClick, collapsed, mode, onExpandSidebar, agentRooms = [] }: WorkspaceNavigationProps) {
   const userLevel = useAgentTeamsStore(state => state.userLevel);
   const taskBoardVisible = useAgentTeamsStore(state => state.taskBoardVisible);
+  const pluginMenus = usePluginMenuItems();
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const id = useId();
 
@@ -47,9 +53,14 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
     <nav aria-label="主要功能" className="space-y-1 px-3 py-3">
       {workspaceMenus.map(menu => {
         const active = menu.sections.includes(activeSection);
-        const items = menu.sections.flatMap(section => {
+        const items = menu.sections.flatMap<{ id: string; label: string }>(section => {
           const item = navItems.find(entry => entry.id === section);
-          return item && item.id !== 'chat' && item.id !== 'my-teams' && item.id !== 'resources' && isNavItemVisible(item, mode, taskBoardVisible, userLevel) ? [item] : [];
+          if (item) return item.id !== 'chat' && item.id !== 'my-teams' && item.id !== 'resources' && isNavItemVisible(item, mode, taskBoardVisible, userLevel) ? [item] : [];
+          // These bundled pages read administrator-only resources. Contributions
+          // disappear when their plugin is disabled, so no dead link is added.
+          if (userLevel < 3) return [];
+          const plugin = pluginMenus.find(({ pluginId, contribution }) => contribution.target.type === 'plugin-route' && pluginSectionId(pluginId, contribution.target.routeId) === section);
+          return plugin ? [{ id: section, label: plugin.contribution.label }] : [];
         });
         const grouped = menu.id !== 'chat' && menu.id !== 'my-teams';
         const expanded = !collapsed && (expandedMenus[menu.id] ?? active);

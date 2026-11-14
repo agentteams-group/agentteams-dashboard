@@ -268,7 +268,9 @@ docker build -t agentteams-dashboard:local .
 
 ### Optional Worker tracing
 
-AT and Dashboard can start without Langfuse. In **Console → Governance → Tracing**, an administrator can open **可观测配置**, enter the Langfuse project query credentials and an existing OTLP/HTTP Collector endpoint, test the connection, save, and apply to selected managed Workers. The Collector must already export to the same Langfuse project and be reachable from the Workers. Use ingestion-only Collector credentials; project query credentials stay on the Dashboard server.
+AT and Dashboard can start without Langfuse. In **观测与治理 → Tracing**, an administrator can open **可观测配置**, enter the Langfuse project query credentials and an existing OTLP/HTTP Collector endpoint, test the connection, save, and apply to selected managed Workers. The Collector must already export to the same Langfuse project and be reachable from the Workers. Use ingestion-only Collector credentials; project query credentials stay on the Dashboard server.
+
+**观测与治理** also contains the enabled runtime-monitor plugin and operation audit. Runtime monitoring reports resource counts, Worker states and the Controller version. Audit displays up to 200 recent recorded events, with search, resource filters, pagination and a detail panel; coverage depends on the Controller's event producers. The system overview and WenTian diagnostics remain in Settings. WenTian's health checks and log ZIP export work independently of AI analysis, which requires its server-side model credentials.
 
 Saving takes effect without a Dashboard restart. Settings are stored atomically in `observability.json` beside `DASHBOARD_CONFIG_FILE` (mode `0600`); persist that directory in a volume. Secret fields are write-only, and blank secret inputs retain saved values. `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_URL`, `LANGFUSE_PROJECT_ID`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` remain optional server-side defaults for reading existing traces.
 
