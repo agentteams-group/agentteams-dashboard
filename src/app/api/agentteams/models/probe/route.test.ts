@@ -63,6 +63,21 @@ describe('model connection probe endpoint', () => {
     expect(JSON.stringify(result)).not.toContain('saved-secret');
   });
 
+  it.each([
+    ['SELF_SIGNED_CERT_IN_CHAIN', 'HTTPS 证书验证失败'],
+    ['CERT_HAS_EXPIRED', 'HTTPS 证书验证失败'],
+    ['ENOTFOUND', '域名解析失败'],
+    ['ECONNREFUSED', '连接被拒绝'],
+    ['UND_ERR_CONNECT_TIMEOUT', '连接超时'],
+  ])('reports the transport cause %s without exposing credentials', async (code, message) => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed', { cause: Object.assign(new Error('new-secret'), { code }) }));
+    const result = await (await POST(request(input))).json();
+    expect(result).toMatchObject({ success: false, model: input.model });
+    expect(result.message).toContain(message);
+    expect(result.message).toContain(code);
+    expect(JSON.stringify(result)).not.toContain(input.token);
+  });
+
   it('rejects non-JSON success pages and keeps timeout active while reading the body', async () => {
     fetchMock.mockResolvedValue(new Response('<html>login</html>', { status: 200 }));
     expect((await (await POST(request(input))).json()).success).toBe(false);

@@ -326,6 +326,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
         <div className="space-y-1.5">
           <Label htmlFor="connection-base-url">API 地址（Base URL）</Label>
           <Input id="connection-base-url" value={form.baseUrl ?? ''} onChange={(event) => { setForm({ ...form, baseUrl: event.target.value }); setTestResult(null); }} placeholder={PROVIDER_BASE_URLS[form.type] ?? 'https://api.example.com/v1'} />
+          {form.type === 'minimax' ? <p className="text-xs leading-5 text-muted-foreground break-words">API Key 需匹配所属站点：在 platform.minimax.io 创建的 Key 使用 https://api.minimax.io/v1；国内站 Key 使用 https://api.minimax.cn/v1。</p> : null}
           <p className="text-xs leading-5 text-muted-foreground">无需追加 /chat/completions。留空使用厂商默认地址；自定义地址须兼容 OpenAI。</p>
         </div>
         <div className="space-y-1.5">

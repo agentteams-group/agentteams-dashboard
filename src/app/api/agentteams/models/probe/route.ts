@@ -68,8 +68,24 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ ...evaluateModelProbe(response.status, data, secrets), model, latencyMs: Date.now() - startedAt });
   } catch (err) {
+    const cause = isRecord(err) && isRecord(err.cause) ? err.cause : err;
+    const code = isRecord(cause) && typeof cause.code === 'string' ? cause.code : '';
+    const transportMessage = {
+      SELF_SIGNED_CERT_IN_CHAIN: 'HTTPS 证书验证失败',
+      DEPTH_ZERO_SELF_SIGNED_CERT: 'HTTPS 证书验证失败',
+      UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'HTTPS 证书验证失败',
+      UNABLE_TO_GET_ISSUER_CERT_LOCALLY: 'HTTPS 证书验证失败',
+      CERT_HAS_EXPIRED: 'HTTPS 证书验证失败',
+      ERR_TLS_CERT_ALTNAME_INVALID: 'HTTPS 证书验证失败',
+      ENOTFOUND: '模型服务域名解析失败',
+      EAI_AGAIN: '模型服务域名解析失败',
+      ECONNREFUSED: '模型服务连接被拒绝',
+      ETIMEDOUT: '模型服务连接超时',
+      UND_ERR_CONNECT_TIMEOUT: '模型服务连接超时',
+    }[code];
     const message = controller.signal.aborted || (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
       ? '模型调用超时（30 秒），请检查网络或稍后重试'
+      : transportMessage ? `${transportMessage}（${code}），请检查 Dashboard 服务器的网络、代理或证书配置；尚未验证 API Key 和模型权限`
       : '模型连接失败：' + redactProbeError(err instanceof Error ? err.message : '网络异常', secrets);
     return NextResponse.json({ success: false, model, message, latencyMs: Date.now() - startedAt });
   } finally {
