@@ -16,7 +16,25 @@ afterAll(() => {
   if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllGlobals(); window.history.replaceState(null, '', '/'); });
+
+it('opens an exact linked trace and span even when the trace is outside the list page', async () => {
+  window.history.replaceState(null, '', '#console/governance/tracing?worker=hermes-demo&trace=linked-trace&span=linked-span');
+  const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(traceResponse(url,
+    url.endsWith('/linked-trace/') ? { id: 'linked-trace', name: 'Linked trace', tags: [], metadata: {},
+      observations: [{ id: 'linked-span', name: 'model.timeout', type: 'GENERATION', level: 'ERROR', startTime: '2026-11-14T01:00:00Z', endTime: '2026-11-14T01:00:01Z', output: 'Timeout from linked span' }] }
+      : { data: [], meta: { page: 1, totalPages: 1, totalItems: 0 } })));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  expect(await screen.findByText(/Timeout from linked span/)).toBeTruthy();
+  expect(document.querySelector('[data-selected-span="linked-span"]')).toBeTruthy();
+  expect(fetcher.mock.calls.some(([url]) => url.includes('worker=hermes-demo'))).toBe(true);
+  window.history.replaceState(null, '', '#console/governance/tracing?trace=next-trace');
+  fireEvent(window, new HashChangeEvent('hashchange'));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.endsWith('/next-trace/'))).toBe(true));
+  view.unmount(); client.clear();
+});
 
 it.each([{ admin: true, configured: false }, { admin: false, configured: false }, { admin: true, configured: true }])('guides inactive tracing according to configuration and permissions ($configured, $admin)', async ({ admin, configured }) => {
   const fetcher = vi.fn().mockResolvedValue(Response.json({ teams: [], workers: [], canConfigure: admin, tracingConfigured: configured, tracingEnabled: false }));

@@ -16,6 +16,8 @@ import { formatMemory, runtimeSourceMessage, type RuntimeTarget } from '@/lib/ru
 import { formatAgoZh } from '@/lib/worker-activity';
 import { useNowTick } from '@/hooks/use-now-tick';
 import type { PluginDashboardServices } from '@/lib/plugins/types';
+import { useObservabilityTarget } from '@/hooks/use-observability-target';
+import type { MonitoringTarget } from '@/lib/observability-links';
 
 const kinds = { worker: 'Worker', manager: 'Manager', component: '基础组件' };
 const states: Record<string, string> = { running: '运行中', exited: '已停止', stopped: '已停止', created: '待启动', restarting: '重启中', paused: '已暂停', dead: '异常' };
@@ -23,10 +25,19 @@ const activities: Record<string, string> = { idle: '空闲', running: '执行中
 const dateTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
 
 export function MonitorPage({ dashboard }: { dashboard: PluginDashboardServices }) {
+  const target = useObservabilityTarget();
+  const initial = target?.section === 'monitoring' ? target : null;
+  return <MonitorView key={JSON.stringify(initial)} dashboard={dashboard} initial={initial} />;
+}
+
+function MonitorView({ dashboard, initial }: { dashboard: PluginDashboardServices; initial: MonitoringTarget | null }) {
   const now = useNowTick(30_000);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initial?.name ?? '');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<RuntimeTarget | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const linkedLog = !dismissed && initial?.view === 'logs' && initial.kind && initial.name ? { kind: initial.kind, name: initial.name } : null;
+  const logTarget = selected ?? linkedLog;
   const snapshot = useQuery({
     queryKey: ['runtime-monitoring', page, search],
     queryFn: () => dashboard.getMonitoring({ page, limit: 12, search }),
@@ -46,21 +57,21 @@ export function MonitorPage({ dashboard }: { dashboard: PluginDashboardServices 
     {snapshot.isPending ? <div role="status" aria-label="加载运行监控" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(item => <Skeleton key={item} className="h-72 rounded-xl" />)}</div> : data && <>
       {!data.items.length ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">{search ? '没有匹配的运行资源' : '暂无运行资源'}</div> :
         <div aria-label="运行资源卡片" aria-busy={snapshot.isFetching} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.items.map(target => <RuntimeCard key={`${target.kind}/${target.name}`} target={target} now={now} onLogs={() => setSelected(target)} />)}
+          {data.items.map(target => <RuntimeCard key={`${target.kind}/${target.name}`} target={target} now={now} highlighted={target.kind === initial?.kind && target.name === initial?.name} onLogs={() => setSelected(target)} />)}
         </div>}
       <ListPagination page={data.page} totalPages={data.totalPages} totalItems={data.total} label="资源" onChange={setPage} />
     </>}
-    <RuntimeLogSheet key={selected ? `${selected.kind}/${selected.name}` : 'closed'} target={selected} dashboard={dashboard} onClose={() => setSelected(null)} />
+    <RuntimeLogSheet key={logTarget ? `${logTarget.kind}/${logTarget.name}` : 'closed'} target={logTarget} initial={linkedLog ? initial : null} dashboard={dashboard} onClose={() => { setSelected(null); setDismissed(true); }} />
   </div>;
 }
 
-function RuntimeCard({ target, now, onLogs }: { target: RuntimeTarget; now: number; onLogs: () => void }) {
+function RuntimeCard({ target, now, onLogs, highlighted }: { target: RuntimeTarget; now: number; onLogs: () => void; highlighted?: boolean }) {
   const m = target.metrics;
   const message = runtimeSourceMessage(target);
   const state = m?.state;
   const stateLabel = state ? states[state] || state : ({ unsupported: '未接入', missing: '无容器', error: '暂不可用', available: '未知' }[target.availability]);
   const title = target.kind === 'component' ? target.name === 'controller' ? 'Controller' : 'Dashboard' : target.name;
-  return <Card className="min-w-0 gap-0 rounded-xl p-4 shadow-none">
+  return <Card data-linked-resource={highlighted || undefined} className={`min-w-0 gap-0 rounded-xl p-4 shadow-none ${highlighted ? 'border-primary ring-1 ring-primary/20' : ''}`}>
     <div className="flex min-w-0 items-center gap-3">
       <div className="min-w-0 flex-1"><h2 className="min-w-0 text-sm font-semibold"><OverflowText text={title} /></h2><p className="mt-1 truncate text-xs text-muted-foreground">{kinds[target.kind]}{target.runtime ? ` · ${target.runtime}` : ''}</p></div>
       <Badge variant="outline" className="shrink-0 gap-1.5 text-xs"><span aria-hidden="true" className={`size-1.5 rounded-full ${state === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />{stateLabel}</Badge>
@@ -81,12 +92,13 @@ function RuntimeCard({ target, now, onLogs }: { target: RuntimeTarget; now: numb
   </Card>;
 }
 
-function RuntimeLogSheet({ target, dashboard, onClose }: { target: RuntimeTarget | null; dashboard: PluginDashboardServices; onClose: () => void }) {
-  const [range, setRange] = useState('all');
+function RuntimeLogSheet({ target, initial, dashboard, onClose }: { target: Pick<RuntimeTarget, 'kind' | 'name'> | null; initial: MonitoringTarget | null; dashboard: PluginDashboardServices; onClose: () => void }) {
+  const [range, setRange] = useState(initial?.since ? 'linked' : 'all');
+  const tail = initial?.tail ?? 300;
   const [keyword, setKeyword] = useState('');
   const logs = useQuery({
-    queryKey: ['runtime-logs', target?.kind, target?.name, range],
-    queryFn: () => dashboard.getMonitoringLogs(target!.kind, target!.name, { tail: 300, ...(range === 'all' ? {} : { since: new Date(Date.now() - Number(range) * 60_000).toISOString() }) }),
+    queryKey: ['runtime-logs', target?.kind, target?.name, range, initial?.since, tail],
+    queryFn: () => dashboard.getMonitoringLogs(target!.kind, target!.name, { tail, ...(range === 'all' ? {} : { since: range === 'linked' ? initial!.since : new Date(Date.now() - Number(range) * 60_000).toISOString() }) }),
     enabled: !!target,
     retry: false,
     staleTime: 0,
@@ -94,15 +106,15 @@ function RuntimeLogSheet({ target, dashboard, onClose }: { target: RuntimeTarget
   const lines = logs.data?.text.split('\n').filter(line => line && line.toLowerCase().includes(keyword.toLowerCase())) ?? [];
   return <Sheet open={!!target} onOpenChange={open => { if (!open) onClose(); }}>
     <SheetContent className="flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-3xl sm:p-6">
-      <SheetHeader className="min-w-0 p-0 pr-6"><SheetTitle className="break-all">{target?.name} · 日志</SheetTitle><SheetDescription>最近 300 行容器输出。常见凭据字段已遮盖。</SheetDescription></SheetHeader>
+      <SheetHeader className="min-w-0 p-0 pr-6"><SheetTitle className="break-all">{target?.name} · 日志</SheetTitle><SheetDescription>最多 {tail} 行容器输出。常见凭据字段已遮盖。{range === 'linked' ? ` 从 ${dateTime(initial?.since)} 起，刷新可读取后续日志。` : ''}</SheetDescription></SheetHeader>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={range} onValueChange={setRange}><SelectTrigger aria-label="日志时间范围" className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">最近日志</SelectItem><SelectItem value="15">最近 15 分钟</SelectItem><SelectItem value="60">最近 1 小时</SelectItem></SelectContent></Select>
+        <Select value={range} onValueChange={setRange}><SelectTrigger aria-label="日志时间范围" className="w-40"><SelectValue /></SelectTrigger><SelectContent>{initial?.since ? <SelectItem value="linked">对话查询时间</SelectItem> : null}<SelectItem value="all">最近日志</SelectItem><SelectItem value="15">最近 15 分钟</SelectItem><SelectItem value="60">最近 1 小时</SelectItem></SelectContent></Select>
         <Input aria-label="筛选已加载日志" placeholder="筛选已加载日志…" value={keyword} onChange={event => setKeyword(event.target.value)} className="min-w-0 flex-1 basis-40" />
         <Button variant="outline" size="sm" className="h-9" disabled={logs.isFetching} onClick={() => void logs.refetch()}>刷新日志</Button>
       </div>
       {logs.isError ? <p role="alert" className="text-sm text-destructive">日志加载失败：{logs.error.message}</p> : logs.isPending ? <Skeleton aria-label="加载日志" className="h-64" /> : <>
         <p className="text-xs text-muted-foreground">已显示 {lines.length} 行 · 更新于 {dateTime(logs.data.sampledAt)}{logs.data.truncated ? ' · 日志较大，内容已截断，请缩小时间范围' : ''}</p>
-        <pre aria-label="容器日志内容" className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs leading-6 whitespace-pre-wrap break-all">{lines.length ? lines.join('\n') : keyword ? '没有匹配的日志' : '所选时间范围暂无日志'}</pre>
+        <pre aria-label="容器日志内容" className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs leading-6 whitespace-pre-wrap break-words">{lines.length ? lines.join('\n') : keyword ? '没有匹配的日志' : '所选时间范围暂无日志'}</pre>
       </>}
     </SheetContent>
   </Sheet>;

@@ -23,6 +23,7 @@ import {
 import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 import { SaveToHumanFiles } from './save-to-human-files';
+import { parseObservabilityLink } from '@/lib/observability-links';
 
 interface MarkdownMessageProps {
   content: string;
@@ -218,6 +219,13 @@ function formatFileSize(size?: number): string {
  * 话」而不是正文，统一成细左边线 + 12px 缩进 + 次要色。
  */
 const QUOTE_CLASS = 'my-2 border-l-2 border-border pl-3 italic text-muted-foreground';
+const EVIDENCE_CLASS = 'my-3 min-w-0 rounded-xl border border-border bg-card p-4 text-foreground not-italic shadow-none [&_pre]:max-h-56 [&_pre]:whitespace-pre-wrap [&_pre]:break-words';
+
+function hasEvidenceLink(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false;
+  const element = node as { properties?: { href?: string }; children?: unknown[] };
+  return Boolean(parseObservabilityLink(element.properties?.href)) || Boolean(element.children?.some(hasEvidenceLink));
+}
 
 export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
   // Prop takes precedence; fall back to the logged-in homeserver from the
@@ -366,7 +374,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   // the case (no real table element while the text has a Markdown table) and
   // fall through to the Markdown renderer below, where remark-gfm builds the
   // table.
-  if (html) {
+  // Matrix formatted_body and plain Markdown use the same evidence renderer.
+  // Other formatted messages retain their existing lightweight HTML path.
+  const evidenceHtml = html && /#console\/governance\/(?:monitoring|tracing)(?:[?"'<>\s]|$)/.test(html) ? html : null;
+  if (html && !evidenceHtml) {
     const hasRealHtmlTable = /<table[\s>]/i.test(html);
     const mdTableOnly = !hasRealHtmlTable && hasMarkdownTable(htmlToPlainText(html));
 
@@ -425,12 +436,13 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     // mdTableOnly → the Markdown renderer below owns this message.
   }
 
-  const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
+  const markdownContent = evidenceHtml || resolvedContent;
+  const mermaidChart = markdownContent.match(/```mermaid\n([\s\S]*?)\n```/);
   const hasMermaid = !!mermaidChart;
-  const plainContent = hasMermaid ? resolvedContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : resolvedContent;
+  const plainContent = hasMermaid ? markdownContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : markdownContent;
 
   // Streaming lightweight path: no block-level features → plain pre + cursor.
-  if (isStreaming && !hasBlockFeatures(plainContent) && !hasMermaid) {
+  if (isStreaming && !evidenceHtml && !hasBlockFeatures(plainContent) && !hasMermaid) {
     return (
       <div className="matrix-message-content text-sm">
         <pre className="whitespace-pre-wrap break-words m-0 font-inherit text-inherit">
@@ -489,12 +501,13 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             return <li className="mb-0.5">{children}</li>;
           },
           a({ href, children }) {
+            const evidenceLink = parseObservabilityLink(href);
             return (
               <a
                 href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline underline-offset-2"
+                target={evidenceLink ? undefined : '_blank'}
+                rel={evidenceLink ? undefined : 'noopener noreferrer'}
+                className={evidenceLink ? 'mr-2 mt-1 inline-flex min-h-8 items-center rounded-md border bg-background px-3 py-1 text-xs font-medium text-foreground no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'text-primary underline underline-offset-2'}
               >
                 {children}
               </a>
@@ -513,9 +526,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
           td({ children }) {
             return <td className="border border-border px-2 py-1">{children}</td>;
           },
-          blockquote({ children }) {
+          blockquote({ children, node }) {
+            const evidence = hasEvidenceLink(node);
             return (
-              <blockquote className={QUOTE_CLASS}>
+              <blockquote data-observability-evidence={evidence || undefined} className={evidence ? EVIDENCE_CLASS : QUOTE_CLASS}>
                 {children}
               </blockquote>
             );
