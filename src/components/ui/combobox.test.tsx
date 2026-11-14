@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Combobox } from './combobox';
@@ -58,6 +58,20 @@ function field() {
 
 describe('Combobox（可搜索 + 可自由输入）', () => {
   afterEach(cleanup);
+
+  it('allows wheel scrolling in portalled options while keeping the dialog background locked', async () => {
+    render(<Dialog open><DialogContent aria-describedby={undefined}><DialogTitle>模型配置</DialogTitle><Harness portal options={Array.from({ length: 30 }, (_, index) => `provider-${index}`)} /></DialogContent></Dialog>);
+    fireEvent.focus(field());
+    await waitFor(() => expect(document.body).toHaveAttribute('data-scroll-locked'));
+
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 });
+    fireEvent(screen.getByRole('option', { name: 'provider-0' }), wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+
+    const backgroundWheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 });
+    fireEvent(document.body, backgroundWheel);
+    expect(backgroundWheel.defaultPrevented).toBe(true);
+  });
 
   it('keeps a portalled candidate list outside clipping containers and selects with the keyboard', () => {
     const { container } = render(<Harness portal />);

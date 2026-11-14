@@ -218,7 +218,7 @@ export function Combobox({
           className={cn(
             'z-50 min-w-40 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
             portal
-              ? 'max-h-[min(240px,var(--radix-popover-content-available-height))] w-(--radix-popover-trigger-width)'
+              ? 'max-h-[min(240px,var(--radix-popover-content-available-height))] w-(--radix-popover-trigger-width) overscroll-contain'
               : 'absolute top-full left-0 mt-1 max-h-[min(50vh,260px)] w-full',
           )}
           {...(portal ? {
@@ -227,6 +227,9 @@ export function Combobox({
             collisionPadding: 8,
             onOpenAutoFocus: (event: Event) => event.preventDefault(),
             onCloseAutoFocus: (event: Event) => event.preventDefault(),
+            // Keep the parent dialog's document-level scroll lock from cancelling popup scrolling.
+            onWheel: (event: React.WheelEvent) => event.stopPropagation(),
+            onTouchMove: (event: React.TouchEvent) => event.stopPropagation(),
             onEscapeKeyDown: (event: globalThis.KeyboardEvent) => event.stopPropagation(),
             onInteractOutside: (event: CustomEvent) => {
               if (containerRef.current?.contains(event.target as Node)) event.preventDefault();
