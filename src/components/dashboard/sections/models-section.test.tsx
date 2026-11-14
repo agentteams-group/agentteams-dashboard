@@ -113,6 +113,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     mockRouteOverrides.value = undefined;
   });
 
@@ -397,6 +398,46 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByRole('button', { name: '创建连接' }));
     expect(mutations.createProvider).toHaveBeenCalledWith(expect.objectContaining({ name: 'connection-only' }), expect.any(Object));
     expect(mutations.createProvider.mock.calls.at(-1)![0].rawConfigs).not.toHaveProperty('modelMapping');
+  });
+
+  it('tests the selected draft model using the entered key and clears stale results when the model changes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: true, model: 'MiniMax-M3', message: '模型已返回生成内容，连接可用', latencyMs: 42 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    fireEvent.change(screen.getByLabelText('API Key *'), { target: { value: 'new-key' } });
+    const model = screen.getByRole('combobox', { name: '模型 ID' });
+    fireEvent.change(model, { target: { value: 'MiniMax-M3' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试模型 MiniMax-M3' }));
+    await screen.findByText(/模型已返回生成内容/);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ model: 'MiniMax-M3', token: 'new-key' });
+    fireEvent.change(model, { target: { value: 'other-model' } });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('tests a saved connection without asking for or sending its stored key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: false, message: '模型访问被拒绝，请检查权限或额度', model: 'private-model', latencyMs: 12 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '测试连接 openai' }));
+    expect(screen.getByRole('heading', { name: '测试连接 - openai' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: '测试模型 ID' }), { target: { value: 'private-model' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始测试' }));
+    await screen.findByText(/模型访问被拒绝/);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ providerName: 'openai', model: 'private-model' });
+    expect(screen.queryByPlaceholderText('输入 API Key')).toBeNull();
+  });
+
+  it('requires a new key or saving first when the endpoint of a saved connection changes', () => {
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '模型 ID' }), { target: { value: 'private-model' } });
+    const test = screen.getByRole('button', { name: '测试模型 private-model' });
+    expect(test.hasAttribute('disabled')).toBe(false);
+    fireEvent.change(screen.getByLabelText('API 地址（Base URL）'), { target: { value: 'https://other.example/v1' } });
+    expect(test.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/请先保存连接或输入新 API Key/)).toBeTruthy();
   });
 
   it('opens the edit form for a route whose authConfig omits allowedCredentialTypes', () => {
