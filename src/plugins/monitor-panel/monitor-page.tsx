@@ -67,8 +67,8 @@ function RuntimeCard({ target, now, onLogs }: { target: RuntimeTarget; now: numb
     </div>
     <div className="mt-3 flex h-5 min-w-0 gap-2 text-xs"><span className="shrink-0 text-muted-foreground">{target.kind === 'component' ? '范围' : '模型'}</span><OverflowText text={target.kind === 'component' ? target.name === 'controller' ? 'Controller 与内置基础服务' : 'Dashboard 服务' : target.model || '—'} /></div>
     <div className="my-4 grid grid-cols-2 gap-4 border-y py-4">
-      <div><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-xl font-semibold tabular-nums">{m?.cpuPercent == null ? '—' : `${m.cpuPercent.toFixed(2)}%`}</p><p className="mt-1 text-[11px] text-muted-foreground">容器整体占用</p></div>
-      <div><p className="text-xs text-muted-foreground">内存</p><p className="mt-1 whitespace-nowrap text-xl font-semibold tabular-nums">{formatMemory(m?.memoryUsageBytes)}</p><p className="mt-1 text-[11px] text-muted-foreground">{m ? m.memoryLimitBytes == null ? '配额未限制' : `配额 ${formatMemory(m.memoryLimitBytes)}` : '配额 —'}</p></div>
+      <div><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-xl font-semibold tabular-nums">{m?.cpuPercent == null ? '—' : `${m.cpuPercent.toFixed(2)}%`}</p><p className="mt-1 text-xs text-muted-foreground">容器整体占用</p></div>
+      <div><p className="text-xs text-muted-foreground">内存</p><p className="mt-1 whitespace-nowrap text-xl font-semibold tabular-nums">{formatMemory(m?.memoryUsageBytes)}</p><p className="mt-1 text-xs text-muted-foreground">{m ? m.memoryLimitBytes == null ? '配额未限制' : `配额 ${formatMemory(m.memoryLimitBytes)}` : '配额 —'}</p></div>
     </div>
     <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
       <span className="text-muted-foreground">重启 <span className="ml-1 text-foreground">{m?.restartCount ?? '—'} 次{m?.oomKilled ? ' · OOM' : ''}</span></span>
