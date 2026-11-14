@@ -41,8 +41,6 @@ import {
   useUpdateAiRoute,
   useUpdateModel,
 } from '@/hooks/use-agentteams-models';
-import { useManagers } from '@/hooks/use-agentteams-managers';
-import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useConsumers } from '@/hooks/use-agentteams-consumers';
 import { useCreateConsumer, useDeleteConsumer, useBindConsumer } from '@/hooks/use-agentteams-mutations';
 import {
@@ -61,7 +59,6 @@ import {
   type ProviderForm,
   type RouteForm,
 } from '@/lib/higress-api';
-import { buildModelBindings } from '@/lib/model-bindings';
 import { useHigressConsoleAccess } from '@/hooks/use-higress-console-access';
 import { useGatewayRouteCatalog } from '@/hooks/use-gateway-route-catalog';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
@@ -73,7 +70,7 @@ import { MODEL_PRESET_NOTES, providerModelPresets } from '@/lib/model-catalog';
 import { commonReasoningEfforts, MODEL_CAPABILITIES, readModelRequestParameters, REASONING_EFFORT_LABELS } from '@/lib/model-parameters';
 
 const newProviderForm = (): ProviderForm => ({
-  name: '', type: 'openai', protocol: 'openai/v1', baseUrl: PROVIDER_BASE_URLS.openai, tokens: [], modelMappings: [], pathPrefix: '/v1',
+  name: '', type: 'openai', protocol: 'openai/v1', baseUrl: PROVIDER_BASE_URLS.openai, tokens: [], modelMappings: [{ pattern: '', targetModel: '' }], pathPrefix: '/v1',
 });
 
 const newRouteForm = (providerNames: string[] = [], pathPrefix = '/v1'): RouteForm => ({
@@ -266,7 +263,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
 
   const submit = () => {
     const tokens = tokenInput.split(',').map((token) => token.trim()).filter(Boolean);
-    const next = { ...form, tokens: tokens.length > 0 ? tokens : form.tokens, modelMappings: form.modelMappings.map((mapping) => ({ ...mapping, pattern: mapping.pattern.trim() || mapping.targetModel.trim() })) };
+    const next = { ...form, tokens: tokens.length > 0 ? tokens : form.tokens, modelMappings: form.modelMappings.filter((mapping) => mapping.pattern.trim() || mapping.targetModel.trim()).map((mapping) => ({ ...mapping, pattern: mapping.pattern.trim() || mapping.targetModel.trim() })) };
     const nextErrors = validateProviderForm(next, editing);
     if (nextErrors.length > 0) return setErrors(nextErrors);
     const onSuccess = () => { onOpenChange(false); autoWireProviderRoute(next.name, next.modelMappings); };
@@ -482,19 +479,15 @@ export function ModelsSection() {
   const { data: infrastructure } = useInfrastructure();
   const providersQuery = useModels(consoleAccess.canManage);
   const routesQuery = useAiRoutes(consoleAccess.canManage);
-  const { data: managers } = useManagers();
-  const { data: workers } = useWorkers();
   const deleteProvider = useDeleteModel();
   const deleteRoute = useDeleteAiRoute();
   const [providerDialog, setProviderDialog] = useState<LlmProviderResponse | null | undefined>(undefined);
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
   const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
-  const [activeTab, setActiveTab] = useState('usage');
   const providers = providersQuery.data ?? [];
   const routes = routesQuery.data ?? [];
   const providerNames = providers.map((provider) => provider.name);
-  const modelBindings = buildModelBindings([... (managers ?? []), ...(workers ?? [])].map((agent) => agent.model), routes, providers);
   const providerInUse = deleteTarget?.type === 'provider' ? routes.filter((route) => route.upstreams.some((upstream) => upstream.provider === deleteTarget.name)).map((route) => route.name) : [];
   const deleting = deleteProvider.isPending || deleteRoute.isPending;
   const confirmDelete = () => {
@@ -506,40 +499,16 @@ export function ModelsSection() {
   };
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
   return <div className="space-y-4">
-    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个模型连接 · {routes.length} 条路由 · {modelBindings.length} 个模型映射</span>} />
+    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个模型连接 · {routes.length} 条路由</span>} />
     <ManagerModelSetup />
     <RuntimeStatusCard higress={infrastructure?.higress} />
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+    <Tabs defaultValue="providers" className="gap-4">
       <TabsList aria-label="模型配置分类" className="max-w-full justify-start overflow-x-auto [&>[role=tab]]:shrink-0">
-        <TabsTrigger value="usage">使用概览</TabsTrigger>
         <TabsTrigger value="providers">模型连接</TabsTrigger>
         <TabsTrigger value="routes">AI 路由</TabsTrigger>
         <TabsTrigger value="access">访问凭证</TabsTrigger>
         <TabsTrigger value="limits">限流与参考</TabsTrigger>
       </TabsList>
-      <TabsContent value="usage" className="space-y-4">
-        <ResourceError error={providersQuery.error} />
-        <ResourceError error={routesQuery.error} />
-        <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
-          <p className="font-medium">Agent 选择模型 → 通过模型连接调用对应的模型 ID</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">模型名称就是请求别名，可与实际模型同名。模型连接保存地址、协议和密钥；路由负责模型匹配、上游分发与授权。AT 用这些配置给 Manager / Worker 选择模型并管理访问范围。</p>
-        </div>
-        <div className="overflow-hidden rounded-lg border">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"><h2 className="text-sm font-semibold">Agent 使用的模型</h2><span className="text-xs text-muted-foreground">配置状态不代表已通过实际调用验证</span></div>
-          <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>模型名称 / 请求别名</TableHead><TableHead>实际模型</TableHead><TableHead>模型连接 / 路由</TableHead><TableHead>使用者</TableHead><TableHead>配置状态</TableHead></TableRow></TableHeader><TableBody>
-            {modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">暂无 Agent 模型配置，请先添加连接并为 Agent 选择模型。</TableCell></TableRow> : modelBindings.map((binding) => {
-              const users = [...(managers ?? []).map((agent) => ({ ...agent, roleLabel: 'Manager' })), ...(workers ?? []).map((agent) => ({ ...agent, roleLabel: 'Worker' }))].filter((agent) => agent.model === binding.requestModelAlias);
-              return <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}>
-                <TableCell className="font-medium"><OverflowText text={binding.requestModelAlias} /></TableCell>
-                <TableCell><OverflowText text={binding.targetModel || (binding.passthrough ? binding.requestModelAlias : '未匹配')} /></TableCell>
-                <TableCell><OverflowText text={binding.providerName || '未绑定'} /><OverflowText text={binding.routeName || '配置路由'} className="mt-1 text-xs text-muted-foreground hover:underline" onClick={() => setActiveTab('routes')} /></TableCell>
-                <TableCell><OverflowText text={users.map((agent) => agent.name || agent.roleLabel).join('、') || '暂无使用者'} className="text-xs" /></TableCell>
-                <TableCell><Badge variant={binding.conflict ? 'destructive' : 'secondary'}>{binding.conflict ? '冲突' : binding.available ? '已配置' : binding.passthrough ? '原名转发' : '待配置'}</Badge></TableCell>
-              </TableRow>;
-            })}
-          </TableBody></Table>
-        </div>
-      </TabsContent>
       <TabsContent value="providers">
     <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">模型连接<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个模型连接</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加连接</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
       </TabsContent>

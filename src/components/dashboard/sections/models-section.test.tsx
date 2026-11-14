@@ -94,18 +94,19 @@ vi.mock('@/components/ui/alert-dialog', () => ({
 // with many async waitFors; under parallel full-suite load on slower hosts the
 // default 5s per-test budget is not enough, so relax it for the whole block.
 
-function renderSection(tab: 'usage' | 'providers' | 'routes' | 'access' = 'usage') {
+function renderSection(tab: 'providers' | 'routes' | 'access' = 'providers') {
   render(<TooltipProvider><ModelsSection /></TooltipProvider>);
-  const names = { usage: '使用概览', providers: '模型连接', routes: 'AI 路由', access: '访问凭证' };
-  if (tab !== 'usage') fireEvent.mouseDown(screen.getByRole('tab', { name: names[tab] }), { button: 0, ctrlKey: false });
+  const names = { providers: '模型连接', routes: 'AI 路由', access: '访问凭证' };
+  if (tab !== 'providers') fireEvent.mouseDown(screen.getByRole('tab', { name: names[tab] }), { button: 0, ctrlKey: false });
 }
 
 describe('ModelsSection', { timeout: 20_000 }, () => {
-  it('starts with model usage and explains how aliases, routes and providers relate', () => {
+  it('opens model connections directly without the usage overview', () => {
     renderSection();
-    expect(screen.getByText('Agent 使用的模型')).toBeTruthy();
-    expect(screen.getByText('Agent 选择模型 → 通过模型连接调用对应的模型 ID')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '添加连接' })).toBeNull();
+    expect(screen.getByRole('tab', { name: '模型连接' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByRole('tab', { name: '使用概览' })).toBeNull();
+    expect(screen.queryByText('Agent 使用的模型')).toBeNull();
+    expect(screen.getByRole('button', { name: '添加连接' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '添加路由' })).toBeNull();
     expect(screen.queryByRole('button', { name: '添加 Consumer' })).toBeNull();
   });
@@ -154,7 +155,6 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     expect((type as HTMLInputElement).value).toBe('MiniMax');
     expect(screen.queryByRole('listbox')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     const model = screen.getByRole('combobox', { name: '模型 ID' });
     fireEvent.focus(model);
     expect(screen.getByRole('option', { name: 'MiniMax-M3' })).toBeTruthy();
@@ -179,7 +179,6 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
     fireEvent.focus(screen.getByRole('combobox', { name: '厂商／平台' }));
     fireEvent.click(screen.getByRole('option', { name: '通义千问 (Qwen)' }));
-    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
     fireEvent.click(screen.getByRole('option', { name: 'qwen4-max-preview' }));
     expect(screen.getByText(/仅支持 Token Plan/)).toBeTruthy();
@@ -195,7 +194,6 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     fireEvent.change(baseUrl, { target: { value: 'https://api.minimax.io/v1' } });
     fireEvent.change(screen.getByPlaceholderText('例如 my-minimax'), { target: { value: 'my-minimax' } });
     fireEvent.change(screen.getByPlaceholderText('输入 API Key'), { target: { value: 'test-key' } });
-    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     fireEvent.change(screen.getByRole('textbox', { name: '调用别名' }), { target: { value: 'MiniMax-M3' } });
     fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
     fireEvent.click(screen.getByRole('option', { name: 'MiniMax-M3' }));
@@ -213,7 +211,6 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     fireEvent.change(screen.getByLabelText('API Key *'), { target: { value: 'test-key' } });
     fireEvent.focus(screen.getByRole('combobox', { name: '厂商／平台' }));
     fireEvent.click(screen.getByRole('option', { name: '智谱 AI (GLM)' }));
-    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
     fireEvent.click(screen.getByRole('option', { name: 'glm-5.3' }));
     expect(screen.getByText(/上下文窗口：1,000,000 Token/)).toBeTruthy();
@@ -380,12 +377,26 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     await waitFor(() => expect(screen.queryByText('sk-live-abcdef123456')).toBeNull());
   });
 
-  it('renders the current request-model binding', () => {
-    renderSection('usage');
+  it('starts a new connection with one empty model input and still allows adding more', () => {
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    expect(screen.getAllByRole('combobox', { name: '模型 ID' })).toHaveLength(1);
+    expect((screen.getByRole('combobox', { name: '模型 ID' }) as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    expect(screen.getAllByRole('combobox', { name: '模型 ID' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    expect(screen.getAllByRole('combobox', { name: '模型 ID' })).toHaveLength(1);
+  });
 
-    expect(screen.getByText('Agent 使用的模型')).toBeTruthy();
-    expect(screen.getByText('gpt-4.1')).toBeTruthy();
-    expect(screen.getAllByText('已配置').length).toBeGreaterThan(0);
+  it('does not save the untouched empty model row as an invalid mapping', () => {
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    fireEvent.change(screen.getByLabelText('连接名称 *'), { target: { value: 'connection-only' } });
+    fireEvent.change(screen.getByLabelText('API Key *'), { target: { value: 'test-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建连接' }));
+    expect(mutations.createProvider).toHaveBeenCalledWith(expect.objectContaining({ name: 'connection-only' }), expect.any(Object));
+    expect(mutations.createProvider.mock.calls.at(-1)![0].rawConfigs).not.toHaveProperty('modelMapping');
   });
 
   it('opens the edit form for a route whose authConfig omits allowedCredentialTypes', () => {
