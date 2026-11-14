@@ -50,6 +50,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   knowledge: 'console/resources/knowledge',
   audit: 'console/governance/audit',
   tracing: 'console/governance/tracing',
+  'plugin-route:monitor-panel/monitor': 'console/governance/monitoring',
   overview: 'console/system/overview',
 };
 
@@ -280,6 +281,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       'resources/knowledge': 'knowledge',
       'governance/audit': 'audit',
       'governance/tracing': 'tracing',
+      'governance/monitoring': 'plugin-route:monitor-panel/monitor',
       'system/overview': 'overview',
     };
     const sub = segments.slice(1).join('/');

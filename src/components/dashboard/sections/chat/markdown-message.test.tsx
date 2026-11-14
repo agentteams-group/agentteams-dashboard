@@ -20,6 +20,28 @@ afterEach(() => {
 });
 
 describe('MarkdownMessage', () => {
+  it('renders monitoring, logs and tracing as readable evidence blocks with same-page detail links', () => {
+    const hrefs = ['#console/governance/monitoring?kind=worker&name=dev', '#console/governance/monitoring?kind=worker&name=dev&view=logs', '#console/governance/tracing?worker=dev&trace=abc&span=tool-1'];
+    const content = hrefs.map((href, index) => `> **${['运行监控', '关键日志', 'Tracing'][index]} · dev**\n>\n> 采样 11:00 · CPU 0.22% · HTTP 429\n>\n> [查看详情](${href})`).join('\n\n');
+    const { container } = render(<MarkdownMessage content={content} isStreaming />);
+    expect(container.querySelectorAll('[data-observability-evidence]')).toHaveLength(3);
+    for (const link of screen.getAllByRole('link', { name: '查看详情' })) {
+      expect(link).not.toHaveAttribute('target', '_blank');
+      expect(hrefs).toContain(link.getAttribute('href'));
+    }
+    expect(screen.getByText('关键日志 · dev')).toBeInTheDocument();
+  });
+
+  it.each([false, true])('supports formatted Matrix HTML evidence without changing normal quotes or external links (streaming=%s)', (isStreaming) => {
+    const href = '#console/governance/monitoring?kind=component&name=controller&view=logs';
+    const { container } = render(<MarkdownMessage content="日志查询结果" isStreaming={isStreaming} formattedContent={`<blockquote><p><strong>日志证据</strong></p><pre>11:00 request timed out</pre><p><a href="${href.replaceAll('&', '&amp;')}" target="_blank">查看日志</a></p></blockquote><blockquote><p>原消息引用</p></blockquote><a href="https://example.com">外部文档</a>`} />);
+    expect(container.querySelectorAll('[data-observability-evidence]')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '查看日志' })).not.toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: '外部文档' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByText('原消息引用').closest('blockquote')).toHaveClass('italic');
+    expect(screen.getByText('11:00 request timed out')).toBeInTheDocument();
+  });
+
   it('renders plain text through markdown', () => {
     render(<MarkdownMessage content="hello **world**" />);
 

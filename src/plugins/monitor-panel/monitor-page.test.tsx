@@ -20,9 +20,22 @@ function setup(items = [target]) {
   return { getMonitoring, getMonitoringLogs };
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
 
 describe('runtime monitoring', () => {
+  it('opens linked logs with the original query window without waiting for metrics', async () => {
+    window.history.replaceState(null, '', '#console/governance/monitoring?kind=worker&name=dev-agent&view=logs&since=2026-11-14T00%3A45%3A00Z&tail=20');
+    const api = setup();
+    expect(await screen.findByLabelText('容器日志内容')).toHaveTextContent('model timeout');
+    expect(api.getMonitoringLogs).toHaveBeenCalledWith('worker', 'dev-agent', { tail: 20, since: '2026-11-14T00:45:00Z' });
+    expect(api.getMonitoring).toHaveBeenCalledWith({ page: 1, limit: 12, search: 'dev-agent' });
+    expect(screen.getByRole('combobox', { name: '日志时间范围' })).toHaveTextContent('对话查询时间');
+    expect(document.querySelector('[data-linked-resource]')).toBeTruthy();
+    window.history.replaceState(null, '', '#console/governance/monitoring?kind=component&name=controller&view=logs&tail=10');
+    fireEvent(window, new HashChangeEvent('hashchange'));
+    await waitFor(() => expect(api.getMonitoringLogs).toHaveBeenCalledWith('component', 'controller', { tail: 10 }));
+  });
+
   it('shows actual zero CPU, memory and unlimited quota; queries logs on demand', async () => {
     const api = setup();
     expect(await screen.findByText('0.00%')).toBeInTheDocument();

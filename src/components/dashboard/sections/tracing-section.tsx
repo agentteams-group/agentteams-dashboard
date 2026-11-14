@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ import { CopyButton } from '@/components/dashboard/copy-button';
 import { TracingSettingsDialog } from './tracing-settings-dialog';
 import { apiUrl } from '@/lib/api-base';
 import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation, type TraceScope } from '@/lib/tracing-types';
+import { useObservabilityTarget } from '@/hooks/use-observability-target';
+import type { TracingTarget } from '@/lib/observability-links';
 
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(apiUrl(`/api/agentteams/traces${path}`), { signal });
@@ -25,20 +27,27 @@ function JsonView({ value }: { value: unknown }) {
 }
 
 export function TracingSection() {
-  const [worker, setWorker] = useState('');
+  const target = useObservabilityTarget();
+  const initial = target?.section === 'tracing' ? target : null;
+  return <TracingView key={JSON.stringify(initial)} initial={initial} />;
+}
+
+function TracingView({ initial }: { initial: TracingTarget | null }) {
+  const [worker, setWorker] = useState(initial?.worker ?? '');
   const [runtime, setRuntime] = useState('');
-  const [task, setTask] = useState('');
-  const [session, setSession] = useState('');
-  const [team, setTeam] = useState('');
-  const [room, setRoom] = useState('');
+  const [task, setTask] = useState(initial?.task ?? '');
+  const [session, setSession] = useState(initial?.session ?? '');
+  const [team, setTeam] = useState(initial?.team ?? '');
+  const [room, setRoom] = useState(initial?.room ?? '');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [hours, setHours] = useState('24');
   const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState('');
-  const [observationId, setObservationId] = useState('');
+  const [selected, setSelected] = useState(initial?.trace ?? '');
+  const [observationId, setObservationId] = useState(initial?.span ?? '');
   const [advancedFilters, setAdvancedFilters] = useState(false);
-  const [filters, setFilters] = useState({ worker: '', runtime: '', task: '', hours: '24', session: '', team: '', room: '' });
+  const [filters, setFilters] = useState({ worker: initial?.worker ?? '', runtime: '', task: initial?.task ?? '', hours: '24', session: initial?.session ?? '', team: initial?.team ?? '', room: initial?.room ?? '' });
+  const linkedDetail = useRef<HTMLDivElement>(null);
   const resources = useQuery({
     queryKey: ['trace-resources'],
     queryFn: ({ signal }) => read<TraceScope>('?options=resources', signal),
@@ -59,8 +68,8 @@ export function TracingSection() {
   });
   const detail = useQuery({
     queryKey: ['trace', selected],
-    queryFn: ({ signal }) => read<TraceDetail>(`/${selected}`, signal),
-    enabled: Boolean(selected) && tracingReady,
+    queryFn: ({ signal }) => read<TraceDetail>(`/${encodeURIComponent(selected)}`, signal),
+    enabled: Boolean(selected) && Boolean(resources.data) && !resources.error && tracingReady,
     retry: false,
   });
   const rows = traceRows(detail.data?.observations ?? []);
@@ -72,6 +81,12 @@ export function TracingSection() {
     o.calculatedTotalCost != null && Object.keys(o.costDetails ?? {}).length > 0);
   const diagnosis = diagnoseTrace(detail.data?.observations ?? []);
   const upstream = detail.data?.metadata?.['agentteams.upstream.trace_id'];
+  useEffect(() => {
+    if (initial?.trace && detail.data?.id === initial.trace) {
+      const span = linkedDetail.current?.querySelector('[data-selected-span]');
+      (span ?? linkedDetail.current)?.scrollIntoView?.({ block: 'nearest' });
+    }
+  }, [initial?.trace, detail.data]);
 
   function openSession(id: string) {
     setWorker(''); setTeam(''); setRuntime(''); setTask(''); setRoom('');
@@ -178,7 +193,7 @@ export function TracingSection() {
         </button>)}</div>
         <div className="flex items-center justify-between p-3"><Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</Button><span className="text-xs text-muted-foreground">{page} / {Math.max(1, list.data?.meta.totalPages ?? 1)}</span><Button size="sm" variant="ghost" disabled={page >= (list.data?.meta.totalPages ?? 1)} onClick={() => setPage((p) => p + 1)}>下一页</Button></div>
       </div>
-      <div className="min-w-0 space-y-3 rounded-lg border bg-card p-4">
+      <div ref={linkedDetail} className="min-w-0 space-y-3 rounded-lg border bg-card p-4">
         {!selected ? <div className="flex min-h-80 flex-col items-center justify-center gap-3 text-muted-foreground"><Activity className="h-8 w-8" /><p className="text-sm">选择一条 Trace 查看执行瀑布</p></div> : null}
         {detail.isFetching ? <p className="text-sm text-muted-foreground">正在读取 Trace…</p> : null}
         {detail.error ? <p role="alert" className="text-sm text-destructive">{detail.error.message}</p> : null}
@@ -219,7 +234,7 @@ export function TracingSection() {
               <span className="text-right font-mono text-xs text-muted-foreground">{duration.toFixed(0)} ms</span>
             </button>)}
           </div></div>
-          {observation ? <div className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">{observation.name}</h3>{observation.statusMessage ? <p className="text-xs text-destructive">{observation.statusMessage}</p> : null}<div className="grid gap-3 md:grid-cols-2"><div><p className="mb-2 text-xs text-muted-foreground">Input</p><JsonView value={observation.input} /></div><div><p className="mb-2 text-xs text-muted-foreground">Output</p><JsonView value={observation.output} /></div></div><details><summary className="cursor-pointer text-xs text-muted-foreground">属性与用量</summary><JsonView value={{ metadata: observation.metadata, usage: observation.usageDetails ?? observation.usage }} /></details></div> : <p className="text-xs text-muted-foreground">点击 Span 查看输入、输出和属性；内容采集由 Worker 配置控制。</p>}
+          {observation ? <div data-selected-span={observation.id} className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">{observation.name}</h3>{observation.statusMessage ? <p className="text-xs text-destructive">{observation.statusMessage}</p> : null}<div className="grid gap-3 md:grid-cols-2"><div><p className="mb-2 text-xs text-muted-foreground">Input</p><JsonView value={observation.input} /></div><div><p className="mb-2 text-xs text-muted-foreground">Output</p><JsonView value={observation.output} /></div></div><details><summary className="cursor-pointer text-xs text-muted-foreground">属性与用量</summary><JsonView value={{ metadata: observation.metadata, usage: observation.usageDetails ?? observation.usage }} /></details></div> : <p className="text-xs text-muted-foreground">点击 Span 查看输入、输出和属性；内容采集由 Worker 配置控制。</p>}
           <details><summary className="cursor-pointer text-xs text-muted-foreground">标识、会话与采集信息</summary><div className="mt-2 flex flex-wrap items-center gap-1 text-xs"><span className="break-all">Trace: {selected}</span><CopyButton text={selected} label="复制完整 Trace ID" />{detail.data.sessionId ? <><span className="break-all">Session: {detail.data.sessionId}</span><CopyButton text={detail.data.sessionId} label="复制 Session ID" /></> : null}</div><JsonView value={{ tags: detail.data.tags, metadata: detail.data.metadata }} /></details>
         </> : null}
       </div>
