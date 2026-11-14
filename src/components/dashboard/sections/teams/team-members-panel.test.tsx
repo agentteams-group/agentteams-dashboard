@@ -119,9 +119,9 @@ describe('TeamMembersPanel · 成员行布局', () => {
     const dialog = screen.getByRole('dialog');
     // 行内与批量共用同一个模型弹窗（标题区分场景）。
     expect(within(dialog).getByText('编辑模型 - w1')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Provider')).toHaveValue('provider-a');
+    expect(within(dialog).getByLabelText('模型连接')).toHaveValue('provider-a');
 
-    fireEvent.change(within(dialog).getByLabelText('请求模型别名'), {
+    fireEvent.change(within(dialog).getByLabelText('模型'), {
       target: { value: 'w1-model-v2' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
@@ -193,8 +193,8 @@ describe('TeamMembersPanel · 批量模型画笔', () => {
     const dialog = dialogs[0];
     expect(within(dialog).getByText('批量设置模型 - Leader 批')).toBeInTheDocument();
     expect(within(dialog).getByText('模型访问与验证说明')).toBeInTheDocument();
-    const provider = within(dialog).getByLabelText('Provider');
-    const model = within(dialog).getByLabelText('请求模型别名');
+    const provider = within(dialog).getByLabelText('模型连接');
+    const model = within(dialog).getByLabelText('模型');
     expect(provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -206,7 +206,7 @@ describe('TeamMembersPanel · 批量模型画笔', () => {
     );
     const dialog = screen.getByRole('dialog');
     // 选中模型时自动跟随网关绑定的 provider。
-    fireEvent.change(within(dialog).getByLabelText('请求模型别名'), {
+    fireEvent.change(within(dialog).getByLabelText('模型'), {
       target: { value: 'leader-model-v2' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
@@ -236,7 +236,7 @@ describe('TeamMembersPanel · 批量模型画笔', () => {
     fireEvent.click(
       within(screen.getByTestId('batch-leader')).getByRole('button', { name: '设置模型' }),
     );
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'leader-model-v2' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -245,7 +245,7 @@ describe('TeamMembersPanel · 批量模型画笔', () => {
     fireEvent.click(
       within(screen.getByTestId('batch-leader')).getByRole('button', { name: '设置模型' }),
     );
-    fireEvent.change(screen.getByLabelText('请求模型别名'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('模型'), { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 

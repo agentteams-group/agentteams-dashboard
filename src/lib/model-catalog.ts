@@ -27,6 +27,7 @@ export const PROVIDER_MODEL_PRESETS: Readonly<Record<string, readonly string[]>>
 };
 
 export function providerModelPresets(type: string): readonly string[] {
+  if (type === 'tokenplan') return [...(PROVIDER_MODEL_PRESETS.qwen ?? []), 'glm-5.3', 'glm-5.2', 'deepseek-v4-pro'];
   return PROVIDER_MODEL_PRESETS[type === 'azure' ? 'openai' : type] ?? [];
 }
 

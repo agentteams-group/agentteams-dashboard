@@ -96,7 +96,7 @@ vi.mock('@/components/ui/alert-dialog', () => ({
 
 function renderSection(tab: 'usage' | 'providers' | 'routes' | 'access' = 'usage') {
   render(<TooltipProvider><ModelsSection /></TooltipProvider>);
-  const names = { usage: '使用概览', providers: '模型提供商', routes: 'AI 路由', access: '访问凭证' };
+  const names = { usage: '使用概览', providers: '模型连接', routes: 'AI 路由', access: '访问凭证' };
   if (tab !== 'usage') fireEvent.mouseDown(screen.getByRole('tab', { name: names[tab] }), { button: 0, ctrlKey: false });
 }
 
@@ -104,8 +104,8 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   it('starts with model usage and explains how aliases, routes and providers relate', () => {
     renderSection();
     expect(screen.getByText('Agent 使用的模型')).toBeTruthy();
-    expect(screen.getByText('Agent 选模型名称 → 路由决定发给谁 → 提供商调用实际模型')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '添加提供商' })).toBeNull();
+    expect(screen.getByText('Agent 选择模型 → 通过模型连接调用对应的模型 ID')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '添加连接' })).toBeNull();
     expect(screen.queryByRole('button', { name: '添加路由' })).toBeNull();
     expect(screen.queryByRole('button', { name: '添加 Consumer' })).toBeNull();
   });
@@ -120,7 +120,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     try {
       renderSection('providers');
       fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
-      expect((screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement).value).toBe('http://host.docker.internal:58317/v1');
+      expect((screen.getByLabelText('API 地址（Base URL）') as HTMLInputElement).value).toBe('http://host.docker.internal:58317/v1');
       fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
       expect(mutations.updateProvider).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ rawConfigs: expect.objectContaining({ openaiCustomUrl: 'http://host.docker.internal:58317/v1' }) }) }), expect.any(Object));
     } finally {
@@ -132,11 +132,11 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     renderSection('providers');
     expect(screen.getByRole('tab', { name: 'AI 路由' })).toBeTruthy();
     expect(screen.queryByText(/AI 路由按/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
 
-    const name = screen.getAllByRole('textbox')[0];
+    const name = screen.getByLabelText('连接名称 *');
     fireEvent.change(name, { target: { value: 'new-provider' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建提供商' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建连接' }));
 
     expect(screen.getByText('至少需要一个凭据')).toBeTruthy();
     expect((name as HTMLInputElement).value).toBe('new-provider');
@@ -145,8 +145,8 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
 
   it('searches provider choices and offers matching models while preserving custom model input', () => {
     renderSection('providers');
-    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
-    const type = screen.getByRole('combobox', { name: '模型供应商' });
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    const type = screen.getByRole('combobox', { name: '厂商／平台' });
     fireEvent.focus(type);
     fireEvent.change(type, { target: { value: 'mini' } });
     expect(screen.queryByRole('option', { name: 'DeepSeek' })).toBeNull();
@@ -154,8 +154,8 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     expect((type as HTMLInputElement).value).toBe('MiniMax');
     expect(screen.queryByRole('listbox')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
-    const model = screen.getByRole('combobox', { name: '供应商实际模型' });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    const model = screen.getByRole('combobox', { name: '模型 ID' });
     fireEvent.focus(model);
     expect(screen.getByRole('option', { name: 'MiniMax-M3' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'MiniMax-M3.1-Flash' })).toBeTruthy();
@@ -176,34 +176,88 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
 
   it('shows Qwen 4 Token Plan restrictions after choosing the model', () => {
     renderSection('providers');
-    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
-    fireEvent.focus(screen.getByRole('combobox', { name: '模型供应商' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '厂商／平台' }));
     fireEvent.click(screen.getByRole('option', { name: '通义千问 (Qwen)' }));
-    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
-    fireEvent.focus(screen.getByRole('combobox', { name: '供应商实际模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
     fireEvent.click(screen.getByRole('option', { name: 'qwen4-max-preview' }));
     expect(screen.getByText(/仅支持 Token Plan/)).toBeTruthy();
   });
 
   it('saves a MiniMax M3 mapping through the selected OpenAI-compatible regional endpoint', () => {
     renderSection('providers');
-    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
-    fireEvent.focus(screen.getByRole('combobox', { name: '模型供应商' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '厂商／平台' }));
     fireEvent.click(screen.getByRole('option', { name: 'MiniMax' }));
-    const baseUrl = screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement;
+    const baseUrl = screen.getByLabelText('API 地址（Base URL）') as HTMLInputElement;
     expect(baseUrl.value).toBe('https://api.minimax.cn/v1');
     fireEvent.change(baseUrl, { target: { value: 'https://api.minimax.io/v1' } });
-    fireEvent.change(screen.getByPlaceholderText('例如 my-provider'), { target: { value: 'my-minimax' } });
-    fireEvent.change(screen.getByPlaceholderText('sk-... 或 ark-...'), { target: { value: 'test-key' } });
-    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '请求模型别名' }), { target: { value: 'MiniMax-M3' } });
-    fireEvent.focus(screen.getByRole('combobox', { name: '供应商实际模型' }));
+    fireEvent.change(screen.getByPlaceholderText('例如 my-minimax'), { target: { value: 'my-minimax' } });
+    fireEvent.change(screen.getByPlaceholderText('输入 API Key'), { target: { value: 'test-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '调用别名' }), { target: { value: 'MiniMax-M3' } });
+    fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
     fireEvent.click(screen.getByRole('option', { name: 'MiniMax-M3' }));
-    fireEvent.click(screen.getByRole('button', { name: '创建提供商' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建连接' }));
     expect(mutations.createProvider).toHaveBeenCalledWith(expect.objectContaining({
       type: 'openai', tokens: ['test-key'],
       rawConfigs: { openaiCustomUrl: 'https://api.minimax.io/v1', modelMapping: { 'MiniMax-M3': 'MiniMax-M3' } },
     }), expect.any(Object));
+  });
+
+  it('saves model IDs without requiring aliases and persists compatible reasoning and output overrides', () => {
+    renderSection('providers');
+    fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+    fireEvent.change(screen.getByLabelText('连接名称 *'), { target: { value: 'my-glm' } });
+    fireEvent.change(screen.getByLabelText('API Key *'), { target: { value: 'test-key' } });
+    fireEvent.focus(screen.getByRole('combobox', { name: '厂商／平台' }));
+    fireEvent.click(screen.getByRole('option', { name: '智谱 AI (GLM)' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '模型 ID' }));
+    fireEvent.click(screen.getByRole('option', { name: 'glm-5.3' }));
+    expect(screen.getByText(/上下文窗口：1,000,000 Token/)).toBeTruthy();
+    expect(screen.queryByRole('option', { name: '中（medium）' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('思考强度'), { target: { value: 'max' } });
+    fireEvent.change(screen.getByLabelText('输出 Token 上限'), { target: { value: '8192' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建连接' }));
+    expect(mutations.createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'my-glm', type: 'openai', rawConfigs: expect.objectContaining({
+        openaiCustomUrl: 'https://open.bigmodel.cn/api/paas/v4', modelMapping: { 'glm-5.3': 'glm-5.3' },
+        customSettings: [{ name: 'max_tokens', value: 8192, mode: 'raw', overwrite: true }, { name: 'reasoning_effort', value: 'max', mode: 'raw', overwrite: true }],
+      }),
+    }), expect.any(Object));
+    mutations.createProvider.mock.calls.at(-1)![1].onSuccess();
+    expect(mutations.createRoute).toHaveBeenCalledWith(expect.objectContaining({
+      modelPredicates: [{ matchType: 'EQUAL', matchValue: 'glm-5.3' }],
+      upstreams: [{ provider: 'my-glm', weight: 100, modelMapping: { 'glm-5.3': 'glm-5.3' } }],
+    }), expect.any(Object));
+  });
+
+  it('synchronizes model changes to an automatically created route without changing its authorization', () => {
+    const authConfig = { enabled: true, allowedCredentialTypes: ['key-auth'], allowedConsumers: ['manager'] };
+    mockRouteOverrides.value = [{ ...routes[0], name: 'agentteams-openai', authConfig }];
+    providers[0].rawConfigs = { modelMapping: { 'gpt-4.1': 'gpt-4.1' } };
+    try {
+      renderSection('providers');
+      fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
+      fireEvent.change(screen.getByRole('combobox', { name: '模型 ID' }), { target: { value: 'gpt-6.1-sol' } });
+      fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+      mutations.updateProvider.mock.calls.at(-1)![1].onSuccess();
+      expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'agentteams-openai', data: expect.objectContaining({ authConfig, modelPredicates: [{ matchType: 'EQUAL', matchValue: 'gpt-6.1-sol' }], upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'gpt-6.1-sol': 'gpt-6.1-sol' } }] }),
+      }), expect.any(Object));
+    } finally { delete providers[0].rawConfigs; }
+  });
+
+  it('keeps unknown existing options and overrides when editing only the connection name-independent fields', () => {
+    providers[0].rawConfigs = { customSettings: [{ name: 'private_param', value: 42 }], extraOption: true };
+    try {
+      renderSection('providers');
+      fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
+      fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+      expect(mutations.updateProvider).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ rawConfigs: expect.objectContaining({ customSettings: [{ name: 'private_param', value: 42 }], extraOption: true }) }) }), expect.any(Object));
+    } finally { delete providers[0].rawConfigs; }
   });
 
   it('keeps invalid fallback JSON visible in the route form', () => {
@@ -224,7 +278,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByRole('button', { name: '添加路由' }));
 
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'new-route' } });
-    fireEvent.change(screen.getByLabelText('上游提供商'), { target: { value: 'openai' } });
+    fireEvent.change(screen.getByLabelText('上游模型连接'), { target: { value: 'openai' } });
     fireEvent.click(screen.getByRole('button', { name: '创建路由' }));
 
     expect(mutations.createRoute).toHaveBeenCalledWith(expect.objectContaining({
@@ -237,7 +291,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     renderSection('providers');
     fireEvent.click(screen.getByRole('button', { name: '删除 openai' }));
 
-    expect(screen.getByText('以下路由仍引用该提供商：team-chat。删除后这些路由将失效。')).toBeTruthy();
+    expect(screen.getByText('以下路由仍引用该模型连接：team-chat。删除后这些路由将失效。')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     expect(mutations.deleteProvider).toHaveBeenCalledWith('openai', expect.any(Object));
   });
@@ -272,9 +326,9 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
 
   it('switches a route to a new provider while preserving route structure', () => {
     renderSection('routes');
-    fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 提供商' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换 team-chat 模型连接' }));
 
-    fireEvent.change(screen.getByLabelText('目标提供商'), { target: { value: 'deepseek' } });
+    fireEvent.change(screen.getByLabelText('目标模型连接'), { target: { value: 'deepseek' } });
     fireEvent.click(screen.getByRole('button', { name: '切换并保存' }));
 
     expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({

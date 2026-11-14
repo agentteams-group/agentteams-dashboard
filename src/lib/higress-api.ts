@@ -13,6 +13,7 @@
 // scoped by `authConfig.allowedConsumers` on the AI route.
 
 import { apiUrl } from '@/lib/api-base';
+import { serializeModelRequestParameters, validateModelRequestParameters } from './model-parameters';
 
 
 export interface FallbackConfig {
@@ -119,6 +120,8 @@ export interface ProviderForm {
   pathPrefix?: string;
   tokenFailoverConfig?: LlmProvider['tokenFailoverConfig'];
   modelMappings: ModelMappingRule[];
+  originalRawConfigs?: Record<string, unknown>;
+  requestParameters?: import('./model-parameters').ModelRequestParameters;
 }
 
 export interface RouteUpstreamForm {
@@ -274,8 +277,17 @@ export function serializeModelMappings(rules: ModelMappingRule[]): Record<string
 
 export function validateProviderForm(form: ProviderForm, isUpdate = false): string[] {
   const errors = validateModelMappings(form.modelMappings);
-  if (!isUpdate && !form.name.trim()) errors.push('厂商名称不能为空');
-  if (!form.type.trim()) errors.push('厂商类型不能为空');
+  if (!isUpdate && !form.name.trim()) errors.push('连接名称不能为空');
+  if (!form.type.trim()) errors.push('请选择厂商／平台');
+  if (['custom', 'tokenplan'].includes(form.type) && !form.baseUrl?.trim()) errors.push('此连接必须填写 API 地址');
+  if (form.baseUrl?.trim() && form.protocol === 'original' && form.type !== 'openai') errors.push('自定义 API 地址请使用 OpenAI 兼容协议');
+  if (form.requestParameters) errors.push(...validateModelRequestParameters(form.requestParameters, form.modelMappings.map((mapping) => mapping.targetModel.trim()).filter(Boolean), form.protocol));
+  if (form.baseUrl?.trim()) {
+    try {
+      const url = new URL(form.baseUrl.trim());
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) errors.push('API 地址须为不含凭据、查询参数和片段的 HTTP(S) Base URL');
+    } catch { errors.push('API 地址格式无效'); }
+  }
   if (!isUpdate && form.tokens.filter(Boolean).length === 0) errors.push('至少需要一个凭据');
   const failover = form.tokenFailoverConfig;
   if (failover?.enabled) {
@@ -293,13 +305,27 @@ export function serializeProviderForm(form: ProviderForm, isUpdate = false): Cre
   const minimaxCompat = form.type === 'minimax' && form.protocol === 'openai/v1' &&
     (Boolean(form.baseUrl?.trim()) || form.modelMappings.some((mapping) => /^MiniMax-M3(?:\.|$)/.test(mapping.targetModel.trim())));
   const baseUrl = form.baseUrl?.trim() || (minimaxCompat ? MINIMAX_BASE_URL : '');
-  const rawConfigs = {
+  const rawConfigs: Record<string, unknown> = {
+    ...form.originalRawConfigs,
     ...(baseUrl ? { openaiCustomUrl: baseUrl } : {}),
     ...(form.pathPrefix && form.pathPrefix !== '/v1' ? { pathPrefix: form.pathPrefix } : {}),
     ...(form.modelMappings.length > 0 ? { modelMapping: serializeModelMappings(form.modelMappings) } : {}),
   };
+  // The Console includes its derived identity/protocol fields in rawConfigs.
+  // The outer provider owns these values; never replay stale ones on edits.
+  for (const key of ['apiTokens', 'id', 'type', 'protocol']) delete rawConfigs[key];
+  // Preserve unrelated provider options while allowing controlled fields to be
+  // cleared. In particular, retaining an old modelMapping would resurrect a
+  // model the user just removed from the connection.
+  if (form.originalRawConfigs) {
+    if (!baseUrl) delete rawConfigs.openaiCustomUrl;
+    delete rawConfigs.openaiCustomServicePort;
+    if (!form.pathPrefix || form.pathPrefix === '/v1') delete rawConfigs.pathPrefix;
+    rawConfigs.modelMapping = serializeModelMappings(form.modelMappings);
+  }
+  if (form.requestParameters) rawConfigs.customSettings = serializeModelRequestParameters(rawConfigs.customSettings, form.requestParameters);
   const common = {
-    type: minimaxCompat ? 'openai' : form.type.trim(),
+    type: minimaxCompat || form.type === 'custom' || form.type === 'tokenplan' || (Boolean(baseUrl) && form.protocol === 'openai/v1') ? 'openai' : form.type.trim(),
     protocol: form.protocol,
     ...(form.tokens.filter(Boolean).length > 0 ? { tokens: form.tokens.map((token) => token.trim()).filter(Boolean) } : {}),
     ...(form.tokenFailoverConfig ? { tokenFailoverConfig: form.tokenFailoverConfig } : {}),
@@ -414,6 +440,7 @@ export const PROVIDER_TYPES = [
   { value: 'azure', label: 'Azure OpenAI' },
   { value: 'claude', label: 'Anthropic Claude' },
   { value: 'qwen', label: '通义千问 (Qwen)' },
+  { value: 'tokenplan', label: '阿里云 Token Plan' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'groq', label: 'Groq' },
@@ -421,7 +448,7 @@ export const PROVIDER_TYPES = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'ollama', label: 'Ollama (本地)' },
   { value: 'vllm', label: 'vLLM' },
-  { value: 'moonshot', label: 'Moonshot (月之暗面)' },
+  { value: 'moonshot', label: 'Kimi (月之暗面)' },
   { value: 'baichuan', label: '百川智能' },
   { value: 'yi', label: '零一万物 (Yi)' },
   { value: 'zhipuai', label: '智谱 AI (GLM)' },
@@ -439,16 +466,37 @@ export const PROVIDER_TYPES = [
   { value: 'vertex', label: 'Google Vertex AI' },
   { value: 'cloudflare', label: 'Cloudflare Workers AI' },
   { value: 'coze', label: 'Coze' },
+  { value: 'custom', label: '自定义（OpenAI 兼容）' },
 ] as const;
 
 // Provider types that need a custom base URL
 export const MINIMAX_BASE_URL = 'https://api.minimax.cn/v1';
 
+export const PROVIDER_BASE_URLS: Readonly<Record<string, string>> = {
+  openai: 'https://api.openai.com/v1',
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  tokenplan: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  moonshot: 'https://api.moonshot.cn/v1',
+  zhipuai: 'https://open.bigmodel.cn/api/paas/v4',
+  minimax: MINIMAX_BASE_URL,
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  grok: 'https://api.x.ai/v1',
+  ollama: 'http://localhost:11434/v1',
+  vllm: 'http://localhost:8000/v1',
+};
+
 export function modelProviderType(provider: LlmProviderResponse): string {
   const baseUrl = provider.rawConfigs?.openaiCustomUrl;
   if (provider.type === 'openai' && typeof baseUrl === 'string') {
     try {
-      if (['api.minimax.cn', 'api.minimax.io'].includes(new URL(baseUrl).hostname)) return 'minimax';
+      const host = new URL(baseUrl).hostname;
+      if (['api.minimax.cn', 'api.minimax.io'].includes(host)) return 'minimax';
+      if (host === 'token-plan.cn-beijing.maas.aliyuncs.com') return 'tokenplan';
+      for (const type of ['qwen', 'deepseek', 'moonshot', 'zhipuai', 'openrouter', 'groq', 'grok']) {
+        if (host === new URL(PROVIDER_BASE_URLS[type]).hostname) return type;
+      }
     } catch { /* Retain the declared type for unrecognized custom URLs. */ }
   }
   return provider.type;
