@@ -297,6 +297,30 @@ afterEach(() => {
 });
 
 describe('TeamDrawer · 分区与骨架', () => {
+  it('shows the team failure reason and never labels a failed team healthy when members are ready', () => {
+    const team = { ...teamFixture, phase: 'Failed', message: 'Matrix admin login: connection refused' } as TeamResponse;
+    renderWithClient(<TeamDrawer team={team} allTeams={[team]} workers={workersFixture} modelOptions={[]} userLevel={3} onOpenChange={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('团队暂未就绪');
+    expect(screen.getByText('暂时无法连接对话服务，请检查服务状态。')).toBeVisible();
+    expect(screen.getByText(team.message)).toBeInTheDocument();
+    expect(screen.getByText('技术详情').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText(team.message)).not.toBeVisible();
+    expect(screen.getByRole('button', { name: '复制失败详情', hidden: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('技术详情'));
+    expect(screen.getByText(team.message)).toBeVisible();
+    const healthRow = screen.getByText('健康度').parentElement!;
+    expect(within(healthRow).getByText('异常')).toBeInTheDocument();
+    expect(within(healthRow).queryByText('健康')).not.toBeInTheDocument();
+  });
+
+  it('keeps unfamiliar backend errors in collapsed technical details without guessing their cause', () => {
+    const team = { ...teamFixture, phase: 'Failed', message: 'team member configuration is invalid' } as TeamResponse;
+    renderWithClient(<TeamDrawer team={team} allTeams={[team]} workers={workersFixture} modelOptions={[]} userLevel={3} onOpenChange={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('展开技术详情，查看具体失败原因。');
+    expect(screen.getByText(team.message)).not.toBeVisible();
+    expect(screen.queryByText('暂时无法连接对话服务，请检查服务状态。')).not.toBeInTheDocument();
+  });
+
   it('渲染四分区（+未归属/危险区），团队技能默认收起', () => {
     renderDrawer();
     for (const title of ['基本信息', 'LLM 调优', '团队成员', '团队技能', '加入未归属 Worker', '危险区']) {
