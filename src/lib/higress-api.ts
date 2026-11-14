@@ -288,13 +288,18 @@ export function validateProviderForm(form: ProviderForm, isUpdate = false): stri
 }
 
 export function serializeProviderForm(form: ProviderForm, isUpdate = false): CreateLlmProviderRequest | UpdateLlmProviderRequest {
+  // Higress's native MiniMax adapter targets the legacy chatcompletion_v2 API.
+  // M3 uses MiniMax's current OpenAI-compatible endpoint instead.
+  const minimaxCompat = form.type === 'minimax' && form.protocol === 'openai/v1' &&
+    (Boolean(form.baseUrl?.trim()) || form.modelMappings.some((mapping) => /^MiniMax-M3(?:\.|$)/.test(mapping.targetModel.trim())));
+  const baseUrl = form.baseUrl?.trim() || (minimaxCompat ? MINIMAX_BASE_URL : '');
   const rawConfigs = {
-    ...(form.baseUrl?.trim() ? { openaiCustomUrl: form.baseUrl.trim() } : {}),
+    ...(baseUrl ? { openaiCustomUrl: baseUrl } : {}),
     ...(form.pathPrefix && form.pathPrefix !== '/v1' ? { pathPrefix: form.pathPrefix } : {}),
     ...(form.modelMappings.length > 0 ? { modelMapping: serializeModelMappings(form.modelMappings) } : {}),
   };
   const common = {
-    type: form.type.trim(),
+    type: minimaxCompat ? 'openai' : form.type.trim(),
     protocol: form.protocol,
     ...(form.tokens.filter(Boolean).length > 0 ? { tokens: form.tokens.map((token) => token.trim()).filter(Boolean) } : {}),
     ...(form.tokenFailoverConfig ? { tokenFailoverConfig: form.tokenFailoverConfig } : {}),
@@ -437,8 +442,20 @@ export const PROVIDER_TYPES = [
 ] as const;
 
 // Provider types that need a custom base URL
+export const MINIMAX_BASE_URL = 'https://api.minimax.cn/v1';
+
+export function modelProviderType(provider: LlmProviderResponse): string {
+  const baseUrl = provider.rawConfigs?.openaiCustomUrl;
+  if (provider.type === 'openai' && typeof baseUrl === 'string') {
+    try {
+      if (['api.minimax.cn', 'api.minimax.io'].includes(new URL(baseUrl).hostname)) return 'minimax';
+    } catch { /* Retain the declared type for unrecognized custom URLs. */ }
+  }
+  return provider.type;
+}
+
 export const PROVIDERS_NEED_BASE_URL = new Set([
-  'openai', 'ollama', 'vllm', 'openrouter',
+  'openai', 'ollama', 'vllm', 'openrouter', 'minimax',
 ]);
 
 // ============ Client ============

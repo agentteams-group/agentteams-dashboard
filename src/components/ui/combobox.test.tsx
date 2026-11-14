@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Combobox } from './combobox';
+import { Dialog, DialogContent, DialogTitle } from './dialog';
 
 // Radix Popover 定位用 floating-ui，jsdom 下需要 ResizeObserver。
 class ResizeObserverStub {
@@ -25,11 +26,13 @@ function Harness({
   allowCustom = true,
   disabled = false,
   options = OPTIONS,
+  portal = false,
 }: {
   initial?: string;
   allowCustom?: boolean;
   disabled?: boolean;
   options?: string[];
+  portal?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -42,6 +45,7 @@ function Harness({
         placeholder="选择或输入"
         allowCustom={allowCustom}
         disabled={disabled}
+        portal={portal}
       />
       <output data-testid="value">{value}</output>
     </div>
@@ -54,6 +58,38 @@ function field() {
 
 describe('Combobox（可搜索 + 可自由输入）', () => {
   afterEach(cleanup);
+
+  it('keeps a portalled candidate list outside clipping containers and selects with the keyboard', () => {
+    const { container } = render(<Harness portal />);
+    fireEvent.focus(field());
+    expect(container.contains(screen.getByRole('listbox'))).toBe(false);
+    fireEvent.keyDown(field(), { key: 'ArrowDown' });
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    expect(field()).toHaveValue('higress');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('closes the portalled list with Escape without dismissing its parent dialog', () => {
+    const onKeyDown = vi.fn();
+    render(<div onKeyDown={onKeyDown}><Harness portal /></div>);
+    fireEvent.focus(field());
+    fireEvent.keyDown(field(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+
+  it('reopens after selecting in a dialog, then Escape dismisses only the list', () => {
+    const onOpenChange = vi.fn();
+    render(<Dialog open onOpenChange={onOpenChange}><DialogContent aria-describedby={undefined}><DialogTitle>模型配置</DialogTitle><Harness portal /></DialogContent></Dialog>);
+    fireEvent.focus(field());
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'deepseek' }));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.click(field());
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.keyDown(field(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
 
   it('聚焦后展示全部候选', () => {
     render(<Harness />);

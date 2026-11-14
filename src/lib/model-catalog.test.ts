@@ -5,6 +5,8 @@ import {
   buildModelSelectionOptions,
   describeRouteAuthorization,
   modelOptionsForProvider,
+  providerModelPresets,
+  MODEL_PRESET_NOTES,
 } from './model-catalog';
 
 const providers = [{ name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 }];
@@ -18,11 +20,36 @@ const routes = [{
 }];
 
 describe('model-catalog', () => {
-  it('mirrors the official built-in model alias list', () => {
+  it('keeps existing aliases while including current provider models', () => {
     expect(BUILTIN_MODEL_ALIASES).toContain('deepseek-chat');
     expect(BUILTIN_MODEL_ALIASES).toContain('claude-sonnet-4-6');
     expect(BUILTIN_MODEL_ALIASES).toContain('qwen3.5-plus');
-    expect(BUILTIN_MODEL_ALIASES.length).toBe(16);
+    expect(BUILTIN_MODEL_ALIASES).toContain('MiniMax-M3');
+    expect(BUILTIN_MODEL_ALIASES).toContain('MiniMax-M3.1-Flash');
+    expect(new Set(BUILTIN_MODEL_ALIASES).size).toBe(BUILTIN_MODEL_ALIASES.length);
+  });
+
+  it.each([
+    ['minimax', 'MiniMax-M3.1-Flash'],
+    ['qwen', 'qwen4-max-preview'],
+    ['deepseek', 'deepseek-flash'],
+    ['moonshot', 'kimi-k3.1-pro'],
+    ['zhipuai', 'glm-5.3'],
+    ['openai', 'gpt-6.1-sol'],
+    ['claude', 'claude-fable-5-2'],
+    ['gemini', 'gemini-4-carbon'],
+    ['grok', 'grok-4.7'],
+  ])('offers current models for %s without mixing provider families', (provider, model) => {
+    expect(providerModelPresets(provider)).toContain(model);
+    expect(BUILTIN_MODEL_ALIASES).toContain(model);
+    if (provider !== 'minimax') expect(providerModelPresets(provider)).not.toContain('MiniMax-M3');
+  });
+
+  it('preserves manual entry for unknown providers and describes channel constraints', () => {
+    expect(providerModelPresets('custom')).toEqual([]);
+    expect(providerModelPresets('azure')).toEqual(providerModelPresets('openai'));
+    expect(MODEL_PRESET_NOTES['qwen4-max-preview']).toContain('Token Plan');
+    expect(MODEL_PRESET_NOTES['gpt-6.1-sol']).toContain('Responses');
   });
 
   it('combines configured aliases with builtin aliases', () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateModelProbeBaseUrl, ModelProbeUrlError } from '@/lib/model-probe-url';
+import { MINIMAX_BASE_URL } from '@/lib/higress-api';
 
 const PROVIDER_BASES: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -20,7 +21,7 @@ const PROVIDER_BASES: Record<string, string> = {
   baidu: 'https://qianfan.baidubce.com/v2',
   hunyuan: 'https://api.hunyuan.cloud.tencent.com/v1',
   stepfun: 'https://api.stepfun.com/v1',
-  minimax: 'https://api.minimax.chat/v1',
+  minimax: MINIMAX_BASE_URL,
   spark: 'https://spark-api-open.xf-yun.com/v1',
   mistral: 'https://api.mistral.ai/v1',
   cohere: 'https://api.cohere.com/v1',

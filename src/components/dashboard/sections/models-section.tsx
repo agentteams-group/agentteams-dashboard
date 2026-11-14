@@ -7,6 +7,7 @@ import { SectionHeader } from '@/components/dashboard/section-header';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,6 +49,8 @@ import {
   parseFallbackConfig,
   PROVIDERS_NEED_BASE_URL,
   PROVIDER_TYPES,
+  MINIMAX_BASE_URL,
+  modelProviderType,
   serializeProviderForm,
   serializeRouteForm,
   summarizeFallbackConfig,
@@ -67,6 +70,7 @@ import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 import { ManagerModelSetup } from './manager-model-setup';
+import { MODEL_PRESET_NOTES, providerModelPresets } from '@/lib/model-catalog';
 
 const newProviderForm = (): ProviderForm => ({
   name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [], pathPrefix: '/v1',
@@ -104,7 +108,7 @@ function providerToForm(provider: LlmProviderResponse): ProviderForm {
   }
   return {
     name: provider.name,
-    type: provider.type,
+    type: modelProviderType(provider),
     protocol: provider.protocol === 'original' ? 'original' : 'openai/v1',
     tokens: [],
     baseUrl,
@@ -143,7 +147,7 @@ function FormErrors({ errors }: { errors: string[] }) {
   return errors.length > 0 ? <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{errors.map((error) => <p key={error}>{error}</p>)}</div> : null;
 }
 
-function MappingEditor({ value, onChange, label }: { value: ModelMappingRule[]; onChange: (_value: ModelMappingRule[]) => void; label?: string }) {
+function MappingEditor({ value, onChange, label, modelOptions }: { value: ModelMappingRule[]; onChange: (_value: ModelMappingRule[]) => void; label?: string; modelOptions?: readonly string[] }) {
   return <div className="space-y-2">
     <div className="flex items-center justify-between">
       <div>
@@ -161,12 +165,12 @@ function MappingEditor({ value, onChange, label }: { value: ModelMappingRule[]; 
         <span>供应商实际模型</span>
       </div>
     )}
-    {value.map((mapping, index) => <div className="flex items-center gap-2" key={index}>
+    {value.map((mapping, index) => <div key={index}><div className="flex items-center gap-2">
       <Input aria-label="请求模型别名" value={mapping.pattern} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, pattern: event.target.value } : item))} />
       <ArrowRight className="size-4 text-muted-foreground shrink-0" />
-      <Input aria-label="供应商实际模型" value={mapping.targetModel} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel: event.target.value } : item))} />
+      {modelOptions ? <Combobox portal ariaLabel="供应商实际模型" value={mapping.targetModel} options={modelOptions} placeholder="选择或输入模型" className="flex-1" onChange={(targetModel) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel } : item))} /> : <Input aria-label="供应商实际模型" value={mapping.targetModel} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel: event.target.value } : item))} />}
       <Button type="button" variant="ghost" size="icon" aria-label="删除模型映射" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="size-4 text-destructive" /></Button>
-    </div>)}
+    </div>{modelOptions && MODEL_PRESET_NOTES[mapping.targetModel] ? <p className="mt-1 text-xs leading-5 text-muted-foreground break-words">{MODEL_PRESET_NOTES[mapping.targetModel]}</p> : null}</div>)}
   </div>;
 }
 
@@ -248,10 +252,11 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
   };
 
   const failover = form.tokenFailoverConfig ?? { enabled: false, failureThreshold: 1, successThreshold: 1, healthCheckInterval: 30, healthCheckModel: '' };
+  const modelOptions = providerModelPresets(form.type);
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle className="flex items-center gap-1">{editing ? `编辑提供商 - ${provider?.name}` : '创建提供商'}<InfoTip label="提供商配置步骤"><span className="block">第 1 步：填写供应商名称、类型和 API Key。</span><span className="mt-1 block">第 2 步：非官方地址需填写自定义 Base URL，并以 /v1 或 /v3 结尾。</span><span className="mt-1 block">第 3 步：在「模型映射」中填写请求别名和实际模型名。保存后会自动创建路由。</span></InfoTip></DialogTitle><DialogDescription>配置 AI 模型供应商，填入 API Key 后即可在路由中引用</DialogDescription></DialogHeader><div className="space-y-4 py-2">
     <div className="grid gap-3 md:grid-cols-4">
       <div><Label>名称 *</Label><Input disabled={editing || pending} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 my-provider" /></div>
-      <div><Label>类型 *</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>{PROVIDER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div>
+      <div><Label htmlFor="provider-type">类型 *</Label><Combobox id="provider-type" portal allowCustom={false} disabled={pending} ariaLabel="模型供应商" value={PROVIDER_TYPES.find((type) => type.value === form.type)?.label ?? form.type} options={PROVIDER_TYPES.map((type) => type.label)} placeholder="搜索或选择供应商" onChange={(label) => { const type = PROVIDER_TYPES.find((item) => item.label === label); if (type) setForm({ ...form, type: type.value, ...(type.value !== form.type ? { baseUrl: type.value === 'minimax' ? MINIMAX_BASE_URL : form.type === 'minimax' ? '' : form.baseUrl } : {}) }); }} /></div>
       <div><Label>协议</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.protocol} onChange={(event) => setForm({ ...form, protocol: event.target.value as ProviderForm['protocol'] })}><option value="openai/v1">openai/v1</option><option value="original">original</option></select><p className="text-xs text-muted-foreground mt-0.5">绝大多数用 openai/v1</p></div>
       <div><Label>网关路径前缀</Label><Input disabled={pending} value={form.pathPrefix || '/v1'} onChange={(event) => setForm({ ...form, pathPrefix: event.target.value })} placeholder="/v1" /></div>
     </div>
@@ -271,7 +276,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
       <Input disabled={pending} value={form.baseUrl ?? ''} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" />
     </div>}
     <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="provider-failover" className="size-4" type="checkbox" checked={failover.enabled} disabled={pending} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, enabled: event.target.checked } })} /><Label htmlFor="provider-failover">启用 Token 故障转移</Label></div>{failover.enabled && <div className="grid gap-3 md:grid-cols-4"><div><Label>失败阈值</Label><Input disabled={pending} type="number" min="1" value={failover.failureThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, failureThreshold: Number(event.target.value) } })} /></div><div><Label>成功阈值</Label><Input disabled={pending} type="number" min="1" value={failover.successThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, successThreshold: Number(event.target.value) } })} /></div><div><Label>检查间隔（秒）</Label><Input disabled={pending} type="number" min="1" value={failover.healthCheckInterval} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckInterval: Number(event.target.value) } })} /></div><div><Label>健康检查模型</Label><Input disabled={pending} value={failover.healthCheckModel} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckModel: event.target.value } })} /></div></div>}</div>
-    <MappingEditor label="模型映射（请求别名 → 实际模型）" value={form.modelMappings} onChange={(modelMappings) => setForm({ ...form, modelMappings })} />
+    <MappingEditor label="模型映射（请求别名 → 实际模型）" value={form.modelMappings} modelOptions={modelOptions} onChange={(modelMappings) => setForm({ ...form, modelMappings })} />
     <FormErrors errors={errors} />
   </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}{editing ? '保存修改' : '创建提供商'}</Button></DialogFooter></DialogContent></Dialog>;
 }
@@ -473,7 +478,7 @@ function ModelsSessionFallback({ reason, isLoading }: { reason?: string; isLoadi
 
 function ResourceError({ error }: { error: Error | null }) { return error ? <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">加载失败：{error.message}</p> : null; }
 
-function ProviderTable({ loading, providers, pending, onEdit, onDelete }: { loading: boolean; providers: LlmProviderResponse[]; pending: boolean; onEdit: (_provider: LlmProviderResponse) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>协议</TableHead><TableHead>Token 数</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : providers.length === 0 ? <EmptyRow icon={<Server className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 提供商配置" /> : providers.map((provider) => <TableRow key={provider.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Server className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={provider.name} /></div></TableCell><TableCell><Badge variant="outline" className="text-xs">{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}</Badge></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{provider.protocol || 'openai/v1'}</TableCell><TableCell><span className="flex items-center gap-1 text-xs"><Key className="size-3 text-muted-foreground" />{provider.tokenCount} 个</span></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="编辑提供商" aria-label={`编辑 ${provider.name}`} disabled={pending} onClick={() => onEdit(provider)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除提供商" aria-label={`删除 ${provider.name}`} disabled={pending} onClick={() => onDelete(provider.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
+function ProviderTable({ loading, providers, pending, onEdit, onDelete }: { loading: boolean; providers: LlmProviderResponse[]; pending: boolean; onEdit: (_provider: LlmProviderResponse) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>协议</TableHead><TableHead>Token 数</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : providers.length === 0 ? <EmptyRow icon={<Server className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 提供商配置" /> : providers.map((provider) => <TableRow key={provider.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Server className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={provider.name} /></div></TableCell><TableCell><Badge variant="outline" className="text-xs">{PROVIDER_TYPES.find((type) => type.value === modelProviderType(provider))?.label || provider.type}</Badge></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{provider.protocol || 'openai/v1'}</TableCell><TableCell><span className="flex items-center gap-1 text-xs"><Key className="size-3 text-muted-foreground" />{provider.tokenCount} 个</span></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="编辑提供商" aria-label={`编辑 ${provider.name}`} disabled={pending} onClick={() => onEdit(provider)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除提供商" aria-label={`删除 ${provider.name}`} disabled={pending} onClick={() => onDelete(provider.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 
 function RouteTable({ loading, routes, pending, onEdit, onSwitch, onDelete }: { loading: boolean; routes: AiRoute[]; pending: boolean; onEdit: (_route: AiRoute) => void; onSwitch: (_route: AiRoute) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>路径</TableHead><TableHead>上游提供商</TableHead><TableHead>认证 / 授权 Consumer</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : routes.length === 0 ? <EmptyRow icon={<Route className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 路由" /> : routes.map((route) => <TableRow key={route.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Route className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={route.name} /></div></TableCell><TableCell className="font-mono text-xs text-muted-foreground"><OverflowText text={route.pathPredicate.matchValue} /></TableCell><TableCell><OverflowText text={route.upstreams.map((upstream) => `${upstream.provider} (${upstream.weight}%)`).join('、')} className="text-xs" /></TableCell><TableCell>{route.authConfig?.enabled ? <div className="flex min-w-0 items-center gap-1"><Badge variant="outline" className="text-xs">已启用</Badge><OverflowText text={(route.authConfig?.allowedConsumers ?? []).join('、')} className="text-xs" />{(route.authConfig?.allowedConsumers ?? []).length === 0 && <span className="text-xs text-muted-foreground">未限定 Consumer</span>}</div> : <span className="text-xs text-muted-foreground">未启用</span>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="切换提供商" aria-label={`切换 ${route.name} 提供商`} disabled={pending} onClick={() => onSwitch(route)}><ArrowLeftRight className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" title="编辑路由" aria-label={`编辑 ${route.name}`} disabled={pending} onClick={() => onEdit(route)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除路由" aria-label={`删除 ${route.name}`} disabled={pending} onClick={() => onDelete(route.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 

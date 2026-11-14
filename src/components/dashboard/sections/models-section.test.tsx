@@ -143,6 +143,69 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     expect(mutations.createProvider).not.toHaveBeenCalled();
   });
 
+  it('searches provider choices and offers matching models while preserving custom model input', () => {
+    renderSection('providers');
+    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
+    const type = screen.getByRole('combobox', { name: '模型供应商' });
+    fireEvent.focus(type);
+    fireEvent.change(type, { target: { value: 'mini' } });
+    expect(screen.queryByRole('option', { name: 'DeepSeek' })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'MiniMax' }));
+    expect((type as HTMLInputElement).value).toBe('MiniMax');
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
+    const model = screen.getByRole('combobox', { name: '供应商实际模型' });
+    fireEvent.focus(model);
+    expect(screen.getByRole('option', { name: 'MiniMax-M3' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'MiniMax-M3.1-Flash' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'MiniMax-M2.7' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'deepseek-chat' })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'MiniMax-M2.7' }));
+    expect((model as HTMLInputElement).value).toBe('MiniMax-M2.7');
+    fireEvent.change(model, { target: { value: 'my-private-model' } });
+    expect((model as HTMLInputElement).value).toBe('my-private-model');
+    fireEvent.focus(type);
+    fireEvent.change(type, { target: { value: 'deep' } });
+    fireEvent.click(screen.getByRole('option', { name: 'DeepSeek' }));
+    fireEvent.focus(model);
+    expect(screen.getByRole('option', { name: 'deepseek-chat' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'MiniMax-M2.7' })).toBeNull();
+    expect((model as HTMLInputElement).value).toBe('my-private-model');
+  });
+
+  it('shows Qwen 4 Token Plan restrictions after choosing the model', () => {
+    renderSection('providers');
+    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '模型供应商' }));
+    fireEvent.click(screen.getByRole('option', { name: '通义千问 (Qwen)' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '供应商实际模型' }));
+    fireEvent.click(screen.getByRole('option', { name: 'qwen4-max-preview' }));
+    expect(screen.getByText(/仅支持 Token Plan/)).toBeTruthy();
+  });
+
+  it('saves a MiniMax M3 mapping through the selected OpenAI-compatible regional endpoint', () => {
+    renderSection('providers');
+    fireEvent.click(screen.getByRole('button', { name: '添加提供商' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '模型供应商' }));
+    fireEvent.click(screen.getByRole('option', { name: 'MiniMax' }));
+    const baseUrl = screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement;
+    expect(baseUrl.value).toBe('https://api.minimax.cn/v1');
+    fireEvent.change(baseUrl, { target: { value: 'https://api.minimax.io/v1' } });
+    fireEvent.change(screen.getByPlaceholderText('例如 my-provider'), { target: { value: 'my-minimax' } });
+    fireEvent.change(screen.getByPlaceholderText('sk-... 或 ark-...'), { target: { value: 'test-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加映射' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '请求模型别名' }), { target: { value: 'MiniMax-M3' } });
+    fireEvent.focus(screen.getByRole('combobox', { name: '供应商实际模型' }));
+    fireEvent.click(screen.getByRole('option', { name: 'MiniMax-M3' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建提供商' }));
+    expect(mutations.createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'openai', tokens: ['test-key'],
+      rawConfigs: { openaiCustomUrl: 'https://api.minimax.io/v1', modelMapping: { 'MiniMax-M3': 'MiniMax-M3' } },
+    }), expect.any(Object));
+  });
+
   it('keeps invalid fallback JSON visible in the route form', () => {
     renderSection('routes');
     fireEvent.click(screen.getByRole('button', { name: '添加路由' }));
