@@ -165,7 +165,7 @@ export function TeamAgentsSection() {
                 <dt className="pt-1 text-muted-foreground">Leader</dt><dd className="h-7 min-w-0">{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
                 <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="h-7 min-w-0">{teamWorkers.length ? memberList(teamWorkers.map((worker) => worker.name), agentChip, `${team.teamName || team.name}的 Workers`, 'Workers') : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
               </dl>
-            </CardContent><div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" className="w-full" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" className="w-full" onClick={() => navigate('teams', 'team', team.name, true)}>编辑</Button></div></Card>;
+            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name, true)}>编辑</Button></div></Card>;
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
         </div> : <div className={RESOURCE_CARD_GRID} aria-label="Agent 卡片">

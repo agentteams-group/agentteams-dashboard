@@ -53,9 +53,9 @@ export function AgentSummaryCard({ agent, onView, onEdit }: {
         <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '独立 Agent'} className="text-right leading-5" /></dd>
       </dl>
     </CardContent>
-    <div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-border/60 px-5 py-3">
-      <Button variant="outline" size="sm" className="w-full" onClick={onView}>详情</Button>
-      <Button variant="outline" size="sm" className="w-full" onClick={onEdit}>编辑</Button>
+    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3">
+      <Button variant="outline" size="sm" onClick={onView}>详情</Button>
+      <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>
     </div>
   </Card>;
 }
