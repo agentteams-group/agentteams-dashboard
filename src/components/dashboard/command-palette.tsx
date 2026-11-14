@@ -26,7 +26,7 @@ import { useAuditEvents } from '@/hooks/use-audit-events';
 import { readDrafts } from './sections/loops-section';
 import { shortUserId } from './sections/chat/format';
 import { highlightSnippet, searchableBody } from '@/lib/matrix-search';
-import { auditHash, loopHash, roomHash, tasksHash, teamAgentsHash } from '@/lib/nav-hash';
+import { auditHash, hashForSection, loopHash, platformAssistantSettingsHash, roomHash, tasksHash } from '@/lib/nav-hash';
 
 export interface SearchResult {
   entity:
@@ -303,8 +303,8 @@ export function useGlobalSearch(
           name: w.name,
           subtitle: `${w.runtime} · ${w.model || '无模型'}`,
           phase: w.phase,
-          section: 'team-agents',
-          hash: teamAgentsHash('agents'),
+          section: 'workers',
+          hash: `#${hashForSection('workers')}?agent=${encodeURIComponent(w.name)}`,
         });
       }
     });
@@ -321,8 +321,8 @@ export function useGlobalSearch(
           name: t.teamName || t.name,
           subtitle: `${t.readyWorkers}/${t.totalWorkers} Workers · ${t.leaderName}`,
           phase: t.phase,
-          section: 'team-agents',
-          hash: teamAgentsHash('teams'),
+          section: 'teams',
+          hash: `#${hashForSection('teams')}?team=${encodeURIComponent(t.name)}`,
         });
       }
     });
@@ -339,7 +339,8 @@ export function useGlobalSearch(
           name: m.name,
           subtitle: `${m.runtime || '-'} · ${m.model || '-'}`,
           phase: m.phase,
-          section: 'managers',
+          section: 'platform-assistant-settings',
+          hash: platformAssistantSettingsHash(m.name),
         });
       }
     });

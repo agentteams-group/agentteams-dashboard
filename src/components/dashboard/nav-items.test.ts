@@ -22,11 +22,12 @@ describe('Navigation with groups (Workbench IA)', () => {
       'artifacts',
       'coding-runs',
       'loops',
-      // 控制台（workers/teams 已合并为 team-agents；humans/managers 保留独立入口）
+      // Separate member pages; assistant settings has no standalone Manager menu.
       'resources',
-      'team-agents',
-      'managers',
+      'workers',
       'humans',
+      'teams',
+      'platform-assistant-settings',
       'skills',
       'models',
       'tools',
@@ -67,19 +68,16 @@ describe('Navigation with groups (Workbench IA)', () => {
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
     expect(byId.get('resources')).toMatchObject({ area: 'console', group: 'resources' });
-    // 团队与Agent：Workers + 团队合并后的单一入口（不再有 workers/teams 导航项）。
-    expect(byId.get('team-agents')).toMatchObject({
+    expect(byId.get('workers')).toMatchObject({
       area: 'console',
       group: 'resources',
       legacyGroup: 'runtime',
     });
-    expect(byId.get('team-agents')?.mergedInto).toBeUndefined();
-    expect(byId.get('workers')).toBeUndefined();
-    expect(byId.get('teams')).toBeUndefined();
-    expect(byId.get('humans')?.mergedInto).toBe('resources');
-    expect(byId.get('managers')?.mergedInto).toBe('resources');
+    expect(byId.get('teams')).toMatchObject({ label: '团队', area: 'console', group: 'resources' });
+    expect(byId.get('humans')?.mergedInto).toBeUndefined();
+    expect(byId.get('managers')).toBeUndefined();
     expect(byId.get('skills')?.mergedInto).toBeUndefined(); // 市场/模型/知识库不并入
-    expect(byId.get('managers')).toMatchObject({ area: 'console', group: 'resources' });
+    expect(byId.get('platform-assistant-settings')).toMatchObject({ area: 'workbench', minLevel: 3 });
     expect(byId.get('humans')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('skills')).toMatchObject({ area: 'console', group: 'resources' });
     expect(byId.get('models')).toMatchObject({ area: 'console', group: 'resources' });
@@ -94,7 +92,7 @@ describe('Navigation with groups (Workbench IA)', () => {
     // Every pre-Workbench item must keep a legacy home so classic mode shows
     // all 13 v1.x sections. M3 新增的 loops 在 v1.x 无对应导航，经典模式不显示。
     const withoutM3 = navItems.filter(
-      (item) => item.id !== 'loops' && item.id !== 'my-workbench' && item.id !== 'resources'
+      (item) => !['loops', 'my-workbench', 'resources', 'platform-assistant-settings'].includes(item.id)
     );
     expect(withoutM3.every((item) => item.legacyGroup)).toBe(true);
   });
@@ -109,11 +107,12 @@ describe('UI level gate (M19 dual track)', () => {
     const ids = navItems
       .filter((item) => isNavItemVisible(item, undefined, true, 2))
       .map((item) => item.id);
-    expect(ids).not.toContain('managers');
+    expect(ids).not.toContain('platform-assistant-settings');
     expect(ids).not.toContain('humans');
     expect(ids).toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
-    expect(ids).toContain('team-agents');
+    expect(ids).toContain('workers');
+    expect(ids).toContain('teams');
     expect(ids).toContain('audit');
   });
 
@@ -121,7 +120,7 @@ describe('UI level gate (M19 dual track)', () => {
     const ids = navItems
       .filter((item) => isNavItemVisible(item, undefined, true, 3))
       .map((item) => item.id);
-    expect(ids).toContain('managers');
+    expect(ids).toContain('platform-assistant-settings');
     expect(ids).toContain('humans');
   });
 
@@ -134,6 +133,6 @@ describe('UI level gate (M19 dual track)', () => {
   });
 
   it('defaults to full visibility when the level is unknown (fail-open UI, server enforces)', () => {
-    expect(isNavItemVisible(navItems.find((i) => i.id === 'managers')!, undefined, true, undefined)).toBe(true);
+    expect(isNavItemVisible(navItems.find((i) => i.id === 'platform-assistant-settings')!, undefined, true, undefined)).toBe(true);
   });
 });
