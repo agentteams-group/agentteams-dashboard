@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { OverflowText } from '@/components/dashboard/overflow-text';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { useCreateTeam, useCreateWorker } from '@/hooks/use-agentteams-mutations';
 import { useHumans } from '@/hooks/use-agentteams-humans';
@@ -95,6 +97,8 @@ export function TeamAgentsSection() {
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
   ].sort((a, b) => Number(b.kind === 'manager') - Number(a.kind === 'manager') || a.name.localeCompare(b.name));
   const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
+  const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
+  const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
   const selectedTeam = teams.find((team) => team.name === location.team);
   const selectedWorker = workers.find((worker) => worker.name === location.agent);
   const selectedManager = managers.find((manager) => manager.name === location.manager);
@@ -116,6 +120,14 @@ export function TeamAgentsSection() {
       <AgentSummaryCard agent={agent} onView={onView} onEdit={() => navigate('agents', 'agent', name, true)} />
     </MemberPreview>;
   }
+  function memberList(names: string[], renderMember: (_name: string) => ReactNode, label: string, title: string) {
+    return <div className={`grid min-w-0 items-center gap-1.5 ${names.length > 2 ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]' : 'grid-cols-2'}`}>
+      {names.slice(0, 2).map(renderMember)}
+      {names.length > 2 && <MemberPreview name={label} label={`… +${names.length - 2}`} ariaLabel={`展开${label}`}>
+        <div className="p-4"><h3 className="mb-3 truncate text-sm font-medium">{title} · {names.length}</h3><div className="grid max-h-64 gap-2 overflow-y-auto">{names.map(renderMember)}</div></div>
+      </MemberPreview>}
+    </div>;
+  }
 
   if ((teamsQuery.isError || workersQuery.isError) && !isConnected) return <ApiErrorState />;
 
@@ -130,7 +142,7 @@ export function TeamAgentsSection() {
 
     {isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
       <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-        <h2 className="font-medium">{location.edit ? '编辑' : '主页'} · {selectedTeam?.teamName || location.team || location.agent || location.manager}</h2>
+        <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent || location.manager}`} /></h2>
         {selectedTeam && <Button size="sm" variant="outline" onClick={() => setMillforgeTeam(selectedTeam.name)}>千锻 · 团队配置</Button>}
       </div>
       {selectedTeam ? <TeamSettingsPanel key={selectedTeam.name} team={selectedTeam} allTeams={teams} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} onChanged={refresh} onDeleted={() => navigate('teams')} /> :
@@ -144,28 +156,28 @@ export function TeamAgentsSection() {
       </div>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
-          {teamRows.map(({ team }) => {
+          {teamPage.items.map(({ team }) => {
             const members = [...new Set([...(team.humanMembers ?? []), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
-            return <Card key={team.name} className="w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
+            return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
               <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} Agent`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
-              {team.description && <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{team.description}</p>}
+              <OverflowText text={team.description || ''} multiline className="h-10 text-xs leading-5 text-muted-foreground" />
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm">
-                <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd>{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
-                <dt className="pt-1 text-muted-foreground">普通成员 · {members.length}</dt><dd className="flex flex-wrap gap-1.5">{members.length ? members.map(humanChip) : <span className="text-muted-foreground">暂无普通成员</span>}</dd>
-                <dt className="pt-1 text-muted-foreground">Leader</dt><dd>{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
-                <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="flex flex-wrap gap-1.5">{teamWorkers.length ? teamWorkers.map((worker) => agentChip(worker.name)) : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
+                <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd className="h-7 min-w-0">{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
+                <dt className="pt-1 text-muted-foreground">普通成员 · {members.length}</dt><dd className="h-7 min-w-0">{members.length ? memberList(members, humanChip, `${team.teamName || team.name}的普通成员`, '普通成员') : <span className="text-muted-foreground">暂无普通成员</span>}</dd>
+                <dt className="pt-1 text-muted-foreground">Leader</dt><dd className="h-7 min-w-0">{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
+                <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="h-7 min-w-0">{teamWorkers.length ? memberList(teamWorkers.map((worker) => worker.name), agentChip, `${team.teamName || team.name}的 Workers`, 'Workers') : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
               </dl>
-              <div className="flex justify-end gap-2 border-t pt-3"><Button variant="ghost" size="sm" onClick={() => navigate('teams', 'team', team.name)}>查看详情</Button><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name, true)}>编辑团队</Button></div>
-            </CardContent></Card>;
+            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name, true)}>编辑</Button></div></Card>;
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
         </div> : <div className={RESOURCE_CARD_GRID} aria-label="Agent 卡片">
-          {agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+          {agentPage.items.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
             onView={() => navigate('agents', agent.kind, agent.name)}
             onEdit={() => navigate('agents', agent.kind, agent.name, true)} />)}
           {agents.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的 Agent' : '暂无 Agent'}</p>}
         </div>}
+      {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : 'Agent'} />}
     </>}
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}

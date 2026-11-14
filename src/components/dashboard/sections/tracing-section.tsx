@@ -104,7 +104,7 @@ export function TracingSection() {
     finally { setExporting(false); }
   }
 
-  const header = <SectionHeader title="Tracing" description="查看 Worker 执行链路、模型调用和工具耗时" actions={
+  const header = <SectionHeader title="Tracing" meta={<span className="text-sm text-muted-foreground">{needsConfiguration ? '待配置' : resources.data?.tracingEnabled === false ? '未启用' : `${resources.data?.workers.length ?? 0} 个 Agent · ${list.data?.meta.totalItems ?? 0} 条执行记录`}</span>} actions={
     <div className="flex flex-wrap items-center gap-2">{tracingReady ? <span className="hidden text-xs text-muted-foreground sm:inline">每 10 秒自动刷新</span> : null}{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} triggerLabel={needsConfiguration ? '配置 Tracing' : tracingReady ? '可观测配置' : '启用 Tracing'} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); if (tracingReady) { void list.refetch(); if (selected) void detail.refetch(); } }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
   } />;
 
@@ -183,7 +183,7 @@ export function TracingSection() {
         {detail.isFetching ? <p className="text-sm text-muted-foreground">正在读取 Trace…</p> : null}
         {detail.error ? <p role="alert" className="text-sm text-destructive">{detail.error.message}</p> : null}
         {detail.data ? <>
-          <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><h2 className="truncate font-medium">{detail.data.name}</h2><span className="font-mono text-xs text-muted-foreground" title={selected}>{selected.slice(0, 8)}</span><CopyButton text={selected} label="复制 Trace ID" /></div>{detail.data.backendUrl || detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.backendUrl || detail.data.langfuseUrl!} target="_blank" rel="noreferrer">{detail.data.backend === 'agentloop' ? 'AgentLoop' : 'Langfuse'}<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 max-w-full items-center gap-2"><h2 className="min-w-0 truncate font-medium" title={detail.data.name || undefined}>{detail.data.name}</h2><span className="shrink-0 font-mono text-xs text-muted-foreground" title={selected}>{selected.slice(0, 8)}</span><CopyButton text={selected} label="复制 Trace ID" /></div>{detail.data.backendUrl || detail.data.langfuseUrl ? <a className="flex shrink-0 items-center gap-1 text-xs text-primary" href={detail.data.backendUrl || detail.data.langfuseUrl!} target="_blank" rel="noreferrer">{detail.data.backend === 'agentloop' ? 'AgentLoop' : 'Langfuse'}<ArrowUpRight className="h-3 w-3" /></a> : null}</div>
           {detail.data.sessionId ? <div className="flex flex-wrap items-center gap-2 text-xs"><Button size="sm" variant="outline" onClick={() => openSession(detail.data!.sessionId!)}>查看整个会话</Button><Button size="sm" variant="ghost" disabled={exporting} onClick={() => void exportSession(detail.data!.sessionId!)}>{exporting ? '正在导出…' : '导出会话 JSON'}</Button></div> : null}
           {exportError ? <p role="alert" className="text-xs text-destructive">{exportError}</p> : null}
           {typeof upstream === 'string' && /^[a-f0-9]{32}$/i.test(upstream) ? <Button size="sm" variant="outline" onClick={() => { setSelected(upstream); setObservationId(''); }}>查看上游 Worker Trace</Button> : null}

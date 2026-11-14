@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { OverflowText } from '@/components/dashboard/overflow-text';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
@@ -124,21 +125,21 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
 
       {!isError && (filteredSkills.length > 0 || filteredMcp.length > 0) && (
         <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[800px] table-fixed text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="text-left p-3 font-medium">技能名称</th>
-                <th className="text-left p-3 font-medium">描述</th>
+                <th className="w-[30%] text-left p-3 font-medium">描述</th>
                 <th className="text-left p-3 font-medium">来源</th>
-                <th className="text-left p-3 font-medium">文件数</th>
-                <th className="text-right p-3 font-medium">操作</th>
+                <th className="w-20 text-left p-3 font-medium">文件数</th>
+                <th className="w-[240px] text-right p-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredSkills.map((skill) => (
                 <tr key={skill.name} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="p-3 font-mono font-medium">{skill.name}</td>
-                  <td className="p-3 max-w-xs truncate">{skill.description}</td>
+                  <td className="p-3 font-mono font-medium"><OverflowText text={skill.name} /></td>
+                  <td className="p-3"><OverflowText text={skill.description || ''} /></td>
                   <td className="p-3">
                     {skill.source === 'nacos' ? (
                       <Badge variant="outline" className="text-xs max-w-[120px] truncate" title={skill.sourceAlias}>

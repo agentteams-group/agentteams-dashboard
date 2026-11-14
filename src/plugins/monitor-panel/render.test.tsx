@@ -8,10 +8,18 @@ import { useExtensionStore } from '@/lib/plugins/extension-store';
 import { pluginEventBus } from '@/lib/plugins/event-bus';
 import { manifest } from './manifest';
 import { activate, deactivate } from './index';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 function mockFetch() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes('/monitoring')) {
+      return Response.json({ mode: 'embedded', sampledAt: '2026-11-14T01:00:00Z', total: 2, page: 1, totalPages: 1, limit: 12, items: [
+        { kind: 'worker', name: 'w-1', availability: 'available', metrics: { state: 'running', cpuPercent: 2.17, memoryUsageBytes: 104857600, memoryLimitBytes: null, restartCount: 0, oomKilled: false, exitCode: 0, startedAt: null, sampledAt: null } },
+        { kind: 'worker', name: 'w-2', availability: 'missing', metrics: null },
+      ] });
+    }
     if (url.includes('cluster-status')) {
       return new Response(
         JSON.stringify({ totalWorkers: 5, totalTeams: 2, totalHumans: 1, kubeMode: false }),
@@ -65,19 +73,20 @@ describe('monitor-panel rendered components', () => {
     expect(screen.getByText('1')).toBeInTheDocument();
   });
 
-  it('renders the standalone monitor page with stats and worker distribution', async () => {
+  it('renders container metrics through the plugin API', async () => {
     const route = useExtensionStore.getState().routes[0];
     expect(route.contribution.id).toBe('monitor');
     const Page = route.contribution.component;
 
-    render(<Page pluginId="monitor-panel" />);
+    render(<QueryClientProvider client={new QueryClient()}><TooltipProvider><Page pluginId="monitor-panel" /></TooltipProvider></QueryClientProvider>);
     await waitFor(() => {
-      expect(screen.getByText('集群监控')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: '运行监控' })).toBeInTheDocument();
     });
-    // Worker phase distribution comes from api.dashboard.listWorkers.
     await waitFor(() => {
-      expect(screen.getByText(/Running: 1/)).toBeInTheDocument();
+      expect(screen.getByText('w-1')).toBeInTheDocument();
     });
-    expect(screen.getByText(/Sleeping: 1/)).toBeInTheDocument();
+    expect(screen.getByText('w-2')).toBeInTheDocument();
+    expect(screen.getByText('2.17%')).toBeInTheDocument();
+    expect(screen.getByText('100.0 MiB')).toBeInTheDocument();
   });
 });

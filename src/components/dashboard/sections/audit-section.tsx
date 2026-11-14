@@ -2,15 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Filter,
-  RefreshCw,
   AlertTriangle,
   ShieldAlert,
   ShieldCheck,
   ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +20,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { OverflowText } from '@/components/dashboard/overflow-text';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { currentHashParams } from '@/lib/nav-hash';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -88,10 +90,10 @@ type EntityFilter = AuditEvent['entity_type'] | 'all';
 
 const ENTITY_OPTIONS: { id: EntityFilter; label: string }[] = [
   { id: 'all', label: '全部' },
-  { id: 'worker', label: 'Worker' },
+  { id: 'worker', label: 'Agent' },
   { id: 'team', label: '团队' },
   { id: 'manager', label: 'Manager' },
-  { id: 'human', label: 'Human' },
+  { id: 'human', label: '用户' },
   { id: 'system', label: '系统' },
 ];
 
@@ -119,182 +121,89 @@ function formatTimestamp(ts: number): string {
 }
 
 function actionLabel(action: string): string {
+  const labels: Record<string, string> = { create: '创建', update: '编辑', delete: '删除', human_created: '创建用户', human_deleted: '删除用户', human_file_write: '写入用户文件', capability_grant: '授予权限', capability_revoke: '撤销权限', channel_update: '更新渠道配置' };
+  if (labels[action]) return labels[action];
   if (action.startsWith('rbac.deny.')) return `拒绝：${action.slice('rbac.deny.'.length)}`;
   if (action.endsWith('-failed')) return `${action.replace(/-failed$/, '')} 失败`;
   return action;
 }
 
+function eventSummary(event: AuditEvent): string {
+  if (!event.details || event.details === '—') return '无附加内容';
+  if (/^\s*[{[]/.test(event.details)) return '已记录操作上下文，详情中可查看';
+  return event.details.replaceAll('permission_level', '权限等级').replaceAll('accessible_teams', '可访问团队').replaceAll('∅', '无');
+}
+
 export function AuditSection() {
   const [entityType, setEntityType] = useState<EntityFilter>('all');
-  const query: AuditQuery = useMemo(() => {
-    const out: AuditQuery = { limit: 200 };
-    if (entityType !== 'all') out.entityType = entityType;
-    return out;
-  }, [entityType]);
-
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<AuditEvent | null>(null);
+  const query: AuditQuery = useMemo(() => ({ limit: 200, ...(entityType === 'all' ? {} : { entityType }) }), [entityType]);
   const { data, isLoading, isFetching, refetch } = useAuditEvents(query);
+  const filtered = (data?.events ?? []).filter(event => [event.actor, event.entity_name, event.action, event.details].some(value => value?.toLowerCase().includes(search.toLowerCase())));
+  const pagination = useListPagination(filtered, 20, `${entityType}:${search}`);
+  const entityLabel = (type: string) => ENTITY_OPTIONS.find(option => option.id === type)?.label || type;
 
-  // 深链消费（方案 v3 C-2）：命令面板命中审计事件后写的是
-  // `#console/governance/audit?entity=<type>`，本视图把它读回筛选维度。
-  // 只接受 ENTITY_OPTIONS 里已有的值：hash 是用户能手改的输入，乱值会把筛选
-  // 卡成一个既不匹配选项又查不出东西的状态。
   useEffect(() => {
     const applyEntityParam = () => {
-      const path = window.location.hash.replace(/^#/, '').split('?')[0];
-      if (path !== 'console/governance/audit') return;
+      if (window.location.hash.replace(/^#/, '').split('?')[0] !== 'console/governance/audit') return;
       const raw = currentHashParams()?.get('entity');
-      if (!raw) return;
-      if (ENTITY_OPTIONS.some((option) => option.id === raw)) setEntityType(raw as EntityFilter);
+      if (raw && ENTITY_OPTIONS.some(option => option.id === raw)) setEntityType(raw as EntityFilter);
     };
     applyEntityParam();
     window.addEventListener('hashchange', applyEntityParam);
     return () => window.removeEventListener('hashchange', applyEntityParam);
   }, []);
 
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="审计日志"
-        description={
-          data?.source === 'controller'
-            ? data.scope === 'team'
-              ? `Controller 记录的治理事件（MinIO 持久存储，覆盖全部入口）。你的视图限定在团队「${data.team ?? '?'}」。`
-              : 'Controller 记录的治理事件（MinIO 持久存储，覆盖全部入口：dashboard、CLI、API）。'
-            : data?.scope === 'self'
-              ? '服务端记录的治理事件。L2 操作员视图仅显示你本人执行的操作；L3+ 平台管理员可查看全部。'
-              : '服务端记录的治理事件（mutation、RBAC 拒绝、登录等）。10 MB 自动 rotate，保留 30 份归档。'
-        }
-      />
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">最近事件</CardTitle>
-            {data?.source === 'controller' ? (
-              <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300">
-                数据源：Controller
-              </Badge>
-            ) : data?.source === 'local' ? (
-              <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                数据源：本地日志
-              </Badge>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <div className="flex flex-wrap gap-1">
-              {ENTITY_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.id}
-                  type="button"
-                  size="sm"
-                  variant={entityType === opt.id ? 'default' : 'outline'}
-                  onClick={() => setEntityType(opt.id)}
-                  aria-pressed={entityType === opt.id}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              onClick={() => refetch()}
-              aria-label="刷新"
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {data?.source === 'local' && data.note ? (
-            <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              {data.note}
-            </div>
-          ) : null}
-          {data && data.success === false ? (
-            <div className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-              <div className="space-y-1">
-                <p className="font-medium text-amber-700 dark:text-amber-300">{data.error}</p>
-                <p className="text-xs text-muted-foreground">
-                  {data.observedLevel == null
-                    ? '服务端未收到身份头 — 当前可能处于 AGENTTEAMS_AUTH_DISABLED 本地模式或 Higress session 未透传'
-                    : `服务端识别到权限等级 L${data.observedLevel}，审计视图要求 ≥ L${data.requiredLevel ?? 2}。L3+ 平台管理员可在 Higress Console 提权；L2 操作员只能看到自己执行的事件`}
-                </p>
-              </div>
-            </div>
-          ) : isLoading ? (
-            <div className="space-y-2 py-1" role="status" aria-label="加载中">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-9 w-full" />
-              ))}
-            </div>
-          ) : !data?.events?.length ? (
-            <SectionEmptyState
-              title="暂无审计事件"
-              description={
-                data?.scope === 'self' ? '视图已限定为你本人执行的治理操作' : undefined
-              }
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">时间</TableHead>
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">操作者</TableHead>
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">实体</TableHead>
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">动作</TableHead>
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">严重度</TableHead>
-                  <TableHead className="h-9 px-2 text-xs uppercase tracking-wide">详情</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.events.map((event) => {
-                  const meta = SEVERITY_META[event.severity];
-                  const Icon = meta.icon;
-                  return (
-                    <TableRow key={event.id} className="align-top">
-                      <TableCell className="px-2 py-2 font-mono text-xs whitespace-nowrap">{formatTimestamp(event.timestamp)}</TableCell>
-                      <TableCell className="px-2 py-2">
-                        <span className="font-medium">{event.actor ?? '系统'}</span>
-                        {event.actor_level !== undefined ? (
-                          <span className="ml-1 text-xs text-muted-foreground">L{event.actor_level}</span>
-                        ) : null}
-                        {event.source_ip ? (
-                          <div className="text-xs text-muted-foreground">{event.source_ip}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="px-2 py-2">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {event.kind ?? event.entity_type}
-                        </Badge>
-                        <div className="text-xs text-muted-foreground">{event.entity_name}</div>
-                        {event.team ? (
-                          <div className="text-xs text-muted-foreground">团队：{event.team}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="px-2 py-2 font-mono text-xs">{actionLabel(event.action)}</TableCell>
-                      <TableCell className="px-2 py-2">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}>
-                          <Icon className="h-3 w-3" aria-hidden />
-                          {meta.label}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-2 py-2 max-w-md break-words text-xs text-muted-foreground">
-                        <div>{event.details ?? '—'}</div>
-                        <AuditReplayLink auditRef={parseAuditRef(event)} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+  const scopeNote = data?.scope === 'team'
+    ? `你的视图限定在团队「${data.team ?? '?'}」，展示已记录的操作。`
+    : data?.scope === 'self' ? '视图限定为你本人执行的操作。' : '查看已接入的操作记录，当前最多读取最近 200 条。';
+  return <div className="space-y-4">
+    <SectionHeader title="操作审计" onRefresh={() => void refetch()} isRefreshing={isFetching}
+      meta={<div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{data?.events?.length ?? 0} 条记录</span>{data?.source && <Badge variant="outline">数据源：{data.source === 'controller' ? 'Controller' : '本地日志'}</Badge>}</div>} />
+    <div className="flex flex-wrap items-center gap-3">
+      <Input aria-label="搜索审计记录" placeholder="搜索操作者、资源或操作…" value={search} onChange={event => setSearch(event.target.value)} className="h-9 w-full sm:max-w-sm" />
+      <select aria-label="资源类型" value={entityType} onChange={event => setEntityType(event.target.value as EntityFilter)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+        {ENTITY_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+      <OverflowText text={scopeNote} multiline className="min-w-0 flex-1 text-xs text-muted-foreground" />
     </div>
-  );
+    {data?.source === 'local' && data.note && <p className="rounded-lg border border-amber-500/30 p-3 text-xs text-muted-foreground">{data.note}</p>}
+    {data?.success === false ? <div className="rounded-lg border border-amber-500/30 p-4 text-sm">
+      <p className="font-medium">{data.error}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{data.observedLevel == null ? '未收到身份头，请重新登录后再试。' : `当前权限 L${data.observedLevel}，需要 ≥ L${data.requiredLevel ?? 2}。`}</p>
+    </div> : isLoading ? <div role="status" aria-label="加载中" className="space-y-2">{Array.from({length:6},(_,i)=><Skeleton key={i} className="h-10 w-full" />)}</div> :
+      <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+        {!filtered.length ? <SectionEmptyState title={search ? '没有匹配的审计记录' : '暂无审计事件'} /> :
+          <Table className="min-w-[1000px] table-fixed"><TableHeader><TableRow>
+            <TableHead className="w-[164px]">时间</TableHead><TableHead className="w-[140px]">操作者</TableHead><TableHead className="w-[180px]">资源</TableHead><TableHead className="w-[150px]">操作</TableHead><TableHead className="w-20">级别</TableHead><TableHead>摘要</TableHead><TableHead className="w-20 text-right">操作</TableHead>
+          </TableRow></TableHeader><TableBody>{pagination.items.map(event => <TableRow key={event.id}>
+            <TableCell className="py-3 text-xs text-muted-foreground">{formatTimestamp(event.timestamp)}</TableCell>
+            <TableCell><OverflowText text={event.actor || '系统'} className="font-medium" />{event.actor_level !== undefined && <span className="text-xs text-muted-foreground">L{event.actor_level}</span>}</TableCell>
+            <TableCell><OverflowText text={event.entity_name} className="font-medium" /><OverflowText text={`${entityLabel(event.entity_type)}${event.team ? ` · 团队：${event.team}` : ''}`} className="mt-1 text-xs text-muted-foreground" /></TableCell>
+            <TableCell><OverflowText text={actionLabel(event.action)} /></TableCell>
+            <TableCell><Badge variant="outline" className={SEVERITY_META[event.severity].className}>{SEVERITY_META[event.severity].label}</Badge></TableCell>
+            <TableCell><OverflowText text={eventSummary(event)} className="text-xs text-muted-foreground" /></TableCell>
+            <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={() => setSelected(event)}>详情</Button></TableCell>
+          </TableRow>)}</TableBody></Table>}
+      </Card>}
+    {data?.success !== false && !isLoading && <ListPagination {...pagination} label="记录" />}
+    <Sheet open={Boolean(selected)} onOpenChange={open => !open && setSelected(null)}>
+      <SheetContent className="overflow-y-auto sm:max-w-lg">
+        <SheetHeader><SheetTitle>审计详情</SheetTitle><SheetDescription>查看操作来源和已记录的上下文。</SheetDescription></SheetHeader>
+        {selected && <div className="space-y-5 p-5">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-3 text-sm">
+            <dt className="text-muted-foreground">时间</dt><dd>{formatTimestamp(selected.timestamp)}</dd>
+            <dt className="text-muted-foreground">操作者</dt><dd className="break-all">{selected.actor || '系统'}</dd>
+            <dt className="text-muted-foreground">资源</dt><dd className="break-all">{entityLabel(selected.entity_type)} · {selected.entity_name}</dd>
+            <dt className="text-muted-foreground">操作</dt><dd className="break-all">{actionLabel(selected.action)}</dd>
+            {selected.kind && <><dt className="text-muted-foreground">事件类型</dt><dd className="break-all">{selected.kind}</dd></>}
+            {selected.source_ip && <><dt className="text-muted-foreground">来源 IP</dt><dd>{selected.source_ip}</dd></>}
+          </dl>
+          <div><h3 className="mb-2 text-sm font-medium">记录内容</h3><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs leading-6">{selected.details || '此事件没有附加内容。'}</pre></div>
+          <AuditReplayLink auditRef={parseAuditRef(selected)} />
+        </div>}
+      </SheetContent>
+    </Sheet>
+  </div>;
 }

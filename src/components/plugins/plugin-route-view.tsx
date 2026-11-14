@@ -40,9 +40,9 @@ export function PluginRouteView({ sectionId }: { sectionId: string }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      {parsed.pluginId !== 'monitor-panel' && <div className="flex items-center gap-2">
         <h1 className="text-lg font-semibold">{record.contribution.title}</h1>
-      </div>
+      </div>}
       <PluginErrorBoundary pluginId={parsed.pluginId} pluginName={pluginName}>
         <Suspense fallback={<SectionSkeleton />}>
           <Page pluginId={parsed.pluginId} />

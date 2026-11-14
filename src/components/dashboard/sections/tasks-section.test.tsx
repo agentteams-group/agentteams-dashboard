@@ -70,6 +70,7 @@ vi.mock('@/lib/use-persistent-state', () => ({
 }));
 
 import { TasksSection } from './tasks-section';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // 真实 react-query 环境（项目视图的 room 时间戳兜底 hook 走 useQueries；
 // 此处 query 均为空列表/不启用，零网络）。
@@ -81,7 +82,7 @@ const renderSection = () => {
   const qc = makeQueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <TasksSection />
+      <TooltipProvider><TasksSection /></TooltipProvider>
     </QueryClientProvider>,
   );
 };

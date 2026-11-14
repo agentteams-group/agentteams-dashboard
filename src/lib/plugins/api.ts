@@ -114,6 +114,8 @@ export function createPluginApi(options: CreatePluginApiOptions): DashboardPlugi
     },
     getClusterStatus: () => agentteamsApi.getStatus(),
     getVersion: () => agentteamsApi.getVersion(),
+    getMonitoring: (options: { page: number; limit: number; search: string }) => agentteamsApi.getMonitoring(options),
+    getMonitoringLogs: (kind: string, name: string, options: { tail: number; since?: string }) => agentteamsApi.getMonitoringLogs(kind, name, options),
     listWorkers: () => agentteamsApi.listWorkers(),
     listTeams: () => agentteamsApi.listTeams(),
     listManagers: () => agentteamsApi.listManagers(),

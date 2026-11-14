@@ -13,10 +13,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('opens audit from settings and dismisses the settings overlay', () => {
+it('points to observability from settings and dismisses the settings overlay', () => {
   render(<ManagementTab />);
-  fireEvent.click(screen.getByRole('button', { name: '审计' }));
-  expect(useSectionStore.getState().activeSection).toBe('audit');
+  fireEvent.click(screen.getByRole('button', { name: '打开观测与治理' }));
+  expect(useSectionStore.getState().activeSection).toBe('tracing');
   expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
 });
 
@@ -28,9 +28,10 @@ it('keeps plugin pages reachable after moving them out of the sidebar', () => {
   expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
 });
 
-it('keeps the upstream tracing page reachable from settings', () => {
+it('does not duplicate operations pages or their bundled plugin entries in settings', () => {
+  useExtensionStore.getState().add('menuItems', 'wen-tian', { id: 'diagnose', label: '问天诊断', target: { type: 'plugin-route', routeId: 'diagnose' } });
+  useExtensionStore.getState().add('menuItems', 'monitor-panel', { id: 'monitor', label: '监控面板', target: { type: 'plugin-route', routeId: 'monitor' } });
   render(<ManagementTab />);
-  fireEvent.click(screen.getByRole('button', { name: 'Tracing' }));
-  expect(useSectionStore.getState().activeSection).toBe('tracing');
-  expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
+  for (const name of ['Tracing', '监控面板']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '问天诊断' })).toBeInTheDocument();
 });

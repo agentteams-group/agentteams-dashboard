@@ -115,7 +115,7 @@ export const navItems: NavItem[] = [
   // 回收站、配额）。权限与 Humans 同档（L1 only）。
   { id: 'files', label: '文件', icon: FolderOpen, area: 'console', group: 'resources', legacyGroup: 'resource', minLevel: 2 },
   // 治理：审计。
-  { id: 'audit', label: '审计', icon: ScrollText, area: 'console', group: 'governance', legacyGroup: 'resource' },
+  { id: 'audit', label: '操作审计', icon: ScrollText, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 2 },
   { id: 'tracing', label: 'Tracing', icon: Activity, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 1 },
   // 系统：集群概览归入系统（附录 A）。
   { id: 'overview', label: '总览', icon: LayoutDashboard, area: 'console', group: 'system', legacyGroup: 'core' },

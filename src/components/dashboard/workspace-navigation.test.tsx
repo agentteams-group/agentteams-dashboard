@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -10,7 +10,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './sections/chat/room-info';
 
-const labels = ['助手', '我的团队', '工作台', '资产中心', '成员与团队'];
+const labels = ['助手', '我的团队', '工作台', '资产中心', '成员与团队', '观测与治理'];
 const props = { activeSection: 'models', countMap: { 'my-workbench': 3 }, sectionsWithNotifications: new Set<string>(), onNavClick: vi.fn(), mode: 'embedded' as const };
 
 beforeEach(() => {
@@ -22,11 +22,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('compact workspace navigation', () => {
-  it('keeps Tracing in the workbench even before collection is configured', () => {
+  it('moves Tracing into observability even before collection is configured', () => {
     render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
     const tracing = screen.getByRole('button', { name: 'Tracing' });
     expect(tracing).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: '观测与治理' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(tracing);
     expect(props.onNavClick).toHaveBeenCalledWith('tracing');
   });
@@ -44,15 +45,38 @@ describe('compact workspace navigation', () => {
     expect(useAgentTeamsStore.getState().settingsOpen).toBe(true);
   });
 
-  it('keeps the same five destinations in the mobile drawer', () => {
+  it('keeps the same six destinations in the mobile drawer', () => {
     render(<MobileSidebar {...props} open onClose={vi.fn()} />);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
-    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(5);
+    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(6);
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
     fireEvent.click(within(nav).getByRole('button', { name: '团队与Agent' }));
     expect(props.onNavClick).toHaveBeenCalledWith('team-agents');
+  });
+
+  it('groups only active operations plugins and highlights their existing deep links', () => {
+    useExtensionStore.getState().add('menuItems', 'wen-tian', { id: 'wen-tian-diagnose', label: '问天诊断', target: { type: 'plugin-route', routeId: 'diagnose' } });
+    useExtensionStore.getState().add('menuItems', 'monitor-panel', { id: 'monitor', label: '监控面板', target: { type: 'plugin-route', routeId: 'monitor' } });
+    render(<Sidebar {...props} activeSection="plugin-route:monitor-panel/monitor" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const group = within(screen.getByRole('group', { name: '观测与治理分类' }));
+    expect(group.getByRole('button', { name: '监控面板' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '问天诊断' })).not.toBeInTheDocument();
+    fireEvent.click(group.getByRole('button', { name: '监控面板' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('plugin-route:monitor-panel/monitor');
+    act(() => useExtensionStore.getState().removePlugin('monitor-panel'));
+    expect(screen.queryByRole('button', { name: '监控面板' })).not.toBeInTheDocument();
+  });
+
+  it('hides administrator diagnostics and monitor pages from Team accounts', () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    useExtensionStore.getState().add('menuItems', 'monitor-panel', { id: 'monitor', label: '监控面板', target: { type: 'plugin-route', routeId: 'monitor' } });
+    useExtensionStore.getState().add('menuItems', 'wen-tian', { id: 'diagnose', label: '问天诊断', target: { type: 'plugin-route', routeId: 'diagnose' } });
+    render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '问天诊断' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '监控面板' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tracing' })).toBeInTheDocument();
   });
 
   it('marks the parent menu for deep-linked work and asset pages when collapsed', () => {

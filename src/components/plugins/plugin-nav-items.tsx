@@ -18,6 +18,7 @@ export interface PluginNavItemsProps {
   activeSection: string;
   collapsed: boolean;
   onNavClick: (_sectionId: string) => void;
+  excludePluginIds?: readonly string[];
 }
 
 function targetSectionId(pluginId: string, item: MenuItemContribution): string | null {
@@ -30,8 +31,8 @@ function targetSectionId(pluginId: string, item: MenuItemContribution): string |
   return null;
 }
 
-export function PluginNavItems({ activeSection, collapsed, onNavClick }: PluginNavItemsProps) {
-  const items = usePluginMenuItems();
+export function PluginNavItems({ activeSection, collapsed, onNavClick, excludePluginIds }: PluginNavItemsProps) {
+  const items = usePluginMenuItems().filter(({ pluginId }) => !excludePluginIds?.includes(pluginId));
 
   if (items.length === 0) return null;
 

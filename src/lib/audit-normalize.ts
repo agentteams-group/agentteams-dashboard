@@ -51,9 +51,12 @@ export type NormalizedAuditEvent = AuditEventRecord & {
  * - capability / approval_level changes target a HUMAN record
  * - channel credential writes target a WORKER record
  * - external source adds/modifies are system-level
+ * - resource-prefixed events retain their resource type (including file writes)
  * - unknown future kinds → system (visible, not filterable to an entity)
  */
 export function kindToEntityType(kind: string): AuditEventRecord['entity_type'] {
+  const resource = /^(worker|team|manager|human)(?:_|$)/.exec(kind);
+  if (resource) return resource[1] as AuditEventRecord['entity_type'];
   switch (kind) {
     case 'capability':
     case 'approval_level':

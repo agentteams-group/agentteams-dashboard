@@ -21,6 +21,7 @@ import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
@@ -117,6 +118,7 @@ export function HumansSection() {
     () => sortHumans(filteredHumans, sortKey),
     [filteredHumans, sortKey],
   );
+  const pagination = useListPagination(sortedHumans, 20, `${searchQuery}:${sortKey}`);
 
   const handleExport = useCallback(() => {
     if (!humans) return;
@@ -214,12 +216,13 @@ export function HumansSection() {
         <EmptyState hasQuery={!!searchQuery} onCreate={() => setCreateOpen(true)} />
       ) : (
         <HumanTable
-          humans={sortedHumans}
+          humans={pagination.items}
           onView={setDetailHuman}
           onEdit={setDrawerHuman}
           onDelete={setDeleteTarget}
         />
       )}
+      {!isLoading && <ListPagination {...pagination} label="用户" />}
 
       </>}
 

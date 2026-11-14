@@ -209,6 +209,54 @@ beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
 describe('Team and Agent resource cards', () => {
+  it('paginates cards and resets the page when searching or switching tabs', () => {
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const extra = Array.from({ length: 26 }, (_, index) => worker(`paged-${index}`, 'alpha'));
+    workersFixture.push(...extra);
+    try {
+      renderSection('#console/resources/team-agents?tab=agents');
+      const cards = () => within(screen.getByLabelText('Agent 卡片')).getAllByRole('heading', { level: 2 });
+      expect(cards()).toHaveLength(12);
+      fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
+      expect(cards()).toHaveLength(7);
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: 'solo' } });
+      expect(cards()).toHaveLength(1);
+      expect(screen.getByText('共 1 个Agent · 第 1 / 1 页')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      selectTab(/^团队/);
+      selectTab(/^Agent/);
+      expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
+    } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
+  });
+
+  it('keeps large member lists collapsed and opens hidden Agent details from the overflow list', async () => {
+    const extra = Array.from({ length: 30 }, (_, index) => worker(`extra-${index}`, 'alpha'));
+    const originalNames = teamsFixture[0].workerNames;
+    const originalMembers = teamsFixture[0].humanMembers;
+    workersFixture.push(...extra);
+    teamsFixture[0].workerNames = [...originalNames, ...extra.map((item) => item.name)];
+    teamsFixture[0].humanMembers = Array.from({ length: 30 }, (_, index) => `member-${index}`);
+    try {
+      renderSection();
+      expect(screen.queryByRole('button', { name: '查看 extra-29 的主页' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '查看 member-29 的主页' })).not.toBeInTheDocument();
+      fireEvent.mouseEnter(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      const list = await screen.findByRole('dialog', { name: 'Alpha的 Workers 资料卡' });
+      expect(within(list).getByRole('heading', { name: 'Workers · 31' })).toBeInTheDocument();
+      fireEvent.focus(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      fireEvent.click(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      expect(list).toBeInTheDocument();
+      fireEvent.click(within(list).getByRole('button', { name: '查看 extra-29 的主页' }));
+      expect(screen.getByText('agent-profile:extra-29')).toBeInTheDocument();
+    } finally {
+      workersFixture.splice(-extra.length);
+      teamsFixture[0].workerNames = originalNames;
+      teamsFixture[0].humanMembers = originalMembers;
+    }
+  });
+
   it('opens an interactive Agent card on hover and keeps it open while entering the card', async () => {
     renderSection();
     const member = screen.getByRole('button', { name: '查看 w1 的主页' });
@@ -221,7 +269,7 @@ describe('Team and Agent resource cards', () => {
     fireEvent.mouseLeave(member);
     fireEvent.mouseEnter(preview);
     expect(preview).toBeInTheDocument();
-    fireEvent.click(within(preview).getByRole('button', { name: '查看详情' }));
+    fireEvent.click(within(preview).getByRole('button', { name: '详情' }));
     expect(screen.getByText('agent-profile:w1')).toBeInTheDocument();
   });
 
@@ -282,7 +330,7 @@ describe('Team and Agent resource cards', () => {
 
   it('opens the team settings and retains the team configuration tool', () => {
     renderSection();
-    fireEvent.click(screen.getAllByRole('button', { name: '编辑团队' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '千锻 · 团队配置' }));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent('millforge-dialog:alpha');

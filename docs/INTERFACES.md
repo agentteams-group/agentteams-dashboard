@@ -97,6 +97,8 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | 路径前缀 | 目标系统 | 主要职责 |
 |---|---|---|
 | `/api/agentteams/*` | AgentTeams Controller | 集群资源、状态、安装、存储、日志和消费者管理 |
+| `/api/agentteams/monitoring?page=&limit=&search=` | Controller `/api/v1/monitoring` | 管理员容器监控：按页读取 Worker、Manager、Controller、Dashboard 的 CPU、内存、运行状态、启动时间、重启/OOM；未知用量为 null，无独立内存限额为 null。当前 Docker embedded 可用，其他数据源显示暂不支持 |
+| `/api/agentteams/monitoring/{kind}/{name}/logs?tail=&since=` | Controller 同名路径 | 管理员按资源读取容器 stdout/stderr；tail 默认 300、最大 1000，since 为 RFC3339。最多 1 MiB，返回截断标志；常见凭据字段遮盖。资源来自 Controller，不能传任意宿主机容器名；无缓存 |
 | `/api/matrix/*` | Matrix Homeserver | 登录、房间、消息、成员、上传和同步 |
 | `/api/higress/ai-providers` | Higress Console | Provider 列表和创建 |
 | `/api/higress/ai-providers/[name]` | Higress Console | 单个 Provider 读取、更新和删除 |
