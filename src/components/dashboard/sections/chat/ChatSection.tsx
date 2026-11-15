@@ -29,7 +29,7 @@ import { preferredAgentRoom, withLeaderAccess, canOpenConversation, conversation
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes';
-import { ConversationSwitcher } from './conversation-switcher';
+import { ConversationSwitcher, RelatedConversationButton } from './conversation-switcher';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const NARROW_MQ = '(max-width: 767px)';
@@ -375,6 +375,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 taskFeed={taskFeed}
                 headerLeading={<Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
                 headerTitle={<ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
+                headerActions={<RelatedConversationButton rooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
 
               />
             ) : (

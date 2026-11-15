@@ -29,6 +29,7 @@ interface ChatPanelProps {
   taskFeed?: AssistantTaskFeed;
   headerLeading?: ReactNode;
   headerTitle?: ReactNode;
+  headerActions?: ReactNode;
   managerName?: string;
 }
 
@@ -43,6 +44,7 @@ export function ChatPanel({
   taskFeed,
   headerLeading,
   headerTitle,
+  headerActions,
   managerName,
 }: ChatPanelProps) {
   const userLevel = useAgentTeamsStore(state => state.userLevel);
@@ -63,6 +65,7 @@ export function ChatPanel({
           roomRuntime={room.runtime}
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
           headerActions={<>
+            {headerActions}
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
             {(room.agentRole || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}

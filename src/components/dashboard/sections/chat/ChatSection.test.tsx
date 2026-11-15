@@ -51,9 +51,9 @@ vi.mock('@/hooks/use-matrix', async () => {
 const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null, runtimeMap: {} as RuntimeMap }));
 
 vi.mock('./ChatPanel', () => ({
-  ChatPanel: ({ room, headerTitle, headerLeading }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode }) => {
+  ChatPanel: ({ room, headerTitle, headerLeading, headerActions }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode; headerActions?: ReactNode }) => {
     chatPanelSpy.lastRoomId = room.id;
-    return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{room.id}</div>;
+    return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{headerActions}{room.id}</div>;
   },
 }));
 
@@ -330,10 +330,12 @@ describe('separate assistants and my teams with mixed roles', () => {
     renderWithQueryClient('teams');
     const sidebar = within(screen.getByTestId('sidebar-stub'));
     expect(sidebar.getAllByRole('button', { name: /team-[a-d] 团队房间/ })).toHaveLength(4);
-    expect(screen.getByText('Team A · 管理员 · 团队协作')).toBeInTheDocument();
+    expect(screen.getByText('Team A')).toBeInTheDocument();
+    expect(screen.getByText('团队协作 · 管理员')).toBeInTheDocument();
     fireEvent.click(sidebar.getByRole('button', { name: 'team-c 团队房间' }));
     await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group-c:test'));
-    expect(screen.getByText('Team C · 成员 · 团队协作')).toBeInTheDocument();
+    expect(screen.getByText('Team C')).toBeInTheDocument();
+    expect(screen.getByText('团队协作 · 成员')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
   });
 

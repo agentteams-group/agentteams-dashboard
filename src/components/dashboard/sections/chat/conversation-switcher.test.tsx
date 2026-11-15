@@ -1,13 +1,21 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConversationSwitcher } from './conversation-switcher';
+import { ConversationSwitcher, RelatedConversationButton } from './conversation-switcher';
 import type { RoomInfo } from './room-info';
 
 afterEach(cleanup);
 const leader = (team: string): RoomInfo => ({ id: `!${team}:test`, name: `${team}助手`, type: 'manager', agentRole: 'leader', parentTeam: team, members: [], access: 'joined' });
 
 describe('team switcher', () => {
+  it('separates the team name from its role and leaves collaboration in the action area', () => {
+    const assistant = { ...leader('design'), teamRole: 'admin' as const };
+    const group: RoomInfo = { id: '!design-group:test', name: 'design群聊', type: 'team', parentTeam: 'design', members: [] };
+    render(<ConversationSwitcher rooms={[assistant, group]} selectedRoomId={assistant.id} attention={{}} onSelectRoom={vi.fn()} />);
+    expect(screen.getByText('design')).toBeInTheDocument();
+    expect(screen.getByText('团队助手 · 管理员')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '团队协作' })).toBeNull();
+  });
   it('names the task collaboration space separately from its parent team', () => {
     const project: RoomInfo = { id: '!task:test', name: 'TASK：基线交付', type: 'project', parentTeam: 'design', members: [], access: 'joined' };
     render(<ConversationSwitcher rooms={[leader('design'), project]} selectedRoomId={project.id} attention={{}} onSelectRoom={vi.fn()} />);
@@ -24,17 +32,17 @@ describe('team switcher', () => {
     const assistant = leader('design');
     const group: RoomInfo = { id: '!design-group:test', name: 'design团队房间', type: 'team', parentTeam: 'design', members: [] };
     const onSelectRoom = vi.fn();
-    const { rerender } = render(<ConversationSwitcher rooms={[assistant, group]} selectedRoomId={assistant.id} attention={{}} onSelectRoom={onSelectRoom} />);
+    const { rerender } = render(<RelatedConversationButton rooms={[assistant, group]} selectedRoomId={assistant.id} onSelectRoom={onSelectRoom} />);
     fireEvent.click(screen.getByRole('button', { name: '团队协作' }));
     expect(onSelectRoom).toHaveBeenLastCalledWith(group.id);
-    rerender(<ConversationSwitcher rooms={[assistant, group]} selectedRoomId={group.id} attention={{}} onSelectRoom={onSelectRoom} />);
+    rerender(<RelatedConversationButton rooms={[assistant, group]} selectedRoomId={group.id} onSelectRoom={onSelectRoom} />);
     fireEvent.click(screen.getByRole('button', { name: '团队助手' }));
     expect(onSelectRoom).toHaveBeenLastCalledWith(assistant.id);
   });
 
   it('does not offer an unjoined assistant from the team room', () => {
     const group: RoomInfo = { id: '!design-group:test', name: 'design群聊', type: 'team', parentTeam: 'design', members: [] };
-    render(<ConversationSwitcher rooms={[{ ...leader('design'), access: 'not-joined' }, group]} selectedRoomId={group.id} attention={{}} onSelectRoom={vi.fn()} />);
+    render(<RelatedConversationButton rooms={[{ ...leader('design'), access: 'not-joined' }, group]} selectedRoomId={group.id} onSelectRoom={vi.fn()} />);
     expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
   });
   it('shows a single team without an unnecessary menu', () => {

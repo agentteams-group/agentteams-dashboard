@@ -9,6 +9,21 @@ import type { RoomInfo } from './room-info';
 
 export type ConversationAttention = ReturnType<typeof attentionCounts>;
 
+export function RelatedConversationButton({ rooms, selectedRoomId, onSelectRoom }: {
+  rooms: RoomInfo[];
+  selectedRoomId: string | null;
+  onSelectRoom: (_id: string) => void;
+}) {
+  const selected = rooms.find(room => room.id === selectedRoomId);
+  const team = conversationSections(rooms).teams.find(team => team.id === selected?.parentTeam);
+  const related = team?.rooms.find(room => selected?.type === 'team'
+    ? room.agentRole === 'leader' && canOpenConversation(room)
+    : room.type === 'team');
+  return related ? <Button variant="outline" size="sm" onClick={() => onSelectRoom(related.id)}>
+    {related.type === 'team' ? '团队协作' : '团队助手'}
+  </Button> : null;
+}
+
 export function TaskAttention({ counts, pending }: { counts?: ConversationAttention; pending?: string }) {
   if (pending) return <span className="text-xs text-muted-foreground">{pending}</span>;
   if (!counts) return null;
@@ -29,22 +44,18 @@ export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoom
 }) {
   const sections = conversationSections(rooms);
   const choices = [
-    ...sections.operations.map(room => ({ id: room.id, name: room.name, target: room, room })),
+    ...sections.operations.map(room => ({ id: room.id, name: room.name, title: room.name, target: room, room })),
     ...sections.teams.map(team => {
       const room = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
-      return { id: team.id, name: `${team.name}${room.teamRole ? ` · ${room.teamRole === 'admin' ? '管理员' : '成员'}` : ''}`, room, target: team.rooms.find(canOpenConversation) };
+      return { id: team.id, name: `${team.name}${room.teamRole ? ` · ${room.teamRole === 'admin' ? '管理员' : '成员'}` : ''}`, title: team.name, room, target: team.rooms.find(canOpenConversation) };
     }),
   ];
   const selected = relatedRooms.find(room => room.id === selectedRoomId);
-  const currentTeam = conversationSections(relatedRooms).teams.find(team => team.id === selected?.parentTeam);
-  const relatedRoom = currentTeam?.rooms.find(room => selected?.type === 'team'
-    ? room.agentRole === 'leader' && canOpenConversation(room)
-    : room.type === 'team');
-  const relatedEntry = relatedRoom && <Button variant="outline" size="sm" className="shrink-0" onClick={() => onSelectRoom(relatedRoom.id)}>
-    {relatedRoom.type === 'team' ? '团队协作' : '团队助手'}
-  </Button>;
   const current = choices.find(choice => choice.id === selected?.parentTeam || choice.id === selected?.id);
   const label = selected?.type === 'project' || selected?.type === 'worker' ? selected.name : current ? `${current.name}${selected?.type === 'team' ? ' · 团队协作' : ''}` : (selected ? selected.name : '选择团队');
+  const title = selected?.type === 'project' || selected?.type === 'worker' ? selected.name : current?.title ?? selected?.name ?? '选择团队';
+  const role = selected?.teamRole ?? current?.room.teamRole;
+  const description = [selected?.agentRole === 'operations' ? '平台管理助手' : selected?.type === 'team' ? '团队协作' : selected?.agentRole === 'leader' ? '团队助手' : '', role === 'admin' ? '管理员' : role === 'member' ? '成员' : ''].filter(Boolean).join(' · ');
   const otherAttention = pending ? 0 : sections.teams.filter(team => team.id !== current?.id).reduce((total, team) => {
     const room = team.rooms.find(room => room.agentRole === 'leader') ?? team.rooms[0];
     const counts = attention[room.id];
@@ -52,12 +63,12 @@ export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoom
   }, 0);
   if (choices.length <= 1) {
     const only = choices[0];
-    return <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{selected ? label : only?.name ?? label}</p>{only && !only.target && only.room.access && only.room.access !== 'joined' && <p className="truncate text-xs text-muted-foreground">{LEADER_ACCESS_LABELS[only.room.access]}</p>}</div>{relatedEntry}</div>;
+    return <div className="min-w-0"><p className="truncate text-sm font-semibold" title={title}>{selected ? title : only?.title ?? title}</p>{description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>}{only && !only.target && only.room.access && only.room.access !== 'joined' && <p className="truncate text-xs text-muted-foreground">{LEADER_ACCESS_LABELS[only.room.access]}</p>}</div>;
   }
   return <div className="flex min-w-0 items-center gap-2"><DropdownMenu>
     <DropdownMenuTrigger asChild>
-      <Button variant="ghost" size="sm" className="h-9 min-w-0 max-w-full gap-2 px-2" aria-label={`切换团队，当前：${label}`}>
-        <span className="truncate text-sm">{label}</span>
+      <Button variant="ghost" size="sm" className="h-auto min-w-0 max-w-full justify-start gap-2 px-1 py-1 text-left" aria-label={`切换团队，当前：${label}`}>
+        <span className="min-w-0"><span className="block truncate text-sm font-semibold" title={title}>{title}</span>{description && <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{description}</span>}</span>
         {otherAttention > 0 && <span className="shrink-0 rounded-full bg-status-waiting/10 px-1.5 text-xs text-status-waiting" aria-label={`其他团队 ${otherAttention} 项待处理`} title={`其他团队有 ${otherAttention} 项待确认、待验收或失败事项`}>{otherAttention}</span>}
         <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
       </Button>
@@ -75,5 +86,5 @@ export function ConversationSwitcher({ rooms, relatedRooms = rooms, selectedRoom
         </DropdownMenuRadioItem>)}
       </DropdownMenuRadioGroup>
     </DropdownMenuContent>
-  </DropdownMenu>{relatedEntry}</div>;
+  </DropdownMenu></div>;
 }

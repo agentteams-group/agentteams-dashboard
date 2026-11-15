@@ -20,6 +20,13 @@ describe('assistant context controls', () => {
     expect(screen.getByRole('button', { name: '切换会话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开空间列表' })).toBeInTheDocument();
   });
+  it('shows one Worker status on the avatar and omits generic copy beside a custom title', () => {
+    render(<ChatRoomHeader compact agentRole="leader" roomName="design" headerTitle={<button>design</button>} workerMatrixUserIds={['@lead:test']} sessionDot={{ state: 'idle', runningOnly: false }} memberCount={2} threadCount={0} activePanel={null} onTogglePanel={vi.fn()} />);
+    expect(screen.queryByTitle('实时同步')).toBeNull();
+    expect(screen.getAllByLabelText('空闲')).toHaveLength(1);
+    expect(screen.queryByText(/你的团队助手/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'design' })).toBeInTheDocument();
+  });
   it('names counted controls by their purpose and opens the corresponding panel', () => {
     const onTogglePanel = vi.fn();
     render(<ChatRoomHeader roomName="设计团队助手" sessionDot={{ state: 'idle', runningOnly: false }} memberCount={2} threadCount={7} activePanel={null} onTogglePanel={onTogglePanel} />);

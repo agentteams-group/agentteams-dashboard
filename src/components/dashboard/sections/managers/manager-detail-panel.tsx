@@ -594,7 +594,7 @@ export function ManagerDetailPanel({
             envKeys.length > 0
               ? `${envKeys.length} 项`
               : detail
-                ? emptyText
+                ? detail.envEditable ? '未配置' : emptyText
                 : loadingText
           }
           disabled={!canWrite || !detail?.envEditable}
