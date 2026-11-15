@@ -57,6 +57,8 @@ export interface LlmTuningFields {
 }
 
 export interface WorkerResponse extends LlmTuningFields {
+  /** Present only when the Controller supports OpenClaw autonomous checks. */
+  llmHeartbeatEnabled?: boolean;
   env?: Record<string, string>;
   envEditable?: boolean;
   name: string;
@@ -672,6 +674,7 @@ export interface MillforgeRollbackResult {
 }
 
 export interface CreateWorkerRequest {
+  llmHeartbeatEnabled?: boolean;
   name: string;
   model?: RequestModelAlias;
   /** APIG Model API name；空 = 跟随默认。 */
@@ -689,6 +692,7 @@ export interface CreateWorkerRequest {
 
 // LLM 调优（#146 缺口 3）：空串 = 清除回默认；缺省 = 不改动。
 export interface UpdateWorkerRequest extends LlmTuningFields {
+  llmHeartbeatEnabled?: boolean;
   env?: Record<string, string>;
   model?: RequestModelAlias;
   /** APIG Model API name；缺省 = 保持控制器现值（合并语义）。 */

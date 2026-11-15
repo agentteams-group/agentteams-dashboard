@@ -51,6 +51,7 @@ import { WorkerChannelsPanel } from './worker-channels-panel';
 import { WorkerCheckpointsCard } from './worker-checkpoints-card';
 import { WorkerCodingCliPanel } from './worker-coding-cli-panel';
 import { WorkerEnvCard } from './worker-env-card';
+import { WorkerHeartbeatControl } from './worker-heartbeat-control';
 import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
 import { WorkerMcpPanel } from './worker-mcp-panel';
 import { WorkerModelDialog } from './worker-model-dialog';
@@ -677,6 +678,23 @@ export function WorkerDetailPanel({
             编辑模型
           </Button>
         </section>
+
+        {view.runtime === 'openclaw' ? (
+          <WorkerHeartbeatControl
+            enabled={view.llmHeartbeatEnabled}
+            disabled={userLevel < 3 || !view.envEditable || updateWorker.isPending}
+            onCheckedChange={(enabled) => updateWorker.mutate(
+              { name: workerName, data: { llmHeartbeatEnabled: enabled } },
+              {
+                onSuccess: () => {
+                  invalidateWorkerDetail(workerName);
+                  void refreshDetail(true);
+                  onChanged?.();
+                },
+              },
+            )}
+          />
+        ) : null}
 
         {/* 资源卡 = 入口：点击打开大弹窗（面板只在弹窗打开时挂载） */}
         <div className="space-y-2">

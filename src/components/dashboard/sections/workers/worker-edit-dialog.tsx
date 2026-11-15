@@ -5,6 +5,7 @@ import { WorkerEnvEditor } from './worker-env-editor';
 import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { WorkerHeartbeatControl } from './worker-heartbeat-control';
 import {
   Select,
   SelectContent,
@@ -160,6 +161,13 @@ export function WorkerEditDialog({
               </p>
             )}
           </div>
+          {currentRuntime === 'openclaw' ? (
+            <WorkerHeartbeatControl
+              enabled={value.llmHeartbeatEnabled}
+              disabled={isPending || !envEditable}
+              onCheckedChange={(checked) => onChange({ ...value, llmHeartbeatEnabled: checked })}
+            />
+          ) : null}
           <div className="space-y-2">
             <Label>镜像</Label>
             <Input
