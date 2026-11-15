@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   formatDate,
   formatTime,
+  formatMessageTime,
   getAvatarColor,
   isDifferentDay,
   renderFormattedContent,
@@ -45,6 +46,25 @@ describe('formatTime', () => {
   it('returns HH:MM', () => {
     const ts = new Date(2025, 0, 1, 14, 30).getTime();
     expect(formatTime(ts)).toMatch(/^\d{2}:\d{2}$/);
+  });
+});
+
+describe('formatMessageTime', () => {
+  afterEach(() => vi.useRealTimers());
+  it('shows time today, yesterday with its label, and older month-day dates', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 15, 23, 0));
+    expect(formatMessageTime(new Date(2026, 10, 15, 21, 22).getTime())).toBe('21:22');
+    expect(formatMessageTime(new Date(2026, 10, 14, 21, 22).getTime())).toBe('昨天 21:22');
+    expect(formatMessageTime(new Date(2026, 10, 13, 21, 22).getTime())).toBe('11-13 21:22');
+  });
+  it('uses calendar days across midnight, month and year boundaries', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2027, 0, 1, 0, 1));
+    expect(formatMessageTime(new Date(2026, 11, 31, 23, 59).getTime())).toBe('昨天 23:59');
+    expect(formatMessageTime(new Date(2026, 11, 30, 9, 5).getTime())).toBe('12-30 09:05');
+    vi.setSystemTime(new Date(2026, 10, 1, 0, 1));
+    expect(formatMessageTime(new Date(2026, 9, 31, 23, 59).getTime())).toBe('昨天 23:59');
   });
 });
 

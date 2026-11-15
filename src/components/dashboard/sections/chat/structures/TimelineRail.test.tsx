@@ -85,8 +85,8 @@ describe('TimelineRail', () => {
     const ticks = screen.getAllByTestId(/^rail-tick-/);
     // ceil(500 / 40) = 13 messages per dash → 39 dashes, none past the end.
     expect(ticks).toHaveLength(39);
-    expect(ticks[0]).toHaveAccessibleName('worker · 10:00（13 条）');
-    expect(ticks[38]).toHaveAccessibleName('worker · 18:14（6 条）');
+    expect(ticks[0]).toHaveAccessibleName(/worker · (?:昨天 |\d{2}-\d{2} )?10:00（13 条）/);
+    expect(ticks[38]).toHaveAccessibleName(/worker · (?:昨天 |\d{2}-\d{2} )?18:14（6 条）/);
 
     fireEvent.click(ticks[38]);
     expect(onJump).toHaveBeenCalledWith(494);

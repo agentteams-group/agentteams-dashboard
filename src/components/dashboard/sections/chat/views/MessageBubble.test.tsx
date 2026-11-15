@@ -151,11 +151,11 @@ describe('MessageBubble', () => {
     );
     const meta = container.querySelector('[data-chat-message-meta]')!;
     const sender = screen.getByText('reviewer');
-    const time = screen.getByText('09:30');
+    const time = screen.getByText(/(?:^| )09:30$/);
     expect(meta).toContainElement(sender);
     expect(meta).toContainElement(time);
     expect(sender.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getAllByText('09:30')).toHaveLength(1);
+    expect(screen.getAllByText(/(?:^| )09:30$/)).toHaveLength(1);
   });
 
   it.each([
@@ -174,7 +174,7 @@ describe('MessageBubble', () => {
       />
     );
     const footer = container.querySelector('[data-chat-message-footer]')!;
-    expect(footer).toContainElement(screen.getByText('09:31'));
+    expect(footer).toContainElement(screen.getByText(/(?:^| )09:31$/));
     expect(footer).toContainElement(title ? screen.getByTitle(receipt) : screen.getByLabelText(receipt));
     expect(footer.previousElementSibling).toContainElement(screen.getByText('continued message'));
     expect(container.querySelector('[data-chat-message-meta]')).toBeNull();

@@ -13,7 +13,7 @@ import {
 import { createPortal } from 'react-dom';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { GroupedMessage } from '../grouper/MainGrouper';
-import { formatTime } from '../format';
+import { formatMessageTime } from '../format';
 import { interactionActivity } from '../confirmation-reply';
 
 export interface TimelineRailHandle {
@@ -82,7 +82,7 @@ function buildTicks(items: GroupedMessage[], tickLimit: number): RailTick[] {
     const label = unread
       ? '未读消息'
       : first
-        ? `${first.senderShort} · ${formatTime(first.timestamp)}${span > 1 ? `（${span} 条）` : ''}`
+        ? `${first.senderShort} · ${formatMessageTime(first.timestamp)}${span > 1 ? `（${span} 条）` : ''}`
         : `第 ${start + 1} 条`;
     ticks.push({ index: start, count: span, label, unread, message: first ?? null });
   }
