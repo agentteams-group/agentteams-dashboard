@@ -5,6 +5,10 @@ import {
 } from './intervention-heuristic';
 
 describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
+  it('keeps a numbered acceptance acknowledgement as a report, not choices', () => {
+    expect(parseInterventionHeuristic('收到，确认任务 -02 验收闭环，我转入待命：\n1. 任务 -02 已完结：交付物冻结，不再编辑。\n2. 给 -03 的衔接记录与报告一致，无异议。\n3. 待命期间：如有疑问，随时 @我。')).toBeNull();
+    expect(parseInterventionHeuristic('请确认本次交付方式：\n1. 只评审\n2. 实现修复')?.options).toHaveLength(2);
+  });
   it('does not turn a list of clarification questions into answer options', () => {
     const body = '开工前需要您确认三点：\n1. 需求对象：本次以哪个为准？\n2. 任务边界：是否只验证已有 PR？\n3. 建单授权：确认后建单。';
     expect(parseInterventionHeuristic(body)).toBeNull();

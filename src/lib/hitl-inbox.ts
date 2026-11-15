@@ -466,13 +466,10 @@ export function ingestHitlTimelineEvents(
       store.upsertConfirmation(confirmation);
       continue;
     }
-    // Non-confirmation message: resolve any pending approval, then drop by
-    // event id if this is an m.replace revision (streaming finalization).
+    // Reconcile this exact event too: older parser versions may have persisted
+    // a normal numbered report as a choice request.
     const body = typeof content.body === 'string' ? content.body : '';
     store.resolveRoomReply(roomId, event.sender, body, currentUserId, relatedEventIdOf(event));
-    const relatesTo = event.content?.['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;
-    if (relatesTo?.rel_type === 'm.replace' && relatesTo.event_id) {
-      store.dropByEventId(roomId, relatesTo.event_id);
-    }
+    store.dropByEventId(roomId, rootEventIdOf(event));
   }
 }

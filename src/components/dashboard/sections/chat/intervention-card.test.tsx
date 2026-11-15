@@ -101,6 +101,27 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
   });
 
+  it('shows short normal-weight choices with full conditions available and sends the original answer', async () => {
+    const label = '只评审验证：检查接口写入、回读、校验及容器注入，输出完整报告，不修改任何实现代码。';
+    render(<InterventionCard payload={{ ...basePayload, options: [
+      { id: 'review', label, description: '发现缺口后先汇报，再确定是否修复。' },
+      { id: 'implement', label: '直接实现修复' },
+    ] }} onAnswer={mockOnAnswer} />);
+    const radio = screen.getByRole('radio', { name: label });
+    expect(radio).toHaveTextContent('只评审验证');
+    expect(radio).not.toHaveTextContent('检查接口写入');
+    expect(screen.getByText('只评审验证')).toHaveClass('font-normal');
+    let details = screen.getByText('选项说明').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(radio);
+    details = screen.getByText('选项说明').closest('details');
+    expect(details).toHaveAttribute('open');
+    expect(details).toHaveTextContent(label);
+    expect(details).toHaveTextContent('发现缺口后先汇报');
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith(`【干预答复】\nA1：${label}`, expect.anything()));
+  });
+
   it('sends the actual nested choice instead of the numbered clarification question', async () => {
     const parsed = parseInterventionHeuristic('开工前需要您确认三点：\n1. 需求对象：以哪个为准？\n2. 任务边界：已有 PR。我们要 (a) 独立实现修复，(b) 只评审/验证该 PR，还是 (c) 其他？\n3. 建单授权：确认后创建 Project。');
     expect(parsed).not.toBeNull();
