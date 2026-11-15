@@ -14,6 +14,7 @@ import { InterventionCard, composeAnswerText } from './intervention-card';
 import type { RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import type { ConfirmationAnswerField } from './confirmation-reply';
+import { heuristicToInterventionPayload, parseInterventionHeuristic } from '@/lib/a2ui/intervention-heuristic';
 
 const mockAddNotification = vi.fn();
 // 默认回报「已写入房间」：C-3 后卡片只在拿到 true 时才翻成已答复。
@@ -98,6 +99,16 @@ describe('InterventionCard（F2.1 交互契约）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
+  });
+
+  it('sends the actual nested choice instead of the numbered clarification question', async () => {
+    const parsed = parseInterventionHeuristic('开工前需要您确认三点：\n1. 需求对象：以哪个为准？\n2. 任务边界：已有 PR。我们要 (a) 独立实现修复，(b) 只评审/验证该 PR，还是 (c) 其他？\n3. 建单授权：确认后创建 Project。');
+    expect(parsed).not.toBeNull();
+    render(<InterventionCard payload={heuristicToInterventionPayload(parsed!, 'heuristic:$nested:1')} onAnswer={mockOnAnswer} />);
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: '只评审/验证该 PR' }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith('【干预答复】\nA1：只评审/验证该 PR', undefined));
   });
 
   it('① 推荐项置顶 + 默认选中；序号随展示序', () => {
