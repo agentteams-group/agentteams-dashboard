@@ -100,6 +100,7 @@ function Harness({
     <TooltipProvider>
       <WorkerEditDialog
         open
+        envEditable
         workerName={initial.name ?? 'worker-1'}
         value={value}
         onChange={setValue}
@@ -120,10 +121,43 @@ function chooseOption(input: HTMLElement, name: string) {
   );
 }
 
-const providerInput = () => screen.getByLabelText('Provider');
-const modelInput = () => screen.getByLabelText('请求模型别名');
+const providerInput = () => screen.getByLabelText('模型连接');
+const modelInput = () => screen.getByLabelText('模型');
 
 const runtimeSelect = () => screen.getByLabelText('运行时') as HTMLSelectElement;
+
+describe('WorkerEditDialog autonomous checks', () => {
+  afterEach(cleanup);
+
+  it('submits an enabled switch without adding environment variables', () => {
+    const onSubmit = vi.fn();
+    render(<Harness initial={{ runtime: 'openclaw', llmHeartbeatEnabled: false }} onSubmit={onSubmit} />);
+    const toggle = screen.getByRole('switch', { name: '自主巡检' });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ llmHeartbeatEnabled: true }));
+    expect(onSubmit.mock.calls[0][0].env).toBeUndefined();
+  });
+
+  it('preserves an explicit false when disabling a saved enabled switch', () => {
+    const onSubmit = vi.fn();
+    render(<Harness initial={{ runtime: 'openclaw', llmHeartbeatEnabled: true }} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByRole('switch', { name: '自主巡检' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ llmHeartbeatEnabled: false }));
+  });
+
+  it('disables the switch for a Controller that does not return the setting', () => {
+    render(<Harness initial={{ runtime: 'openclaw' }} onSubmit={() => {}} />);
+    expect(screen.getByRole('switch', { name: '自主巡检' })).toBeDisabled();
+  });
+
+  it('does not show an unsupported switch for another runtime', () => {
+    render(<Harness initial={{ runtime: 'hermes' }} onSubmit={() => {}} />);
+    expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
+  });
+});
 
 describe('WorkerEditDialog 运行时切换暂禁', () => {
   afterEach(() => {

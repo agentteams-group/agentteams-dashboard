@@ -27,7 +27,7 @@ describe('static-mode helpers (F7)', () => {
       ['/api/agentteams/debug-log', 'logs'],
       ['/api/agentteams/agentspecs/list', 'nacos'],
       ['/api/agentteams/skills/nacos/status', 'nacos'],
-      ['/api/agentteams/models/probe', 'sglang'],
+      ['/api/agentteams/models/probe', 'gateway'],
       ['/api/agentteams/infrastructure', 'infrastructure'],
     ];
     for (const [pathname, capability] of cases) {

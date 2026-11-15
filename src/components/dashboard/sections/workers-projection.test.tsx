@@ -31,7 +31,7 @@ vi.mock('./workers/worker-table', () => ({ WorkerTable: ({ workers, onEdit, onVi
 ) }));
 vi.mock('./workers/worker-detail-dialog', () => ({ WorkerDetailDialog: ({ worker }: { worker: WorkerResponse | null }) => worker ? <output data-testid="detail">{JSON.stringify(worker)}</output> : null }));
 vi.mock('./workers/worker-edit-dialog', () => ({ WorkerEditDialog: ({ open, value, onChange, onSubmit }: { open: boolean; value: Record<string, unknown>; onChange: (_value: Record<string, unknown>) => void; onSubmit: () => void }) => open ? (
-  <div><output data-testid="edit">{JSON.stringify(value)}</output><button onClick={() => onChange({ ...value, model: 'changed' })}>change-model</button><button onClick={onSubmit}>save-edit</button></div>
+  <div><output data-testid="edit">{JSON.stringify(value)}</output><button onClick={() => onChange({ ...value, model: 'changed' })}>change-model</button><button onClick={() => onChange({ ...value, llmHeartbeatEnabled: !value.llmHeartbeatEnabled })}>toggle-heartbeat</button><button onClick={onSubmit}>save-edit</button></div>
 ) : null }));
 
 const detail: WorkerResponse = {
@@ -54,6 +54,25 @@ describe('Worker list detail-before-write', () => {
   it('does not fetch per-row details while rendering the collection', () => {
     const get = vi.spyOn(agentteamsApi, 'getWorker');render(<WorkersSection />);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('saves a heartbeat-only edit and reads the saved switch when reopened', async () => {
+    let saved = { ...detail, runtime: 'openclaw' as const, llmHeartbeatEnabled: true };
+    vi.spyOn(agentteamsApi, 'getWorker').mockImplementation(async () => saved);
+    mocks.update.mockImplementation(({ data }, options) => {
+      saved = { ...saved, ...data };
+      options.onSuccess();
+    });
+    render(<WorkersSection />);
+    fireEvent.click(screen.getByText('edit-a'));
+    await waitFor(() => expect(JSON.parse(screen.getByTestId('edit').textContent!).llmHeartbeatEnabled).toBe(true));
+    fireEvent.click(screen.getByText('toggle-heartbeat'));
+    fireEvent.click(screen.getByText('save-edit'));
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.update.mock.calls[0][0].data).toMatchObject({ llmHeartbeatEnabled: false });
+    expect(mocks.update.mock.calls[0][0].data).not.toHaveProperty('env');
+    fireEvent.click(screen.getByText('edit-a'));
+    await waitFor(() => expect(JSON.parse(screen.getByTestId('edit').textContent!).llmHeartbeatEnabled).toBe(false));
   });
 
   it('waits for full detail before editing and preserves existing env/skills/MCP when saving', async () => {
