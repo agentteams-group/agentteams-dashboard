@@ -370,10 +370,10 @@ describe('project rooms in the teams view', () => {
   });
   afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
 
-  it('includes project rooms in the teams view sidebar', () => {
+  it('lists only joined teams in the teams sidebar, keeping project rooms accessible by deep link', () => {
     renderWithQueryClient('teams');
     const sidebar = within(screen.getByTestId('sidebar-stub'));
-    expect(sidebar.getByRole('button', { name: /网站改版/ })).toBeInTheDocument();
+    expect(sidebar.queryByRole('button', { name: /网站改版/ })).toBeNull();
     expect(sidebar.getByRole('button', { name: /design 团队房间/ })).toBeInTheDocument();
   });
 

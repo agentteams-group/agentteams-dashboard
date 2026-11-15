@@ -172,6 +172,7 @@ export function buildProjectDag(
     nodes.push({
       id: task.runId,
       title: task.title,
+      assignee: task.assignedTo.replace(/^@([^:]+):.*$/, '$1'),
       status: task.status,
       ready: allDepsDone && !TERMINAL_DONE.has(task.status),
       layer: layerOf.get(task.runId) ?? 0,

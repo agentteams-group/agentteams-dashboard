@@ -41,6 +41,8 @@ export function ProjectDagSvg({
   title,
   onNodeClick,
   onStuckNodeClick,
+  currentNodeId,
+  selectedNodeId,
 }: {
   dag: ProjectDag;
   nodeColors: Record<string, DagNodeColor>;
@@ -53,6 +55,8 @@ export function ProjectDagSvg({
   onNodeClick?: (_nodeId: string) => void;
   /** 卡住节点点击（跳对应 Agent 会话）；未传时卡住节点仍只有警示样式。 */
   onStuckNodeClick?: (_nodeId: string) => void;
+  currentNodeId?: string;
+  selectedNodeId?: string;
 }) {
   const W = nodeWidth;
   const H = nodeHeight;
@@ -76,7 +80,7 @@ export function ProjectDagSvg({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      role="img"
+      role={onNodeClick || onStuckNodeClick ? 'group' : 'img'}
       aria-label={title ?? '项目任务依赖图'}
     >
       {dag.edges.map((e, i) => {
@@ -84,7 +88,7 @@ export function ProjectDagSvg({
         const b = positions.get(e.target);
         if (!a || !b) return null;
         const x1 = a.x + W / 2;
-        const y1 = a.y + H;
+        const y1 = a.y + H + (dag.nodes.find(node => node.id === e.source)?.assignee ? 12 : 0);
         const x2 = b.x + W / 2;
         const y2 = b.y;
         const my = (y1 + y2) / 2;
@@ -115,7 +119,8 @@ export function ProjectDagSvg({
         const onCritical = critical.has(n.id);
         const clickable = Boolean(onNodeClick || (stuck && onStuckNodeClick));
         // ~14 CJK glyphs at 11px fit inside the default 190px node width.
-        const label = n.title.length > 14 ? `${n.title.slice(0, 14)}…` : n.title;
+        const maxLabel = W === 190 ? 14 : Math.floor((W - 32) / 12);
+        const label = n.title.length > maxLabel ? `${n.title.slice(0, maxLabel)}…` : n.title;
         const assignee = n.assignee && n.assignee.length > 18 ? `${n.assignee.slice(0, 18)}…` : n.assignee;
         const handleClick = () => {
           if (stuck && onStuckNodeClick) onStuckNodeClick(n.id);
@@ -125,9 +130,16 @@ export function ProjectDagSvg({
           <g
             key={n.id}
             onClick={clickable ? handleClick : undefined}
+            role={clickable ? 'button' : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            aria-label={clickable ? `${n.title} · ${n.assignee || '未分配'}` : undefined}
+            aria-pressed={clickable ? n.id === selectedNodeId : undefined}
+            data-current={n.id === currentNodeId || undefined}
+            onKeyDown={clickable ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleClick(); } } : undefined}
             className={clickable ? 'cursor-pointer' : undefined}
           >
             <title>{stuck ? `${n.title}（卡住 — 点击定位责任 Agent）` : n.title}</title>
+            {n.id === currentNodeId && <rect x={p.x - 4} y={p.y - 4} width={W + 8} height={H + (assignee ? 12 : 0) + 8} rx={10} fill="none" stroke="currentColor" strokeDasharray="4 3" opacity={0.6} />}
             <rect
               x={p.x}
               y={p.y}
@@ -135,8 +147,8 @@ export function ProjectDagSvg({
               height={H + (assignee ? 12 : 0)}
               rx={7}
               fill={colors.fill}
-              stroke={stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
-              strokeWidth={stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
+              stroke={n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              strokeWidth={n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
               strokeDasharray={n.ready ? '5 3' : undefined}
             />
             {n.ready && (
@@ -150,8 +162,8 @@ export function ProjectDagSvg({
             <text
               x={p.x + 18}
               y={p.y + (assignee ? H / 2 - 2 : H / 2 + 4)}
-              fontSize={11}
-              fill={colors.text}
+              fontSize={currentNodeId ? 12 : 11}
+              fill={currentNodeId ? 'currentColor' : colors.text}
               fontFamily="inherit"
             >
               {label}
@@ -160,8 +172,8 @@ export function ProjectDagSvg({
               <text
                 x={p.x + 18}
                 y={p.y + H - 2}
-                fontSize={9}
-                fill="rgba(113,113,122,0.9)"
+                fontSize={currentNodeId ? 12 : 9}
+                fill={currentNodeId ? 'currentColor' : 'rgba(113,113,122,0.9)'}
                 fontFamily="inherit"
               >
                 @{assignee}

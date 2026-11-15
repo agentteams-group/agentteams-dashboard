@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, useId } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,6 +12,7 @@ import {
   Clock,
   ChevronUp,
   MessageSquare,
+  MessageSquareReply,
   Crown,
   Users,
   Eye,
@@ -33,6 +34,8 @@ import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -243,7 +246,7 @@ function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
   );
 }
 
-function TaskRoomActions({ task }: { task: BoardTask }) {
+function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
   const queryClient = useQueryClient();
   const access = useChatRoomAccess();
   const [opening, setOpening] = useState(false);
@@ -270,14 +273,53 @@ function TaskRoomActions({ task }: { task: BoardTask }) {
   }
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant="outline" size="sm" className="text-xs" disabled={opening || access.state !== 'joined'}
+      <Button variant={compact ? 'ghost' : 'outline'} size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs'} aria-label="进入协作房间" disabled={opening || access.state !== 'joined'}
         title={access.state !== 'joined' ? '请先登录对话并等待房间权限同步' : '进入该任务的执行协作房间'}
         onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); void enterCollaboration(); }}>
-        {opening ? <Loader2 className="size-3.5 animate-spin" /> : <MessageSquare className="size-3.5" />}进入协作房间
+        {opening ? <Loader2 className="size-3.5 animate-spin" /> : <MessageSquare className="size-3.5" />}{!compact && '进入协作房间'}
       </Button>
-      {task.roomId && <Button variant="ghost" size="sm" className="px-1 text-xs text-muted-foreground" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}>查看来源会话</Button>}
+      {task.roomId && <Button variant="ghost" size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs text-muted-foreground'} aria-label="查看来源会话" title="查看来源会话" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}><MessageSquareReply className="size-3.5" />{!compact && '查看来源会话'}</Button>}
     </div>
     {error && <p role="status" className="text-xs text-muted-foreground">{error}</p>}
+  </div>;
+}
+
+function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; tasks: BoardTask[]; team?: string; onOpenDetails?: () => void }) {
+  const detail = useQuery({
+    queryKey: ['task-detail', task.runId, task.teamId],
+    queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
+    staleTime: 15000,
+    retry: false,
+  });
+  const sourceName = useRoomMetaStore(state => state.meta[task.roomId]?.roomName);
+  const [selectedId, setSelectedId] = useState(task.runId);
+  const dag = useMemo(() => task.projectId ? buildProjectDag(tasks, task.projectId) : null, [tasks, task.projectId]);
+  const selected = tasks.find(item => item.runId === selectedId) ?? task;
+  const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
+  const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
+  return <div className="space-y-4">
+    <div className="space-y-2 pr-6"><StatusBadge status={task.status} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
+    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+      <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
+      <dt className="text-muted-foreground">负责团队</dt><dd className="break-words">{team || task.teamId || '未指定'}</dd>
+      <dt className="text-muted-foreground">Worker 成员</dt><dd>{task.assignedTo || '未分配'}</dd>
+      <dt className="text-muted-foreground">来源会话</dt><dd className="truncate" title={task.roomId}>{sourceName || task.roomId || '暂无来源会话'}</dd>
+    </dl>
+    <section className="space-y-2 rounded-lg bg-muted/40 p-3"><h4 className="text-xs font-medium">当前进展</h4>
+      <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
+      {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
+      {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
+    </section>
+    <section className="space-y-2"><h4 className="text-xs font-medium">项目任务分工与依赖</h4>
+      {dag && dag.nodes.length > 0 ? <>
+        <p className="text-xs text-muted-foreground">虚线框为当前任务 · 点击节点查看负责人和状态</p>
+        <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
+          <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} nodeWidth={176} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
+        </div>
+        <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || '未分配'}</span><StatusBadge status={selected.status} /></div></div>
+      </> : <p className="text-xs text-muted-foreground">该任务暂无项目分工信息</p>}
+    </section>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><TaskRoomActions task={task} />{onOpenDetails && <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenDetails}>查看完整详情</Button>}</div>
   </div>;
 }
 
@@ -322,6 +364,7 @@ function TaskCard({
   selected,
   showStatus = true,
   onClick,
+  tasks = [],
 }: {
   task: BoardTask;
   managerName?: string;
@@ -330,17 +373,32 @@ function TaskCard({
   selected?: boolean;
   showStatus?: boolean;
   onClick?: () => void;
+  tasks?: BoardTask[];
 }) {
   const expanded = selected ?? (highlightProjectId === task.projectId);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewTitle = useId();
+  const clearTimer = () => { if (timer.current) clearTimeout(timer.current); };
+  const changePreview = (open: boolean) => { clearTimer(); setPreviewOpen(open); };
+  const schedulePreview = (open: boolean) => { clearTimer(); timer.current = setTimeout(() => setPreviewOpen(open), open ? 250 : 200); };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const openDetails = () => { changePreview(false); onClick?.(); };
   return (
+    <Popover open={previewOpen} onOpenChange={changePreview}>
+    <PopoverAnchor asChild>
     <Card
+      onPointerEnter={event => { if (event.pointerType !== 'touch') schedulePreview(true); }}
+      onPointerLeave={() => schedulePreview(false)}
+      onFocus={event => { if (event.target === event.currentTarget) changePreview(true); }}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) schedulePreview(false); }}
       {...(onClick
         ? {
             role: 'button',
             tabIndex: 0,
             'aria-pressed': expanded,
-            onClick,
-            onKeyDown: handleActivate(onClick),
+            onClick: openDetails,
+            onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => { if (event.key === 'Escape') changePreview(false); else handleActivate(openDetails)(event); },
           }
         : {})}
       className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
@@ -380,9 +438,17 @@ function TaskCard({
             {displayTime(task.createdAt)}
           </span>}
         </div>
-        <TaskRoomActions task={task} />
+        <TaskRoomActions task={task} compact />
       </CardContent>
     </Card>
+    </PopoverAnchor>
+    <PopoverContent side="right" align="start" sideOffset={10} collisionPadding={16} className="w-[600px] max-w-[calc(100vw-32px)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-5 shadow-lg" aria-labelledby={previewTitle}
+      onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}
+      onPointerEnter={clearTimer} onPointerLeave={() => schedulePreview(false)} onFocus={clearTimer} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) schedulePreview(false); }}>
+      <span id={previewTitle} className="sr-only">任务预览：{task.title}</span>
+      {previewOpen && <TaskPreview task={task} tasks={tasks} team={workerTeam} onOpenDetails={openDetails} />}
+    </PopoverContent>
+    </Popover>
   );
 }
 
@@ -953,6 +1019,7 @@ export function TasksSection() {
                           >
                             <TaskCard
                               task={t}
+                              tasks={board.tasks}
                               managerName={mgr}
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
@@ -1090,7 +1157,7 @@ export function TasksSection() {
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {tasksForProject(selectedProject.runId).map((t) => (
-                          <TaskCard key={t.runId} task={t} />
+                          <TaskCard key={t.runId} task={t} tasks={board.tasks} onClick={() => setSelectedTaskId(t.runId)} />
                         ))}
                       </div>
                     </div>
@@ -1138,6 +1205,8 @@ export function TasksSection() {
 }
 
 interface TaskMetaDetail {
+  created_at?: string | number;
+  history?: Array<{ action: string; note?: string }>;
   room_id?: string;
   status?: string;
   summary?: string;
@@ -1153,6 +1222,7 @@ function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: Board
     queryKey: ['task-detail', task?.runId, teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
     enabled: !!task,
+    staleTime: 15000,
     retry: false,
     throwOnError: false,
   });

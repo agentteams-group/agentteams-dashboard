@@ -140,10 +140,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined })),
     [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
   );
-  // 项目群与团队房间同属「我的团队」视图：两者都是团队工作单元，只是
-  // 侧栏分组不同（我的团队 / 项目群）。
+  // Project deep links still open here; the sidebar lists joined teams only.
   const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project', []);
-  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? isTeamViewRoom(room) : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view, isTeamViewRoom]);
+  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view]);
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
@@ -224,9 +223,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   ]);
 
   useEffect(() => {
-    const active = selectedRoomId && rooms.some((room) => room.id === selectedRoomId && canOpenConversation(room)) ? selectedRoomId : null;
+    const active = selectedRoomId && availableRooms.some((room) => room.id === selectedRoomId && canOpenConversation(room)) ? selectedRoomId : null;
     useRoomMetaStore.getState().setActiveRoomId(active);
-  }, [selectedRoomId, rooms]);
+  }, [selectedRoomId, availableRooms]);
 
   // Deep-link consumption: read the pending value WITHOUT clearing it, and
   // only take (clear) it once the room list is loaded and actually contains
@@ -335,7 +334,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
           {/* Left: Room list */}
           {!isRoomListCollapsed && !narrowViewport && (
             <ChatRoomSidebar
-              rooms={rooms}
+              rooms={rooms} teamList={view === 'teams'}
               title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined}
               showInvites={view !== 'assistants'}
               selectedRoomId={selectedRoomId}
@@ -355,7 +354,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
             <DialogContent aria-modal="true" showCloseButton={false} className="inset-y-0 left-0 top-0 flex h-dvh w-fit max-w-[88vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-background p-0 sm:max-w-[88vw] [&>div]:h-full" onCloseAutoFocus={event => { event.preventDefault(); switcherRef.current?.focus(); }}>
               <DialogTitle className="sr-only">切换对话</DialogTitle>
               <DialogDescription className="sr-only">选择平台助手、团队助手或其他对话</DialogDescription>
-              <ChatRoomSidebar rooms={rooms} title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined} showInvites={view !== 'assistants'} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
+              <ChatRoomSidebar rooms={rooms} teamList={view === 'teams'} title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined} showInvites={view !== 'assistants'} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
             </DialogContent>
           </Dialog>
 

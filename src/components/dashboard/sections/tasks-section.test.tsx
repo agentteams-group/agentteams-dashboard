@@ -199,11 +199,36 @@ describe('task collaboration room entry', () => {
     vi.stubGlobal('fetch', fetch);
     renderSection();
     expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '进入协作房间' })).not.toHaveTextContent('进入协作房间');
+    expect(screen.getByRole('button', { name: '查看来源会话' })).not.toHaveTextContent('查看来源会话');
     fireEvent.click(screen.getByRole('button', { name: '查看来源会话' }));
     expect(roomNavigation.open).toHaveBeenLastCalledWith('!source:test');
     fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
     await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenLastCalledWith('!execution:test'));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('opens a lazy preview on focus with real dependencies, assignees and no invented creation time', async () => {
+    task();
+    viewPreference.tasks.push({ ...viewPreference.tasks[0], runId: 'task-dev', title: '实现修复', assignedTo: '开发助手', status: 'pending', dependsOn: ['task-room'] });
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ history: [{ ts: '2026-11-15T03:00:00Z', action: 'report_progress', to: 'in_progress', note: '已完成需求核对' }] }), { status: 200 })));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    expect(fetch).not.toHaveBeenCalled();
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    fireEvent.focus(card);
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    expect(await within(preview).findByText('已完成需求核对')).toBeInTheDocument();
+    expect(within(preview).getByText('暂未提供')).toBeInTheDocument();
+    expect(within(preview).getByText('来源会话')).toBeInTheDocument();
+    expect(within(preview).getAllByText('分析助手').length).toBeGreaterThan(0);
+    expect(within(preview).getByRole('group', { name: '项目任务分工与依赖' })).toHaveTextContent('开发助手');
+    expect(within(preview).getByRole('button', { name: /实现修复/ })).toBeInTheDocument();
+    fireEvent.click(within(preview).getByRole('button', { name: /实现修复/ }));
+    expect(within(preview).getByText('所选任务：实现修复')).toBeInTheDocument();
+    expect(within(preview).getByRole('button', { name: /执行分析/ })).toHaveAttribute('data-current', 'true');
+    fireEvent.click(within(preview).getByRole('button', { name: '查看完整详情' }));
+    expect(await screen.findByRole('dialog', { name: '执行分析' })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('does not substitute the source room when there is no execution room', async () => {
     task();
@@ -212,6 +237,26 @@ describe('task collaboration room entry', () => {
     fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
     expect(await screen.findByText('协作房间尚未创建')).toBeInTheDocument();
     expect(roomNavigation.open).not.toHaveBeenCalled();
+  });
+  it('waits for hover intent, stays open when entering the panel, and dismisses with Escape', async () => {
+    task();
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{"summary":"正在核对"}', { status: 200 })));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    fireEvent.pointerEnter(card, { pointerType: 'mouse' });
+    fireEvent.pointerLeave(card);
+    await new Promise(resolve => setTimeout(resolve, 280));
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(card, { pointerType: 'mouse' });
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    fireEvent.pointerLeave(card);
+    fireEvent.pointerEnter(preview, { pointerType: 'mouse' });
+    await within(preview).findByText('正在核对');
+    await new Promise(resolve => setTimeout(resolve, 230));
+    expect(preview).toBeInTheDocument();
+    fireEvent.keyDown(preview, { key: 'Escape' });
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
   it('opens a workflow execution room directly and isolates keyboard activation from the card', async () => {
     task();
