@@ -414,6 +414,10 @@ describe('normalizeToBlocks rule 12: legacy card/details', () => {
 });
 
 describe('normalizeToBlocks rule 13: text fallback', () => {
+  it('uses the readable Markdown body for an acceptance report with formatted HTML', () => {
+    const body = '收到，确认任务 -02 验收闭环，我转入待命：\n1. **任务已完结**：交付物冻结。\n2. 衔接记录与报告一致。';
+    expect(normalizeToBlocks(makeInput({ body, formattedBody: '<p>收到，确认任务 -02 验收闭环，我转入待命：</p><ol><li><strong>任务已完结</strong>：交付物冻结。</li><li>衔接记录与报告一致。</li></ol>' }))).toEqual([{ type: 'text', text: body }]);
+  });
   it('renders plain body as a single text block', () => {
     const input = makeInput({ body: '**加粗** 普通消息' });
 
