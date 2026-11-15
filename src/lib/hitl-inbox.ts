@@ -78,6 +78,10 @@ interface HitlInboxState {
  */
 const MAX_RESOLUTIONS = 50;
 
+function runtimeReceiptKey(room: string, sender: string, request: string, context?: string): string {
+  return `runtime:${JSON.stringify([room, sender, request, context ?? null])}`;
+}
+
 function applyResolution(
   state: Pick<HitlInboxState, 'confirmations' | 'resolutions'>,
   resolution: HitlResolution,
@@ -110,6 +114,10 @@ export const useHitlInboxStore = create<HitlInboxState>()(
   upsertConfirmation: (item) =>
     set((state) => {
       if (state.resolutions[item.id]?.status !== undefined && state.resolutions[item.id]?.status !== 'submitted') return state;
+      if (item.runtimeApproval && item.requestId) {
+        const receipt = state.resolutions[runtimeReceiptKey(item.roomId, item.sender, item.requestId, item.contextId)];
+        if (receipt) return applyResolution(state, { ...receipt, id: item.id });
+      }
       const isNew = !(item.id in state.confirmations);
       // hitl.request 审计（F2.4）：仅新条目上报一次（m.replace 修订
       // 静默 upsert，不重复计审计）。
@@ -454,6 +462,11 @@ export function ingestHitlTimelineEvents(
     const content = resolveEventContent(event);
     const approval = event.sender !== currentUserId && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
     if (approval && approval.status !== 'pending') {
+      // Initial sync can deliver a receipt before history pagination loads
+      // its request. Keep the exact owner/room/context binding for that case.
+      const key = runtimeReceiptKey(roomId, event.sender, approval.request_id, approval.context_id);
+      if (approval.status === 'expired') store.expireConfirmation(key, event.sender);
+      else store.resolveConfirmation(key, event.sender, approval.status);
       for (const item of Object.values(useHitlInboxStore.getState().confirmations)) {
         if (item.roomId !== roomId || item.sender !== event.sender || item.requestId !== approval.request_id || item.contextId !== approval.context_id) continue;
         if (approval.status === 'expired') store.expireConfirmation(item.id, event.sender);
