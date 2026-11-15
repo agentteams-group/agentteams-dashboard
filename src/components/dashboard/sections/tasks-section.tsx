@@ -314,7 +314,7 @@ function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; ta
       {dag && dag.nodes.length > 0 ? <>
         <p className="text-xs text-muted-foreground">虚线框为当前任务 · 点击节点查看负责人和状态</p>
         <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
-          <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} nodeWidth={176} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
+          <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} nodeWidth={156} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
         </div>
         <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || '未分配'}</span><StatusBadge status={selected.status} /></div></div>
       </> : <p className="text-xs text-muted-foreground">该任务暂无项目分工信息</p>}

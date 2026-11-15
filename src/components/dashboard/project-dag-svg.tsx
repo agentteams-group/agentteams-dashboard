@@ -72,14 +72,15 @@ export function ProjectDagSvg({
   );
   const critical = useMemo(() => criticalPathOf(dag), [dag]);
   const { width, height, positions } = layout;
+  const renderedHeight = currentNodeId && dag.nodes.length ? Math.max(...dag.nodes.map(node => (positions.get(node.id)?.y ?? 0) + H + (node.assignee ? 12 : 0))) + 12 : height;
 
   if (dag.nodes.length === 0) return null;
 
   return (
     <svg
       width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
+      height={renderedHeight}
+      viewBox={`0 0 ${width} ${renderedHeight}`}
       role={onNodeClick || onStuckNodeClick ? 'group' : 'img'}
       aria-label={title ?? '项目任务依赖图'}
     >
