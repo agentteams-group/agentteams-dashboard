@@ -193,6 +193,47 @@ describe('task collaboration room entry', () => {
     viewPreference.value = 'kanban';
     viewPreference.tasks = [{ runId: 'task-room', title: '执行分析', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '!source:test', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
   }
+  it('disables an undispatched task room with an explicit reason and makes no metadata request', () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    expect(entry).toBeDisabled();
+    expect(entry).toHaveAttribute('title', '任务尚未派发，协作房间未创建');
+    fireEvent.click(entry);
+    fireEvent.click(entry.parentElement!);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('shows pending-task details without treating an absent task meta file as a server failure', async () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    fireEvent.focus(screen.getByRole('button', { name: /执行分析/ }));
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    expect(within(preview).getByText('任务尚未派发，协作房间未创建')).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(within(preview).getByRole('button', { name: '查看完整详情' }));
+    const detail = await screen.findByRole('dialog', { name: '执行分析' });
+    expect(within(detail).getByText('任务尚未派发，协作房间未创建')).toBeInTheDocument();
+    expect(within(detail).queryByText('详情暂时无法加载')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('keeps a known execution room reachable even if task dispatch status has not caught up', () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    viewPreference.tasks[0].executionRoomId = '!execution:test';
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    expect(entry).toBeEnabled();
+    fireEvent.click(entry);
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test');
+  });
   it('keeps the source link and resolves the real collaboration room on click', async () => {
     task();
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: 'room:!execution:test' }), { status: 200 }));

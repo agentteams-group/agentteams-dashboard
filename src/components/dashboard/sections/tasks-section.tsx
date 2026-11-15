@@ -249,6 +249,8 @@ function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
 function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
   const queryClient = useQueryClient();
   const access = useChatRoomAccess();
+  const awaitingDispatch = task.status === 'pending' && !task.executionRoomId;
+  const unavailableReason = '任务尚未派发，协作房间未创建';
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function enterCollaboration() {
@@ -273,13 +275,16 @@ function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?:
   }
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant={compact ? 'ghost' : 'outline'} size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs'} aria-label="进入协作房间" disabled={opening || access.state !== 'joined'}
-        title={access.state !== 'joined' ? '请先登录对话并等待房间权限同步' : '进入该任务的执行协作房间'}
+      <span className="inline-flex" title={awaitingDispatch ? unavailableReason : undefined} onClick={event => event.stopPropagation()}>
+      <Button variant={compact ? 'ghost' : 'outline'} size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs'} aria-label="进入协作房间" disabled={awaitingDispatch || opening || access.state !== 'joined'}
+        title={awaitingDispatch ? unavailableReason : access.state !== 'joined' ? '请先登录对话并等待房间权限同步' : '进入该任务的执行协作房间'}
         onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); void enterCollaboration(); }}>
         {opening ? <Loader2 className="size-3.5 animate-spin" /> : <MessageSquare className="size-3.5" />}{!compact && '进入协作房间'}
       </Button>
+      </span>
       {task.roomId && <Button variant="ghost" size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs text-muted-foreground'} aria-label="查看来源会话" title="查看来源会话" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}><MessageSquareReply className="size-3.5" />{!compact && '查看来源会话'}</Button>}
     </div>
+    {!compact && awaitingDispatch && <p role="status" className="text-xs text-muted-foreground">{unavailableReason}</p>}
     {error && <p role="status" className="text-xs text-muted-foreground">{error}</p>}
   </div>;
 }
@@ -289,6 +294,7 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
     queryKey: ['task-detail', task.runId, task.teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
     staleTime: 15000,
+    enabled: task.status !== 'pending' || !!task.executionRoomId,
     retry: false,
   });
   const sourceName = useRoomMetaStore(state => state.meta[task.roomId]?.roomName);
@@ -1225,7 +1231,7 @@ function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: Board
   const detail = useQuery({
     queryKey: ['task-detail', task?.runId, teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
-    enabled: !!task,
+    enabled: !!task && (task.status !== 'pending' || !!task.executionRoomId),
     staleTime: 15000,
     retry: false,
     throwOnError: false,
