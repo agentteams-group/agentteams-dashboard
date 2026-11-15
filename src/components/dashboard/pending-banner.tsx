@@ -11,12 +11,13 @@ import { usePendingTally } from '@/hooks/use-pending-tally';
  * 数据源 = 现有 Matrix /sync 驱动的 store（不承诺统一 SSE，§8.2 G5）。
  */
 export function PendingBanner() {
+  const activeSection = useSectionStore((s) => s.activeSection);
   const setActiveSection = useSectionStore((s) => s.setActiveSection);
   // C-1：分项与总数取自同一个 selector，横幅里的数字与导航徽标、
   // 我的工作台永远一致（以前三处各算一套）。
   const { interventions, approvals, invites, mentionRooms, total } = usePendingTally();
 
-  if (total === 0) return null;
+  if (total === 0 || activeSection === 'chat' || activeSection === 'my-teams') return null;
 
   const approvalCount = approvals + invites;
   const parts: string[] = [];

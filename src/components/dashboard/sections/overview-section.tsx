@@ -52,6 +52,7 @@ import { useNotificationStore } from '@/lib/notification-store';
 import { useCounter } from '@/hooks/use-counter';
 import { useApiTaskBoard } from '@/hooks/use-projects';
 import type { BoardTask, BoardProject } from '@/hooks/use-task-board';
+import { mainTasks } from '@/lib/task-hierarchy';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { PluginWidgetsGrid } from '@/components/plugins/plugin-widgets';
 import { HitlInboxCard } from '@/components/dashboard/sections/hitl-inbox-card';
@@ -253,17 +254,22 @@ function ActiveWorkPanel({ projects, tasks, isLoading }: {
 }) {
   // Per-project progress: completed vs total tasks, newest / active first.
   const rows = useMemo(() => {
-    const tasksByProject = new Map<string, { done: number; total: number }>();
+    const tasksByProject = new Map<string, { done: number; total: number; subDone: number; subTotal: number }>();
     for (const t of tasks) {
       if (!t.projectId) continue;
-      const stat = tasksByProject.get(t.projectId) ?? { done: 0, total: 0 };
-      stat.total += 1;
-      if (t.status === 'completed') stat.done += 1;
+      const stat = tasksByProject.get(t.projectId) ?? { done: 0, total: 0, subDone: 0, subTotal: 0 };
+      if (t.parentTaskId) {
+        stat.subTotal += 1;
+        if (t.status === 'completed') stat.subDone += 1;
+      } else {
+        stat.total += 1;
+        if (t.status === 'completed') stat.done += 1;
+      }
       tasksByProject.set(t.projectId, stat);
     }
     const rank: Record<BoardProject['status'], number> = { active: 0, planning: 1, paused: 2, unknown: 3, completed: 4 };
     return projects
-      .map((p) => ({ project: p, stat: tasksByProject.get(p.runId) ?? { done: 0, total: 0 } }))
+      .map((p) => ({ project: p, stat: tasksByProject.get(p.runId) ?? { done: 0, total: 0, subDone: 0, subTotal: 0 } }))
       .sort((a, b) => rank[a.project.status] - rank[b.project.status])
       .slice(0, 6);
   }, [projects, tasks]);
@@ -319,9 +325,10 @@ function ActiveWorkPanel({ projects, tasks, isLoading }: {
                     {stat.total > 0 && (
                       <div className="flex items-center gap-2 mt-1.5">
                         <Progress value={pct} className="h-1.5 flex-1" />
-                        <span className="text-xs text-muted-foreground shrink-0">{stat.done}/{stat.total} 任务</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{stat.done}/{stat.total} 主任务</span>
                       </div>
                     )}
+                    {stat.subTotal > 0 && <div aria-label="子任务进度" className="mt-1.5 flex items-center gap-2"><Progress value={Math.round(stat.subDone / stat.subTotal * 100)} className="h-1 flex-1" /><span className="shrink-0 text-xs text-muted-foreground">{stat.subDone}/{stat.subTotal} 子任务</span></div>}
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
                 </button>
@@ -355,9 +362,12 @@ export function OverviewSection() {
 
   // Task board stats (API primary source; shared react-query cache with the
   // task-board section so mounting this panel costs no extra workflow fetches)
-  const runningTasks = taskBoard.tasks.filter((t) => t.status === 'in_progress' || t.status === 'assigned').length;
-  const completedTasks = taskBoard.tasks.filter((t) => t.status === 'completed').length;
-  const totalTasks = taskBoard.tasks.length;
+  const roots = mainTasks(taskBoard.tasks);
+  const runningTasks = roots.filter((t) => t.status === 'in_progress' || t.status === 'assigned').length;
+  const completedTasks = roots.filter((t) => t.status === 'completed').length;
+  const totalTasks = roots.length;
+  const children = taskBoard.tasks.filter(task => !roots.includes(task));
+  const completedChildren = children.filter(task => task.status === 'completed').length;
   const activeProjects = taskBoard.projects.filter((p) => p.status === 'active' || p.status === 'planning').length;
 
   // Active Workers = Running or Ready
@@ -517,14 +527,15 @@ export function OverviewSection() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <AnimatedStat
             value={taskBoard.isLoading ? null : runningTasks}
-            label="进行中任务"
+            label="进行中主任务"
             icon={ListTodo}
             color="text-violet-500"
             sub={
               totalTasks > 0 ? (
-                <div className="flex gap-2 text-xs text-muted-foreground">
-                  <span className="text-emerald-500">完成 {completedTasks}/{totalTasks}</span>
-                  <span className="text-violet-500">活跃项目 {activeProjects}</span>
+                <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span>主任务完成 {completedTasks}/{totalTasks}</span>
+                  <span>子任务完成 {completedChildren}/{children.length}</span>
+                  <span>活跃项目 {activeProjects}</span>
                 </div>
               ) : undefined
             }

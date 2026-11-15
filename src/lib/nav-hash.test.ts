@@ -14,7 +14,7 @@ import {
 
 const allSections = new Set([
   'overview', 'chat', 'my-teams', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
-  'resources', 'team-agents', 'managers', 'humans', 'skills', 'models',
+  'resources', 'team-agents', 'workers', 'teams', 'platform-assistant-settings', 'humans', 'skills', 'models',
   'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
@@ -51,9 +51,8 @@ describe('hashForSection', () => {
     expect(hashForSection('my-workbench')).toBe('workbench/me');
     expect(hashForSection('resources')).toBe('console/resources');
     expect(hashForSection('team-agents')).toBe('console/resources/team-agents');
-    // 旧 workers/teams section id 现在带 tab 落到合并页（通知 actionUrl 仍用旧路径）。
-    expect(hashForSection('workers')).toBe('console/resources/team-agents?tab=agents');
-    expect(hashForSection('teams')).toBe('console/resources/team-agents?tab=teams');
+    expect(hashForSection('workers')).toBe('console/resources/workers');
+    expect(hashForSection('teams')).toBe('console/resources/teams');
     expect(hashForSection('humans')).toBe('console/resources/humans');
     expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('skills')).toBe('console/resources/skills');
@@ -163,21 +162,19 @@ describe('resolveHash — layered hashes', () => {
   });
 
   it('resolves console hashes (附录 A；F7.1 资源路径进容器)', () => {
-    expect(resolveHash('console/resources', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/team-agents', isKnown)?.section).toBe('team-agents');
+    expect(resolveHash('console/resources', isKnown)?.section).toBe('workers');
+    expect(resolveHash('console/resources/team-agents', isKnown)?.section).toBe('teams');
     expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('humans');
     expect(resolveHash('console/resources/skills', isKnown)?.section).toBe('skills');
     expect(resolveHash('console/governance/audit', isKnown)?.section).toBe('audit');
     expect(resolveHash('console/system/overview', isKnown)?.section).toBe('overview');
   });
 
-  it('aliases the old workers/teams routes to the merged page with their tab', () => {
+  it('resolves separate workers/teams pages and preserves old merged-page params', () => {
     const workers = resolveHash('console/resources/workers', isKnown);
-    expect(workers?.section).toBe('team-agents');
-    expect(workers?.params?.get('tab')).toBe('agents');
+    expect(workers?.section).toBe('workers');
     const teams = resolveHash('console/resources/teams', isKnown);
-    expect(teams?.section).toBe('team-agents');
-    expect(teams?.params?.get('tab')).toBe('teams');
+    expect(teams?.section).toBe('teams');
     // 已规范化的合并页深链原样保留 tab。
     expect(resolveHash('console/resources/team-agents?tab=agents', isKnown)?.params?.get('tab')).toBe(
       'agents',
@@ -194,21 +191,17 @@ describe('resolveHash — legacy flat hashes stay reachable (PRD §5.4)', () => 
   it('resolves every legacy flat hash', () => {
     const legacy = [
       'overview', 'chat', 'tasks', 'artifacts', 'coding-runs',
-      'humans', 'managers', 'skills', 'models', 'knowledge', 'audit',
+      'humans', 'skills', 'models', 'knowledge', 'audit',
     ];
     for (const hash of legacy) {
       expect(resolveHash(hash, isKnown)?.section).toBe(hash);
     }
   });
 
-  it('aliases legacy flat workers/teams to the merged page with their tab', () => {
-    expect(resolveHash('workers', isKnown)).toMatchObject({
-      section: 'team-agents',
-      params: expect.any(URLSearchParams),
-    });
-    expect(resolveHash('workers', isKnown)?.params?.get('tab')).toBe('agents');
-    expect(resolveHash('teams', isKnown)?.section).toBe('team-agents');
-    expect(resolveHash('teams', isKnown)?.params?.get('tab')).toBe('teams');
+  it('resolves legacy flat member and Manager links', () => {
+    expect(resolveHash('workers', isKnown)?.section).toBe('workers');
+    expect(resolveHash('teams', isKnown)?.section).toBe('teams');
+    expect(resolveHash('managers', isKnown)?.section).toBe('platform-assistant-settings');
   });
 
   it('keeps the projects alias resolving to the task board', () => {

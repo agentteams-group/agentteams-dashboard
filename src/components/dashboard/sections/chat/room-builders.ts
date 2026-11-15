@@ -21,8 +21,9 @@ function managerDisplayName(
   manager: ManagerResponse,
   rid: string,
   lookup: RoomMetaByRoomId,
+  multiple: boolean,
 ): string {
-  if (rid === manager.roomID) return '平台助手';
+  if (rid === manager.roomID) return multiple ? `平台助手 · ${manager.name}` : '平台助手';
   const named = lookup[rid]?.roomName;
   if (named) return named;
   return `${manager.name} 对话`;
@@ -146,7 +147,7 @@ export function buildRooms(
     for (const chatRoomId of managerRoomIds(manager)) {
       pushRoom({
         id: chatRoomId,
-        name: managerDisplayName(manager, chatRoomId, lookup),
+        name: managerDisplayName(manager, chatRoomId, lookup, (managers?.length ?? 0) > 1),
         type: 'manager',
         agentRole: leadingTeam ? undefined : 'operations',
         members: [manager.matrixUserID].filter(Boolean),
@@ -214,6 +215,7 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
   return rooms.filter(
     (r) =>
       r.name.toLowerCase().includes(q) ||
+      Boolean(r.team?.teamName?.toLowerCase().includes(q)) ||
       r.id.toLowerCase().includes(q) ||
       r.members.some((m) => m && m.toLowerCase().includes(q)) ||
       (r.parentTeam ? r.parentTeam.toLowerCase().includes(q) : false) ||

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RUNTIME_META, getRuntimeMeta } from './runtime-meta';
 import { RUNTIME_LABELS } from './phase-colors';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('runtime metadata', () => {
   it('recognises Codex without falling back to an unknown runtime', () => {
@@ -17,8 +19,8 @@ describe('runtime metadata', () => {
   it('returns a complete meta entry for every runtime in the WorkerRuntime union', () => {
     for (const runtime of Object.keys(RUNTIME_META) as Array<keyof typeof RUNTIME_META>) {
       const meta = RUNTIME_META[runtime];
-      expect(meta.icon, `icon for ${runtime}`).toBeDefined();
-      expect(meta.badgeClass, `badgeClass for ${runtime}`).toMatch(/^bg-/);
+      expect(meta.logo, `logo for ${runtime}`).toMatch(/^\/runtime-logos\//);
+      expect(existsSync(resolve('public', meta.logo.slice(1))), `bundled logo for ${runtime}`).toBe(true);
       expect(meta.description, `description for ${runtime}`).toBeTruthy();
     }
   });

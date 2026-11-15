@@ -255,6 +255,7 @@ export function ChatRoomSidebar({
   attentionPending,
   title = '协作空间',
   showInvites = true,
+  teamList = false,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -269,6 +270,7 @@ export function ChatRoomSidebar({
   attentionPending?: string;
   title?: string;
   showInvites?: boolean;
+  teamList?: boolean;
 }) {
   const [filter, setFilter] = useState('');
   // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
@@ -295,7 +297,7 @@ export function ChatRoomSidebar({
   const shortId = shortUserId(userId);
   const sections = conversationSections(visible);
   const [collapsedTeams, setCollapsedTeams] = useState<Record<string, boolean>>({});
-  const renderRoom = (room: RoomInfo) => <RoomListItem key={room.id} room={room} isSelected={selectedRoomId === room.id} onClick={() => onSelectRoom(room.id)} attention={sortMode === 'workspace' && room.parentTeam ? undefined : attention?.[room.id]} attentionPending={sortMode === 'workspace' && room.parentTeam ? undefined : attentionPending} />;
+  const renderRoom = (room: RoomInfo) => <RoomListItem key={room.id} room={room} teamList={teamList} isSelected={selectedRoomId === room.id} onClick={() => onSelectRoom(room.id)} attention={!teamList && sortMode === 'workspace' && room.parentTeam ? undefined : attention?.[room.id]} attentionPending={!teamList && sortMode === 'workspace' && room.parentTeam ? undefined : attentionPending} />;
 
   // Resizable width (persisted) via the module store above — SSR and the
   // first client paint agree on the default; the persisted width applies
@@ -371,7 +373,7 @@ export function ChatRoomSidebar({
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="whitespace-nowrap text-xs font-semibold tracking-wide">{title}</span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <DropdownMenu>
+          {!teamList && <><DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
@@ -411,7 +413,7 @@ export function ChatRoomSidebar({
                 <DropdownMenuRadioItem value="type">按房间类型</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu></>}
           <button
             type="button"
             className="flex size-8 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -429,7 +431,7 @@ export function ChatRoomSidebar({
             aria-hidden="true"
           />
           <Input
-            placeholder="搜索对话…"
+            placeholder={teamList ? '搜索团队…' : '搜索对话…'}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="h-7 pl-7 text-xs bg-background/70 rounded-md"
@@ -445,15 +447,15 @@ export function ChatRoomSidebar({
         ) : filtered.length === 0 ? (
           <div className="text-center py-8">
             <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground">暂无对话</p>
+            <p className="text-xs text-muted-foreground">{teamList ? '暂无已加入的团队' : '暂无对话'}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {isLoggedIn
+              {teamList ? '加入团队后，即可在这里进入协作群聊' : isLoggedIn
                 ? '创建 Agent 或团队后，对话会自动显示在这里'
                 : '连接对话后，即可查看 Agent、团队及项目的协作记录'}
             </p>
           </div>
         ) : (
-          sortMode === 'workspace' ? (
+          teamList ? filtered.map(renderRoom) : sortMode === 'workspace' ? (
             <div className="space-y-4">
               {sections.operations.length > 0 && <section aria-label="平台助手">{sections.operations.map(renderRoom)}</section>}
               {sections.teams.length > 0 && <section aria-label="我的团队" className="space-y-1">

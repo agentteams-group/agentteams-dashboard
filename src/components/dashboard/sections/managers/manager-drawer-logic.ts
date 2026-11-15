@@ -10,8 +10,18 @@ import type {
 
 export interface ManagerDmTarget {
   mxid: string;
-  /** 个人房间（Controller roomID）；缺省 = 只有 MXID，无直跳目标。 */
+  /** 安装时创建的管理员会话（Controller roomID），不是按当前账号动态生成。 */
   roomId?: string;
+}
+
+export function managerVersionLabel(image: string, version?: string): string {
+  const value = version || image;
+  if (!value) return '未标记版本';
+  const digest = value.indexOf('@');
+  if (digest >= 0) return value.slice(digest + 1, digest + 20);
+  const tag = value.lastIndexOf(':');
+  if (tag > value.lastIndexOf('/')) return value.slice(tag + 1);
+  return value.includes('/') ? '未标记版本' : value;
 }
 
 /** 有 MXID 才可私聊（房间可选：有个人房间就直跳私聊，无则入口隐藏跳转）。 */
@@ -129,15 +139,16 @@ export function normalizeEnvDraft(rows: EnvDraftRow[]): EnvDraftNormalized {
   return { env };
 }
 
-/** 保存后回读：Controller 未接收 env（当前 UpdateManagerRequest 无该字段）→ false。 */
+/** 保存后回读：键和值都必须一致，缺失变量不能等同于空值。 */
 export function managerEnvApplied(
   requested: Record<string, string>,
   returned: Record<string, string> | undefined,
 ): boolean {
   if (!returned) return Object.keys(requested).length === 0;
-  const keys = new Set([...Object.keys(requested), ...Object.keys(returned)]);
+  const keys = Object.keys(requested);
+  if (keys.length !== Object.keys(returned).length) return false;
   for (const key of keys) {
-    if ((requested[key] ?? '') !== (returned[key] ?? '')) return false;
+    if (!Object.prototype.hasOwnProperty.call(returned, key) || requested[key] !== returned[key]) return false;
   }
   return true;
 }

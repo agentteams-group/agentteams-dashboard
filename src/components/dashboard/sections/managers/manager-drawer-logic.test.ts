@@ -12,9 +12,20 @@ import {
   managerDocSaveBlocked,
   managerEnvApplied,
   managerSpecReadable,
+  managerVersionLabel,
   normalizeEnvDraft,
   normalizeMcpDraft,
 } from './manager-drawer-logic';
+
+describe('managerVersionLabel', () => {
+  it('shows the tag once without exposing an image registry or its port', () => {
+    expect(managerVersionLabel('registry:5000/team/manager:v1.2.7')).toBe('v1.2.7');
+    expect(managerVersionLabel('registry/team/manager:v1.2.7', 'registry/team/manager:v1.2.7')).toBe('v1.2.7');
+    expect(managerVersionLabel('registry/team/manager:v1.2.7', '1.2.7')).toBe('1.2.7');
+    expect(managerVersionLabel('registry:5000/team/manager')).toBe('未标记版本');
+    expect(managerVersionLabel('registry/team/manager@sha256:abcdef0123456789')).toBe('sha256:abcdef012345');
+  });
+});
 
 describe('dmTargetFor', () => {
   it('hides the entry without an MXID', () => {
@@ -124,6 +135,7 @@ describe('normalizeEnvDraft', () => {
 
 describe('save read-back checks', () => {
   it('managerEnvApplied: controller without env → not applied', () => {
+    expect(managerEnvApplied({ API_KEY: '' }, {})).toBe(false);
     expect(managerEnvApplied({ A: '1' }, undefined)).toBe(false);
     expect(managerEnvApplied({}, undefined)).toBe(true);
     expect(managerEnvApplied({ A: '1' }, { A: '1' })).toBe(true);

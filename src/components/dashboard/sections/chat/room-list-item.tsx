@@ -41,12 +41,14 @@ export function RoomListItem({
   onClick,
   attention,
   attentionPending,
+  teamList = false,
 }: {
   room: RoomInfo;
   isSelected: boolean;
   onClick: () => void;
   attention?: ConversationAttention;
   attentionPending?: string;
+  teamList?: boolean;
 }) {
   // Clear the unread red dot immediately on click. The actual m.fully_read
   // upload (and any subsequent server-confirmed reset) is handled by
@@ -104,14 +106,14 @@ export function RoomListItem({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="font-medium text-sm truncate">{room.name}</p>
+            <p className="font-medium text-sm truncate">{teamList ? room.team?.teamName || room.team?.name || room.parentTeam || room.name : room.name}</p>
             {isWorkerRoom && room.matrixUserId ? (
               <WorkerSessionDot state={workerRoomState} />
             ) : null}
             {isTeamRoom ? (
               <WorkerSessionRunningDot running={teamRunning} />
             ) : null}
-            {!room.agentRole && room.phase ? (
+            {!teamList && !room.agentRole && room.phase ? (
               <Badge
                 variant="outline"
                 className={`text-xs px-1 py-0 shrink-0 ${phaseToken ? statusTextClass(phaseToken) : ''}`}
@@ -133,10 +135,10 @@ export function RoomListItem({
               </Badge>
             ) : null}
             <p className="text-xs text-muted-foreground truncate min-w-0">
-              {accessLabel || room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : room.type === 'project' ? '项目协作群聊' : '暂无消息')}
+              {accessLabel || (teamList ? room.teamRole === 'admin' ? '管理员' : '成员' : room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : room.type === 'project' ? '项目协作群聊' : '暂无消息'))}
             </p>
           </div>
-          {room.agentRole && <TaskAttention counts={attention} pending={attentionPending} />}
+          {(room.agentRole || teamList) && <TaskAttention counts={attention} pending={attentionPending} />}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {pendingCount > 0 && !attention && (

@@ -185,15 +185,14 @@ describe('横竖屏：375×812 / 812×375 契约', () => {
     expect(drawer).toMatch(/w-full gap-0 overflow-x-hidden p-0 sm:max-w-\[480px\]/);
   });
 
-  it('Worker 抽屉与资源大弹窗窄屏全屏 + 内容独立滚动', () => {
+  it('Worker 抽屉窄屏全屏，竖向配置内容独立滚动', () => {
     const drawer = read('sections/workers/worker-drawer.tsx');
     // 抽屉本体：窄屏全宽，sm+ 才收成 560
     expect(drawer).toMatch(/w-full max-w-none[^"]*sm:w-\[min\(92vw,560px\)\]/);
     // 新 Worker 抽屉：右侧全高、窄屏全宽、圆角归零；滚动移到内联详情面板。
     expect(drawer).toMatch(/left-auto right-0 top-0 h-full max-h-full w-full max-w-none[^"]*rounded-none/);
-    expect(read('sections/workers/worker-detail-panel.tsx')).toMatch(
-      /min-h-0 flex-1 overflow-y-auto px-5 py-4/,
-    );
+    expect(read('sections/workers/worker-detail-panel.tsx')).toContain('ResourceDetailTabs');
+    expect(read('resource-detail-tabs.tsx')).toMatch(/min-h-0 min-w-0 overflow-y-auto/);
   });
 
   it('文件详情浮层：抽屉形态留 92vw 上限，底部表单不留横向溢出', () => {

@@ -87,6 +87,13 @@ function orderedOptions(question: RuntimeConfirmationQuestion) {
   return [...options].sort((a, b) => Number(b.recommended ?? false) - Number(a.recommended ?? false));
 }
 
+/** Compact display only; the original label remains the answer and full detail. */
+function optionTitle(label: string) {
+  if (label.length <= 36) return label;
+  const lead = label.split(/[：:。；;\n]/, 1)[0].trim();
+  return lead.length >= 2 && lead.length <= 24 ? lead : `${label.slice(0, 36)}…`;
+}
+
 /**
  * 选项式干预卡（PRD F2.1，M2 降级路径）。
  *
@@ -244,6 +251,9 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
   const question = questions[page];
   const list = orderedOptions(question);
   const selected = answers.selections[page] ?? [];
+  const titles = list.map((option) => optionTitle(option.label));
+  const displayTitles = titles.map((title, index) => titles.indexOf(title) !== titles.lastIndexOf(title) ? list[index].label : title);
+  const detailOptions = list.filter((option, index) => displayTitles[index] !== option.label || option.description);
   const freeText = (answers.freeText[page] ?? '').trim();
   const canSubmitPage = selected.length > 0 || freeText.length > 0;
   const isLastPage = page === questions.length - 1;
@@ -316,7 +326,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     >
       <p className="flex items-center gap-2 px-4 pt-4 text-xs text-muted-foreground"><MessageSquare className="size-3.5" aria-hidden="true" />需要你的选择</p>
       <div className="px-4 pt-2 pb-3 flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold leading-snug">{question.question}</h3>
+        <h3 className="text-sm font-normal leading-6">{question.question}</h3>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           {expired && (
             <Badge variant="outline" className="text-xs gap-1 border-red-500/40 text-red-600 dark:text-red-400">
@@ -353,6 +363,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                 key={option.id}
                 type="button"
                 role={question.multi_select ? 'checkbox' : 'radio'}
+                aria-label={option.label}
                 aria-checked={checked}
                 disabled={locked || forbidden}
                 onClick={() => toggleOption(page, option.id)}
@@ -372,15 +383,12 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
                   {checked && <Check className="size-3" />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">
-                    {option.label}
+                  <span className="block text-sm font-normal leading-6">
+                    {displayTitles[index]}
                     {option.recommended && (
                       <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">推荐</span>
                     )}
                   </span>
-                  {option.description && (
-                    <span className="block text-xs text-muted-foreground mt-0.5">{option.description}</span>
-                  )}
                 </span>
                 {/* 序号快捷键提示（Codex 同款右侧方块） */}
                 <span
@@ -394,8 +402,26 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
           })}
         </div>}
 
+        {payload.tool_name !== 'select_team_admin' && detailOptions.length > 0 && (
+          <details
+            key={`${page}:${selected.join(',')}`}
+            open={detailOptions.some((option) => selected.includes(option.id))}
+            className="rounded-lg bg-muted/40 px-3 py-2 text-sm"
+          >
+            <summary className="cursor-pointer text-xs text-muted-foreground">选项说明</summary>
+            <ol className="mt-3 space-y-3 text-sm font-normal leading-6">
+              {detailOptions.map((option) => (
+                <li key={option.id}>
+                  <p>{list.indexOf(option) + 1}. {option.label}</p>
+                  {option.description && <p className="text-muted-foreground">{option.description}</p>}
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+
         {payload.tool_name !== 'select_team_admin' && <div className="space-y-3 border-t border-border/60 pt-3">
-          <label className="block text-xs font-medium" htmlFor={`intervention-free-${payload.confirmation_id}`}>补充说明</label>
+          <label className="block text-xs font-normal" htmlFor={`intervention-free-${payload.confirmation_id}`}>补充说明</label>
           <textarea
             id={`intervention-free-${payload.confirmation_id}`}
             aria-label="自由输入"

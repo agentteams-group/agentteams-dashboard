@@ -41,6 +41,7 @@ import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
+import { formatMessageTime } from '../format';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -120,13 +121,9 @@ function TurnStateNote({
 }
 
 function MessageTime({ timestamp }: { timestamp: number }) {
-  const time = new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
   return (
-    <span className="text-xs text-muted-foreground/60 select-none">
-      {time}
+    <span className="whitespace-nowrap text-xs text-muted-foreground/60 select-none">
+      {formatMessageTime(timestamp)}
     </span>
   );
 }

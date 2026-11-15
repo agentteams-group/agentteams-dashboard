@@ -3,8 +3,8 @@
 // Worker 详情面板（F7 唯一实现）：WorkerDrawer 与「团队与Agent」页内联详情
 // 共用本组件。对齐工作台插件 WorkerDetailPane：
 // - 状态叙述 + 心跳/最近活动/在跑任务/上次运行/上次完成/loop 预算（D2）；
-// - 模型卡 + 资源卡入口（点击开大弹窗，内容懒挂载，D7）；
-// - 「会话」卡（D6）：WorkerChatsPanel showKindTabs —— 会话/子代理会话双 tab；
+// - 竖向配置标签页；只挂载当前分区，编辑模型仍使用确认弹窗；
+// - 「会话」页：WorkerChatsPanel showKindTabs —— 会话/子代理会话双 tab；
 // - 生命周期动作：唤醒 / 休眠 / 重启 / Ensure Ready（仅 Pending/Stopped，
 //   404 → 隐藏）/ Tracing（Langfuse 外链，仅 L1）/ 删除（仅 L1，D8 409
 //   团队占用走友好文案）/ CoPaw 升级；
@@ -14,7 +14,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
-  ChevronRight,
   Loader2,
   MessageCircle,
   Moon,
@@ -27,13 +26,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ResourceDetailTabs } from '@/components/dashboard/resource-detail-tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,36 +98,6 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Resource card = entry point only. Clicking it opens the full panel in a
- * dialog (same modal pattern as the workbench plugin); the drawer never
- * expands panel content inline and never nests a second drawer. */
-function ResourceCard({
-  title,
-  desc,
-  onOpen,
-}: {
-  title: string;
-  desc: string;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={title}
-      onClick={onOpen}
-      className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs font-semibold">{title}</span>
-        <span className="block truncate text-xs text-muted-foreground" title={desc}>
-          {desc}
-        </span>
-      </span>
-      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </button>
-  );
-}
-
 export type WorkerDetailPanelProps = {
   worker: WorkerResponse;
   modelOptions: ModelSelectionOption[];
@@ -163,7 +126,6 @@ export function WorkerDetailPanel({
 }: WorkerDetailPanelProps) {
   const workerName = worker.name;
   const [detail, setDetail] = useState<WorkerResponse | null>(worker);
-  const [openCard, setOpenCard] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -199,7 +161,6 @@ export function WorkerDetailPanel({
     // 反复 fetch。挂载初始值由 useState(worker) 提供；换名后 detail 还
     // 是旧名 → view 回退到 worker prop，数据一致，无需 setDetail(worker)。
     let alive = true;
-    setOpenCard(null);
     setEnsureReadyUnsupported(false);
     setLoopStatus(null);
     fetchWorkerDetail(workerName)
@@ -539,7 +500,6 @@ export function WorkerDetailPanel({
             variant="outline"
             className="h-11 text-sm"
             onClick={() => {
-              setOpenCard(null);
               setUpgradeOpen(true);
             }}
           >
@@ -556,8 +516,6 @@ export function WorkerDetailPanel({
     desc: '回迁 / 恢复',
     render: () => <WorkerCheckpointsCard key={`checkpoints-${view.name}`} workerName={view.name} />,
   });
-
-  const activeCard = openCard ? resourceCards.find((card) => card.id === openCard) ?? null : null;
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
@@ -651,7 +609,8 @@ export function WorkerDetailPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <ResourceDetailTabs key={workerName} label="Agent 配置" items={[
+        { id: 'basic', title: '基本信息', render: () => <div className="space-y-3">
         {/* 状态区 */}
         <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
           <p className="text-xs text-foreground/80" title={buildStatusNarrative(view, now)}>
@@ -665,18 +624,6 @@ export function WorkerDetailPanel({
           {loopStatus && (
             <Row label="loop 预算" value={`${loopStatus.state}${loopStatus.modeName ? ` · ${loopStatus.modeName}` : ''}`} />
           )}
-        </section>
-
-        {/* 模型卡 */}
-        <section className="flex items-center gap-2 rounded-lg border p-2.5" aria-label="模型">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">模型</p>
-            <p className="truncate font-mono text-xs">{view.model || '未设置'}</p>
-            <p className="truncate text-xs text-muted-foreground">provider: {view.modelProvider || providerName || '-'}</p>
-          </div>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => setModelOpen(true)}>
-            编辑模型
-          </Button>
         </section>
 
         {view.runtime === 'openclaw' ? (
@@ -696,58 +643,24 @@ export function WorkerDetailPanel({
           />
         ) : null}
 
-        {/* 资源卡 = 入口：点击打开大弹窗（面板只在弹窗打开时挂载） */}
-        <div className="space-y-2">
-          {resourceCards.map((card) => (
-            <ResourceCard
-              key={card.id}
-              title={card.title}
-              desc={card.desc}
-              onOpen={() => setOpenCard(card.id)}
-            />
-          ))}
-        </div>
-
-        {actionPending && (
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            正在下发操作…
-          </p>
-        )}
-      </div>
-
-      {/* 卡片弹窗：桌面 960×86vh，移动全屏；Esc/遮罩/关闭按钮都能关 */}
-      <Dialog
-        open={activeCard != null}
-        onOpenChange={(next) => {
-          if (!next) setOpenCard(null);
-        }}
-      >
-        <DialogContent
-          className="flex h-[86vh] w-[min(96vw,960px)] max-w-none flex-col gap-0 overflow-hidden rounded-lg p-0 max-sm:h-[100dvh] max-sm:w-full max-sm:max-w-none max-sm:rounded-none"
-          showCloseButton={false}
-        >
-          <DialogHeader className="flex shrink-0 flex-row items-start gap-2 border-b px-5 py-3 text-left">
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="text-base">{activeCard?.title ?? ''}</DialogTitle>
-              <DialogDescription className="text-xs">
-                {activeCard?.desc ?? ''}
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              className="h-11 w-11 shrink-0 p-0 text-lg"
-              aria-label="关闭弹窗"
-              onClick={() => setOpenCard(null)}
-            >
-              ×
-            </Button>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {activeCard ? activeCard.render() : null}
+        </div> },
+        { id: 'model', title: '模型', render: () =>
+        <section className="flex items-center gap-2 rounded-lg border p-2.5" aria-label="模型">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted-foreground">模型</p>
+            <p className="truncate font-mono text-xs">{view.model || '未设置'}</p>
+            <p className="truncate text-xs text-muted-foreground">provider: {view.modelProvider || providerName || '-'}</p>
           </div>
-        </DialogContent>
-      </Dialog>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => setModelOpen(true)}>
+            编辑模型
+          </Button>
+        </section>
+
+        },
+        ...resourceCards.map(card => ({ ...card, render: () => <div className="space-y-4"><h3 className="text-sm font-medium">{card.title}</h3>{card.render()}</div> })),
+      ]} />
+
+      {actionPending && <p role="status" className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden="true" />正在下发操作…</p>}
 
       <WorkerModelDialog
         open={modelOpen}

@@ -38,12 +38,11 @@ const SECTION_TO_HASH: Record<string, string> = {
   loops: 'workbench/loop',
   resources: 'console/resources',
   'team-agents': 'console/resources/team-agents',
-  // Legacy flat/resource section ids now alias the merged page, keeping their
-  // page tab (notifications still produce `#console/resources/workers`).
-  workers: 'console/resources/team-agents?tab=agents',
-  teams: 'console/resources/team-agents?tab=teams',
+  workers: 'console/resources/workers',
+  teams: 'console/resources/teams',
   humans: 'console/resources/humans',
   managers: 'console/resources/managers',
+  'platform-assistant-settings': 'workbench/assistant/settings',
   skills: 'console/resources/skills',
   models: 'console/resources/models',
   tools: 'console/resources/tools',
@@ -73,10 +72,10 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   tasks: 'tasks',
   artifacts: 'artifacts',
   'coding-runs': 'coding-runs',
-  workers: 'team-agents',
-  teams: 'team-agents',
+  workers: 'workers',
+  teams: 'teams',
   humans: 'humans',
-  managers: 'managers',
+  managers: 'platform-assistant-settings',
   skills: 'skills',
   models: 'models',
   tools: 'tools',
@@ -125,6 +124,11 @@ export function teamAgentsHash(tab?: TeamAgentsTab): string {
  */
 export function roomHash(roomId: string): string {
   return `#${SECTION_TO_HASH.chat}/${roomId}`;
+}
+
+export function platformAssistantSettingsHash(managerName?: string): string {
+  const base = `#${SECTION_TO_HASH['platform-assistant-settings']}`;
+  return managerName ? `${base}?manager=${encodeURIComponent(managerName)}` : base;
 }
 
 /**
@@ -182,6 +186,13 @@ export function hashForActiveSection(sectionId: string, currentHash: string): st
   const sep = raw.indexOf('?');
   const path = sep === -1 ? raw : raw.slice(0, sep);
   const query = sep === -1 ? '' : raw.slice(sep);
+  // Preserve resource selection while normalizing old merged-page bookmarks.
+  const resolved = resolveHash(raw, () => true);
+  if (['workers', 'teams', 'platform-assistant-settings'].includes(sectionId) && resolved?.section === sectionId) {
+    const params = new URLSearchParams(resolved.params);
+    params.delete('tab');
+    return canonical + (params.size ? `?${params}` : '');
+  }
   const keep = query && (path === canonical || path.startsWith(`${canonical}/`)) ? query : '';
 
   if (sectionId === 'team-agents') {
@@ -227,10 +238,6 @@ export function resolveHash(
 
   const legacy = LEGACY_HASH_TO_SECTION[hash];
   if (legacy && isKnownSection(legacy)) {
-    const tab = LEGACY_TEAM_AGENTS_TAB[hash];
-    if (tab) {
-      return { section: legacy, params: new URLSearchParams({ tab }) };
-    }
     return { section: legacy };
   }
   return null;
@@ -249,6 +256,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Workbench: space (chat) / tasks (+ artifacts, coding-runs) / loop
   if (segments[0] === 'workbench') {
+    if (path === 'workbench/assistant/settings') return { section: 'platform-assistant-settings', params };
     if (segments[1] === 'me') return { section: 'my-workbench' };
     if (segments[1] === 'teams') return { section: 'my-teams', roomId, params };
     if (segments[1] === 'space') {
@@ -267,14 +275,18 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Console: resources / governance / system
   if (segments[0] === 'console') {
-    // 成员子页面：workers/teams 已合并进 team-agents，保留旧深链并按 tab 落地。
+    // Old merged-page links keep the selected resource on the separate pages.
+    if (path === 'console/resources/team-agents') {
+      const section = params?.has('manager') ? 'platform-assistant-settings'
+        : params?.get('tab') === 'agents' || params?.has('agent') ? 'workers' : 'teams';
+      return { section, params };
+    }
     const consoleMap: Record<string, string> = {
-      'resources': 'resources',
-      'resources/team-agents': 'team-agents',
-      'resources/workers': 'team-agents',
-      'resources/teams': 'team-agents',
+      'resources': 'workers',
+      'resources/workers': 'workers',
+      'resources/teams': 'teams',
       'resources/humans': 'humans',
-      'resources/managers': 'managers',
+      'resources/managers': 'platform-assistant-settings',
       'resources/skills': 'skills',
       'resources/models': 'models',
       'resources/tools': 'tools',
@@ -287,11 +299,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
     const sub = segments.slice(1).join('/');
     const section = consoleMap[sub];
     if (!section) return null;
-    const legacyTab = LEGACY_TEAM_AGENTS_TAB[segments[2] ?? ''];
-    if (section !== 'team-agents' || !legacyTab) return { section, params };
-    const next = new URLSearchParams(params);
-    if (!next.get('tab')) next.set('tab', legacyTab);
-    return { section, params: next };
+    return { section, params };
   }
 
   return null;

@@ -51,9 +51,9 @@ vi.mock('@/hooks/use-matrix', async () => {
 const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null, runtimeMap: {} as RuntimeMap }));
 
 vi.mock('./ChatPanel', () => ({
-  ChatPanel: ({ room, headerTitle, headerLeading }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode }) => {
+  ChatPanel: ({ room, headerTitle, headerLeading, headerActions }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode; headerActions?: ReactNode }) => {
     chatPanelSpy.lastRoomId = room.id;
-    return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{room.id}</div>;
+    return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{headerActions}{room.id}</div>;
   },
 }));
 
@@ -236,6 +236,24 @@ describe('role-based assistant landing', () => {
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
   });
+  it('opens a joined task execution room when legacy workflow metadata and Matrix names omit it', async () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test', '!task:test'], state: 'joined', refetch: vi.fn() });
+    taskFeedMock.workflows = [];
+    useHitlInboxStore.getState().setPendingChatRoomId('!task:test');
+    renderWithQueryClient('assistants');
+    await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!task:test'));
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
+    expect(useRoomMetaStore.getState().activeRoomId).toBe('!task:test');
+  });
+
+  it('does not synthesize an unjoined task room from a deep link', () => {
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
+    useHitlInboxStore.getState().setPendingChatRoomId('!unjoined-task:test');
+    renderWithQueryClient('assistants');
+    expect(screen.queryByTestId('chat-panel-stub')).toBeNull();
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!unjoined-task:test');
+  });
 
   it('lists controller project rooms by source_room_id even without Matrix room meta', () => {
     hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
@@ -330,10 +348,12 @@ describe('separate assistants and my teams with mixed roles', () => {
     renderWithQueryClient('teams');
     const sidebar = within(screen.getByTestId('sidebar-stub'));
     expect(sidebar.getAllByRole('button', { name: /team-[a-d] 团队房间/ })).toHaveLength(4);
-    expect(screen.getByText('Team A · 管理员 · 团队协作')).toBeInTheDocument();
+    expect(screen.getByText('Team A')).toBeInTheDocument();
+    expect(screen.getByText('团队协作 · 管理员')).toBeInTheDocument();
     fireEvent.click(sidebar.getByRole('button', { name: 'team-c 团队房间' }));
     await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group-c:test'));
-    expect(screen.getByText('Team C · 成员 · 团队协作')).toBeInTheDocument();
+    expect(screen.getByText('Team C')).toBeInTheDocument();
+    expect(screen.getByText('团队协作 · 成员')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
   });
 
@@ -368,10 +388,10 @@ describe('project rooms in the teams view', () => {
   });
   afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
 
-  it('includes project rooms in the teams view sidebar', () => {
+  it('lists only joined teams in the teams sidebar, keeping project rooms accessible by deep link', () => {
     renderWithQueryClient('teams');
     const sidebar = within(screen.getByTestId('sidebar-stub'));
-    expect(sidebar.getByRole('button', { name: /网站改版/ })).toBeInTheDocument();
+    expect(sidebar.queryByRole('button', { name: /网站改版/ })).toBeNull();
     expect(sidebar.getByRole('button', { name: /design 团队房间/ })).toBeInTheDocument();
   });
 

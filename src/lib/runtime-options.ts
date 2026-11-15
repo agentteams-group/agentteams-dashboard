@@ -6,6 +6,8 @@ export const CREATABLE_WORKER_RUNTIMES: { value: WorkerRuntime; label: string }[
   { value: 'hermes', label: 'Hermes' },
   { value: 'qwenpaw', label: 'QwenPaw' },
   { value: 'deepseek-harness', label: 'DeepSeek Harness（实验）' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'openhuman', label: 'OpenHuman' },
 ];
 
 /** Manager runtimes accepted by the current Controller. */
@@ -24,7 +26,7 @@ export function isLegacyCopaw(runtime: string | null | undefined): boolean {
 /** Runtimes that remain visible for existing instances but cannot be created. */
 export function isLegacyRuntime(runtime: string | null | undefined): boolean {
   const value = (runtime || '').toLowerCase();
-  return value === 'copaw' || value === 'openhuman';
+  return value === 'copaw';
 }
 
 export function creatableWorkerRuntimeValues(): WorkerRuntime[] {

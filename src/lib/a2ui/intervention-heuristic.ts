@@ -71,7 +71,7 @@ const CIRCLED_INDEX = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲
 const CIRCLED_RE = /[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g;
 
 /** 引导行最小疑问语义（防误伤「步骤如下：」式普通列表）。 */
-const GUIDE_HINT_RE = /(哪个|哪些|哪种|是否|要不要|选|确认|偏好|倾向|还是)/;
+const GUIDE_HINT_RE = /(哪个|哪些|哪种|是否|要不要|选|(?:请|需要|想|麻烦|先|再)[^：:]{0,8}确认|偏好|倾向|还是)/;
 
 /** 过程/教程语义：即使含「选」也不当作选项提问（防误伤普通 Markdown 列表）。 */
 const PROCEDURE_HINT_RE = /(步骤|流程|如下|教程|指南)/;
@@ -377,6 +377,23 @@ function collectInlineGroups(lines: string[]): OptionGroup[] {
     const optionsText = text.slice(colon + 1).trim();
     if (!optionsText) continue;
 
+    // Clarification lists may contain a real choice inside one question:
+    // `任务边界：我们要 (a) 实现，(b) 验证，还是 (c) 其他？`.
+    const wrappedStart = optionsText.search(/[（(]\s*a\s*[）)]/i);
+    const wrapped = wrappedStart >= 0 && isQuestionish(text)
+      ? parseInlineLine(optionsText.slice(wrappedStart), 'alpha') : null;
+    if (wrapped) {
+      const question = stripHeadingOrdinal(`${prefix}${optionsText.slice(0, wrappedStart)}`).trim();
+      if (question.length > 120 || PROCEDURE_HINT_RE.test(question)) continue;
+      groups.push({
+        headingIndex: i, start: i, end: i + 1,
+        question: normalizeQuestion(`${question}：`),
+        options: wrapped.map(option => ({ ...option, label: option.label.replace(/[，,;；]\s*(?:还是|或是)?\s*$|[?？]\s*$/g, '').trim() })),
+        multiSelect: false,
+      });
+      continue;
+    }
+
     const heading = stripHeadingOrdinal(prefix);
     if (!heading || heading.length > 40 || PROCEDURE_HINT_RE.test(heading)) continue;
 
@@ -434,7 +451,8 @@ function collectOptionGroups(lines: string[]): OptionGroup[] {
         cursor += 1;
         if (items.length >= maxItems) break;
       }
-      if (items.length >= 2) {
+      // Numbered questions are prompts to answer, not selectable answers.
+      if (items.length >= 2 && !(kind === 'digit' && items.filter(item => isQuestionish(item.label)).length >= 2)) {
         const heading = headingAbove(lines, i);
         if (heading) {
           groups.push({

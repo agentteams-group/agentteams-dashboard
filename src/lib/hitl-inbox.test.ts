@@ -482,6 +482,18 @@ describe('useHitlInboxStore', () => {
     expect(useHitlInboxStore.getState().confirmations).toEqual({});
   });
 
+  it('removes a persisted false choice when the original report is reingested', () => {
+    ingestHitlTimelineEvents('!r1', [msg('$other', '@agent:test', 1000, { body: TOOL_GUARD_BODY })], '@user:test');
+    useHitlInboxStore.getState().upsertConfirmation({
+      id: 'heuristic:$report:0', roomId: '!r1', eventId: '$report', sender: '@agent:test',
+      toolName: 'ask_human', approveReply: '', rejectReply: '', timestamp: 2000,
+    });
+    ingestHitlTimelineEvents('!r1', [msg('$report', '@agent:test', 2000, {
+      body: '收到，确认任务 -02 验收闭环，我转入待命：\n1. 任务已完结。\n2. 交付物已冻结。',
+    })], '@user:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toEqual(['!r1:$other']);
+  });
+
   it('ingests historical chunks newest-first without missing a later /approve', () => {
     ingestHitlTimelineEvents(
       '!r1',

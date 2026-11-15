@@ -52,8 +52,11 @@ describe('compact workspace navigation', () => {
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
-    fireEvent.click(within(nav).getByRole('button', { name: '团队与Agent' }));
-    expect(props.onNavClick).toHaveBeenCalledWith('team-agents');
+    const members = within(screen.getByRole('group', { name: '成员与团队分类' }));
+    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['Agent', '用户', '团队']);
+    expect(members.queryByRole('button', { name: 'Managers' })).toBeNull();
+    fireEvent.click(members.getByRole('button', { name: 'Agent' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('workers');
   });
 
   it('groups only active operations plugins and highlights their existing deep links', () => {
@@ -112,8 +115,9 @@ describe('compact workspace navigation', () => {
 
   it('hides privileged member pages from Team accounts and selects a deep-linked child', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });
-    render(<Sidebar {...props} activeSection="team-agents" collapsed={false} onToggleCollapse={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '团队与Agent' })).toHaveAttribute('aria-current', 'page');
+    render(<Sidebar {...props} activeSection="teams" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '团队' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '用户' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Managers' })).toBeNull();
   });

@@ -86,6 +86,7 @@ export interface PlanItem {
 }
 
 export interface TaskBoardTask {
+  parentTaskId?: string;
   runId: string; // canonical id (meta.json's task_id; falls back to runId/run_id for legacy)
   title: string;
   status: TaskStatus;
@@ -157,6 +158,7 @@ const TEAM_SHARED_SUFFIX = 'shared/';
 const SPEC_MAX_BYTES = 4 * 1024;
 
 interface RawMeta {
+  parent_task_id?: string;
   task_id?: string;
   taskId?: string;
   runId?: string;
@@ -315,6 +317,7 @@ function normalizeTask(
       (typeof meta.project_id === 'string' && meta.project_id) ||
       (typeof meta.projectId === 'string' && meta.projectId) ||
       undefined,
+    parentTaskId: typeof meta.parent_task_id === 'string' ? meta.parent_task_id || undefined : undefined,
     roomId:
       (typeof meta.room_id === 'string' && meta.room_id) ||
       (typeof meta.roomId === 'string' && meta.roomId) ||

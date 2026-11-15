@@ -681,7 +681,9 @@ export function parseLegacyContent(
 
   // Add remaining text
   if (lastEnd < content.length) {
-    const textAfter = content.slice(lastEnd).trim();
+    // With no legacy blocks, use Matrix's readable body for the Markdown
+    // renderer rather than displaying formatted_body HTML as literal tags.
+    const textAfter = (lastEnd === 0 ? body : content.slice(lastEnd)).trim();
     if (textAfter) {
       blocks.push({ type: 'text', text: textAfter });
     }

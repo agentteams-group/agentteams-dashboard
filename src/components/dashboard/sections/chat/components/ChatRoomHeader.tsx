@@ -11,7 +11,7 @@ import {
   UserCheck,
   Users,
 } from 'lucide-react';
-import { WorkerSessionDot } from '@/components/worker-session-dot';
+import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
@@ -95,8 +95,9 @@ export function ChatRoomHeader({
 }: ChatRoomHeaderProps) {
   const teamName = team ? team.teamName || team.name : '';
   return (
-    <div data-chat-room-header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden border-b border-border px-4 py-3 sm:h-18 sm:flex-nowrap sm:px-6 sm:py-0">
+    <div data-chat-room-header className="flex min-h-18 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 sm:flex-nowrap sm:px-6">
       {headerLeading}
+      <div className="relative shrink-0">
       {avatar ? (
         <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
@@ -106,17 +107,13 @@ export function ChatRoomHeader({
           <span className="text-xs font-semibold text-primary">{agentRole ? 'AT' : roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
+      {workerMatrixUserIds && workerMatrixUserIds.length > 0 && (!sessionDot.runningOnly || sessionDot.state === 'running') && (
+        <WorkerSessionCornerDot state={sessionDot.state} />
+      )}
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <div className="min-w-0">{headerTitle ?? <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>}</div>
-          {workerMatrixUserIds && workerMatrixUserIds.length > 0
-            ? sessionDot.runningOnly
-              ? sessionDot.state === 'running'
-                ? <WorkerSessionDot state="running" />
-                : null
-              : <WorkerSessionDot state={sessionDot.state} />
-            : null}
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
           {!agentRole && roomPhase && (
             <Badge variant="outline" className="text-xs px-1 py-0 h-4 shrink-0">
               {roomPhase}
@@ -128,7 +125,7 @@ export function ChatRoomHeader({
             </Badge>
           )}
         </div>
-        {agentRole ? (
+        {agentRole ? !headerTitle && (
           <p className="mt-1 truncate text-sm text-muted-foreground">{agentRole === 'operations' ? '你的平台管理助手 · 资源、部署与日常运维' : '你的团队助手 · 目标拆解、任务协调与交付'}</p>
         ) : team ? (
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">

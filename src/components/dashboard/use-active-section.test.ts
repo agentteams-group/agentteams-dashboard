@@ -49,22 +49,22 @@ describe('useActiveSection', () => {
     it('resolves a legacy flat hash and normalizes the URL in place', () => {
       setHash('#workers');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('team-agents');
+      expect(result.current.activeSection).toBe('workers');
       expect(replaceStateSpy).toHaveBeenCalledWith(
         null,
         '',
-        '#console/resources/team-agents?tab=agents',
+        '#console/resources/workers',
       );
     });
 
-    it('normalizes #teams to the merged page teams tab', () => {
+    it('normalizes #teams to the separate team page', () => {
       setHash('#teams');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('team-agents');
+      expect(result.current.activeSection).toBe('teams');
       expect(replaceStateSpy).toHaveBeenCalledWith(
         null,
         '',
-        '#console/resources/team-agents?tab=teams',
+        '#console/resources/teams',
       );
     });
 

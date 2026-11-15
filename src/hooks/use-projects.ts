@@ -282,11 +282,14 @@ export function workflowToBoard(
       const detail = detailByTask.get(node.id);
       boardTasks.push({
         runId: node.id,
+        parentTaskId: node.parent_task_id || detail?.parent_task_id || undefined,
         title: node.name || node.id,
         status: workflowStatusToTaskStatus(detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',
         projectId: proj.project_id,
-        roomId: wf.source_room_id ?? '',
+        teamId: proj.team_id,
+        roomId: (detail?.source_room_id ?? wf.source_room_id ?? '').replace(/^room:/, ''),
+        executionRoomId: detail?.room_id?.replace(/^room:/, ''),
         dependsOn: dependsOf.get(node.id) ?? [],
         createdAt: 0,
         // The workflow API does not expose per-task timestamps; completedAt

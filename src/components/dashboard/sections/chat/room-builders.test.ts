@@ -159,6 +159,14 @@ describe('buildRooms', () => {
     expect(rooms[0].name).toBe('平台助手');
   });
 
+  it('distinguishes named platform assistants when multiple Managers exist', () => {
+    const rooms = buildRooms([], [], [
+      manager({ name: 'default', roomID: '!default:matrix' }),
+      manager({ name: 'second', roomID: '!second:matrix' }),
+    ]);
+    expect(rooms.map(room => room.name)).toEqual(['平台助手 · default', '平台助手 · second']);
+  });
+
   it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
     const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1', runtime: 'openclaw' })]);
     expect(rooms[0].workerName).toBe('m1');

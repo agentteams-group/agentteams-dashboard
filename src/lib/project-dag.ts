@@ -56,6 +56,7 @@ export interface DagLayoutOptions {
   gapX?: number;
   gapY?: number;
   padding?: number;
+  centerLayers?: boolean;
 }
 
 export interface DagLayout {
@@ -101,6 +102,12 @@ export function layoutProjectDag(
       x += W + GX;
     }
     width = Math.max(width, x - GX + PAD);
+  }
+  if (options.centerLayers) {
+    for (const nodes of byLayer.values()) {
+      const offset = (width - (nodes.length * (W + GX) - GX + PAD * 2)) / 2;
+      for (const node of nodes) positions.get(node.id)!.x += offset;
+    }
   }
   return { width, height, positions };
 }
@@ -172,6 +179,7 @@ export function buildProjectDag(
     nodes.push({
       id: task.runId,
       title: task.title,
+      assignee: task.assignedTo.replace(/^@([^:]+):.*$/, '$1'),
       status: task.status,
       ready: allDepsDone && !TERMINAL_DONE.has(task.status),
       layer: layerOf.get(task.runId) ?? 0,
