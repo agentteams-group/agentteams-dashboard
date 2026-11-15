@@ -164,11 +164,11 @@ describe('WorkerEditDialog 运行时切换暂禁', () => {
     expect(screen.getByText(/CoPaw 已停止新建/)).toBeInTheDocument();
   });
 
-  it('非可建运行时（openhuman）也显示当前值', () => {
+  it('OpenHuman 显示当前运行时且不标为存量', () => {
     render(<Harness initial={{ name: 'worker-1', runtime: 'openhuman' }} onSubmit={() => {}} />);
 
     expect(runtimeSelect().value).toBe('openhuman');
-    expect(screen.getByRole('option', { name: 'OpenHuman（存量）' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'OpenHuman' })).toBeInTheDocument();
   });
 });
 

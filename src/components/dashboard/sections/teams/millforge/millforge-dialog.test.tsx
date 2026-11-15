@@ -671,6 +671,8 @@ describe('MillforgeDialog · 枚举/模型字段控件形态', () => {
       'hermes',
       'qwenpaw',
       'deepseek-harness',
+      'codex',
+      'openhuman',
     ]);
 
     fireEvent.change(runtime, { target: { value: 'custom-runtime' } });
