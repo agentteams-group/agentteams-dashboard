@@ -208,13 +208,13 @@ describe('TeamCreateDialog 内联新建 Worker（9/13 装验反馈：参考插�
   it('展开 → Provider 在 Model 之前（provider-first 内联新建）', () => {
     renderDialog({ name: 't', leader: { name: 'lead-1' } }, [worker('lead-1')]);
     expand();
-    const provider = screen.getByLabelText('Provider');
-    const model = screen.getByLabelText('请求模型别名');
+    const provider = screen.getByLabelText('模型连接');
+    const model = screen.getByLabelText('模型');
     expect(
       provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByText('Provider')).toBeInTheDocument();
-    expect(screen.getByText('请求模型别名')).toBeInTheDocument();
+    expect(screen.getByText('模型连接')).toBeInTheDocument();
+    expect(screen.getByText('模型')).toBeInTheDocument();
   });
 
   it('选 Provider/Model 后创建 Worker 的 payload 含 modelProvider', async () => {
@@ -225,8 +225,8 @@ describe('TeamCreateDialog 内联新建 Worker（9/13 装验反馈：参考插�
 
     expand();
     fireEvent.change(nameInput(), { target: { value: 'new-w' } });
-    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'provider-a' } });
-    fireEvent.change(screen.getByLabelText('请求模型别名'), {
+    fireEvent.change(screen.getByLabelText('模型连接'), { target: { value: 'provider-a' } });
+    fireEvent.change(screen.getByLabelText('模型'), {
       target: { value: 'team-chat' },
     });
     fireEvent.click(createButton());

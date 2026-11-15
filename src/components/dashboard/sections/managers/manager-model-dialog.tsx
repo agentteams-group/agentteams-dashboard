@@ -84,7 +84,7 @@ export function ManagerModelDialog({
         <DialogHeader>
           <DialogTitle>编辑模型 - {managerName}</DialogTitle>
           <DialogDescription>
-            通过 AI 网关访问模型。已配置别名只表示存在映射，实际授权以网关为准。
+            选择模型连接和模型。保存后可通过网关验证确认实际可调用。
           </DialogDescription>
         </DialogHeader>
 
@@ -97,7 +97,7 @@ export function ManagerModelDialog({
             allModels={providerCatalog.models}
             modelPlaceholder="例如 team-chat"
             providerPlaceholder={
-              providerHint ? `当前解析：${providerHint}` : '留空 = 保持 Controller 现值'
+              providerHint ? `当前连接：${providerHint}` : '选择或输入连接名称'
             }
             onChange={(nextProvider, nextModel) => {
               const providerChanged = nextProvider.trim() !== provider.trim();
@@ -117,12 +117,11 @@ export function ManagerModelDialog({
             }}
           />
           <p className="text-xs text-muted-foreground">
-            多 provider 部署下同时下发 model 与 provider；留空则沿用 Controller 现值。
+            模型名称默认与模型 ID 相同，也可以使用连接中配置的调用别名。未指定连接时沿用当前设置。
           </p>
 
           <p className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
-            子代理模型（spawn / sub）：当前 Controller 的 Manager 更新接口未接收该字段，
-            这里不下发（配置后会静默失效，故不提供入口）。
+            子代理模型目前沿用运行时配置，此处仅修改主模型。
           </p>
         </div>
 

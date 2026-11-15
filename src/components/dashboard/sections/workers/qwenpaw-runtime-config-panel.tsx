@@ -570,7 +570,7 @@ export function QwenpawRuntimeConfigPanel({
                 {String(gates.iterationMax ?? num(config.max_iters) ?? '-')}
               </span>
             </FieldRow>
-            <FieldRow label="最大输入长度" hint="模型上下文窗口上限（max_input_length，≥1000 词元）。L1-only 键。">
+            <FieldRow label="最大输入长度" hint="Agent 保留的输入预算（max_input_length，≥1000 Token），并非模型的上下文窗口。请为输出和思考预留空间；修改此值不会扩大模型容量。">
               <Input
                 type="number"
                 min={1000}

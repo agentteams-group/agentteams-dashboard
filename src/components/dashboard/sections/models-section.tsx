@@ -7,6 +7,7 @@ import { SectionHeader } from '@/components/dashboard/section-header';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,14 +41,13 @@ import {
   useUpdateAiRoute,
   useUpdateModel,
 } from '@/hooks/use-agentteams-models';
-import { useManagers } from '@/hooks/use-agentteams-managers';
-import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useConsumers } from '@/hooks/use-agentteams-consumers';
 import { useCreateConsumer, useDeleteConsumer, useBindConsumer } from '@/hooks/use-agentteams-mutations';
 import {
   parseFallbackConfig,
-  PROVIDERS_NEED_BASE_URL,
+  PROVIDER_BASE_URLS,
   PROVIDER_TYPES,
+  modelProviderType,
   serializeProviderForm,
   serializeRouteForm,
   summarizeFallbackConfig,
@@ -59,7 +59,6 @@ import {
   type ProviderForm,
   type RouteForm,
 } from '@/lib/higress-api';
-import { buildModelBindings } from '@/lib/model-bindings';
 import { useHigressConsoleAccess } from '@/hooks/use-higress-console-access';
 import { useGatewayRouteCatalog } from '@/hooks/use-gateway-route-catalog';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
@@ -67,9 +66,13 @@ import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 import { ManagerModelSetup } from './manager-model-setup';
+import { MODEL_PRESET_NOTES, providerModelPresets } from '@/lib/model-catalog';
+import { commonReasoningEfforts, MODEL_CAPABILITIES, readModelRequestParameters, REASONING_EFFORT_LABELS } from '@/lib/model-parameters';
+import type { ModelProbeInput, ModelProbeResult } from '@/lib/model-connection-probe';
+import { apiUrl } from '@/lib/api-base';
 
 const newProviderForm = (): ProviderForm => ({
-  name: '', type: 'openai', protocol: 'openai/v1', tokens: [], modelMappings: [], pathPrefix: '/v1',
+  name: '', type: 'openai', protocol: 'openai/v1', baseUrl: PROVIDER_BASE_URLS.openai, tokens: [], modelMappings: [{ pattern: '', targetModel: '' }], pathPrefix: '/v1',
 });
 
 const newRouteForm = (providerNames: string[] = [], pathPrefix = '/v1'): RouteForm => ({
@@ -104,13 +107,14 @@ function providerToForm(provider: LlmProviderResponse): ProviderForm {
   }
   return {
     name: provider.name,
-    type: provider.type,
+    type: modelProviderType(provider),
     protocol: provider.protocol === 'original' ? 'original' : 'openai/v1',
     tokens: [],
     baseUrl,
     pathPrefix: typeof rawConfigs.pathPrefix === 'string' ? rawConfigs.pathPrefix : '/v1',
     tokenFailoverConfig: provider.tokenFailoverConfig,
     modelMappings: mappingRules(rawConfigs.modelMapping),
+    originalRawConfigs: rawConfigs,
   };
 }
 
@@ -143,13 +147,28 @@ function FormErrors({ errors }: { errors: string[] }) {
   return errors.length > 0 ? <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{errors.map((error) => <p key={error}>{error}</p>)}</div> : null;
 }
 
-function MappingEditor({ value, onChange, label }: { value: ModelMappingRule[]; onChange: (_value: ModelMappingRule[]) => void; label?: string }) {
+function MappingEditor({ value, onChange, label, modelOptions, simple = false, onTest, canTest }: { value: ModelMappingRule[]; onChange: (_value: ModelMappingRule[]) => void; label?: string; modelOptions?: readonly string[]; simple?: boolean; onTest?: (_model: string) => void; canTest?: boolean }) {
+  if (simple) return <div className="space-y-3">
+    <div className="flex items-center justify-between gap-2"><Label>接入模型</Label><Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, { pattern: '', targetModel: '' }])}><Plus className="mr-1 size-3" />添加模型</Button></div>
+    {value.length === 0 ? <p className="text-xs text-muted-foreground">添加要使用的模型 ID，支持搜索候选和手动输入。</p> : null}
+    {value.map((mapping, index) => {
+      const capability = MODEL_CAPABILITIES[mapping.targetModel];
+      const update = (change: Partial<ModelMappingRule>) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item));
+      return <div key={index} className="space-y-2 rounded-md border p-3">
+        <Label htmlFor={`connection-model-${index}`}>模型 ID</Label>
+        <div className="flex min-w-0 items-center gap-2"><Combobox id={`connection-model-${index}`} portal ariaLabel="模型 ID" value={mapping.targetModel} options={modelOptions ?? []} placeholder="搜索或输入模型 ID" className="min-w-0 flex-1" onChange={(targetModel) => update({ targetModel, ...(!mapping.pattern || mapping.pattern === mapping.targetModel ? { pattern: targetModel } : {}) })} />{onTest ? <Button type="button" variant="outline" size="sm" aria-label={`测试模型 ${mapping.targetModel || '未填写'}`} disabled={!canTest || !mapping.targetModel.trim()} onClick={() => onTest(mapping.targetModel.trim())}><Play className="mr-1 size-3.5" />测试</Button> : null}<Button type="button" variant="ghost" size="icon" aria-label="删除接入模型" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="size-4 text-destructive" /></Button></div>
+        {capability ? <div className="flex items-center gap-1"><p className="text-xs leading-5 text-muted-foreground">上下文窗口：{capability.contextWindow.toLocaleString('en-US')} Token{capability.maxOutputTokens || capability.outputLabel ? ` · 最大输出：${capability.maxOutputTokens?.toLocaleString('en-US') ?? capability.outputLabel} Token` : ''}</p><InfoTip label="模型容量说明">官方参考，实际以接入平台为准。上下文窗口是模型可处理的总容量，不会修改 Agent 的历史保留或压缩设置。</InfoTip></div> : mapping.targetModel ? <p className="text-xs text-muted-foreground">容量信息请以接入平台文档为准。</p> : null}
+        {MODEL_PRESET_NOTES[mapping.targetModel] ? mapping.targetModel.startsWith('MiniMax-') ? <InfoTip label="MiniMax 接入说明">{MODEL_PRESET_NOTES[mapping.targetModel]}</InfoTip> : <p className="text-xs leading-5 text-muted-foreground break-words">{MODEL_PRESET_NOTES[mapping.targetModel]}</p> : null}
+        <details open={Boolean(mapping.pattern && mapping.pattern !== mapping.targetModel) || undefined}><summary className="cursor-pointer text-xs text-muted-foreground">调用别名（可选）</summary><div className="mt-2 space-y-1"><Label htmlFor={`connection-alias-${index}`}>调用别名</Label><Input id={`connection-alias-${index}`} aria-label="调用别名" value={mapping.pattern} placeholder="默认与模型 ID 相同" onChange={(event) => update({ pattern: event.target.value })} /><p className="text-xs text-muted-foreground">Agent 使用的调用名称。多个连接使用相同模型时，可设置不同别名。</p></div></details>
+      </div>;
+    })}
+  </div>;
   return <div className="space-y-2">
     <div className="flex items-center justify-between">
       <div>
         <div className="flex items-center gap-1">
           <Label>{label ?? '模型映射'}</Label>
-          <InfoTip label="模型映射填写说明">左边填请求模型别名（Worker 中选择的名称），右边填供应商实际模型名。</InfoTip>
+          <InfoTip label="模型映射填写说明">左边填请求模型别名（Worker 中选择的名称），右边填模型 ID。</InfoTip>
         </div>
       </div>
       <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, { pattern: '', targetModel: '' }])}><Plus className="mr-1 size-3" />添加映射</Button>
@@ -158,50 +177,94 @@ function MappingEditor({ value, onChange, label }: { value: ModelMappingRule[]; 
       <div className="hidden grid-cols-[1fr_auto_1fr] gap-2 text-xs text-muted-foreground px-1 md:grid">
         <span>请求模型别名</span>
         <span className="w-6" />
-        <span>供应商实际模型</span>
+        <span>模型 ID</span>
       </div>
     )}
-    {value.map((mapping, index) => <div className="flex items-center gap-2" key={index}>
+    {value.map((mapping, index) => <div key={index}><div className="flex items-center gap-2">
       <Input aria-label="请求模型别名" value={mapping.pattern} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, pattern: event.target.value } : item))} />
       <ArrowRight className="size-4 text-muted-foreground shrink-0" />
-      <Input aria-label="供应商实际模型" value={mapping.targetModel} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel: event.target.value } : item))} />
+      {modelOptions ? <Combobox portal ariaLabel="模型 ID" value={mapping.targetModel} options={modelOptions} placeholder="选择或输入模型" className="flex-1" onChange={(targetModel) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel } : item))} /> : <Input aria-label="模型 ID" value={mapping.targetModel} placeholder="例: deepseek-chat" className="flex-1" onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, targetModel: event.target.value } : item))} />}
       <Button type="button" variant="ghost" size="icon" aria-label="删除模型映射" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="size-4 text-destructive" /></Button>
-    </div>)}
+    </div>{modelOptions && MODEL_PRESET_NOTES[mapping.targetModel] ? <p className="mt-1 text-xs leading-5 text-muted-foreground break-words">{MODEL_PRESET_NOTES[mapping.targetModel]}</p> : null}</div>)}
   </div>;
+}
+
+async function probeModelConnection(input: ModelProbeInput): Promise<ModelProbeResult> {
+  try {
+    const response = await fetch(apiUrl('/api/agentteams/models/probe'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    const result = await response.json().catch(() => null);
+    return result && typeof result.success === 'boolean' && typeof result.message === 'string'
+      ? result : { success: false, message: typeof result?.error === 'string' ? result.error : `连接测试失败（HTTP ${response.status}）` };
+  } catch {
+    return { success: false, message: '无法完成连接测试，请检查网络后重试' };
+  }
+}
+
+function ModelProbeStatus({ result }: { result: ModelProbeResult | null }) {
+  return result ? <div role="status" className={'flex items-start gap-2 rounded-md border p-3 text-xs leading-5 ' + (result.success ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400' : 'border-destructive/30 bg-destructive/5 text-destructive')}>
+    {result.success ? <Zap className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
+    <div className="min-w-0 break-words"><p>{result.message}</p>{result.model || result.latencyMs !== undefined ? <p className="text-muted-foreground">{result.model}{result.latencyMs !== undefined ? ` · ${result.latencyMs} ms` : ''}</p> : null}</div>
+  </div> : null;
+}
+
+function ConnectionTestDialog({ provider, onClose }: { provider: LlmProviderResponse; onClose: () => void }) {
+  const models = [...new Set(mappingRules(provider.rawConfigs?.modelMapping).map((mapping) => mapping.targetModel).filter(Boolean))];
+  const [model, setModel] = useState(models[0] ?? '');
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<ModelProbeResult | null>(null);
+  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-[95vw] sm:max-w-md"><DialogHeader><DialogTitle>测试连接 - {provider.name}</DialogTitle><DialogDescription>使用已保存的 API 地址和密钥，直连所选模型进行一次短调用。</DialogDescription></DialogHeader>
+    <div className="min-w-0 space-y-3 py-2"><Label htmlFor="saved-probe-model">模型 ID</Label><Combobox id="saved-probe-model" portal ariaLabel="测试模型 ID" value={model} options={models} disabled={testing} placeholder="选择或输入要测试的模型 ID" onChange={(next) => { setModel(next); setResult(null); }} />
+      <p className="text-xs leading-5 text-muted-foreground">测试输出预算最多 256 Token，可能产生少量费用；不验证 Agent 授权或工具调用能力。</p>
+      {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={result} />}
+    </div><DialogFooter><Button variant="outline" onClick={onClose}>关闭</Button><Button disabled={testing || !model.trim()} onClick={async () => { setTesting(true); setResult(null); const next = await probeModelConnection({ providerName: provider.name, model: model.trim() }); setResult(next); setTesting(false); }}>{testing ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Play className="mr-1 size-3.5" />}{testing ? '测试中…' : '开始测试'}</Button></DialogFooter>
+  </DialogContent></Dialog>;
 }
 
 function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provider: LlmProviderResponse | null; onOpenChange: (_open: boolean) => void }) {
   const create = useCreateModel();
   const update = useUpdateModel();
   const createRoute = useCreateAiRoute();
+  const updateRoute = useUpdateAiRoute();
   const { data: routes } = useAiRoutes();
   const [form, setForm] = useState<ProviderForm>(() => provider ? providerToForm(provider) : newProviderForm());
   const [tokenInput, setTokenInput] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
+  const [testResult, setTestResult] = useState<ModelProbeResult | null>(null);
   const editing = Boolean(provider);
   const pending = create.isPending || update.isPending;
+  const savedForm = provider ? providerToForm(provider) : null;
+  const savedEndpointUnchanged = Boolean(savedForm && form.type === savedForm.type && form.protocol === savedForm.protocol && (form.baseUrl ?? '').trim() === (savedForm.baseUrl ?? '').trim());
+  const canTest = Boolean(tokenInput.trim() || (provider?.tokenCount && savedEndpointUnchanged)) && !testing && !pending;
 
   // After creating a provider, wire it into an auto route so Manager/Worker
   // forms can immediately select the configured model aliases. Skipped when the
   // provider is already referenced by a route or when editing, or when no model
   // mappings are configured (empty-predicate routes would match all aliases and
   // cause binding table noise).
-  const autoWireProviderRoute = (providerName: string) => {
-    if ((routes ?? []).some((route) => route.upstreams.some((upstream) => upstream.provider === providerName))) return;
-    if (form.modelMappings.length === 0) {
-      toast.info(`提供商 ${providerName} 已创建。请手动创建 AI 路由并配置模型映射，或添加模型映射后重试。`);
+  const autoWireProviderRoute = (providerName: string, modelMappings: ModelMappingRule[]) => {
+    const routeName = `agentteams-${providerName}`;
+    const existing = (routes ?? []).find((route) => route.name === routeName && route.upstreams.length === 1 && route.upstreams[0].provider === providerName);
+    if (!existing && (routes ?? []).some((route) => route.upstreams.some((upstream) => upstream.provider === providerName))) return;
+    if (modelMappings.length === 0) {
+      toast.info(`模型连接 ${providerName} 已创建，添加模型和路由后即可供 Agent 使用。`);
       return;
     }
-    const routeName = `agentteams-${providerName}`;
-    const modelPredicates = form.modelMappings
+    const modelPredicates = modelMappings
       .map((mapping) => ({ matchType: 'EXACT' as const, matchValue: mapping.pattern.trim() }))
       .filter((predicate) => predicate.matchValue && !predicate.matchValue.includes('*') && !predicate.matchValue.startsWith('~'));
+    if (existing) {
+      updateRoute.mutate({ name: routeName, data: {
+        ...existing,
+        modelPredicates: modelPredicates.map((predicate) => ({ ...predicate, matchType: 'EQUAL' })),
+        upstreams: [{ ...existing.upstreams[0], modelMapping: Object.fromEntries(modelMappings.map((mapping) => [mapping.pattern.trim(), mapping.targetModel.trim()])) }],
+      } }, { onError: (error) => toast.error(`连接已保存，但模型路由同步失败：${error.message}。请在高级路由配置中检查。`) });
+      return;
+    }
     createRoute.mutate(serializeRouteForm({
       name: routeName,
       pathPredicate: { matchType: 'PRE', matchValue: form.pathPrefix || '/v1' },
-      upstreams: [{ provider: providerName, weight: 100, modelMappings: form.modelMappings }],
+      upstreams: [{ provider: providerName, weight: 100, modelMappings }],
       modelPredicates,
       authConfig: { enabled: true, allowedCredentialTypes: ['key-auth'] },
     }), {
@@ -210,70 +273,123 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
     });
   };
 
-  const handleTest = async () => {
+  const handleTest = async (model: string) => {
     setTestResult(null);
     const token = tokenInput.split(',')[0]?.trim() || '';
     setTesting(true);
-    try {
-      const res = await fetch('/api/agentteams/models/probe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: form.type,
-          protocol: form.protocol,
-          token,
-          baseUrl: form.baseUrl || undefined,
-        }),
-      });
-      const data = await res.json();
-      setTestResult(data);
-    } catch (err) {
-      setTestResult({ success: false, message: err instanceof Error ? err.message : '请求失败' });
-    } finally {
-      setTesting(false);
-    }
+    const result = await probeModelConnection(token ? { model, type: form.type, protocol: form.protocol, token, baseUrl: form.baseUrl || undefined } : { model, providerName: provider?.name });
+    setTestResult(result);
+    setTesting(false);
   };
 
   const submit = () => {
     const tokens = tokenInput.split(',').map((token) => token.trim()).filter(Boolean);
-    const next = { ...form, tokens: tokens.length > 0 ? tokens : form.tokens };
+    const next = { ...form, tokens: tokens.length > 0 ? tokens : form.tokens, modelMappings: form.modelMappings.filter((mapping) => mapping.pattern.trim() || mapping.targetModel.trim()).map((mapping) => ({ ...mapping, pattern: mapping.pattern.trim() || mapping.targetModel.trim() })) };
     const nextErrors = validateProviderForm(next, editing);
     if (nextErrors.length > 0) return setErrors(nextErrors);
-    const onSuccess = () => onOpenChange(false);
+    const onSuccess = () => { onOpenChange(false); autoWireProviderRoute(next.name, next.modelMappings); };
     if (provider) update.mutate({ name: provider.name, data: serializeProviderForm(next, true) }, { onSuccess, onError: (error) => setErrors([error.message]) });
     else {
       const payload = serializeProviderForm(next) as Parameters<typeof create.mutate>[0];
-      create.mutate(payload, { onSuccess: () => { onSuccess(); autoWireProviderRoute(payload.name); }, onError: (error) => setErrors([error.message]) });
+      create.mutate(payload, { onSuccess, onError: (error) => setErrors([error.message]) });
     }
   };
 
   const failover = form.tokenFailoverConfig ?? { enabled: false, failureThreshold: 1, successThreshold: 1, healthCheckInterval: 30, healthCheckModel: '' };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle className="flex items-center gap-1">{editing ? `编辑提供商 - ${provider?.name}` : '创建提供商'}<InfoTip label="提供商配置步骤"><span className="block">第 1 步：填写供应商名称、类型和 API Key。</span><span className="mt-1 block">第 2 步：非官方地址需填写自定义 Base URL，并以 /v1 或 /v3 结尾。</span><span className="mt-1 block">第 3 步：在「模型映射」中填写请求别名和实际模型名。保存后会自动创建路由。</span></InfoTip></DialogTitle><DialogDescription>配置 AI 模型供应商，填入 API Key 后即可在路由中引用</DialogDescription></DialogHeader><div className="space-y-4 py-2">
-    <div className="grid gap-3 md:grid-cols-4">
-      <div><Label>名称 *</Label><Input disabled={editing || pending} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 my-provider" /></div>
-      <div><Label>类型 *</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>{PROVIDER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div>
-      <div><Label>协议</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.protocol} onChange={(event) => setForm({ ...form, protocol: event.target.value as ProviderForm['protocol'] })}><option value="openai/v1">openai/v1</option><option value="original">original</option></select><p className="text-xs text-muted-foreground mt-0.5">绝大多数用 openai/v1</p></div>
-      <div><Label>网关路径前缀</Label><Input disabled={pending} value={form.pathPrefix || '/v1'} onChange={(event) => setForm({ ...form, pathPrefix: event.target.value })} placeholder="/v1" /></div>
-    </div>
-    <div>
-      <div className="flex items-center gap-1">
-        <Label>{editing ? `新增 Token（当前 ${provider?.tokenCount ?? 0} 个，留空保留）` : 'API Key *（多个用逗号分隔）'}</Label>
-        <InfoTip label="API Key 测试说明">输入 API Key 后点「测试连通性」验证是否可用。多个 Key 用英文逗号分隔可实现负载轮换。</InfoTip>
-      </div>
-      <div className="flex gap-2">
-        <Input disabled={pending || testing} type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="flex-1" placeholder="sk-... 或 ark-..." />
-        <Button type="button" variant="outline" size="sm" disabled={testing || (!tokenInput && !editing)} onClick={handleTest}>{testing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Play className="w-3.5 h-3.5 mr-1" />}测试连通性</Button>
-      </div>
-    </div>
-    {testResult && <div className={`flex items-center gap-2 text-xs p-2 rounded ${testResult.success ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'}`}>{testResult.success ? <Zap className="w-3.5 h-3.5 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}{testResult.message}{testResult.latencyMs != null && <span className="text-muted-foreground">({testResult.latencyMs}ms)</span>}<InfoTip label="连通性测试范围">连通性测试以上游 API Key 直连提供商，不经过网关；指定 Worker 经网关的可调用性请在该 Worker 编辑页运行「已保存配置的网关验证」。</InfoTip></div>}
-    {PROVIDERS_NEED_BASE_URL.has(form.type) && <div>
-      <div className="flex items-center gap-1"><Label>自定义 Base URL</Label><InfoTip label="Base URL 填写说明">不填则用官方地址。必须以 /v1 或 /v3 结尾，指向 OpenAI 兼容的 Chat Completions API。</InfoTip></div>
-      <Input disabled={pending} value={form.baseUrl ?? ''} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" />
-    </div>}
-    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="provider-failover" className="size-4" type="checkbox" checked={failover.enabled} disabled={pending} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, enabled: event.target.checked } })} /><Label htmlFor="provider-failover">启用 Token 故障转移</Label></div>{failover.enabled && <div className="grid gap-3 md:grid-cols-4"><div><Label>失败阈值</Label><Input disabled={pending} type="number" min="1" value={failover.failureThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, failureThreshold: Number(event.target.value) } })} /></div><div><Label>成功阈值</Label><Input disabled={pending} type="number" min="1" value={failover.successThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, successThreshold: Number(event.target.value) } })} /></div><div><Label>检查间隔（秒）</Label><Input disabled={pending} type="number" min="1" value={failover.healthCheckInterval} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckInterval: Number(event.target.value) } })} /></div><div><Label>健康检查模型</Label><Input disabled={pending} value={failover.healthCheckModel} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckModel: event.target.value } })} /></div></div>}</div>
-    <MappingEditor label="模型映射（请求别名 → 实际模型）" value={form.modelMappings} onChange={(modelMappings) => setForm({ ...form, modelMappings })} />
-    <FormErrors errors={errors} />
-  </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}{editing ? '保存修改' : '创建提供商'}</Button></DialogFooter></DialogContent></Dialog>;
+  const modelOptions = providerModelPresets(form.type);
+  const modelIds = form.modelMappings.map((mapping) => mapping.targetModel.trim()).filter(Boolean);
+  const parameters = form.requestParameters ?? readModelRequestParameters(form.originalRawConfigs?.customSettings, modelIds);
+  const efforts = commonReasoningEfforts(modelIds);
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-2xl">
+      <DialogHeader>
+        <DialogTitle>{editing ? '编辑模型连接 - ' + provider?.name : '新增模型连接'}</DialogTitle>
+        <DialogDescription>保存 API 地址和密钥，再添加要使用的模型 ID。</DialogDescription>
+      </DialogHeader>
+      <fieldset disabled={pending || testing} className="min-w-0 space-y-4 py-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="connection-name">连接名称 *</Label>
+            <Input id="connection-name" disabled={editing} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 my-minimax" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="provider-type">厂商／平台 *</Label>
+            <Combobox id="provider-type" portal allowCustom={false} ariaLabel="厂商／平台" value={PROVIDER_TYPES.find((type) => type.value === form.type)?.label ?? form.type} options={PROVIDER_TYPES.map((type) => type.label)} placeholder="搜索或选择厂商／平台" onChange={(label) => {
+              const type = PROVIDER_TYPES.find((item) => item.label === label);
+              if (type && type.value !== form.type) {
+                setForm({ ...form, type: type.value, baseUrl: PROVIDER_BASE_URLS[type.value] ?? '', protocol: 'openai/v1' });
+                setTestResult(null);
+              }
+            }} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="connection-base-url">API 地址（Base URL）</Label>
+          <Input id="connection-base-url" value={form.baseUrl ?? ''} onChange={(event) => { setForm({ ...form, baseUrl: event.target.value }); setTestResult(null); }} placeholder={PROVIDER_BASE_URLS[form.type] ?? 'https://api.example.com/v1'} />
+          {form.type === 'minimax' ? <p className="text-xs leading-5 text-muted-foreground break-words">API Key 需匹配所属站点：在 platform.minimax.io 创建的 Key 使用 https://api.minimax.io/v1；国内站 Key 使用 https://api.minimax.cn/v1。</p> : null}
+          <p className="text-xs leading-5 text-muted-foreground">无需追加 /chat/completions。留空使用厂商默认地址；自定义地址须兼容 OpenAI。</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="connection-api-key">{editing ? 'API Key（留空保留已保存密钥）' : 'API Key *'}</Label>
+          <div className="flex flex-wrap gap-2">
+            <Input id="connection-api-key" type="password" autoComplete="off" value={tokenInput} onChange={(event) => { setTokenInput(event.target.value); setTestResult(null); }} className="min-w-0 flex-1" placeholder="输入 API Key" />
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">{editing ? '当前已保存 ' + (provider?.tokenCount ?? 0) + ' 个密钥。' : ''}多个密钥用英文逗号分隔，测试使用第一个密钥。</p>
+        </div>
+        <MappingEditor simple value={form.modelMappings} modelOptions={modelOptions} onTest={handleTest} canTest={canTest} onChange={(modelMappings) => { setForm({ ...form, modelMappings }); setTestResult(null); }} />
+        {editing && !tokenInput.trim() && !savedEndpointUnchanged ? <p className="text-xs text-muted-foreground">地址或厂商已修改，请先保存连接或输入新 API Key 后测试。</p> : <p className="text-xs leading-5 text-muted-foreground">选择模型后可点「测试」直连调用，输出预算最多 256 Token，可能产生少量费用。Agent 授权和工具调用需另外验证。</p>}
+        {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={testResult} />}
+        <details className="rounded-md border p-3" open={Boolean(form.requestParameters || (Array.isArray(form.originalRawConfigs?.customSettings) && form.originalRawConfigs.customSettings.length)) || undefined}>
+          <summary className="cursor-pointer text-sm font-medium">调用参数（可选）</summary>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs leading-5 text-muted-foreground">留空沿用默认值；设置后覆盖此连接下经网关转发的模型请求参数。直连模型的 Agent 不受此处控制；不同参数请分别创建连接。</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="connection-output-tokens">输出 Token 上限</Label>
+                <Input id="connection-output-tokens" type="number" min="1" step="1" disabled={form.protocol !== 'openai/v1'} value={parameters.maxTokens} placeholder="留空沿用默认值" onChange={(event) => setForm({ ...form, requestParameters: { ...parameters, maxTokens: event.target.value } })} />
+                <p className="text-xs leading-5 text-muted-foreground">单次生成的输出预算，不是上下文窗口。部分模型的思考内容也计入该预算；Token 不等于字数。</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="connection-reasoning-effort">思考强度</Label>
+                <select id="connection-reasoning-effort" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" disabled={form.protocol !== 'openai/v1' || (!efforts.length && !parameters.reasoningEffort)} value={parameters.reasoningEffort} onChange={(event) => setForm({ ...form, requestParameters: { ...parameters, reasoningEffort: event.target.value } })}>
+                  <option value="">跟随模型默认</option>
+                  {efforts.map((effort) => <option key={effort} value={effort}>{REASONING_EFFORT_LABELS[effort] ?? effort}</option>)}
+                  {parameters.reasoningEffort && !efforts.includes(parameters.reasoningEffort) ? <option value={parameters.reasoningEffort}>{parameters.reasoningEffort}（已保存，待确认）</option> : null}
+                </select>
+                <p className="text-xs leading-5 text-muted-foreground">{efforts.length ? '仅展示所选模型共同支持的档位。更高通常需要更多时间和 Token。' : '请先选择已核实支持思考强度的模型；未知型号保持默认，不猜测可用档位。'}</p>
+              </div>
+            </div>
+            <details><summary className="cursor-pointer text-xs text-muted-foreground">输出参数兼容设置</summary><div className="mt-2 space-y-1.5">
+              <Label htmlFor="connection-output-field">输出 Token 参数名</Label>
+              <select id="connection-output-field" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={parameters.outputTokenParameter} disabled={form.protocol !== 'openai/v1'} onChange={(event) => setForm({ ...form, requestParameters: { ...parameters, outputTokenParameter: event.target.value as typeof parameters.outputTokenParameter } })}>
+                <option value="max_tokens">max_tokens（多数兼容接口）</option><option value="max_completion_tokens">max_completion_tokens（OpenAI 推理模型）</option>
+              </select>
+              <p className="text-xs text-muted-foreground">默认根据模型 ID 选择；自定义服务请以服务文档为准。</p>
+            </div></details>
+            {form.protocol !== 'openai/v1' ? <p className="text-xs text-muted-foreground">当前原生协议暂不提供统一调用参数，请沿用模型默认值。</p> : null}
+          </div>
+        </details>
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">高级设置</summary>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5"><Label htmlFor="connection-protocol">请求协议</Label><select id="connection-protocol" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={form.protocol} onChange={(event) => { setForm({ ...form, protocol: event.target.value as ProviderForm['protocol'] }); setTestResult(null); }}><option value="openai/v1">OpenAI 兼容（默认）</option><option value="original">厂商原生</option></select></div>
+              <div className="space-y-1.5"><Label htmlFor="connection-path">网关路径前缀</Label><Input id="connection-path" value={form.pathPrefix || '/v1'} onChange={(event) => setForm({ ...form, pathPrefix: event.target.value })} placeholder="/v1" /></div>
+            </div>
+            <div className="flex items-center gap-2"><Input id="provider-failover" className="size-4" type="checkbox" checked={failover.enabled} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, enabled: event.target.checked } })} /><Label htmlFor="provider-failover">启用 API Key 故障转移</Label></div>
+            {failover.enabled ? <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label htmlFor="connection-failure-threshold">失败阈值</Label><Input id="connection-failure-threshold" type="number" min="1" value={failover.failureThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, failureThreshold: Number(event.target.value) } })} /></div>
+              <div><Label htmlFor="connection-success-threshold">成功阈值</Label><Input id="connection-success-threshold" type="number" min="1" value={failover.successThreshold} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, successThreshold: Number(event.target.value) } })} /></div>
+              <div><Label htmlFor="connection-health-interval">检查间隔（秒）</Label><Input id="connection-health-interval" type="number" min="1" value={failover.healthCheckInterval} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckInterval: Number(event.target.value) } })} /></div>
+              <div><Label htmlFor="connection-health-model">健康检查模型 ID</Label><Input id="connection-health-model" value={failover.healthCheckModel} onChange={(event) => setForm({ ...form, tokenFailoverConfig: { ...failover, healthCheckModel: event.target.value } })} /></div>
+            </div> : null}
+          </div>
+        </details>
+        <FormErrors errors={errors} />
+      </fieldset>
+      <DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending || testing} onClick={submit}>{pending ? <Loader2 className="mr-1 size-4 animate-spin" /> : null}{editing ? '保存修改' : '创建连接'}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpenChange }: { open: boolean; route: AiRoute | null; providerNames: string[]; fallbackConfigWritable: boolean; onOpenChange: (_open: boolean) => void }) {
@@ -295,9 +411,9 @@ function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpe
     else create.mutate(payload, { onSuccess, onError: (error) => setErrors([error.message]) });
   };
   const updateUpstream = (index: number, patch: Partial<RouteForm['upstreams'][number]>) => setForm({ ...form, upstreams: form.upstreams.map((upstream, upstreamIndex) => upstreamIndex === index ? { ...upstream, ...patch } : upstream) });
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-4xl"><DialogHeader><DialogTitle>{editing ? `编辑路由 - ${route?.name}` : '创建 AI 路由'}</DialogTitle><DialogDescription>路由决定请求模型别名如何匹配到上游提供商。每个上游可配置独立的模型映射。</DialogDescription></DialogHeader><div className="space-y-4 py-2">
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-4xl"><DialogHeader><DialogTitle>{editing ? `编辑路由 - ${route?.name}` : '创建 AI 路由'}</DialogTitle><DialogDescription>路由决定请求模型别名如何匹配到上游模型连接。每个上游可配置独立的模型映射。</DialogDescription></DialogHeader><div className="space-y-4 py-2">
     <div className="grid gap-3 md:grid-cols-3"><div><Label>路由名称 *</Label><Input disabled={editing || pending} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 agentteams-ark" /></div><div><Label>路径匹配类型</Label><select disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value="PRE"><option value="PRE">前缀（PRE）</option></select></div><div><Label>路径匹配 *</Label><Input disabled={pending} value={form.pathPredicate.matchValue} onChange={(event) => setForm({ ...form, pathPredicate: { ...form.pathPredicate, matchValue: event.target.value } })} /></div></div>
-    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between"><div className="flex items-center gap-1"><Label>上游提供商与权重</Label><InfoTip label="上游权重说明">选择提供商并设置流量权重。多上游时权重总和必须为 100。</InfoTip></div><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setForm({ ...form, upstreams: [...form.upstreams, { provider: '', weight: 0, modelMappings: [] }] })}><Plus className="mr-1 size-3" />添加上游</Button></div>{form.upstreams.map((upstream, index) => { const selectedByOthers = new Set(form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index).map((item) => item.provider).filter(Boolean)); return <div className="space-y-2 rounded border p-3" key={index}><div className="grid gap-2 md:grid-cols-[1fr_110px_36px]"><select aria-label="上游提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={upstream.provider} onChange={(event) => updateUpstream(index, { provider: event.target.value })}><option value="">选择提供商...</option>{providerNames.map((name) => <option key={name} value={name} disabled={selectedByOthers.has(name)}>{name}</option>)}</select><Input aria-label="上游权重" disabled={pending} type="number" min="0" max="100" value={upstream.weight} onChange={(event) => updateUpstream(index, { weight: Number(event.target.value) })} /><Button type="button" variant="ghost" size="icon" disabled={pending || form.upstreams.length === 1} aria-label="删除上游" onClick={() => setForm({ ...form, upstreams: form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div><MappingEditor label="上游模型映射（仅对此上游生效，覆盖提供商级别映射）" value={upstream.modelMappings} onChange={(modelMappings) => updateUpstream(index, { modelMappings })} /></div>; })}</div>
+    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between"><div className="flex items-center gap-1"><Label>上游模型连接与权重</Label><InfoTip label="上游权重说明">选择模型连接并设置流量权重。多上游时权重总和必须为 100。</InfoTip></div><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setForm({ ...form, upstreams: [...form.upstreams, { provider: '', weight: 0, modelMappings: [] }] })}><Plus className="mr-1 size-3" />添加上游</Button></div>{form.upstreams.map((upstream, index) => { const selectedByOthers = new Set(form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index).map((item) => item.provider).filter(Boolean)); return <div className="space-y-2 rounded border p-3" key={index}><div className="grid gap-2 md:grid-cols-[1fr_110px_36px]"><select aria-label="上游模型连接" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={upstream.provider} onChange={(event) => updateUpstream(index, { provider: event.target.value })}><option value="">选择模型连接...</option>{providerNames.map((name) => <option key={name} value={name} disabled={selectedByOthers.has(name)}>{name}</option>)}</select><Input aria-label="上游权重" disabled={pending} type="number" min="0" max="100" value={upstream.weight} onChange={(event) => updateUpstream(index, { weight: Number(event.target.value) })} /><Button type="button" variant="ghost" size="icon" disabled={pending || form.upstreams.length === 1} aria-label="删除上游" onClick={() => setForm({ ...form, upstreams: form.upstreams.filter((_, upstreamIndex) => upstreamIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div><MappingEditor label="上游模型映射（仅对此上游生效，覆盖模型连接级别映射）" value={upstream.modelMappings} onChange={(modelMappings) => updateUpstream(index, { modelMappings })} /></div>; })}</div>
     <div className="space-y-3 rounded-md border p-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
@@ -314,7 +430,7 @@ function RouteDialog({ open, route, providerNames, fallbackConfigWritable, onOpe
         <p className="text-xs text-muted-foreground italic">尚未添加匹配规则，当前为通配符路由（不推荐）</p>
       )}
       {form.modelPredicates.map((predicate, index) => <div className="grid gap-2 md:grid-cols-[150px_1fr_36px]" key={index}><select aria-label="模型匹配类型" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={predicate.matchType} onChange={(event) => setForm({ ...form, modelPredicates: form.modelPredicates.map((item, itemIndex) => itemIndex === index ? { ...item, matchType: event.target.value } : item) })}><option value="EXACT">精确（EXACT）</option><option value="PRE">前缀（PRE）</option></select><Input aria-label="模型匹配值" disabled={pending} value={predicate.matchValue} placeholder={predicate.matchType === 'EXACT' ? '例: deepseek-chat' : '例: kimi-'} onChange={(event) => setForm({ ...form, modelPredicates: form.modelPredicates.map((item, itemIndex) => itemIndex === index ? { ...item, matchValue: event.target.value } : item) })} /><Button type="button" variant="ghost" size="icon" disabled={pending} aria-label="删除模型匹配" onClick={() => setForm({ ...form, modelPredicates: form.modelPredicates.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 className="size-4 text-destructive" /></Button></div>)}</div>
-    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="route-auth" className="size-4" type="checkbox" checked={form.authConfig.enabled} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, enabled: event.target.checked } })} /><Label htmlFor="route-auth">启用认证</Label><InfoTip label="路由认证与授权说明">新增路由不会自动授权已有 Worker。保存后请在 Consumers 中检查绑定范围，并在 Worker 编辑页验证已保存模型；提供商连接成功不代表 Worker 已有访问权限。</InfoTip></div>{form.authConfig.enabled && <div className="flex items-center gap-2"><Input id="key-auth" className="size-4" type="checkbox" checked={form.authConfig.allowedCredentialTypes.includes('key-auth')} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, allowedCredentialTypes: event.target.checked ? ['key-auth'] : [] } })} /><Label htmlFor="key-auth">Key Auth</Label></div>}
+    <div className="space-y-3 rounded-md border p-3"><div className="flex items-center gap-2"><Input id="route-auth" className="size-4" type="checkbox" checked={form.authConfig.enabled} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, enabled: event.target.checked } })} /><Label htmlFor="route-auth">启用认证</Label><InfoTip label="路由认证与授权说明">新增路由不会自动授权已有 Worker。保存后请在 Consumers 中检查绑定范围，并在 Worker 编辑页验证已保存模型；模型连接连接成功不代表 Worker 已有访问权限。</InfoTip></div>{form.authConfig.enabled && <div className="flex items-center gap-2"><Input id="key-auth" className="size-4" type="checkbox" checked={form.authConfig.allowedCredentialTypes.includes('key-auth')} disabled={pending} onChange={(event) => setForm({ ...form, authConfig: { ...form.authConfig, allowedCredentialTypes: event.target.checked ? ['key-auth'] : [] } })} /><Label htmlFor="key-auth">Key Auth</Label></div>}
       {form.authConfig.enabled && <div className="space-y-2"><div className="flex items-center gap-1"><Label htmlFor="route-consumers">授权 Consumer（逗号分隔）</Label><InfoTip label="Consumer 授权说明">只授权此路由；Worker Consumer 通常为 worker-加运行时名称。保存后在 Worker 编辑页验证，不要通过关闭认证解决授权失败。</InfoTip></div><ConsumerNamesInput value={form.authConfig.allowedConsumers || []} disabled={pending} onChange={(allowedConsumers) => setForm({ ...form, authConfig: { ...form.authConfig, allowedConsumers } })} /></div>}
     </div>
     <div><Label>回退配置</Label>{fallbackConfigWritable ? <textarea disabled={pending} className="min-h-28 w-full rounded-md border border-input bg-transparent p-3 font-mono text-sm" value={fallbackJson} onChange={(event) => setFallbackJson(event.target.value)} placeholder={'{\n  "maxRetries": 2\n}'} /> : <p className="mt-2 rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">{summarizeFallbackConfig(route?.fallbackConfig)}。当前 Higress Console API 版本仅提供只读摘要。</p>}</div>
@@ -369,9 +485,9 @@ function RouteProviderSwitchDialog({ open, route, providers, onOpenChange }: { o
     });
   };
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-[95vw] sm:max-w-md"><DialogHeader><DialogTitle>切换提供商 - {route?.name}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
-    <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground"><p>当前上游提供商：{currentProviders.length > 0 ? currentProviders.join('、') : '-'}</p><InfoTip label="切换提供商说明">切换将调整权重使目标提供商接管 100% 流量，其余上游权重置 0；现有上游的模型映射与故障转移配置均保留。若目标提供商尚未在路由中，将追加为新上游，其模型映射为空，需在编辑路由中补充别名映射后才能正常解析。</InfoTip></div>
-    <div><Label>目标提供商 *</Label><select aria-label="目标提供商" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">选择提供商...</option>{candidates.map((provider) => <option key={provider.name} value={provider.name}>{provider.name}（{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}，{provider.tokenCount} Token）</option>)}</select>{candidates.length === 0 && <p className="mt-2 text-xs text-amber-600">没有可切换的提供商（当前路由已使用全部可用提供商）。请先添加新的提供商。</p>}</div>
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-[95vw] sm:max-w-md"><DialogHeader><DialogTitle>切换模型连接 - {route?.name}</DialogTitle></DialogHeader><div className="space-y-4 py-2">
+    <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground"><p>当前上游模型连接：{currentProviders.length > 0 ? currentProviders.join('、') : '-'}</p><InfoTip label="切换模型连接说明">切换将调整权重使目标模型连接接管 100% 流量，其余上游权重置 0；现有上游的模型映射与故障转移配置均保留。若目标模型连接尚未在路由中，将追加为新上游，其模型映射为空，需在编辑路由中补充别名映射后才能正常解析。</InfoTip></div>
+    <div><Label>目标模型连接 *</Label><select aria-label="目标模型连接" disabled={pending} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">选择模型连接...</option>{candidates.map((provider) => <option key={provider.name} value={provider.name}>{provider.name}（{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}，{provider.tokenCount} 个 API Key）</option>)}</select>{candidates.length === 0 && <p className="mt-2 text-xs text-amber-600">没有可切换的模型连接（当前路由已使用全部可用模型连接）。请先添加新的模型连接。</p>}</div>
     <FormErrors errors={errors} />
   </div><DialogFooter><Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={pending || !selected} onClick={submit}>{pending && <Loader2 className="mr-1 size-4 animate-spin" />}切换并保存</Button></DialogFooter></DialogContent></Dialog>;
 }
@@ -381,19 +497,16 @@ export function ModelsSection() {
   const { data: infrastructure } = useInfrastructure();
   const providersQuery = useModels(consoleAccess.canManage);
   const routesQuery = useAiRoutes(consoleAccess.canManage);
-  const { data: managers } = useManagers();
-  const { data: workers } = useWorkers();
   const deleteProvider = useDeleteModel();
   const deleteRoute = useDeleteAiRoute();
   const [providerDialog, setProviderDialog] = useState<LlmProviderResponse | null | undefined>(undefined);
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
   const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
+  const [testProvider, setTestProvider] = useState<LlmProviderResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
-  const [activeTab, setActiveTab] = useState('usage');
   const providers = providersQuery.data ?? [];
   const routes = routesQuery.data ?? [];
   const providerNames = providers.map((provider) => provider.name);
-  const modelBindings = buildModelBindings([... (managers ?? []), ...(workers ?? [])].map((agent) => agent.model), routes, providers);
   const providerInUse = deleteTarget?.type === 'provider' ? routes.filter((route) => route.upstreams.some((upstream) => upstream.provider === deleteTarget.name)).map((route) => route.name) : [];
   const deleting = deleteProvider.isPending || deleteRoute.isPending;
   const confirmDelete = () => {
@@ -405,77 +518,54 @@ export function ModelsSection() {
   };
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
   return <div className="space-y-4">
-    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个提供商 · {routes.length} 条路由 · {modelBindings.length} 个模型映射</span>} />
+    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个模型连接 · {routes.length} 条路由</span>} />
     <ManagerModelSetup />
     <RuntimeStatusCard higress={infrastructure?.higress} />
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+    <Tabs defaultValue="providers" className="gap-4">
       <TabsList aria-label="模型配置分类" className="max-w-full justify-start overflow-x-auto [&>[role=tab]]:shrink-0">
-        <TabsTrigger value="usage">使用概览</TabsTrigger>
-        <TabsTrigger value="providers">模型提供商</TabsTrigger>
+        <TabsTrigger value="providers">模型连接</TabsTrigger>
         <TabsTrigger value="routes">AI 路由</TabsTrigger>
         <TabsTrigger value="access">访问凭证</TabsTrigger>
         <TabsTrigger value="limits">限流与参考</TabsTrigger>
       </TabsList>
-      <TabsContent value="usage" className="space-y-4">
-        <ResourceError error={providersQuery.error} />
-        <ResourceError error={routesQuery.error} />
-        <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
-          <p className="font-medium">Agent 选模型名称 → 路由决定发给谁 → 提供商调用实际模型</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">模型名称就是请求别名，可与实际模型同名。提供商保存地址、协议和密钥；路由负责模型匹配、上游分发与授权。AT 用这些配置给 Manager / Worker 选择模型并管理访问范围。</p>
-        </div>
-        <div className="overflow-hidden rounded-lg border">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"><h2 className="text-sm font-semibold">Agent 使用的模型</h2><span className="text-xs text-muted-foreground">配置状态不代表已通过实际调用验证</span></div>
-          <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>模型名称 / 请求别名</TableHead><TableHead>实际模型</TableHead><TableHead>提供商 / 路由</TableHead><TableHead>使用者</TableHead><TableHead>配置状态</TableHead></TableRow></TableHeader><TableBody>
-            {modelBindings.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">暂无 Agent 模型配置，请先添加提供商并为 Agent 选择模型。</TableCell></TableRow> : modelBindings.map((binding) => {
-              const users = [...(managers ?? []).map((agent) => ({ ...agent, roleLabel: 'Manager' })), ...(workers ?? []).map((agent) => ({ ...agent, roleLabel: 'Worker' }))].filter((agent) => agent.model === binding.requestModelAlias);
-              return <TableRow key={`${binding.requestModelAlias}-${binding.routeName}-${binding.providerName}`}>
-                <TableCell className="font-medium"><OverflowText text={binding.requestModelAlias} /></TableCell>
-                <TableCell><OverflowText text={binding.targetModel || (binding.passthrough ? binding.requestModelAlias : '未匹配')} /></TableCell>
-                <TableCell><OverflowText text={binding.providerName || '未绑定'} /><OverflowText text={binding.routeName || '配置路由'} className="mt-1 text-xs text-muted-foreground hover:underline" onClick={() => setActiveTab('routes')} /></TableCell>
-                <TableCell><OverflowText text={users.map((agent) => agent.name || agent.roleLabel).join('、') || '暂无使用者'} className="text-xs" /></TableCell>
-                <TableCell><Badge variant={binding.conflict ? 'destructive' : 'secondary'}>{binding.conflict ? '冲突' : binding.available ? '已配置' : binding.passthrough ? '原名转发' : '待配置'}</Badge></TableCell>
-              </TableRow>;
-            })}
-          </TableBody></Table>
-        </div>
-      </TabsContent>
       <TabsContent value="providers">
-    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">AI 模型提供商<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个提供商</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加提供商</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
+    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">模型连接<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个模型连接</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加连接</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onTest={setTestProvider} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
       </TabsContent>
       <TabsContent value="routes">
-    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同提供商。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同提供商；给不同提供商配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">{routes.length} 条</span></CardTitle><CardDescription>决定请求由哪个提供商处理，以及哪些 Agent 可以访问</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}>添加路由</Button></CardHeader><CardContent className="space-y-4 p-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个提供商后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
+    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同模型连接。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同模型连接；给不同模型连接配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">{routes.length} 条</span></CardTitle><CardDescription>决定请求由哪个模型连接处理，以及哪些 Agent 可以访问</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}>添加路由</Button></CardHeader><CardContent className="space-y-4 p-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个模型连接后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
       </TabsContent>
       <TabsContent value="access"><ConsumerSection /></TabsContent>
       <TabsContent value="limits" className="space-y-4"><RateLimitSection routes={routes} /><HigressReferencePanel /></TabsContent>
     </Tabs>
     <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} /><RouteProviderSwitchDialog key={`switch-${switchRoute?.name ?? 'none'}`} open={switchRoute !== null} route={switchRoute} providers={providers} onOpenChange={(open) => !open && setSwitchRoute(null)} />
-    <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '提供商' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该提供商：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    {testProvider ? <ConnectionTestDialog key={testProvider.name} provider={testProvider} onClose={() => setTestProvider(null)} /> : null}
+    <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除{deleteTarget?.type === 'provider' ? '模型连接' : '路由'}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === 'provider' && providerInUse.length > 0 ? `以下路由仍引用该模型连接：${providerInUse.join('、')}。删除后这些路由将失效。` : `将删除 ${deleteTarget?.name ?? ''}，此操作无法撤销。`}</AlertDialogDescription>{(deleteProvider.isError || deleteRoute.isError) && <p className="text-sm text-destructive">{(deleteProvider.error ?? deleteRoute.error)?.message}</p>}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction disabled={deleting} onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting && <Loader2 className="mr-1 inline size-4 animate-spin" />}删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
 
 // Console 会话不可用时的降级视图：保留原因说明 + 追加只读模型网关路由目录
 // （Controller #1242，token 鉴权，L1 可读）——治「Console 会话反复失效 → 模型
 // 面整块不可用」的实痛：即使 Console 会话挂了，L1 仍能看到已配置的路由/
-// 提供商/授权 consumer（编辑仍需有效 Console 会话）。旧 Controller 404 → 隐藏；
+// 模型连接/授权 consumer（编辑仍需有效 Console 会话）。旧 Controller 404 → 隐藏；
 // L2 403 → 权限提示。
 function ModelsSessionFallback({ reason, isLoading }: { reason?: string; isLoading: boolean }) {
   const catalog = useGatewayRouteCatalog();
   return <div className="space-y-4">
-    <SectionHeader title="Higress Console 管理" description="模型提供商和 AI 路由由外部 Higress Console 管理" />
+    <SectionHeader title="Higress Console 管理" description="模型连接和 AI 路由由外部 Higress Console 管理" />
     <div className="rounded-lg border border-border/50 bg-muted/30 p-4 text-sm text-muted-foreground">{isLoading ? '正在检查 Higress Console 状态...' : (reason || '需要有效的 Higress Console 会话')}</div>
     {catalog.off ? null : catalog.noAccess ? (
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-600">仅 L1 管理员可查看只读路由目录（当前会话无权限）。恢复 Console 会话后即可管理。</div>
     ) : (
-      <Card className="glass-card"><CardHeader><CardTitle className="text-base">模型网关路由（只读降级视图）</CardTitle><CardDescription>来自 Controller 只读路由目录（Console 会话不可用时的降级展示；路由名=网关 /v1 入口，非模型 ID。编辑仍需有效 Console 会话）</CardDescription></CardHeader><CardContent>{catalog.loading ? <p className="text-sm text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</p> : catalog.routes.length === 0 ? <p className="text-sm text-muted-foreground">暂无 AI 路由（网关未配置路由）</p> : <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>路由名</TableHead><TableHead>上游提供商</TableHead><TableHead>授权 Consumer</TableHead></TableRow></TableHeader><TableBody>{catalog.routes.map((route) => <TableRow key={route.name}><TableCell className="font-mono text-xs"><OverflowText text={route.name} /></TableCell><TableCell><OverflowText text={(route.upstreams ?? []).map((upstream) => `${upstream.provider}${typeof upstream.weight === 'number' ? ` (${upstream.weight}%)` : ''}`).join('、')} className="text-xs" /></TableCell><TableCell><OverflowText text={(route.allowedConsumers ?? []).join('、')} className="text-xs" /></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
+      <Card className="glass-card"><CardHeader><CardTitle className="text-base">模型网关路由（只读降级视图）</CardTitle><CardDescription>来自 Controller 只读路由目录（Console 会话不可用时的降级展示；路由名=网关 /v1 入口，非模型 ID。编辑仍需有效 Console 会话）</CardDescription></CardHeader><CardContent>{catalog.loading ? <p className="text-sm text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</p> : catalog.routes.length === 0 ? <p className="text-sm text-muted-foreground">暂无 AI 路由（网关未配置路由）</p> : <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>路由名</TableHead><TableHead>上游模型连接</TableHead><TableHead>授权 Consumer</TableHead></TableRow></TableHeader><TableBody>{catalog.routes.map((route) => <TableRow key={route.name}><TableCell className="font-mono text-xs"><OverflowText text={route.name} /></TableCell><TableCell><OverflowText text={(route.upstreams ?? []).map((upstream) => `${upstream.provider}${typeof upstream.weight === 'number' ? ` (${upstream.weight}%)` : ''}`).join('、')} className="text-xs" /></TableCell><TableCell><OverflowText text={(route.allowedConsumers ?? []).join('、')} className="text-xs" /></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
     )}
   </div>;
 }
 
 function ResourceError({ error }: { error: Error | null }) { return error ? <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">加载失败：{error.message}</p> : null; }
 
-function ProviderTable({ loading, providers, pending, onEdit, onDelete }: { loading: boolean; providers: LlmProviderResponse[]; pending: boolean; onEdit: (_provider: LlmProviderResponse) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>协议</TableHead><TableHead>Token 数</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : providers.length === 0 ? <EmptyRow icon={<Server className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 提供商配置" /> : providers.map((provider) => <TableRow key={provider.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Server className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={provider.name} /></div></TableCell><TableCell><Badge variant="outline" className="text-xs">{PROVIDER_TYPES.find((type) => type.value === provider.type)?.label || provider.type}</Badge></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{provider.protocol || 'openai/v1'}</TableCell><TableCell><span className="flex items-center gap-1 text-xs"><Key className="size-3 text-muted-foreground" />{provider.tokenCount} 个</span></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="编辑提供商" aria-label={`编辑 ${provider.name}`} disabled={pending} onClick={() => onEdit(provider)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除提供商" aria-label={`删除 ${provider.name}`} disabled={pending} onClick={() => onDelete(provider.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
+function ProviderTable({ loading, providers, pending, onEdit, onTest, onDelete }: { loading: boolean; providers: LlmProviderResponse[]; pending: boolean; onEdit: (_provider: LlmProviderResponse) => void; onTest: (_provider: LlmProviderResponse) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>协议</TableHead><TableHead>API Key 数量</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : providers.length === 0 ? <EmptyRow icon={<Server className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 模型连接配置" /> : providers.map((provider) => <TableRow key={provider.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Server className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={provider.name} /></div></TableCell><TableCell><Badge variant="outline" className="text-xs">{PROVIDER_TYPES.find((type) => type.value === modelProviderType(provider))?.label || provider.type}</Badge></TableCell><TableCell className="font-mono text-xs text-muted-foreground">{provider.protocol || 'openai/v1'}</TableCell><TableCell><span className="flex items-center gap-1 text-xs"><Key className="size-3 text-muted-foreground" />{provider.tokenCount} 个</span></TableCell><TableCell className="text-right"><Button variant="outline" size="sm" className="mr-1" title="测试连接" aria-label={`测试连接 ${provider.name}`} disabled={pending || provider.tokenCount === 0} onClick={() => onTest(provider)}><Play className="mr-1 size-3.5" />测试</Button><Button variant="ghost" size="icon" title="编辑模型连接" aria-label={`编辑 ${provider.name}`} disabled={pending} onClick={() => onEdit(provider)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除模型连接" aria-label={`删除 ${provider.name}`} disabled={pending} onClick={() => onDelete(provider.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 
-function RouteTable({ loading, routes, pending, onEdit, onSwitch, onDelete }: { loading: boolean; routes: AiRoute[]; pending: boolean; onEdit: (_route: AiRoute) => void; onSwitch: (_route: AiRoute) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>路径</TableHead><TableHead>上游提供商</TableHead><TableHead>认证 / 授权 Consumer</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : routes.length === 0 ? <EmptyRow icon={<Route className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 路由" /> : routes.map((route) => <TableRow key={route.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Route className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={route.name} /></div></TableCell><TableCell className="font-mono text-xs text-muted-foreground"><OverflowText text={route.pathPredicate.matchValue} /></TableCell><TableCell><OverflowText text={route.upstreams.map((upstream) => `${upstream.provider} (${upstream.weight}%)`).join('、')} className="text-xs" /></TableCell><TableCell>{route.authConfig?.enabled ? <div className="flex min-w-0 items-center gap-1"><Badge variant="outline" className="text-xs">已启用</Badge><OverflowText text={(route.authConfig?.allowedConsumers ?? []).join('、')} className="text-xs" />{(route.authConfig?.allowedConsumers ?? []).length === 0 && <span className="text-xs text-muted-foreground">未限定 Consumer</span>}</div> : <span className="text-xs text-muted-foreground">未启用</span>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="切换提供商" aria-label={`切换 ${route.name} 提供商`} disabled={pending} onClick={() => onSwitch(route)}><ArrowLeftRight className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" title="编辑路由" aria-label={`编辑 ${route.name}`} disabled={pending} onClick={() => onEdit(route)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除路由" aria-label={`删除 ${route.name}`} disabled={pending} onClick={() => onDelete(route.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
+function RouteTable({ loading, routes, pending, onEdit, onSwitch, onDelete }: { loading: boolean; routes: AiRoute[]; pending: boolean; onEdit: (_route: AiRoute) => void; onSwitch: (_route: AiRoute) => void; onDelete: (_name: string) => void }) { return <Table className="min-w-[800px] table-fixed"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>路径</TableHead><TableHead>上游模型连接</TableHead><TableHead>认证 / 授权 Consumer</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{loading ? <LoadingRow /> : routes.length === 0 ? <EmptyRow icon={<Route className="mx-auto mb-2 size-8 text-muted-foreground/50" />} text="暂无 AI 路由" /> : routes.map((route) => <TableRow key={route.name}><TableCell className="font-medium"><div className="flex items-center gap-2"><Route className="size-3.5 shrink-0 text-muted-foreground" /><OverflowText text={route.name} /></div></TableCell><TableCell className="font-mono text-xs text-muted-foreground"><OverflowText text={route.pathPredicate.matchValue} /></TableCell><TableCell><OverflowText text={route.upstreams.map((upstream) => `${upstream.provider} (${upstream.weight}%)`).join('、')} className="text-xs" /></TableCell><TableCell>{route.authConfig?.enabled ? <div className="flex min-w-0 items-center gap-1"><Badge variant="outline" className="text-xs">已启用</Badge><OverflowText text={(route.authConfig?.allowedConsumers ?? []).join('、')} className="text-xs" />{(route.authConfig?.allowedConsumers ?? []).length === 0 && <span className="text-xs text-muted-foreground">未限定 Consumer</span>}</div> : <span className="text-xs text-muted-foreground">未启用</span>}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" title="切换模型连接" aria-label={`切换 ${route.name} 模型连接`} disabled={pending} onClick={() => onSwitch(route)}><ArrowLeftRight className="size-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" title="编辑路由" aria-label={`编辑 ${route.name}`} disabled={pending} onClick={() => onEdit(route)}><Pencil className="size-4" /></Button><Button variant="ghost" size="icon" title="删除路由" aria-label={`删除 ${route.name}`} disabled={pending} onClick={() => onDelete(route.name)}><Trash2 className="size-4 text-destructive" /></Button></TableCell></TableRow>)}</TableBody></Table>; }
 
 function LoadingRow() { return <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground"><Loader2 className="mr-2 inline size-4 animate-spin" />加载中...</TableCell></TableRow>; }
 function EmptyRow({ icon, text }: { icon: ReactNode; text: string }) { return <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{icon}{text}</TableCell></TableRow>; }

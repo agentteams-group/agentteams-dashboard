@@ -48,19 +48,19 @@ describe('ModelPicker', () => {
 
   it('先 Provider 后 Model 渲染两个可搜索控件', () => {
     render(<Harness />);
-    const provider = screen.getByLabelText('Provider');
-    const model = screen.getByLabelText('请求模型别名');
+    const provider = screen.getByLabelText('模型连接');
+    const model = screen.getByLabelText('模型');
     expect(provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText('Provider')).toBeInTheDocument();
-    expect(screen.getByText('请求模型别名')).toBeInTheDocument();
+    expect(screen.getByText('模型连接')).toBeInTheDocument();
+    expect(screen.getByText('模型')).toBeInTheDocument();
   });
 
   it('空 provider 显示哨兵，模型候选为全量', () => {
     render(<Harness />);
-    const provider = screen.getByLabelText('Provider') as HTMLInputElement;
+    const provider = screen.getByLabelText('模型连接') as HTMLInputElement;
     expect(provider).toHaveValue(LOCAL_PROVIDER);
 
-    const list = openList(screen.getByLabelText('请求模型别名'));
+    const list = openList(screen.getByLabelText('模型'));
     expect(
       within(list)
         .getAllByRole('option')
@@ -71,11 +71,11 @@ describe('ModelPicker', () => {
   it('选择 Provider 后模型候选只剩该 Provider 的模型', () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-a' }));
     expect(onChange).toHaveBeenLastCalledWith('provider-a', '');
 
-    const list = openList(screen.getByLabelText('请求模型别名'));
+    const list = openList(screen.getByLabelText('模型'));
     expect(
       within(list)
         .getAllByRole('option')
@@ -88,7 +88,7 @@ describe('ModelPicker', () => {
     render(
       <Harness initialProvider="provider-a" initialModel="a-model-1" onChange={onChange} />,
     );
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.click(within(openList(provider)).getByRole('option', { name: 'provider-b' }));
     expect(onChange).toHaveBeenLastCalledWith('provider-b', '');
   });
@@ -98,17 +98,17 @@ describe('ModelPicker', () => {
     render(
       <Harness initialProvider="provider-b" initialModel="b-model-1" onChange={onChange} />,
     );
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.click(within(openList(provider)).getByRole('option', { name: LOCAL_PROVIDER }));
     expect(onChange).toHaveBeenLastCalledWith('', 'b-model-1');
 
-    const list = openList(screen.getByLabelText('请求模型别名'));
+    const list = openList(screen.getByLabelText('模型'));
     expect(within(list).getAllByRole('option')).toHaveLength(allModels.length);
   });
 
   it('未知的当前模型仍显示在输入框并保留在候选中', () => {
     render(<Harness initialProvider="provider-a" initialModel="legacy-model" />);
-    const model = screen.getByLabelText('请求模型别名') as HTMLInputElement;
+    const model = screen.getByLabelText('模型') as HTMLInputElement;
     expect(model).toHaveValue('legacy-model');
     const list = openList(model);
     expect(
@@ -121,11 +121,11 @@ describe('ModelPicker', () => {
   it('允许自由输入 provider/model', () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
-    const provider = screen.getByLabelText('Provider');
+    const provider = screen.getByLabelText('模型连接');
     fireEvent.change(provider, { target: { value: 'custom-provider' } });
     expect(onChange).toHaveBeenLastCalledWith('custom-provider', '');
 
-    const model = screen.getByLabelText('请求模型别名');
+    const model = screen.getByLabelText('模型');
     fireEvent.change(model, { target: { value: 'custom-model' } });
     expect(onChange).toHaveBeenLastCalledWith('custom-provider', 'custom-model');
   });

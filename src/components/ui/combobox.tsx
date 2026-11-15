@@ -14,6 +14,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 export interface ComboboxProps {
@@ -30,6 +31,8 @@ export interface ComboboxProps {
   ariaLabel?: string;
   /** 无候选时的提示（allowCustom=false 才需要，true 时直接收起列表）。 */
   emptyText?: string;
+  /** Render candidates outside a scrolling dialog, anchored below the field. */
+  portal?: boolean;
 }
 
 export function Combobox({
@@ -44,6 +47,7 @@ export function Combobox({
   inputClassName,
   ariaLabel,
   emptyText = '无候选项',
+  portal = false,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -53,6 +57,7 @@ export function Combobox({
   const listId = useId();
   const listRef = useRef<HTMLUListElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
   const unique = useMemo(() => {
@@ -99,7 +104,7 @@ export function Combobox({
   useEffect(() => {
     if (!showList) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node) && !popupRef.current?.contains(event.target as Node)) {
         close();
       }
     };
@@ -164,13 +169,15 @@ export function Combobox({
     }
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (portal) event.stopPropagation();
       close();
       return;
     }
     if (event.key === 'Tab') close();
   };
 
-  return (
+  const CandidateList = portal ? PopoverContent : 'div';
+  const content = (
     <div ref={containerRef} className={cn('relative w-full min-w-0', className)}>
       <Input
         id={id}
@@ -191,6 +198,9 @@ export function Combobox({
         onFocus={() => {
           if (!disabled) openList();
         }}
+        onClick={() => {
+          if (portal && !open && !disabled) openList();
+        }}
         onBlur={() => {
           // 不关闭：直接点击内联候选项时 blur 会先于 mousedown/click；
           // 关闭交给外部 pointerdown / Escape / Tab。
@@ -203,7 +213,29 @@ export function Combobox({
         aria-hidden="true"
       />
       {showList ? (
-        <div className="absolute top-full left-0 z-50 mt-1 max-h-[min(50vh,260px)] w-full min-w-40 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+        <CandidateList
+          ref={popupRef}
+          className={cn(
+            'z-50 min-w-40 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
+            portal
+              ? 'max-h-[min(240px,var(--radix-popover-content-available-height))] w-(--radix-popover-trigger-width) overscroll-contain'
+              : 'absolute top-full left-0 mt-1 max-h-[min(50vh,260px)] w-full',
+          )}
+          {...(portal ? {
+            align: 'start' as const,
+            side: 'bottom' as const,
+            collisionPadding: 8,
+            onOpenAutoFocus: (event: Event) => event.preventDefault(),
+            onCloseAutoFocus: (event: Event) => event.preventDefault(),
+            // Keep the parent dialog's document-level scroll lock from cancelling popup scrolling.
+            onWheel: (event: React.WheelEvent) => event.stopPropagation(),
+            onTouchMove: (event: React.TouchEvent) => event.stopPropagation(),
+            onEscapeKeyDown: (event: globalThis.KeyboardEvent) => event.stopPropagation(),
+            onInteractOutside: (event: CustomEvent) => {
+              if (containerRef.current?.contains(event.target as Node)) event.preventDefault();
+            },
+          } : {})}
+        >
           <ul ref={listRef} id={listId} role="listbox" className="space-y-0.5">
             {filtered.map((item, index) => {
               const selected = item === value;
@@ -216,6 +248,7 @@ export function Combobox({
                   aria-selected={selected}
                   className={cn(
                     'flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
+                    portal && 'sm:min-h-8',
                     index === activeIndex && 'bg-accent text-accent-foreground',
                   )}
                   onMouseEnter={() => setActive(index)}
@@ -234,9 +267,15 @@ export function Combobox({
               <li className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</li>
             ) : null}
           </ul>
-        </div>
+        </CandidateList>
       ) : null}
     </div>
   );
+
+  return portal ? (
+    <Popover open={showList} onOpenChange={(next) => { if (!next) close(); }}>
+      <PopoverAnchor asChild>{content}</PopoverAnchor>
+    </Popover>
+  ) : content;
 
 }

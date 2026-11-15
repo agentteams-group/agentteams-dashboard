@@ -52,7 +52,7 @@ const STATIC_DEGRADED_PREFIXES: Array<{
   { prefix: '/api/agentteams/debug-log', capability: 'logs', label: '调试日志' },
   { prefix: '/api/agentteams/agentspecs/', capability: 'nacos', label: 'Nacos Agent 目录' },
   { prefix: '/api/agentteams/skills/nacos', capability: 'nacos', label: 'Nacos 技能目录' },
-  { prefix: '/api/agentteams/models/probe', capability: 'sglang', label: 'SGLang 模型探测' },
+  { prefix: '/api/agentteams/models/probe', capability: 'gateway', label: '模型连接测试' },
   { prefix: '/api/agentteams/infrastructure', capability: 'infrastructure', label: '基础设施健康探测' },
 ];
 

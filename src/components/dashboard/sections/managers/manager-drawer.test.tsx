@@ -200,7 +200,7 @@ describe('ManagerDrawer', () => {
     renderDrawer();
     fireEvent.click(screen.getByRole('button', { name: '模型配置' }));
 
-    const input = await screen.findByLabelText('请求模型别名');
+    const input = await screen.findByLabelText('模型');
     fireEvent.change(input, { target: { value: 'team-chat-v2' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 

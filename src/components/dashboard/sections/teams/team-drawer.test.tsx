@@ -265,7 +265,7 @@ async function paintBatch(
   fireEvent.click(within(screen.getByTestId(testId)).getByRole('button', { name: '设置模型' }));
   // 抽屉自身也是 role=dialog，按标题锁定嵌套的模型弹窗。
   const dialog = screen.getByRole('dialog', { name: dialogTitle });
-  fireEvent.change(within(dialog).getByLabelText('请求模型别名'), {
+  fireEvent.change(within(dialog).getByLabelText('模型'), {
     target: { value: model },
   });
   fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
