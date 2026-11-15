@@ -132,16 +132,17 @@ export function WorkflowDetail({
       list.push(edge.source);
       dependsOf.set(edge.target, list);
     }
-    const current = (wf?.tasks_detail ?? []).map((t) => ({
-      taskId: t.task_id,
-      title: t.summary ?? t.task_id,
-      ...(t.assigned_to ? { assignedTo: t.assigned_to } : {}),
+    const current = (wf?.nodes ?? []).map((node) => ({
+      taskId: node.id,
+      ...(node.parent_task_id ? { parentTaskId: node.parent_task_id } : {}),
+      title: node.name,
+      ...(node.assignee ? { assignedTo: node.assignee } : {}),
       // status deliberately omitted: the controller preserves the previous
       // status when a task id already exists (and defaults to planned) —
       // an explicit status here would override in-flight/completed states
       // and pollute the new plan.
-      ...((dependsOf.get(t.task_id)?.length ?? 0) > 0
-        ? { dependsOn: dependsOf.get(t.task_id) }
+      ...((dependsOf.get(node.id)?.length ?? 0) > 0
+        ? { dependsOn: dependsOf.get(node.id) }
         : {}),
     }));
     setReplanText(JSON.stringify(current, null, 2));

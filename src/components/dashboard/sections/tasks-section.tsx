@@ -71,6 +71,7 @@ import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { buildProjectDag } from '@/lib/project-dag';
+import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { isStaleProjectSelection } from './task-selectors';
 import { ProjectDagSvg, type DagNodeColor } from '@/components/dashboard/project-dag-svg';
@@ -246,10 +247,12 @@ function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
   );
 }
 
-function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
+function TaskRoomActions({ task, tasks = [], compact = false }: { task: BoardTask; tasks?: BoardTask[]; compact?: boolean }) {
   const queryClient = useQueryClient();
   const access = useChatRoomAccess();
-  const awaitingDispatch = task.status === 'pending' && !task.executionRoomId;
+  const children = subtasksOf(task, tasks);
+  const executionTask = children.find(child => child.executionRoomId) ?? children.find(child => child.status !== 'pending') ?? task;
+  const awaitingDispatch = executionTask.status === 'pending' && !executionTask.executionRoomId;
   const unavailableReason = '任务尚未派发，协作房间未创建';
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,12 +261,12 @@ function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?:
     setError(null);
     try {
       // Older Controllers expose the execution room only through task meta.
-      const meta = task.executionRoomId ? undefined : await queryClient.fetchQuery({
-        queryKey: ['task-detail', task.runId, task.teamId],
-        queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
+      const meta = executionTask.executionRoomId ? undefined : await queryClient.fetchQuery({
+        queryKey: ['task-detail', executionTask.runId, executionTask.teamId],
+        queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(executionTask.runId)}/meta${executionTask.teamId ? `?team=${encodeURIComponent(executionTask.teamId)}` : ''}`)),
         staleTime: 15000,
       });
-      const roomId = (task.executionRoomId || meta?.room_id)?.replace(/^room:/, '');
+      const roomId = (executionTask.executionRoomId || meta?.room_id)?.replace(/^room:/, '');
       if (!roomId) setError('协作房间尚未创建');
       else if (access.state !== 'joined' || !access.joinedRooms?.includes(roomId)) setError('尚未加入协作房间，请联系团队管理员');
       else openChatRoom(roomId);
@@ -290,21 +293,29 @@ function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?:
 }
 
 function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: BoardTask; tasks: BoardTask[]; project?: BoardProject; team?: string; onOpenDetails?: () => void }) {
+  const children = subtasksOf(task, tasks);
   const detail = useQuery({
     queryKey: ['task-detail', task.runId, task.teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
     staleTime: 15000,
-    enabled: task.status !== 'pending' || !!task.executionRoomId,
+    enabled: children.length === 0 && (task.status !== 'pending' || !!task.executionRoomId),
     retry: false,
   });
   const sourceName = useRoomMetaStore(state => state.meta[task.roomId]?.roomName);
   const [selectedId, setSelectedId] = useState(task.runId);
-  const dag = useMemo(() => task.projectId ? buildProjectDag(tasks, task.projectId) : null, [tasks, task.projectId]);
+  const dag = useMemo(() => {
+    if (!task.projectId) return null;
+    const descendants = subtasksOf(task, tasks);
+    if (!descendants.length) return buildProjectDag(tasks, task.projectId);
+    const ids = new Set(descendants.map(child => child.runId));
+    return buildProjectDag([task, ...descendants.map(child => ({ ...child, dependsOn: child.dependsOn.some(id => ids.has(id)) ? child.dependsOn.filter(id => ids.has(id)) : [task.runId] }))], task.projectId);
+  }, [tasks, task]);
   const selected = tasks.find(item => item.runId === selectedId) ?? task;
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
   return <div className="space-y-2">
     <div className="space-y-2 pr-6"><StatusBadge status={task.status} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
+    <SubtaskProgress task={task} tasks={tasks} />
     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
       <dt className="text-muted-foreground">负责团队</dt><dd className="break-words">{team || task.teamId || '未指定'}</dd>
@@ -316,17 +327,17 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
       {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
       {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
     </section>
-    <section className="space-y-2"><h4 className="text-xs font-medium">项目任务分工与依赖</h4>
+    <section className="space-y-2"><h4 className="text-xs font-medium">{children.length ? '子任务分工与依赖' : '项目任务分工与依赖'}</h4>
       {dag && dag.nodes.length > 0 ? <>
-        {project && <section aria-label="项目整体进度" className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs"><p className="truncate font-medium" title={project.name}>{project.name}</p><p className="mt-1 text-muted-foreground">项目{PROJECT_STATUS_LABEL[project.status] ?? '状态待同步'} · 已完成 {dag.nodes.filter(node => node.status === 'completed').length}/{dag.nodes.length}</p></section>}
-        <p className="text-xs text-muted-foreground">连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。</p>
+        {!children.length && project && <section aria-label="项目整体进度" className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs"><p className="truncate font-medium" title={project.name}>{project.name}</p><p className="mt-1 text-muted-foreground">项目{PROJECT_STATUS_LABEL[project.status] ?? '状态待同步'} · 已完成 {dag.nodes.filter(node => node.status === 'completed').length}/{dag.nodes.length}</p></section>}
+        <p className="text-xs text-muted-foreground">{children.length ? '顶部为主任务；下方展示子任务及其前置依赖。' : '连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。'}</p>
         <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
           <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} neutral nodeWidth={156} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
         </div>
         <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || '未分配'}</span><StatusBadge status={selected.status} /></div></div>
       </> : <p className="text-xs text-muted-foreground">该任务暂无项目分工信息</p>}
     </section>
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><TaskRoomActions task={task} />{onOpenDetails && <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenDetails}>查看完整详情</Button>}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><TaskRoomActions task={task} tasks={tasks} />{onOpenDetails && <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenDetails}>查看完整详情</Button>}</div>
   </div>;
 }
 
@@ -413,6 +424,7 @@ function TaskCard({
       className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
       <CardContent className="space-y-3 p-4">
+        <SubtaskProgress task={task} tasks={tasks} />
         {(showStatus || task.outcome || task.dependsOn.length > 0) && <div className="flex items-start gap-2">
           {showStatus && <StatusBadge status={task.status} />}
           {task.outcome && <OutcomeBadge outcome={task.outcome} />}
@@ -447,7 +459,7 @@ function TaskCard({
             {displayTime(task.createdAt)}
           </span>}
         </div>
-        <TaskRoomActions task={task} compact />
+        <TaskRoomActions task={task} tasks={tasks} compact />
       </CardContent>
     </Card>
     </PopoverAnchor>
@@ -831,15 +843,16 @@ export function TasksSection() {
 
   // ---- Filters ----
   const filteredTasks = useMemo(() => {
-    if (!search) return board.tasks;
+    const roots = mainTasks(board.tasks);
+    if (!search) return roots;
     const q = search.toLowerCase();
-    return board.tasks.filter((t) => {
+    return roots.filter((root) => [root, ...subtasksOf(root, board.tasks)].some((t) => {
       if (t.title.toLowerCase().includes(q)) return true;
       if (t.runId.toLowerCase().includes(q)) return true;
       if (t.assignedTo.toLowerCase().includes(q)) return true;
       if (t.projectId?.toLowerCase().includes(q)) return true;
       return false;
-    });
+    }));
   }, [board.tasks, search]);
 
   const tasksForProject = useCallback(
@@ -867,7 +880,7 @@ export function TasksSection() {
     let blocked = 0;
     let revision = 0;
     let submitted = 0;
-    for (const t of board.tasks) {
+    for (const t of mainTasks(board.tasks)) {
       if (t.status === 'in_progress' || t.status === 'assigned') running++;
       else if (t.status === 'completed') completed++;
       else if (t.status === 'revision') revision++;
@@ -875,7 +888,7 @@ export function TasksSection() {
       else if (t.status === 'blocked') blocked++;
       else if (t.status === 'submitted') submitted++;
     }
-    return { running, submitted, completed, failed, blocked, revision, total: board.tasks.length };
+    return { running, submitted, completed, failed, blocked, revision, total: mainTasks(board.tasks).length };
   }, [board.tasks]);
 
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
@@ -1052,7 +1065,7 @@ export function TasksSection() {
         </div>
       )}
 
-      <TaskDetailSheet task={selectedTask} teamId={board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
+      <TaskDetailSheet task={selectedTask} tasks={board.tasks} onSelectTask={task => setSelectedTaskId(task.runId)} teamId={board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
         if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); setSelectedTaskId(null); }
       }} />
 
@@ -1156,14 +1169,14 @@ export function TasksSection() {
                     tasks={tasksForProject(selectedProject.runId)}
                   />
                   {selectedProject.source === 'api' ? (
-                    <WorkflowDetail
+                    <div className="space-y-4"><section aria-label="项目主任务" className="space-y-2"><h4 className="text-sm font-medium">主任务（{tasksForProject(selectedProject.runId).length}）</h4><div className="grid grid-cols-1 gap-2 md:grid-cols-2">{tasksForProject(selectedProject.runId).map(task => <TaskCard key={task.runId} task={task} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(task.runId)} />)}</div></section><details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">项目管理与完整执行记录</summary><div className="mt-4"><WorkflowDetail
                       projectId={selectedProject.runId}
                       teamId={selectedProject.teamId}
-                    />
+                    /></div></details></div>
                   ) : (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-2">
-                        该项目的任务 ({tasksForProject(selectedProject.runId).length})
+                        主任务 ({tasksForProject(selectedProject.runId).length})
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {tasksForProject(selectedProject.runId).map((t) => (
@@ -1227,11 +1240,18 @@ interface TaskMetaDetail {
   deliverables?: Array<string | { name?: string; path?: string; description?: string }>;
 }
 
-function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: BoardTask | null; teamId?: string; onClose: () => void; onOpenProject: () => void }) {
+function SubtaskProgress({ task, tasks }: { task: BoardTask; tasks: BoardTask[] }) {
+  const progress = subtaskProgress(task, tasks);
+  return progress.total > 0 ? <div aria-label="子任务进度" className="space-y-1.5 text-xs text-muted-foreground"><p>子任务 {progress.completed}/{progress.total} 已完成 <span className="float-right tabular-nums">{progress.percent}%</span></p><Progress value={progress.percent} className="h-1" /></div> : null;
+}
+
+function TaskDetailSheet({ task, tasks, onSelectTask, teamId, onClose, onOpenProject }: { task: BoardTask | null; tasks: BoardTask[]; onSelectTask: (_task: BoardTask) => void; teamId?: string; onClose: () => void; onOpenProject: () => void }) {
+  const children = task ? subtasksOf(task, tasks) : [];
+  const parent = task?.parentTaskId ? tasks.find(item => item.runId === task.parentTaskId && item.projectId === task.projectId && item.teamId === task.teamId) : undefined;
   const detail = useQuery({
     queryKey: ['task-detail', task?.runId, teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
-    enabled: !!task && (task.status !== 'pending' || !!task.executionRoomId),
+    enabled: !!task && children.length === 0 && (task.status !== 'pending' || !!task.executionRoomId),
     staleTime: 15000,
     retry: false,
     throwOnError: false,
@@ -1243,8 +1263,11 @@ function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: Board
         <SheetDescription>查看任务状态、执行说明与交付结果</SheetDescription>
       </SheetHeader>
       {task && <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 custom-scrollbar">
+        {parent && <Button variant="ghost" size="sm" onClick={() => onSelectTask(parent)}>返回主任务：{parent.title}</Button>}
+        <SubtaskProgress task={task} tasks={tasks} />
+        {children.length > 0 && <section aria-label="子任务列表" className="space-y-2"><h3 className="text-sm font-medium">子任务（{children.length}）</h3>{children.map(child => <button key={child.runId} className="flex w-full items-start justify-between gap-3 rounded-lg border border-border p-3 text-left hover:bg-muted/40" onClick={() => onSelectTask(child)}><span className="min-w-0 text-sm"><span className="block">{child.title}</span><span className="mt-1 block text-xs text-muted-foreground">{child.assignedTo || '未分配'}</span></span><StatusBadge status={child.status} /></button>)}</section>}
         <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
-        <TaskRoomActions task={{ ...task, teamId: task.teamId ?? teamId }} />
+        <TaskRoomActions task={{ ...task, teamId: task.teamId ?? teamId }} tasks={tasks} />
         <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
           <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || '未分配'}</dd>
           <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>

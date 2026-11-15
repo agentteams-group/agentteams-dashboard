@@ -282,6 +282,7 @@ export function workflowToBoard(
       const detail = detailByTask.get(node.id);
       boardTasks.push({
         runId: node.id,
+        parentTaskId: node.parent_task_id || detail?.parent_task_id || undefined,
         title: node.name || node.id,
         status: workflowStatusToTaskStatus(detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',

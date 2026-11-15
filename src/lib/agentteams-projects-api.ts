@@ -48,6 +48,7 @@ export interface ProjectSummary {
 
 export interface WorkflowNode {
   id: string;
+  parent_task_id?: string;
   name: string;
   status: WorkflowNodeStatus;
   assignee?: string;
@@ -134,6 +135,7 @@ export interface TaskTransition {
 /** Mirrors taskDetail, returned when ?includeTasks=true. */
 export interface WorkflowTaskDetail {
   task_id: string;
+  parent_task_id?: string;
   project_id?: string;
   /** Matrix execution room, distinct from the conversation that requested it. */
   room_id?: string;

@@ -91,6 +91,27 @@ const renderSection = () => {
 };
 
 describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反馈）', () => {
+  it('shows only main tasks on the board, then opens their subtasks and execution details', async () => {
+    viewPreference.value = 'kanban';
+    const base = {projectId:'proj-1',teamId:'team',assignedTo:'worker',roomId:'',dependsOn:[],createdAt:0,outcome:null,source:'api'};
+    viewPreference.tasks = [
+      {...base,runId:'main',title:'交付优先级筛选',status:'in_progress'},
+      {...base,runId:'analysis',parentTaskId:'main',title:'分析筛选规则',status:'completed'},
+      {...base,runId:'dev',parentTaskId:'main',title:'实现筛选接口',status:'pending',dependsOn:['analysis']},
+      {...base,runId:'other-main',title:'另一项独立交付',status:'pending'},
+    ];
+    renderSection();
+    const flow=screen.getByRole('region',{name:'任务流程'});
+    expect(within(flow).queryByText('分析筛选规则')).toBeNull();
+    expect(within(flow).queryByText('实现筛选接口')).toBeNull();
+    expect(within(flow).getByText(/子任务 1\/2 已完成/)).toBeInTheDocument();
+    fireEvent.click(within(flow).getByRole('button',{name:/交付优先级筛选/}));
+    const sheet=await screen.findByRole('dialog');
+    expect(within(sheet).getByRole('region',{name:'子任务列表'})).toHaveTextContent('分析筛选规则');
+    fireEvent.click(within(sheet).getByRole('button',{name:/实现筛选接口/}));
+    expect(within(sheet).getByRole('button',{name:'返回主任务：交付优先级筛选'})).toBeInTheDocument();
+    expect(within(sheet).getByText('前置依赖')).toBeInTheDocument();
+  });
   afterEach(() => {
     cleanup();
     viewPreference.value = 'projects';
