@@ -297,7 +297,7 @@ function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; ta
   const selected = tasks.find(item => item.runId === selectedId) ?? task;
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
-  return <div className="space-y-4">
+  return <div className="space-y-3">
     <div className="space-y-2 pr-6"><StatusBadge status={task.status} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
       <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
@@ -306,7 +306,7 @@ function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; ta
       <dt className="text-muted-foreground">来源会话</dt><dd className="truncate" title={task.roomId}>{sourceName || task.roomId || '暂无来源会话'}</dd>
     </dl>
     <section className="space-y-2 rounded-lg bg-muted/40 p-3"><h4 className="text-xs font-medium">当前进展</h4>
-      <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
+      <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
       {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
       {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
     </section>
@@ -442,7 +442,7 @@ function TaskCard({
       </CardContent>
     </Card>
     </PopoverAnchor>
-    <PopoverContent side="right" align="start" sideOffset={10} collisionPadding={16} className="w-[600px] max-w-[calc(100vw-32px)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-5 shadow-lg" aria-labelledby={previewTitle}
+    <PopoverContent side="right" align="start" sideOffset={10} collisionPadding={16} className="w-[600px] max-w-[calc(100vw-32px)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-4 shadow-lg" aria-labelledby={previewTitle}
       onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}
       onPointerEnter={clearTimer} onPointerLeave={() => schedulePreview(false)} onFocus={clearTimer} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) schedulePreview(false); }}>
       <span id={previewTitle} className="sr-only">任务预览：{task.title}</span>
