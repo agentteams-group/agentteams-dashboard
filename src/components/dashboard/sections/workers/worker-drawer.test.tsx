@@ -191,18 +191,17 @@ describe('WorkerDrawer', () => {
     expect(screen.getByText('上次运行')).toBeInTheDocument();
     expect(screen.getByText('上次完成')).toBeInTheDocument();
     expect(screen.getAllByText('gpt-5').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: '编辑模型' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '模型' })).toBeInTheDocument();
   });
 
-  it('renders every resource card as an entry point (13 cards)', () => {
+  it('renders vertical resource tabs without mounting all configuration panels', () => {
     renderDrawer();
     expect(screen.getAllByRole('button', { name: /./ })).not.toHaveLength(0);
     for (const card of CARDS) {
-      expect(screen.getByRole('button', { name: card.title })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: card.title })).toBeInTheDocument();
     }
-    expect(screen.getByText('2 个变量 · 模型 / MCP 网关探测')).toBeInTheDocument();
-    // non-QwenPaw runtimes route the five capability cards through the surface
-    expect(screen.getAllByText('CoPaw 配置面（surface 驱动）')).toHaveLength(5);
+    expect(screen.getByRole('tablist', { name: 'Agent 配置' })).toHaveAttribute('aria-orientation', 'vertical');
+    expect(screen.queryByText('env-panel')).not.toBeInTheDocument();
   });
 
   it('does not mount panel content until a card is opened', () => {
@@ -218,7 +217,7 @@ describe('WorkerDrawer', () => {
     const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
     renderDrawerFor(qwenpawWorker);
 
-    fireEvent.click(screen.getByRole('button', { name: '运行配置' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '运行配置' }), { button: 0, ctrlKey: false });
 
     expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
     expect(mounts.qwenpaw).toBe(1);
@@ -229,33 +228,28 @@ describe('WorkerDrawer', () => {
     const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
     renderDrawerFor(runtimeLessWorker);
 
-    fireEvent.click(screen.getByRole('button', { name: '运行配置' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '运行配置' }), { button: 0, ctrlKey: false });
 
     expect(await screen.findByText('surface-config')).toBeInTheDocument();
     expect(mounts.qwenpaw).toBe(0);
   });
 
-  it.each(CARDS)('opens "$title" in a dialog and closes it', async ({ title, content }) => {
+  it.each(CARDS)('switches to "$title" inline and returns to basic information', async ({ title, content }) => {
     renderDrawer();
-    fireEvent.click(screen.getByRole('button', { name: title }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: title }), { button: 0, ctrlKey: false });
 
     expect(await screen.findByText(content)).toBeInTheDocument();
-    // one modal, sized for the desktop panel
-    const dialog = screen.getAllByRole('dialog').at(-1);
-    expect(dialog).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }));
+    expect(screen.queryByRole('button', { name: '关闭弹窗' })).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '基本信息' }), { button: 0, ctrlKey: false });
     await waitFor(() => expect(screen.queryByText(content)).not.toBeInTheDocument());
   });
 
-  it('closes the card dialog with Escape', async () => {
+  it('selects resource tabs through the keyboard', async () => {
     renderDrawer();
-    fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'MCP' }), { key: 'Enter' });
     expect(await screen.findByText('surface-mcp')).toBeInTheDocument();
 
-    const dialog = screen.getAllByRole('dialog').at(-1);
-    fireEvent.keyDown(dialog as HTMLElement, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByText('surface-mcp')).not.toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'MCP' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('shows delete only for L1 (dashboard level 3)', () => {

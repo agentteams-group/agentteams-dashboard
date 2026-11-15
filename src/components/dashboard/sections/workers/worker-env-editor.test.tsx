@@ -23,3 +23,10 @@ it('rejects duplicate and invalid names without emitting a lossy map', () => {
   expect(valid).toHaveBeenLastCalledWith(false);
   expect(change).not.toHaveBeenCalled();
 });
+
+it('uses the Manager lifecycle description when reused by assistant settings', () => {
+  render(<TooltipProvider><WorkerEnvEditor resource="Manager" value={{ API_KEY: '' }} onChange={vi.fn()} onValidityChange={vi.fn()} /></TooltipProvider>);
+  expect(screen.getByText('修改环境变量会重建托管 Manager 容器，可能中断当前任务。')).toBeTruthy();
+  expect(screen.queryByText(/修改环境变量会重建托管 Worker/)).toBeNull();
+  expect(screen.getByPlaceholderText('变量名，如 API_KEY')).toBeTruthy();
+});

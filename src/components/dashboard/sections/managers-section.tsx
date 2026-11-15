@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Crown, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Crown, Download, ArrowUpDown, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
@@ -93,7 +94,7 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
   );
 }
 
-export function ManagersSection() {
+export function ManagersSection({ compact = false, selectedManager }: { compact?: boolean; selectedManager?: ManagerResponse } = {}) {
   const { data: managers, isLoading, isError, refetch, isRefetching } = useManagers();
   const { searchQuery } = useSearch();
   const { isConnected } = useAgentTeamsStore();
@@ -227,7 +228,17 @@ export function ManagersSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={compact ? '' : 'space-y-6'}>
+      {compact ? <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MoreHorizontal className="size-4" />实例管理</Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setCreateOpen(true)}>新建助手</DropdownMenuItem>
+          <DropdownMenuItem disabled={!selectedManager} onSelect={() => selectedManager && openEdit(selectedManager)}>编辑实例配置</DropdownMenuItem>
+          {selectedManager && isLegacyCopaw(selectedManager.runtime) && <DropdownMenuItem onSelect={() => setUpgradeTarget(selectedManager)}>升级到 QwenPaw</DropdownMenuItem>}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={!selectedManager} className="text-destructive" onSelect={() => selectedManager && setDeleteTarget(selectedManager.name)}>删除助手</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu> : <>
       <SectionHeader
         title="Managers"
         description="管理团队领导和协调者"
@@ -308,7 +319,7 @@ export function ManagersSection() {
           onDelete={setDeleteTarget}
         />
       )}
-
+      </>}
       <ManagerCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

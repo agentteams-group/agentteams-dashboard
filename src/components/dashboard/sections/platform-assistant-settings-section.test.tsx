@@ -14,7 +14,7 @@ vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => {
 } }));
 vi.mock('@/hooks/use-model-selection', () => ({ useModelSelection: () => ({ options: [], sessionIssue: null }) }));
 vi.mock('./managers/manager-detail-panel', () => ({ ManagerDetailPanel: ({ manager }: { manager: ManagerResponse }) => <div>settings:{manager.name}</div> }));
-vi.mock('./managers-section', () => ({ ManagersSection: () => <div>instance-management</div> }));
+vi.mock('./managers-section', () => ({ ManagersSection: ({ compact }: { compact?: boolean }) => <button>{compact ? '实例管理' : 'duplicate-instance-list'}</button> }));
 
 beforeEach(() => {
   state.managers = [{ name: 'default', roomID: '!default:test' }] as ManagerResponse[];
@@ -29,7 +29,9 @@ describe('platform assistant settings', () => {
     render(<PlatformAssistantSettingsSection />);
     expect(screen.getByText('settings:default')).toBeInTheDocument();
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.getByText('高级管理').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText('高级管理')).toBeNull();
+    expect(screen.queryByText('duplicate-instance-list')).toBeNull();
+    expect(screen.getByRole('button', { name: '实例管理' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回对话' }));
     expect(useSectionStore.getState().activeSection).toBe('chat');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!default:test');
@@ -54,9 +56,7 @@ describe('platform assistant settings', () => {
     state.managers = [];
     render(<PlatformAssistantSettingsSection />);
     expect(screen.getByRole('status')).toHaveTextContent('尚未配置平台助手');
-    fireEvent.click(screen.getByText('高级管理'));
-    expect(screen.getByText('高级管理').closest('details')).toHaveAttribute('open');
-    expect(screen.getByText('instance-management')).toBeVisible();
+    expect(screen.getByRole('button', { name: '实例管理' })).toBeVisible();
   });
   it('does not mount privileged settings or query Managers for Team users', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });

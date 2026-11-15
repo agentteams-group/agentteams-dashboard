@@ -332,7 +332,8 @@ describe('Team and Agent resource cards', () => {
 
   it('preserves a direct profile link on refresh and responds to browser navigation', async () => {
     renderSection('#console/resources/team-agents?tab=agents&agent=solo&edit=true');
-    expect(screen.getByRole('heading', { name: '编辑 · solo' })).toBeInTheDocument();
+    expect(window.location.hash).toContain('edit=true');
+    expect(screen.queryByRole('heading', { name: '编辑 · solo' })).toBeNull();
     expect(screen.getByText('agent-profile:solo')).toBeInTheDocument();
     window.history.replaceState({}, '', '#console/resources/team-agents?tab=teams&team=beta');
     fireEvent(window, new Event('hashchange'));

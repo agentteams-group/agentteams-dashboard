@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   WORKER_PHASE_BADGE_CLASSES,
@@ -60,12 +61,11 @@ export function RuntimeBadge({ runtime, className, size = 'default', withTooltip
   const meta = getRuntimeMeta(runtime);
   const label = RUNTIME_LABELS[runtime] || runtime;
   const sizeClass = size === 'sm' ? 'text-xs px-1.5 py-0 gap-0.5' : 'text-xs';
-  const Icon = meta?.icon;
 
   const badge = (
-    <Badge variant="outline" className={`${meta?.badgeClass ?? ''} ${sizeClass} ${className ?? ''}`.trim()}>
-      {Icon && <Icon className={size === 'sm' ? 'w-2.5 h-2.5' : undefined} aria-hidden="true" />}
-      {label}
+    <Badge variant="outline" className={`gap-1.5 border-border bg-background text-foreground ${sizeClass} ${className ?? ''}`.trim()}>
+      {meta?.logo && <Image src={meta.logo} alt="" aria-hidden="true" width={runtime === 'copaw' ? 64 : 16} height={16} unoptimized className={`h-4 shrink-0 object-contain ${runtime === 'copaw' ? 'w-16 rounded-sm bg-white' : 'w-4'} ${['codex', 'openhuman'].includes(runtime) ? 'dark:invert' : ''}`} />}
+      <span className={runtime === 'copaw' ? 'sr-only' : undefined}>{label}</span>
     </Badge>
   );
 

@@ -139,10 +139,10 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
 
     {isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
+      {!selectedWorker && <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
         <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent}`} /></h2>
         {selectedTeam && <Button size="sm" variant="outline" onClick={() => setMillforgeTeam(selectedTeam.name)}>千锻 · 团队配置</Button>}
-      </div>
+      </div>}
       {selectedTeam ? <TeamSettingsPanel key={selectedTeam.name} team={selectedTeam} allTeams={teams} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} onChanged={refresh} onDeleted={() => navigate('teams')} /> :
         selectedWorker ? <WorkerDetailPanel key={selectedWorker.name} worker={selectedWorker} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} className="min-h-0 flex-1" onChanged={refresh} onDeleted={() => navigate('agents')} /> :
             <p className="p-6 text-sm text-muted-foreground">{teamsQuery.isLoading || workersQuery.isLoading ? '正在加载…' : '未找到该资源，请返回列表刷新。'}</p>}

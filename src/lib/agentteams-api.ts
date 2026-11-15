@@ -287,6 +287,7 @@ export interface ManagerResponse {
   skills?: string[];
   mcpServers?: ManagerMcpServer[];
   env?: Record<string, string>;
+  envEditable?: boolean;
   config?: ManagerConfigInfo;
 }
 
@@ -839,10 +840,7 @@ export interface UpdateManagerRequest {
   skills?: string[];
   /** 非 nil = 整表替换（空数组 = 清空）。 */
   mcpServers?: ManagerMcpServer[];
-  /**
-   * 环境变量（整表替换）。注意：controller 的 UpdateManagerRequest 目前没有
-   * env 字段，PUT 会静默忽略——抽屉保存后回读不一致会明示「未生效」，不假装成功。
-   */
+  /** 环境变量整表替换；仅在详情返回 envEditable 时提交。 */
   env?: Record<string, string>;
   /** 整对象替换；空串 = 回退默认。 */
   config?: ManagerConfigInfo;

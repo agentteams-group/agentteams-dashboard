@@ -1,6 +1,6 @@
 'use client';
 
-// Manager 详情面板（F7 唯一实现）：ManagerDrawer 与「团队与Agent」页内联详情
+// Manager 详情面板：ManagerDrawer 与平台助手设置
 // 共用本组件。1:1 移植工作台插件「管理页 · Manager 详情面板」
 // （ManagerDetailPane / ManagerLogsCard）。
 //
@@ -15,7 +15,7 @@
 //   · 容器日志（折叠卡，tail 300，点击才加载，手动刷新，不轮询）。
 //
 // 契约现状（诚实降级）：Controller 的 ManagerResponse / managerToResponse 目前
-// 只映射标量列，详情响应也不带 soul/agents/skills/mcpServers/env/config——
+// 旧版只映射标量列，详情响应可能不带 soul/agents/skills/mcpServers/config——
 // 摘要显示「未配置」，保存后回读不一致时明示「未确认/未生效」，不假装成功。
 
 import { useCallback, useEffect, useState } from 'react';
@@ -36,7 +36,8 @@ import {
   Sun,
   Tags,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ResourceDetailTabs } from '@/components/dashboard/resource-detail-tabs';
+import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -52,7 +53,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
-import { StatusDot } from '@/components/dashboard/status-dot';
 import { useUpdateManager } from '@/hooks/use-agentteams-mutations';
 import { useSkills } from '@/hooks/use-skill-center';
 import { agentteamsApi, type ManagerResponse } from '@/lib/agentteams-api';
@@ -72,6 +72,7 @@ import {
   managerDocSaveBlocked,
   managerEnvApplied,
   managerSpecReadable,
+  managerVersionLabel,
   type ManagerConfigDraft,
 } from './manager-drawer-logic';
 import { ManagerDocDialog, MANAGER_DOC_META, type ManagerDocKind } from './manager-doc-dialog';
@@ -331,26 +332,29 @@ export function ManagerDetailPanel({
     [finishSave, managerName, refresh, updateManager],
   );
 
-  // ── Env（Controller 当前契约无该字段 → 回读判定后明示未生效）──────────
+  // 仅在 Controller 声明 envEditable 时提交，并回读确认保存结果。
   const handleEnvSave = useCallback(
     async (env: Record<string, string>) => {
+      if (!detail?.envEditable) return;
       setSaving('env');
       setActionError(null);
       try {
         await updateManager.mutateAsync({ name: managerName, data: { env } });
-        setEnvOpen(false);
         finishSave();
         const next = await refresh();
-        if (next && !managerEnvApplied(env, next.env)) {
-          setNotice('Env 未生效：Controller 的 Manager 更新接口尚无 env 字段');
+        if (!next || !managerEnvApplied(env, next.env)) {
+          setActionError('环境变量未能回读确认，请刷新后重试。');
+          return;
         }
+        setEnvOpen(false);
+        setNotice('环境变量已保存，Controller 将重建助手容器以应用配置。');
       } catch (err) {
         setActionError(managerActionErrorText(err));
       } finally {
         setSaving(null);
       }
     },
-    [finishSave, managerName, refresh, updateManager],
+    [detail?.envEditable, finishSave, managerName, refresh, updateManager],
   );
 
   // ── Manager 独有 Config（整对象替换）──────────────────────────────────
@@ -398,21 +402,15 @@ export function ManagerDetailPanel({
         <div className="flex min-w-0 items-center gap-2">
           <Crown className="size-4 shrink-0 text-violet-500" aria-hidden="true" />
           <h2 className="min-w-0 truncate text-base font-semibold">{view.name}</h2>
-          <Badge variant="outline" className="shrink-0 text-xs">
-            Manager
-          </Badge>
           <PhaseBadge kind="manager" phase={view.phase} className="shrink-0" />
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <StatusDot phase={view.phase} />
-          <span>{view.state || '—'}</span>
-          <span aria-hidden="true">·</span>
           <RuntimeBadge runtime={view.runtime || ''} />
-          <span className="truncate font-mono">{view.model || '未设置模型'}</span>
+          <span className="text-muted-foreground" title={view.image || view.version}>版本 {managerVersionLabel(view.image, view.version)}</span>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2.5 overflow-x-hidden overflow-y-auto px-3 py-3">
+      <div className="shrink-0 space-y-2 border-b px-3 py-3">
         {/* 操作区 */}
         <div className="flex flex-wrap items-center gap-2">
           {canWrite ? (
@@ -480,7 +478,7 @@ export function ManagerDetailPanel({
           </p>
         ) : null}
 
-        {actionError ? (
+        {actionError && !envOpen ? (
           <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
             {actionError}
           </p>
@@ -492,17 +490,12 @@ export function ManagerDetailPanel({
           </p>
         ) : null}
 
-        {/* 状态卡 */}
-        <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
-          <Row label="Phase">
-            <PhaseBadge kind="manager" phase={view.phase} />
-          </Row>
-          <Row label="State">{view.state || '—'}</Row>
-          <Row label="Runtime">{view.runtime || 'qwenpaw'}</Row>
-          <Row label="镜像">
-            <code className="break-all font-mono text-xs">{view.image || '—'}</code>
-          </Row>
-          <Row label="Matrix">
+      </div>
+
+      <ResourceDetailTabs key={managerName} label="平台助手配置" items={[
+        { id: 'basic', title: '基本信息', render: () => <section className="space-y-4" aria-label="连接信息">
+          <h3 className="text-sm font-medium">连接信息</h3>
+          <Row label="Matrix 账号">
             {view.matrixUserID ? (
               <span className="flex min-w-0 items-center gap-1">
                 <code className="truncate font-mono text-xs">{view.matrixUserID}</code>
@@ -512,7 +505,7 @@ export function ManagerDetailPanel({
               '—'
             )}
           </Row>
-          <Row label="个人房间">
+          <Row label="管理员会话">
             {view.roomID ? (
               <span className="flex min-w-0 items-center gap-1">
                 <code className="truncate font-mono text-xs">{view.roomID}</code>
@@ -522,15 +515,10 @@ export function ManagerDetailPanel({
               '—'
             )}
           </Row>
-          <Row label="版本">{view.version || '—'}</Row>
-          <Row label="欢迎消息">{view.welcomeSent ? '已发送' : '未发送'}</Row>
-          <Row label="最近消息">{view.message || '—'}</Row>
-        </section>
-
-        {/* 容器日志（折叠卡，点击才加载；日志端点需管理员权限） */}
-        <ManagerLogsCard managerName={managerName} enabled={canWrite} />
-
-        {/* 模型 */}
+          <p className="text-xs leading-5 text-muted-foreground">该会话由安装时的管理员与助手创建，不代表当前登录账号的专属私聊。<InfoTip label="管理员会话说明">其他 L1 不会自动拥有独立的助手会话；只有已加入该会话的账号可以访问。</InfoTip></p>
+          {view.message && view.phase !== 'Running' && <p className="text-sm text-muted-foreground">{view.message}</p>}
+        </section> },
+        { id: 'model', title: '模型', render: () =>
         <ConfigCard
           icon={Cpu}
           title="模型配置"
@@ -538,8 +526,8 @@ export function ManagerDetailPanel({
           disabled={!canWrite}
           onClick={() => setModelOpen(true)}
         />
-
-        {/* 文档 */}
+        },
+        { id: 'prompts', title: '提示词', render: () => <div className="space-y-3">
         <ConfigCard
           icon={Brain}
           title="SOUL.md"
@@ -566,8 +554,8 @@ export function ManagerDetailPanel({
           disabled={!canWrite}
           onClick={() => setDocKind('agents')}
         />
-
-        {/* Skills / MCP / Env */}
+        </div> },
+        { id: 'skills', title: '技能', render: () =>
         <ConfigCard
           icon={Tags}
           title="Skills"
@@ -581,6 +569,8 @@ export function ManagerDetailPanel({
           disabled={!canWrite}
           onClick={() => setSkillsOpen(true)}
         />
+        },
+        { id: 'mcp', title: 'MCP', render: () =>
         <ConfigCard
           icon={Plug}
           title="MCP Servers"
@@ -594,9 +584,12 @@ export function ManagerDetailPanel({
           disabled={!canWrite}
           onClick={() => setMcpOpen(true)}
         />
-        <ConfigCard
+        },
+        { id: 'env', title: '环境变量', render: () => <div className="space-y-3">
+          {!detail?.envEditable && <p role="status" className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">当前 Controller 不支持编辑助手环境变量，请升级 Controller 后再配置。</p>}
+          <ConfigCard
           icon={Package}
-          title="Env"
+          title="环境变量"
           summary={
             envKeys.length > 0
               ? `${envKeys.length} 项`
@@ -604,11 +597,11 @@ export function ManagerDetailPanel({
                 ? emptyText
                 : loadingText
           }
-          disabled={!canWrite}
+          disabled={!canWrite || !detail?.envEditable}
           onClick={() => setEnvOpen(true)}
         />
-
-        {/* Manager 独有 Config */}
+        </div> },
+        { id: 'config', title: '运行参数', render: () =>
         <section className="space-y-2.5 rounded-lg border p-2.5" aria-label="Manager 配置">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -675,7 +668,9 @@ export function ManagerDetailPanel({
             </Button>
           ) : null}
         </section>
-      </div>
+        },
+        { id: 'logs', title: '日志', render: () => <ManagerLogsCard managerName={managerName} enabled={canWrite} /> },
+      ]} />
 
       {/* 重启确认 */}
       <AlertDialog open={restartOpen} onOpenChange={setRestartOpen}>
@@ -742,6 +737,7 @@ export function ManagerDetailPanel({
         managerName={managerName}
         value={env}
         saving={saving === 'env'}
+        error={actionError}
         onCancel={() => setEnvOpen(false)}
         onSubmit={(next) => void handleEnvSave(next)}
       />
