@@ -12,6 +12,8 @@ import {
 import { roomHash } from '@/lib/nav-hash';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
@@ -312,13 +314,28 @@ describe('ChatRoom HITL reply correlation', () => {
     mocks.setAgentStatusMap({});
   });
 
+  it('reconciles an approval receipt loaded in room history outside the global sweep', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
+    const request = { version: 1, runtime: 'qwenpaw', request_id: 'req-history', tool_name: 'Bash', expires_at: 4000 };
+    mocks.roomMessagesChunk.push(
+      { event_id: '$pending-history', sender: '@agent:test', type: 'm.room.message', origin_server_ts: 3000,
+        content: { msgtype: 'm.text', body: 'Approval', [RUNTIME_APPROVAL_KEY]: { ...request, status: 'pending' } } },
+      { event_id: '$receipt-history', sender: '@agent:test', type: 'm.room.message', origin_server_ts: 3500,
+        content: { msgtype: 'm.text', body: 'Approved', [RUNTIME_APPROVAL_KEY]: { ...request, status: 'approved' } } },
+    );
+    renderChatRoom();
+    expect(screen.getByText('已批准', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText('已超时', { exact: true })).not.toBeInTheDocument();
+  });
+
   it('sends the intervention answer with an m.reference to its card event', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     mocks.roomMessagesChunk.push({
       event_id: '$card',
       sender: '@agent:test',
       type: 'm.room.message',
-      origin_server_ts: 3000,
+      origin_server_ts: Date.now(),
       content: {
         msgtype: 'm.text',
         body: '请选择页面类型',

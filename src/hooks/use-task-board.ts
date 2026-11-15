@@ -197,7 +197,7 @@ export function useMergedTaskBoard(options: {
         spec: existing?.spec,
         source: 'matrix-live',
       };
-      byId.set(e.runId, existing ? { ...existing, status: liveTask.status } : liveTask);
+      byId.set(e.runId, existing ? { ...existing, status: existing.status === 'completed' ? existing.status : liveTask.status } : liveTask);
     }
     return Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, [board.data, live]);

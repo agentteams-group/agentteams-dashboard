@@ -284,7 +284,8 @@ export function workflowToBoard(
         runId: node.id,
         parentTaskId: node.parent_task_id || detail?.parent_task_id || undefined,
         title: node.name || node.id,
-        status: workflowStatusToTaskStatus(detail?.status ?? node.status),
+        // Worker metadata remains submitted after Leader acceptance.
+        status: workflowStatusToTaskStatus(node.status === 'completed' ? node.status : detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',
         projectId: proj.project_id,
         teamId: proj.team_id,

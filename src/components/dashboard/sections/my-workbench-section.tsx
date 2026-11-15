@@ -17,6 +17,7 @@ import { ApprovalSeverityBadge } from '@/components/dashboard/approval-severity-
 import { useHitlInboxStore, selectConfirmationList } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
 import { openChatRoom } from '@/lib/open-chat-room';
+import { useSectionStore } from '@/lib/section-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { usePendingTally } from '@/hooks/use-pending-tally';
 import { formatInterventionTimeout, partitionByAge, useInterventionTimeoutMs } from '@/lib/intervention-timeout';
@@ -167,7 +168,10 @@ export function MyWorkbenchSection() {
             <button
               key={roomId}
               type="button"
-              onClick={() => openChatRoom(roomId)}
+              onClick={() => {
+                useInviteStore.getState().setPendingInbox();
+                useSectionStore.getState().setActiveSection('my-teams');
+              }}
               className="w-full text-left rounded-lg border border-border/60 hover:bg-accent/50 px-3 py-2 transition-colors"
             >
               <span className="text-sm font-medium">房间邀请 · {roomLabels[roomId] ?? invite.roomId ?? roomId}</span>

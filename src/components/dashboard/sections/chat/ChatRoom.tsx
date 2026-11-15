@@ -57,6 +57,7 @@ import { useRuntimeMap } from './runtime-map-context';
 import type { TeamResponse } from '@/lib/agentteams-api';
 import type { RoomInfo } from './room-info';
 import { MessageReadRoomContext } from './message-read-status';
+import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -241,6 +242,10 @@ export function ChatRoom({
     }
     return events;
   }, [messagesQuery.data, messagesQuery.isSuccess]);
+
+  useEffect(() => {
+    if (currentUserId) ingestHitlTimelineEvents(roomId, allEvents, currentUserId);
+  }, [roomId, allEvents, currentUserId]);
 
   // A17 task status dots on worker avatars in the group chat.
   // Data sources, in priority order: worker heartbeat agentStatus (15s

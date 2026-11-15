@@ -27,6 +27,13 @@ function wf(overrides: Partial<WorkflowResponse> = {}): WorkflowResponse {
 }
 
 describe('workflowToBoard (D5 API primary mapping)', () => {
+  it('keeps Leader acceptance authoritative over the Worker submission snapshot', () => {
+    const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+      nodes: [{ id: 'analysis', name: '需求分析', status: 'completed' }],
+      tasks_detail: [{ task_id: 'analysis', status: 'submitted', result_status: 'SUCCESS' }],
+    })]]));
+    expect(tasks[0]).toMatchObject({ status: 'completed', outcome: 'SUCCESS' });
+  });
   it('preserves parent tasks independently of the dependency graph', () => {
     const {tasks}=workflowToBoard([proj()],new Map([['p1',wf({nodes:[{id:'main',name:'主任务',status:'pending'},{id:'child',name:'执行任务',status:'pending',parent_task_id:'main'}],edges:[]})]]));
     expect(tasks.find(t=>t.runId==='child')).toMatchObject({parentTaskId:'main',dependsOn:[]});

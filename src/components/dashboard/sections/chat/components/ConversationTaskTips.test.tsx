@@ -121,6 +121,11 @@ describe('conversation task tips', () => {
     expect(screen.queryByRole('region', { name: '当前对话的任务' })).toBeNull();
   });
 
+  it('hides an accepted task while raw execution detail still says submitted', () => {
+    render(view(feed([{ ...workflow, nodes: [{ ...workflow.nodes[0], status: 'completed' }], tasks_detail: [{ task_id: 'task', status: 'submitted', room_id: execution.id }] }])));
+    expect(screen.queryByRole('region', { name: '当前对话的任务' })).toBeNull();
+  });
+
   it('excludes completed tasks from the visible list and count', () => {
     render(view(feed([{ ...workflow, nodes: [...workflow.nodes, { id: 'done', name: '已完成的任务', status: 'completed' }] }])));
     expect(screen.queryByText('已完成的任务')).toBeNull();

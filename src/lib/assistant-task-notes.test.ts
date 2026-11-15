@@ -53,6 +53,13 @@ describe('assistant task notes', () => {
     const completed = workflow({ tasks_detail: [{ task_id: 'task', status: 'completed', result_status: 'SUCCESS' }] });
     expect(attentionCounts(assistantTaskNotes(room, [room], [completed], {})).review).toBe(0);
   });
+  it('does not count an accepted node as awaiting acceptance from stale submitted detail', () => {
+    const accepted = workflow({ nodes: [{ id: 'task', name: '首页设计', status: 'completed' }] });
+    const items = assistantTaskNotes(room, [room], [accepted], {});
+    expect(items[0].group).toBe('completed');
+    expect(attentionCounts(items).review).toBe(0);
+  });
+
   it('uses raw submitted state as awaiting acceptance despite a successful result and normalized running node', () => {
     const [item] = assistantTaskNotes(room, [room], [workflow()], {});
     expect(item).toMatchObject({ group: 'review', title: '首页设计', assignee: 'designer', projectId: 'project', teamId: 'design' });

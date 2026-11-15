@@ -21,6 +21,23 @@ beforeEach(() => useHitlInboxStore.setState({ confirmations: {}, resolutions: {}
 afterEach(cleanup);
 
 describe.each(['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'] as const)('%s approval lifecycle', (runtime) => {
+  it('retains a receipt loaded before the older request history', () => {
+    const data = approval(runtime);
+    ingestHitlTimelineEvents(room, [event('$ack', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    ingestHitlTimelineEvents(room, [event('$pending', data)], '@me:test');
+    expect(useHitlInboxStore.getState().confirmations['$pending']).toBeUndefined();
+    expect(useHitlInboxStore.getState().resolutions['$pending']?.answer).toBe('approved');
+  });
+
+  it('does not apply an earlier receipt from another owner or room', () => {
+    const data = approval(runtime);
+    ingestHitlTimelineEvents(room, [event('$other-owner', { ...data, status: 'approved' }, '@other:test', 2)], '@me:test');
+    ingestHitlTimelineEvents('!other:test', [event('$other-room', { ...data, status: 'approved' }, sender, 2)], '@me:test');
+    ingestHitlTimelineEvents(room, [event('$pending', data)], '@me:test');
+    expect(useHitlInboxStore.getState().confirmations['$pending']).toBeDefined();
+    expect(useHitlInboxStore.getState().resolutions['$pending']).toBeUndefined();
+  });
+
   it('retains the original command and risk context after rejection', async () => {
     const data = { ...approval(runtime), risk_details: '需要人工确认此操作' };
     const input = event('$pending', data);

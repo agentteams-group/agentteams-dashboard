@@ -85,7 +85,7 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
     for (const taskId of taskIds) {
       const node = nodes.get(taskId);
       const detail = detailById.get(taskId);
-      const status = detail?.status || node?.status;
+      const status = node?.status === 'completed' ? 'completed' : detail?.status || node?.status;
       const history = detail?.history ?? [];
       const startedAt = history.find(event => ['in_progress', 'in-progress', 'running'].includes(event.to))?.ts
         ?? history.find(event => ['assigned', 'delegated'].includes(event.to))?.ts;
