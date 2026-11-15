@@ -319,14 +319,14 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
       <dt className="text-muted-foreground">负责团队</dt><dd className="break-words">{team || task.teamId || '未指定'}</dd>
-      <dt className="text-muted-foreground">Worker 成员</dt><dd>{task.assignedTo || '未分配'}</dd>
+      <dt className="text-muted-foreground">{children.length ? '负责人' : 'Worker 成员'}</dt><dd>{task.assignedTo || (children.length ? '团队 Leader 协调' : '未分配')}</dd>
       <dt className="text-muted-foreground">来源会话</dt><dd className="truncate" title={task.roomId}>{sourceName || task.roomId || '暂无来源会话'}</dd>
     </dl>
-    <section className="space-y-2 rounded-lg bg-muted/40 p-3"><h4 className="text-xs font-medium">当前进展</h4>
+    {children.length === 0 && <section className="space-y-2 rounded-lg bg-muted/40 p-3"><h4 className="text-xs font-medium">当前进展</h4>
       <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
       {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
       {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
-    </section>
+    </section>}
     <section className="space-y-2"><h4 className="text-xs font-medium">{children.length ? '子任务分工与依赖' : '项目任务分工与依赖'}</h4>
       {dag && dag.nodes.length > 0 ? <>
         {!children.length && project && <section aria-label="项目整体进度" className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs"><p className="truncate font-medium" title={project.name}>{project.name}</p><p className="mt-1 text-muted-foreground">项目{PROJECT_STATUS_LABEL[project.status] ?? '状态待同步'} · 已完成 {dag.nodes.filter(node => node.status === 'completed').length}/{dag.nodes.length}</p></section>}
@@ -334,7 +334,7 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
         <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
           <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} neutral nodeWidth={156} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
         </div>
-        <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || '未分配'}</span><StatusBadge status={selected.status} /></div></div>
+        <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || (subtasksOf(selected, tasks).length ? '团队 Leader 协调' : '未分配')}</span><StatusBadge status={selected.status} /></div></div>
       </> : <p className="text-xs text-muted-foreground">该任务暂无项目分工信息</p>}
     </section>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><TaskRoomActions task={task} tasks={tasks} />{onOpenDetails && <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenDetails}>查看完整详情</Button>}</div>
@@ -1269,7 +1269,7 @@ function TaskDetailSheet({ task, tasks, onSelectTask, teamId, onClose, onOpenPro
         <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
         <TaskRoomActions task={{ ...task, teamId: task.teamId ?? teamId }} tasks={tasks} />
         <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
-          <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || '未分配'}</dd>
+          <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || (children.length ? '团队 Leader 协调' : '未分配')}</dd>
           <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>
           {task.projectId && <><dt className="text-muted-foreground">所属项目</dt><dd><button className="text-primary hover:underline" onClick={onOpenProject}>查看项目详情</button></dd></>}
           {task.dependsOn.length > 0 && <><dt className="text-muted-foreground">前置依赖</dt><dd className="break-all">{task.dependsOn.join('、')}</dd></>}
