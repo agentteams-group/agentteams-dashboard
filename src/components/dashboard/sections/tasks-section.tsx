@@ -24,7 +24,7 @@ import {
   RotateCcw,
   Database,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiUrl, requestJson } from '@/lib/api-base';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,6 +47,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import {
   useMergedTaskBoard,
   useLogTaskBoardScan,
@@ -242,6 +243,44 @@ function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
   );
 }
 
+function TaskRoomActions({ task }: { task: BoardTask }) {
+  const queryClient = useQueryClient();
+  const access = useChatRoomAccess();
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function enterCollaboration() {
+    setOpening(true);
+    setError(null);
+    try {
+      // Older Controllers expose the execution room only through task meta.
+      const meta = task.executionRoomId ? undefined : await queryClient.fetchQuery({
+        queryKey: ['task-detail', task.runId, task.teamId],
+        queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
+        staleTime: 15000,
+      });
+      const roomId = (task.executionRoomId || meta?.room_id)?.replace(/^room:/, '');
+      if (!roomId) setError('协作房间尚未创建');
+      else if (access.state !== 'joined' || !access.joinedRooms?.includes(roomId)) setError('尚未加入协作房间，请联系团队管理员');
+      else openChatRoom(roomId);
+    } catch {
+      setError('协作房间暂时无法读取，请稍后重试');
+    } finally {
+      setOpening(false);
+    }
+  }
+  return <div className="space-y-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" className="text-xs" disabled={opening || access.state !== 'joined'}
+        title={access.state !== 'joined' ? '请先登录对话并等待房间权限同步' : '进入该任务的执行协作房间'}
+        onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); void enterCollaboration(); }}>
+        {opening ? <Loader2 className="size-3.5 animate-spin" /> : <MessageSquare className="size-3.5" />}进入协作房间
+      </Button>
+      {task.roomId && <Button variant="ghost" size="sm" className="px-1 text-xs text-muted-foreground" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}>查看来源会话</Button>}
+    </div>
+    {error && <p role="status" className="text-xs text-muted-foreground">{error}</p>}
+  </div>;
+}
+
 function PlanItemRow({ item }: { item: PlanItem }) {
   const markerChar = item.marker.replace(/[[\]]/g, '');
   const color =
@@ -341,20 +380,7 @@ function TaskCard({
             {displayTime(task.createdAt)}
           </span>}
         </div>
-        {task.roomId && (
-          <button
-            type="button"
-            onClick={(e) => {
-              // 会话维度（F4.1）：来源空间可点直达，且不触发卡片自身的点击
-              e.stopPropagation();
-              openChatRoom(task.roomId);
-            }}
-            title="打开来源空间会话"
-            className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
-          >
-            查看来源会话
-          </button>
-        )}
+        <TaskRoomActions task={task} />
       </CardContent>
     </Card>
   );
@@ -1112,6 +1138,7 @@ export function TasksSection() {
 }
 
 interface TaskMetaDetail {
+  room_id?: string;
   status?: string;
   summary?: string;
   description?: string;
@@ -1137,6 +1164,7 @@ function TaskDetailSheet({ task, teamId, onClose, onOpenProject }: { task: Board
       </SheetHeader>
       {task && <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 custom-scrollbar">
         <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
+        <TaskRoomActions task={{ ...task, teamId: task.teamId ?? teamId }} />
         <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
           <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || '未分配'}</dd>
           <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>

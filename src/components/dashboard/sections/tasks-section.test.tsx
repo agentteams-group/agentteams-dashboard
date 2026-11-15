@@ -60,6 +60,9 @@ vi.mock('@/lib/hitl-inbox', () => ({
   useHitlInboxStore: { getState: () => ({ takePendingProjectKey: () => null }) },
 }));
 const viewPreference = vi.hoisted(() => ({ value: 'projects', tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
+const roomNavigation = vi.hoisted(() => ({ open: vi.fn(), joined: ['!execution:test'] as string[] }));
+vi.mock('@/lib/open-chat-room', () => ({ openChatRoom: roomNavigation.open }));
+vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: () => ({ state: 'joined', joinedRooms: roomNavigation.joined }) }));
 // 视图模式/选中项目持久化：直接给 projects 视图 + 选中 proj-1
 vi.mock('@/lib/use-persistent-state', () => ({
   usePersistentState: (key: string, initial: unknown) => {
@@ -175,4 +178,73 @@ it('separates lifecycle columns from attention states and places submitted tasks
   cleanup();
   viewPreference.value = 'projects';
   viewPreference.tasks = [];
+});
+
+describe('task collaboration room entry', () => {
+  afterEach(() => {
+    cleanup();
+    viewPreference.value = 'projects';
+    viewPreference.tasks = [];
+    roomNavigation.joined = ['!execution:test'];
+    roomNavigation.open.mockClear();
+    vi.unstubAllGlobals();
+  });
+  function task() {
+    viewPreference.value = 'kanban';
+    viewPreference.tasks = [{ runId: 'task-room', title: '执行分析', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '!source:test', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  }
+  it('keeps the source link and resolves the real collaboration room on click', async () => {
+    task();
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: 'room:!execution:test' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '查看来源会话' }));
+    expect(roomNavigation.open).toHaveBeenLastCalledWith('!source:test');
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenLastCalledWith('!execution:test'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('does not substitute the source room when there is no execution room', async () => {
+    task();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    expect(await screen.findByText('协作房间尚未创建')).toBeInTheDocument();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
+  });
+  it('opens a workflow execution room directly and isolates keyboard activation from the card', async () => {
+    task();
+    viewPreference.tasks[0].executionRoomId = '!execution:test';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    fireEvent.keyDown(entry, { key: 'Enter' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(entry);
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('also exposes the entry in task details and reuses the loaded task metadata', async () => {
+    task();
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: '!execution:test', summary: '协作详情已加载' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: /执行分析/ }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('协作详情已加载');
+    fireEvent.click(within(dialog).getByRole('button', { name: '进入协作房间' }));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test'));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('does not navigate to an execution room the user has not joined', async () => {
+    task();
+    roomNavigation.joined = [];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: '!execution:test' }), { status: 200 })));
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    expect(await screen.findByText('尚未加入协作房间，请联系团队管理员')).toBeInTheDocument();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
+  });
 });

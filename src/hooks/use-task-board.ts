@@ -42,7 +42,11 @@ export interface BoardTask {
   status: TaskStatus;
   assignedTo: string;
   projectId?: string;
+  teamId?: string;
+  /** Conversation that requested the task. */
   roomId: string;
+  /** Task execution room; never inferred from its source conversation. */
+  executionRoomId?: string;
   dependsOn: string[];
   createdAt: number;
   completedAt?: number;

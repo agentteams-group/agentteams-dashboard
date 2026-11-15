@@ -286,7 +286,9 @@ export function workflowToBoard(
         status: workflowStatusToTaskStatus(detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',
         projectId: proj.project_id,
-        roomId: wf.source_room_id ?? '',
+        teamId: proj.team_id,
+        roomId: (detail?.source_room_id ?? wf.source_room_id ?? '').replace(/^room:/, ''),
+        executionRoomId: detail?.room_id?.replace(/^room:/, ''),
         dependsOn: dependsOf.get(node.id) ?? [],
         createdAt: 0,
         // The workflow API does not expose per-task timestamps; completedAt

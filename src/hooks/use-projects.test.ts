@@ -27,6 +27,16 @@ function wf(overrides: Partial<WorkflowResponse> = {}): WorkflowResponse {
 }
 
 describe('workflowToBoard (D5 API primary mapping)', () => {
+  it('keeps the execution room separate from the task source conversation', () => {
+    const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+      source_room_id: '!project-source:test',
+      nodes: [{ id: 't1', name: '执行分析', status: 'in-progress' }],
+      tasks_detail: [{ task_id: 't1', room_id: 'room:!execution:test', source_room_id: '!task-source:test' }],
+    })]]));
+    expect(tasks[0]).toMatchObject({ roomId: '!task-source:test', executionRoomId: '!execution:test', teamId: 't1' });
+    const legacy = workflowToBoard([proj()], new Map([['p1', wf({ source_room_id: '!source:test', nodes: [{ id: 't1', name: '执行分析', status: 'pending' }] })]]));
+    expect(legacy.tasks[0].executionRoomId).toBeUndefined();
+  });
   it('maps projects to BoardProject shape', () => {
     const wfs = new Map([['p1', wf()]]);
     const { projects } = workflowToBoard([proj()], wfs);
