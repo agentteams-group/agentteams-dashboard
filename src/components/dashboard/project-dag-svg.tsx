@@ -122,7 +122,7 @@ export function ProjectDagSvg({
         const onCritical = critical.has(n.id);
         const clickable = Boolean(onNodeClick || (stuck && onStuckNodeClick));
         // ~14 CJK glyphs at 11px fit inside the default 190px node width.
-        const maxLabel = W === 190 ? 14 : Math.floor((W - 32) / 12);
+        const maxLabel = neutral && n.status === 'completed' ? Math.floor((W - 52) / 12) : W === 190 ? 14 : Math.floor((W - 32) / 12);
         const label = n.title.length > maxLabel ? `${n.title.slice(0, maxLabel)}…` : n.title;
         const assignee = n.assignee && n.assignee.length > 18 ? `${n.assignee.slice(0, 18)}…` : n.assignee;
         const handleClick = () => {
