@@ -13,9 +13,18 @@ afterEach(cleanup);
 
 describe('PendingBanner（F4.3 待办聚合横幅）', () => {
   beforeEach(() => {
+    useSectionStore.setState({ activeSection: 'workers' });
     useHitlInboxStore.setState({ confirmations: {} });
     useInviteStore.setState({ invites: {} });
     useRoomMetaStore.setState({ meta: {} });
+  });
+
+  it.each(['chat', 'my-teams'])('hides the global banner in %s while the conversation owns its pending entry', (activeSection) => {
+    useSectionStore.setState({ activeSection });
+    useInviteStore.setState({ invites: { '!room:test': { roomId: '!room:test', sender: '@leader:test' } } });
+    render(<PendingBanner />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '去处理' })).not.toBeInTheDocument();
   });
 
   it('零待办不渲染', () => {

@@ -198,6 +198,8 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
     renderDialog();
     expect(screen.queryByRole('option', { name: 'CoPaw' })).toBeNull();
     expect(screen.getByRole('option', { name: 'QwenPaw' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Codex' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'OpenHuman' })).toBeInTheDocument();
     // 运行时推荐与迁移说明都收进 ⓘ，默认视图不展示技术文案。
     expect(screen.getByLabelText('运行时选择说明')).toBeInTheDocument();
     expect(screen.queryByText(/CoPaw 已停止新建/)).not.toBeInTheDocument();

@@ -14,6 +14,8 @@ describe('runtime options', () => {
       'hermes',
       'qwenpaw',
       'deepseek-harness',
+      'codex',
+      'openhuman',
     ]);
   });
 
@@ -24,7 +26,8 @@ describe('runtime options', () => {
   it('recognises leftover copaw instances as legacy', () => {
     expect(isLegacyCopaw('copaw')).toBe(true);
     expect(isLegacyCopaw('qwenpaw')).toBe(false);
-    expect(isLegacyRuntime('openhuman')).toBe(true);
+    expect(isLegacyRuntime('openhuman')).toBe(false);
+    expect(isLegacyRuntime('codex')).toBe(false);
     expect(isLegacyRuntime('openclaw')).toBe(false);
   });
 
