@@ -96,6 +96,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
 
   const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
   const selectedRoomId = selection.scope === selectionKey ? selection.id : null;
+  const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(view !== 'teams');
@@ -135,10 +136,20 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // taskFeed 继续驱动 attention 徽标，不额外发起第二套 projects 查询。
   const taskFeed = useAssistantTaskFeed(undefined, true);
   const availableRooms = useMemo(
-    () => withLeaderAccess(sortRoomsByRecency(buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows)), roomAccess.joinedRooms, roomAccess.state)
+    () => {
+      const projected = buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows);
+      // Legacy Controllers omit task rooms; /sync can also lag room names.
+      // A deep link may still open a room verified by this user's membership.
+      for (const id of [pendingChatRoomId, selectedRoomId]) {
+        if (id && roomAccess.state === 'joined' && roomAccess.joinedRooms?.includes(id) && !projected.some(room => room.id === id)) {
+          projected.push({ id, name: roomMeta[id]?.roomName || '协作房间', type: 'unknown', members: [] });
+        }
+      }
+      return withLeaderAccess(sortRoomsByRecency(projected), roomAccess.joinedRooms, roomAccess.state)
       .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
-      .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined })),
-    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser],
+      .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined }));
+    },
+    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser, pendingChatRoomId, selectedRoomId],
   );
   // Project deep links still open here; the sidebar lists joined teams only.
   const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project', []);
@@ -244,7 +255,6 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // Declared AFTER the clear-guard effect above: within one commit effects
   // run in declaration order, so consumption wins over the guard's
   // setActiveRoomId(null) while selectedRoomId still holds the pre-link value.
-  const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   useEffect(() => {
     if (isLoading) return;
     if (pendingChatRoomId) {

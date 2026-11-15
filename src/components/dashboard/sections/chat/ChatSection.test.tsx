@@ -236,6 +236,24 @@ describe('role-based assistant landing', () => {
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent(WORKER.roomID);
   });
+  it('opens a joined task execution room when legacy workflow metadata and Matrix names omit it', async () => {
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test', '!task:test'], state: 'joined', refetch: vi.fn() });
+    taskFeedMock.workflows = [];
+    useHitlInboxStore.getState().setPendingChatRoomId('!task:test');
+    renderWithQueryClient('assistants');
+    await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!task:test'));
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
+    expect(useRoomMetaStore.getState().activeRoomId).toBe('!task:test');
+  });
+
+  it('does not synthesize an unjoined task room from a deep link', () => {
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
+    useHitlInboxStore.getState().setPendingChatRoomId('!unjoined-task:test');
+    renderWithQueryClient('assistants');
+    expect(screen.queryByTestId('chat-panel-stub')).toBeNull();
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!unjoined-task:test');
+  });
 
   it('lists controller project rooms by source_room_id even without Matrix room meta', () => {
     hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });

@@ -284,7 +284,7 @@ function TaskRoomActions({ task, compact = false }: { task: BoardTask; compact?:
   </div>;
 }
 
-function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; tasks: BoardTask[]; team?: string; onOpenDetails?: () => void }) {
+function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: BoardTask; tasks: BoardTask[]; project?: BoardProject; team?: string; onOpenDetails?: () => void }) {
   const detail = useQuery({
     queryKey: ['task-detail', task.runId, task.teamId],
     queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
@@ -297,22 +297,23 @@ function TaskPreview({ task, tasks, team, onOpenDetails }: { task: BoardTask; ta
   const selected = tasks.find(item => item.runId === selectedId) ?? task;
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
-  return <div className="space-y-3">
+  return <div className="space-y-2">
     <div className="space-y-2 pr-6"><StatusBadge status={task.status} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
-    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
       <dt className="text-muted-foreground">负责团队</dt><dd className="break-words">{team || task.teamId || '未指定'}</dd>
       <dt className="text-muted-foreground">Worker 成员</dt><dd>{task.assignedTo || '未分配'}</dd>
       <dt className="text-muted-foreground">来源会话</dt><dd className="truncate" title={task.roomId}>{sourceName || task.roomId || '暂无来源会话'}</dd>
     </dl>
     <section className="space-y-2 rounded-lg bg-muted/40 p-3"><h4 className="text-xs font-medium">当前进展</h4>
-      <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
+      <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{latestProgress || detail.data?.result_summary || detail.data?.summary || '暂无进展说明'}</p>
       {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
       {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
     </section>
     <section className="space-y-2"><h4 className="text-xs font-medium">项目任务分工与依赖</h4>
       {dag && dag.nodes.length > 0 ? <>
-        <p className="text-xs text-muted-foreground">虚线框为当前任务 · 点击节点查看负责人和状态</p>
+        {project && <section aria-label="项目整体进度" className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs"><p className="truncate font-medium" title={project.name}>{project.name}</p><p className="mt-1 text-muted-foreground">项目{PROJECT_STATUS_LABEL[project.status] ?? '状态待同步'} · 已完成 {dag.nodes.filter(node => node.status === 'completed').length}/{dag.nodes.length}</p></section>}
+        <p className="text-xs text-muted-foreground">连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。</p>
         <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
           <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} neutral nodeWidth={156} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
         </div>
@@ -365,6 +366,7 @@ function TaskCard({
   showStatus = true,
   onClick,
   tasks = [],
+  project,
 }: {
   task: BoardTask;
   managerName?: string;
@@ -374,6 +376,7 @@ function TaskCard({
   showStatus?: boolean;
   onClick?: () => void;
   tasks?: BoardTask[];
+  project?: BoardProject;
 }) {
   const expanded = selected ?? (highlightProjectId === task.projectId);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -446,7 +449,7 @@ function TaskCard({
       onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}
       onPointerEnter={clearTimer} onPointerLeave={() => schedulePreview(false)} onFocus={clearTimer} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) schedulePreview(false); }}>
       <span id={previewTitle} className="sr-only">任务预览：{task.title}</span>
-      {previewOpen && <TaskPreview task={task} tasks={tasks} team={workerTeam} onOpenDetails={openDetails} />}
+      {previewOpen && <TaskPreview task={task} tasks={tasks} project={project} team={workerTeam} onOpenDetails={openDetails} />}
     </PopoverContent>
     </Popover>
   );
@@ -1020,6 +1023,7 @@ export function TasksSection() {
                             <TaskCard
                               task={t}
                               tasks={board.tasks}
+                              project={board.projects.find(project => project.runId === t.projectId)}
                               managerName={mgr}
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
@@ -1157,7 +1161,7 @@ export function TasksSection() {
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {tasksForProject(selectedProject.runId).map((t) => (
-                          <TaskCard key={t.runId} task={t} tasks={board.tasks} onClick={() => setSelectedTaskId(t.runId)} />
+                          <TaskCard key={t.runId} task={t} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(t.runId)} />
                         ))}
                       </div>
                     </div>

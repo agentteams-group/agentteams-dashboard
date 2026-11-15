@@ -69,8 +69,8 @@ export function ProjectDagSvg({
   // resolve to the first instance.
   const markerId = useId();
   const layout = useMemo(
-    () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY }),
-    [dag, W, H, GY],
+    () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY, centerLayers: neutral }),
+    [dag, W, H, GY, neutral],
   );
   const critical = useMemo(() => criticalPathOf(dag), [dag]);
   const { width, height, positions } = layout;
@@ -99,11 +99,11 @@ export function ProjectDagSvg({
         return (
           <path
             key={`edge-${i}`}
-            d={`M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
+            d={neutral ? `M ${x1} ${y1} V ${my} H ${x2} V ${y2}` : `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
             fill="none"
             stroke={neutral ? 'var(--muted-foreground)' : onCritical ? CRITICAL_STROKE : 'rgba(148,163,184,0.55)'}
             strokeWidth={onCritical ? 2 : 1.2}
-            strokeDasharray={e.conditional ? '4 3' : undefined}
+            strokeDasharray={!neutral && e.conditional ? '4 3' : undefined}
             markerEnd={`url(#${markerId})`}
             opacity={onCritical ? 0.95 : undefined}
           />
@@ -142,7 +142,7 @@ export function ProjectDagSvg({
             className={clickable ? 'cursor-pointer' : undefined}
           >
             <title>{stuck ? `${n.title}（卡住 — 点击定位责任 Agent）` : n.title}</title>
-            {n.id === currentNodeId && <rect x={p.x - 4} y={p.y - 4} width={W + 8} height={H + (assignee ? 12 : 0) + 8} rx={10} fill="none" stroke="currentColor" strokeDasharray="4 3" opacity={0.6} />}
+            {!neutral && n.id === currentNodeId && <rect x={p.x - 4} y={p.y - 4} width={W + 8} height={H + (assignee ? 12 : 0) + 8} rx={10} fill="none" stroke="currentColor" strokeDasharray="4 3" opacity={0.6} />}
             <rect
               x={p.x}
               y={p.y}
@@ -150,8 +150,8 @@ export function ProjectDagSvg({
               height={H + (assignee ? 12 : 0)}
               rx={7}
               fill={neutral ? 'var(--card)' : colors.fill}
-              stroke={n.id === selectedNodeId ? 'currentColor' : neutral ? 'var(--border)' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
-              strokeWidth={n.id === selectedNodeId ? 2 : neutral ? 1 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
+              stroke={neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              strokeWidth={neutral ? 1 : n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
               strokeDasharray={!neutral && n.ready ? '5 3' : undefined}
             />
             {neutral && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}

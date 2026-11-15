@@ -10,7 +10,7 @@ import '@testing-library/jest-dom/vitest';
 const FAKE_PROJECT = {
   runId: 'proj-1',
   name: '测试项目',
-  status: 'in_progress' as const,
+  status: 'active' as const,
   roomId: '!room:example.org',
   workers: ['w1'],
   phases: [],
@@ -237,6 +237,21 @@ describe('task collaboration room entry', () => {
     fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
     expect(await screen.findByText('协作房间尚未创建')).toBeInTheDocument();
     expect(roomNavigation.open).not.toHaveBeenCalled();
+  });
+  it('separates project progress from a completed prerequisite task', async () => {
+    task();
+    viewPreference.tasks[0].status = 'completed';
+    viewPreference.tasks.push({ ...viewPreference.tasks[0], runId: 'downstream', title: '独立验证', status: 'in_progress', assignedTo: '测试助手', dependsOn: ['task-room'] });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 }))));
+    renderSection();
+    fireEvent.focus(screen.getByRole('button', { name: /执行分析/ }));
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    const project = within(preview).getByRole('region', { name: '项目整体进度' });
+    expect(project).toHaveTextContent('测试项目');
+    expect(project).toHaveTextContent('进行中');
+    expect(project).toHaveTextContent('已完成 1/2');
+    expect(within(preview).getByText('连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。')).toBeInTheDocument();
+    expect(within(preview).getByRole('button', { name: /执行分析 ·/ }).querySelector('[data-completed]')).not.toBeNull();
   });
   it('waits for hover intent, stays open when entering the panel, and dismisses with Escape', async () => {
     task();

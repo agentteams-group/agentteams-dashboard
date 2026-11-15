@@ -18,4 +18,12 @@ it('uses neutral nodes and edges, marks only completed tasks with a green check,
   expect([...graph.querySelectorAll('path:not([data-completed])')].every(path => !['orange', '#f59e0b', '#22d3ee'].includes(path.getAttribute('stroke') ?? ''))).toBe(true);
   expect(screen.getByRole('button', { name: '任务0 · worker0' })).toHaveAttribute('data-current', 'true');
   expect(screen.getByRole('button', { name: '任务1 · worker1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(graph.querySelectorAll('rect[stroke-dasharray]')).toHaveLength(0);
+  const root = screen.getByRole('button', { name: '任务0 · worker0' }).querySelector('rect')!;
+  const left = screen.getByRole('button', { name: '任务1 · worker1' }).querySelector('rect')!;
+  const right = screen.getByRole('button', { name: '任务2 · worker2' }).querySelector('rect')!;
+  expect(Number(root.getAttribute('x'))).toBe((Number(left.getAttribute('x')) + Number(right.getAttribute('x'))) / 2);
+  const edges = [...graph.querySelectorAll('path[marker-end]')];
+  expect(edges.every(path => /^M [\d.]+ [\d.]+ V [\d.]+ H [\d.]+ V [\d.]+$/.test(path.getAttribute('d') ?? ''))).toBe(true);
+  expect(new Set([...graph.querySelectorAll('rect')].map(rect => rect.getAttribute('stroke-width'))).size).toBe(1);
 });
