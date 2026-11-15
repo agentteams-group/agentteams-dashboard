@@ -43,6 +43,7 @@ export function ProjectDagSvg({
   onStuckNodeClick,
   currentNodeId,
   selectedNodeId,
+  neutral = false,
 }: {
   dag: ProjectDag;
   nodeColors: Record<string, DagNodeColor>;
@@ -57,6 +58,7 @@ export function ProjectDagSvg({
   onStuckNodeClick?: (_nodeId: string) => void;
   currentNodeId?: string;
   selectedNodeId?: string;
+  neutral?: boolean;
 }) {
   const W = nodeWidth;
   const H = nodeHeight;
@@ -93,13 +95,13 @@ export function ProjectDagSvg({
         const x2 = b.x + W / 2;
         const y2 = b.y;
         const my = (y1 + y2) / 2;
-        const onCritical = critical.has(e.source) && critical.has(e.target);
+        const onCritical = !neutral && critical.has(e.source) && critical.has(e.target);
         return (
           <path
             key={`edge-${i}`}
             d={`M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
             fill="none"
-            stroke={onCritical ? CRITICAL_STROKE : 'rgba(148,163,184,0.55)'}
+            stroke={neutral ? 'var(--muted-foreground)' : onCritical ? CRITICAL_STROKE : 'rgba(148,163,184,0.55)'}
             strokeWidth={onCritical ? 2 : 1.2}
             strokeDasharray={e.conditional ? '4 3' : undefined}
             markerEnd={`url(#${markerId})`}
@@ -109,7 +111,7 @@ export function ProjectDagSvg({
       })}
       <defs>
         <marker id={markerId} markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L7,3 L0,6 Z" fill="rgba(148,163,184,0.7)" />
+          <path d="M0,0 L7,3 L0,6 Z" fill={neutral ? 'var(--muted-foreground)' : 'rgba(148,163,184,0.7)'} />
         </marker>
       </defs>
       {dag.nodes.map((n) => {
@@ -147,15 +149,16 @@ export function ProjectDagSvg({
               width={W}
               height={H + (assignee ? 12 : 0)}
               rx={7}
-              fill={colors.fill}
-              stroke={n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
-              strokeWidth={n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
-              strokeDasharray={n.ready ? '5 3' : undefined}
+              fill={neutral ? 'var(--card)' : colors.fill}
+              stroke={n.id === selectedNodeId ? 'currentColor' : neutral ? 'var(--border)' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              strokeWidth={n.id === selectedNodeId ? 2 : neutral ? 1 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
+              strokeDasharray={!neutral && n.ready ? '5 3' : undefined}
             />
-            {n.ready && (
+            {neutral && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
+            {!neutral && n.ready && (
               <circle cx={p.x + 10} cy={p.y + H / 2 - (assignee ? 6 : 0)} r={3} fill="#22d3ee" />
             )}
-            {stuck && (
+            {!neutral && stuck && (
               <circle cx={p.x + W - 9} cy={p.y + 9} r={3.5} fill="#ef4444">
                 <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" />
               </circle>
