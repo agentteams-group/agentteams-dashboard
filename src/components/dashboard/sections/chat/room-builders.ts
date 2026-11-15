@@ -215,6 +215,7 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
   return rooms.filter(
     (r) =>
       r.name.toLowerCase().includes(q) ||
+      Boolean(r.team?.teamName?.toLowerCase().includes(q)) ||
       r.id.toLowerCase().includes(q) ||
       r.members.some((m) => m && m.toLowerCase().includes(q)) ||
       (r.parentTeam ? r.parentTeam.toLowerCase().includes(q) : false) ||

@@ -49,7 +49,7 @@ describe('ChatRoomSidebar', () => {
   it('shows joined teams as single rows and opens both admin and member groups directly', () => {
     const onSelectRoom = vi.fn();
     renderSidebar({ title: '我的团队', teamList: true, onSelectRoom, rooms: [
-      room({ id: '!admin:test', name: 'Team: design', parentTeam: '设计团队', teamRole: 'admin', phase: 'Active' }),
+      room({ id: '!admin:test', name: 'Team: design', parentTeam: 'design', team: { name: 'design', teamName: '设计团队' } as RoomInfo['team'], teamRole: 'admin', phase: 'Active' }),
       room({ id: '!member:test', name: 'Team: engineering', parentTeam: '研发团队', teamRole: 'member' }),
     ] });
     expect(screen.getAllByText('我的团队')).toHaveLength(1);
@@ -60,6 +60,9 @@ describe('ChatRoomSidebar', () => {
     expect(onSelectRoom).toHaveBeenLastCalledWith('!admin:test');
     fireEvent.click(screen.getByRole('button', { name: '研发团队 成员' }));
     expect(onSelectRoom).toHaveBeenLastCalledWith('!member:test');
+    fireEvent.change(screen.getByPlaceholderText('搜索团队…'), { target: { value: '设计' } });
+    expect(screen.getByRole('button', { name: '设计团队 管理员' })).toBeInTheDocument();
+    expect(screen.queryByText('研发团队')).toBeNull();
   });
   it('folds each team independently and keeps other conversations available', () => {
     const leader = room({ id: '!design:test', name: '设计助手', type: 'manager', agentRole: 'leader', parentTeam: 'design', access: 'joined' });
