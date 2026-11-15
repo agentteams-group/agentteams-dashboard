@@ -74,6 +74,19 @@ beforeEach(() => {
   mockMessageSearch.mockReturnValue({ data: undefined, isError: false, isFetching: false });
 });
 
+it('supports a single Chinese character for local resource and page searches', () => {
+  renderPalette('任');
+  expect(screen.getByRole('button', { name: /任务看板/ })).toBeVisible();
+});
+
+it('Enter selects the highlighted rendered result rather than the unsorted input order', () => {
+  const worker = { entity: 'worker' as const, name: '工程师', subtitle: '', phase: 'Running', section: 'workers' };
+  const task = { entity: 'task' as const, name: '验收任务', subtitle: '', phase: 'completed', section: 'tasks' };
+  render(<CommandPalette results={[worker, task]} onSelect={mockOnSelect} onClose={vi.fn()} />);
+  fireEvent.keyDown(window, { key: 'Enter' });
+  expect(mockOnSelect).toHaveBeenCalledWith(task);
+});
+
 describe('CommandPalette 跨房间消息（方案 v3 B-1 延伸）', () => {
   it('命中渲染成可点的结果，点开带上房间与检索词深链', () => {
     ok({

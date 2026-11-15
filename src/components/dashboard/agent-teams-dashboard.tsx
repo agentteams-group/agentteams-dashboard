@@ -11,7 +11,6 @@ import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
-import { useMatrixStore } from '@/lib/matrix-store';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStatus } from '@/hooks/use-agentteams-status';
@@ -29,7 +28,6 @@ import { Sidebar } from './sidebar';
 import { MobileSidebar } from './mobile-sidebar';
 import { MobileQuickBar } from './mobile-quick-bar';
 import { DashboardHeader } from './header';
-import { DashboardFooter } from './footer';
 import { useActiveSection } from './use-active-section';
 import {
   navItems,
@@ -117,14 +115,9 @@ export function AgentTeamsDashboard() {
   // section below it) each time.
   const isConnected = useAgentTeamsStore((s) => s.isConnected);
   const openSettings = useAgentTeamsStore((s) => s.openSettings);
-  const controllerUrl = useAgentTeamsStore((s) => s.controllerUrl);
-  const connectionLatency = useAgentTeamsStore((s) => s.connectionLatency);
-  const reconnectInterval = useAgentTeamsStore((s) => s.reconnectInterval);
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
-  const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
-  const matrixSyncing = useMatrixStore((s) => s.isSyncing);
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
@@ -141,7 +134,6 @@ export function AgentTeamsDashboard() {
   const { data: humans } = useHumans();
   const conversationAccess = useChatRoomAccess();
   const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? room.team?.admin ? room.team.admin.name === sessionUser : userLevel >= 3 : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, conversationAccess.joinedRooms, conversationAccess.state]);
-  const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Plugin system: discover + activate plugins once per session.
   usePluginSystem();
@@ -163,24 +155,6 @@ export function AgentTeamsDashboard() {
   useEffect(() => {
     checkConnection();
   }, [checkConnection]);
-
-  // Track the last time entity data changed. React 19 is much stricter
-  // about "adjust state during render" patterns than React 18 — every
-  // setState in the render body that fires on every render trips the
-  // max-update-depth budget on first paint when the source data identity
-  // shifts between renders (the previous version compared ref objects
-  // whose identity drifted whenever a hook returned a fresh wrapper).
-  // Derive lastRefreshTime in an effect instead.
-  const lastDataRef = useRef<{ workers: typeof workers; teams: typeof teams; managers: typeof managers } | null>(null);
-  useEffect(() => {
-    const last = lastDataRef.current;
-    if (!last || last.workers !== workers || last.teams !== teams || last.managers !== managers) {
-      lastDataRef.current = { workers, teams, managers };
-      if (workers !== undefined || teams !== undefined || managers !== undefined) {
-        setLastRefreshTime(new Date());
-      }
-    }
-  }, [workers, teams, managers]);
 
   // Guard active section: fall back to overview if the current section is
   // hidden in this mode or points at a plugin route that no longer exists.
@@ -323,22 +297,6 @@ export function AgentTeamsDashboard() {
     return sectionSet;
   }, [notifications]);
 
-  const latencyText = connectionLatency != null ? `${connectionLatency}ms` : '--';
-  const latencyColor = connectionLatency != null
-    ? connectionLatency < 100 ? 'text-emerald-500'
-    : connectionLatency < 300 ? 'text-amber-500'
-    : 'text-red-500'
-    : 'text-muted-foreground';
-
-  const lastRefreshText = (() => {
-    const now = Date.now();
-    const diff = now - lastRefreshTime.getTime();
-    if (diff < 5000) return '刚刚';
-    if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-    return lastRefreshTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  })();
-
   const handleNavClick = useCallback((sectionId: string) => {
     setActiveSection(sectionId);
     setMobileMenuOpen(false);
@@ -359,7 +317,6 @@ export function AgentTeamsDashboard() {
           );
         },
       });
-      setLastRefreshTime(new Date());
     } finally {
       setIsRefreshingAll(false);
     }
@@ -430,8 +387,7 @@ export function AgentTeamsDashboard() {
               and any other section (one AnimatePresence child) used to skip
               the entrance animation and sometimes left the new section
               invisible (operator saw "click 任务看板 first time does
-              nothing"). The footer is hidden in chat mode to give chat the
-              full height.
+              nothing").
             */}
             <div
               className={`flex-1 flex flex-col min-h-0 ${isConversationSection ? '' : 'bg-background'}`}
@@ -483,19 +439,7 @@ export function AgentTeamsDashboard() {
               )}
             </div>
 
-            {!isConversationSection && (
-              <DashboardFooter
-                isConnected={isConnected}
-                connectionLatency={connectionLatency}
-                controllerUrl={controllerUrl}
-                reconnectInterval={reconnectInterval}
-                lastRefreshText={lastRefreshText}
-                latencyColor={latencyColor}
-                latencyText={latencyText}
-                matrixLoggedIn={matrixLoggedIn}
-                matrixSyncing={matrixSyncing}
-              />
-            )}
+
           </div>
         </div>
 

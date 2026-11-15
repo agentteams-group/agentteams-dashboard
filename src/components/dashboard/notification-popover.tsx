@@ -41,15 +41,13 @@ export function NotificationPopover() {
         <Button variant="ghost" size="icon" className="h-9 w-9 relative" aria-label={`通知（${count} 条未读）`}>
           <Bell className="w-4 h-4" aria-hidden="true" />
           {count > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center">
-              {count > 9 ? '9+' : count}
-            </span>
+            <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-foreground/60 ring-2 ring-background" aria-hidden="true" />
           )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between p-3 border-b">
-          <span className="font-medium text-sm">通知</span>
+          <span className="text-sm">通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
           <div className="flex gap-1">
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
               <Check className="w-3 h-3 mr-1" />

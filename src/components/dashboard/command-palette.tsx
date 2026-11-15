@@ -165,7 +165,7 @@ export function useGlobalSearch(
 
   return useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q || q.length < 2) return [];
+    if (!q) return [];
 
     const results: SearchResult[] = [];
 
@@ -396,6 +396,9 @@ export function CommandPalette({
 }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const selectableResults = useMemo(() => PALETTE_ORDER
+    .filter((entity) => entity !== 'message-notice')
+    .flatMap((entity) => results.filter((result) => result.entity === entity)), [results]);
 
   // Reset selection when the result count changes (adjust state during render)
   const [prevResultCount, setPrevResultCount] = useState(results.length);
@@ -406,20 +409,21 @@ export function CommandPalette({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (e.isComposing) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIdx((prev) => (prev + 1) % results.length);
+        if (selectableResults.length) setSelectedIdx((prev) => (prev + 1) % selectableResults.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIdx((prev) => (prev - 1 + results.length) % results.length);
-      } else if (e.key === 'Enter' && results[selectedIdx]) {
+        if (selectableResults.length) setSelectedIdx((prev) => (prev - 1 + selectableResults.length) % selectableResults.length);
+      } else if (e.key === 'Enter' && selectableResults[selectedIdx]) {
         e.preventDefault();
-        onSelect(results[selectedIdx]);
+        onSelect(selectableResults[selectedIdx]);
       } else if (e.key === 'Escape') {
         onClose();
       }
     },
-    [results, selectedIdx, onSelect, onClose]
+    [selectableResults, selectedIdx, onSelect, onClose]
   );
 
   useEffect(() => {
@@ -429,7 +433,7 @@ export function CommandPalette({
 
   // Scroll selected item into view
   useEffect(() => {
-    const el = listRef.current?.children[selectedIdx] as HTMLElement | undefined;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-search-index="${selectedIdx}"]`);
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
@@ -485,10 +489,12 @@ export function CommandPalette({
                 return (
                   <button
                     key={`${result.entity}-${idx}-${result.name}`}
+                    data-search-index={idx}
                     className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                       idx === selectedIdx ? 'bg-accent' : 'hover:bg-accent/50'
                     }`}
                     onClick={() => onSelect(result)}
+                    onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setSelectedIdx(idx)}
                   >
                     <Icon

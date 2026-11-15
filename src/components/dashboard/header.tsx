@@ -32,7 +32,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { GlobalWorkStatus } from './global-work-status';
+import { ConnectionStatus } from './connection-status';
 import { NotificationPopover } from './notification-popover';
 import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
@@ -197,9 +197,12 @@ export function DashboardHeader({
             onClose={() => setPaletteOpen(false)}
           />
         )}
+        {paletteOpen && searchResults.length === 0 && (
+          <div role="status" className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-border bg-popover p-4 text-sm text-muted-foreground shadow-lg">
+            {debouncedQuery.trim() ? '没有找到匹配结果' : '输入名称搜索 Agent、任务或页面'}
+          </div>
+        )}
       </div>
-
-      {isConnected && <GlobalWorkStatus onNavClick={onNavClick} />}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -251,19 +254,7 @@ export function DashboardHeader({
         {/* Plugin-contributed toolbar buttons (extension point: toolbar) */}
         <PluginToolbarButtons />
 
-        {/* 连接状态独立展示，版本信息保留在说明中。 */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className={`hidden items-center gap-1.5 text-sm sm:inline-flex ${isConnected ? 'text-status-done' : 'text-status-waiting'}`}>
-              <span className={`size-1.5 rounded-full ${isConnected ? 'bg-status-done' : 'bg-status-waiting'}`} aria-hidden="true" />
-              {isConnected ? '在线' : '离线'}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            {isConnected ? '平台服务已连接' : '平台服务未连接'}
-            {versionString && <div className="text-xs opacity-80">版本 v{versionString}</div>}
-          </TooltipContent>
-        </Tooltip>
+        <ConnectionStatus isConnected={isConnected} versionString={versionString} mode={mode} />
 
         <NotificationPopover />
 
