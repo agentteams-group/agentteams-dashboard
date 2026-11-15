@@ -53,13 +53,13 @@ vi.mock('@/hooks/use-task-board', () => ({
 vi.mock('@/lib/task-store', () => ({
   useTaskStore: (sel?: (_s: unknown) => unknown) =>
     sel
-      ? sel({ tasks: {}, clearTasks: vi.fn() })
-      : { tasks: {}, clearTasks: vi.fn() },
+      ? sel({ tasks: viewPreference.live, clearTasks: vi.fn() })
+      : { tasks: viewPreference.live, clearTasks: vi.fn() },
 }));
 vi.mock('@/lib/hitl-inbox', () => ({
   useHitlInboxStore: { getState: () => ({ takePendingProjectKey: () => null }) },
 }));
-const viewPreference = vi.hoisted(() => ({ value: 'projects', tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
+const viewPreference = vi.hoisted(() => ({ value: 'projects', tasks: [] as import('@/hooks/use-task-board').BoardTask[], live: {} as Record<string, import('@/lib/task-store').TaskEntry> }));
 const roomNavigation = vi.hoisted(() => ({ open: vi.fn(), joined: ['!execution:test'] as string[] }));
 vi.mock('@/lib/open-chat-room', () => ({ openChatRoom: roomNavigation.open }));
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: () => ({ state: 'joined', joinedRooms: roomNavigation.joined }) }));
@@ -91,6 +91,17 @@ const renderSection = () => {
 };
 
 describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反馈）', () => {
+  it('does not roll accepted subtask progress back when an older completion message is replayed', () => {
+    viewPreference.value = 'kanban';
+    const base = { projectId: 'proj-1', assignedTo: 'worker', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' };
+    viewPreference.tasks = [
+      { ...base, runId: 'main', title: '交付统计工具', status: 'in_progress' },
+      { ...base, runId: 'analysis', parentTaskId: 'main', title: '已验收的需求', status: 'completed' },
+    ];
+    viewPreference.live = { analysis: { runId: 'analysis', title: '已验收的需求', status: 'submitted', roomId: '!task:test', senderMatrixUserId: 'worker', subagents: [], steps: [], createdAt: 1, updatedAt: 1 } };
+    renderSection();
+    expect(screen.getByRole('region', { name: '任务流程' })).toHaveTextContent('子任务 1/1 已完成');
+  });
   it('shows only main tasks on the board, then opens their subtasks and execution details', async () => {
     viewPreference.value = 'kanban';
     const base = {projectId:'proj-1',teamId:'team',assignedTo:'worker',roomId:'',dependsOn:[],createdAt:0,outcome:null,source:'api'};
@@ -116,6 +127,7 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
     cleanup();
     viewPreference.value = 'projects';
     viewPreference.tasks = [];
+    viewPreference.live = {};
     vi.unstubAllGlobals();
   });
 

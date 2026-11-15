@@ -83,9 +83,13 @@ export function buildConfirmationReply(
   workerMatrixUserIds: string[] | undefined,
 ): ConfirmationReply {
   const workerIds = workerMatrixUserIds ?? [];
-  if (workerIds.length === 0) return { content };
-
-  const targetId = sender && workerIds.includes(sender) ? sender : workerIds[0];
+  // Task rooms can lack a Worker projection. Native decisions still belong
+  // to the exact Agent that published the approval, including in group rooms.
+  const nativeDecision = /^\/(?:approval\s+(?:approve|deny|cancel)|agentteams-approval\s+(?:approve|deny)|approve|reject)\b/.test(content);
+  const targetId = sender && (workerIds.includes(sender) || nativeDecision)
+    ? sender
+    : workerIds[0];
+  if (!targetId) return { content };
   const name = targetId.startsWith('@')
     ? targetId.slice(1).split(':')[0]
     : targetId.split(':')[0];

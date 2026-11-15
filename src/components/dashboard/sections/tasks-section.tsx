@@ -722,7 +722,7 @@ export function TasksSection() {
       };
       byId.set(
         e.runId,
-        existing ? { ...existing, status: liveTask.status } : liveTask,
+        existing ? { ...existing, status: existing.status === 'completed' ? existing.status : liveTask.status } : liveTask,
       );
     }
     return {

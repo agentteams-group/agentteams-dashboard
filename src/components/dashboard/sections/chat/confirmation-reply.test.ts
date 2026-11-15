@@ -25,6 +25,17 @@ describe('interaction activity presentation', () => {
 });
 
 describe('buildConfirmationReply', () => {
+  it('targets a native approval owner when a task room has no Worker projection', () => {
+    const reply = buildConfirmationReply('/approval approve req-1', WORKER_2, undefined);
+    expect(reply.content).toBe('@other /approval approve req-1');
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+  });
+
+  it('never routes a native decision to another projected Worker', () => {
+    const reply = buildConfirmationReply('/approval deny req-1', WORKER_2, [WORKER]);
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+  });
+
   it('Worker 房间默认 @ 发起卡片的 Agent', () => {
     const reply = buildConfirmationReply('1A / 2A', WORKER, [WORKER]);
     expect(reply.content).toBe('@ceshi 1A / 2A');
