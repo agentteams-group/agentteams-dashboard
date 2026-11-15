@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WorkerResponse } from '@/lib/agentteams-api';
+import { agentteamsApi } from '@/lib/agentteams-api';
 
 const mounts = vi.hoisted(() => ({
   surface: {} as Record<string, number>,
@@ -161,7 +162,31 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it('saves the OpenClaw heartbeat switch without environment changes and reads it back', async () => {
+  const target: WorkerResponse = { ...worker, runtime: 'openclaw', envEditable: true, llmHeartbeatEnabled: true };
+  const update = vi.spyOn(agentteamsApi, 'updateWorker').mockImplementation(async (_name, data) => {
+    detailState.worker = { ...target, ...data };
+    return detailState.worker as WorkerResponse;
+  });
+  renderDrawerFor(target);
+  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeChecked();
+  fireEvent.click(screen.getByRole('switch', { name: '自主巡检' }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith('worker-a', { llmHeartbeatEnabled: false }));
+  await waitFor(() => expect(screen.getByRole('switch', { name: '自主巡检' })).not.toBeChecked());
+});
+
+it('keeps the heartbeat switch read-only for non-admin viewers', async () => {
+  renderDrawerFor({ ...worker, runtime: 'openclaw', envEditable: false, llmHeartbeatEnabled: true }, 2);
+  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeDisabled();
+});
+
+it('does not show the OpenClaw heartbeat switch for other runtimes', async () => {
+  renderDrawer();
+  expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
 });
 
 const CARDS: Array<{ title: string; content: string }> = [

@@ -533,6 +533,7 @@ export function WorkersSection() {
           name: worker.name,
           env: worker.envEditable ? (worker.env || {}) : undefined,
           model: worker.model || '',
+          llmHeartbeatEnabled: worker.llmHeartbeatEnabled,
           runtime: worker.runtime,
           image: worker.image || '',
           skills: worker.skills || [],
@@ -574,6 +575,7 @@ export function WorkersSection() {
     const envChanged = JSON.stringify(editForm.env) !== JSON.stringify(editWorker.envEditable ? (editWorker.env || {}) : undefined);
     const hasChanges =
       envChanged ||
+      editForm.llmHeartbeatEnabled !== editWorker.llmHeartbeatEnabled ||
       editForm.model !== (editWorker.model || '') ||
       editForm.modelProvider !== undefined ||
       editForm.runtime !== editWorker.runtime ||
@@ -594,6 +596,7 @@ export function WorkersSection() {
       return;
     }
     if (!envChanged) delete data.env;
+    if (editForm.llmHeartbeatEnabled === editWorker.llmHeartbeatEnabled) delete data.llmHeartbeatEnabled;
     warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
