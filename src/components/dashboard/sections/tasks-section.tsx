@@ -686,7 +686,7 @@ export function TasksSection() {
   // Matrix 实时事件（useTaskStore）作为叠加层两轨共享。
   const apiBoard = useApiTaskBoard();
   const minioBoard = useMergedTaskBoard({
-    refetchInterval: 8000,
+    refetchInterval: 5000,
     enabled: apiBoard.degraded,
   });
   const primary = apiBoard.degraded ? minioBoard : apiBoard;
