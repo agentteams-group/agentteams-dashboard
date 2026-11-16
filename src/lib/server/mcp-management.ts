@@ -63,6 +63,11 @@ async function consoleApi(request: NextRequest, path: string, method = 'GET', bo
     result = await callHigressConsole(path, { method, body, cookie });
   }
   if (method === 'GET' && result.response.status === 404 && /^\/v1\/(consumers|mcpServer|wasm-plugins|service-sources)\/[^/]+$/.test(path)) return null;
+  // Embedded Console wraps this SDK NotFoundException in HTTP 502.
+  // Match the requested route exactly so actual upstream failures still fail.
+  const missingMcp = method === 'GET' && path.match(/^\/v1\/mcpServer\/([a-z][a-z0-9-]*)$/);
+  if (missingMcp && result.response.status === 502 && isRecord(result.body) && result.body.success === false
+    && result.body.message === `com.alibaba.higress.sdk.exception.NotFoundException: can't found the bound route by name: mcp-server-${missingMcp[1]}.internal`) return null;
   if (method === 'DELETE' && result.response.status === 404 && /^\/v1\/(consumers|mcpServer)\/[^/]+$/.test(path)) return null;
   if (!result.response.ok || (isRecord(result.body) && result.body.success === false)) {
     throw new McpManagementError(`网关操作失败（HTTP ${result.response.status}）。请检查服务来源、插件与网关配置后重试。`, result.response.status === 409 ? 409 : 502);

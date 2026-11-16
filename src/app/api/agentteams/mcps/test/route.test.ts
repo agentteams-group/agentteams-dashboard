@@ -128,15 +128,25 @@ describe('POST /api/agentteams/mcps/test', () => {
     expect(json.message).toContain('transport');
   });
 
-  it('opens the GET stream for legacy sse transport', async () => {
-    handler = (_req, res) => {
-      res.writeHead(200, { 'content-type': 'text/event-stream' });
-      res.write('data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}\n\n');
-      // Keep the stream open briefly; the client reads the first frame.
+  it('initializes legacy SSE through its advertised message endpoint with credentials', async () => {
+    let stream: import('node:http').ServerResponse;
+    handler = (req, res) => {
+      if (req.method === 'GET') {
+        stream = res;
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write('event: endpoint\ndata: /messages?session_id=test\n\n');
+        return;
+      }
+      const body = JSON.parse(receivedRequests.at(-1)!.body!);
+      res.writeHead(202); res.end();
+      if (body.method === 'initialize') stream.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2025-03-26', serverInfo: { name: 'legacy-sse' } } })}\n\n`);
     };
-    const { json } = await postJson({ url: baseUrl, transport: 'sse' });
+    const { json } = await postJson({ url: baseUrl, transport: 'sse', headers: { Authorization: 'Bearer backend-token' }, timeout: 500 });
     expect(json.success).toBe(true);
-    expect(receivedRequests[0].method).toBe('GET');
+    expect(receivedRequests.map((req) => req.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(receivedRequests.every((req) => req.auth === 'Bearer backend-token')).toBe(true);
+    expect(receivedRequests[1].url).toBe('/messages?session_id=test');
+    expect(JSON.parse(receivedRequests[2].body!).method).toBe('notifications/initialized');
   });
 
   it('fails fast when the handshake payload is not MCP JSON-RPC', async () => {

@@ -48,6 +48,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('managed MCP lifecycle', () => {
+  it('accepts the embedded Console missing-MCP response wrapped in HTTP 502', async () => {
+    const fallback = vi.mocked(callHigressConsole).getMockImplementation()!;
+    vi.mocked(callHigressConsole).mockImplementation(async (path, options) => path === '/v1/mcpServer/docs'
+      ? { response: new Response(null, { status: 502 }), body: { success: false, message: "com.alibaba.higress.sdk.exception.NotFoundException: can't found the bound route by name: mcp-server-docs.internal", data: null } }
+      : fallback(path, options));
+    await expect(saveManagedMcp(request(), { name: 'docs', connection: record().connection })).resolves.toMatchObject({ gatewayState: 'ready' });
+  });
+
+  it('does not interpret unrelated gateway failures as an absent MCP', async () => {
+    vi.mocked(callHigressConsole).mockResolvedValue({ response: new Response(null, { status: 502 }), body: { success: false, message: 'upstream unavailable' } });
+    await expect(saveManagedMcp(request(), { name: 'docs', connection: record().connection })).rejects.toMatchObject({ status: 502 });
+    expect(putObject).not.toHaveBeenCalled();
+  });
+
   it.each(['gateway', 'source'])('rejects a pre-existing %s resource before writing anything', async (collision) => {
     vi.mocked(callHigressConsole).mockImplementation(async (path) => consoleResult(path === (collision === 'gateway' ? '/v1/mcpServer/docs' : '/v1/service-sources/at-mcp-docs') ? { name: 'existing' } : null));
     await expect(saveManagedMcp(request(), { name: 'docs', connection: record().connection })).rejects.toMatchObject({ status: 409 });
