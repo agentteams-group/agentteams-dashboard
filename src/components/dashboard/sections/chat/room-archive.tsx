@@ -5,16 +5,14 @@ import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { useArchivedRooms, useSetRoomArchived, useDeleteArchivedRoom } from '@/hooks/use-room-archive';
-import { useMatrixRoomState } from '@/hooks/use-matrix';
+import { useArchivedRooms, useRoomArchiveStatus, useSetRoomArchived, useDeleteArchivedRoom } from '@/hooks/use-room-archive';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { MatrixRequestError, type ArchivedRoomFilters } from '@/lib/matrix-api';
 import type { RoomInfo } from './room-info';
 
 export function archiveError(error: unknown): string {
   return error instanceof MatrixRequestError && error.status === 404
-    ? '当前服务尚未支持任务房间归档，请升级 Matrix 服务。'
+    ? '当前服务尚未支持任务房间归档，请升级 Controller 和 Matrix 服务。'
     : error instanceof Error ? error.message : '操作失败，请重试';
 }
 
@@ -48,26 +46,11 @@ export function ArchivedRoomsDialog({ onSelectRoom }: { onSelectRoom: (_id: stri
 }
 
 export function RoomArchiveAction({ room }: { room: RoomInfo }) {
-  const state = useMatrixRoomState(room.id);
-  const userId = useMatrixStore(value => value.userId);
-  const userLevel = useAgentTeamsStore(value => value.userLevel);
-  const list = useArchivedRooms();
+  const status = useRoomArchiveStatus(room.id);
   const change = useSetRoomArchived();
   const remove = useDeleteArchivedRoom();
-  const archivedRoom = list.data?.rooms.find(item => item.room_id === room.id);
-  const meta = state.data?.find(event => event.type === 'room.meta' && event.state_key === '')?.content;
-  if (meta?.roomKind !== 'task_room' && !archivedRoom) return null;
-  const archived = !!archivedRoom || !!room.archived;
-  const power = state.data?.find(event => event.type === 'm.room.power_levels')?.content;
-  const users = power?.users as Record<string, number> | undefined;
-  const events = power?.events as Record<string, number> | undefined;
-  const create = state.data?.find(event => event.type === 'm.room.create');
-  const isCreator = !!userId && (create?.sender === userId || Array.isArray(create?.content.additional_creators) && create.content.additional_creators.includes(userId));
-  const level = Number(create?.content.room_version ?? 1) >= 12 && isCreator ? Infinity : userId ? users?.[userId] ?? Number(power?.users_default ?? 0) : 0;
-  const teamAdmin = meta?.teamAdmin as { userId?: string } | undefined;
-  const leader = meta?.leaderWorker as { userId?: string } | undefined;
-  const hasRole = userLevel >= 3 || !!userId && (teamAdmin?.userId === userId || leader?.userId === userId);
-  const canArchive = archivedRoom?.can_archive ?? (hasRole && level >= (events?.['org.agentteams.room.archive'] ?? Number(power?.state_default ?? 50)));
+  if (!status.data?.is_task_room) return null;
+  const { archived, can_archive: canArchive, can_delete: canDelete } = status.data;
   const busy = change.isPending || remove.isPending;
   return <div className="flex items-center gap-1">
     {archived && <span className="whitespace-nowrap text-xs text-muted-foreground">已归档<span className="hidden lg:inline"> · 只读</span></span>}
@@ -75,7 +58,7 @@ export function RoomArchiveAction({ room }: { room: RoomInfo }) {
       if (!archived && !window.confirm('归档后所有成员将停止同步此任务房间。请确认任务已完成，产物已同步到工作区。')) return;
       change.mutate({ roomId: room.id, archived: !archived });
     }}>{archived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}<span className="hidden xl:inline">{archived ? '取消归档' : '归档任务房间'}</span></Button>}
-    {archived && archivedRoom?.can_delete && <Button variant="ghost" size="sm" aria-label="删除房间" title="删除房间" disabled={busy} onClick={() => {
+    {archived && canDelete && <Button variant="ghost" size="sm" aria-label="删除房间" title="删除房间" disabled={busy} onClick={() => {
       if (window.confirm('永久删除此归档任务房间？房间消息将无法恢复，工作区产物保留。')) remove.mutate(room.id);
     }}><Trash2 className="size-4" /><span className="hidden xl:inline">删除房间</span></Button>}
     {(change.isError || remove.isError) && <span role="alert" className="text-xs text-destructive">{archiveError(change.error || remove.error)}</span>}

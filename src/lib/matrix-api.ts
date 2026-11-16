@@ -26,6 +26,13 @@ export interface ArchivedRoomFilters {
   human_member?: string;
 }
 
+export interface RoomArchiveStatus {
+  is_task_room: boolean;
+  archived: boolean;
+  can_archive: boolean;
+  can_delete: boolean;
+}
+
 export interface MatrixLoginResponse {
   access_token: string;
   user_id: string;
@@ -161,7 +168,7 @@ async function throwIfNotOk(res: Response, fallback: string): Promise<void> {
   if (res.ok) return;
   const data = await res.json().catch(() => ({}));
   const errcode = typeof data.errcode === 'string' ? data.errcode : undefined;
-  const error = typeof data.error === 'string' ? data.error : fallback;
+  const error = typeof data.error === 'string' ? data.error : typeof data.message === 'string' ? data.message : fallback;
   const retryAfterMs =
     typeof data.retry_after_ms === 'number'
       ? data.retry_after_ms
@@ -240,6 +247,12 @@ export const matrixApi = {
   getArchivedRooms: async (homeserver: string, accessToken: string, filters: ArchivedRoomFilters = {}): Promise<{ rooms: ArchivedRoom[] }> => {
     const res = await fetch(buildMatrixUrl('/api/matrix/archived-rooms', { homeserver, ...filters }), { headers: buildHeaders(accessToken), cache: 'no-store' });
     await throwIfNotOk(res, '无法加载归档房间');
+    return res.json();
+  },
+
+  getRoomArchiveStatus: async (homeserver: string, accessToken: string, roomId: string): Promise<RoomArchiveStatus> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/archive`, { homeserver }), { headers: buildHeaders(accessToken), cache: 'no-store' });
+    await throwIfNotOk(res, '无法加载任务房间权限');
     return res.json();
   },
 

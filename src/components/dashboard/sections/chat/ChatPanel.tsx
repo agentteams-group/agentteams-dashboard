@@ -15,6 +15,7 @@ import { RoomContextTabs } from './components/RoomContextTabs';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { ManagerModelGate } from './manager-model-gate';
 import { RoomArchiveAction } from './room-archive';
+import { useRoomArchiveStatus } from '@/hooks/use-room-archive';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -49,6 +50,7 @@ export function ChatPanel({
   managerName,
 }: ChatPanelProps) {
   const userLevel = useAgentTeamsStore(state => state.userLevel);
+  const archiveStatus = useRoomArchiveStatus(room.id);
   const renderPanel = (configured = true) => (
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
@@ -74,7 +76,7 @@ export function ChatPanel({
           </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
-          canSend={canSend && configured && !room.archived}
+          canSend={canSend && configured && !(archiveStatus.data?.archived ?? room.archived)}
           onSendMessage={onSendMessage}
           className="h-full"
         />
