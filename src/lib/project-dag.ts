@@ -112,11 +112,8 @@ export function layoutProjectDag(
   return { width, height, positions };
 }
 
-export function buildProjectDag(
-  tasks: BoardTask[],
-  projectId: string,
-): ProjectDag {
-  const projectTasks = tasks.filter((t) => t.projectId === projectId);
+export function buildTaskDag(tasks: BoardTask[]): ProjectDag {
+  const projectTasks = tasks;
   const byId = new Map(projectTasks.map((t) => [t.runId, t]));
 
   const nodes: DagNode[] = [];
@@ -353,4 +350,8 @@ export function criticalPathOf(dag: ProjectDag): Set<string> {
     cursor = (next as unknown as string) ?? null;
   }
   return path;
+}
+
+export function buildProjectDag(tasks: BoardTask[], projectId: string): ProjectDag {
+  return buildTaskDag(tasks.filter(task => task.projectId === projectId));
 }
