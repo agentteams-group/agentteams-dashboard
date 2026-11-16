@@ -11,6 +11,21 @@ import {
   type RoomSearchResult,
 } from '@/lib/matrix-search';
 
+export interface ArchivedRoom {
+  room_id: string;
+  name: string | null;
+  joined_member_count: number;
+  can_archive: boolean;
+  can_delete: boolean;
+  room_meta: { teamName?: string; teamAdmin?: { userId?: string }; humanMembers?: { userId?: string }[]; roomKind?: string } | null;
+}
+
+export interface ArchivedRoomFilters {
+  team?: string;
+  team_admin?: string;
+  human_member?: string;
+}
+
 export interface MatrixLoginResponse {
   access_token: string;
   user_id: string;
@@ -220,6 +235,22 @@ export const matrixApi = {
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
     await throwIfNotOk(res, 'Failed to get joined rooms');
     return res.json();
+  },
+
+  getArchivedRooms: async (homeserver: string, accessToken: string, filters: ArchivedRoomFilters = {}): Promise<{ rooms: ArchivedRoom[] }> => {
+    const res = await fetch(buildMatrixUrl('/api/matrix/archived-rooms', { homeserver, ...filters }), { headers: buildHeaders(accessToken), cache: 'no-store' });
+    await throwIfNotOk(res, '无法加载归档房间');
+    return res.json();
+  },
+
+  setRoomArchived: async (homeserver: string, accessToken: string, roomId: string, archived: boolean): Promise<void> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/${archived ? 'archive' : 'unarchive'}`, { homeserver }), { method: 'POST', headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, archived ? '归档失败' : '取消归档失败');
+  },
+
+  deleteArchivedRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<void> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/delete`, { homeserver }), { method: 'POST', headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, '删除归档房间失败');
   },
 
   joinRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<MatrixJoinedRoom> => {

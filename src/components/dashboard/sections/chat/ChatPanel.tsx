@@ -14,6 +14,7 @@ import { ConversationTaskTips } from './components/ConversationTaskTips';
 import { RoomContextTabs } from './components/RoomContextTabs';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { ManagerModelGate } from './manager-model-gate';
+import { RoomArchiveAction } from './room-archive';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -66,13 +67,14 @@ export function ChatPanel({
           topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
           headerActions={<>
             {headerActions}
+            <RoomArchiveAction room={room} />
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
             {(room.agentRole || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
           </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
-          canSend={canSend && configured}
+          canSend={canSend && configured && !room.archived}
           onSendMessage={onSendMessage}
           className="h-full"
         />

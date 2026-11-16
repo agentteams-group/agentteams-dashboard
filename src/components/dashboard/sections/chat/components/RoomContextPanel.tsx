@@ -14,6 +14,7 @@ import { RoomContextTabs } from './RoomContextTabs';
 export type RoomContextTab = 'tasks' | 'members' | 'files' | 'thread';
 
 interface RoomContextPanelProps {
+  canSend?: boolean;
   showMembers?: boolean;
   roomId: string;
   team?: TeamResponse;
@@ -39,6 +40,7 @@ interface RoomContextPanelProps {
  * <lg 统一收成右侧抽屉 —— 不再出现宽度 208/320/256~600 三套侧栏。
  */
 export function RoomContextPanel({
+  canSend = true,
   roomId,
   team,
   activeTab,
@@ -92,6 +94,7 @@ export function RoomContextPanel({
         {activeTab === 'thread' && (
           activeThread ? (
             <ThreadPanel
+              canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}
               memberMap={memberMap}

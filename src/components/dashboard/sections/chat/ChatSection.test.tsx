@@ -17,6 +17,7 @@ const hooksMock = vi.hoisted(() => ({
   useManagers: vi.fn(),
   useHumans: vi.fn(),
   useRoomAccess: vi.fn(),
+  useArchivedRooms: vi.fn(),
 }));
 const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test', sessionUser: 'alice' }));
 const taskFeedMock = vi.hoisted(() => ({ workflows: [] as unknown[] }));
@@ -26,6 +27,7 @@ vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams })
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: hooksMock.useManagers }));
 vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans }));
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: hooksMock.useRoomAccess }));
+vi.mock('@/hooks/use-room-archive', () => ({ useArchivedRooms: hooksMock.useArchivedRooms }));
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: taskFeedMock.workflows, loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
 
 // --- Store hooks (no-selector call sites) -----------------------------------
@@ -88,6 +90,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionMock.userId = '@user:test';
   taskFeedMock.workflows = [];
+  hooksMock.useArchivedRooms.mockReturnValue({ data: { rooms: [] }, isSuccess: true });
   hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test', '!room1:test'], state: 'joined', refetch: vi.fn() });
 });
 
@@ -273,6 +276,17 @@ describe('role-based assistant landing', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
     const sidebar = within(screen.getByTestId('sidebar-stub'));
     expect(sidebar.getByRole('button', { name: '网站改版' })).toBeInTheDocument();
+  });
+
+  it('loads archived task rooms without sync metadata and opens their history through a deep link', () => {
+    loaded();
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!archive:test'], state: 'joined', refetch: vi.fn() });
+    hooksMock.useArchivedRooms.mockReturnValue({ data: { rooms: [{ room_id: '!archive:test', name: '已验收任务', room_meta: { teamName: 'design' }, joined_member_count: 3 }] }, isSuccess: true });
+    useHitlInboxStore.getState().setPendingChatRoomId('!archive:test');
+    renderWithQueryClient();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!archive:test');
+    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    expect(within(screen.getByTestId('sidebar-stub')).queryByRole('button', { name: '已验收任务' })).toBeNull();
   });
 
   it('restores the same account selection and gives an explicit deep link priority', () => {

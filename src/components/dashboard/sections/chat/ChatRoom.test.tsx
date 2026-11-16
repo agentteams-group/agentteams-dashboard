@@ -174,6 +174,19 @@ describe('ChatRoom read-position dual-write', () => {
     expect(onSendMessage).toHaveBeenCalledWith('@leader 你好', undefined, [expect.objectContaining({ userId: '@leader:test' })]);
   });
 
+  it('keeps history readable while a room is read only, then restores its composer', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const onSendMessage = vi.fn();
+    const view = renderChatRoom({ canSend: false, onSendMessage });
+    expect(screen.getByText('第一条')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(onSendMessage).not.toHaveBeenCalled();
+    view.unmount();
+    renderChatRoom({ canSend: true, onSendMessage });
+    expect(screen.getByRole('textbox')).toBeEnabled();
+  });
+
   it('writes both m.read and m.fully_read when the user reaches the bottom', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     useRoomMetaStore.setState({

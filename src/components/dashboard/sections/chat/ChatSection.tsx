@@ -27,6 +27,8 @@ import { ChatProvider } from './ChatStore';
 import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
 import { preferredAgentRoom, withLeaderAccess, canOpenConversation, conversationStorageKey, LEADER_ACCESS_LABELS } from './agent-conversations';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
+import { useArchivedRooms } from '@/hooks/use-room-archive';
+import { ArchivedRoomsDialog } from './room-archive';
 import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes';
 import { ConversationSwitcher, RelatedConversationButton } from './conversation-switcher';
@@ -92,6 +94,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const accountKey = conversationStorageKey(homeserver, userId || sessionUser || '');
   const selectionKey = accountKey && view !== 'all' ? `${accountKey}:${view}` : accountKey;
   const roomAccess = useChatRoomAccess();
+  const archivedRooms = useArchivedRooms();
   const switcherRef = useRef<HTMLButtonElement>(null);
 
   const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
@@ -138,6 +141,11 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const availableRooms = useMemo(
     () => {
       const projected = buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows);
+      for (const archived of archivedRooms.data?.rooms ?? []) {
+        const existing = projected.find(room => room.id === archived.room_id);
+        if (existing) existing.archived = true;
+        else projected.push({ id: archived.room_id, name: archived.name || '任务房间', type: 'project', members: [], parentTeam: archived.room_meta?.teamName, archived: true, memberCount: archived.joined_member_count });
+      }
       // Legacy Controllers omit task rooms; /sync can also lag room names.
       // A deep link may still open a room verified by this user's membership.
       for (const id of [pendingChatRoomId, selectedRoomId]) {
@@ -149,11 +157,11 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
       .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined }));
     },
-    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser, pendingChatRoomId, selectedRoomId],
+    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser, pendingChatRoomId, selectedRoomId, archivedRooms.data],
   );
   // Project deep links still open here; the sidebar lists joined teams only.
   const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project', []);
-  const rooms = useMemo(() => availableRooms.filter(room => view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin')), [availableRooms, view]);
+  const rooms = useMemo(() => availableRooms.filter(room => !room.archived && (view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin'))), [availableRooms, view]);
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
@@ -316,6 +324,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
           </Button>
           <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
           <SyncStatusChip />
+          <ArchivedRoomsDialog onSelectRoom={handleSelectRoom} />
         </div>
         )}
         {projectionNotices.map((notice) => (
@@ -384,7 +393,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 taskFeed={taskFeed}
                 headerLeading={<Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
                 headerTitle={<ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
-                headerActions={<RelatedConversationButton rooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
+                headerActions={<><ArchivedRoomsDialog onSelectRoom={handleSelectRoom} /><RelatedConversationButton rooms={availableRooms.filter(room => !room.archived)} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} /></>}
 
               />
             ) : (
