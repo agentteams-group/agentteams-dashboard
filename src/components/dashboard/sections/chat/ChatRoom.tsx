@@ -552,6 +552,7 @@ export function ChatRoom({
   // ---- Drag-and-drop file upload (overlay on the whole room area) ----
   const { dragActive, dropZoneProps } = useFileDropZone({
     onFiles: (files) => {
+      if (!canSend || membershipDenied) return;
       for (const file of files) handleFileUpload(file);
     },
   });
@@ -756,7 +757,7 @@ export function ChatRoom({
     >
       {/* Drag-and-drop upload overlay */}
       <DragDropOverlay
-        active={dragActive}
+        active={canSend && !membershipDenied && dragActive}
         label="松开以上传文件"
         description={`支持多文件，发送到 ${roomName}`}
       />

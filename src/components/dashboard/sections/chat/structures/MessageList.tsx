@@ -34,10 +34,12 @@ export interface ChatSystemNotice {
 
 function SystemNoticeItem({
   notice,
+  canRetry,
   onRetry,
   onDismiss,
 }: {
   notice: ChatSystemNotice;
+  canRetry: boolean;
   onRetry: (_notice: ChatSystemNotice) => void;
   onDismiss: (_notice: ChatSystemNotice) => void;
 }) {
@@ -48,14 +50,14 @@ function SystemNoticeItem({
   // f4-2: notice 对象来自 useState 数组（useOutboundMessages），身份稳定；
   // onRetry 却随父级每次重渲染经 useMutation 对象链换新引用。倒计时 effect 若
   // 把 onRetry 放进 deps，活动房间（流式输出 / typing 持续重渲染）里 start 会
-  // 被反复重置、倒计时永远走不完——用 ref 固定最新回调，deps 收敛到 [notice]。
+  // 被反复重置、倒计时永远走不完——用 ref 固定最新回调，deps 收敛到 [notice, canRetry]。
   const onRetryRef = useRef(onRetry);
   useEffect(() => {
     onRetryRef.current = onRetry;
   });
 
   useEffect(() => {
-    if (!notice.autoRetry || !notice.retryAfterMs) return;
+    if (!canRetry || !notice.autoRetry || !notice.retryAfterMs) return;
     const start = Date.now();
     const timer = setInterval(() => {
       const remaining = notice.retryAfterMs! - (Date.now() - start);
@@ -67,7 +69,7 @@ function SystemNoticeItem({
       setLeftMs(remaining);
     }, 250);
     return () => clearInterval(timer);
-  }, [notice]);
+  }, [notice, canRetry]);
 
   const seconds = Math.max(1, Math.ceil(leftMs / 1000));
 
@@ -82,10 +84,11 @@ function SystemNoticeItem({
       >
         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
         <span className="truncate">{notice.message}</span>
-        {notice.kind === 'rate-limited' && notice.autoRetry && (
+        {canRetry && notice.kind === 'rate-limited' && notice.autoRetry && (
           <span className="shrink-0 font-mono opacity-80">{seconds}s</span>
         )}
         <button
+          disabled={!canRetry}
           onClick={() => onRetry(notice)}
           className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-foreground/10 transition-colors"
           title="重新发送"
@@ -221,6 +224,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     memberMap,
     onAtBottomChange,
     notices = [],
+    _canSend,
     onRetryNotice,
     onDismissNotice,
     readReceipts,
@@ -359,6 +363,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             <SystemNoticeItem
               key={notice.id}
               notice={notice}
+              canRetry={_canSend}
               onRetry={onRetryNotice ?? (() => {})}
               onDismiss={onDismissNotice ?? (() => {})}
             />
