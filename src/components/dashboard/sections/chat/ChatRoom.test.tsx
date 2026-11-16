@@ -14,11 +14,13 @@ import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
+import { MatrixRequestError } from '@/lib/matrix-api';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
   const setReadMarkerMutate = vi.fn();
   const sendMutate = vi.fn();
+  const uploadMutateAsync = vi.fn().mockResolvedValue({ content_uri: 'mxc://hs.test/file' });
   const roomMessagesChunk: unknown[] = [
     {
       event_id: '$old',
@@ -46,6 +48,7 @@ const mocks = vi.hoisted(() => {
     sendReceiptMutate,
     setReadMarkerMutate,
     sendMutate,
+    uploadMutateAsync,
     roomMessagesChunk,
     virtuoso,
     roomMembersChunk,
@@ -101,7 +104,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, isPending: false, error: null }),
     useMatrixEditMessage: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
     useMatrixRedactMessage: () => ({ mutate: vi.fn() }),
-    useMatrixUploadMedia: () => ({ mutate: vi.fn(), isPending: false }),
+    useMatrixUploadMedia: () => ({ mutate: vi.fn(), mutateAsync: mocks.uploadMutateAsync, isPending: false }),
     useTypingNotification: () => ({ notifyTyping: vi.fn(), stopTyping: vi.fn() }),
     useMatrixTypingUsers: () => [],
   };
@@ -172,6 +175,52 @@ describe('ChatRoom read-position dual-write', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '你好' } });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     expect(onSendMessage).toHaveBeenCalledWith('@leader 你好', undefined, [expect.objectContaining({ userId: '@leader:test' })]);
+  });
+
+  it('keeps history readable while a room is read only, then restores its composer', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const onSendMessage = vi.fn();
+    const view = renderChatRoom({ canSend: false, onSendMessage });
+    expect(screen.getByText('第一条')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(onSendMessage).not.toHaveBeenCalled();
+    view.unmount();
+    renderChatRoom({ canSend: true, onSendMessage });
+    expect(screen.getByRole('textbox')).toBeEnabled();
+  });
+
+  it('blocks dropped files while archived and allows them after restoring', async () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const view = renderChatRoom({ canSend: false });
+    const dataTransfer = { types: ['Files'], files: [new File(['result'], 'result.txt')] };
+    await act(async () => { fireEvent.drop(view.container.firstElementChild!, { dataTransfer }); });
+    expect(mocks.uploadMutateAsync).not.toHaveBeenCalled();
+    view.rerender(<ChatProvider><ChatRoom roomId="!room:test" roomName="测试房间" canSend /></ChatProvider>);
+    await act(async () => { fireEvent.drop(view.container.firstElementChild!, { dataTransfer }); });
+    expect(mocks.uploadMutateAsync).toHaveBeenCalledOnce();
+  });
+
+  it('stops manual and automatic failed-message retries when the room is archived', async () => {
+    vi.useFakeTimers();
+    try {
+      useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+      mocks.sendMutate.mockImplementationOnce((_args: unknown, callbacks: { onError: (_error: Error) => void }) => {
+        callbacks.onError(new MatrixRequestError('rate limit', 'M_LIMIT_EXCEEDED', 429, 1000));
+      });
+      const view = renderChatRoom();
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'follow up' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: '发送消息' })); });
+      expect(screen.getByTitle('重新发送')).toBeEnabled();
+      view.rerender(<ChatProvider><ChatRoom roomId="!room:test" roomName="测试房间" canSend={false} /></ChatProvider>);
+      act(() => { vi.advanceTimersByTime(2000); });
+      expect(mocks.sendMutate).toHaveBeenCalledOnce();
+      expect(screen.getByTitle('重新发送')).toBeDisabled();
+      fireEvent.click(screen.getByTitle('重新发送'));
+      expect(mocks.sendMutate).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('writes both m.read and m.fully_read when the user reaches the bottom', () => {

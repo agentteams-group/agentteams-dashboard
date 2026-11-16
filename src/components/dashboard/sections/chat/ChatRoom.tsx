@@ -454,7 +454,7 @@ export function ChatRoom({
   });
 
   const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[], fileRefs?: FileRef[]) => {
-    if (membershipDenied) return;
+    if (!canSend || membershipDenied) return;
     const typed = content.trim();
     // A message may carry only file references (#87); it then falls back to a
     // short body so the send route's non-empty body contract still holds.
@@ -486,7 +486,7 @@ export function ChatRoom({
     clearDraft();
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds, canRedirect, directExecution]);
+  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds, canRedirect, directExecution, canSend]);
 
   const handleStopExecution = useCallback(() => {
     if (!directExecution || !canRedirect || !canSend || membershipDenied) return;
@@ -494,13 +494,14 @@ export function ChatRoom({
   }, [directExecution, canRedirect, canSend, membershipDenied, sendOutbound]);
 
   const handleInputChange = useCallback((content: string) => {
+    if (!canSend) return;
     setInputValue(content);
     if (content.trim()) {
       notifyTyping();
     } else {
       stopTyping();
     }
-  }, [notifyTyping, stopTyping, setInputValue]);
+  }, [notifyTyping, stopTyping, setInputValue, canSend]);
 
   // ---- Composer edit session (ArrowUp flow) ----
   const handleRequestEditLast = useCallback(() => {
@@ -551,6 +552,7 @@ export function ChatRoom({
   // ---- Drag-and-drop file upload (overlay on the whole room area) ----
   const { dragActive, dropZoneProps } = useFileDropZone({
     onFiles: (files) => {
+      if (!canSend || membershipDenied) return;
       for (const file of files) handleFileUpload(file);
     },
   });
@@ -755,7 +757,7 @@ export function ChatRoom({
     >
       {/* Drag-and-drop upload overlay */}
       <DragDropOverlay
-        active={dragActive}
+        active={canSend && !membershipDenied && dragActive}
         label="松开以上传文件"
         description={`支持多文件，发送到 ${roomName}`}
       />
@@ -859,14 +861,14 @@ export function ChatRoom({
             loading={messagesQuery.isLoading}
             _canSend={canSend && isLoggedIn && !membershipDenied}
             _onSend={handleSend}
-            onReply={handleReply}
+            onReply={canSend ? handleReply : undefined}
             onCopy={handleCopy}
             onOpenThread={handleOpenThread}
-            onEdit={handleEditSubmit}
-            onDelete={handleDelete}
-            onResend={handleResendLocal}
+            onEdit={canSend ? handleEditSubmit : undefined}
+            onDelete={canSend ? handleDelete : undefined}
+            onResend={canSend ? handleResendLocal : undefined}
             onCancel={handleCancelLocal}
-            onSendConfirmation={handleSendConfirmation}
+            onSendConfirmation={canSend ? handleSendConfirmation : undefined}
             onOpenWorkerFiles={handleOpenWorkerFiles}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
@@ -950,6 +952,7 @@ export function ChatRoom({
 
       {contextPanel !== null && (
         <RoomContextPanel
+          canSend={canSend}
           showMembers={!agentRole}
           roomId={roomId}
           team={team}

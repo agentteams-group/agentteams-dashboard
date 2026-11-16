@@ -18,6 +18,7 @@ import { useImeGuard } from '../use-ime-guard';
 import { buildAnswerContent, buildConfirmationReply, type ConfirmationAnswerField } from '../confirmation-reply';
 
 interface ThreadPanelProps {
+  canSend?: boolean;
   roomId: string;
   rootMessage: DisplayMessage;
   memberMap?: Record<string, string>;
@@ -26,6 +27,7 @@ interface ThreadPanelProps {
 
 /** 话题 body（无面板外框）：根消息 + Matrix m.thread 回复 + 回复框。 */
 export function ThreadPanel({
+  canSend = true,
   roomId,
   rootMessage,
   memberMap,
@@ -75,14 +77,14 @@ export function ThreadPanel({
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
-    if (!trimmed || !isLoggedIn || sendMutation.isPending) return;
+    if (!canSend || !trimmed || !isLoggedIn || sendMutation.isPending) return;
     sendMutation.mutate({
       roomId,
       body: trimmed,
       relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
     });
     setInputValue('');
-  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id]);
+  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id, canSend]);
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, _eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     if (!isLoggedIn || sendMutation.isPending) return Promise.resolve(false);
@@ -146,9 +148,9 @@ export function ThreadPanel({
           message={rootMessage}
           showSender
           isContinuation={false}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onSendConfirmation={handleSendConfirmation}
+          onEdit={canSend ? handleEdit : undefined}
+          onDelete={canSend ? handleDelete : undefined}
+          onSendConfirmation={canSend ? handleSendConfirmation : undefined}
           memberMap={memberMap}
         />
         {threadQuery.isLoading ? (
@@ -172,9 +174,9 @@ export function ThreadPanel({
                 message={reply}
                 showSender={!isContinuation}
                 isContinuation={isContinuation}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onSendConfirmation={handleSendConfirmation}
+                onEdit={canSend ? handleEdit : undefined}
+                onDelete={canSend ? handleDelete : undefined}
+                onSendConfirmation={canSend ? handleSendConfirmation : undefined}
                 memberMap={memberMap}
               />
             );
@@ -194,7 +196,7 @@ export function ThreadPanel({
           onCompositionStart={onCompositionStart}
           onCompositionEnd={onCompositionEnd}
           placeholder={isLoggedIn ? '回复此话题... (Enter 发送, Shift+Enter 换行)' : '请先登录后再回复'}
-          disabled={!isLoggedIn}
+          disabled={!canSend || !isLoggedIn}
           rows={1}
           className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"
         />
@@ -204,7 +206,7 @@ export function ThreadPanel({
             size="sm"
             className="h-7 px-2.5"
             onClick={handleSend}
-            disabled={!inputValue.trim() || !isLoggedIn || sendMutation.isPending}
+            disabled={!canSend || !inputValue.trim() || !isLoggedIn || sendMutation.isPending}
           >
             {sendMutation.isPending ? (
               <span className="animate-pulse">发送中</span>

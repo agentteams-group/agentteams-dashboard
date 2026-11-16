@@ -2,6 +2,7 @@ import type { TeamResponse } from '@/lib/agentteams-api';
 
 export interface RoomInfo {
   id: string;
+  archived?: boolean;
   name: string;
   type: 'worker' | 'team' | 'project' | 'manager' | 'human' | 'unknown';
   /** Product role of a direct assistant conversation. */
