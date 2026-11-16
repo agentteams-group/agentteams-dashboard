@@ -64,8 +64,13 @@ afterEach(() => {
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: originalMedia });
 });
 
+function startRecording() {
+  fireEvent.click(screen.getByRole('button', { name: '语音输入' }));
+  fireEvent.click(screen.getByRole('button', { name: '开始录音' }));
+}
+
 async function recordAndFinish() {
-  fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+  startRecording();
   await screen.findByRole('button', { name: '完成录音' });
   fireEvent.click(screen.getByRole('button', { name: '完成录音' }));
   await waitFor(() => expect(FakeWorker.instances[0]?.postMessage).toHaveBeenCalled());
@@ -75,6 +80,7 @@ describe('voice input in the composer', () => {
   it('loads no model initially, appends editable text and sends only on user action', async () => {
     render(<Composer />);
     expect(FakeWorker.instances).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: '语音设置' })).not.toBeInTheDocument();
     await recordAndFinish();
     expect(FakeWorker.instances[0].postMessage.mock.calls[0][0]).toMatchObject({ language: 'zh' });
     expect(stopTrack).toHaveBeenCalled();
@@ -102,7 +108,7 @@ describe('voice input in the composer', () => {
     let resolve!: (_value: unknown) => void;
     getUserMedia.mockReturnValueOnce(new Promise(done => { resolve = done; }));
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    startRecording();
     fireEvent.click(await screen.findByRole('button', { name: '取消语音输入' }));
     await act(async () => resolve({ getTracks: () => [{ stop: stopTrack }] }));
     expect(stopTrack).toHaveBeenCalled();
@@ -113,7 +119,7 @@ describe('voice input in the composer', () => {
   it('keeps the draft on permission and recognition failures', async () => {
     getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    startRecording();
     expect(await screen.findByRole('alert')).toHaveTextContent('麦克风');
     await recordAndFinish();
     await act(async () => FakeWorker.instances[0].onmessage?.({ data: { type: 'error', error: '识别失败' } }));
@@ -123,7 +129,7 @@ describe('voice input in the composer', () => {
 
   it('stops an active microphone when cancelled without starting recognition', async () => {
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    startRecording();
     await screen.findByRole('button', { name: '完成录音' });
     fireEvent.click(screen.getByRole('button', { name: '取消语音输入' }));
     expect(stopTrack).toHaveBeenCalled();
@@ -135,7 +141,7 @@ describe('voice input in the composer', () => {
   it('finishes recording at 60 seconds', async () => {
     vi.useFakeTimers();
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    startRecording();
     await act(async () => {});
     expect(FakeRecorder.instances[0].state).toBe('recording');
     await act(async () => { vi.advanceTimersByTime(60000); });
@@ -148,7 +154,7 @@ describe('voice input in the composer', () => {
   it('explains HTTPS before asking for the microphone', async () => {
     vi.stubGlobal('isSecureContext', false);
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    startRecording();
     expect(await screen.findByRole('alert')).toHaveTextContent('HTTPS');
     expect(getUserMedia).not.toHaveBeenCalled();
   });
@@ -157,11 +163,10 @@ describe('voice input in the composer', () => {
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ dashscopeAvailable: true }))
       .mockResolvedValueOnce(Response.json({ text: '百煉轉寫' }));
     render(<Composer />);
-    fireEvent.click(screen.getByRole('button', { name: '语音设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '语音输入' }));
     await waitFor(() => expect(screen.getByRole('option', { name: '百炼（按量付费）' })).not.toBeDisabled());
     fireEvent.change(screen.getByLabelText('语音识别方式'), { target: { value: 'dashscope' } });
-    fireEvent.keyDown(screen.getByLabelText('语音识别方式'), { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始录音' }));
     fireEvent.click(await screen.findByRole('button', { name: '完成录音' }));
     await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('@worker 原有草稿 百炼转写'));
     expect(FakeWorker.instances).toHaveLength(0);

@@ -9,6 +9,7 @@ import {
   hashForSection,
   needsHashNormalization,
   resolveHash,
+  taskCollaborationHash,
 } from '@/lib/nav-hash';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
@@ -31,6 +32,8 @@ function isKnownSection(hash: string): boolean {
 
 /** Apply a resolved hash's deep-link payload (room id) to the target store. */
 function applyDeepLinks(resolved: ReturnType<typeof resolveHash>): void {
+  useSectionStore.setState({ taskCollaboration: resolved?.taskId && resolved.roomId
+    ? { taskId: resolved.taskId, roomId: resolved.roomId } : null });
   if ((resolved?.section === 'chat' || resolved?.section === 'my-teams') && resolved.roomId) {
     useHitlInboxStore.getState().setPendingChatRoomId(resolved.roomId);
   }
@@ -81,6 +84,7 @@ export function resetInitialResolutionForTests(): void {
 
 export function useActiveSection() {
   const activeSection = useSectionStore((s) => s.activeSection);
+  const taskCollaboration = useSectionStore((s) => s.taskCollaboration);
 
   // Resolve the initial section once on mount (hash / localStorage / default).
   // Subsequent mounts (TasksSection etc.) keep the live store value.
@@ -91,6 +95,7 @@ export function useActiveSection() {
   }, []);
 
   const setActiveSection = useCallback((section: string) => {
+    useSectionStore.setState({ taskCollaboration: null });
     useSectionStore.getState().setActiveSection(section);
   }, []);
 
@@ -106,11 +111,14 @@ export function useActiveSection() {
     const section = useSectionStore.getState().activeSection;
     // Preserve a valid resource-tab deep link (`#console/resources/<tab>`)
     // instead of collapsing it to `#console/resources` on mount.
-    const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
+    const context = useSectionStore.getState().taskCollaboration;
+    const canonical = context && section === 'chat'
+      ? taskCollaborationHash(context.taskId, context.roomId)
+      : `#${hashForActiveSection(section, window.location.hash)}`;
     if (window.location.hash !== canonical) {
       window.location.hash = canonical;
     }
-  }, [activeSection]);
+  }, [activeSection, taskCollaboration]);
 
   // --- Listen for external hash changes (browser back/forward) ---
   useEffect(() => {
@@ -120,7 +128,10 @@ export function useActiveSection() {
       // Echo of our own programmatic write — nothing to sync. Use the same
       // canonical form as the write effect so a preserved resource-tab deep
       // link (`#console/resources/<tab>`) still counts as an echo.
-      const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
+      const context = useSectionStore.getState().taskCollaboration;
+      const canonical = context && section === 'chat'
+        ? taskCollaborationHash(context.taskId, context.roomId)
+        : `#${hashForActiveSection(section, window.location.hash)}`;
 
       // Pure echo of our own programmatic write — nothing to sync.
       if (window.location.hash === canonical) return;

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // 9/17 装验反馈回归：任务看板项目视图**右栏详情独立滚动**——
@@ -218,6 +218,7 @@ describe('task collaboration room entry', () => {
     cleanup();
     viewPreference.value = 'projects';
     viewPreference.tasks = [];
+    viewPreference.live = {};
     roomNavigation.joined = ['!execution:test'];
     roomNavigation.open.mockClear();
     vi.unstubAllGlobals();
@@ -226,6 +227,22 @@ describe('task collaboration room entry', () => {
     viewPreference.value = 'kanban';
     viewPreference.tasks = [{ runId: 'task-room', title: '执行分析', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '!source:test', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
   }
+  it('moves a refreshed task between columns while keeping the board mounted and ignoring a stale chat status', async () => {
+    task();
+    viewPreference.tasks[0].status = 'assigned';
+    viewPreference.live = { 'task-room': { runId: 'task-room', title: '执行分析', status: 'assigned', roomId: '!source:test', senderMatrixUserId: 'worker', steps: [], subagents: [], createdAt: 0, updatedAt: 1 } };
+    const client = makeQueryClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider>;
+    const { rerender } = render(<TasksSection />, { wrapper });
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    const previousColumn = card.closest('[class*="h-[360px]"]')!;
+    expect(previousColumn).toHaveTextContent('已派发');
+    viewPreference.tasks = viewPreference.tasks.map(item => ({ ...item, status: 'in_progress' }));
+    rerender(<TasksSection />);
+    await waitFor(() => expect(within(previousColumn as HTMLElement).queryByRole('button', { name: /执行分析/ })).toBeNull());
+    expect(screen.getByRole('button', { name: /执行分析/ }).closest('[class*="h-[360px]"]')).toHaveTextContent('进行中');
+    expect(previousColumn.isConnected).toBe(true);
+  });
   it('disables an undispatched task room with an explicit reason and makes no metadata request', () => {
     task();
     viewPreference.tasks[0].status = 'pending';
@@ -265,7 +282,7 @@ describe('task collaboration room entry', () => {
     const entry = screen.getByRole('button', { name: '进入协作房间' });
     expect(entry).toBeEnabled();
     fireEvent.click(entry);
-    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test');
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room');
   });
   it('keeps the source link and resolves the real collaboration room on click', async () => {
     task();
@@ -278,7 +295,7 @@ describe('task collaboration room entry', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看来源会话' }));
     expect(roomNavigation.open).toHaveBeenLastCalledWith('!source:test');
     fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
-    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenLastCalledWith('!execution:test'));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenLastCalledWith('!execution:test', 'task-room'));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('opens a lazy preview on focus with real dependencies, assignees and no invented creation time', async () => {
@@ -357,7 +374,7 @@ describe('task collaboration room entry', () => {
     fireEvent.keyDown(entry, { key: 'Enter' });
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(entry);
-    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test');
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room');
     expect(fetch).not.toHaveBeenCalled();
   });
   it('also exposes the entry in task details and reuses the loaded task metadata', async () => {
@@ -369,7 +386,7 @@ describe('task collaboration room entry', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('协作详情已加载');
     fireEvent.click(within(dialog).getByRole('button', { name: '进入协作房间' }));
-    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test'));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room'));
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('does not navigate to an execution room the user has not joined', async () => {

@@ -5,6 +5,9 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { taskCollaborationHash } from '@/lib/nav-hash';
+import { openChatRoom } from '@/lib/open-chat-room';
 
 function setHash(hash: string) {
   Object.defineProperty(window, 'location', {
@@ -18,7 +21,7 @@ describe('useActiveSection', () => {
 
   beforeEach(() => {
     resetInitialResolutionForTests();
-    useSectionStore.setState({ activeSection: 'overview' });
+    useSectionStore.setState({ activeSection: 'overview', taskCollaboration: null });
     localStorage.clear();
     replaceStateSpy = vi.spyOn(window.history, 'replaceState');
   });
@@ -34,6 +37,31 @@ describe('useActiveSection', () => {
   });
 
   describe('initial active section', () => {
+    it('restores a task collaboration URL and returns directly to the board', () => {
+      const hash = taskCollaborationHash('task-123', '!execution:test');
+      setHash(hash);
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('chat');
+      expect(useSectionStore.getState().taskCollaboration?.taskId).toBe('task-123');
+      expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!execution:test');
+      expect(window.location.hash).toBe(hash);
+      act(() => result.current.setActiveSection('tasks'));
+      expect(window.location.hash).toBe('#workbench/tasks');
+      expect(useSectionStore.getState().taskCollaboration).toBeNull();
+      act(() => { setHash(hash); window.dispatchEvent(new Event('hashchange')); });
+      expect(result.current.activeSection).toBe('chat');
+      expect(useSectionStore.getState().taskCollaboration?.taskId).toBe('task-123');
+    });
+
+    it('writes a task route on entry and clears it on ordinary chat navigation', () => {
+      setHash('#workbench/tasks');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => openChatRoom('!execution:test', 'task-123'));
+      expect(window.location.hash).toBe(taskCollaborationHash('task-123', '!execution:test'));
+      act(() => result.current.setActiveSection('chat'));
+      expect(window.location.hash).toBe('#workbench/space');
+      expect(useSectionStore.getState().taskCollaboration).toBeNull();
+    });
     it('defaults to the collaboration space when no hash or localStorage is set', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());

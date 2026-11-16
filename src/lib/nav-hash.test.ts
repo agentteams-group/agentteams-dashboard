@@ -9,6 +9,7 @@ import {
   needsHashNormalization,
   resolveHash,
   tasksHash,
+  taskCollaborationHash,
   teamAgentsHash,
 } from './nav-hash';
 
@@ -18,6 +19,12 @@ const allSections = new Set([
   'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
+
+it('round-trips task collaboration under the task board, including escaped IDs', () => {
+  const hash = taskCollaborationHash('任务/123', '!execution:test');
+  expect(hash).toMatch(/^#workbench\/tasks\//);
+  expect(resolveHash(hash.slice(1), isKnown)).toMatchObject({ section: 'chat', taskId: '任务/123', roomId: '!execution:test' });
+});
 
 describe('isLayeredHash', () => {
   it('resolves the separate my-teams route and team room deep links', () => {

@@ -53,7 +53,7 @@ export function useProjects(enabled = true) {
     queryKey: ['agentteams-projects'],
     queryFn: () => listProjects(),
     enabled,
-    refetchInterval: 15000,
+    refetchInterval: 5000,
     retry: 1,
     placeholderData: (previousData) => previousData,
     // Don't take the whole overview / task board down with the section
@@ -80,7 +80,7 @@ export function useProjectWorkflow(projectId: string | null, teamId?: string) {
     // Keep the detail fresh while a project is selected — mutations elsewhere
     // (e.g. an agent completing tasks) would otherwise never show up without
     // a manual refresh.
-    refetchInterval: 15000,
+    refetchInterval: 5000,
     retry: 1,
     // Same defensive contract as useProjects: a single detail-fetch failure
     // (404 on a deleted project, 500 on a controller hiccup) used to trip
@@ -355,7 +355,7 @@ export function useApiTaskBoard() {
   const taskIndex = useQuery({
     queryKey: ['agentteams-task-index'],
     queryFn: () => requestJson<{ tasks: IndexedTask[] }>(apiUrl('/api/agentteams/tasks')),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
     retry: 1,
     throwOnError: false,
   });
@@ -380,7 +380,8 @@ export function useApiTaskBoard() {
         getProjectWorkflow(p.project_id, { includeTasks: true, teamId: p.team_id }),
       enabled: !degraded,
       retry: 1,
-      staleTime: 15000,
+      staleTime: 5000,
+      refetchInterval: 5000,
       // Per-project workflow fetches failing (one stale runId, one
       // proxy hiccup, …) used to bubble up through useQueries and trip
       // the section error boundary — the whole overview / task board
@@ -405,7 +406,7 @@ export function useApiTaskBoard() {
   board.tasks = mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []);
 
   // Refresh must re-pull the per-project workflows too — the list query
-  // alone would leave stale workflow data behind (staleTime 15s).
+  // alone would leave stale workflow data behind (staleTime 5s).
   // Stable identity: re-creating the refetch arrow on every render made
   // the consumer's useMemo chain re-evaluate every parent re-render,
   // which combined with the render-time setState in the dashboard shell

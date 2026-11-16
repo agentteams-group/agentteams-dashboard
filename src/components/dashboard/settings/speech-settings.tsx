@@ -76,7 +76,7 @@ export function SpeechSettings({ canManage }: { canManage: boolean }) {
   return (
     <section className="space-y-3 rounded-lg border p-4" aria-label="语音识别配置">
       <h3 className="text-sm font-medium">语音识别</h3>
-      <p className="text-xs text-muted-foreground">默认使用本地免费识别。配置百炼后，可在对话框的麦克风菜单中选择付费识别。</p>
+      <p className="text-xs text-muted-foreground">默认使用本地免费识别。配置百炼后，可在对话框的语音面板中选择付费识别。</p>
       {!canManage ? <p className="text-xs text-muted-foreground">请联系管理员配置百炼语音服务。</p> : loading ? (
         <p className="text-xs text-muted-foreground">加载语音配置…</p>
       ) : config ? (
