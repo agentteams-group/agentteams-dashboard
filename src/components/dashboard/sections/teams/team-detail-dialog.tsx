@@ -16,7 +16,7 @@ const DETAIL_FIELDS: Array<[string, (_t: TeamResponse) => string]> = [
   ['Leader', (t) => t.leaderName || '-'],
   ['Leader 就绪', (t) => (t.leaderReady ? '是' : '否')],
   ['Workers', (t) => `${t.readyWorkers}/${t.totalWorkers}`],
-  ['人类成员', (t) => (t.humanMembers || []).join(', ') || '-'],
+  ['人类成员', (t) => (t.humanMembers || []).map((member) => typeof member === 'string' ? member : member.name).join(', ') || '-'],
   ['Worker 列表', (t) => (t.workerNames || []).join(', ') || '-'],
   ['团队房间', (t) => t.teamRoomID || '-'],
   ['Leader DM 房间', (t) => t.leaderDMRoomID || '-'],

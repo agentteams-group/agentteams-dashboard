@@ -161,16 +161,14 @@ export function RuntimeConfigPanel(props: RuntimeConfigPanelProps) {
     if (!faceMode || bucket === 'config') return [];
     return filterByBucket(runtime, surface, bucket)
       .map((face) => {
-        const section = allSections.find((item) => item.id === face.id);
-        const filtered = section ? filterSection(section, query) : null;
         return {
           id: face.id,
           title: faceLabel(runtime, face.id, face.label),
-          fields: fieldsFor(filtered ? filtered.fields : face.fields, '', advancedKeys, showAdvanced),
+          fields: fieldsFor(face.fields, query, advancedKeys, showAdvanced),
         };
       })
       .filter((group) => group.fields.length > 0);
-  }, [faceMode, bucket, runtime, surface, allSections, query, advancedKeys, showAdvanced]);
+  }, [faceMode, bucket, runtime, surface, query, advancedKeys, showAdvanced]);
 
   const tabs = faceMode ? faceTabs : sectionTabs;
   const hitCount = groups.length > 0
@@ -184,7 +182,7 @@ export function RuntimeConfigPanel(props: RuntimeConfigPanelProps) {
         0,
       );
 
-  if (faceMode && groups.length === 0 && tabs.length === 0) {
+  if (faceMode && filterByBucket(runtime, surface, bucket).every((face) => face.fields.length === 0)) {
     return (
       <p className="p-3 text-xs text-muted-foreground">
         该运行时没有这部分配置面
@@ -192,7 +190,7 @@ export function RuntimeConfigPanel(props: RuntimeConfigPanelProps) {
     );
   }
 
-  if (!faceMode && tabs.length === 0) {
+  if (!faceMode && !allSections.some((section) => section.id === 'config' && section.fields.length > 0)) {
     return <p className="p-3 text-xs text-muted-foreground">暂无可配置字段</p>;
   }
 
@@ -238,7 +236,7 @@ export function RuntimeConfigPanel(props: RuntimeConfigPanelProps) {
         </Button>
       </div>
 
-      {groups.length > 0 ? (
+      {hitCount === 0 ? <p className="p-3 text-xs text-muted-foreground">没有匹配的字段</p> : groups.length > 0 ? (
         <div className="space-y-4">
           {groups.map((group) => (
             <section key={group.id} className="space-y-1">

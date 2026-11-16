@@ -126,6 +126,17 @@ afterEach(() => {
 });
 
 describe('WorkerRuntimeConfigSurface', () => {
+  it('keeps search available after a query has no matches', async () => {
+    installFetch({});
+    renderSurface({ bucket: 'mcp' });
+    await screen.findByRole('switch', { name: 'MCP enabled' });
+    fireEvent.change(screen.getByLabelText('搜索字段'), { target: { value: 'no-such-field' } });
+    expect(screen.getByLabelText('搜索字段')).toHaveValue('no-such-field');
+    expect(screen.getByText('没有匹配的字段')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('搜索字段'), { target: { value: '' } });
+    expect(screen.getByRole('switch', { name: 'MCP enabled' })).toBeInTheDocument();
+  });
+
   it('renders surface faces as tabs and supports search + advanced filtering', async () => {
     installFetch({});
     renderSurface();

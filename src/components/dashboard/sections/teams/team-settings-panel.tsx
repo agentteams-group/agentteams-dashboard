@@ -61,6 +61,7 @@ import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
 
 import { TeamMembersPanel } from './team-members-panel';
+import { TeamUsersPanel } from './team-users-panel';
 import { TeamSkillsPanel } from './team-skills-panel';
 import {
   buildBasicDraft,
@@ -519,6 +520,10 @@ export function TeamSettingsPanel({
             onChanged={onChanged}
           />
         </SettingsSection>
+
+        {userLevel >= 3 && <SettingsSection title="用户与权限" icon={UserCog} expanded={expanded.has('users')} onToggle={() => toggle('users')}>
+          <TeamUsersPanel team={team} onChanged={onChanged} />
+        </SettingsSection>}
 
         {/* 4. 团队技能（默认收起） */}
         <SettingsSection
