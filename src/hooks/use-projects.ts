@@ -10,6 +10,8 @@ import {
   type ProjectSummary,
   type WorkflowResponse,
 } from '@/lib/agentteams-projects-api';
+import { apiUrl, requestJson } from '@/lib/api-base';
+import { ApiError } from '@/lib/api-error';
 import type { BoardProject, BoardTask, TaskStatus } from '@/hooks/use-task-board';
 
 /** Sortable timestamp for an API project. The current controller
@@ -306,11 +308,57 @@ export function workflowToBoard(
   return { tasks: boardTasks, projects: boardProjects };
 }
 
+export interface IndexedTask {
+  task_id: string;
+  main_task_id?: string;
+  parent_task_id?: string;
+  project_id?: string;
+  team_id?: string;
+  title: string;
+  assigned_to?: string;
+  status: string;
+  depends_on?: string[];
+  room_id?: string;
+  source_room_id?: string;
+  created_at?: string;
+}
+
+/** Main Task records override their legacy Project aggregation, with no fake Project. */
+export function mergeMainTaskIndex(tasks: BoardTask[], index: IndexedTask[]): BoardTask[] {
+  const merged = new Map(tasks.map(task => [`${task.teamId ?? ''}/${task.runId}`, task]));
+  for (const task of index) {
+    if (!task.main_task_id) continue;
+    merged.set(`${task.team_id ?? ''}/${task.task_id}`, {
+      runId: task.task_id,
+      parentTaskId: task.parent_task_id || undefined,
+      projectId: task.project_id || undefined,
+      teamId: task.team_id,
+      title: task.title || task.task_id,
+      assignedTo: task.assigned_to ?? '',
+      status: workflowStatusToTaskStatus(task.status),
+      dependsOn: task.depends_on ?? [],
+      roomId: (task.source_room_id ?? '').replace(/^room:/, ''),
+      executionRoomId: task.room_id?.replace(/^room:/, ''),
+      createdAt: Date.parse(task.created_at ?? '') || 0,
+      outcome: null,
+      source: 'api',
+    });
+  }
+  return [...merged.values()];
+}
+
 /** Primary task-board source: Controller projects + per-project workflow
  * (cap 20), mapped to the board shapes. Falls back to the MinIO board when
  * the API is degraded (list 404 = not deployed / 500 = controller error). */
 export function useApiTaskBoard() {
   const listQuery = useProjects();
+  const taskIndex = useQuery({
+    queryKey: ['agentteams-task-index'],
+    queryFn: () => requestJson<{ tasks: IndexedTask[] }>(apiUrl('/api/agentteams/tasks')),
+    refetchInterval: 15000,
+    retry: 1,
+    throwOnError: false,
+  });
   const queryClient = useQueryClient();
 
   const projects = useMemo(
@@ -322,7 +370,8 @@ export function useApiTaskBoard() {
   // deployed / 500 controller error) OR the request failed entirely (network
   // / proxy down). In both cases the caller falls back to the MinIO board —
   // otherwise the board would render blank on a proxy outage.
-  const degraded = listQuery.data?.degraded === true || listQuery.isError === true;
+  const taskIndexUnavailable = taskIndex.isError && !(taskIndex.error instanceof ApiError && taskIndex.error.status === 404);
+  const degraded = listQuery.data?.degraded === true || listQuery.isError === true || taskIndexUnavailable;
 
   const workflowQueries = useQueries({
     queries: projects.map((p) => ({
@@ -353,6 +402,7 @@ export function useApiTaskBoard() {
     if (q.data && projects[i]) workflows.set(projects[i].project_id, q.data);
   });
   const board = workflowToBoard(projects, workflows);
+  board.tasks = mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []);
 
   // Refresh must re-pull the per-project workflows too — the list query
   // alone would leave stale workflow data behind (staleTime 15s).
@@ -365,7 +415,8 @@ export function useApiTaskBoard() {
       queryKey: ['agentteams-project-workflow'],
     });
     void listQuery.refetch();
-  }, [queryClient, listQuery]);
+    void taskIndex.refetch();
+  }, [queryClient, listQuery, taskIndex]);
 
   // Memoize the consumer-facing object so a parent re-render with the
   // same source data returns the same reference (OverviewSection
@@ -375,13 +426,13 @@ export function useApiTaskBoard() {
       ...board,
       degraded,
       degradedReason: listQuery.data?.degradedReason,
-      isLoading: listQuery.isLoading,
-      isRefetching: listQuery.isRefetching,
+      isLoading: listQuery.isLoading || taskIndex.isLoading,
+      isRefetching: listQuery.isRefetching || taskIndex.isRefetching,
       refetch,
     }),
     // `board` is a pure projection of `projects` and `workflowQueries`;
     // depending on them keeps the memo stable across renders where neither
     // changed.
-    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, refetch]
+    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, taskIndex.isLoading, taskIndex.isRefetching, refetch]
   );
 }

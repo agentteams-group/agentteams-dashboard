@@ -70,7 +70,7 @@ import { MetaEditorEntry } from './projects/meta-editor';
 import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
-import { buildProjectDag } from '@/lib/project-dag';
+import { buildTaskDag, buildProjectDag } from '@/lib/project-dag';
 import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { isStaleProjectSelection } from './task-selectors';
@@ -304,11 +304,10 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
   const sourceName = useRoomMetaStore(state => state.meta[task.roomId]?.roomName);
   const [selectedId, setSelectedId] = useState(task.runId);
   const dag = useMemo(() => {
-    if (!task.projectId) return null;
     const descendants = subtasksOf(task, tasks);
-    if (!descendants.length) return buildProjectDag(tasks, task.projectId);
+    if (!descendants.length) return task.projectId ? buildProjectDag(tasks, task.projectId) : null;
     const ids = new Set(descendants.map(child => child.runId));
-    return buildProjectDag([task, ...descendants.map(child => ({ ...child, dependsOn: child.dependsOn.some(id => ids.has(id)) ? child.dependsOn.filter(id => ids.has(id)) : [task.runId] }))], task.projectId);
+    return buildTaskDag([task, ...descendants.map(child => ({ ...child, dependsOn: child.dependsOn.some(id => ids.has(id)) ? child.dependsOn.filter(id => ids.has(id)) : [task.runId] }))]);
   }, [tasks, task]);
   const selected = tasks.find(item => item.runId === selectedId) ?? task;
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
@@ -1065,7 +1064,7 @@ export function TasksSection() {
         </div>
       )}
 
-      <TaskDetailSheet task={selectedTask} tasks={board.tasks} onSelectTask={task => setSelectedTaskId(task.runId)} teamId={board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
+      <TaskDetailSheet task={selectedTask} tasks={board.tasks} onSelectTask={task => setSelectedTaskId(task.runId)} teamId={selectedTask?.teamId ?? board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
         if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); setSelectedTaskId(null); }
       }} />
 

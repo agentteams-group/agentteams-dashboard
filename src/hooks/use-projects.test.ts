@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { workflowToBoard } from './use-projects';
+import { workflowToBoard, mergeMainTaskIndex } from './use-projects';
 import type { WorkflowResponse, ProjectSummary, WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 
 function proj(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
@@ -144,4 +144,20 @@ it('preserves submitted detail status when workflow nodes normalize it to in-pro
     tasks_detail: [{ task_id: 'review', status: 'submitted' }],
   })]]));
   expect(tasks[0].status).toBe('submitted');
+});
+
+
+describe('main Task index', () => {
+  it('shows a no-Project main task and its children without synthesizing a Project', () => {
+    const tasks = mergeMainTaskIndex([], [
+      { task_id: 'main', main_task_id: 'main', title: 'Main', team_id: 'alpha', status: 'in_progress', room_id: '!work:test', source_room_id: '!source:test' },
+      { task_id: 'child', main_task_id: 'main', parent_task_id: 'main', title: 'Child', team_id: 'alpha', status: 'planned', depends_on: [] },
+    ]);
+    expect(tasks[0]).toMatchObject({ runId: 'main', projectId: undefined, status: 'in_progress', executionRoomId: '!work:test', roomId: '!source:test' });
+    expect(tasks[1]).toMatchObject({ parentTaskId: 'main', status: 'pending' });
+  });
+  it('keeps same-named tasks in different teams separate', () => {
+    const rows = ['alpha', 'beta'].map(team_id => ({ task_id: 'main', main_task_id: 'main', title: 'Main', team_id, status: 'completed' }));
+    expect(mergeMainTaskIndex([], rows)).toHaveLength(2);
+  });
 });
