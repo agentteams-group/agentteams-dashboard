@@ -166,6 +166,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('shows a nonblocking skill warning while keeping skill editing available', async () => {
+  renderDrawerFor({ ...worker, runtime: 'qwenpaw', phase: 'Running', skillWarnings: ['Skill broken: load failed (ParserError)'] });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: /^技能/ }), { button: 0, ctrlKey: false });
+  expect(await screen.findByText('部分技能未能加载，Agent 可继续运行')).toBeInTheDocument();
+  expect(screen.getByText('Skill broken: load failed (ParserError)')).toBeInTheDocument();
+  expect(screen.getByText('skills-panel')).toBeInTheDocument();
+});
+
 it('saves the OpenClaw heartbeat switch without environment changes and reads it back', async () => {
   const target: WorkerResponse = { ...worker, runtime: 'openclaw', envEditable: true, llmHeartbeatEnabled: true };
   const update = vi.spyOn(agentteamsApi, 'updateWorker').mockImplementation(async (_name, data) => {

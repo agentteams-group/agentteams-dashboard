@@ -391,6 +391,10 @@ export function WorkerDetailPanel({
           surface('skills')
         ) : (
           <div className="space-y-2">
+            {Boolean(worker.skillWarnings?.length) && <div role="alert" className="space-y-1 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+              <p className="font-medium">部分技能未能加载，Agent 可继续运行</p>
+              <ul className="list-disc space-y-1 pl-4">{worker.skillWarnings!.map((warning) => <li key={warning} className="break-words">{warning}</li>)}</ul>
+            </div>}
             <WorkerSkillAssign
               key={`skills-${view.name}`}
               worker={view}

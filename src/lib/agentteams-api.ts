@@ -95,6 +95,8 @@ export interface WorkerResponse extends LlmTuningFields {
   lastRunAt?: string;
   /** ISO8601 time the worker's task tracker last finished a run (optional, backend vNext). */
   lastFinishAt?: string;
+  /** Non-blocking skill load or enable warnings reported by the runtime. */
+  skillWarnings?: string[];
 }
 
 export interface TeamHumanMember {
