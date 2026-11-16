@@ -55,3 +55,16 @@ it('does not report success when an older controller silently ignores changes', 
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('服务端未应用'));
   expect(screen.queryByText('用户角色已保存')).not.toBeInTheDocument();
 });
+
+it('keeps filtered-out members when saving a role change', async () => {
+  setup();
+  fireEvent.change(screen.getByLabelText('搜索成员'), { target: { value: 'bob' } });
+  expect(screen.queryByLabelText('carol 的角色')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('bob 的角色'), { target: { value: 'coordinator' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存用户角色' }));
+  await screen.findByText('用户角色已保存');
+  expect(agentteamsApi.updateTeam).toHaveBeenCalledWith('alpha', { humanMembers: [
+    { name: 'bob', role: 'coordinator', matrixUserId: '@bob:matrix' },
+    { name: 'carol', role: 'coordinator' },
+  ] });
+});

@@ -72,7 +72,7 @@ describe('TeamMembersPanel · 成员行布局', () => {
     mocks.updateTeamMutateAsync.mockReset();
   });
 
-  it('姓名占满第一行剩余空间，角色/改模型/移除按钮不被挤压', () => {
+  it('shows Agent, role, model and actions in a table with long names truncated', () => {
     render(
       <TooltipProvider>
         <TeamMembersPanel
@@ -86,20 +86,22 @@ describe('TeamMembersPanel · 成员行布局', () => {
     const leaderRow = screen.getByTestId(`member-${LONG_NAME}`);
     const name = within(leaderRow).getByText(LONG_NAME);
     expect(name).toHaveAttribute('title', LONG_NAME);
-    expect(name.className).toContain('flex-1');
     expect(name.className).toContain('truncate');
+    expect(screen.getByRole('columnheader', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '模型' })).toBeInTheDocument();
+    expect(screen.getByText('批量设置模型').closest('details')).not.toHaveAttribute('open');
 
     expect(within(leaderRow).getByText('Leader')).toBeInTheDocument();
     const change = within(leaderRow).getByRole('button', { name: '改模型' });
-    expect(change.className).toContain('shrink-0');
+    expect(change).toBeVisible();
 
     // 两行固定结构：外层不再 flex-wrap，模型与移除在第二行。
     expect(leaderRow.className).not.toContain('flex-wrap');
-    expect(within(leaderRow).getByText(`${LONG_NAME}-model`)).toBeInTheDocument();
+    expect(within(leaderRow).getAllByText(`${LONG_NAME}-model`).length).toBeGreaterThan(0);
 
     const workerRow = screen.getByTestId('member-w1');
     const remove = within(workerRow).getByRole('button', { name: '移除 w1' });
-    expect(remove.className).toContain('shrink-0');
+    expect(remove).toBeVisible();
     expect(within(workerRow).getByRole('button', { name: '改模型' })).toBeInTheDocument();
   });
 
@@ -148,7 +150,7 @@ function option(alias: string, providerName: string): ModelSelectionOption {
 }
 
 function renderPanel(modelOptions: ModelSelectionOption[] = []) {
-  return render(
+  const rendered = render(
     <TooltipProvider>
       <TeamMembersPanel
         team={team}
@@ -157,6 +159,8 @@ function renderPanel(modelOptions: ModelSelectionOption[] = []) {
       />
     </TooltipProvider>,
   );
+  fireEvent.click(screen.getByText('批量设置模型'));
+  return rendered;
 }
 
 describe('TeamMembersPanel · 批量模型画笔', () => {
