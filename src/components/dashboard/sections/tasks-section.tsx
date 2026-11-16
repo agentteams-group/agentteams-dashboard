@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef, useId } from 'react';
 import { useShallow } from 'zustand/shallow';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   ListTodo,
   Search,
@@ -269,7 +269,7 @@ function TaskRoomActions({ task, tasks = [], compact = false }: { task: BoardTas
       const roomId = (executionTask.executionRoomId || meta?.room_id)?.replace(/^room:/, '');
       if (!roomId) setError('协作房间尚未创建');
       else if (access.state !== 'joined' || !access.joinedRooms?.includes(roomId)) setError('尚未加入协作房间，请联系团队管理员');
-      else openChatRoom(roomId);
+      else openChatRoom(roomId, task.runId);
     } catch {
       setError('协作房间暂时无法读取，请稍后重试');
     } finally {
@@ -676,6 +676,7 @@ const isProjectIdOrNone = (raw: unknown): raw is string | null =>
   raw === null || (typeof raw === 'string' && raw.length > 0);
 
 export function TasksSection() {
+  const reduceMotion = useReducedMotion();
   const { setActiveSection } = useActiveSection();
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
   const clearTasks = useTaskStore((s) => s.clearTasks);
@@ -696,9 +697,8 @@ export function TasksSection() {
     minioBoard.error,
   );
 
-  // Live Matrix workflow events fill in runIds the board doesn't know about
-  // and refresh statuses. Subscribed reactively (not getState snapshot) so
-  // live updates re-merge into the board.
+  // Live events fill missing tasks; persisted states remain authoritative
+  // so an older chat snapshot cannot undo the latest polling response.
   const live = useTaskStore(useShallow((s) => s.tasks));
   const board = useMemo(() => {
     const byId = new Map<string, (typeof primary.tasks)[number]>();
@@ -721,7 +721,7 @@ export function TasksSection() {
       };
       byId.set(
         e.runId,
-        existing ? { ...existing, status: existing.status === 'completed' ? existing.status : liveTask.status } : liveTask,
+        existing ?? liveTask,
       );
     }
     return {
@@ -1020,10 +1020,10 @@ export function TasksSection() {
                   <p className="text-xs font-semibold">{col.label}</p>
                   <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain custom-scrollbar">
-                  <AnimatePresence initial={false}>
+                <div className="relative min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain custom-scrollbar">
+                  <AnimatePresence initial={false} mode="popLayout">
                     {list.length === 0 ? (
-                      <p className="py-4 text-center text-xs text-muted-foreground/70">
+                      <p key="empty" className="py-4 text-center text-xs text-muted-foreground/70">
                         暂无任务
                       </p>
                     ) : (
@@ -1033,10 +1033,11 @@ export function TasksSection() {
                         return (
                           <motion.div
                             key={t.runId}
-                            initial={{ opacity: 0, y: 6 }}
+                            layout={reduceMotion ? false : 'position'}
+                            initial={{ opacity: 0, y: reduceMotion ? 0 : 6 }}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.15 }}
+                            exit={{ opacity: 0, y: reduceMotion ? 0 : -4 }}
+                            transition={{ duration: reduceMotion ? 0 : 0.16 }}
                           >
                             <TaskCard
                               task={t}

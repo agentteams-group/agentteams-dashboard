@@ -11,6 +11,7 @@ import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useSectionStore } from '@/lib/section-store';
 import { useNotificationStore } from '@/lib/notification-store';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStatus } from '@/hooks/use-agentteams-status';
@@ -104,6 +105,8 @@ export function AgentTeamsDashboard() {
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
   const isConversationSection = activeSection === 'chat' || activeSection === 'my-teams';
+  const taskCollaboration = useSectionStore((s) => s.taskCollaboration);
+  const navigationSection = activeSection === 'chat' && taskCollaboration ? 'tasks' : activeSection;
   const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -328,7 +331,7 @@ export function AgentTeamsDashboard() {
         <div className="flex flex-1 min-h-0">
           <Sidebar
             agentRooms={agentRooms}
-            activeSection={activeSection}
+            activeSection={navigationSection}
             countMap={countMap}
             sectionsWithNotifications={sectionsWithNotifications}
             collapsed={sidebarCollapsed}
@@ -340,7 +343,7 @@ export function AgentTeamsDashboard() {
           <MobileSidebar
             agentRooms={agentRooms}
             open={mobileMenuOpen}
-            activeSection={activeSection}
+            activeSection={navigationSection}
             countMap={countMap}
             sectionsWithNotifications={sectionsWithNotifications}
             onNavClick={handleNavClick}
@@ -409,7 +412,7 @@ export function AgentTeamsDashboard() {
                 <div className="flex-1 flex flex-col min-h-0">
                   <SectionErrorBoundary sectionName={activeLabel}>
                     <Suspense fallback={<SectionSkeleton />}>
-                      <ChatSection key={activeSection} view={activeSection === 'my-teams' ? 'teams' : 'assistants'} />
+                      <ChatSection key={activeSection} view={taskCollaboration ? 'all' : activeSection === 'my-teams' ? 'teams' : 'assistants'} />
                     </Suspense>
                   </SectionErrorBoundary>
                 </div>

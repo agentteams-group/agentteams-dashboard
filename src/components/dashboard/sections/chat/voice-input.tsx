@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Loader2, Mic, Square, X } from 'lucide-react';
+import { Loader2, Mic, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { apiUrl } from '@/lib/api-base';
@@ -190,41 +190,39 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
       {phase === 'idle' ? (
-        <>
-          <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0 text-muted-foreground"
-            onClick={start} disabled={disabled} aria-label="开始语音输入" title={`语音输入（${provider === 'local' ? '本地免费' : '百炼付费'}）`}>
-            <Mic className="h-4 w-4" />
-          </Button>
-          <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-5 shrink-0 p-0" disabled={disabled} aria-label="语音设置">
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="space-y-2 text-xs">
-              <label className="block space-y-1">
-                <span>语音识别方式</span>
-                <select aria-label="语音识别方式" value={provider} onChange={event => setProvider(event.target.value as 'local' | 'dashscope')}
-                  className="w-full rounded-md border bg-background p-2 text-sm">
-                  <option value="local">本地免费（音频不上传）</option>
-                  <option value="dashscope" disabled={!dashscopeAvailable}>百炼（按量付费）</option>
-                </select>
-              </label>
-              <label className="block space-y-1">
-                <span>识别语言</span>
-                <select aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
-                  className="w-full rounded-md border bg-background p-2 text-sm">
-                  <option value="zh">中文（简体）</option>
-                  <option value="en">English</option>
-                  <option value="auto">自动识别</option>
-                </select>
-              </label>
-              <p className="text-muted-foreground">本地模型首次使用需要加载，之后会缓存。每次最多录制 60 秒，转写后可编辑再发送。</p>
-              {!dashscopeAvailable && <p className="text-muted-foreground">请管理员在「设置 → 后端 → 语音识别」配置百炼 API Key 后启用。</p>}
-              {provider === 'dashscope' && <p className="text-muted-foreground">录音将发送至百炼，按管理员配置的服务计费。</p>}
-            </PopoverContent>
-          </Popover>
-        </>
+        <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0 text-muted-foreground" disabled={disabled}
+              aria-label="语音输入" title={`语音输入（${provider === 'local' ? '本地免费' : '百炼付费'}）`}>
+              <Mic className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="space-y-2 text-xs">
+            <label className="block space-y-1">
+              <span>语音识别方式</span>
+              <select aria-label="语音识别方式" value={provider} onChange={event => setProvider(event.target.value as 'local' | 'dashscope')}
+                className="w-full rounded-md border bg-background p-2 text-sm">
+                <option value="local">本地免费（音频不上传）</option>
+                <option value="dashscope" disabled={!dashscopeAvailable}>百炼（按量付费）</option>
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span>识别语言</span>
+              <select aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
+                className="w-full rounded-md border bg-background p-2 text-sm">
+                <option value="zh">中文（简体）</option>
+                <option value="en">English</option>
+                <option value="auto">自动识别</option>
+              </select>
+            </label>
+            <p className="text-muted-foreground">本地模型首次使用需要加载，之后会缓存。每次最多录制 60 秒，转写后可编辑再发送。</p>
+            {!dashscopeAvailable && <p className="text-muted-foreground">请管理员在「设置 → 后端 → 语音识别」配置百炼 API Key 后启用。</p>}
+            {provider === 'dashscope' && <p className="text-muted-foreground">录音将发送至百炼，按管理员配置的服务计费。</p>}
+            <Button size="sm" className="w-full gap-2" onClick={start} disabled={disabled}>
+              <Mic className="h-4 w-4" />开始录音
+            </Button>
+          </PopoverContent>
+        </Popover>
       ) : (
         <>
           {phase === 'recording' ? (

@@ -584,59 +584,61 @@ export function ChatComposer({
             </Button>
           )}
 
-          <VoiceInput
-            key={`${roomId ?? ''}:${editSession?.eventId ?? 'draft'}`}
-            disabled={disabled || isSending || Boolean(editSession)}
-            onBusyChange={setVoiceBusy}
-            onTranscript={text => {
-              onChange(`${value}${value && !/\s$/.test(value) ? ' ' : ''}${text}`);
-              requestAnimationFrame(() => {
-                const input = inputRef.current;
-                input?.focus();
-                input?.setSelectionRange(input.value.length, input.value.length);
-              });
-            }}
-          />
-
           <p className="ml-2 hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="↑ 编辑上一条 · @ 提及 · : 表情 · / 命令">
             Enter 发送 · Shift+Enter 换行
           </p>
 
-          {working && onStop && !editSession && (
-            <Button variant="ghost" size="sm" className="ml-auto h-8 w-8 shrink-0 rounded-full p-0"
-              aria-label="停止执行" title={execution?.status === 'stopping' ? '正在停止执行' : '停止执行'} onClick={onStop}
-              disabled={disabled || isSending || execution?.status === 'stopping'}>
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="12" cy="12" r="9" />
-                <rect x="9" y="9" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" />
-              </svg>
-            </Button>
-          )}
-          {editSession ? (
-            <Button
-              size="sm"
-              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-              onClick={() => value.trim() && onSubmitEdit?.(value)}
-              disabled={!value.trim() || isSending}
-              title="保存编辑 (Enter)"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">保存</span>
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              data-chat-send
-              aria-label={working ? '补充信息并继续' : '发送消息'}
-              className={`${working && onStop ? '' : 'ml-auto'} h-7 shrink-0 gap-1.5 px-2.5 text-xs`}
-              onClick={handleSend}
-              disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
-              title={working ? '补充 (Enter)' : '发送 (Enter)'}
-            >
-              {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>{working ? '补充' : '发送'}</span>
-            </Button>
-          )}
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            <VoiceInput
+              key={`${roomId ?? ''}:${editSession?.eventId ?? 'draft'}`}
+              disabled={disabled || isSending || Boolean(editSession)}
+              onBusyChange={setVoiceBusy}
+              onTranscript={text => {
+                onChange(`${value}${value && !/\s$/.test(value) ? ' ' : ''}${text}`);
+                requestAnimationFrame(() => {
+                  const input = inputRef.current;
+                  input?.focus();
+                  input?.setSelectionRange(input.value.length, input.value.length);
+                });
+              }}
+            />
+
+            {working && onStop && !editSession && (
+              <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 rounded-full p-0"
+                aria-label="停止执行" title={execution?.status === 'stopping' ? '正在停止执行' : '停止执行'} onClick={onStop}
+                disabled={disabled || isSending || execution?.status === 'stopping'}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="12" cy="12" r="9" />
+                  <rect x="9" y="9" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" />
+                </svg>
+              </Button>
+            )}
+            {editSession ? (
+              <Button
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                onClick={() => value.trim() && onSubmitEdit?.(value)}
+                disabled={!value.trim() || isSending}
+                title="保存编辑 (Enter)"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">保存</span>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                data-chat-send
+                aria-label={working ? '补充信息并继续' : '发送消息'}
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                onClick={handleSend}
+                disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
+                title={working ? '补充 (Enter)' : '发送 (Enter)'}
+              >
+                {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>{working ? '补充' : '发送'}</span>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       {sendError && (
