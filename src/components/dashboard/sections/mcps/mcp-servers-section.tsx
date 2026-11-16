@@ -64,6 +64,10 @@ export function McpServersSection() {
     );
   }, [servers, search]);
   const pagination = useListPagination(filteredServers, 20, search);
+  const listedDetail = detail && servers.find((server) => server.name === detail.name);
+  // A save already contains verified tools; the directory can still be stale
+  // until refetch completes. Prefer it only once it catches up with the save.
+  const detailServer = listedDetail && (!detail?.updatedAt || (listedDetail.updatedAt ?? '') >= detail.updatedAt) ? listedDetail : detail;
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -179,7 +183,7 @@ export function McpServersSection() {
       />
 
       <McpSetupDialog key={setupOpen ? managedEdit?.name ?? 'new-managed' : 'closed-managed'} open={setupOpen} onOpenChange={setSetupOpen} server={managedEdit} onSaved={(saved) => { refetch(); setDetail(saved); }} />
-      {detail && <McpDetailDialog server={servers.find((s) => s.name === detail.name) ?? detail} onClose={() => setDetail(undefined)} onChanged={() => { refetch(); }} onEdit={() => { setManagedEdit(servers.find((s) => s.name === detail.name) ?? detail); setDetail(undefined); setSetupOpen(true); }} />}
+      {detailServer && <McpDetailDialog server={detailServer} onClose={() => setDetail(undefined)} onChanged={() => { refetch(); }} onEdit={() => { setManagedEdit(detailServer); setDetail(undefined); setSetupOpen(true); }} />}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

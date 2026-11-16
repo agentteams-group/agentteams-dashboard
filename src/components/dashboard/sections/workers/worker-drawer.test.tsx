@@ -166,6 +166,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('shows a nonblocking skill warning while keeping skill editing available', async () => {
+  renderDrawerFor({ ...worker, runtime: 'qwenpaw', phase: 'Running', skillWarnings: ['Skill broken: load failed (ParserError)'] });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: /^技能/ }), { button: 0, ctrlKey: false });
+  expect(await screen.findByText('部分技能未能加载，Agent 可继续运行')).toBeInTheDocument();
+  expect(screen.getByText('Skill broken: load failed (ParserError)')).toBeInTheDocument();
+  expect(screen.getByText('skills-panel')).toBeInTheDocument();
+});
+
 it('saves the OpenClaw heartbeat switch without environment changes and reads it back', async () => {
   const target: WorkerResponse = { ...worker, runtime: 'openclaw', envEditable: true, llmHeartbeatEnabled: true };
   const update = vi.spyOn(agentteamsApi, 'updateWorker').mockImplementation(async (_name, data) => {
@@ -190,7 +198,7 @@ it('does not show the OpenClaw heartbeat switch for other runtimes', async () =>
 });
 
 const CARDS: Array<{ title: string; content: string }> = [
-  { title: '运行配置', content: 'surface-config' },
+  { title: '高级配置', content: 'surface-config' },
   { title: 'MCP', content: 'surface-mcp' },
   { title: '工具', content: 'surface-tools' },
   { title: '技能', content: 'surface-skills' },
@@ -198,8 +206,6 @@ const CARDS: Array<{ title: string; content: string }> = [
   { title: '审批模式', content: 'surface-approval' },
   { title: 'Coding CLI', content: 'coding-panel' },
   { title: '工作区文件', content: 'workspace-panel' },
-  { title: '环境变量与网关', content: 'env-panel' },
-  { title: 'LLM 调优', content: 'llm-panel' },
   { title: 'Worker 插件', content: 'plugins-panel' },
   { title: '运行时升级', content: '将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。' },
   { title: '检查点', content: 'checkpoints-card' },
@@ -216,13 +222,16 @@ describe('WorkerDrawer', () => {
     expect(screen.getByText('上次运行')).toBeInTheDocument();
     expect(screen.getByText('上次完成')).toBeInTheDocument();
     expect(screen.getAllByText('gpt-5').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('tab', { name: '模型' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '基础配置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '模型' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '环境变量与网关' })).not.toBeInTheDocument();
   });
 
   it('renders vertical resource tabs without mounting all configuration panels', () => {
     renderDrawer();
     expect(screen.getAllByRole('button', { name: /./ })).not.toHaveLength(0);
-    for (const card of CARDS) {
+    for (const card of CARDS.filter((card) => ['高级配置', 'MCP', '技能', '工作区文件'].includes(card.title))) {
       expect(screen.getByRole('tab', { name: card.title })).toBeInTheDocument();
     }
     expect(screen.getByRole('tablist', { name: 'Agent 配置' })).toHaveAttribute('aria-orientation', 'vertical');
@@ -242,7 +251,7 @@ describe('WorkerDrawer', () => {
     const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
     renderDrawerFor(qwenpawWorker);
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '运行配置' }), { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
 
     expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
     expect(mounts.qwenpaw).toBe(1);
@@ -253,7 +262,7 @@ describe('WorkerDrawer', () => {
     const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
     renderDrawerFor(runtimeLessWorker);
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '运行配置' }), { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
 
     expect(await screen.findByText('surface-config')).toBeInTheDocument();
     expect(mounts.qwenpaw).toBe(0);
@@ -261,11 +270,17 @@ describe('WorkerDrawer', () => {
 
   it.each(CARDS)('switches to "$title" inline and returns to basic information', async ({ title, content }) => {
     renderDrawer();
-    fireEvent.mouseDown(screen.getByRole('tab', { name: title }), { button: 0, ctrlKey: false });
+    const standalone = ['高级配置', 'MCP', '技能', '工作区文件'].includes(title);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: standalone ? title : '高级配置' }), { button: 0, ctrlKey: false });
+    if (!standalone) {
+      const summary = screen.getByText(title, { selector: 'summary' });
+      (summary.parentElement as HTMLDetailsElement).open = true;
+      fireEvent(summary.parentElement!, new Event('toggle'));
+    }
 
     expect(await screen.findByText(content)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '关闭弹窗' })).not.toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '基本信息' }), { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '基础配置' }), { button: 0, ctrlKey: false });
     await waitFor(() => expect(screen.queryByText(content)).not.toBeInTheDocument());
   });
 

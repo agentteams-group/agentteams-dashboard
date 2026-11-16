@@ -95,6 +95,19 @@ export interface WorkerResponse extends LlmTuningFields {
   lastRunAt?: string;
   /** ISO8601 time the worker's task tracker last finished a run (optional, backend vNext). */
   lastFinishAt?: string;
+  /** Non-blocking skill load or enable warnings reported by the runtime. */
+  skillWarnings?: string[];
+}
+
+export interface TeamHumanMember {
+  name: string;
+  matrixUserId?: string;
+  role?: string;
+}
+
+/** Older Dashboard fixtures stored only names; Controller returns member objects. */
+export function teamHumanMembers(team: { humanMembers?: (TeamHumanMember | string)[] }): TeamHumanMember[] {
+  return (team.humanMembers ?? []).map((member) => typeof member === 'string' ? { name: member, role: 'coordinator' } : member);
 }
 
 export interface TeamResponse extends LlmTuningFields {
@@ -103,7 +116,7 @@ export interface TeamResponse extends LlmTuningFields {
   phase: TeamPhase;
   description: string;
   admin: { name: string } | null;
-  humanMembers: string[];
+  humanMembers: (TeamHumanMember | string)[];
   leaderName: string;
   leaderHeartbeat: { enabled: boolean; every: string } | null;
   workerIdleTimeout: string;
@@ -716,7 +729,7 @@ export interface CreateTeamRequest extends LlmTuningFields {
   leader?: { name: string };
   admin?: { name: string };
   workerNames?: string[];
-  humanMembers?: string[];
+  humanMembers?: TeamHumanMember[];
   /** Default model for newly provisioned worker members. */
   defaultWorkerModel?: RequestModelAlias;
   /** Default runtime for newly provisioned worker members. */
@@ -735,7 +748,7 @@ export interface UpdateTeamRequest extends LlmTuningFields {
   leader?: { name: string } | null;
   admin?: { name: string } | null;
   workerNames?: string[];
-  humanMembers?: string[];
+  humanMembers?: TeamHumanMember[];
   defaultWorkerModel?: RequestModelAlias;
   defaultWorkerRuntime?: WorkerRuntime;
   /**

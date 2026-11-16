@@ -19,6 +19,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useSearch } from '@/lib/search-context';
 import { currentHashParams, hashForSection, type TeamAgentsTab } from '@/lib/nav-hash';
 import type { CreateTeamRequest, CreateWorkerRequest } from '@/lib/agentteams-api';
+import { teamHumanMembers } from '@/lib/agentteams-api';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
@@ -154,7 +155,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
           {teamPage.items.map(({ team }) => {
-            const members = [...new Set([...(team.humanMembers ?? []), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
+            const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
             return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
               <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} Agent`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />

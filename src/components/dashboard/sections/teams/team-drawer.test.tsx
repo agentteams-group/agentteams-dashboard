@@ -43,6 +43,8 @@ vi.mock('@/hooks/use-agentteams-mutations', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: () => ({ data: [{ name: 'alice', displayName: 'Alice' }, { name: 'bob', displayName: 'Bob' }] }) }));
+
 vi.mock('@/hooks/use-skill-center', () => ({
   useSkills: () => ({
     data: {
@@ -235,8 +237,8 @@ function renderWithClient(node: ReactNode) {
   );
 }
 
-function renderDrawer(userLevel = 3) {
-  return renderWithClient(
+function renderDrawer(userLevel = 3, tab?: string) {
+  const rendered = renderWithClient(
     <TeamDrawer
       team={teamFixture}
       allTeams={[teamFixture]}
@@ -248,6 +250,8 @@ function renderDrawer(userLevel = 3) {
       onDeleted={vi.fn()}
     />,
   );
+  if (tab) fireEvent.mouseDown(screen.getByRole('tab', { name: new RegExp(tab) }), { button: 0 });
+  return rendered;
 }
 
 function selectAllOptions() {
@@ -262,6 +266,8 @@ async function paintBatch(
   dialogTitle: string,
   model: string,
 ) {
+  const batch = screen.getByText('批量设置模型').closest('details')!;
+  if (!batch.open) fireEvent.click(screen.getByText('批量设置模型'));
   fireEvent.click(within(screen.getByTestId(testId)).getByRole('button', { name: '设置模型' }));
   // 抽屉自身也是 role=dialog，按标题锁定嵌套的模型弹窗。
   const dialog = screen.getByRole('dialog', { name: dialogTitle });
@@ -308,6 +314,7 @@ describe('TeamDrawer · 分区与骨架', () => {
     expect(screen.getByRole('button', { name: '复制失败详情', hidden: true })).toBeInTheDocument();
     fireEvent.click(screen.getByText('技术详情'));
     expect(screen.getByText(team.message)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '运行状态与房间信息' }));
     const healthRow = screen.getByText('健康度').parentElement!;
     expect(within(healthRow).getByText('异常')).toBeInTheDocument();
     expect(within(healthRow).queryByText('健康')).not.toBeInTheDocument();
@@ -321,14 +328,15 @@ describe('TeamDrawer · 分区与骨架', () => {
     expect(screen.queryByText('暂时无法连接对话服务，请检查服务状态。')).not.toBeInTheDocument();
   });
 
-  it('渲染四分区（+未归属/危险区），团队技能默认收起', () => {
+  it('uses three direct tabs and keeps secondary settings collapsed', () => {
     renderDrawer();
-    for (const title of ['基本信息', 'LLM 调优', '团队成员', '团队技能', '加入未归属 Worker', '危险区']) {
-      expect(screen.getByRole('button', { name: title })).toBeInTheDocument();
+    for (const title of ['基本信息', '成员管理', 'Agent 管理']) {
+      expect(screen.getByRole('tab', { name: new RegExp(title) })).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: 'LLM 调优' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '高级设置' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: '危险区' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByPlaceholderText('搜索技能…')).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     expect(screen.getByPlaceholderText('搜索技能…')).toBeInTheDocument();
   });
@@ -364,6 +372,24 @@ describe('TeamDrawer · 分区与骨架', () => {
 });
 
 describe('TeamDrawer · 基本信息 / LLM 调优', () => {
+  it('uses three tabs and preserves drafts when switching between them', () => {
+    renderDrawer();
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: '下一步' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('描述'), { target: { value: '未保存的描述' } });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /成员管理/ }), { button: 0 });
+    fireEvent.change(screen.getByLabelText('Team Admin'), { target: { value: 'bob' } });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.click(screen.getByRole('button', { name: '移除 w1' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '基本信息' }), { button: 0 });
+    expect(screen.getByLabelText('描述')).toHaveValue('未保存的描述');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /成员管理/ }), { button: 0 });
+    expect(screen.getByLabelText('Team Admin')).toHaveValue('bob');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    expect(screen.queryByTestId('member-w1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('members-save')).toBeEnabled();
+  });
+
   it('保存基本信息调用 updateTeam（只发改动字段）', async () => {
     renderDrawer();
     fireEvent.change(screen.getByLabelText('描述'), { target: { value: '新描述' } });
@@ -378,7 +404,7 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 
   it('团队 LLM 调优随同一次团队 PUT 提交', async () => {
     renderDrawer();
-    fireEvent.click(screen.getByRole('button', { name: 'LLM 调优' }));
+    fireEvent.click(screen.getByRole('button', { name: '高级设置' }));
     fireEvent.change(screen.getByLabelText('最大重试次数'), { target: { value: '5' } });
     fireEvent.click(screen.getByTestId('basic-save'));
     await waitFor(() =>
@@ -398,8 +424,18 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 });
 
 describe('TeamDrawer · 团队成员', () => {
+  it('changes Leader without dropping the former Leader or other Agents', async () => {
+    renderDrawer(3, 'Agent 管理');
+    const leaderSelect = selectAllOptions().find((select) => select.value === 'lead')!;
+    fireEvent.change(leaderSelect, { target: { value: 'w1' } });
+    expect(within(screen.getByTestId('member-w1')).getByText('Leader')).toBeInTheDocument();
+    expect(within(screen.getByTestId('member-lead')).getByText('Worker')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('members-save'));
+    await waitFor(() => expect(mocks.updateTeamAsync).toHaveBeenCalledWith({ name: 'alpha', data: { leader: { name: 'w1' }, workerNames: ['lead', 'w2'] } }));
+  });
+
   it('批量 Leader 模型只刷 Leader 行，保存只写该行 updateWorker', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     expect(within(screen.getByTestId('batch-leader')).getByText('leader-batch')).toBeInTheDocument();
     expect(screen.getByTestId('member-lead')).toHaveTextContent('leader-batch');
@@ -416,7 +452,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('Workers 批量只刷 worker 行', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     await paintBatch('batch-workers', '批量设置模型 - Workers 批', 'worker-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalledTimes(2));
@@ -428,7 +464,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('行内「改模型」打开统一模型弹窗，保存走 updateWorker', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     const rows = screen.getAllByRole('button', { name: '改模型' });
     fireEvent.click(rows[1]);
     const input = await screen.findByPlaceholderText('例如 team-chat');
@@ -455,6 +491,7 @@ describe('TeamDrawer · 团队成员', () => {
         onOpenChange={vi.fn()}
       />,
     );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
     expect(screen.getByText(/以下 Worker 不存在/)).toHaveTextContent('ghost');
     expect(screen.getByTestId('members-save')).toBeDisabled();
 
@@ -475,8 +512,9 @@ describe('TeamDrawer · 团队成员', () => {
         onOpenChange={vi.fn()}
       />,
     );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
     const addSelect = selectAllOptions().find((select) =>
-      Array.from(select.options).some((option) => option.value === 'w9'),
+      select.value !== 'lead' && Array.from(select.options).some((option) => option.value === 'w9'),
     );
     expect(addSelect).toBeTruthy();
     fireEvent.change(addSelect as HTMLSelectElement, { target: { value: 'w9' } });
@@ -492,7 +530,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('只改模型时不再重复 PUT 团队成员', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalled());
@@ -502,7 +540,7 @@ describe('TeamDrawer · 团队成员', () => {
 
 describe('TeamDrawer · 团队技能（独立保存）', () => {
   it('分配矩阵保存走 updateWorker{skills}，不触发团队 PUT', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     fireEvent.click(screen.getByLabelText('w1 s1'));
     fireEvent.click(screen.getByTestId('skills-save'));
@@ -516,7 +554,7 @@ describe('TeamDrawer · 团队技能（独立保存）', () => {
   });
 
   it('MCP 卡保存写 updateWorker{mcpServers}，独立于团队保存', async () => {
-    renderDrawer();
+    renderDrawer(3, 'Agent 管理');
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     fireEvent.click(screen.getByRole('button', { name: '编辑 w1 MCP' }));
     fireEvent.click(screen.getByRole('button', { name: '选择 MCP' }));

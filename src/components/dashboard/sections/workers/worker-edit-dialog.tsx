@@ -49,6 +49,7 @@ export function WorkerEditDialog({
   modelProvider,
   sessionIssue,
   envEditable = false,
+  basicOnly = false,
 
 }: {
   open: boolean;
@@ -63,6 +64,7 @@ export function WorkerEditDialog({
   modelProvider?: string;
   sessionIssue?: string | null;
   envEditable?: boolean;
+  basicOnly?: boolean;
 
 }) {
   const [envValid, setEnvValid] = useState(true);
@@ -161,7 +163,7 @@ export function WorkerEditDialog({
               </p>
             )}
           </div>
-          {currentRuntime === 'openclaw' ? (
+          {!basicOnly && currentRuntime === 'openclaw' ? (
             <WorkerHeartbeatControl
               enabled={value.llmHeartbeatEnabled}
               disabled={isPending || !envEditable}
@@ -176,11 +178,12 @@ export function WorkerEditDialog({
               placeholder="容器镜像地址（可选）"
             />
           </div>
+          {!basicOnly && <>
           <div className="space-y-2">
             <Label>技能</Label>
             <SkillSelector
               value={value.skills || []}
-              onChange={(skills) => onChange({ ...value, skills: skills.length ? skills : undefined })}
+              onChange={(skills) => onChange({ ...value, skills })}
             />
           </div>
           <div className="space-y-2">
@@ -203,6 +206,7 @@ export function WorkerEditDialog({
             {envEditable ? <WorkerEnvEditor key={workerName} value={value.env || {}} onChange={(env) => onChange({ ...value, env })} onValidityChange={setEnvValid} /> : <p className="text-xs text-muted-foreground">需要管理员权限及支持环境变量编辑的 Controller。</p>}
           </div>
           {workerName && <WorkerGatewayProbe key={workerName} workerName={workerName} />}
+          </>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

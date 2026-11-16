@@ -55,7 +55,7 @@ vi.mock('@/components/ui/select', () => ({
 }));
 
 vi.mock('@/components/dashboard/sections/skills/skill-selector', () => ({
-  SkillSelector: () => null,
+  SkillSelector: ({ onChange }: { onChange: (_skills: string[]) => void }) => <button onClick={() => onChange([])}>清空技能</button>,
 }));
 
 vi.mock('@/components/dashboard/sections/mcps/mcp-selector', () => ({
@@ -265,5 +265,22 @@ describe('WorkerEditDialog Provider → Model（未改不写回）', () => {
       model: 'alias-b',
       modelProvider: 'provider-b',
     });
+  });
+});
+
+describe('WorkerEditDialog configuration regression', () => {
+  afterEach(cleanup);
+  it('sends an empty array when the final skill is removed', () => {
+    const onSubmit = vi.fn();
+    render(<Harness initial={{ skills: ['one'], runtime: 'qwenpaw' }} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByText('清空技能'));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ skills: [] }));
+  });
+  it('keeps MCP and Skills outside the basic configuration form', () => {
+    render(<TooltipProvider><WorkerEditDialog open basicOnly workerName="worker" value={{ runtime: 'qwenpaw' }} onChange={() => {}} isPending={false} onOpenChange={() => {}} onSubmit={() => {}} modelOptions={[]} /></TooltipProvider>);
+    expect(screen.getByPlaceholderText('容器镜像地址（可选）')).toBeInTheDocument();
+    expect(screen.queryByText('清空技能')).not.toBeInTheDocument();
+    expect(screen.queryByText('MCP Servers')).not.toBeInTheDocument();
   });
 });

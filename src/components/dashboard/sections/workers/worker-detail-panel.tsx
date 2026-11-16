@@ -47,7 +47,7 @@ import { WorkerEnvCard } from './worker-env-card';
 import { WorkerHeartbeatControl } from './worker-heartbeat-control';
 import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
 import { WorkerMcpPanel } from './worker-mcp-panel';
-import { WorkerModelDialog } from './worker-model-dialog';
+import { WorkerEditDialog, type WorkerEditForm } from './worker-edit-dialog';
 import { WorkerPluginsCard } from './worker-plugins-card';
 import { WorkerChatsPanel } from './worker-chats-panel';
 import { QwenpawRuntimeConfigPanel } from './qwenpaw-runtime-config-panel';
@@ -126,7 +126,10 @@ export function WorkerDetailPanel({
 }: WorkerDetailPanelProps) {
   const workerName = worker.name;
   const [detail, setDetail] = useState<WorkerResponse | null>(worker);
-  const [modelOpen, setModelOpen] = useState(false);
+  const [editForm, setEditForm] = useState<WorkerEditForm | null>(null);
+  const [envOpen, setEnvOpen] = useState(false);
+  const [llmOpen, setLlmOpen] = useState(false);
+  const [expandedCards, setExpandedCards] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -332,7 +335,7 @@ export function WorkerDetailPanel({
   }> = [
     {
       id: 'runtime',
-      title: '运行配置',
+      title: '高级配置',
       desc: isQwenpaw
         ? `${runtimeName} · 全部配置分区 / 循环 / 重启生效`
         : `${runtimeName} · 分组 / 搜索 / 已改计数 / 回滚`,
@@ -388,6 +391,10 @@ export function WorkerDetailPanel({
           surface('skills')
         ) : (
           <div className="space-y-2">
+            {Boolean(worker.skillWarnings?.length) && <div role="alert" className="space-y-1 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+              <p className="font-medium">部分技能未能加载，Agent 可继续运行</p>
+              <ul className="list-disc space-y-1 pl-4">{worker.skillWarnings!.map((warning) => <li key={warning} className="break-words">{warning}</li>)}</ul>
+            </div>}
             <WorkerSkillAssign
               key={`skills-${view.name}`}
               worker={view}
@@ -449,28 +456,6 @@ export function WorkerDetailPanel({
       ),
     },
     {
-      id: 'env',
-      title: '环境变量与网关',
-      desc: `${envCount} 个变量 · 模型 / MCP 网关探测`,
-      render: () => (
-        <WorkerEnvCard
-          key={`env-${view.name}`}
-          worker={view}
-          onSaved={() => {
-            invalidateWorkerDetail(view.name);
-            void refreshDetail(true);
-            onChanged?.();
-          }}
-        />
-      ),
-    },
-    {
-      id: 'llm',
-      title: 'LLM 调优',
-      desc: '重试 / 限流 + 流式超时',
-      render: () => <WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} />,
-    },
-    {
       id: 'plugins',
       title: 'Worker 插件',
       desc: 'id / 名称 / 版本 / 启用（只读）',
@@ -516,6 +501,9 @@ export function WorkerDetailPanel({
     desc: '回迁 / 恢复',
     render: () => <WorkerCheckpointsCard key={`checkpoints-${view.name}`} workerName={view.name} />,
   });
+  const tabIds = ['mcp', 'skills', 'runtime', 'workspace-files', 'chats'];
+  const tabCards = tabIds.flatMap((id) => resourceCards.filter((card) => card.id === id));
+  const advancedCards = resourceCards.filter((card) => !tabIds.includes(card.id));
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
@@ -610,7 +598,14 @@ export function WorkerDetailPanel({
       </div>
 
       <ResourceDetailTabs key={workerName} label="Agent 配置" items={[
-        { id: 'basic', title: '基本信息', render: () => <div className="space-y-3">
+        { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
+        <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
+          <Row label="运行时" value={runtimeName} />
+          <Row label="模型 ID" value={view.model || '未设置'} />
+          <Row label="模型连接" value={view.modelProvider || providerName || '默认连接'} />
+          <Row label="镜像" value={view.image || '默认镜像'} />
+          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' })}>编辑基础配置</Button>
+        </section>
         {/* 状态区 */}
         <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
           <p className="text-xs text-foreground/80" title={buildStatusNarrative(view, now)}>
@@ -643,40 +638,58 @@ export function WorkerDetailPanel({
           />
         ) : null}
 
+        <details className="rounded-lg border p-3" onToggle={(event) => setEnvOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm">环境变量与网关 · {envCount} 个变量</summary>
+          {envOpen && <div className="pt-3"><WorkerEnvCard key={`env-${view.name}`} worker={view} onSaved={() => {
+            invalidateWorkerDetail(view.name);
+            void refreshDetail(true);
+            onChanged?.();
+          }} /></div>}
+        </details>
+        <details className="rounded-lg border p-3" onToggle={(event) => setLlmOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm">模型调优</summary>
+          {llmOpen && <div className="pt-3"><WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} /></div>}
+        </details>
         </div> },
-        { id: 'model', title: '模型', render: () =>
-        <section className="flex items-center gap-2 rounded-lg border p-2.5" aria-label="模型">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">模型</p>
-            <p className="truncate font-mono text-xs">{view.model || '未设置'}</p>
-            <p className="truncate text-xs text-muted-foreground">provider: {view.modelProvider || providerName || '-'}</p>
+        ...tabCards.map(card => ({ ...card, render: () => (
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium">{card.title}</h3>
+            {card.render()}
+            {card.id === 'runtime' && advancedCards.map((item) => (
+              <details key={item.id} className="rounded-lg border p-3" onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setExpandedCards((previous) => open ? [...new Set([...previous, item.id])] : previous.filter((id) => id !== item.id));
+              }}>
+                <summary className="cursor-pointer text-sm">{item.title}</summary>
+                {expandedCards.includes(item.id) && <div className="pt-3">{item.render()}</div>}
+              </details>
+            ))}
           </div>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => setModelOpen(true)}>
-            编辑模型
-          </Button>
-        </section>
-
-        },
-        ...resourceCards.map(card => ({ ...card, render: () => <div className="space-y-4"><h3 className="text-sm font-medium">{card.title}</h3>{card.render()}</div> })),
+        ) })),
       ]} />
 
       {actionPending && <p role="status" className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden="true" />正在下发操作…</p>}
 
-      <WorkerModelDialog
-        open={modelOpen}
+      {editForm && <WorkerEditDialog
+        open
+        basicOnly
         workerName={view.name}
-        model={view.model || ''}
-        modelProvider={view.modelProvider}
-        providerHint={providerName}
+        value={editForm}
+        onChange={setEditForm}
+        isPending={updateWorker.isPending}
+        onOpenChange={(open) => !open && setEditForm(null)}
         modelOptions={modelOptions}
+        modelProvider={view.modelProvider}
         sessionIssue={sessionIssue}
-        onOpenChange={setModelOpen}
-        onSaved={() => {
-          invalidateWorkerDetail(view.name);
-          void refreshDetail(true);
-          onChanged?.();
-        }}
-      />
+        onSubmit={() => updateWorker.mutate({ name: view.name, data: editForm }, {
+          onSuccess: () => {
+            setEditForm(null);
+            invalidateWorkerDetail(view.name);
+            void refreshDetail(true);
+            onChanged?.();
+          },
+        })}
+      />}
 
       <WorkerSkillUploadDialog
         open={uploadOpen}

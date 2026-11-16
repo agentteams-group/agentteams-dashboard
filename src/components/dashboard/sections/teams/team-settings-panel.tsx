@@ -2,7 +2,7 @@
 
 // 团队设置面板（无 Sheet / 无 Dialog 的 body）——「团队与Agent」页内联详情与
 // TeamDrawer 共用的唯一实现（F7 单一数据源）。对齐工作台插件「配置团队」
-// 四分区 + 千锻 + 加入未归属 Worker + 危险区。
+// 基本信息 / 成员管理 / Agent 管理三个标签页。
 //
 // 保存边界（与插件一致）：
 //   · 基本信息（含 心跳间隔 / 子代理默认模型）+ 团队 LLM 调优 = 同一次
@@ -24,8 +24,6 @@ import {
   Puzzle,
   SlidersHorizontal,
   Trash2,
-  UserCog,
-  UserPlus,
   Users,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -43,12 +41,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useHumans } from '@/hooks/use-agentteams-humans';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { LlmTuningFields } from '@/components/dashboard/sections/workers/llm-tuning-fields';
 import { useCreateTeam, useDeleteTeam, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
-import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import { teamHumanMembers, type TeamResponse, type WorkerResponse } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import {
   findLlmTuningError,
@@ -61,11 +61,11 @@ import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
 
 import { TeamMembersPanel } from './team-members-panel';
+import { TeamUsersPanel } from './team-users-panel';
 import { TeamSkillsPanel } from './team-skills-panel';
 import {
   buildBasicDraft,
   buildBasicUpdate,
-  standaloneWorkers,
   type TeamBasicDraft,
 } from './team-drawer-logic';
 
@@ -132,7 +132,6 @@ export type TeamSettingsPanelProps = {
  */
 export function TeamSettingsPanel({
   team,
-  allTeams,
   workers,
   modelOptions,
   sessionIssue,
@@ -140,7 +139,16 @@ export function TeamSettingsPanel({
   onChanged,
   onDeleted,
 }: TeamSettingsPanelProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['basic', 'members']));
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [tab, setTab] = useState('basic');
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['basic']));
+  const { data: humans = [] } = useHumans();
+  const humanNames = new Set([
+    ...teamHumanMembers(team).map((member) => member.name),
+    ...humans.filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name),
+    ...(team.admin?.name ? [team.admin.name] : []),
+  ]);
+  const agentCount = new Set([...(team.workerNames ?? []), ...(team.leaderName ? [team.leaderName] : [])]).size;
   const [basic, setBasic] = useState<TeamBasicDraft>(() => buildBasicDraft(team));
   const [llm, setLlm] = useState<LlmTuningRecord>(() => pickLlmTuning(team));
   const [saving, setSaving] = useState(false);
@@ -149,7 +157,6 @@ export function TeamSettingsPanel({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmName, setConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
-  const [joining, setJoining] = useState<string | null>(null);
 
   const updateTeam = useUpdateTeam();
   const deleteTeam = useDeleteTeam();
@@ -159,7 +166,6 @@ export function TeamSettingsPanel({
   const failureSummary = /matrix/i.test(team.message) && /connection refused|ECONNREFUSED/i.test(team.message)
     ? '暂时无法连接对话服务，请检查服务状态。'
     : '展开技术详情，查看具体失败原因。';
-  const standalone = useMemo(() => standaloneWorkers(allTeams, workers), [allTeams, workers]);
   const showPeerMentions = typeof team.peerMentions === 'boolean';
   const llmError = findLlmTuningError(llm);
 
@@ -213,31 +219,6 @@ export function TeamSettingsPanel({
     }
   };
 
-  const handleJoin = async (worker: WorkerResponse) => {
-    if (joining) return;
-    // 与插件 doAddWorker 同语义：已是现有成员 → info，不发起 PUT。
-    if (
-      team.leaderName === worker.name ||
-      (team.workerNames ?? []).includes(worker.name)
-    ) {
-      toast.info('该 Worker 已是团队现有成员');
-      return;
-    }
-    setJoining(worker.name);
-    try {
-      const workerNames = [...new Set([...(team.workerNames ?? []), worker.name])];
-      await updateTeam.mutateAsync({
-        name: team.name,
-        data: { workerNames, leader: team.leaderName ? { name: team.leaderName } : null },
-      });
-      onChanged?.();
-    } catch (err) {
-      toast.error(formatErrorMessage(err));
-    } finally {
-      setJoining(null);
-    }
-  };
-
   const handleDelete = async () => {
     if (confirmName.trim() !== team.name || deleting) return;
     setDeleting(true);
@@ -281,40 +262,30 @@ export function TeamSettingsPanel({
   };
 
   return (
-    <div
-      data-slot="team-drawer-body"
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden"
-    >
-      {/* 标题栏：名称 + 阶段 + 保存（C2：保存随面板标题，对齐插件 PaneHeader） */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-        <Users className="size-4 shrink-0 text-status-done" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{team.name}</span>
+    <div data-slot="team-drawer-body" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
+      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
+        <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>
         <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
-        <Button
-          size="sm"
-          className="min-h-11 shrink-0 text-xs sm:min-h-9"
-          data-testid="basic-save"
-          disabled={saving}
-          onClick={() => void handleSaveBasic()}
-        >
-          {saving ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Check className="size-3.5" aria-hidden="true" />
-          )}
-          保存
-        </Button>
+        {tab === 'basic' && <Button size="sm" data-testid="basic-save" disabled={saving} onClick={() => void handleSaveBasic()}>
+          {saving ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
+          保存基本信息
+        </Button>}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2.5 overflow-x-hidden overflow-y-auto px-3 py-3">
-        {/* 1. 基本信息 */}
-        <SettingsSection
-          title="基本信息"
-          icon={Users}
-          expanded={expanded.has('basic')}
-          onToggle={() => toggle('basic')}
-        >
-          <div className="space-y-2">
+      <Tabs value={tab} onValueChange={(next) => {
+        setTab(next);
+        setVisitedTabs((previous) => new Set([...previous, next]));
+      }} className="min-h-0 flex-1 gap-0">
+        <div className="shrink-0 border-b px-4 py-3">
+          <TabsList aria-label="团队编辑" className="grid h-10 w-full max-w-lg grid-cols-3">
+            <TabsTrigger value="basic">基本信息</TabsTrigger>
+            <TabsTrigger value="users">成员管理 <span className="text-xs text-muted-foreground">{humanNames.size}</span></TabsTrigger>
+            <TabsTrigger value="agents">Agent 管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <TabsContent value="basic" forceMount hidden={tab !== 'basic'} className="m-0 space-y-5">
             {team.phase === 'Failed' && team.message ? (
               <Alert className="min-w-0 border-destructive/20 bg-destructive/5 px-3 py-2.5 text-destructive">
                 <AlertTriangle aria-hidden="true" />
@@ -331,56 +302,14 @@ export function TeamSettingsPanel({
                 </AlertDescription>
               </Alert>
             ) : null}
-            <div className="space-y-1 rounded-md bg-muted/20 p-2">
-              <SummaryRow label="阶段">
-                <span className="flex items-center gap-1.5">
-                  <StatusDot phase={team.phase} />
-                  <PhaseBadge kind="team" phase={team.phase} />
-                </span>
-              </SummaryRow>
-              <SummaryRow label="Leader">
-                <span className="font-mono">{team.leaderName || '-'}</span>
-              </SummaryRow>
-              <SummaryRow label="Workers">
-                <span>
-                  {team.readyWorkers}/{team.totalWorkers} 就绪
-                </span>
-              </SummaryRow>
-              <SummaryRow label="团队房间">
-                {team.teamRoomID ? (
-                  <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono">{team.teamRoomID}</span>
-                    <CopyButton text={team.teamRoomID} />
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </SummaryRow>
-              <SummaryRow label="Leader DM">
-                {team.leaderDMRoomID ? (
-                  <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono">{team.leaderDMRoomID}</span>
-                    <CopyButton text={team.leaderDMRoomID} />
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </SummaryRow>
-              <SummaryRow label="健康度">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    variant={analytics.trend === 'critical' ? 'destructive' : analytics.trend === 'healthy' ? 'secondary' : 'outline'}
-                    className="text-xs"
-                  >
-                    {analytics.label}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    就绪率 {analytics.readinessPct}% · 成员健康 {analytics.healthScore}
-                  </span>
-                </span>
-              </SummaryRow>
-            </div>
 
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-5 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">团队 Admin</dt><dd className="text-sm">{humans.find((human) => human.name === team.admin?.name)?.displayName || team.admin?.name || '未设置'}</dd></div>
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">Leader Agent</dt><dd className="break-all text-sm">{team.leaderName || '未设置'}</dd></div>
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">成员数</dt><dd className="text-sm">{humanNames.size}</dd></div>
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">Agent 数</dt><dd className="text-sm">{agentCount}</dd></div>
+            </dl>
+            <div className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="team-drawer-team-name" className="text-xs">
                 团队名称
@@ -406,6 +335,24 @@ export function TeamSettingsPanel({
                 onChange={(event) => setBasic({ ...basic, description: event.target.value })}
               />
             </div>
+
+            {notices.length > 0 && (
+              <div role="status" className="space-y-1 rounded-md border border-status-waiting/30 bg-status-waiting/10 p-2">
+                {notices.map((notice) => (
+                  <p key={notice} className="text-xs text-status-waiting">
+                    {notice}
+                  </p>
+                ))}
+              </div>
+            )}
+            {error && (
+              <p role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            </div>
+            <SettingsSection title="高级设置" icon={SlidersHorizontal} expanded={expanded.has('advanced')} onToggle={() => toggle('advanced')}>
+              <div className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="team-drawer-idle-timeout" className="text-xs">
                 空闲超时（workerIdleTimeout，如 720m）
@@ -460,30 +407,8 @@ export function TeamSettingsPanel({
                 </Label>
               </div>
             )}
-            {notices.length > 0 && (
-              <div role="status" className="space-y-1 rounded-md border border-status-waiting/30 bg-status-waiting/10 p-2">
-                {notices.map((notice) => (
-                  <p key={notice} className="text-xs text-status-waiting">
-                    {notice}
-                  </p>
-                ))}
-              </div>
-            )}
-            {error && (
-              <p role="alert" className="text-xs text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
-        </SettingsSection>
 
-        {/* 2. LLM 调优（团队级默认，随基本信息保存） */}
-        <SettingsSection
-          title="LLM 调优"
-          icon={SlidersHorizontal}
-          expanded={expanded.has('llm')}
-          onToggle={() => toggle('llm')}
-        >
+              <div className="border-t pt-4">
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
               团队级默认：成员 Worker 未单独设置时继承。留空 = 不设置；保存随团队 PUT。
@@ -502,84 +427,62 @@ export function TeamSettingsPanel({
               </p>
             )}
           </div>
-        </SettingsSection>
-
-        {/* 3. 团队成员 */}
-        <SettingsSection
-          title="团队成员"
-          icon={UserCog}
-          expanded={expanded.has('members')}
-          onToggle={() => toggle('members')}
-        >
-          <TeamMembersPanel
-            team={team}
-            workers={workers}
-            modelOptions={modelOptions}
-            sessionIssue={sessionIssue}
-            onChanged={onChanged}
-          />
-        </SettingsSection>
-
-        {/* 4. 团队技能（默认收起） */}
-        <SettingsSection
-          title="团队技能"
-          icon={Puzzle}
-          expanded={expanded.has('skills')}
-          onToggle={() => toggle('skills')}
-        >
-          <TeamSkillsPanel team={team} workers={workers} onChanged={onChanged} />
-        </SettingsSection>
-
-        {/* 5. 千锻入口只在「团队与Agent」拓扑头部（对齐插件 TeamSection）。 */}
-
-        {/* 6. 加入未归属 Worker */}
-        <SettingsSection
-          title="加入未归属 Worker"
-          icon={UserPlus}
-          expanded={expanded.has('standalone')}
-          onToggle={() => toggle('standalone')}
-        >
-          <div className="space-y-2">
-            {standalone.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                没有未归属任何团队的 Worker。
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {standalone.map((worker) => (
-                  <div
-                    key={worker.name}
-                    className="flex min-w-0 items-center gap-2 rounded-lg border p-2"
-                  >
-                    <StatusDot phase={worker.phase} />
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                      {worker.name}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="min-h-11 shrink-0 text-xs sm:min-h-9"
-                      disabled={joining !== null}
-                      onClick={() => void handleJoin(worker)}
-                    >
-                      {joining === worker.name ? (
-                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <UserPlus className="size-3.5" aria-hidden="true" />
-                      )}
-                      加入本团队
-                    </Button>
-                  </div>
-                ))}
               </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              一键加入 = PUT 合并进当前团队成员（保留原有成员，角色 = worker）。
-            </p>
-          </div>
-        </SettingsSection>
+              </div>
+            </SettingsSection>
+            <SettingsSection title="运行状态与房间信息" icon={Users} expanded={expanded.has('status')} onToggle={() => toggle('status')}>
+            <div className="space-y-1 rounded-md bg-muted/20 p-2">
+              <SummaryRow label="阶段">
+                <span className="flex items-center gap-1.5">
+                  <StatusDot phase={team.phase} />
+                  <PhaseBadge kind="team" phase={team.phase} />
+                </span>
+              </SummaryRow>
+              <SummaryRow label="Leader">
+                <span className="font-mono">{team.leaderName || '-'}</span>
+              </SummaryRow>
+              <SummaryRow label="Workers">
+                <span>
+                  {team.readyWorkers}/{team.totalWorkers} 就绪
+                </span>
+              </SummaryRow>
+              <SummaryRow label="团队房间">
+                {team.teamRoomID ? (
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="truncate font-mono">{team.teamRoomID}</span>
+                    <CopyButton text={team.teamRoomID} />
+                  </span>
+                ) : (
+                  '-'
+                )}
+              </SummaryRow>
+              <SummaryRow label="Leader DM">
+                {team.leaderDMRoomID ? (
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="truncate font-mono">{team.leaderDMRoomID}</span>
+                    <CopyButton text={team.leaderDMRoomID} />
+                  </span>
+                ) : (
+                  '-'
+                )}
+              </SummaryRow>
+              <SummaryRow label="健康度">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <Badge
+                    variant={analytics.trend === 'critical' ? 'destructive' : analytics.trend === 'healthy' ? 'secondary' : 'outline'}
+                    className="text-xs"
+                  >
+                    {analytics.label}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    就绪率 {analytics.readinessPct}% · 成员健康 {analytics.healthScore}
+                  </span>
+                </span>
+              </SummaryRow>
+            </div>
 
-        {/* 7. 危险区 */}
+
+            </SettingsSection>
         <SettingsSection
           title="危险区"
           icon={AlertTriangle}
@@ -612,7 +515,27 @@ export function TeamSettingsPanel({
             )}
           </div>
         </SettingsSection>
-      </div>
+          </TabsContent>
+
+          {visitedTabs.has('users') && <TabsContent value="users" forceMount hidden={tab !== 'users'} className="m-0 space-y-4">
+            <div><h3 className="text-sm font-medium">成员管理</h3><p className="mt-1 text-xs text-muted-foreground">设置团队管理员，添加成员并调整角色。</p></div>
+            {userLevel >= 3 ? <TeamUsersPanel team={team} onChanged={onChanged} /> : <p className="text-sm text-muted-foreground">需要管理员权限才能编辑团队成员。</p>}
+          </TabsContent>}
+
+          {visitedTabs.has('agents') && <TabsContent value="agents" forceMount hidden={tab !== 'agents'} className="m-0 space-y-5">
+            <div><h3 className="text-sm font-medium">Agent 管理</h3><p className="mt-1 text-xs text-muted-foreground">查看 Leader 和 Worker，添加或移除 Agent，并调整模型。</p></div>
+            <TeamMembersPanel team={team} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onChanged={onChanged} />
+        <SettingsSection
+          title="团队技能"
+          icon={Puzzle}
+          expanded={expanded.has('skills')}
+          onToggle={() => toggle('skills')}
+        >
+          <TeamSkillsPanel team={team} workers={workers} onChanged={onChanged} />
+        </SettingsSection>
+          </TabsContent>}
+        </div>
+      </Tabs>
 
       <Dialog
         open={deleteOpen}
