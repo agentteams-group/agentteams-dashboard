@@ -12,10 +12,15 @@ import { create } from 'zustand';
 
 interface SectionState {
   activeSection: string;
+  taskCollaboration: { taskId: string; roomId: string } | null;
   setActiveSection: (_sectionId: string) => void;
 }
 
 export const useSectionStore = create<SectionState>()((set) => ({
   activeSection: 'overview',
-  setActiveSection: (sectionId: string) => set({ activeSection: sectionId }),
+  taskCollaboration: null,
+  setActiveSection: (sectionId: string) => set((state) => ({
+    activeSection: sectionId,
+    taskCollaboration: sectionId === 'chat' ? state.taskCollaboration : null,
+  })),
 }));

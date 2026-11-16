@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useProjects } from './use-projects';
-import { getProjectWorkflow, type WorkflowResponse } from '@/lib/agentteams-projects-api';
+import { getProjectWorkflow } from '@/lib/agentteams-projects-api';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
 
 /** The switcher and the open note share the same project/workflow query cache. */
@@ -14,8 +14,8 @@ export function useAssistantTaskFeed(room?: RoomInfo, enabled = true) {
     queryKey: ['agentteams-project-workflow', project.team_id ?? 'any', project.project_id],
     queryFn: () => getProjectWorkflow(project.project_id, { includeTasks: true, teamId: project.team_id }),
     enabled: enabled && !degraded,
-    refetchInterval: (query: { state: { data?: WorkflowResponse } }) => enabled && query.state.data?.status !== 'completed' ? 15000 : false as const,
-    staleTime: 15000,
+    refetchInterval: enabled ? 5000 : false,
+    staleTime: 5000,
     retry: 1,
     throwOnError: false,
   })) });

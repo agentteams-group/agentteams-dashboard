@@ -85,6 +85,7 @@ import { conversationStorageKey } from './agent-conversations';
 import { useSectionStore } from '@/lib/section-store';
 
 beforeEach(() => {
+  useSectionStore.setState({ taskCollaboration: null });
   localStorage.clear();
   sessionMock.userId = '@user:test';
   taskFeedMock.workflows = [];
@@ -125,6 +126,18 @@ function renderWithQueryClient(view: 'all' | 'assistants' | 'teams' = 'all') {
 }
 
 describe('ChatSection deep-link consumption (FUNC-04)', () => {
+  it('shows task collaboration navigation and returns to the board without opening task details', async () => {
+    loaded();
+    useSectionStore.setState({ activeSection: 'chat', taskCollaboration: { taskId: 'task-123', roomId: '!room1:test' } });
+    useHitlInboxStore.getState().setPendingChatRoomId('!room1:test');
+    renderWithQueryClient();
+    expect(screen.getByRole('navigation', { name: '任务协作导航' })).toHaveTextContent('task-123/协作');
+    await waitFor(() => expect(chatPanelSpy.lastRoomId).toBe('!room1:test'));
+    fireEvent.click(screen.getByRole('button', { name: '返回任务看板' }));
+    expect(useSectionStore.getState().activeSection).toBe('tasks');
+    expect(useSectionStore.getState().taskCollaboration).toBeNull();
+    expect(useHitlInboxStore.getState().pendingProjectKey).toBeNull();
+  });
   beforeEach(() => {
     useHitlInboxStore.setState({ pendingChatRoomId: null, pendingProjectKey: null });
     useRoomMetaStore.setState({ meta: {}, activeRoomId: null });

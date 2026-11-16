@@ -8,9 +8,10 @@ import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useSectionStore } from '@/lib/section-store';
+import { openChatRoom } from '@/lib/open-chat-room';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { AlertTriangle, PanelLeftOpen } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
@@ -97,6 +98,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
   const selectedRoomId = selection.scope === selectionKey ? selection.id : null;
   const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
+  const taskCollaboration = useSectionStore((state) => state.taskCollaboration);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(view !== 'teams');
@@ -161,6 +163,11 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
     const room = availableRooms.find(room => room.id === roomId);
     if (!room || !canOpenConversation(room)) return;
+    const context = useSectionStore.getState().taskCollaboration;
+    if (context && context.roomId !== roomId) {
+      openChatRoom(roomId);
+      return;
+    }
     if (view !== 'all' && (view === 'teams') !== isTeamViewRoom(room)) {
       useHitlInboxStore.getState().setPendingChatRoomId(roomId);
       useSectionStore.getState().setActiveSection(isTeamViewRoom(room) ? 'my-teams' : 'chat');
@@ -309,6 +316,17 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map((human) => human.matrixUserID)}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {taskCollaboration && (
+          <nav aria-label="任务协作导航" className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-sm sm:px-6">
+            <Button variant="ghost" size="sm" className="shrink-0 gap-1" onClick={() => useSectionStore.getState().setActiveSection('tasks')}>
+              <ArrowLeft className="size-4" />返回任务看板
+            </Button>
+            <span aria-hidden className="text-muted-foreground">/</span>
+            <span className="min-w-0 truncate" title={taskCollaboration.taskId}>{taskCollaboration.taskId}</span>
+            <span aria-hidden className="text-muted-foreground">/</span>
+            <span aria-current="page">协作</span>
+          </nav>
+        )}
         {!selectedRoom && (
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
           <Button ref={switcherRef} variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>

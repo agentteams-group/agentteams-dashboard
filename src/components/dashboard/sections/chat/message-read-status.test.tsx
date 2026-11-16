@@ -41,8 +41,10 @@ describe('message read interaction', () => {
     const list = screen.getByRole('list', { name: '阅读成员' });
     const rows = screen.getAllByRole('listitem');
     expect(rows.map((row) => row.textContent)).toEqual(['Alice已读', 'Bob未读']);
-    expect(rows[0].lastElementChild).toHaveClass('text-emerald-600');
-    expect(rows[1].lastElementChild).toHaveClass('text-muted-foreground');
+    expect(rows[0].lastElementChild).toHaveClass('text-muted-foreground');
+    expect(rows[1].lastElementChild).toHaveClass('text-blue-600', 'dark:text-blue-400');
+    expect(trigger.firstElementChild).toHaveClass('text-muted-foreground');
+    expect(trigger.lastElementChild).toHaveClass('text-blue-600', 'dark:text-blue-400');
     expect(list.closest('[data-slot="popover-content"]')).toHaveClass('w-max', 'border', 'border-border/50', 'shadow-none');
     expect(rows[0]).not.toHaveClass('justify-between');
     expect(list.closest('[data-slot="popover-content"]')).toHaveAttribute('data-side', 'bottom');
@@ -54,9 +56,22 @@ describe('message read interaction', () => {
 
   it('only shows mentioned members', () => {
     show({ ...message, rawContent: { ...message.rawContent, 'm.mentions': { user_ids: ['@b:hs'] } } });
-    fireEvent.click(screen.getByRole('button', { name: '消息阅读状态：Bob 未读' }));
+    const trigger = screen.getByRole('button', { name: '消息阅读状态：未读' });
+    expect(trigger.textContent).toBe('未读');
+    expect(trigger.firstElementChild).toHaveClass('text-blue-600', 'dark:text-blue-400');
+    fireEvent.click(trigger);
     expect(screen.queryByText('Alice')).not.toBeInTheDocument();
     expect(screen.getByText('Bob')).toBeInTheDocument();
+  });
+
+  it('keeps a single read receipt short and muted, with the name in the details', () => {
+    show({ ...message, rawContent: { ...message.rawContent, 'm.mentions': { user_ids: ['@a:hs'] } } });
+    const trigger = screen.getByRole('button', { name: '消息阅读状态：已读' });
+    expect(trigger.textContent).toBe('已读');
+    expect(trigger.firstElementChild).toHaveClass('text-muted-foreground');
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(screen.getByText('Alice')).toBeInTheDocument();
   });
 
   it('renders no status entry when no Agent supports confirmation', () => {

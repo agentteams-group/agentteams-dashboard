@@ -115,7 +115,7 @@ export function useTaskBoard(options: { refetchInterval?: number | false; enable
       return (await res.json()) as TeamTasksResponse;
     },
     enabled: options.enabled ?? true,
-    refetchInterval: options.refetchInterval ?? 8000,
+    refetchInterval: options.refetchInterval ?? 5000,
     retry: 1,
     placeholderData: (prev) => prev,
     throwOnError: false,
@@ -178,9 +178,7 @@ export function useMergedTaskBoard(options: {
     const byId = new Map<string, BoardTask>();
     // Persistent board first
     for (const t of board.data?.tasks ?? []) byId.set(t.runId, t);
-    // Live Matrix workflow events fill in any runIds the board doesn't
-    // know about, and refresh the updatedAt timestamp so live ones sort
-    // first.
+    // Live events fill missing tasks without replacing persisted states.
     for (const [, e] of Object.entries(live)) {
       const existing = byId.get(e.runId);
       const liveTask: BoardTask = {
@@ -197,7 +195,7 @@ export function useMergedTaskBoard(options: {
         spec: existing?.spec,
         source: 'matrix-live',
       };
-      byId.set(e.runId, existing ? { ...existing, status: existing.status === 'completed' ? existing.status : liveTask.status } : liveTask);
+      byId.set(e.runId, existing ?? liveTask);
     }
     return Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, [board.data, live]);

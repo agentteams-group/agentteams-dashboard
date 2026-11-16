@@ -53,19 +53,19 @@ export function MessageReadStatus({ message }: { message: DisplayMessage }) {
   const read = members.filter((m) => m.state === 'read');
   const unread = members.filter((m) => m.state === 'unread');
   const summary = members.length === 1
-    ? `${members[0].displayName} ${read.length ? '已读' : '未读'}`
+    ? (read.length ? '已读' : '未读')
     : `已读 ${read.length} · 未读 ${unread.length}`;
 
   return (
     <Popover open={open} onOpenChange={(nextOpen) => { openedByClick.current = false; setOpen(nextOpen); }}>
       <PopoverTrigger asChild>
         <button type="button" onMouseEnter={showMembers} onMouseLeave={hideMembers} onClick={(event) => { event.preventDefault(); event.stopPropagation(); openedByClick.current = true; showMembers(); }} className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`消息阅读状态：${summary}`}>
-          {members.length === 1 ? <span className={`truncate ${read.length ? 'text-emerald-600' : ''}`}>{summary}</span> : <><span className="text-emerald-600">已读 {read.length}</span><span>·</span><span>未读 {unread.length}</span></>}
+          {members.length === 1 ? <span className={read.length ? 'text-muted-foreground' : 'text-blue-600 dark:text-blue-400'}>{summary}</span> : <><span className="text-muted-foreground">已读 {read.length}</span><span>·</span><span className={unread.length ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}>未读 {unread.length}</span></>}
         </button>
       </PopoverTrigger>
       <PopoverContent side="bottom" align={message.isMe ? 'end' : 'start'} avoidCollisions={false} onMouseEnter={showMembers} onMouseLeave={hideMembers} onClick={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()} className="w-max max-w-[calc(100vw-2rem)] border border-border/50 p-1.5 shadow-none">
         <ul aria-label="阅读成员" className="max-h-64 space-y-1.5 overflow-y-auto">
-          {members.map((member) => <li key={member.userId} className="flex min-w-0 items-center gap-2 text-xs"><span className="w-[4em] shrink-0 truncate" title={member.displayName}>{member.displayName}</span><span className={`shrink-0 ${member.state === 'read' ? 'text-emerald-600' : 'text-muted-foreground'}`}>{member.state === 'read' ? '已读' : '未读'}</span></li>)}
+          {members.map((member) => <li key={member.userId} className="flex min-w-0 items-center gap-2 text-xs"><span className="w-[4em] shrink-0 truncate" title={member.displayName}>{member.displayName}</span><span className={`shrink-0 ${member.state === 'read' ? 'text-muted-foreground' : 'text-blue-600 dark:text-blue-400'}`}>{member.state === 'read' ? '已读' : '未读'}</span></li>)}
         </ul>
       </PopoverContent>
     </Popover>

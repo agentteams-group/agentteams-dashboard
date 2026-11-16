@@ -15,6 +15,7 @@ export interface ResolvedHash {
   section: string;
   /** Room id for `#workbench/space/<roomId>` deep links. */
   roomId?: string;
+  taskId?: string;
   /** Query params (e.g. `project=<id>` on task deep links). */
   params?: URLSearchParams;
 }
@@ -140,6 +141,10 @@ export function tasksHash(projectRunId?: string): string {
   return projectRunId ? `${base}?project=${encodeURIComponent(projectRunId)}` : base;
 }
 
+export function taskCollaborationHash(taskId: string, roomId: string): string {
+  return `#workbench/tasks/${encodeURIComponent(taskId)}/collaboration?room=${encodeURIComponent(roomId)}`;
+}
+
 /** 深链：循环页并选中某个循环草案（`#workbench/loop?loop=<id>`）。 */
 export function loopHash(loopId?: string): string {
   const base = `#${SECTION_TO_HASH.loops}`;
@@ -188,6 +193,7 @@ export function hashForActiveSection(sectionId: string, currentHash: string): st
   const query = sep === -1 ? '' : raw.slice(sep);
   // Preserve resource selection while normalizing old merged-page bookmarks.
   const resolved = resolveHash(raw, () => true);
+  if (sectionId === 'tasks' && resolved?.taskId) return canonical;
   if (['workers', 'teams', 'platform-assistant-settings'].includes(sectionId) && resolved?.section === sectionId) {
     const params = new URLSearchParams(resolved.params);
     params.delete('tab');
@@ -264,6 +270,9 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       return { section: 'chat', roomId, params };
     }
     if (segments[1] === 'tasks') {
+      if (segments.length === 4 && segments[3] === 'collaboration' && roomId && params?.get('room')) {
+        return { section: 'chat', taskId: roomId, roomId: params.get('room')!, params };
+      }
       if (segments[2] === 'artifacts') return { section: 'artifacts', params };
       if (segments[2] === 'coding-runs') return { section: 'coding-runs', params };
       return { section: 'tasks', params };
