@@ -11,6 +11,7 @@ import { StatusDot } from '@/components/dashboard/status-dot';
 import { useEnsureReadyWorker } from '@/hooks/use-agentteams-mutations';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { isUnsupportedEndpointError } from '@/lib/api-error';
+import { cn } from '@/lib/utils';
 import { MillforgeEntryCard } from '../teams/millforge/millforge-entry-card';
 import {
   ROLE_LABELS,
@@ -38,6 +39,8 @@ export interface InteractiveTeamTopologyProps {
   onBack?: () => void;
   /** Dashboard 会话等级：3 = 管理员（插件侧 L1），行内「拉起就绪」仅 L1 可见。 */
   userLevel?: number;
+  /** 宿主布局类（工作台两栏模式传 "h-full" 让 Card 撑满中栏、成员列表内部滚动）。 */
+  className?: string;
 }
 
 /**
@@ -89,8 +92,8 @@ function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
  * - leader 只从 Worker 列表解析（`team.leaderName` 是 Worker 名，不是 Manager）；
  * - Manager 展示用 `team.admin`；
  * - 成员行是 div[role=button]（行内「拉起就绪」是嵌套按钮，HTML 不允许
- *   button 套 button）：点击 / Enter / Space 打开 Worker 详情；
- * - 头部齿轮打开团队设置（合并页 = 选中该团队，内联设置面板）。
+ *   button 套 button）：点击 / Enter / Space 打开 Worker 详情大弹窗；
+ * - 头部齿轮 + 显式「团队设置」按钮都打开团队设置大弹窗（R2：详情不再内联）。
  */
 export function InteractiveTeamTopology({
   team,
@@ -102,6 +105,7 @@ export function InteractiveTeamTopology({
   onOpenMillforge,
   onBack,
   userLevel,
+  className,
 }: InteractiveTeamTopologyProps) {
   const allMembers = teamMembers(team, workers);
   const counts = teamAgentCounts(allMembers);
@@ -118,7 +122,7 @@ export function InteractiveTeamTopology({
     : allMembers.filter(({ worker }) => worker.name.toLowerCase().includes(query));
 
   return (
-    <Card className="glass-card flex min-h-0 flex-col overflow-hidden">
+    <Card className={cn('glass-card flex min-h-0 flex-col overflow-hidden', className)}>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-0">
         <header
           data-testid="team-topology-header"
@@ -128,7 +132,7 @@ export function InteractiveTeamTopology({
             <Button
               variant="ghost"
               size="sm"
-              className="min-h-11 shrink-0 gap-1 px-2 text-xs md:hidden"
+              className="min-h-11 shrink-0 gap-1 px-2 text-xs"
               onClick={onBack}
             >
               <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -174,6 +178,17 @@ export function InteractiveTeamTopology({
               )}
             </p>
           </div>
+          {/* R2：显式入口（≥44px 触控目标）与齿轮等价，打开团队设置大弹窗。
+              aria-label 区别于齿轮，避免同名按钮双重匹配。 */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-h-11 shrink-0 gap-1 px-2.5 text-xs"
+            aria-label="打开团队设置"
+            onClick={() => onOpenTeamSettings(team)}
+          >
+            团队设置
+          </Button>
           <Button
             variant="outline"
             size="icon"
