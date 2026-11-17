@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { Bell, Check, Trash2, CheckCircle2, XCircle, AlertTriangle, Info, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
+} from '@/components/ui/sheet';
+import { useSectionStore } from '@/lib/section-store';
+import { usePendingTally } from '@/hooks/use-pending-tally';
+import { MyWorkbenchSection } from './sections/my-workbench-section';
 import { useNotificationStore } from '@/lib/notification-store';
 import { hasNotificationTarget, openNotificationTarget } from '@/lib/notification-nav';
 import { formatDistanceToNow } from 'date-fns';
@@ -33,21 +33,29 @@ export function NotificationPopover() {
     useNotificationStore();
   const count = unreadCount();
   // 跳完要把气泡关掉，所以 open 由本组件持有（原来是非受控，关不掉）。
-  const [open, setOpen] = useState(false);
+  const open = useSectionStore(state => state.notificationsOpen);
+  const setOpen = useSectionStore(state => state.setNotificationsOpen);
+  const pending = usePendingTally().total;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 relative" aria-label={`通知（${count} 条未读）`}>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 relative" aria-label={`通知（${count} 条未读）${pending ? `，${pending} 条待处理` : ''}`}>
           <Bell className="w-4 h-4" aria-hidden="true" />
-          {count > 0 && (
-            <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-foreground/60 ring-2 ring-background" aria-hidden="true" />
+          {(count > 0 || pending > 0) && (
+            <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-xs text-primary-foreground" aria-hidden="true">{pending > 0 ? pending > 99 ? '99+' : pending : '•'}</span>
           )}
         </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
+      </SheetTrigger>
+      <SheetContent className="w-full sm:max-w-xl gap-0">
+        <SheetHeader className="border-b">
+          <SheetTitle>通知{pending > 0 && <span className="ml-2 text-sm font-normal text-muted-foreground">{pending} 条待处理</span>}</SheetTitle>
+          <SheetDescription className="sr-only">处理审批、答复和 @提醒，查看系统通知。</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="p-4"><MyWorkbenchSection onNavigate={() => setOpen(false)} /></div>
         <div className="flex items-center justify-between p-3 border-b">
-          <span className="text-sm">通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
+          <span className="text-sm">系统通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
           <div className="flex gap-1">
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
               <Check className="w-3 h-3 mr-1" />
@@ -61,7 +69,7 @@ export function NotificationPopover() {
         </div>
         {/* Native overflow scroll: Radix ScrollArea's focusable viewport
             paints a ring that gets clipped into stray edge stripes. */}
-        <div className="max-h-96 overflow-y-auto custom-scrollbar">
+        <div>
           {notifications.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
               暂无通知
@@ -127,7 +135,8 @@ export function NotificationPopover() {
             </div>
           )}
         </div>
-      </PopoverContent>
-    </Popover>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

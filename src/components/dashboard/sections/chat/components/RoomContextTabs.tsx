@@ -3,22 +3,23 @@ import { ListTodo, Users, FolderTree, MessagesSquare } from 'lucide-react';
 import type { RoomContextTab } from './RoomContextPanel';
 
 const tabs = [
-  { id: 'tasks', label: '任务', icon: ListTodo },
+  { id: 'tasks', label: '任务拓扑', icon: ListTodo },
   { id: 'members', label: '成员', icon: Users },
   { id: 'files', label: '文件', icon: FolderTree },
   { id: 'thread', label: '话题', icon: MessagesSquare },
 ] as const;
 
-export function RoomContextTabs({ activeTab, onTabChange, showMembers = true, vertical = false, memberCount = 0, threadCount = 0, children }: {
+export function RoomContextTabs({ activeTab, onTabChange, showMembers = true, showTasks = true, vertical = false, memberCount = 0, threadCount = 0, children }: {
   activeTab: RoomContextTab | null;
   onTabChange: (_tab: RoomContextTab | null) => void;
   showMembers?: boolean;
+  showTasks?: boolean;
   vertical?: boolean;
   memberCount?: number;
   threadCount?: number;
   children?: ReactNode;
 }) {
-  const entries = tabs.filter(tab => showMembers || tab.id !== 'members');
+  const entries = tabs.filter(tab => (showMembers || tab.id !== 'members') && (showTasks || tab.id !== 'tasks'));
   return <nav aria-label="会话资料" className={vertical ? 'flex w-full flex-col items-center gap-2 py-2' : 'flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1.5 custom-scrollbar'}>
     {entries.map(tab => {
       const Icon = tab.icon;

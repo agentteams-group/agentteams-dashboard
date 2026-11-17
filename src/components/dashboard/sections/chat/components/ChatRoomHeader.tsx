@@ -21,6 +21,7 @@ import type { RoomInfo } from '../room-info';
 interface ChatRoomHeaderProps {
   compact?: boolean;
   headerActions?: ReactNode;
+  taskAction?: ReactNode;
   headerLeading?: ReactNode;
   headerTitle?: ReactNode;
   agentRole?: RoomInfo['agentRole'];
@@ -77,6 +78,7 @@ function ContextChip({
 export function ChatRoomHeader({
   compact = false,
   headerActions,
+  taskAction,
   headerLeading,
   headerTitle,
   agentRole,
@@ -154,12 +156,12 @@ export function ChatRoomHeader({
       </div>
       <div className={`flex ${compact ? 'w-auto' : 'w-full sm:w-auto'} shrink-0 flex-wrap items-center justify-end gap-1 max-sm:gap-0.5 sm:flex-nowrap`}>
         {!compact && <>
-        <ContextChip
+        {taskAction ?? <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
-          label="任务"
+          label="任务拓扑"
           onClick={() => onTogglePanel('tasks')}
-        />
+        />}
         {!agentRole && <ContextChip
           active={activePanel === 'members'}
           icon={Users}

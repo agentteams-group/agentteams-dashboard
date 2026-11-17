@@ -43,6 +43,7 @@ export interface LlmProvider {
 }
 
 export interface LlmProviderResponse {
+  gatewayManaged?: boolean;
   name: string;
   type: string;
   protocol?: string;

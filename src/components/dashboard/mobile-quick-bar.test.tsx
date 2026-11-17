@@ -61,10 +61,11 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
     expect(screen.queryByText('120')).toBeNull();
   });
 
-  it('点「等我」只写 hash：#workbench/me', () => {
+  it('opens pending items without leaving the current page', () => {
     render(<MobileQuickBar onSearch={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /待处理/ }));
-    expect(window.location.hash).toBe('#workbench/me');
+    expect(window.location.hash).toBe('');
+    expect(useSectionStore.getState().notificationsOpen).toBe(true);
   });
 
   it('点「空间」只写 hash：#workbench/space', () => {
@@ -76,10 +77,7 @@ describe('MobileQuickBar（C-6 移动端底部常驻栏）', () => {
   it('当前分区那一项带 aria-current="page"，其余不带', () => {
     useSectionStore.getState().setActiveSection('my-workbench');
     render(<MobileQuickBar onSearch={() => {}} />);
-    expect(screen.getByRole('button', { name: /待处理/ })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
+    expect(screen.getByRole('button', { name: /待处理/ })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: '助手' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: '搜索' })).not.toHaveAttribute('aria-current');
   });

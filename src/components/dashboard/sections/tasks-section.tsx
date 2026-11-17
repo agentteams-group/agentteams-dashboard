@@ -45,6 +45,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ArchivedRoomsDialog, CompletedTaskArchiveAction } from './chat/room-archive';
+import { useArchivedRooms } from '@/hooks/use-room-archive';
 import { currentHashParams } from '@/lib/nav-hash';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
@@ -91,14 +93,14 @@ const TASK_STATUS_COLUMNS: Array<{
   {
     key: 'pending',
     label: '待办',
-    description: 'Manager 拆分但尚未派发',
+    description: '已交给团队 Leader，等待分析、拆分和派发',
     color: 'text-muted-foreground bg-muted border-border',
     icon: Clock,
   },
   {
     key: 'assigned',
     label: '已派发',
-    description: '已发给 Worker,等待首次心跳',
+    description: 'Leader 已拆分并派发给 Worker，等待接单',
     color: 'text-foreground bg-muted border-border',
     icon: ChevronUp,
   },
@@ -286,6 +288,19 @@ function TaskRoomActions({ task, tasks = [], compact = false }: { task: BoardTas
       </Button>
       </span>
       {task.roomId && <Button variant="ghost" size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs text-muted-foreground'} aria-label="查看来源会话" title="查看来源会话" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}><MessageSquareReply className="size-3.5" />{!compact && '查看来源会话'}</Button>}
+      {task.status === 'completed' && children.every(child => child.status === 'completed') && <CompletedTaskArchiveAction title={task.title} resolveRooms={async () => {
+        const executionTasks = children.length ? children : [task];
+        return Promise.all(executionTasks.map(async item => {
+          if (item.executionRoomId) return item.executionRoomId.replace(/^room:/, '');
+          const meta = await queryClient.fetchQuery({
+            queryKey: ['task-detail', item.runId, item.teamId],
+            queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(item.runId)}/meta${item.teamId ? `?team=${encodeURIComponent(item.teamId)}` : ''}`)),
+            staleTime: 15000,
+          });
+          if (!meta.room_id) throw new Error('协作房间尚未创建，无法归档');
+          return meta.room_id.replace(/^room:/, '');
+        }));
+      }} />}
     </div>
     {!compact && awaitingDispatch && <p role="status" className="text-xs text-muted-foreground">{unavailableReason}</p>}
     {error && <p role="status" className="text-xs text-muted-foreground">{error}</p>}
@@ -423,6 +438,10 @@ function TaskCard({
       className={`gap-0 rounded-lg border bg-card py-0 shadow-none ${onClick ? INTERACTIVE_CARD_CLASS : 'transition-colors hover:border-foreground/20'} ${expanded ? 'border-primary/35' : 'border-border'}`}
     >
       <CardContent className="space-y-3 p-4">
+        <div className="flex items-start gap-2">
+          <OverflowText text={task.title} multiline className="min-w-0 flex-1 text-sm font-medium leading-6" />
+          {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
+        </div>
         <SubtaskProgress task={task} tasks={tasks} />
         {(showStatus || task.outcome || task.dependsOn.length > 0) && <div className="flex items-start gap-2">
           {showStatus && <StatusBadge status={task.status} />}
@@ -437,15 +456,9 @@ function TaskCard({
             </Badge>
           )}
         </div>}
-        <div>
-          <div className="flex items-start gap-2">
-            <OverflowText text={task.title} multiline className="h-12 min-w-0 flex-1 text-sm font-medium leading-6" />
-            {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
-          </div>
-          <p className="text-xs text-muted-foreground font-mono mt-1">
-            {shortId(task.runId, 22)}
-          </p>
-        </div>
+        {task.title !== task.runId && <p className="text-xs text-muted-foreground font-mono" title={task.runId}>
+          {shortId(task.runId, 22)}
+        </p>}
         <div className="min-w-0 space-y-1.5 text-xs text-muted-foreground">
           {task.assignedTo && (
             <div className="min-w-0" title={task.assignedTo}>
@@ -679,6 +692,8 @@ export function TasksSection() {
   const reduceMotion = useReducedMotion();
   const { setActiveSection } = useActiveSection();
   const matrixLoggedIn = useMatrixStore((s) => s.isLoggedIn);
+  const archivedRooms = useArchivedRooms({}, matrixLoggedIn);
+  const archivedRoomIds = useMemo(() => new Set(archivedRooms.data?.rooms.map(room => room.room_id) ?? []), [archivedRooms.data]);
   const clearTasks = useTaskStore((s) => s.clearTasks);
 
   // D5 双轨：主源 = Controller projects/workflow API（standardized），
@@ -726,9 +741,13 @@ export function TasksSection() {
     }
     return {
       ...primary,
-      tasks: Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt),
+      tasks: Array.from(byId.values()).filter(task => {
+        if (task.executionRoomId && archivedRoomIds.has(task.executionRoomId)) return false;
+        const children = Array.from(byId.values()).filter(child => child.parentTaskId === task.runId);
+        return !children.length || !children.every(child => child.executionRoomId && archivedRoomIds.has(child.executionRoomId));
+      }).sort((a, b) => b.createdAt - a.createdAt),
     };
-  }, [primary, live]);
+  }, [primary, live, archivedRoomIds]);
 
   const { data: managers } = useManagers();
   const { data: workers } = useWorkers();
@@ -872,24 +891,6 @@ export function TasksSection() {
     return map;
   }, [filteredTasks]);
 
-  const counts = useMemo(() => {
-    let running = 0;
-    let completed = 0;
-    let failed = 0;
-    let blocked = 0;
-    let revision = 0;
-    let submitted = 0;
-    for (const t of mainTasks(board.tasks)) {
-      if (t.status === 'in_progress' || t.status === 'assigned') running++;
-      else if (t.status === 'completed') completed++;
-      else if (t.status === 'revision') revision++;
-      else if (t.status === 'failed') failed++;
-      else if (t.status === 'blocked') blocked++;
-      else if (t.status === 'submitted') submitted++;
-    }
-    return { running, submitted, completed, failed, blocked, revision, total: mainTasks(board.tasks).length };
-  }, [board.tasks]);
-
   const selectedProject = board.projects.find((p) => p.runId === effectiveProjectId);
 
   return (
@@ -897,21 +898,20 @@ export function TasksSection() {
       <SectionHeader
         title="任务看板"
         meta={
-          <div aria-label="任务状态汇总" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            {[
-              ['进行中', counts.running], ['待验收', counts.submitted],
-              ['已完成', counts.completed], ['需修订', counts.revision],
-              ['阻塞', counts.blocked], ['失败', counts.failed],
-            ].map(([label, count]) => (
-              <span key={label} className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-medium tabular-nums">{count}</span>
-              </span>
-            ))}
+          <div className="relative w-full min-w-0 sm:w-96">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              aria-label="搜索任务"
+              placeholder="搜索任务标题 / Run ID / 负责人 / 项目 ID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 pl-9"
+            />
           </div>
         }
         actions={
           <div className="flex items-center gap-2">
+            <ArchivedRoomsDialog onSelectRoom={openChatRoom} />
             <div className="flex items-center gap-1">
               {(['kanban', 'projects'] as const).map((v) => (
                 <Button
@@ -981,17 +981,6 @@ export function TasksSection() {
           </CardContent>
         </Card>
       )}
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="搜索任务标题 / Run ID / 负责人 / 项目 ID..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
 
       {/* One quiet empty state instead of eight oversized empty columns. */}
       {view === 'kanban' && filteredTasks.length === 0 && <div className="rounded-xl border border-border bg-muted/10">

@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { SectionHeader } from '@/components/dashboard/section-header';
 import { ApprovalSeverityBadge } from '@/components/dashboard/approval-severity-badge';
 import { useHitlInboxStore, selectConfirmationList } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
@@ -21,7 +20,7 @@ import { useSectionStore } from '@/lib/section-store';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { usePendingTally } from '@/hooks/use-pending-tally';
 import { formatInterventionTimeout, partitionByAge, useInterventionTimeoutMs } from '@/lib/intervention-timeout';
-import { WelcomeSteps } from './welcome-steps';
+import { PendingRequest } from '../pending-request';
 
 function formatRelative(ts: number): string {
   const diff = Date.now() - ts;
@@ -36,7 +35,7 @@ function formatRelative(ts: number): string {
  * 收件箱）、@我的消息（房间 highlight）、暂停项目；每类条目可直达上下文。
  * 优先级：待干预 > 待放行/审批 > @我（F4.3 同一口径）。
  */
-export function MyWorkbenchSection() {
+export function MyWorkbenchSection({ onNavigate }: { onNavigate?: () => void }) {
   // selector 只取 map（引用稳定），排序派生走 useMemo —— 直接把
   // selectConfirmationList 当 selector 会每次返回新数组，触发
   // useSyncExternalStore 的 getSnapshot 缓存告警并无限重渲染。
@@ -51,8 +50,7 @@ export function MyWorkbenchSection() {
     () =>
       Object.entries(roomMeta)
         .filter(([, m]) => (m.unreadHighlightCount ?? 0) > 0)
-        .sort((a, b) => (b[1].unreadHighlightCount ?? 0) - (a[1].unreadHighlightCount ?? 0))
-        .slice(0, 8),
+        .sort((a, b) => (b[1].unreadHighlightCount ?? 0) - (a[1].unreadHighlightCount ?? 0)),
     [roomMeta],
   );
 
@@ -71,21 +69,14 @@ export function MyWorkbenchSection() {
   // 待办横幅取同一个 selector，不再各算一套。
   const pendingCount = usePendingTally().total;
 
+  if (pendingCount === 0) return <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Sparkles className="size-4" aria-hidden="true" />暂无待处理事项</p>;
+
   return (
     <div className="space-y-4">
-      <SectionHeader
-        title="我的工作台"
-        description="一屏处理全部「等我」事项 —— 待干预 > 待审批 > @我的"
-      />
-
-      <WelcomeSteps
-        visible={confirmations.length === 0 && mentionedRooms.length === 0 && Object.keys(invites).length === 0}
-      />
-
       {/* 三栏看板：待干预 / 待审批+邀请 / @我，宽屏并排，窄屏回落单列 */}
-      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="space-y-4">
       {/* 待处理干预（优先级最高） */}
-      <Card className="py-3 border-l-4 border-l-status-waiting">
+      {interventions.length > 0 && <Card className="py-3 border-l-4 border-l-status-waiting">
         <CardContent className="px-4 space-y-2">
           <p className="text-xs font-semibold flex items-center gap-1.5">
             <Inbox className="h-3.5 w-3.5 text-status-waiting" aria-hidden="true" />
@@ -95,10 +86,11 @@ export function MyWorkbenchSection() {
             <p className="text-xs text-muted-foreground">没有等待你答复的执行中提问。</p>
           )}
           {shownInterventions.map((item) => (
+            <PendingRequest key={item.id} item={item} onNavigate={onNavigate}>
             <button
               key={item.id}
               type="button"
-              onClick={() => openChatRoom(item.roomId)}
+              onClick={() => { openChatRoom(item.roomId); onNavigate?.(); }}
               className="w-full text-left rounded-lg border border-status-waiting/20 bg-status-waiting/5 hover:bg-status-waiting/10 px-3 py-2 transition-colors"
             >
               <div className="flex items-center justify-between gap-2">
@@ -112,6 +104,7 @@ export function MyWorkbenchSection() {
                 {roomLabels[item.roomId] ?? item.roomId}
               </span>
             </button>
+            </PendingRequest>
           ))}
           {interventionAged.aged.length > 0 && (
             <AgedToggle
@@ -122,10 +115,10 @@ export function MyWorkbenchSection() {
             />
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* 待审批 + 邀请 */}
-      <Card className="py-3 border-l-4 border-l-status-blocked">
+      {(approvals.length > 0 || Object.keys(invites).length > 0) && <Card className="py-3 border-l-4 border-l-status-blocked">
         <CardContent className="px-4 space-y-2">
           <p className="text-xs font-semibold flex items-center gap-1.5">
             <Inbox className="h-3.5 w-3.5 text-status-blocked" aria-hidden="true" />
@@ -135,10 +128,11 @@ export function MyWorkbenchSection() {
             <p className="text-xs text-muted-foreground">没有待你审批的工具请求或房间邀请。</p>
           )}
           {shownApprovals.map((item) => (
+            <PendingRequest key={item.id} item={item} onNavigate={onNavigate}>
             <button
               key={item.id}
               type="button"
-              onClick={() => openChatRoom(item.roomId)}
+              onClick={() => { openChatRoom(item.roomId); onNavigate?.(); }}
               className="w-full text-left rounded-lg border border-status-blocked/20 bg-status-blocked/5 hover:bg-status-blocked/10 px-3 py-2 transition-colors"
             >
               <div className="flex items-center justify-between gap-2">
@@ -155,6 +149,7 @@ export function MyWorkbenchSection() {
                 {roomLabels[item.roomId] ?? item.roomId}
               </span>
             </button>
+            </PendingRequest>
           ))}
           {approvalAged.aged.length > 0 && (
             <AgedToggle
@@ -171,6 +166,7 @@ export function MyWorkbenchSection() {
               onClick={() => {
                 useInviteStore.getState().setPendingInbox();
                 useSectionStore.getState().setActiveSection('my-teams');
+                onNavigate?.();
               }}
               className="w-full text-left rounded-lg border border-border/60 hover:bg-accent/50 px-3 py-2 transition-colors"
             >
@@ -178,10 +174,10 @@ export function MyWorkbenchSection() {
             </button>
           ))}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* @我的消息 */}
-      <Card className="py-3">
+      {mentionedRooms.length > 0 && <Card className="py-3">
         <CardContent className="px-4 space-y-2">
           <p className="text-xs font-semibold flex items-center gap-1.5">
             <AtSign className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
@@ -190,11 +186,12 @@ export function MyWorkbenchSection() {
           {mentionedRooms.length === 0 && (
             <p className="text-xs text-muted-foreground">没有未读的 @提及。</p>
           )}
+          <div className="max-h-[32rem] space-y-2 overflow-y-auto">
           {mentionedRooms.map(([roomId, meta]) => (
             <button
               key={roomId}
               type="button"
-              onClick={() => openChatRoom(roomId)}
+              onClick={() => { openChatRoom(roomId, undefined, 'mention'); onNavigate?.(); }}
               className="w-full text-left rounded-lg border border-border/60 hover:bg-accent/50 px-3 py-2 transition-colors flex items-center gap-2"
             >
               <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -205,16 +202,11 @@ export function MyWorkbenchSection() {
               <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
             </button>
           ))}
+          </div>
         </CardContent>
-      </Card>
+      </Card>}
       </div>
 
-      {pendingCount === 0 && mentionedRooms.length === 0 && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          全部处理完毕。
-        </p>
-      )}
     </div>
   );
 }

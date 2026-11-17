@@ -52,7 +52,8 @@ vi.mock('@/hooks/use-agentteams-humans', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: () => ({ data: [] }) }));
+const teamFixture = vi.hoisted(() => ({ data: [] as { name: string; humanMembers?: { name: string }[] }[] }));
+vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: () => ({ data: teamFixture.data }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
 
 function renderSection() {
@@ -77,6 +78,7 @@ it('hides the built-in admin from the managed user list', () => {
 });
 
 beforeEach(() => {
+  teamFixture.data = [];
   window.history.replaceState({}, '', '#console/resources/humans');
   useAgentTeamsStore.setState({ userLevel: 3, isConnected: true });
   vi.spyOn(agentteamsApi, 'getHuman').mockResolvedValue(human);
@@ -93,6 +95,11 @@ afterEach(() => {
 });
 
 describe('HumansSection 详情 / 编辑入口', () => {
+  it('renders when an Agent-only team omits humanMembers', () => {
+    teamFixture.data = [{ name: 'agent-only-team' }];
+    renderSection();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+  });
   it('opens a linked human homepage with a separate edit action', async () => {
     window.history.replaceState({}, '', '#console/resources/humans?human=alice');
     renderSection();

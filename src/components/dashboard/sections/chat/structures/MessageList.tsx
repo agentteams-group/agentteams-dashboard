@@ -150,6 +150,7 @@ export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessa
 }
 
 interface MessageListProps {
+  focusedMentionId?: string | null;
   messages: DisplayMessage[];
   /** Locally tracked outbound messages (sending/failed) shown above the composer. */
   localMessages?: LocalOutboundMessage[];
@@ -199,12 +200,13 @@ interface MessageListProps {
  */
 export interface MessageListHandle extends ScrollPanelHandle {
   /** Jump to the first timeline item matching id/eventId/sourceEventIds. Returns false when not found. */
-  scrollToEvent: (_eventId: string) => boolean;
+  scrollToEvent: (_eventId: string, _options?: { smooth?: boolean }) => boolean;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     messages,
+    focusedMentionId,
     localMessages = [],
     readEventId,
     hasNextPage,
@@ -249,9 +251,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   const itemContent = useCallback((_index: number, gm: GroupedMessage) => {
     if (!gm) return null;
+    const focused = Boolean(focusedMentionId && (gm.message.id === focusedMentionId || gm.message.eventId === focusedMentionId || gm.message.sourceEventIds?.includes(focusedMentionId)));
     return (
-      <EventTile
-        key={gm.message.id}
+      <div key={gm.message.id} className={focused ? 'rounded-lg border border-blue-500/30 bg-blue-500/5 px-2' : undefined}>
+        <EventTile
         _message={gm.message}
         showSender={gm.showSender}
         isContinuation={gm.isContinuation}
@@ -269,9 +272,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         currentUserId={currentUserId}
         senderStatus={senderStatusMap?.[gm.message.sender] ?? null}
         onOpenWorkerChats={onOpenWorkerChats}
-      />
+        />
+      </div>
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenWorkerFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenWorkerFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would
@@ -313,9 +317,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     ref,
     () => ({
       scrollToBottom: (options?: { smooth?: boolean }) => timelineRef.current?.scrollToBottom(options),
-      scrollToIndex: (index: number) => timelineRef.current?.scrollToIndex(index),
+      scrollToIndex: (index: number, options?: { smooth?: boolean }) => timelineRef.current?.scrollToIndex(index, options),
       scrollToItem: (key: string) => timelineRef.current?.scrollToItem(key),
-      scrollToEvent: (eventId: string): boolean => {
+      scrollToEvent: (eventId: string, options?: { smooth?: boolean }): boolean => {
         const index = timelineItems.findIndex(
           (item) =>
             item.kind === 'message' &&
@@ -324,7 +328,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               (item.gm.message.sourceEventIds?.includes(eventId) ?? false)),
         );
         if (index < 0) return false;
-        timelineRef.current?.scrollToIndex(index);
+        timelineRef.current?.scrollToIndex(index, options);
         return true;
       },
     }),

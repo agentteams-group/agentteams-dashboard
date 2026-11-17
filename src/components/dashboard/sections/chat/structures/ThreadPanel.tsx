@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ interface ThreadPanelProps {
   canSend?: boolean;
   roomId: string;
   rootMessage: DisplayMessage;
+  focusedMessage?: DisplayMessage | null;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
 }
@@ -30,6 +31,7 @@ export function ThreadPanel({
   canSend = true,
   roomId,
   rootMessage,
+  focusedMessage,
   memberMap,
   workerMatrixUserIds,
 }: ThreadPanelProps) {
@@ -37,6 +39,7 @@ export function ThreadPanel({
   const [inputValue, setInputValue] = useState('');
   const { isImeKey, onCompositionStart, onCompositionEnd } = useImeGuard();
   const [actionError, setActionError] = useState<string | null>(null);
+  const focusedRef = useRef<HTMLDivElement>(null);
 
   const threadQuery = useMatrixThreadMessages(roomId, rootMessage.id);
   const sendMutation = useMatrixSendMessage();
@@ -70,8 +73,15 @@ export function ThreadPanel({
       const formatted = formatMatrixEvent(event, userId);
       if (formatted) messages.push(formatted);
     }
+    if (focusedMessage && !messages.some(message => message.id === focusedMessage.id)) {
+      messages.push(focusedMessage);
+    }
     return messages.sort((a, b) => a.timestamp - b.timestamp);
-  }, [threadQuery.data, userId]);
+  }, [threadQuery.data, userId, focusedMessage]);
+
+  useEffect(() => {
+    focusedRef.current?.scrollIntoView({ block: 'center' });
+  }, [focusedMessage?.id, threadQuery.isLoading]);
 
   const rootSender = memberMap?.[rootMessage.sender] ?? rootMessage.senderShort;
 
@@ -169,16 +179,18 @@ export function ThreadPanel({
             const prev = replies[idx - 1];
             const isContinuation = !!prev && prev.sender === reply.sender;
             return (
-              <MessageBubble
-                key={reply.id}
-                message={reply}
-                showSender={!isContinuation}
-                isContinuation={isContinuation}
-                onEdit={canSend ? handleEdit : undefined}
-                onDelete={canSend ? handleDelete : undefined}
-                onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-                memberMap={memberMap}
-              />
+              <div key={reply.id} ref={reply.id === focusedMessage?.id ? focusedRef : undefined}
+                className={reply.id === focusedMessage?.id ? 'rounded-lg bg-blue-500/5 ring-1 ring-blue-500/30' : undefined}>
+                <MessageBubble
+                  message={reply}
+                  showSender={!isContinuation}
+                  isContinuation={isContinuation}
+                  onEdit={canSend ? handleEdit : undefined}
+                  onDelete={canSend ? handleDelete : undefined}
+                  onSendConfirmation={canSend ? handleSendConfirmation : undefined}
+                  memberMap={memberMap}
+                />
+              </div>
             );
           })
         )}

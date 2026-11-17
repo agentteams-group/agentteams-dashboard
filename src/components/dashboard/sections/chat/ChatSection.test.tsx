@@ -129,6 +129,24 @@ function renderWithQueryClient(view: 'all' | 'assistants' | 'teams' = 'all') {
 }
 
 describe('ChatSection deep-link consumption (FUNC-04)', () => {
+  it('puts task room mentions under task board navigation regardless of their entry point', async () => {
+    loaded();
+    useRoomMetaStore.setState({ meta: { '!task:test': { roomName: 'TASK：p50-22-word-count', updatedAt: 0 } } });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!room1:test', '!task:test'], state: 'joined', refetch: vi.fn() });
+    useSectionStore.setState({ activeSection: 'chat', mentionRoomId: '!task:test' });
+    useHitlInboxStore.getState().setPendingChatRoomId('!task:test');
+    const client = new QueryClient();
+    const view = render(<QueryClientProvider client={client}><ChatSection view="assistants" /></QueryClientProvider>);
+    await waitFor(() => expect(chatPanelSpy.lastRoomId).toBe('!task:test'));
+    expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'p50-22-word-count', roomId: '!task:test' });
+    view.rerender(<QueryClientProvider client={client}><ChatSection view="all" /></QueryClientProvider>);
+    expect(chatPanelSpy.lastRoomId).toBe('!task:test');
+    expect(useSectionStore.getState().mentionRoomId).toBe('!task:test');
+    expect(screen.getByRole('button', { name: '返回任务看板' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /切换团队/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务看板' }));
+    expect(useSectionStore.getState().activeSection).toBe('tasks');
+  });
   it('shows task collaboration navigation and returns to the board without opening task details', async () => {
     loaded();
     useSectionStore.setState({ activeSection: 'chat', taskCollaboration: { taskId: 'task-123', roomId: '!room1:test' } });
@@ -298,6 +316,8 @@ describe('role-based assistant landing', () => {
     useHitlInboxStore.getState().setPendingChatRoomId('!archive:test');
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!archive:test');
+    expect(screen.queryByRole('button', { name: '已归档房间' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '归档任务' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
     expect(within(screen.getByTestId('sidebar-stub')).queryByRole('button', { name: '已验收任务' })).toBeNull();
   });
@@ -436,14 +456,13 @@ describe('project rooms in the teams view', () => {
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!project:test');
   });
 
-  it('opens an execution room from task details even when its origin is the assistant DM', () => {
+  it('opens an execution room under task board navigation even when its origin is the assistant DM', () => {
     taskFeedMock.workflows = [{ ...projectWorkflow, source_room_id: '!leader:test', tasks_detail: [{ task_id: 'task', room_id: '!project:test' }] }];
     useHitlInboxStore.getState().setPendingChatRoomId('!project:test');
     renderWithQueryClient('assistants');
-    expect(useSectionStore.getState().activeSection).toBe('my-teams');
-    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!project:test');
-    cleanup();
-    renderWithQueryClient('teams');
+    expect(useSectionStore.getState().activeSection).toBe('chat');
+    expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'task', roomId: '!project:test' });
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!project:test');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
   });

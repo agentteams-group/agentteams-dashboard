@@ -8,6 +8,8 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 
 const getProjectWorkflow = vi.fn();
+const board = vi.hoisted(() => ({ tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
+vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => ({ tasks: board.tasks }) }));
 
 vi.mock('@/lib/agentteams-projects-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/agentteams-projects-api')>();
@@ -39,7 +41,23 @@ function seedTask(overrides: Partial<Parameters<ReturnType<typeof useTaskStore.g
 }
 
 describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
+  it('shows the current execution room task family even without workflow messages', () => {
+    const base = { assignedTo: 'leader', dependsOn: [], roomId: '!source:test', createdAt: 1, outcome: null, source: 'controller', teamId: 'team' } as const;
+    board.tasks = [
+      { ...base, dependsOn: [], runId: 'main', title: '主任务', status: 'in_progress' },
+      { ...base, dependsOn: [], runId: 'child', title: '实现', status: 'completed', parentTaskId: 'main', executionRoomId: '!room:test' },
+      { ...base, dependsOn: ['child'], runId: 'check', title: '验证', status: 'in_progress', parentTaskId: 'main' },
+      { ...base, dependsOn: [], runId: 'other', title: '其他任务', status: 'assigned', executionRoomId: '!other:test' },
+    ];
+    renderPanel();
+    expect(screen.getByRole('group', { name: '任务拓扑' })).toBeInTheDocument();
+    expect(screen.getByText('子任务 1/2 已完成')).toBeInTheDocument();
+    expect(screen.queryByText('其他任务')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '验证 · leader' }));
+    expect(screen.getByText('执行中 · leader')).toBeInTheDocument();
+  });
   beforeEach(() => {
+    board.tasks = [];
     useTaskStore.getState().clearTasks();
     useHitlInboxStore.setState({ pendingProjectKey: null });
     useSectionStore.setState({ activeSection: 'chat' });
@@ -93,7 +111,7 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
   it('没有工作流消息时给出真实来源的空态，不填充假任务', () => {
     renderPanel('!empty:test');
 
-    expect(screen.getByText('本空间还没有任务消息')).toBeInTheDocument();
+    expect(screen.getByText('本空间还没有关联任务')).toBeInTheDocument();
     expect(screen.queryByText('产品介绍页生产线')).toBeNull();
     expect(getProjectWorkflow).not.toHaveBeenCalled();
   });

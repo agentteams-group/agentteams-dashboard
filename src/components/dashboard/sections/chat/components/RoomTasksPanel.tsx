@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
 import { CircleCheck, CircleX, ExternalLink, ListTodo, Loader2 } from 'lucide-react';
@@ -12,6 +12,11 @@ import { isProjectMiss, workflowLiveFromProject } from '@/lib/chat-workflow-live
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import type { WorkflowItem } from '@/lib/a2ui/workflow';
+import type { BoardTask } from '@/hooks/use-task-board';
+import { useApiTaskBoard } from '@/hooks/use-projects';
+import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
+import { buildTaskDag } from '@/lib/project-dag';
+import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
 
 const COMPLETE_STATUSES = new Set(['completed', 'success', 'done']);
 const ERROR_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
@@ -136,14 +141,19 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
 export function RoomTasksPanel({ roomId }: { roomId: string }) {
   const roomIds = useMemo(() => new Set([roomId]), [roomId]);
   const tasks = useTaskStore(useShallow((state) => selectTasksByRooms(state.tasks, roomIds)));
+  const board = useApiTaskBoard();
+  const boardTasks = board.tasks;
+  const root = mainTasks(boardTasks).find(task => [task, ...subtasksOf(task, boardTasks)].some(child => child.executionRoomId?.replace(/^room:/, '') === roomId));
+
+  if (root) return <RoomTaskTopology root={root} tasks={boardTasks} roomId={roomId} />;
 
   if (tasks.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <ListTodo className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
-        <p className="text-xs font-medium">本空间还没有任务消息</p>
+        <p className="text-xs font-medium">{board.isLoading ? '正在加载任务…' : board.degraded ? '任务暂时无法加载' : '本空间还没有关联任务'}</p>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Agent 在空间内发布工作流后，任务节点会按空间聚合在这里；状态来自 Controller 项目正源。
+          任务派发后，这里展示主任务、子任务及其执行进展。
         </p>
       </div>
     );
@@ -156,4 +166,23 @@ export function RoomTasksPanel({ roomId }: { roomId: string }) {
       ))}
     </div>
   );
+}
+
+function RoomTaskTopology({ root, tasks, roomId }: { root: BoardTask; tasks: BoardTask[]; roomId: string }) {
+  const [selectedId, setSelectedId] = useState(root.runId);
+  const children = subtasksOf(root, tasks);
+  const family = [root, ...children];
+  const ids = new Set(family.map(task => task.runId));
+  const dag = buildTaskDag(family.map(task => ({ ...task, dependsOn: task.dependsOn.some(id => ids.has(id)) ? task.dependsOn.filter(id => ids.has(id)) : task.parentTaskId && ids.has(task.parentTaskId) ? [task.parentTaskId] : [] })));
+  const selected = family.find(task => task.runId === selectedId) ?? root;
+  const progress = subtaskProgress(root, tasks);
+  const colors = { unknown: { fill: 'var(--muted)', stroke: 'var(--border)', text: 'var(--foreground)' } };
+  const labels: Record<string, string> = { pending: '待办', assigned: '已派发', in_progress: '执行中', submitted: '待验收', completed: '已完成', blocked: '阻塞', revision: '需修订', failed: '失败' };
+  return <div className="h-full overflow-auto space-y-3 p-4">
+    <h3 className="text-sm font-semibold">任务拓扑（依赖关系）<span className="ml-2 font-normal text-muted-foreground">{root.title}</span></h3>
+    {children.length > 0 && <div className="space-y-2 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {progress.completed}/{progress.total} 已完成</span><span>{progress.percent}%</span></div><progress className="h-1.5 w-full accent-primary" aria-label="子任务进度" max={100} value={progress.percent} /></div>}
+    <p className="text-xs text-muted-foreground">顶部为主任务，下方展示子任务及前置依赖。点击节点查看状态和执行者。</p>
+    <div className="flex justify-center overflow-auto rounded-xl border border-border/60 bg-muted/10 p-3"><ProjectDagSvg dag={dag} nodeColors={colors} statusLabels={labels} neutral nodeWidth={220} nodeHeight={40} gapY={84} title="任务拓扑" selectedNodeId={selected.runId} currentNodeId={family.find(task => task.executionRoomId?.replace(/^room:/, '') === roomId)?.runId} onNodeClick={setSelectedId} /></div>
+    <div className="space-y-2 border-t pt-3 text-sm"><p className="font-medium">{selected.title}</p><p>{labels[selected.status] ?? selected.status} · {selected.assignedTo || '未分配'}</p></div>
+  </div>;
 }

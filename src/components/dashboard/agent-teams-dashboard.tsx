@@ -21,7 +21,6 @@ import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { ConnectionBanner } from './connection-banner';
-import { PendingBanner } from './pending-banner';
 import { SettingsDialog } from './settings-dialog';
 import { SectionErrorBoundary } from './section-error-boundary';
 import { SectionSkeleton } from './section-skeleton';
@@ -70,7 +69,6 @@ const TasksSection = lazy(() => import('./sections/tasks-section').then(m => ({ 
 const ArtifactsSection = lazy(() => import('./sections/artifacts-section').then(m => ({ default: m.ArtifactsSection })));
 const CodingRunsSection = lazy(() => import('./sections/coding-runs-section').then(m => ({ default: m.CodingRunsSection })));
 const LoopsSection = lazy(() => import('./sections/loops-section').then(m => ({ default: m.LoopsSection })));
-const MyWorkbenchSection = lazy(() => import('./sections/my-workbench-section').then(m => ({ default: m.MyWorkbenchSection })));
 const AuditSection = lazy(() => import('./sections/audit-section').then(m => ({ default: m.AuditSection })));
 const TracingSection = lazy(() => import('./sections/tracing-section').then(m => ({ default: m.TracingSection })));
 const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(m => ({ default: m.KnowledgeSection })));
@@ -83,7 +81,6 @@ export const sectionMap: Record<string, React.ComponentType> = {
   artifacts: ArtifactsSection,
   'coding-runs': CodingRunsSection,
   loops: LoopsSection,
-  'my-workbench': MyWorkbenchSection,
   resources: AgentsSection,
   'team-agents': TeamsSection,
   workers: AgentsSection,
@@ -379,7 +376,6 @@ export function AgentTeamsDashboard() {
             />
 
             <ConnectionBanner />
-            <PendingBanner />
 
             {/*
               Single tree for every section. The chat layout only differs in

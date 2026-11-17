@@ -225,7 +225,9 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
         customSettings: [{ name: 'max_tokens', value: 8192, mode: 'raw', overwrite: true }, { name: 'reasoning_effort', value: 'max', mode: 'raw', overwrite: true }],
       }),
     }), expect.any(Object));
-    mutations.createProvider.mock.calls.at(-1)![1].onSuccess();
+    mutations.createProvider.mock.calls.at(-1)![1].onSuccess({ gatewayManaged: true });
+    expect(mutations.createRoute).not.toHaveBeenCalled();
+    mutations.createProvider.mock.calls.at(-1)![1].onSuccess({ gatewayManaged: false });
     expect(mutations.createRoute).toHaveBeenCalledWith(expect.objectContaining({
       modelPredicates: [{ matchType: 'EQUAL', matchValue: 'glm-5.3' }],
       upstreams: [{ provider: 'my-glm', weight: 100, modelMapping: { 'glm-5.3': 'glm-5.3' } }],
@@ -241,7 +243,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
       fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
       fireEvent.change(screen.getByRole('combobox', { name: '模型 ID' }), { target: { value: 'gpt-6.1-sol' } });
       fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
-      mutations.updateProvider.mock.calls.at(-1)![1].onSuccess();
+      mutations.updateProvider.mock.calls.at(-1)![1].onSuccess({ gatewayManaged: false });
       expect(mutations.updateRoute).toHaveBeenCalledWith(expect.objectContaining({
         name: 'agentteams-openai', data: expect.objectContaining({ authConfig, modelPredicates: [{ matchType: 'EQUAL', matchValue: 'gpt-6.1-sol' }], upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'gpt-6.1-sol': 'gpt-6.1-sol' } }] }),
       }), expect.any(Object));

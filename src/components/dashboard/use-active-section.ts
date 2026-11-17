@@ -26,6 +26,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
  */
 
 function isKnownSection(hash: string): boolean {
+  if (hash === 'my-workbench') return true; // Old bookmarks open the notification drawer.
   if (navItems.some((n) => n.id === hash)) return true;
   return isPluginSectionId(hash);
 }

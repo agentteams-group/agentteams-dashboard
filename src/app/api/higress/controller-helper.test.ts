@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { callControllerGateway } from './controller-helper';
+import { callControllerAsset, callControllerGateway } from './controller-helper';
 import { callHigressConsole, isFallbackConfigWriteEnabled } from './proxy-helper';
 import { createSession, SESSION_COOKIE_NAME, __resetSessionStoreForTests } from '@/lib/dashboard-session';
 import * as backendConfig from '@/lib/backend-config';
@@ -111,7 +111,19 @@ describe('Controller gateway forwarding', () => {
     vi.stubGlobal('fetch', fetchMock);
     const body = { name: 'provider', type: 'openai', tokens: ['new-key'] };
     await callControllerGateway(request(), '/v1/ai/providers', { method: 'POST', body });
-    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ method: 'POST', body: JSON.stringify(body) }));
+    expect(fetchMock).toHaveBeenCalledWith('http://controller.test:8090/api/v1/gateway/assets/models', expect.objectContaining({ method: 'POST', body: JSON.stringify({ action: 'save', input: body, update: false }) }));
+  });
+
+  it.each([401, 403, 409, 500, 502, 503])('does not fall back from an asset failure %i', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'failed' }, { status })));
+    expect((await callControllerAsset(request(), 'mcps', { action: 'save' }))?.response.status).toBe(status);
+    expect(consoleMock).not.toHaveBeenCalled();
+  });
+
+  it.each([404, 405, 501])('allows the legacy path only for missing capability %i', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'unavailable' }, { status })));
+    expect(await callControllerAsset(request(), 'mcps', { action: 'save' })).toBeNull();
+    expect(consoleMock).not.toHaveBeenCalled();
   });
 
   it('does not borrow the server SA when no user session exists', async () => {

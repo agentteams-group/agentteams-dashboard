@@ -214,7 +214,9 @@ describe('Team and Agent resource cards', () => {
     renderSection('#console/resources/workers', 'agents');
     expect(screen.getByRole('heading', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).toBeNull();
-    expect(screen.getByText('4 个 Agent')).toBeInTheDocument();
+    const header = screen.getByRole('heading', { name: 'Agent' }).closest('[data-slot="section-header"]') as HTMLElement;
+    expect(within(header).getByRole('textbox', { name: '搜索团队或 Agent' })).toBeInTheDocument();
+    expect(screen.queryByText('4 个 Agent')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'boss' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'lead' })).toBeInTheDocument();
   });

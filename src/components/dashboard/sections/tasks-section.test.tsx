@@ -19,7 +19,7 @@ const FAKE_PROJECT = {
 };
 
 vi.mock('@/lib/matrix-store', () => ({
-  useMatrixStore: (fn: (_s: unknown) => unknown) => fn({ isLoggedIn: true }),
+  useMatrixStore: (fn?: (_s: unknown) => unknown) => fn ? fn({ isLoggedIn: true }) : { isLoggedIn: true },
 }));
 vi.mock('@/components/dashboard/use-active-section', () => ({
   useActiveSection: () => ({ setActiveSection: vi.fn() }),
@@ -171,9 +171,26 @@ it('shows one restrained empty board instead of eight colored empty columns', ()
   renderSection();
   expect(screen.getByText('暂无任务')).toBeInTheDocument();
   expect(screen.queryByText('待办')).toBeNull();
-  expect(screen.getByLabelText('任务状态汇总')).toBeInTheDocument();
+  expect(screen.queryByLabelText('任务状态汇总')).toBeNull();
+  const header = screen.getByRole('heading', { name: '任务看板' }).closest('[data-slot="section-header"]') as HTMLElement;
+  expect(within(header).getByRole('textbox', { name: '搜索任务' })).toBeInTheDocument();
+  expect(within(header).getByRole('button', { name: '归档任务' })).toBeInTheDocument();
   cleanup();
   viewPreference.value = 'projects';
+});
+
+it('puts the task title before subtask progress and hides an identical task ID', () => {
+  viewPreference.value = 'kanban';
+  const base = { projectId: 'proj-1', assignedTo: 'worker', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' };
+  viewPreference.tasks = [
+    { ...base, runId: 'delivery-01', title: 'delivery-01', status: 'in_progress' },
+    { ...base, runId: 'child', parentTaskId: 'delivery-01', title: '实现功能', status: 'completed' },
+  ];
+  renderSection();
+  const card = screen.getByRole('button', { name: /delivery-01/ });
+  const title = within(card).getByText('delivery-01');
+  const progress = within(card).getByLabelText('子任务进度');
+  expect(title.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it('opens the selected task detail and keeps populated groups at a fixed height', async () => {
@@ -335,7 +352,8 @@ describe('task collaboration room entry', () => {
     viewPreference.tasks.push({ ...viewPreference.tasks[0], runId: 'downstream', title: '独立验证', status: 'in_progress', assignedTo: '测试助手', dependsOn: ['task-room'] });
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 }))));
     renderSection();
-    fireEvent.focus(screen.getByRole('button', { name: /执行分析/ }));
+    expect(screen.getByRole('button', { name: '归档任务 执行分析' })).toBeVisible();
+    fireEvent.focus(screen.getAllByRole('button', { name: /执行分析/ }).find(element => element.hasAttribute('aria-pressed'))!);
     const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
     const project = within(preview).getByRole('region', { name: '项目整体进度' });
     expect(project).toHaveTextContent('测试项目');

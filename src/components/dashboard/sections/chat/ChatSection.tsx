@@ -8,6 +8,7 @@ import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useSectionStore } from '@/lib/section-store';
+import { WelcomeSteps } from '../welcome-steps';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
@@ -29,7 +30,6 @@ import { RuntimeMapProvider, type RuntimeMap } from './runtime-map-context';
 import { preferredAgentRoom, withLeaderAccess, canOpenConversation, conversationStorageKey, LEADER_ACCESS_LABELS } from './agent-conversations';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import { useArchivedRooms } from '@/hooks/use-room-archive';
-import { ArchivedRoomsDialog } from './room-archive';
 import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes';
 import { ConversationSwitcher, RelatedConversationButton } from './conversation-switcher';
@@ -99,9 +99,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const switcherRef = useRef<HTMLButtonElement>(null);
 
   const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
-  const selectedRoomId = selection.scope === selectionKey ? selection.id : null;
-  const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   const taskCollaboration = useSectionStore((state) => state.taskCollaboration);
+  const selectedRoomId = taskCollaboration?.roomId ?? (selection.scope === selectionKey ? selection.id : null);
+  const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(view !== 'teams');
@@ -167,16 +167,24 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
+  const taskIdForRoom = useCallback((room: RoomInfo) => {
+    if (room.type !== 'project' && room.type !== 'unknown') return undefined;
+    return room.name.match(/^TASK[：:]\s*(.+)$/i)?.[1]
+      ?? taskFeed.workflows.flatMap(workflow => workflow.tasks_detail ?? []).find(task => task.room_id?.replace(/^room:/, '') === room.id)?.task_id;
+  }, [taskFeed.workflows]);
 
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
     const room = availableRooms.find(room => room.id === roomId);
     if (!room || !canOpenConversation(room)) return;
     const context = useSectionStore.getState().taskCollaboration;
-    if (context && context.roomId !== roomId) {
+    const taskId = taskIdForRoom(room);
+    if (taskId) {
+      useSectionStore.setState({ activeSection: 'chat', taskCollaboration: { taskId, roomId } });
+    } else if (context && context.roomId !== roomId) {
       openChatRoom(roomId);
       return;
     }
-    if (view !== 'all' && (view === 'teams') !== isTeamViewRoom(room)) {
+    if (!taskId && view !== 'all' && (view === 'teams') !== isTeamViewRoom(room)) {
       useHitlInboxStore.getState().setPendingChatRoomId(roomId);
       useSectionStore.getState().setActiveSection(isTeamViewRoom(room) ? 'my-teams' : 'chat');
       return;
@@ -191,7 +199,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     setSelection({ scope: selectionKey, id: roomId });
     setContextPanel(null);
     setMobileRoomListOpen(false);
-  }, [availableRooms, selectionKey, view, isTeamViewRoom]);
+  }, [availableRooms, selectionKey, view, isTeamViewRoom, taskIdForRoom]);
 
 
   const projectionNotices = useMemo(() => {
@@ -295,6 +303,13 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     () => availableRooms.find((r) => r.id === selectedRoomId && canOpenConversation(r)) || null,
     [availableRooms, selectedRoomId],
   );
+  const selectedTaskId = selectedRoom ? taskIdForRoom(selectedRoom) : undefined;
+  useEffect(() => {
+    if (!selectedRoom || !selectedTaskId) return;
+    const context = useSectionStore.getState().taskCollaboration;
+    if (context?.roomId === selectedRoom.id && context.taskId === selectedTaskId) return;
+    useSectionStore.setState({ activeSection: 'chat', taskCollaboration: { taskId: selectedTaskId, roomId: selectedRoom.id } });
+  }, [selectedRoom, selectedTaskId]);
 
   if (hasError) {
     return <ApiErrorState />;
@@ -324,6 +339,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     <ChatProvider>
       <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map((human) => human.matrixUserID)}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {!taskCollaboration && <div className="shrink-0 px-4"><WelcomeSteps visible={isLoggedIn && availableRooms.length === 0} /></div>}
         {taskCollaboration && (
           <nav aria-label="任务协作导航" className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-sm sm:px-6">
             <Button variant="ghost" size="sm" className="shrink-0 gap-1" onClick={() => useSectionStore.getState().setActiveSection('tasks')}>
@@ -342,7 +358,6 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
           </Button>
           <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
           <SyncStatusChip />
-          <ArchivedRoomsDialog onSelectRoom={handleSelectRoom} />
         </div>
         )}
         {projectionNotices.map((notice) => (
@@ -409,9 +424,9 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
                 taskFeed={taskFeed}
-                headerLeading={<Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
-                headerTitle={<ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
-                headerActions={<><ArchivedRoomsDialog onSelectRoom={handleSelectRoom} /><RelatedConversationButton rooms={availableRooms.filter(room => !room.archived)} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} /></>}
+                headerLeading={taskCollaboration ? undefined : <Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
+                headerTitle={taskCollaboration ? <span className="truncate font-semibold">{selectedRoom.name}</span> : <ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
+                headerActions={<RelatedConversationButton rooms={availableRooms.filter(room => !room.archived)} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
 
               />
             ) : (

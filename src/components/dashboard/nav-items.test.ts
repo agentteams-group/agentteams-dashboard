@@ -15,7 +15,6 @@ describe('Navigation with groups (Workbench IA)', () => {
     const ids = navItems.map((item) => item.id);
     expect(ids).toEqual([
       // 工作台
-      'my-workbench',
       'chat',
       'my-teams',
       'tasks',
@@ -57,7 +56,7 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('assigns items to workbench groups', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
-    expect(byId.get('my-workbench')).toMatchObject({ area: 'workbench', group: 'mine' });
+    expect(byId.has('my-workbench')).toBe(false);
     expect(byId.get('chat')).toMatchObject({ area: 'workbench', group: 'space' });
     expect(byId.get('tasks')).toMatchObject({ area: 'workbench', group: 'task-center' });
     expect(byId.get('artifacts')).toMatchObject({ area: 'workbench', group: 'task-center' });
