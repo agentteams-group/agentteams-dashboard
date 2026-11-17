@@ -102,7 +102,13 @@ describe('InteractiveTeamTopology · 千锻入口', () => {
     renderTopology({ onOpenMillforge: vi.fn() });
     const card = screen.getByTestId('millforge-card');
     expect(card).toHaveTextContent('千锻');
-    expect(screen.getByTestId('millforge-logo')).toBeInTheDocument();
+    const logo = screen.getByTestId('millforge-logo');
+    expect(logo).toBeInTheDocument();
+    // 品牌弱化后的尺寸：20px（h-5），不再是 30px。
+    expect(logo).toHaveClass('h-5');
+    expect(logo).not.toHaveClass('h-[30px]');
+    // 副标题（四 tab 一览的合并行）存在。
+    expect(card).toHaveTextContent('SOUL 注入 · 协作模块更新 · 自定义团队');
     // 位置：拓扑 header 之后、成员列表之前。
     const header = screen.getByTestId('team-topology-header');
     const list = screen.getByRole('list', { name: `${alpha.name} 成员` });
