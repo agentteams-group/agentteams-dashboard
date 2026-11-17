@@ -18,7 +18,9 @@ export const workspaceMenus = [
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
   { id: 'workbench', label: '工作台', icon: Hammer, sections: ['tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
-  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'humans', 'teams'] },
+  // R4：侧栏只列统一工作台 + 用户 + Managers；workers/teams 的 id 仍在
+  // navItems/sectionMap 中，旧深链可达（功能零删减），只是不再单列。
+  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'team-agents', 'humans', 'managers'] },
   { id: 'tracing', label: '观测与治理', icon: Activity, sections: ['plugin-route:monitor-panel/monitor', 'tracing', 'audit'] },
 ];
 

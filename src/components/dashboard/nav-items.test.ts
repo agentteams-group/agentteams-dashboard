@@ -23,6 +23,9 @@ describe('Navigation with groups (Workbench IA)', () => {
       'loops',
       // Separate member pages; assistant settings has no standalone Manager menu.
       'resources',
+      // R4 导航合并：统一工作台入口 + Managers（L1）；workers/teams 保留 id 供深链。
+      'team-agents',
+      'managers',
       'workers',
       'humans',
       'teams',
@@ -74,7 +77,21 @@ describe('Navigation with groups (Workbench IA)', () => {
     });
     expect(byId.get('teams')).toMatchObject({ label: '团队', area: 'console', group: 'resources' });
     expect(byId.get('humans')?.mergedInto).toBeUndefined();
-    expect(byId.get('managers')).toBeUndefined();
+    // R4：Managers 恢复为 L1-only 独立入口（#233 口径，mergedInto 仅影响 Workbench 变体）。
+    expect(byId.get('managers')).toMatchObject({
+      label: 'Managers',
+      area: 'console',
+      group: 'resources',
+      legacyGroup: 'runtime',
+      minLevel: 3,
+      mergedInto: 'resources',
+    });
+    expect(byId.get('team-agents')).toMatchObject({
+      label: '团队与 Agent',
+      area: 'console',
+      group: 'resources',
+      legacyGroup: 'runtime',
+    });
     expect(byId.get('skills')?.mergedInto).toBeUndefined(); // 市场/模型/知识库不并入
     expect(byId.get('platform-assistant-settings')).toMatchObject({ area: 'workbench', minLevel: 3 });
     expect(byId.get('humans')).toMatchObject({ area: 'console', group: 'resources' });

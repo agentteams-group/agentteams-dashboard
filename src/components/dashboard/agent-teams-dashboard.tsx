@@ -61,6 +61,7 @@ const OverviewSection = lazy(() => import('./sections/overview-section').then(m 
 const ResourceCenterSection = lazy(() => import('./sections/resource-center-section').then(m => ({ default: m.ResourceCenterSection })));
 const AgentsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.AgentsSection })));
 const TeamsSection = lazy(() => import('./sections/team-agents/team-agents-section').then(m => ({ default: m.TeamsSection })));
+const ManagersSection = lazy(() => import('./sections/managers-section').then(m => ({ default: m.ManagersSection })));
 const PlatformAssistantSettingsSection = lazy(() => import('./sections/platform-assistant-settings-section').then(m => ({ default: m.PlatformAssistantSettingsSection })));
 const HumansSection = lazy(() => import('./sections/humans-section').then(m => ({ default: m.HumansSection })));
 const ModelsSection = lazy(() => import('./sections/models-section').then(m => ({ default: m.ModelsSection })));
@@ -86,6 +87,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   workers: AgentsSection,
   skills: ResourceCenterSection,
   teams: TeamsSection,
+  managers: ManagersSection,
   'platform-assistant-settings': PlatformAssistantSettingsSection,
   humans: HumansSection,
   models: ModelsSection,
