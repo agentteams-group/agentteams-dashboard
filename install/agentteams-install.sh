@@ -73,6 +73,11 @@
 #   AGENTTEAMS_DASHBOARD              Install agentteams-dashboard management UI (default: 1)
 #   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.4.1, independent of AgentTeams version)
 #   AGENTTEAMS_PORT_DASHBOARD         Dashboard host port (default: 13000)
+#   AGENTTEAMS_UNIFIED_ENTRY          single-entry mode (0/1, default 0). When 1
+#                                     only the Higress gateway port is published;
+#                                     Console/Element/dashboard stay internal and
+#                                     /api + /dashboard are served behind the entry.
+#   AGENTTEAMS_ENTRY_EXTERNAL_URL     Public address of the single entry (optional)
 #   AGENTTEAMS_DASHBOARD_IMAGE        Override dashboard image (default: <registry>/agentteams/agentteams-dashboard:<DASHBOARD_VERSION>)
 #   AGENTTEAMS_AI_GATEWAY_ADMIN_URL   Higress Console URL for shared auth (auto-detected)
 
@@ -4271,6 +4276,11 @@ AGENTTEAMS_PORT_CONSOLE=${AGENTTEAMS_PORT_CONSOLE}
 AGENTTEAMS_PORT_ELEMENT_WEB=${AGENTTEAMS_PORT_ELEMENT_WEB}
 AGENTTEAMS_PORT_MANAGER_CONSOLE=${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}
 
+# Unified entry: expose only the Higress gateway; /api + /dashboard behind
+# one address; Console/Element/dashboard stay internal.
+AGENTTEAMS_UNIFIED_ENTRY=${AGENTTEAMS_UNIFIED_ENTRY:-0}
+AGENTTEAMS_ENTRY_EXTERNAL_URL=${AGENTTEAMS_ENTRY_EXTERNAL_URL:-}
+
 # Manager runtime (qwenpaw | openclaw | copaw | hermes | deepseek-harness | openhuman)
 AGENTTEAMS_MANAGER_RUNTIME=${AGENTTEAMS_MANAGER_RUNTIME:-qwenpaw}
 
@@ -4639,6 +4649,16 @@ CREDEOF
             -e "${_ctrl_env_prefix}MANAGER_ENABLED=true"
             -e "${_ctrl_env_prefix}PORT_MANAGER_CONSOLE=${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}"
         )
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ] && [ "${_ctrl_env_prefix}" = "AGENTTEAMS_" ]; then
+            _ctrl_env_args+=(
+                -e "${_ctrl_env_prefix}UNIFIED_ENTRY_ENABLED=true"
+                -e "${_ctrl_env_prefix}ENTRY_INTERNAL_URL=http://127.0.0.1:${AGENTTEAMS_PORT_GATEWAY}"
+                -e "${_ctrl_env_prefix}ENTRY_EXTERNAL_URL=${AGENTTEAMS_ENTRY_EXTERNAL_URL:-}"
+            )
+            if [ -n "${AGENTTEAMS_DASHBOARD_URL:-}" ]; then
+                _ctrl_env_args+=(-e "${_ctrl_env_prefix}DASHBOARD_URL=${AGENTTEAMS_DASHBOARD_URL}")
+            fi
+        fi
         # Forward the configured Console URL to the Controller (management
         # plane); see _controller_admin_url_env_args. Default direct mode
         # keeps the Controller's internal Console default.
@@ -4746,6 +4766,12 @@ CREDEOF
             _ctrl_env_args+=(-e "${_ctrl_env_prefix}FS_PUBLIC_ENDPOINT=${AGENTTEAMS_FS_PUBLIC_ENDPOINT}")
         fi
 
+        # Unified entry: publish only the gateway when single-entry mode is enabled.
+        local _entry_port_args=(-p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080")
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" != "1" ]; then
+            _entry_port_args+=(-p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088")
+        fi
+
         # shellcheck disable=SC2086
         ${DOCKER_CMD} run -d \
             --name agentteams-controller \
@@ -4758,9 +4784,7 @@ CREDEOF
             --security-opt label=disable \
             -v "${AGENTTEAMS_DATA_DIR}:/data" \
             -v "${AGENTTEAMS_WORKSPACE_DIR}:/root/agentteams-fs/agents/manager" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" \
+            "${_entry_port_args[@]}" \
             --restart unless-stopped \
             "${EMBEDDED_IMAGE}"
 
@@ -4937,6 +4961,12 @@ CREDEOF
             MATRIX_DEBUG_ARGS="-e AGENTTEAMS_MATRIX_DEBUG=1"
         fi
 
+        # Unified entry: publish only the gateway when single-entry mode is enabled.
+        local _entry_port_args=(-p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080")
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" != "1" ]; then
+            _entry_port_args+=(-p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" -p "127.0.0.1:${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}:18888")
+        fi
+
         # shellcheck disable=SC2086
         ${DOCKER_CMD} run -d \
             --name agentteams-manager \
@@ -4953,10 +4983,7 @@ CREDEOF
             ${NETWORK_ARGS} \
             ${NETWORK_ALIAS_ARGS} \
             ${PROXY_ARGS} \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" \
-            -p "127.0.0.1:${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}:18888" \
+            "${_entry_port_args[@]}" \
             "${DATA_MOUNT_ARGS[@]}" \
             ${WORKSPACE_MOUNT_ARGS} \
             ${HOST_SHARE_MOUNT_ARGS} \
