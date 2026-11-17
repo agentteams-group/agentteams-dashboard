@@ -37,8 +37,8 @@ export function MillforgeEntryCard({
         <Image
           src="/millforge-logo.svg"
           alt=""
-          width={42}
-          height={30}
+          width={28}
+          height={20}
           unoptimized
           data-testid="millforge-logo"
           className="h-5 w-auto shrink-0"
@@ -46,7 +46,10 @@ export function MillforgeEntryCard({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[11px] font-medium text-muted-foreground">千锻</span>
           <span className="truncate text-[11px] text-muted-foreground">
-            SOUL 注入 · 协作模块更新 · 自定义团队 · 历史
+            SOUL 注入 · 协作模块更新 · 自定义团队
+          </span>
+          <span className="truncate text-[11px] text-muted-foreground/80">
+            注入 / 自定义 / 模块更新 / 历史
           </span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
