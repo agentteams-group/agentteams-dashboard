@@ -15,7 +15,7 @@ import { TeamSettingsPanel } from './team-settings-panel';
 
 export type TeamDrawerProps = {
   team: TeamResponse | null;
-  /** 全部团队（判定独立 Agent 的引用集）。 */
+  /** 全部团队（判定 Agent 归属的引用集）。 */
   allTeams?: TeamResponse[];
   workers: WorkerResponse[];
   modelOptions: ModelSelectionOption[];

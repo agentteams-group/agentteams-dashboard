@@ -537,9 +537,9 @@ describe('TeamDrawer · 团队成员', () => {
     expect(mocks.updateTeamAsync).not.toHaveBeenCalled();
   });
 
-  it('独立 Agent 池为空 → 显示「没有可添加的独立 Agent」', () => {
+  it('Agent 池为空 → 显示「没有可添加的 Agent」', () => {
     renderDrawer(3, 'Agent 管理');
-    expect(screen.getByText('没有可添加的独立 Agent')).toBeInTheDocument();
+    expect(screen.getByText('没有可添加的 Agent')).toBeInTheDocument();
   });
 });
 

@@ -104,7 +104,7 @@ function SettingsSection({
 
 export type TeamSettingsPanelProps = {
   team: TeamResponse;
-  /** 全部团队（判定独立 Agent 的引用集）。 */
+  /** 全部团队（判定 Agent 归属的引用集）。 */
   allTeams?: TeamResponse[];
   workers: WorkerResponse[];
   /** 初始 tab（默认 'basic'，行为不变）；仅接受 basic/users/agents（A3 Inspector 分区直达）。 */
@@ -463,7 +463,7 @@ export function TeamSettingsPanel({
                   删除团队
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  成员 Worker 保留（变为独立 Agent）；团队房间与团队配置删除后不可恢复。
+                  成员 Worker 保留（变为 Agent）；团队房间与团队配置删除后不可恢复。
                 </p>
               </>
             ) : (
@@ -507,7 +507,7 @@ export function TeamSettingsPanel({
           <DialogHeader>
             <DialogTitle>删除团队 {team.name}</DialogTitle>
             <DialogDescription>
-              团队房间与团队配置将删除；成员 Worker 保留（变为独立 Agent）。请核对团队名后确认。
+              团队房间与团队配置将删除；成员 Worker 保留（变为 Agent）。请核对团队名后确认。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">

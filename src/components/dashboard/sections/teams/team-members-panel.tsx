@@ -254,7 +254,7 @@ export function TeamMembersPanel({
         ) : (
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <Plus className="size-3.5" aria-hidden="true" />
-            没有可添加的独立 Agent
+            没有可添加的 Agent
           </p>
         )}
       </div>

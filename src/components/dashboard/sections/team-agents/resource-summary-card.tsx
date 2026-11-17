@@ -50,7 +50,7 @@ export function AgentSummaryCard({ agent, onView, onEdit }: {
       </div>
       <dl className="mt-auto grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         <dt className="text-muted-foreground">运行时</dt><dd className="min-w-0"><OverflowText text={runtimeLabel(agent.runtime)} className="text-right" /></dd>
-        <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '独立 Agent'} className="text-right leading-5" /></dd>
+        <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '—'} className="text-right leading-5" /></dd>
       </dl>
     </CardContent>
     <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3">

@@ -15,6 +15,7 @@
 // 这里不复制第二份编辑 UI。
 
 import { useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   Bot,
   ChevronRight,
@@ -63,7 +64,7 @@ import { TeamStatusSummary } from '../teams/team-status-summary';
 import { ROLE_LABELS, memberRole } from './team-agents-logic';
 
 interface SectionEntry {
-  /** 对应面板 ResourceDetailTabs / TeamSettingsPanel 的 tab id（弹窗直达用）。 */
+  /** 分区 panel id（弹窗直达用，写 URL ?panel=；团队侧由弹窗翻译成真实 tab）。 */
   id: string;
   title: string;
 }
@@ -79,18 +80,17 @@ const WORKER_SECTIONS: SectionEntry[] = [
 ];
 
 /**
- * 团队分区 → TeamSettingsPanel 的三个真实 tab（basic / users / agents）。
- * LLM 调优在 basic tab 的「高级设置」内，独立 Agent / 团队技能在 agents
- * tab（「添加 Agent」从独立 Agent 池选择 / 「团队技能」分区），危险区在
- * basic tab 的「危险区」内——按钮直达承载它们的 tab。
+ * 团队分区（6 个细粒度 panel id，按钮文字 = 弹窗标题的分区名）：
+ * team-detail-dialog 把 panel id 翻译成 TeamSettingsPanel 真实 tab + 分区标题
+ * （team-skills → agents；llm / danger → basic；users → users）。
  */
 const TEAM_SECTIONS: SectionEntry[] = [
   { id: 'basic', title: '基本信息' },
   { id: 'users', title: '团队成员' },
-  { id: 'agents', title: '团队技能' },
-  { id: 'basic', title: 'LLM 调优' },
-  { id: 'agents', title: '独立 Agent' },
-  { id: 'basic', title: '危险区' },
+  { id: 'team-skills', title: '团队技能' },
+  { id: 'llm', title: 'LLM 调优' },
+  { id: 'agents', title: '智能体管理' },
+  { id: 'danger', title: '危险区' },
 ];
 
 /** Manager 分区 = ManagerDetailPanel 现有的八个 tab。 */
@@ -151,6 +151,7 @@ export function EntityInspector({
   const updateManager = useUpdateManager();
   const [restarting, setRestarting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'worker' | 'team'; name: string } | null>(null);
+  const reduceMotion = useReducedMotion();
 
   if (!entity) {
     return (
@@ -169,6 +170,7 @@ export function EntityInspector({
     entity.kind === 'worker' ? WORKER_SECTIONS : entity.kind === 'team' ? TEAM_SECTIONS : MANAGER_SECTIONS;
   const name =
     entity.kind === 'worker' ? entity.worker.name : entity.kind === 'team' ? entity.team.name : entity.manager.name;
+  const entityKey = `${entity.kind}:${name}`;
   const roleLabel =
     entity.kind === 'worker'
       ? ROLE_LABELS[memberRole(entity.worker, entity.homeTeam?.leaderName)]
@@ -199,7 +201,13 @@ export function EntityInspector({
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <motion.div
+      key={entityKey}
+      initial={reduceMotion ? false : { opacity: 0, y: 2 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18 }}
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+    >
       {/* 头部：名 + 角色徽标 + chips + 动作条（sticky，正文独立滚动）。 */}
       <div className="shrink-0 border-b px-3 py-3">
         <div className="flex min-w-0 items-center gap-2">
@@ -430,7 +438,7 @@ export function EntityInspector({
             <AlertDialogDescription>
               {deleteTarget?.kind === 'worker'
                 ? '容器与相关配置将被删除，不可恢复。'
-                : '团队房间与团队配置将删除；成员 Worker 保留（变为独立 Agent）。'}
+                : '团队房间与团队配置将删除；成员 Worker 保留（变为 Agent）。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -444,6 +452,6 @@ export function EntityInspector({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </motion.div>
   );
 }

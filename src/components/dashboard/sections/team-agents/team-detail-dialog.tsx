@@ -6,13 +6,17 @@ import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { DetailDialogShell } from './detail-dialog-shell';
 
 /**
- * 分区标题映射（弹窗标题 `<实体名> · <分区名>`）：与 TeamSettingsPanel 的
- * tab 同名同义；未命中的 initialTab 回退「基本信息」。
+ * 分区映射（弹窗标题 `<实体名> · <分区名>`，按钮文字 = 分区名）：
+ * Inspector 的 6 个细粒度 panel id → TeamSettingsPanel 真实 tab + 分区标题
+ * （team-skills → agents；llm / danger → basic）；未命中的 initialTab 回退 basic。
  */
-const TEAM_SECTION_TITLES: Record<string, string> = {
-  basic: '基本信息',
-  users: '成员管理',
-  agents: 'Agent 管理',
+const TEAM_PANELS: Record<string, { tab: string; title: string }> = {
+  basic: { tab: 'basic', title: '基本信息' },
+  users: { tab: 'users', title: '团队成员' },
+  'team-skills': { tab: 'agents', title: '团队技能' },
+  llm: { tab: 'basic', title: 'LLM 调优' },
+  agents: { tab: 'agents', title: '智能体管理' },
+  danger: { tab: 'basic', title: '危险区' },
 };
 
 /**
@@ -47,17 +51,17 @@ export function TeamDetailDialog({
   onChanged?: () => void;
   /** 面板内删除团队成功后：关弹窗并清选中。 */
   onDeleted?: () => void;
-  /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
+  /** 初始分区（Inspector 6 个 panel id；basic/users/agents 同值兼容）；A3 Inspector 分区直达。 */
   initialTab?: string;
   chrome?: 'full' | 'section';
 }) {
   if (!team) return null;
-  const sectionTitle = TEAM_SECTION_TITLES[initialTab ?? 'basic'] ?? TEAM_SECTION_TITLES.basic;
+  const panel = TEAM_PANELS[initialTab ?? 'basic'] ?? TEAM_PANELS.basic;
   return (
     <DetailDialogShell
       open={open}
       onOpenChange={onOpenChange}
-      title={`${team.name} · ${sectionTitle}`}
+      title={`${team.name} · ${panel.title}`}
       description="团队基本信息、LLM 调参与成员管理"
       bodyClassName="flex flex-col overflow-hidden"
     >
@@ -73,7 +77,7 @@ export function TeamDetailDialog({
         onChanged={onChanged}
         onDeleted={onDeleted}
         chrome={chrome}
-        initialTab={initialTab}
+        initialTab={panel.tab}
       />
     </DetailDialogShell>
   );
