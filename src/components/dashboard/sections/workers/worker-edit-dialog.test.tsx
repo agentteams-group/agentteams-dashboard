@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -159,7 +159,7 @@ describe('WorkerEditDialog autonomous checks', () => {
   });
 });
 
-describe('WorkerEditDialog 运行时切换暂禁', () => {
+describe('WorkerEditDialog 运行时交接', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -182,20 +182,49 @@ describe('WorkerEditDialog 运行时切换暂禁', () => {
     expect(onSubmit.mock.calls[0][0].runtime).toBe('qwenpaw');
   });
 
-  it('展示「运行时切换暂不可用」说明', () => {
-    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={() => {}} />);
-    expect(
-      screen.getByText('运行时切换暂不可用（上游运行时适配尚未就绪）'),
-    ).toBeInTheDocument();
+  it('旧 Controller 不开放交接，基础配置仍可保存', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+    try {
+      render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={() => {}} />);
+      expect(await screen.findByText('当前 Controller 未提供此 Worker 的运行时交接。')).toBeInTheDocument();
+      expect(runtimeSelect()).toBeDisabled();
+      expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
+    } finally { vi.unstubAllGlobals(); }
   });
 
-  it('CoPaw 存量提示与升级说明保留', () => {
+  it('CoPaw 存量显示来源，默认升级目标为 QwenPaw', () => {
     render(<Harness initial={{ name: 'worker-1', runtime: 'copaw' }} onSubmit={() => {}} />);
-
-    expect(runtimeSelect()).toBeDisabled();
-    expect(runtimeSelect().value).toBe('copaw');
-    expect(screen.getByLabelText('CoPaw 升级说明')).toBeInTheDocument();
+    expect(runtimeSelect().value).toBe('qwenpaw');
     expect(screen.getByText(/CoPaw 已停止新建/)).toBeInTheDocument();
+  });
+
+  it.each([null, '"read-version"'])('切换发送独立条件请求，网络重试复用请求编号 (%s)', async (etag) => {
+    const idle = { schema_version: 1, kind: 'WorkerRuntimeState' };
+    const posts: RequestInit[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === 'POST') {
+        posts.push(init);
+        if (posts.length === 1) throw new Error('模拟响应丢失');
+        return Response.json({ ...idle, handoff: { id: JSON.parse(String(init.body)).request_id, phase: 'draining',
+          source: { runtime: 'hermes' }, target_runtime: 'qwenpaw' } });
+      }
+      return Response.json(idle, { headers: etag ? { ETag: etag } : {} });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const save = vi.fn();
+      render(<Harness initial={{ name: 'worker-1', runtime: 'hermes' }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      fireEvent.change(runtimeSelect(), { target: { value: 'qwenpaw' } });
+      fireEvent.click(screen.getByRole('button', { name: '从 Hermes 切换到 QwenPaw' }));
+      await screen.findByText('模拟响应丢失');
+      fireEvent.click(screen.getByRole('button', { name: '从 Hermes 切换到 QwenPaw' }));
+      await waitFor(() => expect(posts).toHaveLength(2));
+      expect(save).not.toHaveBeenCalled();
+      expect(posts[1].body).toBe(posts[0].body);
+      expect(posts[0].headers).toEqual({ 'Content-Type': 'application/json', ...(etag ? { 'If-Match': etag } : { 'If-None-Match': '*' }) });
+      expect(JSON.parse(String(posts[0].body))).toEqual({ target_runtime: 'qwenpaw', request_id: expect.any(String) });
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('OpenHuman 显示当前运行时且不标为存量', () => {

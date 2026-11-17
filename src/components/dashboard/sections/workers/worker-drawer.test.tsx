@@ -207,7 +207,7 @@ const CARDS: Array<{ title: string; content: string }> = [
   { title: 'Coding CLI', content: 'coding-panel' },
   { title: '工作区文件', content: 'workspace-panel' },
   { title: 'Worker 插件', content: 'plugins-panel' },
-  { title: '运行时升级', content: '将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。' },
+  { title: '运行时升级', content: '通过 Controller 将此 Worker 交接到 QwenPaw。' },
   { title: '检查点', content: 'checkpoints-card' },
 ];
 

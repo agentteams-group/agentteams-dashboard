@@ -132,7 +132,6 @@ export function WorkerDetailPanel({
   const [expandedCards, setExpandedCards] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [ensureReadyUnsupported, setEnsureReadyUnsupported] = useState(false);
   const [tracingUrl, setTracingUrl] = useState<string | null>(null);
@@ -256,20 +255,7 @@ export function WorkerDetailPanel({
     });
   }, [deleteWorker, onClose, onDeleted, workerName]);
 
-  const handleUpgrade = useCallback(() => {
-    if (!workerName) return;
-    updateWorker.mutate(
-      { name: workerName, data: { runtime: 'qwenpaw' } },
-      {
-        onSuccess: () => {
-          setUpgradeOpen(false);
-          invalidateWorkerDetail(workerName);
-          void refreshDetail(true);
-          onChanged?.();
-        },
-      },
-    );
-  }, [onChanged, refreshDetail, updateWorker, workerName]);
+
 
   const openDm = useCallback(() => {
     if (!dm) return;
@@ -475,17 +461,17 @@ export function WorkerDetailPanel({
     resourceCards.push({
       id: 'upgrade',
       title: '运行时升级',
-      desc: 'CoPaw → QwenPaw（二次确认）',
+      desc: 'CoPaw → QwenPaw',
       render: () => (
         <div className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。
+            通过 Controller 将此 Worker 交接到 QwenPaw。
           </p>
           <Button
             variant="outline"
             className="h-11 text-sm"
             onClick={() => {
-              setUpgradeOpen(true);
+              setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' });
             }}
           >
             升级到 QwenPaw
@@ -677,18 +663,30 @@ export function WorkerDetailPanel({
         value={editForm}
         onChange={setEditForm}
         isPending={updateWorker.isPending}
-        onOpenChange={(open) => !open && setEditForm(null)}
-        modelOptions={modelOptions}
-        modelProvider={view.modelProvider}
-        sessionIssue={sessionIssue}
-        onSubmit={() => updateWorker.mutate({ name: view.name, data: editForm }, {
-          onSuccess: () => {
+        onOpenChange={(open) => {
+          if (!open) {
             setEditForm(null);
             invalidateWorkerDetail(view.name);
             void refreshDetail(true);
             onChanged?.();
-          },
-        })}
+          }
+        }}
+        modelOptions={modelOptions}
+        modelProvider={view.modelProvider}
+        sessionIssue={sessionIssue}
+        onSubmit={() => {
+          const data = { ...editForm };
+          delete data.runtime;
+          if (data.image === (view.image || '')) delete data.image;
+          updateWorker.mutate({ name: view.name, data }, {
+            onSuccess: () => {
+              setEditForm(null);
+              invalidateWorkerDetail(view.name);
+              void refreshDetail(true);
+              onChanged?.();
+            },
+          });
+        }}
       />}
 
       <WorkerSkillUploadDialog
@@ -720,22 +718,6 @@ export function WorkerDetailPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
-            <AlertDialogDescription>
-              将 Worker &quot;{view.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。工作区、会话、记忆和凭据会按 Controller 迁移链路保留。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updateWorker.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUpgrade} disabled={updateWorker.isPending}>
-              {updateWorker.isPending ? '升级中...' : '确认升级'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
