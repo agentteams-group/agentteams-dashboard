@@ -28,7 +28,7 @@ import { Sidebar } from './sidebar';
 import { MobileSidebar } from './mobile-sidebar';
 import { MobileQuickBar } from './mobile-quick-bar';
 import { DashboardHeader } from './header';
-import { useActiveSection } from './use-active-section';
+import { sectionWrapperClass, useActiveSection } from './use-active-section';
 import {
   navItems,
   isNavItemVisible,
@@ -435,7 +435,7 @@ export function AgentTeamsDashboard() {
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={sectionMotionKey}
-                      className="mx-auto w-full max-w-[1760px]"
+                      className={sectionWrapperClass(activeSection)}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}

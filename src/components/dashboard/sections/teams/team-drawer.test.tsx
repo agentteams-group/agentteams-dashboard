@@ -536,6 +536,11 @@ describe('TeamDrawer · 团队成员', () => {
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalled());
     expect(mocks.updateTeamAsync).not.toHaveBeenCalled();
   });
+
+  it('独立 Agent 池为空 → 显示「没有可添加的独立 Agent」', () => {
+    renderDrawer(3, 'Agent 管理');
+    expect(screen.getByText('没有可添加的独立 Agent')).toBeInTheDocument();
+  });
 });
 
 describe('TeamDrawer · 团队技能（独立保存）', () => {

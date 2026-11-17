@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
+import { resetInitialResolutionForTests, sectionWrapperClass, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
@@ -209,6 +209,24 @@ describe('useActiveSection', () => {
       });
       expect(localStorage.getItem(STORAGE_KEY)).toBe('chat');
     });
+  });
+
+  describe('sectionWrapperClass (C：容器撑满父容器)', () => {
+    it.each(['resources', 'team-agents', 'workers', 'teams'])(
+      'workbench family (%s): full width, no 1760 cap',
+      (id) => {
+        const cls = sectionWrapperClass(id);
+        expect(cls).toContain('w-full');
+        expect(cls).not.toContain('max-w-[1760px]');
+      },
+    );
+
+    it.each(['overview', 'tasks', 'models', 'chat', 'managers', 'humans'])(
+      'other sections (%s) keep the 1760 cap',
+      (id) => {
+        expect(sectionWrapperClass(id)).toContain('max-w-[1760px]');
+      },
+    );
   });
 
 });

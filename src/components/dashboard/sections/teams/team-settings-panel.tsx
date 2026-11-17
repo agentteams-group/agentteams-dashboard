@@ -15,7 +15,7 @@
 // workerMembers / heartbeatEvery / peerMentions / subagentModel），
 // 删除成功后 toast.warning + 「撤销（按快照重建）」= createTeam。
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -26,7 +26,6 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,7 +44,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
-import { StatusDot } from '@/components/dashboard/status-dot';
 import { LlmTuningFields } from '@/components/dashboard/sections/workers/llm-tuning-fields';
 import { useCreateTeam, useDeleteTeam, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
 import { teamHumanMembers, type TeamResponse, type WorkerResponse } from '@/lib/agentteams-api';
@@ -57,26 +55,17 @@ import {
   type LlmTuningRecord,
 } from '@/lib/llm-tuning';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
-import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
 
 import { TeamMembersPanel } from './team-members-panel';
 import { TeamUsersPanel } from './team-users-panel';
 import { TeamSkillsPanel } from './team-skills-panel';
+import { TeamStatusSummary } from './team-status-summary';
 import {
   buildBasicDraft,
   buildBasicUpdate,
   type TeamBasicDraft,
 } from './team-drawer-logic';
-
-function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 text-xs">{children}</span>
-    </div>
-  );
-}
 
 function SettingsSection({
   title,
@@ -115,7 +104,7 @@ function SettingsSection({
 
 export type TeamSettingsPanelProps = {
   team: TeamResponse;
-  /** 全部团队（判定未归属 Worker 的引用集）。 */
+  /** 全部团队（判定独立 Agent 的引用集）。 */
   allTeams?: TeamResponse[];
   workers: WorkerResponse[];
   /** 初始 tab（默认 'basic'，行为不变）；仅接受 basic/users/agents（A3 Inspector 分区直达）。 */
@@ -176,7 +165,6 @@ export function TeamSettingsPanel({
   const deleteTeam = useDeleteTeam();
   const createTeam = useCreateTeam();
 
-  const analytics = useMemo(() => computeTeamAnalytics(team, workers), [team, workers]);
   const failureSummary = /matrix/i.test(team.message) && /connection refused|ECONNREFUSED/i.test(team.message)
     ? '暂时无法连接对话服务，请检查服务状态。'
     : '展开技术详情，查看具体失败原因。';
@@ -451,57 +439,7 @@ export function TeamSettingsPanel({
               </div>
             </SettingsSection>
             <SettingsSection title="运行状态与房间信息" icon={Users} expanded={expanded.has('status')} onToggle={() => toggle('status')}>
-            <div className="space-y-1 rounded-md bg-muted/20 p-2">
-              <SummaryRow label="阶段">
-                <span className="flex items-center gap-1.5">
-                  <StatusDot phase={team.phase} />
-                  <PhaseBadge kind="team" phase={team.phase} />
-                </span>
-              </SummaryRow>
-              <SummaryRow label="Leader">
-                <span className="font-mono">{team.leaderName || '-'}</span>
-              </SummaryRow>
-              <SummaryRow label="Workers">
-                <span>
-                  {team.readyWorkers}/{team.totalWorkers} 就绪
-                </span>
-              </SummaryRow>
-              <SummaryRow label="团队房间">
-                {team.teamRoomID ? (
-                  <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono">{team.teamRoomID}</span>
-                    <CopyButton text={team.teamRoomID} />
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </SummaryRow>
-              <SummaryRow label="Leader DM">
-                {team.leaderDMRoomID ? (
-                  <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono">{team.leaderDMRoomID}</span>
-                    <CopyButton text={team.leaderDMRoomID} />
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </SummaryRow>
-              <SummaryRow label="健康度">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    variant={analytics.trend === 'critical' ? 'destructive' : analytics.trend === 'healthy' ? 'secondary' : 'outline'}
-                    className="text-xs"
-                  >
-                    {analytics.label}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    就绪率 {analytics.readinessPct}% · 成员健康 {analytics.healthScore}
-                  </span>
-                </span>
-              </SummaryRow>
-            </div>
-
-
+              <TeamStatusSummary team={team} workers={workers} />
             </SettingsSection>
         <SettingsSection
           title="危险区"
@@ -525,7 +463,7 @@ export function TeamSettingsPanel({
                   删除团队
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  成员 Worker 保留（变为未归属）；团队房间与团队配置删除后不可恢复。
+                  成员 Worker 保留（变为独立 Agent）；团队房间与团队配置删除后不可恢复。
                 </p>
               </>
             ) : (
@@ -569,7 +507,7 @@ export function TeamSettingsPanel({
           <DialogHeader>
             <DialogTitle>删除团队 {team.name}</DialogTitle>
             <DialogDescription>
-              团队房间与团队配置将删除；成员 Worker 保留（变为未归属）。请核对团队名后确认。
+              团队房间与团队配置将删除；成员 Worker 保留（变为独立 Agent）。请核对团队名后确认。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">

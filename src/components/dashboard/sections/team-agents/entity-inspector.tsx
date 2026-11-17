@@ -59,6 +59,7 @@ import { hashForSection, roomHash } from '@/lib/nav-hash';
 import { toast } from 'sonner';
 import type { ManagerDmTarget } from '../managers/manager-drawer-logic';
 import { dmTargetFor, isManagerAsleep } from '../managers/manager-drawer-logic';
+import { TeamStatusSummary } from '../teams/team-status-summary';
 import { ROLE_LABELS, memberRole } from './team-agents-logic';
 
 interface SectionEntry {
@@ -79,8 +80,8 @@ const WORKER_SECTIONS: SectionEntry[] = [
 
 /**
  * 团队分区 → TeamSettingsPanel 的三个真实 tab（basic / users / agents）。
- * LLM 调优在 basic tab 的「高级设置」内，未归属 Worker / 团队技能在 agents
- * tab（「添加 Agent」从未归属 Worker 池选择 / 「团队技能」分区），危险区在
+ * LLM 调优在 basic tab 的「高级设置」内，独立 Agent / 团队技能在 agents
+ * tab（「添加 Agent」从独立 Agent 池选择 / 「团队技能」分区），危险区在
  * basic tab 的「危险区」内——按钮直达承载它们的 tab。
  */
 const TEAM_SECTIONS: SectionEntry[] = [
@@ -88,7 +89,7 @@ const TEAM_SECTIONS: SectionEntry[] = [
   { id: 'users', title: '团队成员' },
   { id: 'agents', title: '团队技能' },
   { id: 'basic', title: 'LLM 调优' },
-  { id: 'agents', title: '未归属 Worker' },
+  { id: 'agents', title: '独立 Agent' },
   { id: 'basic', title: '危险区' },
 ];
 
@@ -112,6 +113,8 @@ export type EntityInspectorEntity =
 export interface EntityInspectorProps {
   /** 当前选中的已解析实体；null = 占位说明（未选实体）。 */
   entity: EntityInspectorEntity | null;
+  /** 全部 Worker 列表：团队状态块的成员健康口径（computeTeamAnalytics）。 */
+  workers: WorkerResponse[];
   /** Dashboard 会话等级：3 = 管理员（插件侧 L1）。 */
   userLevel: number;
   /** 打开详情大弹窗并直达分区（panel id 由 section 写入 URL ?panel=）。 */
@@ -134,6 +137,7 @@ function roleBadgeClass(label: string): string {
 
 export function EntityInspector({
   entity,
+  workers,
   userLevel,
   onOpenSection,
   onChanged,
@@ -256,6 +260,12 @@ export function EntityInspector({
             </>
           )}
         </div>
+        {/* 团队状态块（选中团队时）：与团队设置面板「运行状态与房间信息」同字段同口径。 */}
+        {isTeam && (
+          <div className="mt-2">
+            <TeamStatusSummary team={entity.team} workers={workers} />
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {entity.kind === 'worker' && (
             <>
@@ -420,7 +430,7 @@ export function EntityInspector({
             <AlertDialogDescription>
               {deleteTarget?.kind === 'worker'
                 ? '容器与相关配置将被删除，不可恢复。'
-                : '团队房间与团队配置将删除；成员 Worker 保留（变为未归属）。'}
+                : '团队房间与团队配置将删除；成员 Worker 保留（变为独立 Agent）。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

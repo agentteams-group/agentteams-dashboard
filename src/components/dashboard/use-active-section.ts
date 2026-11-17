@@ -28,6 +28,20 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 /** Legacy section ids merged into the unified team-agents workbench (R4). */
 const LEGACY_MERGED_SECTIONS = new Set(['workers', 'teams']);
 
+/** team-agents 家族的四个 section id（R4 合并工作台：canonical 页 + 三个旧深链 id）。 */
+export const WORKBENCH_FAMILY_SECTIONS = new Set(['resources', 'team-agents', 'workers', 'teams']);
+
+/**
+ * C（容器撑满父容器）：各 section 内容包裹层类名。
+ * team-agents 家族为三栏工作台，去掉 1760 限宽撑满父级宽度（父级内边距保留）；
+ * 其它 section 保留 max-w-[1760px]。
+ */
+export function sectionWrapperClass(activeSection: string): string {
+  return WORKBENCH_FAMILY_SECTIONS.has(activeSection)
+    ? 'mx-auto w-full'
+    : 'mx-auto w-full max-w-[1760px]';
+}
+
 function isKnownSection(hash: string): boolean {
   if (hash === 'my-workbench') return true; // Old bookmarks open the notification drawer.
   if (navItems.some((n) => n.id === hash)) return true;
