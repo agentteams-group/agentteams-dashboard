@@ -93,15 +93,14 @@ export const navItems: NavItem[] = [
   // ── 控制台（二级：资源与治理合并） ──
   // 成员管理：团队与 Agent 合并为一个拓扑工作台（R4）；用户 / Managers 保留独立入口。
   { id: 'resources', label: '成员与团队', icon: Users, area: 'console', group: 'resources' },
-  // R4 统一工作台入口（拓扑 + 详情大弹窗）；下方 workers/teams 仅保留 id 供旧深链兼容。
+  // R4 统一工作台入口（拓扑 + 详情大弹窗）。旧 workers/teams 不再单列入口：
+  // 其 id 仍保留在 sectionMap + 工作台 hash 解析里，旧深链（#console/resources/workers 等）直达同一工作台。
   { id: 'team-agents', label: '团队与 Agent', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
   { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
-  { id: 'workers', label: 'Agent', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
   // (initialPassword) that must not be visible to team-level users.
   { id: 'humans', label: '用户', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3 },
-  { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
   { id: 'platform-assistant-settings', label: '平台助手设置', icon: Bot, area: 'workbench', group: 'space', minLevel: 3 },
   { id: 'skills', label: '技能', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },

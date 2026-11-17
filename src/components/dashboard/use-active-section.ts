@@ -25,9 +25,16 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
  * `plugin-route:<pluginId>/<routeId>` form.
  */
 
+/** Legacy section ids merged into the unified team-agents workbench (R4). */
+const LEGACY_MERGED_SECTIONS = new Set(['workers', 'teams']);
+
 function isKnownSection(hash: string): boolean {
   if (hash === 'my-workbench') return true; // Old bookmarks open the notification drawer.
   if (navItems.some((n) => n.id === hash)) return true;
+  // R4: workers / teams no longer have their own nav entries, but legacy
+  // hashes and bookmarks must still resolve to the unified workbench
+  // (sectionMap maps both ids to the same section).
+  if (LEGACY_MERGED_SECTIONS.has(hash)) return true;
   return isPluginSectionId(hash);
 }
 

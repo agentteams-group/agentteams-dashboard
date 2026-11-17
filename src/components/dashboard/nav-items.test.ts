@@ -23,12 +23,10 @@ describe('Navigation with groups (Workbench IA)', () => {
       'loops',
       // Separate member pages; assistant settings has no standalone Manager menu.
       'resources',
-      // R4 导航合并：统一工作台入口 + Managers（L1）；workers/teams 保留 id 供深链。
+      // R4 导航合并：统一工作台入口 + Managers（L1）；旧 workers/teams 入口已并入。
       'team-agents',
       'managers',
-      'workers',
       'humans',
-      'teams',
       'platform-assistant-settings',
       'skills',
       'models',
@@ -70,12 +68,9 @@ describe('Navigation with groups (Workbench IA)', () => {
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
     expect(byId.get('resources')).toMatchObject({ area: 'console', group: 'resources' });
-    expect(byId.get('workers')).toMatchObject({
-      area: 'console',
-      group: 'resources',
-      legacyGroup: 'runtime',
-    });
-    expect(byId.get('teams')).toMatchObject({ label: '团队', area: 'console', group: 'resources' });
+    // R4 导航合并：workers / teams 不再单列入口（id 由 sectionMap + hash 解析承接旧深链）。
+    expect(byId.has('workers')).toBe(false);
+    expect(byId.has('teams')).toBe(false);
     expect(byId.get('humans')?.mergedInto).toBeUndefined();
     // R4：Managers 恢复为 L1-only 独立入口（#233 口径，mergedInto 仅影响 Workbench 变体）。
     expect(byId.get('managers')).toMatchObject({
@@ -127,8 +122,7 @@ describe('UI level gate (M19 dual track)', () => {
     expect(ids).not.toContain('humans');
     expect(ids).toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
-    expect(ids).toContain('workers');
-    expect(ids).toContain('teams');
+    expect(ids).toContain('team-agents');
     expect(ids).toContain('audit');
   });
 
