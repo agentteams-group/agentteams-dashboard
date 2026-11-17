@@ -6,9 +6,21 @@ import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { DetailDialogShell } from './detail-dialog-shell';
 
 /**
- * 团队详情大弹窗：承载当前 main 版 TeamSettingsPanel（只按现有签名嵌入，
- * 不改面板内部行为）。面板自带滚动链（内部 min-h-0 flex-1 overflow-y-auto），
- * 所以 body 用 flex 定高 + overflow-hidden。
+ * 分区标题映射（弹窗标题 `<实体名> · <分区名>`）：与 TeamSettingsPanel 的
+ * tab 同名同义；未命中的 initialTab 回退「基本信息」。
+ */
+const TEAM_SECTION_TITLES: Record<string, string> = {
+  basic: '基本信息',
+  users: '成员管理',
+  agents: 'Agent 管理',
+};
+
+/**
+ * 团队详情大弹窗（R1 分区直出）：以 chrome="section" 嵌入
+ * TeamSettingsPanel —— 弹窗标题承担实体身份（`<实体名> · <分区名>`），
+ * body 只渲染 initialTab 命中的分区；initialTab 缺失/无效时面板回退
+ * 'full'（标题栏 + 横向 tab 列表，行为与旧版一致）。面板自带滚动链
+ * （内部 min-h-0 flex-1 overflow-y-auto），body 用 flex 定高 + overflow-hidden。
  */
 export function TeamDetailDialog({
   open,
@@ -38,11 +50,12 @@ export function TeamDetailDialog({
   initialTab?: string;
 }) {
   if (!team) return null;
+  const sectionTitle = TEAM_SECTION_TITLES[initialTab ?? 'basic'] ?? TEAM_SECTION_TITLES.basic;
   return (
     <DetailDialogShell
       open={open}
       onOpenChange={onOpenChange}
-      title={`团队设置 · ${team.name}`}
+      title={`${team.name} · ${sectionTitle}`}
       description="团队基本信息、LLM 调参与成员管理"
       bodyClassName="flex flex-col overflow-hidden"
     >
@@ -57,6 +70,7 @@ export function TeamDetailDialog({
         userLevel={userLevel}
         onChanged={onChanged}
         onDeleted={onDeleted}
+        chrome="section"
         initialTab={initialTab}
       />
     </DetailDialogShell>

@@ -120,6 +120,13 @@ export type TeamSettingsPanelProps = {
   workers: WorkerResponse[];
   /** 初始 tab（默认 'basic'，行为不变）；仅接受 basic/users/agents（A3 Inspector 分区直达）。 */
   initialTab?: string;
+  /**
+   * 渲染模式：'full'（默认，行为不变）= 标题栏 + 横向 tab 列表；
+   * 'section' = 分区直出（详情弹窗场景）：隐藏标题栏图标 / 团队名 / 阶段
+   * 徽标与横向 tab 列表，仅渲染 initialTab 命中的分区（内容区自滚）；
+   * initialTab 缺失或无效时回退 'full'（避免空白弹窗）。
+   */
+  chrome?: 'full' | 'section';
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
   userLevel: number;
@@ -141,9 +148,12 @@ export function TeamSettingsPanel({
   onChanged,
   onDeleted,
   initialTab,
+  chrome = 'full',
 }: TeamSettingsPanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const initialTabValid = initialTab !== undefined && ['basic', 'users', 'agents'].includes(initialTab) ? initialTab : 'basic';
+  // 'section' 模式（详情弹窗）：initialTab 必须命中分区，否则回退 'full'（避免空白弹窗）。
+  const sectionMode = chrome === 'section' && initialTab !== undefined && ['basic', 'users', 'agents'].includes(initialTab);
   const [tab, setTab] = useState(initialTabValid);
   const [visitedTabs, setVisitedTabs] = useState(() => new Set([initialTabValid]));
   const { data: humans = [] } = useHumans();
@@ -267,28 +277,34 @@ export function TeamSettingsPanel({
 
   return (
     <div data-slot="team-drawer-body" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
-        <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>
-        <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
-        {tab === 'basic' && <Button size="sm" data-testid="basic-save" disabled={saving} onClick={() => void handleSaveBasic()}>
-          {saving ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
-          保存基本信息
-        </Button>}
-      </div>
+      {/* section 模式下标题栏只保留基本信息分区的保存按钮（功能控件，非 chrome）。 */}
+      {(!sectionMode || tab === 'basic') && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
+          {!sectionMode && <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          {!sectionMode && <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>}
+          {!sectionMode && <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />}
+          {tab === 'basic' && <Button size="sm" data-testid="basic-save" disabled={saving} onClick={() => void handleSaveBasic()}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
+            保存基本信息
+          </Button>}
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={(next) => {
         setTab(next);
         setVisitedTabs((previous) => new Set([...previous, next]));
       }} className="min-h-0 flex-1 gap-0">
-        <div className="shrink-0 border-b px-4 py-3">
-          <TabsList aria-label="团队编辑" className="grid h-10 w-full max-w-lg grid-cols-3">
-            <TabsTrigger value="basic">基本信息</TabsTrigger>
-            <TabsTrigger value="users">成员管理 <span className="text-xs text-muted-foreground">{humanNames.size}</span></TabsTrigger>
-            <TabsTrigger value="agents">Agent 管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
-          </TabsList>
-        </div>
+        {!sectionMode && (
+          <div className="shrink-0 border-b px-4 py-3">
+            <TabsList aria-label="团队编辑" className="grid h-10 w-full max-w-lg grid-cols-3">
+              <TabsTrigger value="basic">基本信息</TabsTrigger>
+              <TabsTrigger value="users">成员管理 <span className="text-xs text-muted-foreground">{humanNames.size}</span></TabsTrigger>
+              <TabsTrigger value="agents">Agent 管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
+            </TabsList>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          {(!sectionMode || tab === 'basic') && (
           <TabsContent value="basic" forceMount hidden={tab !== 'basic'} className="m-0 space-y-5">
             {team.phase === 'Failed' && team.message ? (
               <Alert className="min-w-0 border-destructive/20 bg-destructive/5 px-3 py-2.5 text-destructive">
@@ -520,6 +536,7 @@ export function TeamSettingsPanel({
           </div>
         </SettingsSection>
           </TabsContent>
+          )}
 
           {visitedTabs.has('users') && <TabsContent value="users" forceMount hidden={tab !== 'users'} className="m-0 space-y-4">
             <div><h3 className="text-sm font-medium">成员管理</h3><p className="mt-1 text-xs text-muted-foreground">设置团队管理员，添加成员并调整角色。</p></div>

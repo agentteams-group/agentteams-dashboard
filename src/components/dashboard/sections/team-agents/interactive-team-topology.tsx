@@ -93,7 +93,8 @@ function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
  * - Manager 展示用 `team.admin`；
  * - 成员行是 div[role=button]（行内「拉起就绪」是嵌套按钮，HTML 不允许
  *   button 套 button）：点击 / Enter / Space 打开 Worker 详情大弹窗；
- * - 头部齿轮 + 显式「团队设置」按钮都打开团队设置大弹窗（R2：详情不再内联）。
+ * - 头部齿轮是团队设置唯一入口（R2：详情不再内联；Inspector 团队分区按钮
+ *   走同一 onOpenTeamSettings）。
  */
 export function InteractiveTeamTopology({
   team,
@@ -178,17 +179,8 @@ export function InteractiveTeamTopology({
               )}
             </p>
           </div>
-          {/* R2：显式入口（≥44px 触控目标）与齿轮等价，打开团队设置大弹窗。
-              aria-label 区别于齿轮，避免同名按钮双重匹配。 */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-11 shrink-0 gap-1 px-2.5 text-xs"
-            aria-label="打开团队设置"
-            onClick={() => onOpenTeamSettings(team)}
-          >
-            团队设置
-          </Button>
+          {/* R2：单一入口——头部只有齿轮（≥44px 触控目标）打开团队设置大弹窗，
+              与 Inspector 团队分区入口共用同一 onOpenTeamSettings。 */}
           <Button
             variant="outline"
             size="icon"

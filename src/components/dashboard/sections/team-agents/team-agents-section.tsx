@@ -15,6 +15,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { StatusDot } from '@/components/dashboard/status-dot';
@@ -86,8 +87,8 @@ function workbenchSectionIdFromHash(hash: string): string {
   return 'team-agents';
 }
 
-/** 本页消费的深链参数（#251 口径 + A4 的 manager / panel）。 */
-const WORKBENCH_DEEPLINK_PARAMS = ['team', 'agent', 'manager', 'edit', 'panel'] as const;
+/** 本页消费的深链参数（#251 口径 + A4 的 manager / panel + R3 的 inspect）。 */
+const WORKBENCH_DEEPLINK_PARAMS = ['team', 'agent', 'manager', 'edit', 'panel', 'inspect'] as const;
 
 /**
  * A2 容器宽度断点：ResizeObserver 量壳的宽度（不是 window.innerWidth——
@@ -417,9 +418,11 @@ function StaleSelectionState({
  *
  * 列表（F1 无页签）：Manager 行（仅 L1 可见）+ 团队行（leader 名排序）+
  * 底部「未归属团队的 Worker」折叠行；中间 = InteractiveTeamTopology。
- * 详情不再占栏：团队（拓扑头部齿轮 / 显式「团队设置」按钮）、Agent
+ * 详情不再占栏：团队（拓扑头部齿轮，R2 单一入口）、Agent
  * （拓扑成员行 / 独立 Worker 行）、Manager（列表 Manager 行）各自打开
  * 承载当前 main 版面板的自适应大弹窗（见 *-detail-dialog.tsx）。
+ * dual 断点下 Inspector 走右侧真 Sheet 抽屉（R3：Esc / 遮罩只关抽屉，
+ * 保留选中；URL ?inspect=1 反映开合）。
  *
  * 布局：≥1024 列表 + 拓扑两栏；narrow <1024 单栏，列表 ↔ 拓扑切换
  * （拓扑内「团队列表」返回）。
@@ -465,6 +468,7 @@ export function TeamAgentsSection() {
   const dialogPanelRef = useRef<string | null>(null);
   const layoutRef = useRef<TeamAgentsLayout>('triple');
   const standaloneRef = useRef<WorkerResponse[]>([]);
+  const drawerOpenRef = useRef(false);
 
   const [selection, setSelection] = useState<TeamAgentsSelection | null>(null);
   const [narrowView, setNarrowView] = useState<'list' | 'topology'>('list');
@@ -473,6 +477,9 @@ export function TeamAgentsSection() {
   // A3：当前大弹窗应直达的分区 id（Inspector 分区按钮 / 齿轮写 'basic'，
   // 深链 ?panel= 写入）；null = 弹窗落在面板默认分区。
   const [dialogPanel, setDialogPanel] = useState<string | null>(null);
+  // R3：dual 抽屉（真 Sheet）开合——Esc / 遮罩 / X 只关抽屉，保留选中；
+  // 再点同一行一键重开（选择变化 effect 负责）。
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -485,6 +492,7 @@ export function TeamAgentsSection() {
   detailOpenRef.current = detailOpen;
   dialogPanelRef.current = dialogPanel;
   layoutRef.current = layout;
+  drawerOpenRef.current = drawerOpen;
 
   // 数据到位后应用一次初始选择：?manager= > ?agent= > ?team= 深链优先
   // （#251「选中资源与编辑意图」+ A5 manager 深链），再按意图兜底
@@ -572,9 +580,11 @@ export function TeamAgentsSection() {
       params.set('edit', 'true');
       if (dialogPanel) params.set('panel', dialogPanel);
     }
+    // R3：?inspect=1 反映 dual 抽屉开合（刷新 / 前进后退可还原）。
+    if (selection && layout === 'dual' && drawerOpen) params.set('inspect', '1');
     const next = params.size > 0 ? `${base}?${params.toString()}` : base;
     if (window.location.hash !== `#${next}`) window.location.hash = next;
-  }, [selection, detailOpen, dialogPanel]);
+  }, [selection, detailOpen, dialogPanel, layout, drawerOpen]);
 
   // A4：外部 hash 变化（前进 / 后退、搜索深链、跨组件导航）→ 还原选择
   // 与弹窗状态。自身写入的 echo（派生状态 === 当前状态）no-op，不成环。
@@ -637,10 +647,21 @@ export function TeamAgentsSection() {
         setDetailOpen(openNow);
         setDialogPanel(openNow ? panel : null);
       }
+      // R3：?inspect=1 → dual 抽屉开合（自身写入的 echo 时两值相等 → no-op）。
+      const inspectNow =
+        layoutRef.current === 'dual' && desired !== null && params.get('inspect') === '1';
+      if (inspectNow !== drawerOpenRef.current) setDrawerOpen(inspectNow);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [teams, workers, managers]);
+
+  // R3：dual 下有选中（进入 dual / 新选中 / 深链与 hashchange 还原）→ 开抽屉。
+  // setSelection 总是产生新对象引用，故「关抽屉后再点同一行」也会触发
+  // 重开；关抽屉本身不改 selection，不会触发本 effect。
+  useEffect(() => {
+    if (layout === 'dual' && selection !== null) setDrawerOpen(true);
+  }, [layout, selection]);
 
   const refresh = useCallback(() => {
     void refetch();
@@ -759,6 +780,7 @@ export function TeamAgentsSection() {
     setSelection(null);
     setDetailOpen(false);
     setDialogPanel(null);
+    setDrawerOpen(false);
     setNarrowView('list');
   }, []);
 
@@ -766,17 +788,6 @@ export function TeamAgentsSection() {
     setDetailOpen(false);
     clearSelection();
   }, [clearSelection]);
-
-  // dual：Esc 关闭 Inspector 覆盖层（大弹窗开着时 Esc 归 Radix 关弹窗，
-  // 不重复处理）。
-  useEffect(() => {
-    if (layout !== 'dual' || !selection || detailOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') clearSelection();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [layout, selection, detailOpen, clearSelection]);
 
   const handleCreateTeam = useCallback(() => {
     createTeam.mutate(newTeam, {
@@ -1016,20 +1027,29 @@ export function TeamAgentsSection() {
             />
           </Pane>
         )}
-        {layout === 'dual' && inspectorEntity && (
-          <div
-            data-testid="inspector-overlay"
-            className="absolute inset-y-0 right-0 z-20 flex w-[min(420px,92vw)] flex-col overflow-hidden rounded-r-lg border-l bg-card shadow-xl"
-          >
-            <EntityInspector
-              entity={inspectorEntity}
-              userLevel={userLevel}
-              onOpenSection={handleOpenSection}
-              onChanged={refresh}
-              onDeleted={handleDeleted}
-              onClose={clearSelection}
-            />
-          </div>
+        {/* R3：dual 右栏 Inspector = 真 Sheet（遮罩 / 滑入 / 焦点圈 / Esc
+            与遮罩点击关闭）；关闭只隐藏抽屉、保留选中，再点同一行重开。 */}
+        {layout === 'dual' && (
+          <Sheet open={drawerOpen && inspectorEntity !== null} onOpenChange={(open) => setDrawerOpen(open)}>
+            <SheetContent
+              side="right"
+              data-testid="inspector-drawer"
+              className="w-[min(420px,92vw)] gap-0 p-0 sm:max-w-none"
+            >
+              <SheetTitle className="sr-only">实体详情</SheetTitle>
+              <SheetDescription className="sr-only">当前选中实体（团队 / Agent / Manager）的详情分区</SheetDescription>
+              {inspectorEntity && (
+                <EntityInspector
+                  entity={inspectorEntity}
+                  userLevel={userLevel}
+                  onOpenSection={handleOpenSection}
+                  onChanged={refresh}
+                  onDeleted={handleDeleted}
+                  onClose={() => setDrawerOpen(false)}
+                />
+              )}
+            </SheetContent>
+          </Sheet>
         )}
       </div>
 

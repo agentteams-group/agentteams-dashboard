@@ -90,9 +90,17 @@ describe('InteractiveTeamTopology · 头部', () => {
     expect(within(header).getByText('异常')).toBeInTheDocument(); // health badge
   });
 
-  it('opens the existing team settings entry', () => {
+  it('R2 single settings entry: only the gear (≥44px) opens team settings', () => {
     const { onOpenTeamSettings } = renderTopology();
+    const header = screen.getByTestId('team-topology-header');
+    // A 轮「团队设置」文本按钮已删。
+    expect(screen.queryByRole('button', { name: '打开团队设置' })).toBeNull();
+    // 头部只剩一个齿轮入口（触控目标 ≥44px）。
+    const gears = header.querySelectorAll('button[aria-label="团队设置"]');
+    expect(gears).toHaveLength(1);
+    expect(gears[0]).toHaveClass('min-h-11');
     fireEvent.click(screen.getByRole('button', { name: '团队设置' }));
+    expect(onOpenTeamSettings).toHaveBeenCalledTimes(1);
     expect(onOpenTeamSettings).toHaveBeenCalledWith(alpha);
   });
 });

@@ -142,6 +142,13 @@ export type ManagerDetailPanelProps = {
   className?: string;
   /** 初始 tab（默认第一项 basic，行为不变）；命中 tab 才生效（A3 Inspector 分区直达）。 */
   initialTab?: string;
+  /**
+   * 渲染模式：'full'（默认，行为不变）= 身份头 + 动作条 + 垂直 tab 列表；
+   * 'section' = 分区直出（详情弹窗场景）：隐藏身份头 / 动作条 / 状态 banner
+   * 与垂直 tab 列表，仅渲染 initialTab 命中的分区内容（内容区自滚）；
+   * initialTab 缺失或无效时回退 'full'（避免空白弹窗）。
+   */
+  chrome?: 'full' | 'section';
 };
 
 export function ManagerDetailPanel({
@@ -154,6 +161,7 @@ export function ManagerDetailPanel({
   onDm,
   className,
   initialTab,
+  chrome = 'full',
 }: ManagerDetailPanelProps) {
   const managerName = manager.name;
   const canWrite = userLevel >= 3;
@@ -398,104 +406,9 @@ export function ManagerDetailPanel({
   const emptyText = specReadable ? '未配置' : 'Controller 未回显';
   const cfgDirty = managerConfigDirty(cfg, detail?.config);
 
-  return (
-    <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
-      {/* 身份头（抽屉场景由 Sheet 关闭键兜底关闭；内联场景由页面返回键兜底） */}
-      <div className="shrink-0 border-b px-3 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Crown className="size-4 shrink-0 text-violet-500" aria-hidden="true" />
-          <h2 className="min-w-0 truncate text-base font-semibold">{view.name}</h2>
-          <PhaseBadge kind="manager" phase={view.phase} className="shrink-0" />
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <RuntimeBadge runtime={view.runtime || ''} />
-          <span className="text-muted-foreground" title={view.image || view.version}>版本 {managerVersionLabel(view.image, view.version)}</span>
-        </div>
-      </div>
-
-      <div className="shrink-0 space-y-2 border-b px-3 py-3">
-        {/* 操作区 */}
-        <div className="flex flex-wrap items-center gap-2">
-          {canWrite ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-9 text-xs"
-              disabled={acting != null}
-              onClick={() => void handleState(asleep ? 'Running' : 'Sleeping')}
-            >
-              {acting === 'wake' || acting === 'sleep' ? (
-                <Loader2 className="mr-1 size-3.5 animate-spin" aria-hidden="true" />
-              ) : asleep ? (
-                <Sun className="mr-1 size-3.5" aria-hidden="true" />
-              ) : (
-                <Moon className="mr-1 size-3.5" aria-hidden="true" />
-              )}
-              {asleep ? '唤醒' : '休眠'}
-            </Button>
-          ) : null}
-          {canWrite ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-9 text-xs"
-              disabled={acting != null}
-              onClick={() => setRestartOpen(true)}
-            >
-              <RefreshCw
-                className={`mr-1 size-3.5 ${acting === 'restart' ? 'animate-spin' : ''}`}
-                aria-hidden="true"
-              />
-              重启
-            </Button>
-          ) : null}
-          {onEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-9 text-xs"
-              onClick={() => onEdit(view)}
-            >
-              <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-              编辑
-            </Button>
-          ) : null}
-          {dm ? (
-            <Button size="sm" variant="outline" className="h-9 text-xs" onClick={openDm}>
-              <MessageSquare className="mr-1 size-3.5" aria-hidden="true" />
-              私聊
-            </Button>
-          ) : null}
-        </div>
-
-        {!canWrite ? (
-          <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-            只读：编辑 Manager 配置需要 L1 管理员权限（Controller 管理员 token）。
-            当前会话仅可查看状态与摘要。
-          </p>
-        ) : null}
-
-        {notice ? (
-          <p role="status" className="rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground">
-            {notice}
-          </p>
-        ) : null}
-
-        {actionError && !envOpen ? (
-          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
-            {actionError}
-          </p>
-        ) : null}
-
-        {detailError ? (
-          <p role="alert" className="rounded-lg border border-destructive/40 p-2.5 text-xs text-destructive">
-            读取 Manager 详情失败：{detailError}
-          </p>
-        ) : null}
-
-      </div>
-
-      <ResourceDetailTabs key={managerName} label="平台助手配置" initialTab={initialTab} items={[
+  // 详情分区（唯一来源）：'full' 模式渲染为垂直 tab 列表（ResourceDetailTabs）；
+  // 'section' 模式（详情弹窗）直接展示 initialTab 命中的分区——无身份头/动作条/tab 列表。
+  const detailTabs: Array<{ id: string; title: string; render: () => React.ReactNode }> = [
         { id: 'basic', title: '基本信息', render: () => <section className="space-y-4" aria-label="连接信息">
           <h3 className="text-sm font-medium">连接信息</h3>
           <Row label="Matrix 账号">
@@ -673,7 +586,116 @@ export function ManagerDetailPanel({
         </section>
         },
         { id: 'logs', title: '日志', render: () => <ManagerLogsCard managerName={managerName} enabled={canWrite} /> },
-      ]} />
+  ];
+
+  // 'section' 模式要求 initialTab 命中分区，否则回退 'full'（避免空白弹窗）。
+  const sectionItem =
+    chrome === 'section' && initialTab ? detailTabs.find((item) => item.id === initialTab) ?? null : null;
+
+  return (
+    <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
+      {sectionItem ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{sectionItem.render()}</div>
+      ) : (
+        <>
+      {/* 身份头（抽屉场景由 Sheet 关闭键兜底关闭；内联场景由页面返回键兜底） */}
+      <div className="shrink-0 border-b px-3 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Crown className="size-4 shrink-0 text-violet-500" aria-hidden="true" />
+          <h2 className="min-w-0 truncate text-base font-semibold">{view.name}</h2>
+          <PhaseBadge kind="manager" phase={view.phase} className="shrink-0" />
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          <RuntimeBadge runtime={view.runtime || ''} />
+          <span className="text-muted-foreground" title={view.image || view.version}>版本 {managerVersionLabel(view.image, view.version)}</span>
+        </div>
+      </div>
+
+      <div className="shrink-0 space-y-2 border-b px-3 py-3">
+        {/* 操作区 */}
+        <div className="flex flex-wrap items-center gap-2">
+          {canWrite ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              disabled={acting != null}
+              onClick={() => void handleState(asleep ? 'Running' : 'Sleeping')}
+            >
+              {acting === 'wake' || acting === 'sleep' ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" aria-hidden="true" />
+              ) : asleep ? (
+                <Sun className="mr-1 size-3.5" aria-hidden="true" />
+              ) : (
+                <Moon className="mr-1 size-3.5" aria-hidden="true" />
+              )}
+              {asleep ? '唤醒' : '休眠'}
+            </Button>
+          ) : null}
+          {canWrite ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              disabled={acting != null}
+              onClick={() => setRestartOpen(true)}
+            >
+              <RefreshCw
+                className={`mr-1 size-3.5 ${acting === 'restart' ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              重启
+            </Button>
+          ) : null}
+          {onEdit ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              onClick={() => onEdit(view)}
+            >
+              <Pencil className="mr-1 size-3.5" aria-hidden="true" />
+              编辑
+            </Button>
+          ) : null}
+          {dm ? (
+            <Button size="sm" variant="outline" className="h-9 text-xs" onClick={openDm}>
+              <MessageSquare className="mr-1 size-3.5" aria-hidden="true" />
+              私聊
+            </Button>
+          ) : null}
+        </div>
+
+        {!canWrite ? (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+            只读：编辑 Manager 配置需要 L1 管理员权限（Controller 管理员 token）。
+            当前会话仅可查看状态与摘要。
+          </p>
+        ) : null}
+
+        {notice ? (
+          <p role="status" className="rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground">
+            {notice}
+          </p>
+        ) : null}
+
+        {actionError && !envOpen ? (
+          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
+            {actionError}
+          </p>
+        ) : null}
+
+        {detailError ? (
+          <p role="alert" className="rounded-lg border border-destructive/40 p-2.5 text-xs text-destructive">
+            读取 Manager 详情失败：{detailError}
+          </p>
+        ) : null}
+
+      </div>
+
+      <ResourceDetailTabs key={managerName} label="平台助手配置" initialTab={initialTab} items={detailTabs} />
+        </>
+      )}
 
       {/* 重启确认 */}
       <AlertDialog open={restartOpen} onOpenChange={setRestartOpen}>

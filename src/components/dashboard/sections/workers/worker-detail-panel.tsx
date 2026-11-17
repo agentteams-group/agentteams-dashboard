@@ -111,6 +111,13 @@ export type WorkerDetailPanelProps = {
   className?: string;
   /** 初始 tab（默认第一项 basic，行为不变）；命中 tab 才生效（A3 Inspector 分区直达）。 */
   initialTab?: string;
+  /**
+   * 渲染模式：'full'（默认，行为不变）= 头部 + 动作条 + 垂直 tab 列表；
+   * 'section' = 分区直出（详情弹窗场景）：隐藏头像 / 标题 / 角色徽标 / 状态
+   * chips / 动作条与垂直 tab 列表，仅渲染 initialTab 命中的分区内容（内容区
+   * 自滚）；initialTab 缺失或无效时回退 'full'（避免空白弹窗）。
+   */
+  chrome?: 'full' | 'section';
   onChanged?: () => void;
   onDeleted?: () => void;
 };
@@ -124,6 +131,7 @@ export function WorkerDetailPanel({
   onDm,
   className,
   initialTab,
+  chrome = 'full',
   onChanged,
   onDeleted,
 }: WorkerDetailPanelProps) {
@@ -508,8 +516,89 @@ export function WorkerDetailPanel({
   const tabCards = tabIds.flatMap((id) => resourceCards.filter((card) => card.id === id));
   const advancedCards = resourceCards.filter((card) => !tabIds.includes(card.id));
 
+  // 详情分区（唯一来源）：'full' 模式渲染为垂直 tab 列表（ResourceDetailTabs）；
+  // 'section' 模式（详情弹窗）直接展示 initialTab 命中的分区——无头部/动作条/tab 列表。
+  const detailTabs: Array<{ id: string; title: string; render: () => React.ReactNode }> = [
+    { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
+        <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
+          <Row label="运行时" value={runtimeName} />
+          <Row label="模型 ID" value={view.model || '未设置'} />
+          <Row label="模型连接" value={view.modelProvider || providerName || '默认连接'} />
+          <Row label="镜像" value={view.image || '默认镜像'} />
+          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' })}>编辑基础配置</Button>
+        </section>
+        {/* 状态区 */}
+        <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
+          <p className="text-xs text-foreground/80" title={buildStatusNarrative(view, now)}>
+            {buildStatusNarrative(view, now)}
+          </p>
+          <Row label="心跳" value={view.agentStatus || '未上报'} />
+          <Row label="最近活动" value={view.lastActivityAt ? formatAgoZh(view.lastActivityAt, now) ?? '-' : '暂无'} />
+          <Row label="在跑任务" value={view.runningTaskCount != null ? `${view.runningTaskCount} 个` : '暂无'} />
+          <Row label="上次运行" value={view.lastRunAt ? formatAgoZh(view.lastRunAt, now) ?? '-' : '暂无'} />
+          <Row label="上次完成" value={view.lastFinishAt ? formatAgoZh(view.lastFinishAt, now) ?? '-' : '暂无'} />
+          {loopStatus && (
+            <Row label="loop 预算" value={`${loopStatus.state}${loopStatus.modeName ? ` · ${loopStatus.modeName}` : ''}`} />
+          )}
+        </section>
+
+        {view.runtime === 'openclaw' ? (
+          <WorkerHeartbeatControl
+            enabled={view.llmHeartbeatEnabled}
+            disabled={userLevel < 3 || !view.envEditable || updateWorker.isPending}
+            onCheckedChange={(enabled) => updateWorker.mutate(
+              { name: workerName, data: { llmHeartbeatEnabled: enabled } },
+              {
+                onSuccess: () => {
+                  invalidateWorkerDetail(workerName);
+                  void refreshDetail(true);
+                  onChanged?.();
+                },
+              },
+            )}
+          />
+        ) : null}
+
+        <details className="rounded-lg border p-3" onToggle={(event) => setEnvOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm">环境变量与网关 · {envCount} 个变量</summary>
+          {envOpen && <div className="pt-3"><WorkerEnvCard key={`env-${view.name}`} worker={view} onSaved={() => {
+            invalidateWorkerDetail(view.name);
+            void refreshDetail(true);
+            onChanged?.();
+          }} /></div>}
+        </details>
+        <details className="rounded-lg border p-3" onToggle={(event) => setLlmOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm">模型调优</summary>
+          {llmOpen && <div className="pt-3"><WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} /></div>}
+        </details>
+        </div> },
+    ...tabCards.map(card => ({ ...card, render: () => (
+      <div className="space-y-4">
+        <h3 className="text-sm font-medium">{card.title}</h3>
+        {card.render()}
+        {card.id === 'runtime' && advancedCards.map((item) => (
+          <details key={item.id} className="rounded-lg border p-3" onToggle={(event) => {
+            const open = event.currentTarget.open;
+            setExpandedCards((previous) => open ? [...new Set([...previous, item.id])] : previous.filter((id) => id !== item.id));
+          }}>
+            <summary className="cursor-pointer text-sm">{item.title}</summary>
+            {expandedCards.includes(item.id) && <div className="pt-3">{item.render()}</div>}
+          </details>
+        ))}
+      </div>
+    ) })),
+  ];
+
+  // 'section' 模式要求 initialTab 命中分区，否则回退 'full'（避免空白弹窗）。
+  const sectionItem =
+    chrome === 'section' && initialTab ? detailTabs.find((item) => item.id === initialTab) ?? null : null;
+
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
+      {sectionItem ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{sectionItem.render()}</div>
+      ) : (
+        <>
       <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
         <div className="flex items-start gap-3">
           <Avatar className="size-9 shrink-0">
@@ -600,76 +689,9 @@ export function WorkerDetailPanel({
         </div>
       </div>
 
-      <ResourceDetailTabs key={workerName} label="Agent 配置" initialTab={initialTab} items={[
-        { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
-        <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
-          <Row label="运行时" value={runtimeName} />
-          <Row label="模型 ID" value={view.model || '未设置'} />
-          <Row label="模型连接" value={view.modelProvider || providerName || '默认连接'} />
-          <Row label="镜像" value={view.image || '默认镜像'} />
-          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' })}>编辑基础配置</Button>
-        </section>
-        {/* 状态区 */}
-        <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
-          <p className="text-xs text-foreground/80" title={buildStatusNarrative(view, now)}>
-            {buildStatusNarrative(view, now)}
-          </p>
-          <Row label="心跳" value={view.agentStatus || '未上报'} />
-          <Row label="最近活动" value={view.lastActivityAt ? formatAgoZh(view.lastActivityAt, now) ?? '-' : '暂无'} />
-          <Row label="在跑任务" value={view.runningTaskCount != null ? `${view.runningTaskCount} 个` : '暂无'} />
-          <Row label="上次运行" value={view.lastRunAt ? formatAgoZh(view.lastRunAt, now) ?? '-' : '暂无'} />
-          <Row label="上次完成" value={view.lastFinishAt ? formatAgoZh(view.lastFinishAt, now) ?? '-' : '暂无'} />
-          {loopStatus && (
-            <Row label="loop 预算" value={`${loopStatus.state}${loopStatus.modeName ? ` · ${loopStatus.modeName}` : ''}`} />
-          )}
-        </section>
-
-        {view.runtime === 'openclaw' ? (
-          <WorkerHeartbeatControl
-            enabled={view.llmHeartbeatEnabled}
-            disabled={userLevel < 3 || !view.envEditable || updateWorker.isPending}
-            onCheckedChange={(enabled) => updateWorker.mutate(
-              { name: workerName, data: { llmHeartbeatEnabled: enabled } },
-              {
-                onSuccess: () => {
-                  invalidateWorkerDetail(workerName);
-                  void refreshDetail(true);
-                  onChanged?.();
-                },
-              },
-            )}
-          />
-        ) : null}
-
-        <details className="rounded-lg border p-3" onToggle={(event) => setEnvOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer text-sm">环境变量与网关 · {envCount} 个变量</summary>
-          {envOpen && <div className="pt-3"><WorkerEnvCard key={`env-${view.name}`} worker={view} onSaved={() => {
-            invalidateWorkerDetail(view.name);
-            void refreshDetail(true);
-            onChanged?.();
-          }} /></div>}
-        </details>
-        <details className="rounded-lg border p-3" onToggle={(event) => setLlmOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer text-sm">模型调优</summary>
-          {llmOpen && <div className="pt-3"><WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} /></div>}
-        </details>
-        </div> },
-        ...tabCards.map(card => ({ ...card, render: () => (
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium">{card.title}</h3>
-            {card.render()}
-            {card.id === 'runtime' && advancedCards.map((item) => (
-              <details key={item.id} className="rounded-lg border p-3" onToggle={(event) => {
-                const open = event.currentTarget.open;
-                setExpandedCards((previous) => open ? [...new Set([...previous, item.id])] : previous.filter((id) => id !== item.id));
-              }}>
-                <summary className="cursor-pointer text-sm">{item.title}</summary>
-                {expandedCards.includes(item.id) && <div className="pt-3">{item.render()}</div>}
-              </details>
-            ))}
-          </div>
-        ) })),
-      ]} />
+      <ResourceDetailTabs key={workerName} label="Agent 配置" initialTab={initialTab} items={detailTabs} />
+        </>
+      )}
 
       {actionPending && <p role="status" className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden="true" />正在下发操作…</p>}
 
