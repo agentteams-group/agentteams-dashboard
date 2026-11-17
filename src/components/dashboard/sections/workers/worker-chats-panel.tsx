@@ -510,7 +510,7 @@ export function WorkerChatsPanel({
     <div className="grid gap-1">
       {spawnRows.length === 0 && (
         <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
-          暂无子代理会话（该 Worker 当前没有子代理会话）。
+          子代理会话：运行时尚未提供（上游端点未合并）。
         </p>
       )}
       {spawnRows.map(({ chat, depth, hasChildren }) => {
@@ -615,6 +615,9 @@ export function WorkerChatsPanel({
           </TabsContent>
           <TabsContent value="spawn" className="space-y-2">
             {listHeader}
+            <p className="text-xs text-muted-foreground">
+              子代理会话由运行时按 ChatSpec 标记分流（meta.spawn / source=subagent），上游未投影时该页为空属预期。
+            </p>
             {spawnTree}
           </TabsContent>
         </Tabs>

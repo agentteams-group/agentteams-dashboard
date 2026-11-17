@@ -157,4 +157,21 @@ describe('C WorkerChatsPanel（#1295 消费）', () => {
     fireEvent.click(screen.getByRole('button', { name: /返回列表/ }));
     expect(await screen.findByText('会话（只读 · Agent 上下文）')).toBeInTheDocument();
   });
+
+  it('⑨ 子代理会话 tab：运行时尚未提供 → 诚实空态 + 分流说明（R4）', async () => {
+    // 列表里只有普通会话（无 meta.spawn / source=subagent / 父子链接）→ 子代理页为空。
+    mockFetch([{ status: 200, body: CHATS }]);
+    render(<WorkerChatsPanel workerName="w1" showKindTabs />);
+    // 双 tab：智能体会话 1 / 子代理会话 0。
+    const spawnTab = await screen.findByRole('tab', { name: /子代理会话 \(0\)/ });
+    fireEvent.click(spawnTab);
+    expect(
+      await screen.findByText('子代理会话：运行时尚未提供（上游端点未合并）。'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '子代理会话由运行时按 ChatSpec 标记分流（meta.spawn / source=subagent），上游未投影时该页为空属预期。',
+      ),
+    ).toBeInTheDocument();
+  });
 });
