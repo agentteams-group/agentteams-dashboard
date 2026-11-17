@@ -105,19 +105,19 @@ describe('WorkerDetailDialog · R1 分区直出', () => {
     expect(within(dialog).getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
   });
 
-  it('initialTab 无效 → 回退 full（动作条 + 垂直 tab 列表，标题回落基础配置）', async () => {
+  it('initialTab 无效 → 回落首个分区（分区直出，不出现头/动作条/tab 列表）', async () => {
     renderDialog({ initialTab: 'bogus' });
     const dialog = await screen.findByRole('dialog', { name: 'w1 · 基础配置' });
-    expect(within(dialog).getByRole('tablist', { name: 'Agent 配置' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /重启/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('tab', { name: 'MCP' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('tablist')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /休眠/ })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /重启/ })).toBeNull();
   });
 
-  it('initialTab 缺省 → 同样回退 full（避免空白弹窗）', async () => {
+  it('initialTab 缺省 → 同样回落首个分区（避免空白弹窗，且不重复头部/分区列表）', async () => {
     renderDialog();
     const dialog = await screen.findByRole('dialog', { name: 'w1 · 基础配置' });
-    expect(within(dialog).getByRole('tablist', { name: 'Agent 配置' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('tablist')).toBeNull();
   });
 });

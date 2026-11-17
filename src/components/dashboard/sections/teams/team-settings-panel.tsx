@@ -153,7 +153,7 @@ export function TeamSettingsPanel({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const initialTabValid = initialTab !== undefined && ['basic', 'users', 'agents'].includes(initialTab) ? initialTab : 'basic';
   // 'section' 模式（详情弹窗）：initialTab 必须命中分区，否则回退 'full'（避免空白弹窗）。
-  const sectionMode = chrome === 'section' && initialTab !== undefined && ['basic', 'users', 'agents'].includes(initialTab);
+  const sectionMode = chrome === 'section';
   const [tab, setTab] = useState(initialTabValid);
   const [visitedTabs, setVisitedTabs] = useState(() => new Set([initialTabValid]));
   const { data: humans = [] } = useHumans();

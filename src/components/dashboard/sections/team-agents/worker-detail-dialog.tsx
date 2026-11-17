@@ -26,7 +26,7 @@ const WORKER_SECTION_TITLES: Record<string, string> = {
 };
 
 /**
- * Agent 详情大弹窗（R1 分区直出）：以 chrome="section" 嵌入
+ * Agent 详情大弹窗（R1 分区直出）：以 chrome={chrome} 嵌入
  * WorkerDetailPanel —— 弹窗标题承担实体身份（`<实体名> · <分区名>`），
  * body 只渲染 initialTab 命中的分区内容；initialTab 缺失/无效时面板回退
  * 'full'（完整头部 + 动作条 + 垂直 tab 列表，行为与旧版一致）。
@@ -43,6 +43,7 @@ export function WorkerDetailDialog({
   onChanged,
   onDeleted,
   initialTab,
+  chrome = 'section',
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -56,6 +57,7 @@ export function WorkerDetailDialog({
   onDeleted?: () => void;
   /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
   initialTab?: string;
+  chrome?: 'full' | 'section';
 }) {
   if (!worker) return null;
   const sectionTitle = WORKER_SECTION_TITLES[initialTab ?? 'basic'] ?? WORKER_SECTION_TITLES.basic;
@@ -76,7 +78,7 @@ export function WorkerDetailDialog({
         onClose={() => onOpenChange(false)}
         onDm={onDm}
         className="min-h-0 flex-1"
-        chrome="section"
+        chrome={chrome}
         onChanged={onChanged}
         onDeleted={onDeleted}
         initialTab={initialTab}

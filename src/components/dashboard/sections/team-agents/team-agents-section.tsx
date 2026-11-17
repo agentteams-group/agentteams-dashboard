@@ -1030,7 +1030,7 @@ export function TeamAgentsSection() {
         {/* R3：dual 右栏 Inspector = 真 Sheet（遮罩 / 滑入 / 焦点圈 / Esc
             与遮罩点击关闭）；关闭只隐藏抽屉、保留选中，再点同一行重开。 */}
         {layout === 'dual' && (
-          <Sheet open={drawerOpen && inspectorEntity !== null} onOpenChange={(open) => setDrawerOpen(open)}>
+          <Sheet modal={false} open={drawerOpen && inspectorEntity !== null} onOpenChange={(open) => setDrawerOpen(open)}>
             <SheetContent
               side="right"
               data-testid="inspector-drawer"
@@ -1052,6 +1052,19 @@ export function TeamAgentsSection() {
           </Sheet>
         )}
       </div>
+
+      {/* R3（非模态抽屉）：自绘遮罩放在壳外，点它只关抽屉、保留选中。
+          data-slot=sheet-overlay 与 Radix Sheet 的遮罩标记对齐（测试/样式共用）。 */}
+      {layout === 'dual' && drawerOpen && inspectorEntity !== null && (
+        <div
+          data-slot="sheet-overlay"
+          data-testid="inspector-backdrop"
+          aria-hidden="true"
+          className="fixed inset-0 z-40 bg-black/20"
+          onPointerDown={() => setDrawerOpen(false)}
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
 
       <TeamCreateDialog
         open={createTeamOpen}
@@ -1091,6 +1104,7 @@ export function TeamAgentsSection() {
         onChanged={refresh}
         onDeleted={handleDeleted}
         initialTab={dialogPanel ?? undefined}
+        chrome={layout === 'single' ? 'full' : 'section'}
       />
       <WorkerDetailDialog
         open={detailOpen && selection?.kind === 'worker'}
@@ -1102,6 +1116,7 @@ export function TeamAgentsSection() {
         onChanged={refresh}
         onDeleted={handleDeleted}
         initialTab={dialogPanel ?? undefined}
+        chrome={layout === 'single' ? 'full' : 'section'}
       />
       <ManagerDetailDialog
         open={detailOpen && selection?.kind === 'manager'}
@@ -1112,6 +1127,7 @@ export function TeamAgentsSection() {
         userLevel={userLevel}
         onChanged={refresh}
         initialTab={dialogPanel ?? undefined}
+        chrome={layout === 'single' ? 'full' : 'section'}
       />
 
       {millforgeTeam ? (

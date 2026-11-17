@@ -16,7 +16,7 @@ const TEAM_SECTION_TITLES: Record<string, string> = {
 };
 
 /**
- * 团队详情大弹窗（R1 分区直出）：以 chrome="section" 嵌入
+ * 团队详情大弹窗（R1 分区直出）：以 chrome={chrome} 嵌入
  * TeamSettingsPanel —— 弹窗标题承担实体身份（`<实体名> · <分区名>`），
  * body 只渲染 initialTab 命中的分区；initialTab 缺失/无效时面板回退
  * 'full'（标题栏 + 横向 tab 列表，行为与旧版一致）。面板自带滚动链
@@ -34,6 +34,7 @@ export function TeamDetailDialog({
   onChanged,
   onDeleted,
   initialTab,
+  chrome = 'section',
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -48,6 +49,7 @@ export function TeamDetailDialog({
   onDeleted?: () => void;
   /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
   initialTab?: string;
+  chrome?: 'full' | 'section';
 }) {
   if (!team) return null;
   const sectionTitle = TEAM_SECTION_TITLES[initialTab ?? 'basic'] ?? TEAM_SECTION_TITLES.basic;
@@ -70,7 +72,7 @@ export function TeamDetailDialog({
         userLevel={userLevel}
         onChanged={onChanged}
         onDeleted={onDeleted}
-        chrome="section"
+        chrome={chrome}
         initialTab={initialTab}
       />
     </DetailDialogShell>

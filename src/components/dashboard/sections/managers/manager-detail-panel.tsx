@@ -590,7 +590,9 @@ export function ManagerDetailPanel({
 
   // 'section' 模式要求 initialTab 命中分区，否则回退 'full'（避免空白弹窗）。
   const sectionItem =
-    chrome === 'section' && initialTab ? detailTabs.find((item) => item.id === initialTab) ?? null : null;
+    chrome === 'section'
+      ? (detailTabs.find((item) => item.id === initialTab) ?? detailTabs[0] ?? null)
+      : null;
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>

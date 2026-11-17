@@ -164,7 +164,7 @@ describe('C WorkerChatsPanel（#1295 消费）', () => {
     render(<WorkerChatsPanel workerName="w1" showKindTabs />);
     // 双 tab：智能体会话 1 / 子代理会话 0。
     const spawnTab = await screen.findByRole('tab', { name: /子代理会话 \(0\)/ });
-    fireEvent.click(spawnTab);
+    fireEvent.mouseDown(spawnTab, { button: 0 });
     expect(
       await screen.findByText('子代理会话：运行时尚未提供（上游端点未合并）。'),
     ).toBeInTheDocument();
