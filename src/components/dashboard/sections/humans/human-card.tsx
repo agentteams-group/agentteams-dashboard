@@ -1,10 +1,9 @@
 'use client';
 
-import { Eye, Shield, UserCheck } from 'lucide-react';
+import { Eye, Pencil, Shield, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
@@ -21,13 +20,11 @@ export function HumanCard({
   index,
   onView,
   onEdit,
-  onDelete,
 }: {
   human: HumanResponse;
   index: number;
   onView: (_human: HumanResponse) => void;
   onEdit: (_human: HumanResponse) => void;
-  onDelete: (_name: string) => void;
 }) {
   const level = human.permissionLevel ?? 2;
   return (
@@ -90,10 +87,15 @@ export function HumanCard({
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
-            <ResourceListMenu label={`${human.name} 更多操作`} items={[
-              { label: '编辑', onSelect: () => onEdit(human) },
-              { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
-            ]} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 flex-1 text-xs max-sm:h-11"
+              onClick={() => onEdit(human)}
+            >
+              <Pencil className="w-3 h-3 mr-1" aria-hidden="true" />
+              编辑
+            </Button>
           </div>
         </CardContent>
       </Card>
