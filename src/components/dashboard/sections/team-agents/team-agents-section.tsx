@@ -44,11 +44,13 @@ import { standaloneWorkers as computeStandaloneWorkers } from '../teams/team-dra
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
 import { WorkerDetailDialog } from './worker-detail-dialog';
 import { InteractiveTeamTopology } from './interactive-team-topology';
+import { EntityInspector, type EntityInspectorEntity } from './entity-inspector';
 import {
   compareTeamRows,
   filterTeamRows,
   leaderWorker,
   layoutForWidth,
+  shellGridClass,
   teamAgentCounts,
   teamAgentsInitialIntentFromHash,
   teamMembers,
@@ -84,18 +86,31 @@ function workbenchSectionIdFromHash(hash: string): string {
   return 'team-agents';
 }
 
-/** 本页消费的深链参数（#251「selected resource and edit intent」口径）。 */
-const WORKBENCH_DEEPLINK_PARAMS = ['team', 'agent', 'edit'] as const;
+/** 本页消费的深链参数（#251 口径 + A4 的 manager / panel）。 */
+const WORKBENCH_DEEPLINK_PARAMS = ['team', 'agent', 'manager', 'edit', 'panel'] as const;
 
-function useTeamAgentsLayout(): TeamAgentsLayout {
-  // SSR 首帧固定 wide（服务端/客户端一致），挂载后按真实宽度切换。
-  const [layout, setLayout] = useState<TeamAgentsLayout>('wide');
+/**
+ * A2 容器宽度断点：ResizeObserver 量壳的宽度（不是 window.innerWidth——
+ * 侧栏折叠 / 容器限宽时两者不一致）。jsdom 无 ResizeObserver → 回落
+ * window 宽度 + resize 监听。
+ */
+function useTeamAgentsLayout<T extends HTMLElement>(containerRef: React.RefObject<T | null>): TeamAgentsLayout {
+  // SSR 首帧固定 triple（服务端/客户端一致），挂载后按实测宽度切换。
+  const [layout, setLayout] = useState<TeamAgentsLayout>('triple');
   useEffect(() => {
-    const sync = () => setLayout(layoutForWidth(window.innerWidth));
-    sync();
-    window.addEventListener('resize', sync);
-    return () => window.removeEventListener('resize', sync);
-  }, []);
+    const node = containerRef.current;
+    if (typeof ResizeObserver === 'undefined' || !node) {
+      const sync = () => setLayout(layoutForWidth(window.innerWidth));
+      sync();
+      window.addEventListener('resize', sync);
+      return () => window.removeEventListener('resize', sync);
+    }
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setLayout(layoutForWidth(entry.contentRect.width));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [containerRef]);
   return layout;
 }
 
@@ -417,7 +432,9 @@ export function TeamAgentsSection() {
   const { isConnected, userLevel } = useAgentTeamsStore();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const queryClient = useQueryClient();
-  const layout = useTeamAgentsLayout();
+  // A2：壳自身作为测量容器（断点跟容器宽度走，不跟 window 走）。
+  const shellRef = useRef<HTMLDivElement>(null);
+  const layout = useTeamAgentsLayout(shellRef);
 
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
@@ -440,10 +457,22 @@ export function TeamAgentsSection() {
       typeof window === 'undefined' ? 'team-agents' : workbenchSectionIdFromHash(window.location.hash);
   }
 
+  // A4：最新状态 refs——hashchange 监听绑定一次，读这些 ref 而不是闭包
+  // 旧值，做「自身写入的 echo」判定（派生状态 === 当前状态 → no-op）。
+  // 赋值在下方 state 声明之后（避免 TDZ）。
+  const selectionRef = useRef<TeamAgentsSelection | null>(null);
+  const detailOpenRef = useRef(false);
+  const dialogPanelRef = useRef<string | null>(null);
+  const layoutRef = useRef<TeamAgentsLayout>('triple');
+  const standaloneRef = useRef<WorkerResponse[]>([]);
+
   const [selection, setSelection] = useState<TeamAgentsSelection | null>(null);
   const [narrowView, setNarrowView] = useState<'list' | 'topology'>('list');
   const [standaloneExpanded, setStandaloneExpanded] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  // A3：当前大弹窗应直达的分区 id（Inspector 分区按钮 / 齿轮写 'basic'，
+  // 深链 ?panel= 写入）；null = 弹窗落在面板默认分区。
+  const [dialogPanel, setDialogPanel] = useState<string | null>(null);
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -451,19 +480,40 @@ export function TeamAgentsSection() {
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
   const [millforgeTeam, setMillforgeTeam] = useState<TeamResponse | null>(null);
 
-  // 数据到位后应用一次初始选择：?team= / ?agent= 深链优先（#251「选中资源
-  // 与编辑意图」），再按意图兜底（teams → 首个团队；agents → 展开独立行
-  // 选首个独立 Worker）。
+  // A4：refs 赋值（渲染体同步，供 hashchange 监听读最新值）。
+  selectionRef.current = selection;
+  detailOpenRef.current = detailOpen;
+  dialogPanelRef.current = dialogPanel;
+  layoutRef.current = layout;
+
+  // 数据到位后应用一次初始选择：?manager= > ?agent= > ?team= 深链优先
+  // （#251「选中资源与编辑意图」+ A5 manager 深链），再按意图兜底
+  // （teams → 首个团队；agents → 展开独立行选首个独立 Worker）。
+  // edit=true 时同时记 ?panel= 直达分区（A3）。
   useEffect(() => {
     if (initialApplied.current || !teams) return;
     const params = initialParams.current ?? undefined;
+    const managerParam = params?.get('manager');
     const teamParam = params?.get('team');
     const agentParam = params?.get('agent');
     const editIntent = params?.get('edit') === 'true';
+    const panelParam = params?.get('panel');
 
+    if (managerParam && (managers ?? []).some((item) => item.name === managerParam)) {
+      setSelection({ kind: 'manager', name: managerParam });
+      if (editIntent) {
+        setDialogPanel(panelParam ?? null);
+        setDetailOpen(true);
+      }
+      initialApplied.current = true;
+      return;
+    }
     if (teamParam && teams.some((team) => team.name === teamParam)) {
       setSelection({ kind: 'team', name: teamParam });
-      if (editIntent) setDetailOpen(true);
+      if (editIntent) {
+        setDialogPanel(panelParam ?? null);
+        setDetailOpen(true);
+      }
       initialApplied.current = true;
       return;
     }
@@ -473,7 +523,10 @@ export function TeamAgentsSection() {
       );
       if (isStandalone) setStandaloneExpanded(true);
       setSelection({ kind: 'worker', name: agentParam });
-      if (editIntent) setDetailOpen(true);
+      if (editIntent) {
+        setDialogPanel(panelParam ?? null);
+        setDetailOpen(true);
+      }
       initialApplied.current = true;
       return;
     }
@@ -498,28 +551,96 @@ export function TeamAgentsSection() {
     }
     setSelection({ kind: 'team', name: first.name });
     initialApplied.current = true;
-  }, [teams, workers]);
+  }, [teams, workers, managers]);
 
-  // 选择变化 → 同步 hash。以进来的 id 为基址（见 sectionId），深链参数
-  // 只在初始应用前保留（意图已消费后剥掉；?tab= 等本页不用的 query 始终剥）。
+  // A4：URL 状态的单一写入口——选择 / 弹窗 / 分区变化 → hash。
+  // 以进来的 id 为基址（见 sectionId）：?tab= 保留初始深链的页签意图，
+  // team / agent / manager 参数跟选择走，edit / panel 跟弹窗走。
+  // 初始深链未消费前不写（避免抹掉还没读的参数）。
+  useEffect(() => {
+    if (typeof window === 'undefined' || !initialApplied.current) return;
+    const base = hashForSection(sectionId.current ?? 'team-agents');
+    const params = new URLSearchParams();
+    const initialTab = initialParams.current?.get('tab') ?? null;
+    if (initialTab) params.set('tab', initialTab);
+    if (selection) {
+      if (selection.kind === 'team') params.set('team', selection.name);
+      else if (selection.kind === 'worker') params.set('agent', selection.name);
+      else params.set('manager', selection.name);
+    }
+    if (selection && detailOpen) {
+      params.set('edit', 'true');
+      if (dialogPanel) params.set('panel', dialogPanel);
+    }
+    const next = params.size > 0 ? `${base}?${params.toString()}` : base;
+    if (window.location.hash !== `#${next}`) window.location.hash = next;
+  }, [selection, detailOpen, dialogPanel]);
+
+  // A4：外部 hash 变化（前进 / 后退、搜索深链、跨组件导航）→ 还原选择
+  // 与弹窗状态。自身写入的 echo（派生状态 === 当前状态）no-op，不成环。
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const target = hashForSection(sectionId.current ?? 'team-agents');
-    const raw = window.location.hash.replace(/^#/, '');
-    const sep = raw.indexOf('?');
-    const currentPath = sep === -1 ? raw : raw.slice(0, sep);
-    let next = target;
-    if (sep !== -1 && currentPath === target && !initialApplied.current) {
-      const params = new URLSearchParams(raw.slice(sep + 1));
-      for (const key of [...params.keys()]) {
-        if (!(WORKBENCH_DEEPLINK_PARAMS as readonly string[]).includes(key)) params.delete(key);
+    // 工作台可达的 hash 路径（canonical 合并页 / workers / teams 独立页 /
+    // 裸 console/resources / 旧扁平路径）。
+    const WORKBENCH_HASH_PATHS = new Set([
+      'console/resources/team-agents',
+      'console/resources/workers',
+      'console/resources/teams',
+      'console/resources',
+      'workers',
+      'teams',
+    ]);
+    const onHashChange = () => {
+      const raw = window.location.hash.replace(/^#/, '');
+      const sep = raw.indexOf('?');
+      const path = sep === -1 ? raw : raw.slice(0, sep);
+      if (!WORKBENCH_HASH_PATHS.has(path)) return;
+      const params = new URLSearchParams(sep === -1 ? '' : raw.slice(sep + 1));
+      const managerName = params.get('manager');
+      const agentName = params.get('agent');
+      const teamName = params.get('team');
+      const editIntent = params.get('edit') === 'true';
+      const panel = params.get('panel');
+      // 期望选择：manager > agent > team > 未选中（取数据中仍存在的）。
+      let desired: TeamAgentsSelection | null = null;
+      if (managerName && (managers ?? []).some((item) => item.name === managerName)) {
+        desired = { kind: 'manager', name: managerName };
+      } else if (agentName && (workers ?? []).some((item) => item.name === agentName)) {
+        desired = { kind: 'worker', name: agentName };
+      } else if (teamName && (teams ?? []).some((item) => item.name === teamName)) {
+        desired = { kind: 'team', name: teamName };
       }
-      if (params.size > 0) next = `${target}?${params.toString()}`;
-    }
-    if (window.location.hash !== `#${next}`) {
-      window.location.hash = next;
-    }
-  }, [selection]);
+      const current = selectionRef.current;
+      const selectionChanged =
+        (desired?.kind ?? null) !== (current?.kind ?? null) ||
+        (desired?.name ?? null) !== (current?.name ?? null);
+      if (selectionChanged) {
+        setSelection(desired);
+        // 单栏：钻取视图同步（manager → 列表，team / worker → 拓扑，
+        // 未选中 → 列表）。
+        if (layoutRef.current === 'single') {
+          setNarrowView(desired ? (desired.kind === 'manager' ? 'list' : 'topology') : 'list');
+        }
+        if (
+          desired?.kind === 'worker' &&
+          standaloneRef.current.some((item) => item.name === desired.name)
+        ) {
+          setStandaloneExpanded(true);
+        }
+      }
+      const openNow = editIntent && desired !== null;
+      if (
+        selectionChanged ||
+        openNow !== detailOpenRef.current ||
+        (openNow && panel !== dialogPanelRef.current)
+      ) {
+        setDetailOpen(openNow);
+        setDialogPanel(openNow ? panel : null);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [teams, workers, managers]);
 
   const refresh = useCallback(() => {
     void refetch();
@@ -535,6 +656,7 @@ export function TeamAgentsSection() {
     () => computeStandaloneWorkers(teams, workers),
     [teams, workers],
   );
+  standaloneRef.current = standalone;
 
   const selectedTeam = useMemo(
     () =>
@@ -558,36 +680,85 @@ export function TeamAgentsSection() {
     [managers, selection],
   );
 
+  // A3 右栏：当前选中项解析出的实体；解析不出 = 未选中占位。
+  const inspectorEntity = useMemo<EntityInspectorEntity | null>(() => {
+    if (selection?.kind === 'team' && selectedTeam) return { kind: 'team', team: selectedTeam };
+    if (selection?.kind === 'worker' && selectedWorker) {
+      const homeTeam =
+        (teams ?? []).find(
+          (team) => team.name === selectedWorker.team || team.teamName === selectedWorker.team,
+        ) ?? null;
+      return { kind: 'worker', worker: selectedWorker, homeTeam };
+    }
+    if (selection?.kind === 'manager' && selectedManager) {
+      return { kind: 'manager', manager: selectedManager };
+    }
+    return null;
+  }, [selection, selectedTeam, selectedWorker, selectedManager, teams]);
+
+  // 行为矩阵（A2/A3）：多栏（triple / triple-compact / dual）行点击 =
+  // 只选中（右栏 Inspector 接管详情，不弹大弹窗）；单栏（single）= 原有
+  // 钻取（worker 点击开大弹窗；manager 点击开大弹窗；team 点击切拓扑）。
   const handleSelectTeam = useCallback((team: TeamResponse) => {
     setSelection({ kind: 'team', name: team.name });
-    setNarrowView('topology');
-    setDetailOpen(false);
-  }, []);
+    setDialogPanel(null);
+    if (layout === 'single') {
+      setNarrowView('topology');
+      setDetailOpen(false);
+    }
+  }, [layout]);
 
-  // 拓扑成员行 / 独立 Worker 行：选中（拓扑高亮 / 上下文卡）+ 打开详情大弹窗。
+  // 拓扑成员行 / 独立 Worker 行：多栏 = 选中（Inspector 展示）；
+  // 单栏 = 选中 + 打开详情大弹窗。
   const handleOpenWorker = useCallback((worker: WorkerResponse) => {
     setSelection({ kind: 'worker', name: worker.name });
-    setNarrowView('topology');
-    setDetailOpen(true);
-  }, []);
+    if (layout === 'single') {
+      setNarrowView('topology');
+      setDetailOpen(true);
+    } else {
+      setDetailOpen(false);
+      setDialogPanel(null);
+    }
+  }, [layout]);
 
-  // 拓扑头部齿轮 / 显式「团队设置」按钮：确保该团队选中 + 打开设置大弹窗。
+  // 拓扑头部齿轮 / 显式「团队设置」按钮：选中团队 + 打开设置大弹窗
+  // （落在「基本信息」分区）。
   const handleOpenTeamSettings = useCallback((team: TeamResponse) => {
     setSelection({ kind: 'team', name: team.name });
-    setNarrowView('topology');
+    if (layout === 'single') setNarrowView('topology');
+    setDialogPanel('basic');
+    setDetailOpen(true);
+  }, [layout]);
+
+  // Manager 行：多栏 = 选中（Inspector 展示）；单栏 = 选中 + 打开大弹窗。
+  // 不切 narrow 视图，关弹窗后停在列表（拓扑引导空态不是更好的落点）。
+  const handleSelectManager = useCallback((manager: ManagerResponse) => {
+    setSelection({ kind: 'manager', name: manager.name });
+    if (layout === 'single') {
+      setDetailOpen(true);
+    } else {
+      setDetailOpen(false);
+      setDialogPanel(null);
+    }
+  }, [layout]);
+
+  // Inspector 分区按钮：打开大弹窗并直达该分区（panel 由写 effect 写
+  // 进 URL ?panel=，刷新 / 回退可还原）。
+  const handleOpenSection = useCallback((panel: string) => {
+    setDialogPanel(panel);
     setDetailOpen(true);
   }, []);
 
-  // Manager 行：选中（列表高亮）+ 打开详情大弹窗；不切 narrow 视图，
-  // 关弹窗后停在列表（拓扑引导空态不是更好的落点）。
-  const handleSelectManager = useCallback((manager: ManagerResponse) => {
-    setSelection({ kind: 'manager', name: manager.name });
-    setDetailOpen(true);
+  // 大弹窗开关：关闭时清分区（写 effect 会把 edit / panel 从 URL 剥掉）。
+  const handleDetailOpenChange = useCallback((open: boolean) => {
+    setDetailOpen(open);
+    if (!open) setDialogPanel(null);
   }, []);
 
   const clearSelection = useCallback(() => {
     setSelection(null);
     setDetailOpen(false);
+    setDialogPanel(null);
     setNarrowView('list');
   }, []);
 
@@ -595,6 +766,17 @@ export function TeamAgentsSection() {
     setDetailOpen(false);
     clearSelection();
   }, [clearSelection]);
+
+  // dual：Esc 关闭 Inspector 覆盖层（大弹窗开着时 Esc 归 Radix 关弹窗，
+  // 不重复处理）。
+  useEffect(() => {
+    if (layout !== 'dual' || !selection || detailOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [layout, selection, detailOpen, clearSelection]);
 
   const handleCreateTeam = useCallback(() => {
     createTeam.mutate(newTeam, {
@@ -621,16 +803,12 @@ export function TeamAgentsSection() {
   }
 
   const hasSearch = searchQuery.trim().length > 0;
-  const narrow = layout === 'narrow';
+  const narrow = layout === 'single';
   const narrowTopology = narrow && narrowView === 'topology';
   const showList = !narrow || !narrowTopology;
   const showMain = !narrow || narrowTopology;
-  // 两栏工作台（#233 三栏去掉右栏）：列宽沿用 shellGridClass 的 2 列口径。
-  const gridClass = narrow
-    ? 'grid-cols-1'
-    : layout === 'medium'
-      ? 'grid-cols-[minmax(220px,280px)_minmax(0,1fr)]'
-      : 'grid-cols-[minmax(240px,300px)_minmax(0,1fr)]';
+  // A2：断点定列（dual 的 Inspector 走右侧覆盖层，不占栅格列）。
+  const gridClass = shellGridClass(layout);
 
   const narrowBack = narrow ? () => setNarrowView('list') : undefined;
 
@@ -821,11 +999,38 @@ export function TeamAgentsSection() {
       />
 
       <div
+        ref={shellRef}
         data-testid="team-agents-shell"
-        className={`grid h-[calc(100dvh-14rem)] max-h-[1200px] min-h-[420px] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-hidden ${gridClass}`}
+        className={`relative grid h-[calc(100dvh-14rem)] max-h-[1200px] min-h-[420px] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-hidden ${gridClass}`}
       >
         {showList && listPane}
         {showMain && mainPane}
+        {(layout === 'triple' || layout === 'triple-compact') && (
+          <Pane label="实体详情">
+            <EntityInspector
+              entity={inspectorEntity}
+              userLevel={userLevel}
+              onOpenSection={handleOpenSection}
+              onChanged={refresh}
+              onDeleted={handleDeleted}
+            />
+          </Pane>
+        )}
+        {layout === 'dual' && inspectorEntity && (
+          <div
+            data-testid="inspector-overlay"
+            className="absolute inset-y-0 right-0 z-20 flex w-[min(420px,92vw)] flex-col overflow-hidden rounded-r-lg border-l bg-card shadow-xl"
+          >
+            <EntityInspector
+              entity={inspectorEntity}
+              userLevel={userLevel}
+              onOpenSection={handleOpenSection}
+              onChanged={refresh}
+              onDeleted={handleDeleted}
+              onClose={clearSelection}
+            />
+          </div>
+        )}
       </div>
 
       <TeamCreateDialog
@@ -852,10 +1057,11 @@ export function TeamAgentsSection() {
         sessionIssue={sessionIssue}
       />
 
-      {/* R2 详情大弹窗：承载当前 main 版面板，壳见 detail-dialog-shell.tsx。 */}
+      {/* R2 详情大弹窗：承载当前 main 版面板，壳见 detail-dialog-shell.tsx。
+          A3：initialTab = 当前分区（Inspector 分区按钮 / 齿轮 / 深链 ?panel=）。 */}
       <TeamDetailDialog
         open={detailOpen && selection?.kind === 'team'}
-        onOpenChange={setDetailOpen}
+        onOpenChange={handleDetailOpenChange}
         team={selectedTeam}
         allTeams={teams}
         workers={workers ?? []}
@@ -864,25 +1070,28 @@ export function TeamAgentsSection() {
         userLevel={userLevel}
         onChanged={refresh}
         onDeleted={handleDeleted}
+        initialTab={dialogPanel ?? undefined}
       />
       <WorkerDetailDialog
         open={detailOpen && selection?.kind === 'worker'}
-        onOpenChange={setDetailOpen}
+        onOpenChange={handleDetailOpenChange}
         worker={selectedWorker}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
         userLevel={userLevel}
         onChanged={refresh}
         onDeleted={handleDeleted}
+        initialTab={dialogPanel ?? undefined}
       />
       <ManagerDetailDialog
         open={detailOpen && selection?.kind === 'manager'}
-        onOpenChange={setDetailOpen}
+        onOpenChange={handleDetailOpenChange}
         manager={selectedManager}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
         userLevel={userLevel}
         onChanged={refresh}
+        initialTab={dialogPanel ?? undefined}
       />
 
       {millforgeTeam ? (

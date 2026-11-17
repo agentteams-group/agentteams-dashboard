@@ -140,6 +140,8 @@ export type ManagerDetailPanelProps = {
   onDm?: (_mxid: string, _roomId?: string) => void;
   /** 根节点附加 class（内联页面用 min-h-0 flex-1 参与父级 flex 布局）。 */
   className?: string;
+  /** 初始 tab（默认第一项 basic，行为不变）；命中 tab 才生效（A3 Inspector 分区直达）。 */
+  initialTab?: string;
 };
 
 export function ManagerDetailPanel({
@@ -151,6 +153,7 @@ export function ManagerDetailPanel({
   onChanged,
   onDm,
   className,
+  initialTab,
 }: ManagerDetailPanelProps) {
   const managerName = manager.name;
   const canWrite = userLevel >= 3;
@@ -492,7 +495,7 @@ export function ManagerDetailPanel({
 
       </div>
 
-      <ResourceDetailTabs key={managerName} label="平台助手配置" items={[
+      <ResourceDetailTabs key={managerName} label="平台助手配置" initialTab={initialTab} items={[
         { id: 'basic', title: '基本信息', render: () => <section className="space-y-4" aria-label="连接信息">
           <h3 className="text-sm font-medium">连接信息</h3>
           <Row label="Matrix 账号">

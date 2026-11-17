@@ -20,6 +20,7 @@ export function WorkerDetailDialog({
   onDm,
   onChanged,
   onDeleted,
+  initialTab,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -31,6 +32,8 @@ export function WorkerDetailDialog({
   onChanged?: () => void;
   /** 面板内删除 Worker 成功后：关弹窗并清选中。 */
   onDeleted?: () => void;
+  /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
+  initialTab?: string;
 }) {
   if (!worker) return null;
   return (
@@ -50,6 +53,7 @@ export function WorkerDetailDialog({
         onDm={onDm}
         onChanged={onChanged}
         onDeleted={onDeleted}
+        initialTab={initialTab}
       />
     </DetailDialogShell>
   );

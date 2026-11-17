@@ -21,6 +21,7 @@ export function TeamDetailDialog({
   userLevel,
   onChanged,
   onDeleted,
+  initialTab,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -33,6 +34,8 @@ export function TeamDetailDialog({
   onChanged?: () => void;
   /** 面板内删除团队成功后：关弹窗并清选中。 */
   onDeleted?: () => void;
+  /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
+  initialTab?: string;
 }) {
   if (!team) return null;
   return (
@@ -54,6 +57,7 @@ export function TeamDetailDialog({
         userLevel={userLevel}
         onChanged={onChanged}
         onDeleted={onDeleted}
+        initialTab={initialTab}
       />
     </DetailDialogShell>
   );

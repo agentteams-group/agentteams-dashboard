@@ -86,17 +86,43 @@ const managersFixture = [
   },
 ] as unknown as ManagerResponse[];
 
-// 可变 mock 状态：权限 / 搜索 / 模型目录场景在同一套件里切换。
+// 可变 mock 状态：权限 / 搜索 / 模型目录 / 团队数据场景在同一套件里切换。
 const mockState = vi.hoisted(() => ({
   searchQuery: '',
   userLevel: 3,
   modelOptions: [] as ModelSelectionOption[],
+  teams: [] as TeamResponse[],
 }));
+mockState.teams = teamsFixture;
 const refetchTeams = vi.hoisted(() => vi.fn());
+
+// A2：jsdom 没有 ResizeObserver → mock：observe() 立即以挂起宽度回调，
+// setWidth() 向所有存活实例广播新宽度（模拟容器尺寸变化）。
+const roState = vi.hoisted(() => ({
+  width: 1920,
+  instances: [] as Array<{
+    callback: (entries: Array<{ contentRect: { width: number } }>) => void;
+  }>,
+}));
+class MockResizeObserver {
+  callback: (entries: Array<{ contentRect: { width: number } }>) => void;
+  constructor(callback: (entries: Array<{ contentRect: { width: number } }>) => void) {
+    this.callback = callback;
+    roState.instances.push(this);
+  }
+  observe() {
+    this.callback([{ contentRect: { width: roState.width } }]);
+  }
+  unobserve() {}
+  disconnect() {
+    const i = roState.instances.indexOf(this);
+    if (i !== -1) roState.instances.splice(i, 1);
+  }
+}
 
 vi.mock('@/hooks/use-agentteams-teams', () => ({
   useTeams: () => ({
-    data: teamsFixture,
+    data: mockState.teams,
     isLoading: false,
     isError: false,
     refetch: refetchTeams,
@@ -190,8 +216,13 @@ vi.mock('../teams/millforge/millforge-dialog', () => ({
 // 三个详情面板不 mock：R2 要求弹窗承载当前 main 版真实面板。
 import { AgentsSection, TeamAgentsSection, TeamsSection } from './team-agents-section';
 
+/** 容器宽度 = ResizeObserver 广播宽度（同步 window.innerWidth 兜底路径）。 */
 function setWidth(width: number) {
+  roState.width = width;
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+  for (const instance of roState.instances) {
+    instance.callback([{ contentRect: { width } }]);
+  }
 }
 
 function setHash(hash: string) {
@@ -199,6 +230,12 @@ function setHash(hash: string) {
     writable: true,
     value: { ...window.location, hash },
   });
+}
+
+/** 模拟外部导航（前进 / 后退 / 跨组件深链）：换 hash + 触发 hashchange。 */
+function navigateHash(hash: string) {
+  setHash(hash);
+  window.dispatchEvent(new Event('hashchange'));
 }
 
 function makeClient() {
@@ -219,8 +256,19 @@ function shell() {
   return screen.getByTestId('team-agents-shell');
 }
 
+/** 壳的栅格子列（dual 的 Inspector 覆盖层不算栅格列）。 */
+function gridColumns() {
+  return Array.from(shell().children).filter(
+    (child) => child.getAttribute('data-testid') !== 'inspector-overlay',
+  );
+}
+
 function listRegion() {
   return screen.getByRole('region', { name: '团队列表' });
+}
+
+function inspectorRegion() {
+  return screen.getByRole('region', { name: '实体详情' });
 }
 
 function topologyHeader() {
@@ -270,148 +318,356 @@ async function openTeamSettingsDialog() {
 }
 
 beforeEach(() => {
-  setWidth(1500);
+  roState.instances = [];
+  vi.stubGlobal('ResizeObserver', MockResizeObserver);
+  setWidth(1920);
   setHash('');
   mockState.searchQuery = '';
   mockState.userLevel = 3;
   mockState.modelOptions = [];
+  mockState.teams = teamsFixture;
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
-describe('TeamAgentsSection · 工作台壳（列表 + 拓扑，无详情栏）', () => {
-  it('xwide renders list + topology in two columns, with no detail column', async () => {
-    renderSection();
-    await layoutIs('xwide');
-    const list = listRegion();
-    // 统一列表：Manager 行 + 团队行 + 未归属折叠行同在一个列表。
-    expect(within(list).getByText('boss')).toBeInTheDocument();
-    expect(within(list).getByText('alpha')).toBeInTheDocument();
-    expect(within(list).getByText(/未归属团队的 Worker/)).toBeInTheDocument();
-    expect(topologyHeader()).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: '详情' })).toBeNull();
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(shell().children).toHaveLength(2);
-    expect(shell().className).toContain('minmax(0,1fr)');
-  });
-
+describe('TeamAgentsSection · A2 断点矩阵（容器宽度 ResizeObserver）', () => {
   it.each([
-    [1300, 'wide'],
-    [1100, 'medium'],
-  ])('%s renders list + topology in two columns', async (width, layout) => {
+    [1920, 'triple', 3, 'grid-cols-[320px'],
+    [1440, 'triple-compact', 3, 'grid-cols-[280px'],
+    [1024, 'dual', 2, 'grid-cols-[300px'],
+    [768, 'single', 1, 'grid-cols-1'],
+    [390, 'single', 1, 'grid-cols-1'],
+  ])('容器宽 %i → %s（栅格 %i 列 / %s）', async (width, layout, columns, gridFragment) => {
     setWidth(width);
     renderSection();
     await layoutIs(layout);
+    expect(shell().className).toContain(gridFragment);
+    expect(gridColumns()).toHaveLength(columns);
     expect(listRegion()).toBeInTheDocument();
-    expect(topologyHeader()).toBeInTheDocument();
-    expect(shell().children).toHaveLength(2);
+    if (layout === 'single') {
+      // 单栏：列表钻取视图（拓扑在选中后才出现）。
+      expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    } else {
+      expect(topologyHeader()).toBeInTheDocument();
+    }
+    if (layout === 'triple' || layout === 'triple-compact') {
+      // 右栏 Inspector 占栅格列；初始兜底选中首个团队（alpha）。
+      expect(inspectorRegion()).toBeInTheDocument();
+      await waitFor(() =>
+        expect(within(inspectorRegion()).getByText('alpha')).toBeInTheDocument(),
+      );
+    } else if (layout === 'dual') {
+      // dual 的 Inspector 是右侧覆盖层（不占栅格列），初始选中同样触发。
+      expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull();
+      const overlay = await screen.findByTestId('inspector-overlay');
+      expect(within(overlay).getByText('alpha')).toBeInTheDocument();
+    }
+  });
+});
+
+describe('TeamAgentsSection · A2 dual 覆盖层', () => {
+  it('选中实体显示右侧覆盖层；关闭按钮与 Esc 都收掉', async () => {
+    setWidth(1024);
+    renderSection();
+    await layoutIs('dual');
+    const overlay = await screen.findByTestId('inspector-overlay');
+    expect(within(overlay).getByText('alpha')).toBeInTheDocument();
+    expect(within(overlay).getByRole('button', { name: '关闭 Inspector' })).toBeInTheDocument();
+    // 覆盖层不占栅格列。
+    expect(gridColumns()).toHaveLength(2);
+
+    fireEvent.click(within(overlay).getByRole('button', { name: '关闭 Inspector' }));
+    await waitFor(() => expect(screen.queryByTestId('inspector-overlay')).toBeNull());
+
+    clickListButton(listRegion(), 'beta');
+    const again = await screen.findByTestId('inspector-overlay');
+    expect(within(again).getByText('beta')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('inspector-overlay')).toBeNull());
+    // 清选中后 URL 实体参数剥掉（写 effect）。
+    await waitFor(() => expect(window.location.hash).not.toContain('team='));
+  });
+});
+
+describe('TeamAgentsSection · 多栏行为（行点击 = 选中，不弹大弹窗）', () => {
+  it('triple：团队 / Manager / 成员行点击只更新 Inspector 与拓扑', async () => {
+    renderSection();
+    await layoutIs('triple');
+    // 初始兜底选中 alpha（Inspector 已展示）。
+    expect(within(inspectorRegion()).getByText('alpha')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    clickListButton(listRegion(), 'boss');
+    await waitFor(() =>
+      expect(within(inspectorRegion()).getByRole('heading', { name: 'boss' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+    await waitFor(() =>
+      expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument(),
+    );
+    expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute(
+      'data-highlighted',
+      'true',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('TeamAgentsSection · A3 右栏 Inspector', () => {
+  it('triple：无选中 → 占位引导', async () => {
+    mockState.teams = [];
+    renderSection();
+    await layoutIs('triple');
+    expect(within(inspectorRegion()).getByText('未选中实体')).toBeInTheDocument();
   });
 
-  it('narrow starts on the list only, with no topology underneath', async () => {
-    setWidth(900);
+  it('triple：团队选中 → 头部（名 / Team 徽标 / 状态）+ 分区按钮 + 团队动作', async () => {
     renderSection();
-    await layoutIs('narrow');
-    expect(listRegion()).toBeInTheDocument();
-    expect(screen.queryByTestId('team-topology-header')).toBeNull();
+    await layoutIs('triple');
+    clickListButton(listRegion(), 'beta');
+    const inspector = inspectorRegion();
+    expect(within(inspector).getByRole('heading', { name: 'beta' })).toBeInTheDocument();
+    expect(within(inspector).getByText('Team')).toBeInTheDocument();
+    expect(within(inspector).getByText('活跃')).toBeInTheDocument();
+    for (const title of ['基本信息', '团队成员', '团队技能', 'LLM 调优', '未归属 Worker', '危险区']) {
+      expect(within(inspector).getByRole('button', { name: title })).toBeInTheDocument();
+    }
+    expect(within(inspector).getByRole('button', { name: /删除团队/ })).toBeInTheDocument(); // L1
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('triple：Worker 选中 → 角色徽标 + 快动作 + 分区；点分区开大弹窗直达该分区', async () => {
+    renderSection();
+    await layoutIs('triple');
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+    const inspector = inspectorRegion();
+    expect(within(inspector).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(within(inspector).getByText('成员')).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /重启/ })).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /私聊/ })).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /删除/ })).toBeInTheDocument();
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'MCP' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
+    expect(within(dialog).getByRole('tab', { name: 'MCP' })).toHaveAttribute('aria-selected', 'true');
+    // URL 带实体 / edit / panel（A4）。
+    expect(window.location.hash).toContain('agent=w1');
+    expect(window.location.hash).toContain('edit=true');
+    expect(window.location.hash).toContain('panel=mcp');
+  });
+
+  it('triple：Manager 选中 → Manager 徽标 + 休眠/唤醒、重启、私聊（L1）', async () => {
+    renderSection();
+    await layoutIs('triple');
+    clickListButton(listRegion(), 'boss');
+    const inspector = inspectorRegion();
+    expect(within(inspector).getByRole('heading', { name: 'boss' })).toBeInTheDocument();
+    expect(within(inspector).getByText('Manager')).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /重启/ })).toBeInTheDocument();
+    expect(within(inspector).getByRole('button', { name: /私聊/ })).toBeInTheDocument();
+    for (const title of ['基本信息', '模型', '提示词', '技能', '环境变量', '运行参数', '日志']) {
+      expect(within(inspector).getByRole('button', { name: title })).toBeInTheDocument();
+    }
+  });
+});
+
+describe('TeamAgentsSection · A4 URL 状态（深链 / 前进后退 / Esc）', () => {
+  it('?tab=agents&agent=w1&edit=true → 选中 Worker 并开弹窗', async () => {
+    setHash('#console/resources/team-agents?tab=agents&agent=w1&edit=true');
+    renderSection();
+    await layoutIs('triple');
+    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
+    expect(within(dialog).getByRole('tab', { name: '基础配置' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('?tab=teams&team=beta&edit=true → 选中团队并开团队设置弹窗', async () => {
+    setHash('#console/resources/team-agents?tab=teams&team=beta&edit=true');
+    renderSection();
+    await layoutIs('triple');
+    const dialog = await screen.findByRole('dialog', { name: '团队设置 · beta' });
+    expect(within(dialog).getByRole('tab', { name: '基本信息' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('?manager=boss&edit=true（A5 搜索深链）→ 选中 Manager 并开弹窗', async () => {
+    setHash('#console/resources/team-agents?manager=boss&edit=true');
+    renderSection();
+    await layoutIs('triple');
+    const dialog = await screen.findByRole('dialog', { name: 'Manager · boss' });
+    expect(within(dialog).getByText('Manager · boss')).toBeInTheDocument();
+  });
+
+  it('?panel= 深链直达分区；关弹窗后 edit / panel 从 URL 剥掉', async () => {
+    setHash('#console/resources/team-agents?tab=teams&team=alpha&edit=true&panel=users');
+    renderSection();
+    await layoutIs('triple');
+    const dialog = await screen.findByRole('dialog', { name: '团队设置 · alpha' });
+    expect(within(dialog).getByRole('tab', { name: /成员管理/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(window.location.hash).not.toContain('edit=true'));
+    expect(window.location.hash).not.toContain('panel=');
+    expect(window.location.hash).toContain('team=alpha');
+  });
+
+  it('前进 / 后退（hashchange）还原选择与弹窗状态', async () => {
+    renderSection();
+    await layoutIs('triple');
+    navigateHash('#console/resources/team-agents?tab=agents&agent=w1&edit=true&panel=skills');
+    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
+    expect(within(dialog).getByRole('tab', { name: '技能' })).toHaveAttribute('aria-selected', 'true');
+
+    // 回到「选中、无编辑」状态：弹窗收掉，选中保留。
+    navigateHash('#console/resources/team-agents?tab=agents&agent=w1');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+  });
+});
+
+describe('TeamAgentsSection · 单栏钻取（single <840，行为不变）', () => {
+  it('768：起始列表；选团队切拓扑，返回回列表', async () => {
+    setWidth(768);
+    renderSection();
+    await layoutIs('single');
     expect(shell().children).toHaveLength(1);
-  });
-
-  it('narrow team selection swaps to the topology view; back returns to the list', async () => {
-    setWidth(900);
-    renderSection();
-    await layoutIs('narrow');
+    expect(screen.queryByTestId('team-topology-header')).toBeNull();
 
     clickListButton(listRegion(), 'alpha');
     expect(topologyHeader()).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
-    expect(shell().children).toHaveLength(1);
 
     const back = screen.getByRole('button', { name: '团队列表' });
     expect(back).toHaveClass('min-h-11');
     fireEvent.click(back);
 
-    await waitFor(() => expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument());
+    await waitFor(() => expect(listRegion()).toBeInTheDocument());
     expect(screen.queryByTestId('team-topology-header')).toBeNull();
-    expect(shell().children).toHaveLength(1);
   });
 
-  it('narrow standalone worker selection shows the context card, back returns to the list', async () => {
-    setWidth(900);
+  it('768：Worker 点击开详情弹窗；关掉后选中高亮保留', async () => {
+    setWidth(768);
     renderSection();
-    await layoutIs('narrow');
+    await layoutIs('single');
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
+    expect(within(dialog).getAllByText('w1-model').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute(
+      'data-highlighted',
+      'true',
+    );
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute(
+      'data-highlighted',
+      'true',
+    );
+  });
+
+  it('768：独立 Worker 点击开弹窗；关掉后落在上下文卡', async () => {
+    setWidth(768);
+    renderSection();
+    await layoutIs('single');
 
     const region = await openStandaloneRow();
     clickListButton(region, 'solo');
-
-    // 点行先开 Worker 详情弹窗；关掉后落在上下文卡（narrow 拓扑视图）。
     await screen.findByRole('dialog', { name: 'Agent · solo' });
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     expect(screen.getByText(/该 Worker 未归属任何团队/)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
-    expect(shell().children).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: '回团队列表' }));
-    await waitFor(() => expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument());
+    await waitFor(() => expect(listRegion()).toBeInTheDocument());
   });
 
-  it('has no team/agent tab UI; managers, teams and standalone workers share one list', async () => {
+  it('768：Manager 行点击开详情弹窗', async () => {
+    setWidth(768);
     renderSection();
-    await layoutIs('xwide');
-    expect(document.querySelector('[role="tab"]')).toBeNull();
-    expect(document.querySelector('[role="tablist"]')).toBeNull();
-    const list = listRegion();
-    expect(within(list).getByText('boss')).toBeInTheDocument(); // Manager 行
-    expect(within(list).getByText('alpha')).toBeInTheDocument(); // 团队行
-    expect(within(list).getByText(/未归属团队的 Worker/)).toBeInTheDocument(); // 折叠行
+    await layoutIs('single');
+
+    clickListButton(listRegion(), 'boss');
+    const dialog = await screen.findByRole('dialog', { name: 'Manager · boss' });
+    expect(within(dialog).getByText('Manager · boss')).toBeInTheDocument();
   });
 });
 
-describe('TeamAgentsSection · 详情大弹窗（R2）', () => {
-  it('team settings opens from the explicit header button as a large dialog with the real panel', async () => {
+describe('TeamAgentsSection · 详情大弹窗（R2 + A3 直达分区）', () => {
+  it('显式「打开团队设置」按钮开设置弹窗，落在基本信息分区', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
 
     const dialog = await openTeamSettingsDialog();
     expect(within(dialog).getByText('团队设置 · alpha')).toBeInTheDocument();
-    expect(within(dialog).getByText('基本信息')).toBeInTheDocument();
+    expect(within(dialog).getByRole('tab', { name: '基本信息' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     expect(within(dialog).getByText('保存基本信息')).toBeInTheDocument();
+    // 齿轮 / 显式按钮路径：URL 带 panel=basic + edit。
+    expect(window.location.hash).toContain('panel=basic');
+    expect(window.location.hash).toContain('edit=true');
   });
 
-  it('team settings also opens from the gear icon', async () => {
+  it('齿轮图标同样打开设置弹窗', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
 
     fireEvent.click(screen.getByRole('button', { name: '团队设置' }));
     const dialog = await screen.findByRole('dialog', { name: '团队设置 · alpha' });
     expect(within(dialog).getByText('基本信息')).toBeInTheDocument();
   });
 
-  it('clicking a topology member row opens the worker detail dialog with the real panel', async () => {
+  it('头部关闭按钮收弹窗，选中保留', async () => {
     renderSection();
-    await layoutIs('xwide');
-    clickListButton(listRegion(), 'alpha');
-    clickTopologyMember('w1');
+    await layoutIs('triple');
 
-    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
-    expect(within(dialog).getByText('Agent · w1')).toBeInTheDocument();
-    expect(within(dialog).getAllByText('w1-model').length).toBeGreaterThan(0);
+    clickListButton(listRegion(), 'alpha');
+    await openTeamSettingsDialog();
+    const close = detailDialog().querySelector('header button') as HTMLButtonElement;
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // 选中仍在：拓扑继续显示 alpha（Inspector 也有同名 heading，按拓扑头部取）。
+    expect(within(topologyHeader()).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
   });
 
-  it('clicking a Manager row opens the manager detail dialog with the real panel', async () => {
+  it('Escape 收弹窗，URL 剥掉 edit / panel', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
 
-    clickListButton(listRegion(), 'boss');
-    const dialog = await screen.findByRole('dialog', { name: 'Manager · boss' });
-    expect(within(dialog).getByText('Manager · boss')).toBeInTheDocument();
-    expect(within(dialog).getByText('boss')).toBeInTheDocument();
+    await openTeamSettingsDialog();
+    expect(window.location.hash).toContain('edit=true');
+    fireEvent.keyDown(detailDialog(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(window.location.hash).not.toContain('edit=true'));
+    expect(window.location.hash).not.toContain('panel=');
   });
 
   it('dialog sizing: responsive large classes with a narrow (<640px) variant', async () => {
+    setWidth(768);
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('single');
 
     clickListButton(listRegion(), 'alpha');
     clickTopologyMember('w1');
@@ -423,65 +679,49 @@ describe('TeamAgentsSection · 详情大弹窗（R2）', () => {
     // 内容区独立滚动（body 可滚、外壳裁切）。
     expect(dialog.className).toContain('overflow-hidden');
   });
-
-  it('closes with the header close button and keeps the selection', async () => {
-    renderSection();
-    await layoutIs('xwide');
-
-    clickListButton(listRegion(), 'alpha');
-    await openTeamSettingsDialog();
-    const close = detailDialog().querySelector('header button') as HTMLButtonElement;
-    fireEvent.click(close);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    // 选中仍在：拓扑继续显示 alpha。
-    expect(screen.getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
-  });
-
-  it('closes with Escape', async () => {
-    renderSection();
-    await layoutIs('xwide');
-    clickListButton(listRegion(), 'alpha');
-    clickTopologyMember('w1');
-
-    const dialog = await screen.findByRole('dialog', { name: 'Agent · w1' });
-    fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  });
 });
 
-describe('TeamAgentsSection · 拓扑成员高亮', () => {
-  it('selecting a topology member highlights the row and keeps it after closing the dialog', async () => {
+describe('TeamAgentsSection · 工作台壳（统一列表）', () => {
+  it('triple 渲染 列表 + 拓扑 + Inspector 三栏，无弹窗', async () => {
     renderSection();
-    await layoutIs('xwide');
-    clickListButton(listRegion(), 'alpha');
-    clickTopologyMember('w1');
+    await layoutIs('triple');
+    const list = listRegion();
+    // 统一列表：Manager 行 + 团队行 + 未归属折叠行同在一个列表。
+    expect(within(list).getByText('boss')).toBeInTheDocument();
+    expect(within(list).getByText('alpha')).toBeInTheDocument();
+    expect(within(list).getByText(/未归属团队的 Worker/)).toBeInTheDocument();
+    expect(topologyHeader()).toBeInTheDocument();
+    expect(inspectorRegion()).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(gridColumns()).toHaveLength(3);
+    expect(shell().className).toContain('minmax(0,1fr)');
+  });
 
-    await screen.findByRole('dialog', { name: 'Agent · w1' });
-    const row = document.querySelector('[data-worker-name="w1"]');
-    expect(row).toHaveAttribute('data-highlighted', 'true');
-
-    fireEvent.keyDown(detailDialog(), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute(
-      'data-highlighted',
-      'true',
-    );
+  it('no team/agent tab UI; managers, teams and standalone workers share one list', async () => {
+    renderSection();
+    await layoutIs('triple');
+    expect(document.querySelector('[role="tab"]')).toBeNull();
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
+    const list = listRegion();
+    expect(within(list).getByText('boss')).toBeInTheDocument(); // Manager 行
+    expect(within(list).getByText('alpha')).toBeInTheDocument(); // 团队行
+    expect(within(list).getByText(/未归属团队的 Worker/)).toBeInTheDocument(); // 折叠行
   });
 });
 
 describe('TeamAgentsSection · 未归属 Worker 入口', () => {
-  it('expands the standalone row and opens the context card + worker dialog', async () => {
+  it('triple：展开独立行，选中显示上下文卡（不弹大弹窗）', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     const region = await openStandaloneRow();
     // 行内含会话灯（role=img，aria-label=运行中）→ 可访问名称是「运行中 solo」。
     expect(within(region).getByRole('button', { name: /solo/ })).toBeInTheDocument();
 
     clickListButton(region, 'solo');
-    const dialog = await screen.findByRole('dialog', { name: 'Agent · solo' });
-    expect(within(dialog).getAllByText('solo-model').length).toBeGreaterThan(0);
-    // 上下文卡在弹窗背后（弹窗打开时背景 inert，用文本断言）。
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 中栏落在上下文卡。
     expect(screen.getByText(/该 Worker 未归属任何团队/)).toBeInTheDocument();
+    expect(within(inspectorRegion()).getByRole('heading', { name: 'solo' })).toBeInTheDocument();
   });
 });
 
@@ -495,7 +735,7 @@ describe('TeamAgentsSection · 导航合并兼容导出（R4）', () => {
           <TooltipProvider>{node}</TooltipProvider>
         </QueryClientProvider>,
       );
-      await layoutIs('xwide');
+      await layoutIs('triple');
       // SectionHeader(h1) 与列表 PaneHeader(h2) 同名，取 level 1 消歧。
       expect(screen.getByRole('heading', { name: '团队与 Agent', level: 1 })).toBeInTheDocument();
       expect(screen.getByTestId('team-agents-shell')).toBeInTheDocument();
@@ -505,11 +745,11 @@ describe('TeamAgentsSection · 导航合并兼容导出（R4）', () => {
   );
 });
 
-describe('TeamAgentsSection · 旧 hash 深链（初始选中，edit 意图开弹窗）', () => {
+describe('TeamAgentsSection · 旧 hash 深链（初始选中）', () => {
   it('legacy workers route preselects the first standalone worker', async () => {
     setHash('#console/resources/workers');
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     expect(document.querySelector('[role="tab"]')).toBeNull();
     // agents 意图：展开未归属行并选中首个独立 Worker（上下文卡）。
     expect(within(listRegion()).getByText('solo')).toBeInTheDocument();
@@ -521,41 +761,22 @@ describe('TeamAgentsSection · 旧 hash 深链（初始选中，edit 意图开�
   it('legacy teams route preselects the first team', async () => {
     setHash('#console/resources/teams');
     renderSection();
-    await layoutIs('xwide');
-    expect(screen.getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
+    await layoutIs('triple');
+    expect(within(topologyHeader()).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('?team= preselects the named team', async () => {
     setHash('#console/resources/team-agents?team=beta');
     renderSection();
-    await layoutIs('xwide');
-    expect(screen.getByRole('heading', { name: 'beta' })).toBeInTheDocument();
-  });
-
-  it('?team=...&edit=true opens the team settings dialog', async () => {
-    setHash('#console/resources/team-agents?team=alpha&edit=true');
-    renderSection();
-    await layoutIs('xwide');
-    const dialog = await screen.findByRole('dialog', { name: '团队设置 · alpha' });
-    expect(within(dialog).getByText('基本信息')).toBeInTheDocument();
-  });
-
-  it('?agent=...&edit=true opens the worker dialog and expands the standalone row', async () => {
-    setHash('#console/resources/team-agents?agent=solo&edit=true');
-    renderSection();
-    await layoutIs('xwide');
-    // 弹窗打开时背景 inert，region 角色查不到；用文本定位折叠行断言展开。
-    const toggle = screen.getByText(/未归属团队的 Worker/).closest('button') as HTMLButtonElement;
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const dialog = await screen.findByRole('dialog', { name: 'Agent · solo' });
-    expect(within(dialog).getAllByText('solo-model').length).toBeGreaterThan(0);
+    await layoutIs('triple');
+    expect(within(topologyHeader()).getByRole('heading', { name: 'beta' })).toBeInTheDocument();
   });
 
   it('explicit tab=agents query maps to the agents intent', async () => {
     setHash('#console/resources/team-agents?tab=agents');
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     expect(document.querySelector('[role="tab"]')).toBeNull();
     expect(within(listRegion()).getByText('solo')).toBeInTheDocument();
     expect(screen.getByText(/该 Worker 未归属任何团队/)).toBeInTheDocument();
@@ -566,7 +787,7 @@ describe('TeamAgentsSection · 搜索（A3）', () => {
   it('keeps teams with matched members and marks the matched names', async () => {
     mockState.searchQuery = 'w1';
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     const list = listRegion();
     expect(within(list).getByText('匹配成员：w1')).toBeInTheDocument();
     expect(within(list).queryByText('beta')).toBeNull();
@@ -578,7 +799,7 @@ describe('TeamAgentsSection · 搜索（A3）', () => {
   it('shows the empty state when nothing matches', async () => {
     mockState.searchQuery = 'zzz-no-match';
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     expect(within(listRegion()).getByText('没有匹配的团队 / 成员')).toBeInTheDocument();
   });
 });
@@ -586,8 +807,9 @@ describe('TeamAgentsSection · 搜索（A3）', () => {
 describe('TeamAgentsSection · 权限门控（L1，在 Worker 弹窗内）', () => {
   it('hides the worker delete action below L1', async () => {
     mockState.userLevel = 2;
+    setWidth(768);
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('single');
     const region = await openStandaloneRow();
     clickListButton(region, 'solo');
 
@@ -597,8 +819,9 @@ describe('TeamAgentsSection · 权限门控（L1，在 Worker 弹窗内）', () 
 
   it('shows the worker delete action at L1', async () => {
     mockState.userLevel = 3;
+    setWidth(768);
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('single');
     const region = await openStandaloneRow();
     clickListButton(region, 'solo');
 
@@ -610,9 +833,8 @@ describe('TeamAgentsSection · 权限门控（L1，在 Worker 弹窗内）', () 
 describe('TeamAgentsSection · 千锻入口（拓扑承载）', () => {
   it('topology entry card opens the dialog; injected refreshes teams', async () => {
     renderSection();
-    await layoutIs('xwide');
-    clickListButton(listRegion(), 'alpha');
-
+    await layoutIs('triple');
+    // alpha 初始兜底选中 → 拓扑已显示。
     const card = screen.getByTestId('millforge-card');
     expect(card).toHaveTextContent('千锻');
     expect(screen.queryByTestId('mock-millforge-dialog')).toBeNull();
@@ -629,15 +851,13 @@ describe('TeamAgentsSection · 千锻入口（拓扑承载）', () => {
 
   it('worker selection keeps the millforge entry on its home team topology', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     clickListButton(listRegion(), 'alpha');
     clickTopologyMember('w1');
 
-    await screen.findByRole('dialog', { name: 'Agent · w1' });
+    // 多栏：选中即止（不弹大弹窗）。
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('millforge-card')).toBeInTheDocument();
-    fireEvent.keyDown(detailDialog(), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-
     fireEvent.click(screen.getByTestId('millforge-card'));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent(
       'millforge-dialog:alpha:workers-4',
@@ -648,7 +868,7 @@ describe('TeamAgentsSection · 千锻入口（拓扑承载）', () => {
 describe('TeamAgentsSection · 创建入口与团队设置草稿', () => {
   it('keeps create-team and create-agent entries on the page', async () => {
     renderSection();
-    await layoutIs('xwide');
+    await layoutIs('triple');
     fireEvent.click(screen.getByRole('button', { name: /创建团队/ }));
     expect(screen.getByText('team-create-dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /创建 Agent/ }));
@@ -658,7 +878,7 @@ describe('TeamAgentsSection · 创建入口与团队设置草稿', () => {
   it('keeps an unsaved team draft across a model catalog refresh (dialog open)', async () => {
     const client = makeClient();
     const { rerender } = renderSection(client);
-    await layoutIs('xwide');
+    await layoutIs('triple');
 
     clickListButton(listRegion(), 'alpha');
     const dialog = await openTeamSettingsDialog();

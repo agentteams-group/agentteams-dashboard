@@ -20,6 +20,7 @@ export function ManagerDetailDialog({
   userLevel,
   onDm,
   onChanged,
+  initialTab,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -29,6 +30,8 @@ export function ManagerDetailDialog({
   userLevel: number;
   onDm?: (_mxid: string, _roomId?: string) => void;
   onChanged?: () => void;
+  /** 初始 tab（默认 basic，行为不变）；A3 Inspector 分区直达。 */
+  initialTab?: string;
 }) {
   if (!manager) return null;
   return (
@@ -46,6 +49,7 @@ export function ManagerDetailDialog({
         userLevel={userLevel}
         onDm={onDm}
         onChanged={onChanged}
+        initialTab={initialTab}
       />
     </DetailDialogShell>
   );

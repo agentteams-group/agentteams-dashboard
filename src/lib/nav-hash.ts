@@ -117,6 +117,31 @@ export function teamAgentsHash(tab?: TeamAgentsTab): string {
 }
 
 /**
+ * 深链：工作台并选中实体 + 编辑意图（A5 搜索深链 / A4 URL 状态）。
+ * 在 teamAgentsHash 之上组合：
+ * - worker → `?tab=agents&agent=<name>&edit=true`；
+ * - team   → `?tab=teams&team=<name>&edit=true`；
+ * - manager → `?manager=<name>&edit=true`（不带 tab：resolver 把
+ *   manager 无 tab 的 team-agents 链接落到工作台 'teams'，带 tab 仍落
+ *   platform-assistant-settings——见 resolveLayeredHash）。
+ */
+export function teamAgentsEntityHash(params: {
+  tab?: TeamAgentsTab;
+  team?: string;
+  agent?: string;
+  manager?: string;
+}): string {
+  const base = teamAgentsHash(params.tab);
+  const query = new URLSearchParams();
+  if (params.team) query.set('team', params.team);
+  if (params.agent) query.set('agent', params.agent);
+  if (params.manager) query.set('manager', params.manager);
+  query.set('edit', 'true');
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}${query.toString()}`;
+}
+
+/**
  * Deep link for a Matrix room, with the leading '#'
  * (`#workbench/space/!abc:hs.example`).
  *
@@ -205,12 +230,17 @@ export function hashForActiveSection(sectionId: string, currentHash: string): st
     // Legacy workers/teams hashes must keep their page tab when the shell
     // rewrites the URL to the canonical merged route (otherwise a
     // notification pointing at `#console/resources/workers` would land on
-    // the teams tab).
+    // the teams tab). The query also carries the workbench URL state
+    // (team / agent / manager / edit / panel — A4/A5), so it is preserved
+    // whole; only `tab` is filled from the legacy path when absent.
+    const currentParams = new URLSearchParams(query);
     const legacyTab =
       LEGACY_TEAM_AGENTS_TAB[path] ??
       LEGACY_TEAM_AGENTS_TAB[/^console\/resources\/(workers|teams)$/.exec(path)?.[1] ?? ''];
-    const tab = (new URLSearchParams(query).get('tab') ?? legacyTab) as TeamAgentsTab | undefined;
-    return tab && TEAM_AGENTS_TABS.includes(tab) ? `${canonical}?tab=${tab}` : canonical;
+    const tab = (currentParams.get('tab') ?? legacyTab) as TeamAgentsTab | undefined;
+    if (tab && (TEAM_AGENTS_TABS as readonly string[]).includes(tab)) currentParams.set('tab', tab);
+    else currentParams.delete('tab');
+    return currentParams.size > 0 ? `${canonical}?${currentParams.toString()}` : canonical;
   }
 
   if (sectionId !== 'resources') return canonical + keep;
@@ -286,7 +316,13 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
   if (segments[0] === 'console') {
     // Old merged-page links keep the selected resource on the separate pages.
     if (path === 'console/resources/team-agents') {
-      const section = params?.has('manager') ? 'platform-assistant-settings'
+      // manager + tab = 旧「成员管理」深链 → 平台助手设置（member-navigation
+      // 口径）；manager 不带 tab = A5 搜索深链 → 工作台（选中 Manager 行 +
+      // 详情弹窗，edit=true 由工作台消费）。
+      const hasManager = params?.has('manager') ?? false;
+      const hasTab = params?.has('tab') ?? false;
+      const section = hasManager
+        ? hasTab ? 'platform-assistant-settings' : 'teams'
         : params?.get('tab') === 'agents' || params?.has('agent') ? 'workers' : 'teams';
       return { section, params };
     }

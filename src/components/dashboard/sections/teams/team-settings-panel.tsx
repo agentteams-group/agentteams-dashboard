@@ -118,6 +118,8 @@ export type TeamSettingsPanelProps = {
   /** 全部团队（判定未归属 Worker 的引用集）。 */
   allTeams?: TeamResponse[];
   workers: WorkerResponse[];
+  /** 初始 tab（默认 'basic'，行为不变）；仅接受 basic/users/agents（A3 Inspector 分区直达）。 */
+  initialTab?: string;
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
   userLevel: number;
@@ -138,10 +140,12 @@ export function TeamSettingsPanel({
   userLevel,
   onChanged,
   onDeleted,
+  initialTab,
 }: TeamSettingsPanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [tab, setTab] = useState('basic');
-  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['basic']));
+  const initialTabValid = initialTab !== undefined && ['basic', 'users', 'agents'].includes(initialTab) ? initialTab : 'basic';
+  const [tab, setTab] = useState(initialTabValid);
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([initialTabValid]));
   const { data: humans = [] } = useHumans();
   const humanNames = new Set([
     ...teamHumanMembers(team).map((member) => member.name),

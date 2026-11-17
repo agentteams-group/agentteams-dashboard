@@ -109,6 +109,8 @@ export type WorkerDetailPanelProps = {
   onDm?: (_mxid: string, _roomId?: string) => void;
   /** 根节点附加 class（内联页面用 min-h-0 flex-1 参与父级 flex 布局）。 */
   className?: string;
+  /** 初始 tab（默认第一项 basic，行为不变）；命中 tab 才生效（A3 Inspector 分区直达）。 */
+  initialTab?: string;
   onChanged?: () => void;
   onDeleted?: () => void;
 };
@@ -121,6 +123,7 @@ export function WorkerDetailPanel({
   onClose,
   onDm,
   className,
+  initialTab,
   onChanged,
   onDeleted,
 }: WorkerDetailPanelProps) {
@@ -597,7 +600,7 @@ export function WorkerDetailPanel({
         </div>
       </div>
 
-      <ResourceDetailTabs key={workerName} label="Agent 配置" items={[
+      <ResourceDetailTabs key={workerName} label="Agent 配置" initialTab={initialTab} items={[
         { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
         <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
           <Row label="运行时" value={runtimeName} />

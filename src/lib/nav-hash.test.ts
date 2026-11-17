@@ -10,6 +10,7 @@ import {
   resolveHash,
   tasksHash,
   taskCollaborationHash,
+  teamAgentsEntityHash,
   teamAgentsHash,
 } from './nav-hash';
 
@@ -235,6 +236,34 @@ describe('深链构造器与参数读取（方案 v3 C-2）', () => {
     expect(teamAgentsHash()).toBe('#console/resources/team-agents');
     expect(teamAgentsHash('agents')).toBe('#console/resources/team-agents?tab=agents');
     expect(resolveHash('workbench/tasks', isKnown)?.params).toBeUndefined();
+  });
+
+  it('A5 实体深链：worker / team / manager 三种形态都能反向解析', () => {
+    const workerHash = teamAgentsEntityHash({ tab: 'agents', agent: 'w1' });
+    expect(workerHash).toBe('#console/resources/team-agents?tab=agents&agent=w1&edit=true');
+    const workerResolved = resolveHash(workerHash.slice(1), isKnown);
+    expect(workerResolved?.section).toBe('workers');
+    expect(workerResolved?.params?.get('agent')).toBe('w1');
+    expect(workerResolved?.params?.get('edit')).toBe('true');
+
+    const teamHash = teamAgentsEntityHash({ tab: 'teams', team: 'alpha' });
+    expect(teamHash).toBe('#console/resources/team-agents?tab=teams&team=alpha&edit=true');
+    expect(resolveHash(teamHash.slice(1), isKnown)?.section).toBe('teams');
+    expect(resolveHash(teamHash.slice(1), isKnown)?.params?.get('team')).toBe('alpha');
+
+    // manager 不带 tab → 工作台（选中 Manager 行 + 详情弹窗），不是平台助手设置页。
+    const managerHash = teamAgentsEntityHash({ manager: 'boss' });
+    expect(managerHash).toBe('#console/resources/team-agents?manager=boss&edit=true');
+    const managerResolved = resolveHash(managerHash.slice(1), isKnown);
+    expect(managerResolved?.section).toBe('teams');
+    expect(managerResolved?.params?.get('manager')).toBe('boss');
+    expect(managerResolved?.params?.get('edit')).toBe('true');
+  });
+
+  it('manager + tab 的旧「成员管理」深链仍落平台助手设置页', () => {
+    expect(
+      resolveHash('console/resources/team-agents?tab=agents&manager=boss', isKnown)?.section,
+    ).toBe('platform-assistant-settings');
   });
 
   it('写出的 hash 能被反向解析回同一 section 与参数（id 带分隔符也不能碎）', () => {

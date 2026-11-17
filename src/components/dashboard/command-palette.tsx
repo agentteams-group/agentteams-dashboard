@@ -26,7 +26,7 @@ import { useAuditEvents } from '@/hooks/use-audit-events';
 import { readDrafts } from './sections/loops-section';
 import { shortUserId } from './sections/chat/format';
 import { highlightSnippet, searchableBody } from '@/lib/matrix-search';
-import { auditHash, hashForSection, loopHash, platformAssistantSettingsHash, roomHash, tasksHash } from '@/lib/nav-hash';
+import { auditHash, loopHash, roomHash, tasksHash, teamAgentsEntityHash } from '@/lib/nav-hash';
 
 export interface SearchResult {
   entity:
@@ -303,8 +303,10 @@ export function useGlobalSearch(
           name: w.name,
           subtitle: `${w.runtime} · ${w.model || '无模型'}`,
           phase: w.phase,
-          section: 'workers',
-          hash: `#${hashForSection('workers')}?agent=${encodeURIComponent(w.name)}`,
+          // A5：搜索深链走合并工作台（旧 'workers' 路由在 c25dac4a 后已不在
+          // navItems，会被守卫弹回 overview）。
+          section: 'team-agents',
+          hash: teamAgentsEntityHash({ tab: 'agents', agent: w.name }),
         });
       }
     });
@@ -321,8 +323,8 @@ export function useGlobalSearch(
           name: t.teamName || t.name,
           subtitle: `${t.readyWorkers}/${t.totalWorkers} Workers · ${t.leaderName}`,
           phase: t.phase,
-          section: 'teams',
-          hash: `#${hashForSection('teams')}?team=${encodeURIComponent(t.name)}`,
+          section: 'team-agents',
+          hash: teamAgentsEntityHash({ tab: 'teams', team: t.name }),
         });
       }
     });
@@ -339,8 +341,10 @@ export function useGlobalSearch(
           name: m.name,
           subtitle: `${m.runtime || '-'} · ${m.model || '-'}`,
           phase: m.phase,
-          section: 'platform-assistant-settings',
-          hash: platformAssistantSettingsHash(m.name),
+          // A5：manager 不带 tab → resolver 落到工作台（选中 Manager 行 +
+          // 详情弹窗），不再跳平台助手设置页。
+          section: 'team-agents',
+          hash: teamAgentsEntityHash({ manager: m.name }),
         });
       }
     });

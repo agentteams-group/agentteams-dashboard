@@ -179,25 +179,27 @@ describe('拉起就绪显示条件（B4 / 插件 lifecycle 口径）', () => {
   });
 });
 
-describe('响应式断点 / 栅格', () => {
-  it('maps widths to the four layouts at the documented breakpoints', () => {
-    expect(layoutForWidth(1440)).toBe('xwide');
-    expect(layoutForWidth(1439)).toBe('wide');
-    expect(layoutForWidth(1280)).toBe('wide');
-    expect(layoutForWidth(1279)).toBe('medium');
-    expect(layoutForWidth(1024)).toBe('medium');
-    expect(layoutForWidth(1023)).toBe('narrow');
-    expect(layoutForWidth(375)).toBe('narrow');
+describe('A2 响应式断点 / 栅格', () => {
+  it('maps container widths to the four layouts at the documented breakpoints', () => {
+    expect(layoutForWidth(1920)).toBe('triple');
+    expect(layoutForWidth(1600)).toBe('triple');
+    expect(layoutForWidth(1599)).toBe('triple-compact');
+    expect(layoutForWidth(1200)).toBe('triple-compact');
+    expect(layoutForWidth(1199)).toBe('dual');
+    expect(layoutForWidth(840)).toBe('dual');
+    expect(layoutForWidth(839)).toBe('single');
+    expect(layoutForWidth(375)).toBe('single');
   });
 
-  it('renders 3 / 2 / 2 / 1 content columns (nav is the extra fourth on xwide)', () => {
-    expect(contentColumnCount('xwide')).toBe(3);
-    expect(contentColumnCount('wide')).toBe(2);
-    expect(contentColumnCount('medium')).toBe(2);
-    expect(contentColumnCount('narrow')).toBe(1);
-    expect(shellGridClass('xwide')).toContain('_minmax(0,1fr)_');
-    expect(shellGridClass('xwide').match(/minmax/g)).toHaveLength(3);
-    expect(shellGridClass('narrow')).toBe('grid-cols-1');
+  it('renders 3 / 3 / 2 / 1 content columns (dual 的 Inspector 走覆盖层)', () => {
+    expect(contentColumnCount('triple')).toBe(3);
+    expect(contentColumnCount('triple-compact')).toBe(3);
+    expect(contentColumnCount('dual')).toBe(2);
+    expect(contentColumnCount('single')).toBe(1);
+    expect(shellGridClass('triple')).toBe('grid-cols-[320px_minmax(0,1fr)_420px]');
+    expect(shellGridClass('triple-compact')).toBe('grid-cols-[280px_minmax(0,1fr)_360px]');
+    expect(shellGridClass('dual')).toBe('grid-cols-[300px_minmax(0,1fr)]');
+    expect(shellGridClass('single')).toBe('grid-cols-1');
   });
 });
 
