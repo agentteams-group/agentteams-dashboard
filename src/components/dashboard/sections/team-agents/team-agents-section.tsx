@@ -650,9 +650,11 @@ export function TeamAgentsSection() {
         setDialogPanel(openNow ? panel : null);
       }
       // R3：?inspect=1 → dual 抽屉开合（自身写入的 echo 时两值相等 → no-op）。
+      // B：分区弹窗打开期间（edit=true）不据 hash 关抽屉——弹窗与抽屉共存，
+      // 否则 URL 二次写入（先写选区、后补 panel）会让 echo 把抽屉误关。
       const inspectNow =
         layoutRef.current === 'dual' && desired !== null && params.get('inspect') === '1';
-      if (inspectNow !== drawerOpenRef.current) setDrawerOpen(inspectNow);
+      if (!editIntent && inspectNow !== drawerOpenRef.current) setDrawerOpen(inspectNow);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -1060,6 +1062,16 @@ export function TeamAgentsSection() {
               side="right"
               data-testid="inspector-drawer"
               className="w-[min(420px,92vw)] gap-0 p-0 sm:max-w-none"
+              // B：分区弹窗打开期间抽屉不因焦点/外部交互被 dismiss（与弹窗共存）。
+              onInteractOutside={(event) => {
+                if (detailOpen) event.preventDefault();
+              }}
+              onPointerDownOutside={(event) => {
+                if (detailOpen) event.preventDefault();
+              }}
+              onFocusOutside={(event) => {
+                if (detailOpen) event.preventDefault();
+              }}
             >
               <SheetTitle className="sr-only">实体详情</SheetTitle>
               <SheetDescription className="sr-only">当前选中实体（团队 / Agent / Manager）的详情分区</SheetDescription>
