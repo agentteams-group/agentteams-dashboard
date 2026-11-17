@@ -3,11 +3,16 @@ import { requireHigressConsoleAccess } from '@/app/api/higress/access';
 import { isRecord } from '@/app/api/higress/helpers';
 import { authorizeManagedMcp, deleteManagedMcp, importMcpOpenApi, McpManagementError, mcpCapabilities, saveManagedMcp, verifyManagedMcp } from '@/lib/server/mcp-management';
 import type { McpManagedInput } from '@/lib/mcp-management';
+import { callControllerAsset } from '@/app/api/higress/controller-helper';
 
 export async function GET(request: NextRequest) {
   const denied = await requireHigressConsoleAccess(request);
   if (denied) return denied;
-  try { return NextResponse.json(await mcpCapabilities(request)); }
+  try {
+    const managed = await callControllerAsset(request, 'mcps');
+    if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
+    return NextResponse.json(await mcpCapabilities(request));
+  }
   catch (error) { return failure(error); }
 }
 
@@ -17,6 +22,8 @@ export async function POST(request: NextRequest) {
   try {
     const body: unknown = await request.json().catch(() => null);
     if (!isRecord(body)) throw new McpManagementError('请求格式不正确。');
+    const managed = await callControllerAsset(request, 'mcps', body);
+    if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
     if (body.action === 'save') return NextResponse.json(await saveManagedMcp(request, body.input as McpManagedInput));
     if (body.action === 'import') return NextResponse.json(await importMcpOpenApi(request, body.content as string));
     if (typeof body.name !== 'string') throw new McpManagementError('请选择 MCP 服务。');

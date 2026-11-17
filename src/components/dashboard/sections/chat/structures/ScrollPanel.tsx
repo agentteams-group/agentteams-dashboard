@@ -8,7 +8,7 @@ import { TimelineRail, type TimelineRailHandle } from './TimelineRail';
 
 export interface ScrollPanelHandle {
   scrollToBottom: (_options?: { smooth?: boolean }) => void;
-  scrollToIndex: (_index: number) => void;
+  scrollToIndex: (_index: number, _options?: { smooth?: boolean }) => void;
   /** Scrolls the first timeline item whose key matches (read-marker divider, message id/event id). */
   scrollToItem: (_key: string) => void;
 }
@@ -170,13 +170,13 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   );
 
   const jumpToIndex = useCallback(
-    (index: number) => {
+    (index: number, options?: { smooth?: boolean }) => {
       if (index < 0 || index >= items.length) return;
       // Leaving the bottom is an explicit user intent: report it before the
       // animation starts, while the list still measures itself at the bottom.
       handleAtBottomChange(false);
       jumpWindowUntilRef.current = Date.now() + JUMP_FOLLOW_WINDOW_MS;
-      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
+      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: options?.smooth === false ? 'auto' : 'smooth' });
       highlightIndex(index);
     },
     [handleAtBottomChange, highlightIndex, items.length]

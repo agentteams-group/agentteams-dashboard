@@ -132,10 +132,12 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
 
   return <div className="space-y-4" data-testid="team-agents-section">
     <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
-      meta={view ? <span className="text-sm text-muted-foreground">{view === 'agents' ? `${workers.length} 个 Agent` : `${teams.length} 个团队`}</span> : <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
+      meta={!isDetail && <div className="flex min-w-0 flex-wrap items-center gap-3">{!view && <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
         <TabsTrigger value="teams">团队 <span className="text-muted-foreground tabular-nums">{teams.length}</span></TabsTrigger>
         <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
+        <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
+      </div>}
       actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
         <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
 
@@ -148,10 +150,6 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         selectedWorker ? <WorkerDetailPanel key={selectedWorker.name} worker={selectedWorker} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} className="min-h-0 flex-1" onChanged={refresh} onDeleted={() => navigate('agents')} /> :
             <p className="p-6 text-sm text-muted-foreground">{teamsQuery.isLoading || workersQuery.isLoading ? '正在加载…' : '未找到该资源，请返回列表刷新。'}</p>}
     </div> : <>
-      <div className="flex flex-wrap items-center gap-3">
-        <Input className="h-9 w-full sm:max-w-sm" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
-        <span className="text-xs text-muted-foreground">{location.tab === 'teams' ? '人类成员与 Agent 分别展示 · 悬停查看概要' : '执行成员与团队负责人 · 点击查看主页或编辑配置'}</span>
-      </div>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
           {teamPage.items.map(({ team }) => {

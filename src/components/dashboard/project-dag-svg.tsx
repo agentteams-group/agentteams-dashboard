@@ -44,6 +44,7 @@ export function ProjectDagSvg({
   currentNodeId,
   selectedNodeId,
   neutral = false,
+  statusLabels,
 }: {
   dag: ProjectDag;
   nodeColors: Record<string, DagNodeColor>;
@@ -59,6 +60,7 @@ export function ProjectDagSvg({
   currentNodeId?: string;
   selectedNodeId?: string;
   neutral?: boolean;
+  statusLabels?: Record<string, string>;
 }) {
   const W = nodeWidth;
   const H = nodeHeight;
@@ -122,7 +124,7 @@ export function ProjectDagSvg({
         const onCritical = critical.has(n.id);
         const clickable = Boolean(onNodeClick || (stuck && onStuckNodeClick));
         // ~14 CJK glyphs at 11px fit inside the default 190px node width.
-        const maxLabel = neutral && n.status === 'completed' ? Math.floor((W - 52) / 12) : W === 190 ? 14 : Math.floor((W - 32) / 12);
+        const maxLabel = statusLabels ? Math.floor((W - 92) / 12) : neutral && n.status === 'completed' ? Math.floor((W - 52) / 12) : W === 190 ? 14 : Math.floor((W - 32) / 12);
         const label = n.title.length > maxLabel ? `${n.title.slice(0, maxLabel)}…` : n.title;
         const assignee = n.assignee && n.assignee.length > 18 ? `${n.assignee.slice(0, 18)}…` : n.assignee;
         const handleClick = () => {
@@ -149,12 +151,13 @@ export function ProjectDagSvg({
               width={W}
               height={H + (assignee ? 12 : 0)}
               rx={7}
-              fill={neutral ? 'var(--card)' : colors.fill}
-              stroke={neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              fill={statusLabels && ['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.06)' : neutral ? 'var(--card)' : colors.fill}
+              stroke={statusLabels && ['in_progress', 'completed'].includes(n.status) ? '#10b981' : neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
               strokeWidth={neutral ? 1 : n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
               strokeDasharray={!neutral && n.ready ? '5 3' : undefined}
             />
-            {neutral && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
+            {neutral && !statusLabels && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
+            {statusLabels && <g><rect x={p.x + W - 62} y={p.y + 9} width={52} height={19} rx={5} fill={['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.15)' : 'var(--muted)'} /><text x={p.x + W - 36} y={p.y + 22} textAnchor="middle" fontSize={10} fill={['in_progress', 'completed'].includes(n.status) ? '#047857' : 'var(--muted-foreground)'}>{statusLabels[n.status] ?? n.status}</text></g>}
             {!neutral && n.ready && (
               <circle cx={p.x + 10} cy={p.y + H / 2 - (assignee ? 6 : 0)} r={3} fill="#22d3ee" />
             )}
@@ -165,22 +168,22 @@ export function ProjectDagSvg({
             )}
             <text
               x={p.x + 18}
-              y={p.y + (assignee ? H / 2 - 2 : H / 2 + 4)}
+              y={p.y + (assignee || statusLabels ? H / 2 - 2 : H / 2 + 4)}
               fontSize={currentNodeId ? 12 : 11}
               fill={currentNodeId ? 'currentColor' : colors.text}
               fontFamily="inherit"
             >
               {label}
             </text>
-            {assignee && (
+            {(assignee || statusLabels) && (
               <text
                 x={p.x + 18}
                 y={p.y + H - 2}
-                fontSize={currentNodeId ? 12 : 9}
+                fontSize={statusLabels ? 9 : currentNodeId ? 12 : 9}
                 fill={currentNodeId ? 'currentColor' : 'rgba(113,113,122,0.9)'}
                 fontFamily="inherit"
               >
-                @{assignee}
+                {assignee ? `@${assignee}` : '未分配'}
               </text>
             )}
           </g>

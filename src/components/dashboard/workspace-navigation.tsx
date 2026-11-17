@@ -16,7 +16,7 @@ export const OBSERVABILITY_PLUGIN_IDS: readonly string[] = ['monitor-panel'];
 export const workspaceMenus = [
   { id: 'chat', label: '助手', icon: Bot, sections: ['chat', 'platform-assistant-settings'] },
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
-  { id: 'my-workbench', label: '工作台', icon: Hammer, sections: ['my-workbench', 'tasks', 'artifacts', 'coding-runs', 'loops'] },
+  { id: 'workbench', label: '工作台', icon: Hammer, sections: ['tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
   { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'workers', 'humans', 'teams'] },
   { id: 'tracing', label: '观测与治理', icon: Activity, sections: ['plugin-route:monitor-panel/monitor', 'tracing', 'audit'] },
@@ -64,7 +64,7 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
         });
         const grouped = menu.id !== 'chat' && menu.id !== 'my-teams';
         const expanded = !collapsed && (expandedMenus[menu.id] ?? active);
-        const count = ['my-workbench', 'chat', 'my-teams'].includes(menu.id) ? countMap[menu.id] ?? 0 : 0;
+        const count = ['chat', 'my-teams'].includes(menu.id) ? countMap[menu.id] ?? 0 : 0;
         const notification = menu.sections.some(section => sectionsWithNotifications.has(section));
         const Icon = menu.icon;
         return (

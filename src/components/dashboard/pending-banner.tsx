@@ -12,7 +12,7 @@ import { usePendingTally } from '@/hooks/use-pending-tally';
  */
 export function PendingBanner() {
   const activeSection = useSectionStore((s) => s.activeSection);
-  const setActiveSection = useSectionStore((s) => s.setActiveSection);
+  const setNotificationsOpen = useSectionStore((s) => s.setNotificationsOpen);
   // C-1：分项与总数取自同一个 selector，横幅里的数字与导航徽标、
   // 我的工作台永远一致（以前三处各算一套）。
   const { interventions, approvals, invites, mentionRooms, total } = usePendingTally();
@@ -38,7 +38,7 @@ export function PendingBanner() {
         variant="ghost"
         size="sm"
         className="h-5 px-2 text-xs text-inherit hover:bg-sky-500/20"
-        onClick={() => setActiveSection('my-workbench')}
+        onClick={() => setNotificationsOpen(true)}
       >
         去处理
       </Button>

@@ -1,30 +1,32 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest, NextResponse } from 'next/server';
-import { requireHigressConsoleAccess } from '@/app/api/higress/access';
-import { saveManagedMcp, verifyManagedMcp } from '@/lib/server/mcp-management';
-import { POST } from './route';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+import { GET, POST } from './route';
+import { callControllerAsset } from '@/app/api/higress/controller-helper';
+import { saveManagedMcp } from '@/lib/server/mcp-management';
 
-vi.mock('@/app/api/higress/access', () => ({ requireHigressConsoleAccess: vi.fn() }));
-vi.mock('@/lib/server/mcp-management', async (original) => ({ ...await original<typeof import('@/lib/server/mcp-management')>(), saveManagedMcp: vi.fn(), verifyManagedMcp: vi.fn() }));
+vi.mock('@/app/api/higress/access', () => ({ requireHigressConsoleAccess: vi.fn(async () => null) }));
+vi.mock('@/app/api/higress/controller-helper', () => ({ callControllerAsset: vi.fn() }));
+vi.mock('@/lib/server/mcp-management', () => ({ saveManagedMcp: vi.fn(async () => ({ legacy: true })), McpManagementError: class extends Error {}, mcpCapabilities: vi.fn(async () => ({ legacy: true })) }));
+beforeEach(() => vi.clearAllMocks());
+const request = () => new NextRequest('http://dashboard/api/agentteams/mcps/manage', { method: 'POST', body: JSON.stringify({ action: 'save', input: { name: 'docs' } }) });
 
-const request = (body: unknown) => new NextRequest('http://dashboard/api/agentteams/mcps/manage', { method: 'POST', body: JSON.stringify(body) });
-beforeEach(() => { vi.clearAllMocks(); vi.mocked(requireHigressConsoleAccess).mockResolvedValue(null); });
-describe('MCP management administrator boundary', () => {
-  it('rejects unauthorized mutations before touching gateway configuration', async () => {
-    vi.mocked(requireHigressConsoleAccess).mockResolvedValue(NextResponse.json({ error: 'forbidden' }, { status: 403 }));
-    expect((await POST(request({ action: 'save', input: {} }))).status).toBe(403);
-    expect(saveManagedMcp).not.toHaveBeenCalled();
-  });
-  it('separates saving from tool verification', async () => {
-    vi.mocked(saveManagedMcp).mockResolvedValue({ name: 'docs' } as never);
-    expect((await POST(request({ action: 'save', input: { name: 'docs' } }))).status).toBe(200);
-    expect(verifyManagedMcp).not.toHaveBeenCalled();
-  });
-  it('does not echo upstream error responses containing credentials', async () => {
-    vi.mocked(saveManagedMcp).mockRejectedValue(new Error('request Authorization: Bearer private-token'));
-    const result = await POST(request({ action: 'save', input: {} }));
-    expect(result.status).toBe(502);
-    expect(await result.text()).not.toContain('private-token');
-  });
+it('uses Controller for MCP management', async () => {
+  vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}), body: { name: 'docs', managed: true } });
+  expect(await (await POST(request())).json()).toEqual({ name: 'docs', managed: true });
+  expect(saveManagedMcp).not.toHaveBeenCalled();
+});
+it('preserves Controller permission and upstream failures', async () => {
+  vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}, { status: 403 }), body: { error: 'denied' } });
+  expect((await POST(request())).status).toBe(403);
+  expect(saveManagedMcp).not.toHaveBeenCalled();
+});
+it('keeps legacy management for deployments without the capability', async () => {
+  vi.mocked(callControllerAsset).mockResolvedValue(null);
+  expect(await (await POST(request())).json()).toEqual({ legacy: true });
+  expect(saveManagedMcp).toHaveBeenCalled();
+});
+it('reads capabilities from Controller', async () => {
+  vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}), body: { available: true } });
+  expect(await (await GET(request())).json()).toEqual({ available: true });
 });

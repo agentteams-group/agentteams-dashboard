@@ -39,8 +39,9 @@ describe('compact workspace navigation', () => {
     expect(screen.queryByRole('button', { name: '监控面板' })).toBeNull();
     fireEvent.click(within(nav).getByRole('button', { name: /工作台/ }));
     expect(props.onNavClick).not.toHaveBeenCalled();
-    fireEvent.click(within(nav).getByRole('button', { name: '待你处理' }));
-    expect(props.onNavClick).toHaveBeenCalledWith('my-workbench');
+    expect(within(nav).queryByRole('button', { name: '待你处理' })).toBeNull();
+    fireEvent.click(within(nav).getByRole('button', { name: '任务看板' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('tasks');
     fireEvent.click(screen.getByRole('button', { name: '设置' }));
     expect(useAgentTeamsStore.getState().settingsOpen).toBe(true);
   });

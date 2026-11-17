@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
@@ -13,8 +13,9 @@ import { roomHash } from '@/lib/nav-hash';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { useSectionStore } from '@/lib/section-store';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
-import { MatrixRequestError } from '@/lib/matrix-api';
+import { matrixApi, MatrixRequestError } from '@/lib/matrix-api';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
@@ -99,6 +100,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     useMatrixRoomState: () => mocks.roomState,
     useMatrixReadMarker: () => ({ data: { event_id: '$old' }, isSuccess: true, isError: false }),
     useMatrixReadReceipts: () => ({}),
+    useMatrixThreadMessages: () => ({ data: { chunk: [] }, isLoading: false, isError: false }),
     useMatrixSetReadMarker: () => ({ mutate: mocks.setReadMarkerMutate, isPending: false }),
     useMatrixSendReadReceipt: () => ({ mutate: mocks.sendReceiptMutate }),
     useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, isPending: false, error: null }),
@@ -136,6 +138,39 @@ function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
 }
 
 describe('ChatRoom read-position dual-write', () => {
+  it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'test' });
+    useSectionStore.setState({ mentionRoomId: '!room:test' });
+    const getEvent = vi.spyOn(matrixApi, 'getRoomEvent').mockResolvedValue({
+      event_id: '$root', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 500,
+      content: { msgtype: 'm.text', body: 'Older thread root' },
+    });
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    mocks.roomMessagesChunk.push({ event_id: '$thread-mention', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
+      content: { msgtype: 'm.text', body: 'Mentioned thread reply', 'm.mentions': { user_ids: ['@me:test'] },
+        'm.relates_to': { rel_type: 'm.thread', event_id: '$root' } } });
+    renderChatRoom();
+    await waitFor(() => expect(useSectionStore.getState().mentionRoomId).toBeNull());
+    expect(getEvent).toHaveBeenCalledWith('https://hs.test', 'test', '!room:test', '$root');
+    expect(within(screen.getByRole('complementary')).getByText('Mentioned thread reply').closest('.ring-1')).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+    expect(mocks.sendReceiptMutate).not.toHaveBeenCalled();
+    getEvent.mockRestore();
+  });
+  it('lands on an actual mention rather than the read marker or latest unrelated message', async () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    useSectionStore.setState({ mentionRoomId: '!room:test' });
+    mocks.roomMessagesChunk.push(
+      { event_id: '$mention', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000, content: { msgtype: 'm.text', body: 'Please review this', 'm.mentions': { user_ids: ['@me:test'] } } },
+      { event_id: '$other', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000, content: { msgtype: 'm.text', body: 'Not your mention', 'm.mentions': { user_ids: ['@someone:test'] } } },
+    );
+    renderChatRoom();
+    await waitFor(() => expect(useSectionStore.getState().mentionRoomId).toBeNull());
+    expect(mocks.virtuoso.scrollToIndex).toHaveBeenLastCalledWith(expect.objectContaining({ index: 3, align: 'center' }));
+    expect(mocks.sendReceiptMutate).not.toHaveBeenCalled();
+    expect(screen.queryByText('@ 提到了你')).not.toBeInTheDocument();
+  });
   it('targets Stop and supplementary input at the advertised execution', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
     mocks.roomMembersChunk.push(...['@me:test', '@peer:test'].map(id => ({
@@ -158,6 +193,7 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
     mocks.setAgentStatusMap({});
+    useSectionStore.setState({ mentionRoomId: null });
   });
 
   it('explains why a visible room cannot be used after the current user left', () => {

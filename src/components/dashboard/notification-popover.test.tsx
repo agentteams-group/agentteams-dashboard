@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import '@testing-library/jest-dom/vitest';
 import { NotificationPopover } from './notification-popover';
 import { useNotificationStore, type NewNotification } from '@/lib/notification-store';
+import { useSectionStore } from '@/lib/section-store';
 
 /**
  * C-1「通知点击直达上下文」的验收：通知不只是被读掉，还要把用户带到
@@ -28,7 +29,16 @@ afterEach(() => {
 
 describe('NotificationPopover（C-1 通知点击直达上下文）', () => {
   beforeEach(() => {
+    useSectionStore.setState({ notificationsOpen: false });
     window.location.hash = '#workbench/me';
+  });
+
+  it('opens the drawer without changing the current section', async () => {
+    useSectionStore.setState({ activeSection: 'tasks' });
+    render(<NotificationPopover />);
+    fireEvent.click(screen.getByRole('button', { name: /条未读）$/ }));
+    expect(await screen.findByRole('dialog', { name: '通知' })).toBeInTheDocument();
+    expect(useSectionStore.getState().activeSection).toBe('tasks');
   });
 
   it('带房间定位的通知：跳房间深链并标记已读', async () => {

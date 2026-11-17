@@ -160,14 +160,14 @@ export function AuditSection() {
     : data?.scope === 'self' ? '视图限定为你本人执行的操作。' : '查看已接入的操作记录，当前最多读取最近 200 条。';
   return <div className="space-y-4">
     <SectionHeader title="操作审计" onRefresh={() => void refetch()} isRefreshing={isFetching}
-      meta={<div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{data?.events?.length ?? 0} 条记录</span>{data?.source && <Badge variant="outline">数据源：{data.source === 'controller' ? 'Controller' : '本地日志'}</Badge>}</div>} />
-    <div className="flex flex-wrap items-center gap-3">
-      <Input aria-label="搜索审计记录" placeholder="搜索操作者、资源或操作…" value={search} onChange={event => setSearch(event.target.value)} className="h-9 w-full sm:max-w-sm" />
+      actions={data?.source && <Badge variant="outline">数据源：{data.source === 'controller' ? 'Controller' : '本地日志'}</Badge>}
+      meta={<div className="flex min-w-0 flex-wrap items-center gap-3">
+      <Input aria-label="搜索审计记录" placeholder="搜索操作者、资源或操作…" value={search} onChange={event => setSearch(event.target.value)} className="h-9 w-72 max-w-full" />
       <select aria-label="资源类型" value={entityType} onChange={event => setEntityType(event.target.value as EntityFilter)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
         {ENTITY_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
       </select>
-      <OverflowText text={scopeNote} multiline className="min-w-0 flex-1 text-xs text-muted-foreground" />
-    </div>
+      </div>} />
+    {data?.scope && data.scope !== 'all' && <p className="text-xs text-muted-foreground">{scopeNote}</p>}
     {data?.source === 'local' && data.note && <p className="rounded-lg border border-amber-500/30 p-3 text-xs text-muted-foreground">{data.note}</p>}
     {data?.success === false ? <div className="rounded-lg border border-amber-500/30 p-4 text-sm">
       <p className="font-medium">{data.error}</p>

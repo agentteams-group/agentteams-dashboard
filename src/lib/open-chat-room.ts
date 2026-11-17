@@ -12,9 +12,8 @@ import { useSectionStore } from '@/lib/section-store';
  * Tasks CTA, etc.) needs to deep-link into a specific conversation. Keeping a
  * single entry point ensures the two store writes stay in lockstep.
  */
-export function openChatRoom(roomId: string | null | undefined, taskId?: string): void {
+export function openChatRoom(roomId: string | null | undefined, taskId?: string, target?: 'mention'): void {
   if (!roomId) return;
   useHitlInboxStore.getState().setPendingChatRoomId(roomId);
-  useSectionStore.getState().setActiveSection('chat');
-  useSectionStore.setState({ taskCollaboration: taskId ? { taskId, roomId } : null });
+  useSectionStore.setState({ activeSection: 'chat', taskCollaboration: taskId ? { taskId, roomId } : null, mentionRoomId: target === 'mention' ? roomId : null });
 }

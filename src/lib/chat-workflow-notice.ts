@@ -3,6 +3,7 @@ export interface WorkflowNotice {
   kind: 'project' | 'assigned' | 'submitted' | 'revision' | 'blocked' | 'interrupted' | 'requested' | 'artifact' | 'progress';
   title: string;
   subject?: string;
+  taskId?: string;
   description?: string;
   attention?: boolean;
   body: string;
@@ -35,10 +36,10 @@ export function parseWorkflowNotice(body: string | null | undefined, runtime?: s
     return { kind: 'project', title, subject, description, body };
   }
 
-  const assignment = /^You are assigned task \*\*[^*]+\*\*:\s*([^\n]+)/.exec(text);
+  const assignment = /^You are assigned task \*\*([^*]+)\*\*:\s*([^\n]+)/.exec(text);
   if (assignment) {
     const assignee = /^@([^:\s]+):/.exec(body.trim())?.[1];
-    return { kind: 'assigned', title: '任务已分配', subject: assignment[1].trim(), description: assignee ? '执行者：' + assignee : undefined, body };
+    return { kind: 'assigned', title: '任务已分配', taskId: assignment[1].trim(), subject: assignment[2].trim(), description: assignee ? '执行者：' + assignee : undefined, body };
   }
 
   const request = /^PROJECT_REQUESTED:\s*([^\n]+)/.exec(text);
@@ -54,7 +55,7 @@ export function parseWorkflowNotice(body: string | null | undefined, runtime?: s
       INTERRUPTED: { kind: 'interrupted', title: '任务已中断', attention: true },
     } as const;
     const state = states[task[1] as keyof typeof states];
-    return { ...state, ...(!['COMPLETED', 'ASSIGNED'].includes(task[1]) && task[2] ? { description: task[2].trim().slice(0, 180) } : {}), body };
+    return { ...state, taskId: /^TASK_\w+:\s*(\S+)/.exec(text)?.[1], ...(!['COMPLETED', 'ASSIGNED'].includes(task[1]) && task[2] ? { description: task[2].trim().slice(0, 180) } : {}), body };
   }
 
   const artifact = /^📎 已发布 (.+?)（([^）]+)）\s*[—-]/.exec(text);

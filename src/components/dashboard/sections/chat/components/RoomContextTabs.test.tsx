@@ -23,5 +23,5 @@ it('keeps icon shortcuts accessible when the right sidebar is collapsed', () => 
 it('hides members for assistants while retaining task, file and topic entries', () => {
   render(<RoomContextTabs activeTab={null} showMembers={false} onTabChange={vi.fn()} />);
   expect(screen.queryByRole('button', { name: /成员/ })).toBeNull();
-  for (const name of ['任务', '文件', '话题']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
+  for (const name of ['任务拓扑', '文件', '话题']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
 });

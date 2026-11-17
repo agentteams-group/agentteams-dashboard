@@ -47,12 +47,8 @@ function MonitorView({ dashboard, initial }: { dashboard: PluginDashboardService
   const data = snapshot.data;
   return <div className="space-y-4">
     <SectionHeader title="运行监控" onRefresh={() => void snapshot.refetch()} isRefreshing={snapshot.isFetching}
-      meta={<span className="text-sm text-muted-foreground">{data ? `${data.total} 个运行资源` : '容器状态与资源用量'}</span>} />
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <Input aria-label="搜索运行资源" placeholder="搜索名称、运行时或状态…" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="h-9 w-full sm:max-w-sm" />
-      <p className="text-xs text-muted-foreground">{data?.mode === 'embedded' ? 'Docker' : data?.mode || '—'} · 更新于 {data ? dateTime(data.sampledAt) : '—'}</p>
-    </div>
-    <p className="text-xs leading-5 text-muted-foreground">展示容器整体用量，CPU 100% 对应一个核。嵌入式部署的 Matrix、网关和存储共用 Controller 容器。</p>
+      meta={<Input aria-label="搜索运行资源" placeholder="搜索名称、运行时或状态…" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="h-9 w-72 max-w-full" />}
+      actions={<span className="text-xs text-muted-foreground">更新于 {data ? dateTime(data.sampledAt) : '—'}</span>} />
     {snapshot.isError && <div role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">监控数据加载失败，请确认 Controller 已支持监控接口后刷新重试。<span className="mt-1 block text-xs">{snapshot.error.message}</span></div>}
     {snapshot.isPending ? <div role="status" aria-label="加载运行监控" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(item => <Skeleton key={item} className="h-72 rounded-xl" />)}</div> : data && <>
       {!data.items.length ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">{search ? '没有匹配的运行资源' : '暂无运行资源'}</div> :
@@ -78,7 +74,7 @@ function RuntimeCard({ target, now, onLogs, highlighted }: { target: RuntimeTarg
     </div>
     <div className="mt-3 flex h-5 min-w-0 gap-2 text-xs"><span className="shrink-0 text-muted-foreground">{target.kind === 'component' ? '范围' : '模型'}</span><OverflowText text={target.kind === 'component' ? target.name === 'controller' ? 'Controller 与内置基础服务' : 'Dashboard 服务' : target.model || '—'} /></div>
     <div className="my-4 grid grid-cols-2 gap-4 border-y py-4">
-      <div><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-xl font-semibold tabular-nums">{m?.cpuPercent == null ? '—' : `${m.cpuPercent.toFixed(2)}%`}</p><p className="mt-1 text-xs text-muted-foreground">容器整体占用</p></div>
+      <div><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-xl font-semibold tabular-nums">{m?.cpuPercent == null ? '—' : `${m.cpuPercent.toFixed(2)}%`}</p><p className="mt-1 text-xs text-muted-foreground">100% 对应一个核</p></div>
       <div><p className="text-xs text-muted-foreground">内存</p><p className="mt-1 whitespace-nowrap text-xl font-semibold tabular-nums">{formatMemory(m?.memoryUsageBytes)}</p><p className="mt-1 text-xs text-muted-foreground">{m ? m.memoryLimitBytes == null ? '配额未限制' : `配额 ${formatMemory(m.memoryLimitBytes)}` : '配额 —'}</p></div>
     </div>
     <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">

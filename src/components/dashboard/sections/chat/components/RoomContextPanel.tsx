@@ -16,6 +16,7 @@ export type RoomContextTab = 'tasks' | 'members' | 'files' | 'thread';
 interface RoomContextPanelProps {
   canSend?: boolean;
   showMembers?: boolean;
+  showTasks?: boolean;
   roomId: string;
   team?: TeamResponse;
   activeTab: RoomContextTab;
@@ -28,6 +29,7 @@ interface RoomContextPanelProps {
   selectedIsTeamShared: boolean;
   onSelectWorker: (_worker: string | null) => void;
   activeThread: DisplayMessage | null;
+  threadMention?: DisplayMessage | null;
   threadRoots: DisplayMessage[];
   onOpenThread: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
@@ -53,15 +55,17 @@ export function RoomContextPanel({
   selectedIsTeamShared,
   onSelectWorker,
   activeThread,
+  threadMention,
   threadRoots,
   onOpenThread,
   memberMap,
   workerMatrixUserIds,
   showMembers = true,
+  showTasks = true,
 }: RoomContextPanelProps) {
   return (
     <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(20rem,85vw)] max-lg:shadow-xl">
-      <RoomContextTabs activeTab={activeTab} showMembers={showMembers} onTabChange={tab => { if (tab) onTabChange(tab); }} memberCount={roomMembers.length} threadCount={threadRoots.length}>
+      <RoomContextTabs activeTab={activeTab} showMembers={showMembers} showTasks={showTasks} onTabChange={tab => { if (tab) onTabChange(tab); }} memberCount={roomMembers.length} threadCount={threadRoots.length}>
         <Button
           variant="ghost"
           size="sm"
@@ -97,6 +101,7 @@ export function RoomContextPanel({
               canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}
+              focusedMessage={threadMention}
               memberMap={memberMap}
               workerMatrixUserIds={workerMatrixUserIds}
             />

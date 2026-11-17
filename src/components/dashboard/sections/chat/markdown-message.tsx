@@ -8,6 +8,8 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
 import rehypeSanitize from 'rehype-sanitize';
+import type { Root, RootContent } from 'mdast';
+import { escapeHtml } from '@/lib/utils';
 import { chatMarkdownSchema } from './sanitize-schema';
 import { Copy, Check, Download, FileText, Play, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,6 +35,7 @@ interface MarkdownMessageProps {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   homeserver?: string;
   memberMap?: Record<string, string>;
+  mentionedUserIds?: string[];
   /** Streaming placeholder path: lightweight text render + trailing cursor. */
   isStreaming?: boolean;
 }
@@ -220,6 +223,34 @@ function formatFileSize(size?: number): string {
  */
 const QUOTE_CLASS = 'my-2 border-l-2 border-border pl-3 italic text-muted-foreground';
 const EVIDENCE_CLASS = 'my-3 min-w-0 rounded-xl border border-border bg-card p-4 text-foreground not-italic shadow-none [&_pre]:max-h-56 [&_pre]:whitespace-pre-wrap [&_pre]:break-words';
+const MENTION_CLASS = 'matrix-mention rounded bg-blue-500/10 px-1 font-medium text-blue-600 dark:text-blue-400';
+
+function remarkMentions(memberMap?: Record<string, string>, prefixHtml?: string) {
+  return () => (tree: Root) => {
+    function walk(parent: { children: RootContent[] }) {
+      parent.children = parent.children.flatMap<RootContent>(node => {
+        if (node.type === 'link' || node.type === 'linkReference') return [node];
+        if (node.type !== 'text') {
+          if ('children' in node) walk(node as { children: RootContent[] });
+          return [node];
+        }
+        return node.value.split(/((?<![\p{L}\p{N}._])@[\p{L}\p{N}._:/-]+)/u).filter(Boolean).map(part => {
+          const name = resolveMentionsToDisplayNames(part, memberMap);
+          return part.startsWith('@') && name !== part
+            ? { type: 'html' as const, value: `<span class="${MENTION_CLASS}">@${escapeHtml(name)}</span>` }
+            : { type: 'text' as const, value: part };
+        });
+      });
+    }
+    walk(tree);
+    if (prefixHtml) {
+      const firstParagraph = tree.children.find(node => node.type === 'paragraph');
+      const prefix = { type: 'html' as const, value: prefixHtml };
+      if (firstParagraph) firstParagraph.children.unshift(prefix);
+      else tree.children.unshift({ type: 'paragraph', children: [prefix] });
+    }
+  };
+}
 
 function hasEvidenceLink(node: unknown): boolean {
   if (!node || typeof node !== 'object') return false;
@@ -227,7 +258,7 @@ function hasEvidenceLink(node: unknown): boolean {
   return Boolean(parseObservabilityLink(element.properties?.href)) || Boolean(element.children?.some(hasEvidenceLink));
 }
 
-export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, mentionedUserIds, isStreaming }: MarkdownMessageProps) {
   // Prop takes precedence; fall back to the logged-in homeserver from the
   // store so media URLs resolve even when the caller omits the prop.
   const { homeserver: storeHomeserver } = useMatrixStore();
@@ -237,27 +268,42 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     return mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver);
   }, [mediaUrl, resolvedHomeserver]);
 
+  const mentionPrefix = useMemo(() => {
+    const tokens = new Set(content.match(/@[\p{L}\p{N}._:/-]+/gu) ?? []);
+    return [...new Set(mentionedUserIds)].filter(id => {
+      const name = memberMap?.[id] ?? id.slice(1).split(':')[0];
+      return ![id, `@${id.slice(1).split(':')[0]}`, `@${name}`].some(token => tokens.has(token))
+        && !formattedContent?.includes(encodeURIComponent(id)) && !formattedContent?.includes(id);
+    }).map(id => `<span class="${MENTION_CLASS}">@${escapeHtml(memberMap?.[id] ?? id.slice(1).split(':')[0])}</span> `).join('');
+  }, [content, formattedContent, memberMap, mentionedUserIds]);
+
   const html = useMemo(() => {
     if (formattedContent) {
       const formatted = renderFormattedContent(formattedContent, content).html;
-      const mentionResolved = resolveMentionsInHtml(
+      let mentionResolved = resolveMentionsInHtml(
         formatted,
         memberMap,
-        (name) => `<span class="matrix-mention text-primary font-medium">${name}</span>`
-      );
+        (name) => `<span class="${MENTION_CLASS}">@${name}</span>`
+      ).replace(/<a\b[^>]*href=["']https:\/\/matrix\.to\/#\/(?:@|%40)[^"']+["'][^>]*>([\s\S]*?)<\/a>/gi,
+        (_link, label: string) => `<span class="${MENTION_CLASS}">@${label.replace(/<[^>]*>/g, '').replace(/^@/, '')}</span>`);
+      if (mentionPrefix) {
+        mentionResolved = /<p(?:\s[^>]*)?>/i.test(mentionResolved)
+          ? mentionResolved.replace(/<p(?:\s[^>]*)?>/i, paragraph => paragraph + mentionPrefix)
+          : mentionPrefix + mentionResolved;
+      }
       // Runtimes that wrap GFM tables in <pre><code> blocks render as literal
       // pipes; convert them to real tables before the HTML path renders.
       return convertFencedTablesInHtml(mentionResolved);
     }
     return undefined;
-  }, [formattedContent, content, memberMap]);
+  }, [formattedContent, content, memberMap, mentionPrefix]);
 
   const resolvedContent = useMemo(
     () => linkifyMxcUris(
-      unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
+      unwrapFencedTables(content),
       resolvedHomeserver,
     ),
-    [content, memberMap, resolvedHomeserver]
+    [content, resolvedHomeserver]
   );
 
   // Full-screen image preview (element-web lightbox)
@@ -385,7 +431,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
       const hasMermaid = !!mermaidChart;
 
-      if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
+      if (isStreaming && !mentionPrefix && !hasBlockFeatures(html) && !hasMermaid) {
         return (
           <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
             <TypingEffect text={content} speed={10} />
@@ -442,7 +488,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   const plainContent = hasMermaid ? markdownContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : markdownContent;
 
   // Streaming lightweight path: no block-level features → plain pre + cursor.
-  if (isStreaming && !evidenceHtml && !hasBlockFeatures(plainContent) && !hasMermaid) {
+  if (isStreaming && !mentionPrefix && !evidenceHtml && !hasBlockFeatures(plainContent) && !hasMermaid) {
     return (
       <div className="matrix-message-content text-sm">
         <pre className="whitespace-pre-wrap break-words m-0 font-inherit text-inherit">
@@ -456,7 +502,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     <div className="matrix-message-content text-sm space-y-1">
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkMentions(memberMap, evidenceHtml ? undefined : mentionPrefix)]}
         rehypePlugins={[
           rehypeRaw,
           [rehypeSanitize, chatMarkdownSchema],

@@ -42,6 +42,7 @@ import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
 import { formatMessageTime } from '../format';
+import { TaskAssignmentCard } from '../task-assignment-card';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -397,6 +398,8 @@ export function MessageBubble({
       runtime: message.runtime ?? null,
     });
   }, [message.precomputedBlocks, message.content, message.formattedContent, message.rawContent, message.fileRefs, message.isStreaming, message.isMe, message.runtime]);
+  const firstTextIndex = parsedBlocks.findIndex(block => block.type === 'text' && block.text && !isProcessBlock(block));
+  const mentionedUserIds = (message.rawContent?.['m.mentions'] as { user_ids?: string[] } | undefined)?.user_ids;
 
   // Worker messages fold their whole process (thinking + tool calls) into one
   // disclosure per contiguous segment: the avatar anchors a compact summary
@@ -494,6 +497,7 @@ export function MessageBubble({
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
   }
   if (workflowNotice && parsedBlocks.every(block => block.type === 'text')) {
+    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenWorkerFiles ? () => onOpenWorkerFiles(message) : undefined} />;
     return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
   }
 
@@ -803,6 +807,7 @@ export function MessageBubble({
                     <div key={idx} data-chat-bubble className={bubbleClasses}>
                       <MarkdownMessage
                         content={block.text}
+                        mentionedUserIds={idx === firstTextIndex ? mentionedUserIds : undefined}
                         formattedContent={message.formattedContent ? block.text : undefined}
                         msgType={message.type}
                         mediaUrl={message.mediaUrl}

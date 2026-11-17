@@ -10,8 +10,10 @@ import { useOutboundMessages } from './hooks/useOutboundMessages';
 import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { useSectionStore } from '@/lib/section-store';
 import {
   useMatrixRoomMessages,
   useMatrixRoomMembers,
@@ -23,10 +25,11 @@ import {
   useMatrixEditMessage,
   useMatrixRedactMessage,
   formatMatrixEvents,
+  formatMatrixEvent,
   type DisplayMessage,
   type RoomMember,
 } from '@/hooks/use-matrix';
-import { MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
+import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
 import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -102,6 +105,7 @@ export function resetRoomSearchDeepLinkForTests(): void {
 }
 
 interface ChatRoomProps {
+  taskRoom?: boolean;
   agentRole?: RoomInfo['agentRole'];
   roomId: string;
   roomName: string;
@@ -134,6 +138,7 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({
+  taskRoom = false,
   agentRole,
   roomId,
   roomName,
@@ -157,6 +162,7 @@ export function ChatRoom({
 }: ChatRoomProps) {
   const { setAutoScroll } = useChatStore();
   const [autoScroll, setAutoScrollLocal] = useState(true);
+  const pendingMention = useSectionStore(state => state.mentionRoomId === roomId);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const [internalContextPanel, setInternalContextPanel] = useState<ChatContextPanel>(null);
   const contextPanel = controlledContextPanel === undefined ? internalContextPanel : controlledContextPanel;
@@ -166,6 +172,8 @@ export function ChatRoom({
   }, [onContextPanelChange]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
+  const [threadMention, setThreadMention] = useState<DisplayMessage | null>(null);
+  const [focusedMentionId, setFocusedMentionId] = useState<string | null>(null);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   const { value: inputValue, setValue: setInputValue, setValueLocal: setInputValueLocal, clear: clearDraft } = usePersistedDraft(roomId);
   // Composer edit session (ArrowUp on empty input → edit my latest message)
@@ -176,7 +184,7 @@ export function ChatRoom({
   const handleOpenWorkerChats = useCallback((name: string) => setChatsWorkerName(name), []);
   const chatLayoutRef = useRef<HTMLDivElement>(null);
 
-  const { userId, isLoggedIn } = useMatrixStore();
+  const { userId, isLoggedIn, homeserver, accessToken } = useMatrixStore();
   const sendMutation = useMatrixSendMessage();
   const uploadMutation = useMatrixUploadMedia();
   const editMutation = useMatrixEditMessage();
@@ -359,6 +367,7 @@ export function ChatRoom({
   // position. Both are best-effort — the sidebar badge is cleared optimistically
   // and UNREAD_GRACE_MS suppresses stale counters until the server confirms.
   const markAllRead = useCallback((targetOverride?: string) => {
+    if (pendingMention) return;
     // m.fully_read follows the latest raw event (including edit revisions);
     // m.read must stay on a top-level event so the homeserver clears the
     // room's unread counter. Folded turns no longer collapse these targets.
@@ -377,7 +386,7 @@ export function ChatRoom({
         if (code !== 'M_BAD_JSON') console.warn('Failed to set read marker:', err);
       },
     });
-  }, [chatIr.latestEventId, chatIr.latestTopLevelEventId, readEventId, setReadMarkerMutation, sendReceiptMutation, roomId]);
+  }, [chatIr.latestEventId, chatIr.latestTopLevelEventId, readEventId, setReadMarkerMutation, sendReceiptMutation, roomId, pendingMention]);
 
   // Single watcher for newly appended messages: scroll down when pinned to
   // the bottom, otherwise accumulate a "new messages" counter for the badge.
@@ -388,7 +397,7 @@ export function ChatRoom({
 
     if (lastChanged) {
       const added = Math.max(0, formattedMessages.length - prevMsgCountRef.current);
-      if (autoScroll && atBottomRef.current) {
+      if (autoScroll && atBottomRef.current && !pendingMention) {
         // followOutput already pins the list; this nudge covers media/resize.
         // scrollToBottom reports "at bottom", which is the read-advance trigger.
         scrollRef.current?.scrollToBottom({ smooth: false });
@@ -401,7 +410,7 @@ export function ChatRoom({
 
     prevMsgCountRef.current = formattedMessages.length;
     prevMsgLastIdRef.current = lastId;
-  }, [formattedMessages, autoScroll]);
+  }, [formattedMessages, autoScroll, pendingMention]);
 
   // Landing position for a freshly opened room: if the read marker is behind
   // the latest message, land on the unread divider without advancing the read
@@ -409,6 +418,7 @@ export function ChatRoom({
   // mount effect already does this, this effect is a fallback for when the
   // read marker query resolves after the message list.
   useEffect(() => {
+    if (pendingMention) return;
     if (!messagesQuery.isSuccess || formattedMessages.length === 0) return;
     if (!readMarkerQuery.isSuccess && !readMarkerQuery.isError) return;
     if (didInitialScrollRef.current) return;
@@ -420,7 +430,7 @@ export function ChatRoom({
     } else {
       scrollRef.current?.scrollToBottom({ smooth: false });
     }
-  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError]);
+  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
 
   // Outbound message cluster (optimistic bubbles + system notices + send),
   // extracted verbatim; markAllRead is injected because sending a message
@@ -580,6 +590,64 @@ export function ChatRoom({
     }
   }, [autoScroll, handleAutoScrollChange, markAllRead]);
 
+  const { isSuccess: messagesReady, hasNextPage: hasOlderMessages, isFetchingNextPage: fetchingOlderMessages, fetchNextPage: fetchOlderMessages } = messagesQuery;
+  useEffect(() => {
+    if (!pendingMention || !messagesReady || !userId) return;
+    didInitialScrollRef.current = true;
+    const finish = () => useSectionStore.setState(state => state.mentionRoomId === roomId ? { mentionRoomId: null } : state);
+    const mentioned = allEvents.filter(event => {
+      if (event.type !== 'm.room.message' || event.sender === userId) return false;
+      const content = (event.content['m.new_content'] ?? event.content) as Record<string, unknown>;
+      const mention = content['m.mentions'] as { user_ids?: string[]; room?: boolean } | undefined;
+      return mention?.user_ids?.includes(userId) || mention?.room === true;
+    }).sort((a, b) => b.origin_server_ts - a.origin_server_ts)[0];
+    if (mentioned) {
+      const relation = mentioned.content['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;
+      const target = mentioned.event_id;
+      if (relation?.rel_type === 'm.thread' && relation.event_id) {
+        let cancelled = false;
+        const rootId = relation.event_id;
+        void (async () => {
+          try {
+            const rootEvent = allEvents.find(event => event.event_id === rootId)
+              ?? await matrixApi.getRoomEvent(homeserver, accessToken, roomId, rootId);
+            if (cancelled) return;
+            const root = formatMatrixEvent(rootEvent, userId);
+            const reply = formatMatrixEvent(mentioned, userId);
+            if (!root || !reply) throw new Error('Message unavailable');
+            handleAutoScrollChange(false);
+            atBottomRef.current = false;
+            setActiveThread(root);
+            setThreadMention(reply);
+            setContextPanel('thread');
+            finish();
+          } catch {
+            if (cancelled) return;
+            setActionError('读取 @消息所在的话题失败，请稍后重试。');
+            finish();
+          }
+        })();
+        return () => { cancelled = true; };
+      }
+      const frame = requestAnimationFrame(() => {
+        handleAutoScrollChange(false);
+        atBottomRef.current = false;
+        setFocusedMentionId(target);
+        if (scrollRef.current?.scrollToEvent(target, { smooth: false })) finish();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (hasOlderMessages) {
+      if (!fetchingOlderMessages) void fetchOlderMessages().catch(() => {
+        setActionError('读取更早的 @消息失败，请稍后重试。');
+        finish();
+      });
+    } else {
+      setActionError('未找到 @当前账号的消息，请刷新待办列表。');
+      finish();
+    }
+  }, [pendingMention, messagesReady, hasOlderMessages, fetchingOlderMessages, fetchOlderMessages, allEvents, userId, roomId, homeserver, accessToken, handleAutoScrollChange, setContextPanel]);
+
   const handleReply = useCallback((message: DisplayMessage) => {
     setReplyTo(message);
     // f5-1: 定位改走 timeline 索引空间（scrollToEvent 匹配 id/eventId/
@@ -737,6 +805,7 @@ export function ChatRoom({
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
     setSelectedWorker(null);
+    setThreadMention(null);
     setActiveThread(message);
     setContextPanel('thread');
   }, [setSelectedWorker, setContextPanel]);
@@ -749,6 +818,8 @@ export function ChatRoom({
     <MessageReadRoomContext.Provider value={roomId}>
     <div
       ref={chatLayoutRef}
+      data-mention-event={focusedMentionId ?? threadMention?.id ?? undefined}
+      data-mention-pending={pendingMention || undefined}
       className={`flex h-full relative ${className}`}
       onDragEnter={dropZoneProps.onDragEnter}
       onDragOver={dropZoneProps.onDragOver}
@@ -764,6 +835,7 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          taskAction={taskRoom ? <TaskTopologyPopover key={roomId} roomId={roomId} /> : undefined}
           compact={integratedSidebar}
           headerActions={headerActions}
           headerLeading={headerLeading}
@@ -855,6 +927,7 @@ export function ChatRoom({
             messages={formattedMessages}
             localMessages={localMessages}
             readEventId={readEventId}
+            focusedMentionId={focusedMentionId}
             hasNextPage={messagesQuery.hasNextPage || false}
             isFetchingNextPage={messagesQuery.isFetchingNextPage}
             onLoadMore={loadMore}
@@ -941,7 +1014,7 @@ export function ChatRoom({
           </div>
         </div>
 
-      {contextPanel !== null && (
+      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
         <button
           type="button"
           aria-label="关闭上下文遮罩"
@@ -950,8 +1023,9 @@ export function ChatRoom({
         />
       )}
 
-      {contextPanel !== null && (
+      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
         <RoomContextPanel
+          showTasks={!taskRoom}
           canSend={canSend}
           showMembers={!agentRole}
           roomId={roomId}
@@ -966,8 +1040,10 @@ export function ChatRoom({
           selectedIsTeamShared={selectedIsTeamShared}
           onSelectWorker={setSelectedWorker}
           activeThread={activeThread}
+          threadMention={threadMention}
           threadRoots={threadRoots}
           onOpenThread={(message) => {
+            setThreadMention(null);
             setActiveThread(message);
             setContextPanel('thread');
           }}

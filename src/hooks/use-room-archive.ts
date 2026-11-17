@@ -38,6 +38,8 @@ export function useSetRoomArchived() {
         client.invalidateQueries({ queryKey: ['archived-rooms'] }),
         client.invalidateQueries({ queryKey: ['task-room-archive'] }),
         client.invalidateQueries({ queryKey: ['matrix-state', roomId] }),
+        client.invalidateQueries({ queryKey: ['agentteams-task-index'] }),
+        client.invalidateQueries({ queryKey: ['team-tasks'] }),
       ]);
     },
   });

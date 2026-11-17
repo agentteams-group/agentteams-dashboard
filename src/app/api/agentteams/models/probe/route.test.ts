@@ -3,9 +3,11 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { requireHigressConsoleAccess } from '../../../higress/access';
 import { callHigressConsole } from '../../../higress/proxy-helper';
+import { callControllerAsset } from '../../../higress/controller-helper';
 
 vi.mock('../../../higress/access', () => ({ requireHigressConsoleAccess: vi.fn() }));
 vi.mock('../../../higress/proxy-helper', () => ({ callHigressConsole: vi.fn() }));
+vi.mock('../../../higress/controller-helper', () => ({ callControllerAsset: vi.fn() }));
 vi.mock('../../../higress/helpers', async (original) => ({ ...await original<object>(), getSessionCookie: () => '_hi_sess=test-session' }));
 
 const auth = vi.mocked(requireHigressConsoleAccess);
@@ -18,6 +20,7 @@ describe('model connection probe endpoint', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     auth.mockResolvedValue(null);
+    vi.mocked(callControllerAsset).mockResolvedValue(null);
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: 'OK' } }] }));
   });
@@ -35,6 +38,15 @@ describe('model connection probe endpoint', () => {
     expect(result).toMatchObject({ success: true, model: 'qwen3.8-max' });
     expect(fetchMock).toHaveBeenCalledWith('https://models.example/v1/chat/completions', expect.objectContaining({ method: 'POST', redirect: 'error' }));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ model: 'qwen3.8-max', max_tokens: 256 });
+  });
+
+  it('prefers Controller probing and never reads Console credentials when supported', async () => {
+    vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}), body: { success: true, scope: 'upstream' } });
+    const result = await (await POST(request(input))).json();
+    expect(result).toMatchObject({ success: true, scope: 'upstream' });
+    expect(callControllerAsset).toHaveBeenCalledWith(expect.any(NextRequest), 'models', { action: 'probe', input });
+    expect(consoleCall).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('uses saved credentials only against the saved endpoint, ignoring browser endpoint overrides', async () => {

@@ -4,6 +4,7 @@ import { buildModelProbe, evaluateModelProbe, redactProbeError, type ModelProbeI
 import { requireHigressConsoleAccess } from '../../../higress/access';
 import { callHigressConsole } from '../../../higress/proxy-helper';
 import { getSessionCookie, isRecord, unwrapData } from '../../../higress/helpers';
+import { callControllerAsset } from '../../../higress/controller-helper';
 
 export async function POST(request: NextRequest) {
   const denied = await requireHigressConsoleAccess(request);
@@ -14,6 +15,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: '请填写有效的模型 ID 和连接配置' }, { status: 400 });
   }
   const input = value as unknown as ModelProbeInput;
+  // Keep the existing URL guard before forwarding user-entered endpoints.
+  if (!input.providerName && input.baseUrl) {
+    try { validateModelProbeBaseUrl(input.baseUrl); }
+    catch { return NextResponse.json({ success: false, message: '模型地址不在允许的探测范围内' }, { status: 400 }); }
+  }
+  const managed = await callControllerAsset(request, 'models', { action: 'probe', input: value });
+  if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
   const model = input.model.trim();
   const secrets: string[] = [];
   let target;

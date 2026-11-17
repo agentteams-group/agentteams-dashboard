@@ -255,7 +255,7 @@ export function HumansSection() {
         human={drawerHuman}
         teams={(teams ?? []).map((team) => ({
           name: team.name,
-          humanMembers: team.humanMembers.map((member) => typeof member === 'string' ? member : member.name),
+          humanMembers: (team.humanMembers ?? []).map((member) => typeof member === 'string' ? member : member.name),
         }))}
         workers={(workers ?? []).map((worker) => ({ name: worker.name }))}
         teamsLoading={teamsLoading}

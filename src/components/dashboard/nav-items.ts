@@ -1,5 +1,4 @@
 import {
-  Inbox,
   Activity,
   LayoutDashboard,
   Bot,
@@ -74,8 +73,6 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   // ── 工作台（一级主线） ──
-  // 我的工作台（F4.2）：聚合「等我」事项（待干预/待审批/@我的）。
-  { id: 'my-workbench', label: '待你处理', icon: Inbox, area: 'workbench', group: 'mine' },
   // 协作空间：Matrix 房间升级为「工作单元」（F1.1）。id 仍为 chat。
   { id: 'chat', label: '助手', icon: MessageSquare, area: 'workbench', group: 'space', legacyGroup: 'core' },
   { id: 'my-teams', label: '我的团队', icon: Users, area: 'workbench', group: 'space', legacyGroup: 'core' },

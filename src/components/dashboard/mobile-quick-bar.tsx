@@ -105,9 +105,9 @@ export function MobileQuickBar({ onSearch }: MobileQuickBarProps) {
           <BarButton
             label="待处理"
             Icon={Inbox}
-            active={activeSection === 'my-workbench'}
+            active={false}
             count={pendingCount}
-            onClick={() => goTo('my-workbench')}
+            onClick={() => useSectionStore.getState().setNotificationsOpen(true)}
           />
         </li>
         <li className="flex-1">

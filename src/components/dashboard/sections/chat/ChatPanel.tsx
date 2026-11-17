@@ -55,6 +55,7 @@ export function ChatPanel({
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
+          taskRoom={archiveStatus.data?.is_task_room === true}
           headerLeading={headerLeading}
           headerTitle={headerTitle}
           integratedSidebar={!!room.agentRole || room.type === 'team'}

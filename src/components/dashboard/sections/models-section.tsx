@@ -287,7 +287,10 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
     const next = { ...form, tokens: tokens.length > 0 ? tokens : form.tokens, modelMappings: form.modelMappings.filter((mapping) => mapping.pattern.trim() || mapping.targetModel.trim()).map((mapping) => ({ ...mapping, pattern: mapping.pattern.trim() || mapping.targetModel.trim() })) };
     const nextErrors = validateProviderForm(next, editing);
     if (nextErrors.length > 0) return setErrors(nextErrors);
-    const onSuccess = () => { onOpenChange(false); autoWireProviderRoute(next.name, next.modelMappings); };
+    const onSuccess = (result: { gatewayManaged?: boolean }) => {
+      onOpenChange(false);
+      if (!result.gatewayManaged) autoWireProviderRoute(next.name, next.modelMappings);
+    };
     if (provider) update.mutate({ name: provider.name, data: serializeProviderForm(next, true) }, { onSuccess, onError: (error) => setErrors([error.message]) });
     else {
       const payload = serializeProviderForm(next) as Parameters<typeof create.mutate>[0];

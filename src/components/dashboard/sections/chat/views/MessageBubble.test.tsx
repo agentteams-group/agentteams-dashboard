@@ -52,6 +52,21 @@ describe('workflow notification presentation', () => {
   });
 });
 
+it('passes structured recipients into the body renderer', () => {
+  markdownMock.mockClear();
+  renderWithProvider(<MessageBubble message={{ id: '$mention', sender: '@leader:test', senderShort: 'leader', content: '任务已完成。', timestamp: 0, type: 'm.text', isMe: false, rawContent: { 'm.mentions': { user_ids: ['@admin:test'] } } }} showSender isContinuation={false} />);
+  expect(markdownMock.mock.calls.some(([props]) => (props as { mentionedUserIds?: string[] }).mentionedUserIds?.includes('@admin:test'))).toBe(true);
+});
+
+it('puts recipients on the visible answer after folded process text', () => {
+  markdownMock.mockClear();
+  renderWithProvider(<MessageBubble message={{ id: '$turn-mention', sender: '@leader:test', senderShort: 'leader', content: '任务已完成。', timestamp: 0, type: 'm.text', isMe: false,
+    rawContent: { 'm.mentions': { user_ids: ['@admin:test'] } },
+    precomputedBlocks: [{ type: 'text', text: '检查执行结果', inProcess: true }, { type: 'text', text: '任务已完成。' }] }} showSender isContinuation={false} />);
+  const answer = markdownMock.mock.calls.find(([props]) => props.content === '任务已完成。');
+  expect((answer?.[0] as { mentionedUserIds?: string[] }).mentionedUserIds).toEqual(['@admin:test']);
+});
+
 describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
   const base = {
     sender: '@me:example.com',

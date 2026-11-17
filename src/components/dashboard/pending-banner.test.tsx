@@ -61,6 +61,7 @@ describe('PendingBanner（F4.3 待办聚合横幅）', () => {
     expect(banner.textContent).toContain('2 条待审批');
     expect(banner.textContent).toContain('1 个房间 @你');
     fireEvent.click(screen.getByRole('button', { name: '去处理' }));
-    expect(useSectionStore.getState().activeSection).toBe('my-workbench');
+    expect(useSectionStore.getState().activeSection).toBe('workers');
+    expect(useSectionStore.getState().notificationsOpen).toBe(true);
   });
 });

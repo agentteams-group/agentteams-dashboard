@@ -21,6 +21,7 @@ import {
 import { formatInterventionTimeout, useInterventionTimeoutMs } from '@/lib/intervention-timeout';
 
 interface InterventionCardProps {
+  sourceRoomId?: string;
   payload: RuntimeConfirmationBlock['payload'];
   /**
    * 回写通道（方案 v3 C-3）：正文仍是一条房间消息，同时带上
@@ -105,7 +106,7 @@ function optionTitle(label: string) {
  * 与选项互斥；多问题分页逐题作答、末页提交；提交后卡片只读并显示提交人
  * 与时间；超时（expires_at 或可配置等待窗口，默认 30 分钟）置灰禁答并升级通知。
  */
-export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
+export function InterventionCard({ payload, onAnswer, sourceRoomId }: InterventionCardProps) {
   const currentUserId = useMatrixStore((s) => s.userId);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const addNotification = useNotificationStore((s) => s.addNotification);
@@ -196,7 +197,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
     useHitlInboxStore.getState().expireConfirmation(payload.confirmation_id, currentUserId ?? undefined);
     // 房间定位：本卡只在当前打开的房间的消息流里挂载（切房间时卸载），所以
     // activeRoomId 就是发出这条干预的房间；通知点击后能直接回到它。
-    const timeoutRoomId = useRoomMetaStore.getState().activeRoomId;
+    const timeoutRoomId = sourceRoomId ?? useRoomMetaStore.getState().activeRoomId;
     addNotification({
       type: 'warning',
       title: '干预请求已超时',
@@ -212,7 +213,7 @@ export function InterventionCard({ payload, onAnswer }: InterventionCardProps) {
       ...(typeof requestTimestamp === 'number' ? { elapsedMs: Date.now() - requestTimestamp } : {}),
       actor: currentUserId ?? undefined,
     });
-  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId, timeoutMs]);
+  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId, timeoutMs, sourceRoomId]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
   // 绑定在卡片根节点而非 window：多个干预卡同时可见时，按键只作用于

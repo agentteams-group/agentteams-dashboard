@@ -20,6 +20,43 @@ afterEach(() => {
 });
 
 describe('MarkdownMessage', () => {
+  it.each([undefined, '<p>任务已完成，结果已通知 requester（admin）。</p>'])('integrates structured mentions into the message paragraph (HTML=%s)', formattedContent => {
+    const { container } = render(<MarkdownMessage content="任务已完成，结果已通知 requester（admin）。" formattedContent={formattedContent} mentionedUserIds={['@admin:hs.test']} memberMap={{ '@admin:hs.test': '管理员' }} />);
+    const mention = container.querySelector('.matrix-mention');
+    expect(mention).toHaveTextContent('@管理员');
+    expect(mention?.parentElement?.tagName).toBe('P');
+    expect(mention?.parentElement).toHaveTextContent('@管理员 任务已完成');
+    expect(screen.queryByText('@ 提到了你')).not.toBeInTheDocument();
+  });
+
+  it('does not repeat a mention already written in the body', () => {
+    const { container } = render(<MarkdownMessage content="xxx @admin 这样处理" mentionedUserIds={['@admin:hs.test']} memberMap={{ '@admin:hs.test': 'admin' }} />);
+    expect(container.querySelectorAll('.matrix-mention')).toHaveLength(1);
+    expect(container.querySelector('p')).toHaveTextContent('xxx @admin 这样处理');
+  });
+
+  it('does not repeat a mention represented by a Matrix user link', () => {
+    const { container } = render(<MarkdownMessage content="请看" mentionedUserIds={['@admin:hs.test']} formattedContent={'<p><a href="https://matrix.to/#/%40admin%3Ahs.test">admin</a> 请看</p>'} />);
+    expect(container.querySelectorAll('.matrix-mention')).toHaveLength(1);
+    expect(container.querySelector('p')).toHaveTextContent('@admin 请看');
+  });
+  it('keeps the @ prefix and highlights known mentions without changing code or email addresses', () => {
+    const { container } = render(<MarkdownMessage content={'@admin:hs.test 请看 **@张三**，联系 bob@example.com，代码 `@admin:hs.test`'} memberMap={{ '@admin:hs.test': '管理员', '@zhang:hs.test': '张三' }} />);
+    expect([...container.querySelectorAll('.matrix-mention')].map(node => node.textContent)).toEqual(['@管理员', '@张三']);
+    expect(container.querySelector('code')).toHaveTextContent('@admin:hs.test');
+    expect(container.textContent).toContain('bob@example.com');
+  });
+
+  it('highlights mentions in formatted Matrix messages', () => {
+    const { container } = render(<MarkdownMessage content="@admin 请看" formattedContent="<p>@admin 请看</p>" memberMap={{ '@admin:hs.test': 'admin' }} />);
+    expect(container.querySelector('.matrix-mention')).toHaveTextContent('@admin');
+    expect(container.querySelector('.matrix-mention')).toHaveClass('text-blue-600');
+  });
+  it('renders Matrix user links as blue @name mentions', () => {
+    const { container } = render(<MarkdownMessage content="@罗承华 请看" formattedContent={'<p><a href="https://matrix.to/#/%40luo%3Ahs.test">罗承华</a> 请看</p>'} />);
+    expect(container.querySelector('.matrix-mention')).toHaveTextContent('@罗承华');
+    expect(container.querySelector('.matrix-mention')).toHaveClass('text-blue-600');
+  });
   it('renders monitoring, logs and tracing as readable evidence blocks with same-page detail links', () => {
     const hrefs = ['#console/governance/monitoring?kind=worker&name=dev', '#console/governance/monitoring?kind=worker&name=dev&view=logs', '#console/governance/tracing?worker=dev&trace=abc&span=tool-1'];
     const content = hrefs.map((href, index) => `> **${['运行监控', '关键日志', 'Tracing'][index]} · dev**\n>\n> 采样 11:00 · CPU 0.22% · HTTP 429\n>\n> [查看详情](${href})`).join('\n\n');
