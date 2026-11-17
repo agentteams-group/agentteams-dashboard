@@ -219,7 +219,6 @@ export function HumansSection() {
           humans={pagination.items}
           onView={setDetailHuman}
           onEdit={setDrawerHuman}
-          onDelete={setDeleteTarget}
         />
       )}
       {!isLoading && <ListPagination {...pagination} label="用户" />}

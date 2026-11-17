@@ -66,7 +66,6 @@ function Harness({
         humans={[summary]}
         onView={setDetail}
         onEdit={setEditing}
-        onDelete={() => {}}
       />
       <HumanDetailDialog
         human={detail}
@@ -104,18 +103,16 @@ afterEach(() => {
 });
 
 describe('HumanDrawer', () => {
-  it('keeps details visible and editing in the menu and drops the edit action from the detail dialog', async () => {
+  it('keeps details visible and exposes a direct edit action while the detail dialog stays read-only', async () => {
     renderUi(
       <HumanTable
         humans={[summary]}
         onView={vi.fn()}
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByRole('button', { name: '查看 alice 详情' })).toBeInTheDocument();
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'alice 更多操作' }), { button: 0, ctrlKey: false });
-    expect(screen.getByRole('menuitem', { name: '编辑' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑 alice' })).toBeInTheDocument();
     cleanup();
 
     vi.spyOn(agentteamsApi, 'getHuman').mockResolvedValue(summary);
@@ -140,8 +137,7 @@ describe('HumanDrawer', () => {
       expect(screen.queryByText('Human 详情 - alice')).not.toBeInTheDocument(),
     );
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'alice 更多操作' }), { button: 0, ctrlKey: false });
-    fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }));
+    fireEvent.click(screen.getByRole('button', { name: '编辑 alice' }));
     expect(await screen.findByText('编辑人员')).toBeInTheDocument();
     expect(screen.getByText('访问与权限')).toBeInTheDocument();
     expect(screen.getByText('工作区容量配额')).toBeInTheDocument();

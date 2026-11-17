@@ -2,7 +2,6 @@
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { OverflowText } from '@/components/dashboard/overflow-text';
@@ -25,12 +24,10 @@ export function HumanTable({
   humans,
   onView,
   onEdit,
-  onDelete,
 }: {
   humans: HumanResponse[];
   onView: (_human: HumanResponse) => void;
   onEdit: (_human: HumanResponse) => void;
-  onDelete: (_name: string) => void;
 }) {
   return (
     <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
@@ -93,10 +90,15 @@ export function HumanTable({
                     >
                       详情
                     </Button>
-                    <ResourceListMenu label={`${human.name} 更多操作`} items={[
-                      { label: '编辑', onSelect: () => onEdit(human) },
-                      { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
-                    ]} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(human)}
+                      title="编辑人员"
+                      aria-label={`编辑 ${human.name}`}
+                    >
+                      编辑
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
