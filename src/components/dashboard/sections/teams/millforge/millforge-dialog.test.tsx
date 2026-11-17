@@ -346,6 +346,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  // 模块更新来源会持久化到 localStorage，清掉避免跨用例串状态。
+  window.localStorage.clear();
 });
 
 describe('MillforgeDialog · 四 tab 骨架', () => {
@@ -640,6 +642,84 @@ describe('MillforgeDialog · 模块更新 tab', () => {
     expect(screen.queryByText('qwen-code-bridge')).not.toBeInTheDocument();
     // 已装但被过滤的模块也不该落进「索引外的已安装模块（只读）」兜底列表。
     expect(screen.queryByText('索引外的已安装模块（只读）')).not.toBeInTheDocument();
+  });
+
+  it('来源切 GitCode：索引查询与安装请求都带 source，选择持久化，切回恢复 github', async () => {
+    renderDialog();
+    switchTab('模块更新');
+
+    const panel = await screen.findByTestId('millforge-modules-tab');
+    // 工具栏顺序：发布通道 / 来源 / 目标类型 / 目标
+    const sourceSelect = within(panel).getAllByRole('combobox')[1] as HTMLSelectElement;
+    expect(sourceSelect).toHaveValue('github');
+
+    fireEvent.change(sourceSelect, { target: { value: 'gitcode' } });
+    await waitFor(() =>
+      expect(mocks.api.getMillforgeIndex).toHaveBeenLastCalledWith({
+        source: 'gitcode',
+        channel: 'beta',
+      }),
+    );
+    expect(window.localStorage.getItem('millforge.moduleSource')).toBe('gitcode');
+
+    // 切源后重挂的行按新源索引预选版本；安装请求带所选来源。
+    const row = await screen.findByTestId('module-row-teamharness');
+    fireEvent.click(within(row).getByRole('button', { name: /更新/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认更新' }));
+    await waitFor(() =>
+      expect(mocks.api.installTeamModule).toHaveBeenCalledWith(
+        'alpha',
+        'teamharness',
+        expect.objectContaining({ source: 'gitcode', channel: 'beta', version: '0.2.0' }),
+      ),
+    );
+
+    // 确认弹窗已关后再切回 GitHub。
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '确认更新' })).toBeNull(),
+    );
+    fireEvent.change(sourceSelect, { target: { value: 'github' } });
+    // 切回 github 时索引在 staleTime 内命中缓存（与切通道的行为一致），
+    // 不必然重取；断言选择态/持久化与后续安装请求的来源。
+    expect(sourceSelect).toHaveValue('github');
+    expect(window.localStorage.getItem('millforge.moduleSource')).toBe('github');
+
+    const row2 = await screen.findByTestId('module-row-teamharness');
+    fireEvent.click(within(row2).getByRole('button', { name: /更新/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认更新' }));
+    await waitFor(() =>
+      expect(mocks.api.installTeamModule).toHaveBeenLastCalledWith(
+        'alpha',
+        'teamharness',
+        expect.objectContaining({ source: 'github', channel: 'beta', version: '0.2.0' }),
+      ),
+    );
+  });
+
+  it('localStorage 里的来源：合法 gitcode 下次打开沿用，非法值回退 GitHub', async () => {
+    window.localStorage.setItem('millforge.moduleSource', 'gitcode');
+    renderDialog();
+    switchTab('模块更新');
+    await screen.findByTestId('millforge-modules-tab');
+    await waitFor(() =>
+      expect(mocks.api.getMillforgeIndex).toHaveBeenCalledWith({
+        source: 'gitcode',
+        channel: 'beta',
+      }),
+    );
+    cleanup();
+    mocks.api.getMillforgeIndex.mockClear();
+
+    window.localStorage.setItem('millforge.moduleSource', 'gitlab');
+    renderDialog();
+    switchTab('模块更新');
+    await screen.findByTestId('millforge-modules-tab');
+    await waitFor(() =>
+      expect(mocks.api.getMillforgeIndex).toHaveBeenCalledWith({
+        source: 'github',
+        channel: 'beta',
+      }),
+    );
   });
 });
 

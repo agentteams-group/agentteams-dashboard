@@ -57,8 +57,15 @@ import {
 
 type TargetKind = 'team' | 'worker' | 'manager';
 type ReleaseChannel = NonNullable<MillforgeIndexQuery['channel']>;
+type ModuleSource = NonNullable<MillforgeIndexQuery['source']>;
 
 const CHANNELS: ReleaseChannel[] = ['alpha', 'beta', 'stable'];
+const MODULE_SOURCES: { value: ModuleSource; label: string }[] = [
+  { value: 'github', label: 'GitHub' },
+  { value: 'gitcode', label: 'GitCode' },
+];
+/** 模块更新来源的持久化 key（非法/缺失值回默认 GitHub）。 */
+const SOURCE_STORAGE_KEY = 'millforge.moduleSource';
 const TARGET_LABELS: Record<TargetKind, string> = {
   team: '团队',
   worker: 'Worker',
@@ -93,6 +100,16 @@ const STATE_CLASSES: Record<ModuleUpdateState | 'inconsistent', string> = {
 /** 404/405 = Controller 尚未提供该路由（旧版本）→ 诚实降级。 */
 function isUnsupported(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 404 || error.status === 405);
+}
+
+/** 读取持久化的来源；缺失/非法值返回 null（由调用方回默认 GitHub）。 */
+function readStoredSource(): ModuleSource | null {
+  try {
+    const raw = window.localStorage.getItem(SOURCE_STORAGE_KEY);
+    return raw === 'github' || raw === 'gitcode' ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadInstalled(kind: TargetKind, name: string): Promise<InstalledRow[]> {
@@ -299,12 +316,29 @@ export function MillforgeModulesTab({
 }) {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ReleaseChannel>('beta');
+  const [source, setSourceState] = useState<ModuleSource>('github');
   const [targetKind, setTargetKind] = useState<TargetKind>('team');
   const [teamName, setTeamName] = useState(defaultTeam);
   const [workerName, setWorkerName] = useState('');
   const [managerName, setManagerName] = useState('');
   const [pending, setPending] = useState<PendingInstall | null>(null);
   const [installing, setInstalling] = useState(false);
+
+  // 来源选择持久化（与 use-view-mode 同款：SSR 渲染默认值，挂载后再读
+  // localStorage 应用，避免水合不一致；非法值 readStoredSource 已过滤）。
+  useEffect(() => {
+    const stored = readStoredSource();
+    if (stored && stored !== 'github') setSourceState(stored);
+  }, []);
+
+  const setSource = (next: ModuleSource) => {
+    setSourceState(next);
+    try {
+      window.localStorage.setItem(SOURCE_STORAGE_KEY, next);
+    } catch {
+      // 持久化尽力而为（隐私模式等），来源选择不持久也不影响功能。
+    }
+  };
 
   const { data: teams } = useTeams();
   const { data: workers } = useWorkers();
@@ -328,9 +362,10 @@ export function MillforgeModulesTab({
   const targetOptions =
     targetKind === 'team' ? teamOptions : targetKind === 'worker' ? workerOptions : managerOptions;
 
+  // queryKey 带 source：切换来源即重取索引（GitHub / GitCode 两份缓存独立）。
   const indexQuery = useQuery({
-    queryKey: ['millforge-index', channel],
-    queryFn: () => agentteamsApi.getMillforgeIndex({ source: 'github', channel }),
+    queryKey: ['millforge-index', source, channel],
+    queryFn: () => agentteamsApi.getMillforgeIndex({ source, channel }),
     retry: 1,
     staleTime: 60_000,
   });
@@ -378,7 +413,7 @@ export function MillforgeModulesTab({
     try {
       const body: ModuleInstallRequest = {
         module: pending.entry.module,
-        source: 'github',
+        source,
         channel,
         version: pending.version,
       };
@@ -416,6 +451,21 @@ export function MillforgeModulesTab({
               {CHANNELS.map((value) => (
                 <SelectItem key={value} value={value} className="text-xs">
                   {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">来源</Label>
+          <Select value={source} onValueChange={(value) => setSource(value as ModuleSource)}>
+            <SelectTrigger className="h-8 w-24 text-xs" aria-label="来源">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MODULE_SOURCES.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -533,7 +583,8 @@ export function MillforgeModulesTab({
           {rows.length === 0 ? <p className="text-xs text-muted-foreground">索引中暂无模块</p> : null}
           {rows.map(({ entry, rawEntry, installed: current }) => (
             <ModuleRow
-              key={entry.module}
+              // key 带 source：切换来源时整行重挂，重置已选版本，避免跨源安装。
+              key={`${source}:${entry.module}`}
               entry={entry}
               rawEntry={rawEntry}
               installed={current}

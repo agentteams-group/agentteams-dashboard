@@ -1,7 +1,8 @@
 'use client';
 
 // 团队设置的「千锻」入口卡——整卡即按钮：logo + 标题 + 一句说明
-// （注入 / 自定义 / 模块更新 / 历史）+ 右侧 ›，点击打开四 tab 弹窗。
+// （SOUL 注入 · 协作模块更新 · 自定义团队 · 历史）+ 右侧 ›，点击打开四 tab 弹窗。
+// 说明行 = 副标题与四 tab 一览的合并行（3 行会把卡高拉高 ~18px，合并后卡高不变）。
 // disabled + disabledReason：与插件 MillforgeEntryCard 同语义
 // （权限/数据不就绪时整卡禁用并在 title 里给原因）。
 
@@ -36,15 +37,18 @@ export function MillforgeEntryCard({
         <Image
           src="/millforge-logo.svg"
           alt=""
-          width={42}
-          height={30}
+          width={28}
+          height={20}
           unoptimized
           data-testid="millforge-logo"
-          className="h-[30px] w-auto max-w-14 shrink-0"
+          className="h-5 w-auto shrink-0"
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-xs font-semibold">千锻</span>
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-[11px] font-medium text-muted-foreground">千锻</span>
+          <span className="truncate text-[11px] text-muted-foreground">
+            SOUL 注入 · 协作模块更新 · 自定义团队
+          </span>
+          <span className="truncate text-[11px] text-muted-foreground/80">
             注入 / 自定义 / 模块更新 / 历史
           </span>
         </span>
