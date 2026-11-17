@@ -30,6 +30,11 @@ vi.mock('@/hooks/use-agentteams-managers', () => ({
 vi.mock('@/hooks/use-agentteams-workers', () => ({
   useWorkers: () => ({ data: [] }),
 }));
+vi.mock('@/hooks/use-room-archive', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/use-room-archive')>();
+  const data = { rooms: [] };
+  return { ...actual, useArchivedRooms: () => ({ data }) };
+});
 vi.mock('@/hooks/use-projects', () => ({
   useApiTaskBoard: () => ({
     projects: [FAKE_PROJECT],
