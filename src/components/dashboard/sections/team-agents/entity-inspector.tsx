@@ -10,9 +10,12 @@
 //   Team = 删除团队（仅 L1；完整配置仍在详情大弹窗）；
 // - 分区按钮列表（行高 ≥44px、右侧箭头）：点击打开详情大弹窗并直达该分区
 //   （onOpenSection(tab id)，section 写入 URL ?panel=，见 team-agents-section A4）。
+// - 分区按钮下方：常驻只读详情——
+//   worker = WorkerDetailSummary（与只读详情弹窗同一实现，禁复制）；
+//   team = 头部 TeamStatusSummary（既有只读摘要）；
+//   manager = 无现成只读组件，不另造面板（任务书②分支）。
 //
-// 只发 mutation / 导航，不承载面板本体——面板仍是大弹窗里的单一实现，
-// 这里不复制第二份编辑 UI。
+// 只发 mutation / 导航，不承载可编辑面板本体——编辑仍是大弹窗里的单一实现。
 
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -61,6 +64,7 @@ import { toast } from 'sonner';
 import type { ManagerDmTarget } from '../managers/manager-drawer-logic';
 import { dmTargetFor, isManagerAsleep } from '../managers/manager-drawer-logic';
 import { TeamStatusSummary } from '../teams/team-status-summary';
+import { WorkerDetailSummary } from '../workers/worker-detail-summary';
 import { ROLE_LABELS, memberRole } from './team-agents-logic';
 
 interface SectionEntry {
@@ -409,7 +413,7 @@ export function EntityInspector({
         </div>
       </div>
 
-      {/* 分区列表（独立滚动）。 */}
+      {/* 分区列表 + 常驻只读详情（独立滚动；只读，可编辑面在分区弹窗）。 */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2 custom-scrollbar">
         <p className="px-1.5 pb-1 pt-0.5 text-xs font-semibold text-muted-foreground">详情分区</p>
         <ul className="space-y-0.5" aria-label="详情分区">
@@ -426,6 +430,14 @@ export function EntityInspector({
             </li>
           ))}
         </ul>
+        {/* worker 常驻只读详情（与 WorkerDetailDialog 正文同一实现）；
+            team 的只读摘要在头部（TeamStatusSummary），manager 无现成只读组件。 */}
+        {entity.kind === 'worker' && (
+          <div className="mt-2 border-t pt-2">
+            <p className="px-1.5 pb-1 text-xs font-semibold text-muted-foreground">只读详情</p>
+            <WorkerDetailSummary worker={entity.worker} />
+          </div>
+        )}
       </div>
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>

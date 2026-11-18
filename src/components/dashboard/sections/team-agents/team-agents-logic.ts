@@ -265,3 +265,159 @@ export function groupAgentsByTeam<T extends { team?: string }>(
   ];
   return ordered.map((key) => ({ team: key, agents: buckets.get(key)! }));
 }
+
+// ===== 智能体卡片：分组开关 / 排序偏好 / 整组分页（纯逻辑） =====
+
+/** 智能体卡片排序键：分组开 = 团队名称 / Human 名称；分组关 = 智能体名称。 */
+export type AgentSortKey = 'team' | 'admin' | 'name';
+export type AgentSortDir = 'asc' | 'desc';
+export interface AgentSortState {
+  key: AgentSortKey;
+  dir: AgentSortDir;
+}
+
+/** 当前分组模式下可选的排序键。 */
+export function agentSortKeys(grouped: boolean): AgentSortKey[] {
+  return grouped ? ['team', 'admin'] : ['name'];
+}
+
+/** 当前分组模式的默认排序键（升降序默认 asc）。 */
+export function defaultAgentSortKey(grouped: boolean): AgentSortKey {
+  return grouped ? 'team' : 'name';
+}
+
+/** localStorage `teamAgents.sort`（`team:asc` / `admin:desc` / `name:asc`）解析；非法值返回 null。 */
+export function parseAgentSortPreference(raw: string | null): AgentSortState | null {
+  if (!raw) return null;
+  const parts = raw.split(':');
+  if (parts.length !== 2) return null;
+  const [key, dir] = parts;
+  if (key !== 'team' && key !== 'admin' && key !== 'name') return null;
+  if (dir !== 'asc' && dir !== 'desc') return null;
+  return { key, dir };
+}
+
+/** 序列化为 `teamAgents.sort` 存储值。 */
+export function formatAgentSortPreference(sort: AgentSortState): string {
+  return `${sort.key}:${sort.dir}`;
+}
+
+/** 切换分组模式后当前键不适用时，回落到该模式默认键（dir 保留）。 */
+export function fallbackAgentSort(sort: AgentSortState, grouped: boolean): AgentSortState {
+  return agentSortKeys(grouped).includes(sort.key)
+    ? sort
+    : { key: defaultAgentSortKey(grouped), dir: sort.dir };
+}
+
+/**
+ * 分组排序（分组开）：
+ * - team：组名 zh 排序；「无团队」（team=''）恒排最后，与 dir 无关；
+ * - admin：`team.admin` 名 zh 排序；无 admin 的组恒排最后（同档组名升序保底确定性）；
+ * - name：分组模式下不参与组序（按 team 键处理）。
+ */
+export function sortAgentGroups<T extends { name: string; team?: string; adminName?: string }>(
+  groups: Array<{ team: string; agents: T[] }>,
+  key: AgentSortKey,
+  dir: AgentSortDir,
+): Array<{ team: string; agents: T[] }> {
+  const direction = dir === 'asc' ? 1 : -1;
+  const adminOf = (group: { team: string; agents: T[] }): string | undefined =>
+    group.team === '' ? undefined : group.agents.find((agent) => agent.adminName)?.adminName;
+  return [...groups].sort((a, b) => {
+    const aNone = a.team === '';
+    const bNone = b.team === '';
+    if (aNone !== bNone) return aNone ? 1 : -1;
+    const sortKey = key === 'name' ? 'team' : key;
+    if (sortKey === 'admin') {
+      const aAdmin = adminOf(a);
+      const bAdmin = adminOf(b);
+      const aRank = aAdmin ? 0 : 1;
+      const bRank = bAdmin ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+      if (aRank === 0 && bRank === 0) {
+        const cmp = aAdmin!.localeCompare(bAdmin!, 'zh');
+        if (cmp !== 0) return cmp * direction;
+      }
+    }
+    const cmp = a.team.localeCompare(b.team, 'zh');
+    if (cmp !== 0) return cmp * direction;
+    return 0;
+  });
+}
+
+/** 整组分页：组不跨页；单组超 pageSize 时独占一页（可溢出）。返回每页的组下标。 */
+export function paginateGroupIndexes(counts: number[], pageSize = 12): number[][] {
+  const pages: number[][] = [];
+  let current: number[] = [];
+  let currentCount = 0;
+  counts.forEach((count, index) => {
+    if (currentCount > 0 && currentCount + count > pageSize) {
+      pages.push(current);
+      current = [];
+      currentCount = 0;
+    }
+    current.push(index);
+    currentCount += count;
+  });
+  if (current.length > 0) pages.push(current);
+  return pages;
+}
+
+/** 智能体卡片分页结果：`pages` 为全部页（每页 = 组块序列；分组关为单个 team='' 平铺块）。 */
+export interface AgentPagingResult<T> {
+  pages: Array<Array<{ team: string; agents: T[] }>>;
+  totalPages: number;
+  totalItems: number;
+}
+
+/**
+ * 智能体卡片 ① 分页 + ④ 排序：
+ * - 分组开 = 按整组切页（组不跨页；组内恒按智能体名升序，本函数内部排序）；
+ * - 分组关 = 平铺数组按智能体名升/降序，每页 pageSize 条。
+ */
+export function paginateAgentCards<T extends { name: string; team?: string }>(
+  agents: T[],
+  teams: TeamResponse[],
+  options: { grouped: boolean; sort: AgentSortState },
+  pageSize = 12,
+): AgentPagingResult<T> {
+  const totalItems = agents.length;
+  if (!options.grouped) {
+    const direction = options.sort.dir === 'asc' ? 1 : -1;
+    const sorted = [...agents].sort(
+      (a, b) => a.name.localeCompare(b.name, 'zh') * direction,
+    );
+    const pages: Array<Array<{ team: string; agents: T[] }>> = [];
+    for (let start = 0; start < sorted.length; start += pageSize) {
+      pages.push([{ team: '', agents: sorted.slice(start, start + pageSize) }]);
+    }
+    return { pages, totalPages: Math.max(1, pages.length), totalItems };
+  }
+  const teamAdmins = new Map<string, string>();
+  for (const team of teams) {
+    const key = team.name ?? team.teamName ?? '';
+    const admin = team.admin?.name;
+    if (key && admin && !teamAdmins.has(key)) teamAdmins.set(key, admin);
+  }
+  const groups = groupAgentsByTeam(agents).map((group) => ({
+    team: group.team,
+    // 组内恒按智能体名称升序（与输入顺序无关）。
+    agents: [...group.agents]
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+      .map((agent) => ({
+        ...agent,
+        adminName: group.team === '' ? undefined : teamAdmins.get(group.team),
+      })),
+  }));
+  const sortedGroups = sortAgentGroups(
+    groups,
+    options.sort.key === 'name' ? 'team' : options.sort.key,
+    options.sort.dir,
+  );
+  const indexPages = paginateGroupIndexes(
+    sortedGroups.map((group) => group.agents.length),
+    pageSize,
+  );
+  const pages = indexPages.map((indexes) => indexes.map((index) => sortedGroups[index]));
+  return { pages, totalPages: Math.max(1, pages.length), totalItems };
+}

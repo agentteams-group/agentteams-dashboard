@@ -1,315 +1,286 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { useState } from 'react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { WorkerResponse } from '@/lib/agentteams-api';
-import { agentteamsApi } from '@/lib/agentteams-api';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 
-const mounts = vi.hoisted(() => ({
-  surface: {} as Record<string, number>,
-  qwenpaw: 0,
-  mcp: 0,
-  tools: 0,
-  skills: 0,
-  channels: 0,
-  approval: 0,
-  coding: 0,
-  workspace: 0,
-  env: 0,
-  llm: 0,
-  plugins: 0,
-  checkpoints: 0,
+// 整改③ 新契约：WorkerDrawer = EntityInspector（真实，头部 + 动作 + 分区按钮 +
+// 按钮下方只读详情）+ EntitySectionDialogs（共享弹窗路由）。
+// 三个 section 弹窗按 kind 互斥——抽屉只承载 worker 实体，全部 stub：
+// stub 断言 open / worker / initialTab / chrome 接线，并带一个输入框标记「可编辑」。
+const dialogState = vi.hoisted(() => ({
+  open: false,
+  workerName: null as string | null,
+  initialTab: undefined as string | undefined,
+  chrome: undefined as string | undefined,
+  lastOpenChange: null as ((open: boolean) => void) | null,
 }));
 
-const detailState = vi.hoisted(() => ({ worker: null as unknown }));
-
-vi.mock('@/lib/worker-detail', () => ({
-  fetchWorkerDetail: vi.fn(async () => detailState.worker),
-  invalidateWorkerDetail: vi.fn(),
-}));
-vi.mock('@/hooks/use-now-tick', () => ({ useNowTick: () => 0 }));
-vi.mock('@/hooks/use-agentteams-worker-skills', () => ({
-  useWorkerSkills: () => ({ data: [] }),
-  useUploadWorkerSkill: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
-
-vi.mock('./worker-runtime-config-surface', () => ({
-  WorkerRuntimeConfigSurface: ({ bucket = 'config' }: { bucket?: string }) => {
-    mounts.surface[bucket] = (mounts.surface[bucket] ?? 0) + 1;
-    return <div>{`surface-${bucket}`}</div>;
-  },
-}));
-vi.mock('./qwenpaw-runtime-config-panel', () => ({
-  QwenpawRuntimeConfigPanel: ({
-    workerName,
-    canWrite,
+vi.mock('../team-agents/worker-detail-dialog', () => ({
+  WorkerDetailDialog: ({
+    open,
+    onOpenChange,
+    worker,
+    initialTab,
+    chrome,
   }: {
-    workerName: string;
-    canWrite?: boolean;
+    open: boolean;
+    onOpenChange: (_open: boolean) => void;
+    worker: WorkerResponse | null;
+    initialTab?: string;
+    chrome?: 'full' | 'section';
   }) => {
-    mounts.qwenpaw += 1;
-    return <div>{`qwenpaw-runtime-${workerName}-${canWrite ? 'rw' : 'ro'}`}</div>;
+    dialogState.open = open;
+    dialogState.workerName = worker?.name ?? null;
+    dialogState.initialTab = initialTab;
+    dialogState.chrome = chrome;
+    dialogState.lastOpenChange = onOpenChange;
+    if (!open || !worker) return null;
+    return (
+      <div role="dialog" aria-label={`stub-detail:${worker.name}:${initialTab ?? 'basic'}`}>
+        <input aria-label="stub-editable-input" />
+        <button type="button" aria-label="stub-close" onClick={() => onOpenChange(false)}>
+          stub-close
+        </button>
+      </div>
+    );
   },
 }));
-vi.mock('./worker-tools-panel', () => ({
-  WorkerToolsPanel: () => { mounts.tools += 1; return <div>tools-panel</div>; },
+vi.mock('../team-agents/team-detail-dialog', () => ({
+  TeamDetailDialog: () => null,
 }));
-vi.mock('./worker-mcp-panel', () => ({
-  WorkerMcpPanel: ({ worker }: { worker: { mcpServers?: Array<{ name: string }> } }) => {
-    mounts.mcp += 1;
-    return <div>{(worker.mcpServers ?? []).map((server) => server.name).join(',')}</div>;
-  },
+vi.mock('../team-agents/manager-detail-dialog', () => ({
+  ManagerDetailDialog: () => null,
 }));
-vi.mock('./worker-skill-assign', () => ({
-  WorkerSkillAssign: () => { mounts.skills += 1; return <div>skills-panel</div>; },
-}));
-vi.mock('./worker-skill-upload-dialog', () => ({
-  WorkerSkillUploadDialog: () => <div>upload-dialog</div>,
-}));
-vi.mock('./worker-channels-panel', () => ({
-  WorkerChannelsPanel: () => { mounts.channels += 1; return <div>channels-panel</div>; },
-}));
-vi.mock('./worker-approval-control', () => ({
-  WorkerApprovalControl: () => { mounts.approval += 1; return <div>approval-panel</div>; },
-}));
-vi.mock('./worker-coding-cli-panel', () => ({
-  WorkerCodingCliPanel: () => { mounts.coding += 1; return <div>coding-panel</div>; },
-}));
-vi.mock('./worker-workspace-files-panel', () => ({
-  WorkerWorkspaceFilesPanel: () => { mounts.workspace += 1; return <div>workspace-panel</div>; },
-}));
-vi.mock('./worker-env-card', () => ({
-  WorkerEnvCard: () => { mounts.env += 1; return <div>env-panel</div>; },
-}));
-vi.mock('./worker-llm-tuning-panel', () => ({
-  WorkerLlmTuningPanel: () => { mounts.llm += 1; return <div>llm-panel</div>; },
-}));
-vi.mock('./worker-plugins-card', () => ({
-  WorkerPluginsCard: () => { mounts.plugins += 1; return <div>plugins-panel</div>; },
-}));
-vi.mock('./worker-checkpoints-card', () => ({
-  WorkerCheckpointsCard: () => { mounts.checkpoints += 1; return <div>checkpoints-card</div>; },
-}));
+vi.mock('@/hooks/use-agentteams-mutations', () => {
+  // mutate(vars, { onSuccess })：立即触发成功回调，覆盖「删除成功 → 关弹窗/抽屉」链路。
+  const hook = () => ({
+    mutate: vi.fn((_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.()),
+    mutateAsync: vi.fn(async () => null),
+    isPending: false,
+  });
+  return {
+    useCreateTeam: hook,
+    useCreateWorker: hook,
+    useUpdateTeam: hook,
+    useDeleteTeam: hook,
+    useUpdateWorker: hook,
+    useDeleteWorker: hook,
+    useWakeWorker: hook,
+    useSleepWorker: hook,
+    useEnsureReadyWorker: hook,
+    useUpdateManager: hook,
+  };
+});
 
 import { WorkerDrawer } from './worker-drawer';
 
-const worker = {
-  name: 'worker-a',
-  phase: 'Running',
-  state: 'Running',
-  containerManaged: true,
-  model: 'gpt-5',
-  // CoPaw exposes every card (legacy migration card included) and routes the
-  // capability cards through the runtime surface (non-QwenPaw path).
-  runtime: 'copaw',
-  image: 'img:latest',
-  containerState: 'running',
-  matrixUserID: '@worker-a:server',
-  roomID: '!room:server',
+const teamAlpha = {
+  name: 'alpha',
+  teamName: 'Alpha',
+  phase: 'Active',
+  admin: { name: 'boss' },
+  humanMembers: [],
+  leaderName: 'lead',
+  leaderHeartbeat: null,
+  workerIdleTimeout: '720m',
+  teamRoomID: '!team:server',
+  leaderDMRoomID: '!dm:server',
+  leaderReady: true,
+  readyWorkers: 2,
+  totalWorkers: 2,
   message: '',
-  team: 'team-alpha',
-  role: 'worker',
-  agentStatus: 'idle',
-  runningTaskCount: 0,
-  lastActivityAt: new Date(Date.now() - 60_000).toISOString(),
-  env: { A: '1', B: '2' },
-  skills: ['s1'],
-  mcpServers: [{ name: 'ctx7', url: 'http://mcp', transport: 'http' }],
-} as unknown as WorkerResponse;
+  workerNames: ['lead', 'worker-a'],
+  workerExposedPorts: {},
+} as unknown as TeamResponse;
 
-function renderDrawerFor(target: WorkerResponse, userLevel = 3) {
-  detailState.worker = target;
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <WorkerDrawer
-        worker={target}
-        onOpenChange={vi.fn()}
-        modelOptions={[]}
-        userLevel={userLevel}
-        onChanged={vi.fn()}
-      />
+function workerFixture(name: string): WorkerResponse {
+  return {
+    name,
+    phase: 'Running',
+    state: 'Running',
+    containerManaged: true,
+    model: `${name}-model`,
+    runtime: 'qwenpaw',
+    image: 'img:latest',
+    containerState: 'running',
+    matrixUserID: `@${name}:server`,
+    roomID: `!${name}:server`,
+    message: '',
+    team: 'alpha',
+    role: 'worker',
+    lastActivityAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  } as unknown as WorkerResponse;
+}
+
+const workerA = workerFixture('worker-a');
+const workerList = [workerA, workerFixture('lead')];
+
+interface DrawerOptions {
+  userLevel?: number;
+  teams?: TeamResponse[];
+  workers?: WorkerResponse[];
+  onDeleted?: () => void;
+}
+
+function makeClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+}
+
+function renderDrawer(target: WorkerResponse, options: DrawerOptions = {}) {
+  const client = makeClient();
+  const onOpenChange = vi.fn();
+  const utils = render(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <WorkerDrawer
+          worker={target}
+          onOpenChange={onOpenChange}
+          modelOptions={[]}
+          userLevel={options.userLevel ?? 3}
+          teams={options.teams ?? [teamAlpha]}
+          workers={options.workers ?? workerList}
+          onChanged={vi.fn()}
+          onDeleted={options.onDeleted}
+        />
+      </TooltipProvider>
     </QueryClientProvider>,
+  );
+  return { ...utils, onOpenChange };
+}
+
+function SwitchableDrawer({ worker }: { worker: WorkerResponse }) {
+  return (
+    <WorkerDrawer
+      worker={worker}
+      onOpenChange={vi.fn()}
+      modelOptions={[]}
+      userLevel={3}
+      teams={[teamAlpha]}
+      workers={workerList}
+      onChanged={vi.fn()}
+    />
   );
 }
 
-function renderDrawer(userLevel = 3) {
-  return renderDrawerFor(worker, userLevel);
-}
-
 beforeEach(() => {
-  mounts.surface = {};
-  mounts.qwenpaw = 0;
-  mounts.mcp = 0;
-  mounts.tools = 0;
-  mounts.skills = 0;
-  mounts.channels = 0;
-  mounts.approval = 0;
-  mounts.coding = 0;
-  mounts.workspace = 0;
-  mounts.env = 0;
-  mounts.llm = 0;
-  mounts.plugins = 0;
-  mounts.checkpoints = 0;
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('/observability')) {
-      return new Response(JSON.stringify({ error: '仅管理员' }), { status: 403 });
+  localStorage.clear();
+  dialogState.open = false;
+  dialogState.workerName = null;
+  dialogState.initialTab = undefined;
+  dialogState.chrome = undefined;
+  dialogState.lastOpenChange = null;
+});
+
+afterEach(cleanup);
+
+describe('WorkerDrawer（③：Inspector + 分区弹窗共享接线）', () => {
+  it('抽屉 = Inspector：标题 / 头部 / 角色徽标 / 6 个分区按钮 / 下方只读详情 / 快动作', () => {
+    renderDrawer(workerA);
+    const drawer = screen.getByRole('dialog', { name: 'Worker 详情' });
+    expect(within(drawer).getByRole('heading', { name: 'worker-a' })).toBeInTheDocument();
+    expect(within(drawer).getByText('成员')).toBeInTheDocument();
+    for (const title of ['基础配置', 'MCP', '技能', '高级配置', '工作区文件', '会话']) {
+      expect(within(drawer).getByRole('button', { name: title })).toBeInTheDocument();
     }
-    return new Response('{}', { status: 404 });
-  }));
-});
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-it('shows a nonblocking skill warning while keeping skill editing available', async () => {
-  renderDrawerFor({ ...worker, runtime: 'qwenpaw', phase: 'Running', skillWarnings: ['Skill broken: load failed (ParserError)'] });
-  fireEvent.mouseDown(screen.getByRole('tab', { name: /^技能/ }), { button: 0, ctrlKey: false });
-  expect(await screen.findByText('部分技能未能加载，Agent 可继续运行')).toBeInTheDocument();
-  expect(screen.getByText('Skill broken: load failed (ParserError)')).toBeInTheDocument();
-  expect(screen.getByText('skills-panel')).toBeInTheDocument();
-});
-
-it('saves the OpenClaw heartbeat switch without environment changes and reads it back', async () => {
-  const target: WorkerResponse = { ...worker, runtime: 'openclaw', envEditable: true, llmHeartbeatEnabled: true };
-  const update = vi.spyOn(agentteamsApi, 'updateWorker').mockImplementation(async (_name, data) => {
-    detailState.worker = { ...target, ...data };
-    return detailState.worker as WorkerResponse;
-  });
-  renderDrawerFor(target);
-  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeChecked();
-  fireEvent.click(screen.getByRole('switch', { name: '自主巡检' }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith('worker-a', { llmHeartbeatEnabled: false }));
-  await waitFor(() => expect(screen.getByRole('switch', { name: '自主巡检' })).not.toBeChecked());
-});
-
-it('keeps the heartbeat switch read-only for non-admin viewers', async () => {
-  renderDrawerFor({ ...worker, runtime: 'openclaw', envEditable: false, llmHeartbeatEnabled: true }, 2);
-  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeDisabled();
-});
-
-it('does not show the OpenClaw heartbeat switch for other runtimes', async () => {
-  renderDrawer();
-  expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
-});
-
-const CARDS: Array<{ title: string; content: string }> = [
-  { title: '高级配置', content: 'surface-config' },
-  { title: 'MCP', content: 'surface-mcp' },
-  { title: '工具', content: 'surface-tools' },
-  { title: '技能', content: 'surface-skills' },
-  { title: '频道', content: 'surface-channels' },
-  { title: '审批模式', content: 'surface-approval' },
-  { title: 'Coding CLI', content: 'coding-panel' },
-  { title: '工作区文件', content: 'workspace-panel' },
-  { title: 'Worker 插件', content: 'plugins-panel' },
-  { title: '运行时升级', content: '将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。' },
-  { title: '检查点', content: 'checkpoints-card' },
-];
-
-describe('WorkerDrawer', () => {
-  it('renders header, status and model card', () => {
-    renderDrawer();
-    expect(screen.getByText('worker-a')).toBeInTheDocument();
-    expect(screen.getByText('成员')).toBeInTheDocument();
-    expect(screen.getByText('心跳')).toBeInTheDocument();
-    expect(screen.getByText('最近活动')).toBeInTheDocument();
-    expect(screen.getByText('在跑任务')).toBeInTheDocument();
-    expect(screen.getByText('上次运行')).toBeInTheDocument();
-    expect(screen.getByText('上次完成')).toBeInTheDocument();
-    expect(screen.getAllByText('gpt-5').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('tab', { name: '基础配置' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: '模型' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: '环境变量与网关' })).not.toBeInTheDocument();
+    // ② 分区按钮下方常驻只读详情（与只读详情弹窗同一实现 WorkerDetailSummary）。
+    expect(within(drawer).getByText('只读详情')).toBeInTheDocument();
+    expect(within(drawer).getByText('容器状态')).toBeInTheDocument();
+    // 容器状态值 / 模型值与头部 chips 重复出现（阶段徽标「运行中」、头部模型）——用计数断言。
+    expect(within(drawer).getAllByText('running').length).toBeGreaterThanOrEqual(1);
+    expect(within(drawer).getAllByText('worker-a-model').length).toBeGreaterThanOrEqual(1);
+    // 快动作：休眠 / 重启 / 删除（L1）。
+    expect(within(drawer).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: /重启/ })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: /删除/ })).toBeInTheDocument();
+    // 旧全量编辑面不再在抽屉内（无 tab 列表 / 无内联配置面板）。
+    expect(within(drawer).queryByRole('tablist')).toBeNull();
   });
 
-  it('renders vertical resource tabs without mounting all configuration panels', () => {
-    renderDrawer();
-    expect(screen.getAllByRole('button', { name: /./ })).not.toHaveLength(0);
-    for (const card of CARDS.filter((card) => ['高级配置', 'MCP', '技能', '工作区文件'].includes(card.title))) {
-      expect(screen.getByRole('tab', { name: card.title })).toBeInTheDocument();
+  it('点分区按钮 → 可编辑分区弹窗（共享路由：worker 实体 + initialTab + chrome=section）', async () => {
+    renderDrawer(workerA);
+    fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
+    const dialog = await screen.findByRole('dialog', { name: 'stub-detail:worker-a:mcp' });
+    // 可编辑标记：弹窗内含输入框。
+    expect(within(dialog).getByRole('textbox', { name: 'stub-editable-input' })).toBeInTheDocument();
+    expect(dialogState.workerName).toBe('worker-a');
+    expect(dialogState.initialTab).toBe('mcp');
+    expect(dialogState.chrome).toBe('section');
+    // 关闭分区弹窗 → 抽屉仍在。
+    fireEvent.click(within(dialog).getByRole('button', { name: 'stub-close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /stub-detail/ })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Worker 详情' })).toBeInTheDocument();
+  });
+
+  it('未传 teams / workers 时保持兼容（homeTeam=null，成员口径为空）', () => {
+    const utils = render(<WorkerDrawer worker={workerA} onOpenChange={vi.fn()} modelOptions={[]} userLevel={3} />);
+    const drawer = screen.getByRole('dialog', { name: 'Worker 详情' });
+    expect(within(drawer).getByRole('heading', { name: 'worker-a' })).toBeInTheDocument();
+    expect(within(drawer).getByText('成员')).toBeInTheDocument();
+    utils.unmount();
+  });
+
+  it('切换 worker（重开抽屉）→ 分区弹窗状态复位', async () => {
+    const client = makeClient();
+    const utils = render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <SwitchableDrawer worker={workerA} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'MCP' }));
+    await screen.findByRole('dialog', { name: 'stub-detail:worker-a:mcp' });
+    const workerB = { ...workerA, name: 'worker-b' };
+    utils.rerender(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <SwitchableDrawer worker={workerB} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /stub-detail/ })).toBeNull());
+    const drawer = screen.getByRole('dialog', { name: 'Worker 详情' });
+    expect(within(drawer).getByRole('heading', { name: 'worker-b' })).toBeInTheDocument();
+  });
+
+  it('删除（L1）：确认 → 关分区弹窗 + 关抽屉 + onDeleted 回调', async () => {
+    const onDeleted = vi.fn();
+    // 状态化父组件：onOpenChange(false) → 清 worker（模拟列表页真实行为，抽屉随之卸载）。
+    function Parent() {
+      const [target, setTarget] = useState(workerA);
+      return (
+        <WorkerDrawer
+          worker={target}
+          onOpenChange={(open) => {
+            if (!open) setTarget(null);
+          }}
+          modelOptions={[]}
+          userLevel={3}
+          teams={[teamAlpha]}
+          workers={workerList}
+          onChanged={vi.fn()}
+          onDeleted={onDeleted}
+        />
+      );
     }
-    expect(screen.getByRole('tablist', { name: 'Agent 配置' })).toHaveAttribute('aria-orientation', 'vertical');
-    expect(screen.queryByText('env-panel')).not.toBeInTheDocument();
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <TooltipProvider>
+          <Parent />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /删除/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Worker 详情' })).toBeNull());
   });
 
-  it('does not mount panel content until a card is opened', () => {
-    renderDrawer();
-    expect(screen.queryByText('checkpoints-card')).not.toBeInTheDocument();
-    expect(mounts.checkpoints).toBe(0);
-    expect(mounts.surface).toEqual({});
-    expect(mounts.qwenpaw).toBe(0);
-    expect(mounts.coding).toBe(0);
-  });
-
-  it('routes QwenPaw runtime config to the legacy panel instead of the surface', async () => {
-    const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
-    renderDrawerFor(qwenpawWorker);
-
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
-
-    expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
-    expect(mounts.qwenpaw).toBe(1);
-    expect(mounts.surface).toEqual({});
-  });
-
-  it('treats an empty runtime as non-QwenPaw (surface-driven, no fake fields)', async () => {
-    const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
-    renderDrawerFor(runtimeLessWorker);
-
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
-
-    expect(await screen.findByText('surface-config')).toBeInTheDocument();
-    expect(mounts.qwenpaw).toBe(0);
-  });
-
-  it.each(CARDS)('switches to "$title" inline and returns to basic information', async ({ title, content }) => {
-    renderDrawer();
-    const standalone = ['高级配置', 'MCP', '技能', '工作区文件'].includes(title);
-    fireEvent.mouseDown(screen.getByRole('tab', { name: standalone ? title : '高级配置' }), { button: 0, ctrlKey: false });
-    if (!standalone) {
-      const summary = screen.getByText(title, { selector: 'summary' });
-      (summary.parentElement as HTMLDetailsElement).open = true;
-      fireEvent(summary.parentElement!, new Event('toggle'));
-    }
-
-    expect(await screen.findByText(content)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '关闭弹窗' })).not.toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '基础配置' }), { button: 0, ctrlKey: false });
-    await waitFor(() => expect(screen.queryByText(content)).not.toBeInTheDocument());
-  });
-
-  it('selects resource tabs through the keyboard', async () => {
-    renderDrawer();
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'MCP' }), { key: 'Enter' });
-    expect(await screen.findByText('surface-mcp')).toBeInTheDocument();
-
-    expect(screen.getByRole('tab', { name: 'MCP' })).toHaveAttribute('aria-selected', 'true');
-  });
-
-  it('shows delete only for L1 (dashboard level 3)', () => {
-    const { unmount } = renderDrawer(2);
+  it('非 L1：无删除入口', () => {
+    renderDrawer(workerA, { userLevel: 2 });
     expect(screen.queryByRole('button', { name: /删除/ })).not.toBeInTheDocument();
-    unmount();
-    renderDrawer(3);
-    expect(screen.getByRole('button', { name: /删除/ })).toBeInTheDocument();
-  });
-
-  it('shows Tracing only when observability is configured', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/observability')) {
-        return new Response(JSON.stringify({ enabled: true, publicUrl: 'https://langfuse.example.com' }), { status: 200 });
-      }
-      return new Response('{}', { status: 404 });
-    }));
-    renderDrawer(3);
-    const link = await screen.findByRole('link', { name: /Tracing/ });
-    expect(link).toHaveAttribute('href', 'https://langfuse.example.com');
   });
 });

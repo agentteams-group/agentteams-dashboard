@@ -583,6 +583,28 @@ describe('TeamAgentsWorkbench · A3 右栏 Inspector', () => {
       expect(within(inspector).getByRole('button', { name: title })).toBeInTheDocument();
     }
   });
+
+  it('triple：Worker 选中 → 分区按钮列表下方常驻只读详情（②），分区按钮仍开大弹窗', async () => {
+    renderSection();
+    await layoutIs('triple');
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+    const inspector = inspectorRegion();
+    await waitFor(() =>
+      expect(within(inspector).getByRole('heading', { name: 'w1' })).toBeInTheDocument(),
+    );
+    // ② 只读详情（WorkerDetailSummary：字段行 + 健康块）渲染在分区按钮列表之后。
+    const sectionList = within(inspector).getByRole('list', { name: '详情分区' });
+    const readonlyLabel = within(inspector).getByText('只读详情');
+    expect(readonlyLabel.compareDocumentPosition(sectionList) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(within(inspector).getByText('容器状态')).toBeInTheDocument();
+    expect(within(inspector).getByText('工具调用（24 小时）')).toBeInTheDocument();
+    expect(within(inspector).getByText('可用性')).toBeInTheDocument();
+    // 分区按钮入口行为不变：点击仍开可编辑大弹窗（分区直出）。
+    fireEvent.click(within(inspector).getByRole('button', { name: 'MCP' }));
+    const dialog = await screen.findByRole('dialog', { name: 'w1 · MCP' });
+    expect(within(dialog).queryByRole('tablist')).toBeNull();
+  });
 });
 
 describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）', () => {

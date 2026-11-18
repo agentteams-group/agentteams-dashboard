@@ -38,15 +38,13 @@ import type {
   TeamResponse,
   WorkerResponse,
 } from '@/lib/agentteams-api';
-import { ManagerDetailDialog } from './manager-detail-dialog';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
-import { TeamDetailDialog } from './team-detail-dialog';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { standaloneWorkers as computeStandaloneWorkers } from '../teams/team-drawer-logic';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
-import { WorkerDetailDialog } from './worker-detail-dialog';
 import { InteractiveTeamTopology } from './interactive-team-topology';
 import { EntityInspector, type EntityInspectorEntity } from './entity-inspector';
+import { EntitySectionDialogs } from './entity-inspector-sections';
 import {
   compareTeamRows,
   filterTeamRows,
@@ -1163,43 +1161,21 @@ export function TeamAgentsWorkbench() {
       />
 
       {/* R2 详情大弹窗：承载当前 main 版面板，壳见 detail-dialog-shell.tsx。
-          A3：initialTab = 当前分区（Inspector 分区按钮 / 齿轮 / 深链 ?panel=）。 */}
-      <TeamDetailDialog
-        open={detailOpen && selection?.kind === 'team'}
-        onOpenChange={handleDetailOpenChange}
-        team={selectedTeam}
+          A3：initialTab = 当前分区（Inspector 分区按钮 / 齿轮 / 深链 ?panel=）。
+          接线抽到共享组件 EntitySectionDialogs（卡片编辑抽屉 WorkerDrawer 同源复用）。 */}
+      <EntitySectionDialogs
+        entity={inspectorEntity}
+        open={detailOpen}
+        initialTab={dialogPanel ?? undefined}
+        chrome={layout === 'single' ? 'full' : 'section'}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
         allTeams={teams}
         workers={workers ?? []}
-        modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
-        userLevel={userLevel}
+        onOpenChange={handleDetailOpenChange}
         onChanged={refresh}
         onDeleted={handleDeleted}
-        initialTab={dialogPanel ?? undefined}
-        chrome={layout === 'single' ? 'full' : 'section'}
-      />
-      <WorkerDetailDialog
-        open={detailOpen && selection?.kind === 'worker'}
-        onOpenChange={handleDetailOpenChange}
-        worker={selectedWorker}
-        modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
-        userLevel={userLevel}
-        onChanged={refresh}
-        onDeleted={handleDeleted}
-        initialTab={dialogPanel ?? undefined}
-        chrome={layout === 'single' ? 'full' : 'section'}
-      />
-      <ManagerDetailDialog
-        open={detailOpen && selection?.kind === 'manager'}
-        onOpenChange={handleDetailOpenChange}
-        manager={selectedManager}
-        modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
-        userLevel={userLevel}
-        onChanged={refresh}
-        initialTab={dialogPanel ?? undefined}
-        chrome={layout === 'single' ? 'full' : 'section'}
       />
 
       {millforgeTeam ? (

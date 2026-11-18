@@ -227,7 +227,7 @@ describe('Team and Agent resource cards', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
     expect(window.location.hash).toBe('#console/resources/teams');
   });
-  it('paginates cards and resets the page when searching or switching tabs', () => {
+  it('paginates by whole group (grouped on) and resets the page when searching or switching tabs', () => {
     const scrollIntoView = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = vi.fn();
     const extra = Array.from({ length: 26 }, (_, index) => worker(`paged-${index}`, 'alpha'));
@@ -236,17 +236,127 @@ describe('Team and Agent resource cards', () => {
       renderSection('#console/resources/team-agents?tab=agents');
       // 卡片计数用「详情」按钮（每卡一个；组头按钮是团队名，不会混入）。
       const cards = () => within(screen.getByLabelText('智能体卡片')).getAllByRole('button', { name: '详情' });
-      expect(cards()).toHaveLength(12);
-      fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
-      expect(cards()).toHaveLength(6);
+      const groupTeams = () => screen.getAllByTestId('agent-team-group').map((group) => group.getAttribute('data-team'));
+      // 分组开 + 团队名称升序：alpha 组（28）独占第 1 页，第 2 页 = beta(1) + 无团队(1)——组不跨页。
+      expect(cards()).toHaveLength(28);
+      expect(screen.getByText('共 30 个智能体 · 第 1 / 2 页')).toBeInTheDocument();
+      expect(groupTeams()).toEqual(['alpha']);
+      fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      expect(cards()).toHaveLength(2);
+      expect(groupTeams()).toEqual(['beta', '']);
+      // 搜索 → 回第 1 页。
       fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或智能体' }), { target: { value: 'solo' } });
       expect(cards()).toHaveLength(1);
       expect(screen.getByText('共 1 个智能体 · 第 1 / 1 页')).toBeInTheDocument();
+      // 清空搜索 → 回第 1 页；切排序方向 → 同样回第 1 页。
       fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或智能体' }), { target: { value: '' } });
       fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      fireEvent.click(screen.getByRole('button', { name: '升序' }));
+      expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: '降序' })).toHaveAttribute('aria-pressed', 'false');
+      // 切 tab → 回第 1 页。
       selectTab(/^团队/);
       selectTab(/^智能体/);
       expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
+    } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
+  });
+
+  it('keeps whole groups on one page: 31 agents (12/12/7) become 3 pages with disjoint group headers', () => {
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const extra = [
+      ...Array.from({ length: 10 }, (_, index) => worker(`paged-${index}`, 'alpha')),
+      ...Array.from({ length: 11 }, (_, index) => worker(`pbeta-${index}`, 'beta')),
+      ...Array.from({ length: 6 }, (_, index) => worker(`pn-${index}`, '')),
+    ];
+    workersFixture.push(...extra);
+    try {
+      renderSection('#console/resources/workers', 'agents');
+      const cards = () => within(screen.getByLabelText('智能体卡片')).getAllByRole('button', { name: '详情' });
+      const groupTeams = () => screen.getAllByTestId('agent-team-group').map((group) => group.getAttribute('data-team'));
+      expect(screen.getByText('共 31 个智能体 · 第 1 / 3 页')).toBeInTheDocument();
+      expect(groupTeams()).toEqual(['alpha']);
+      expect(cards()).toHaveLength(12);
+      fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      expect(groupTeams()).toEqual(['beta']);
+      expect(cards()).toHaveLength(12);
+      fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
+      expect(groupTeams()).toEqual(['']);
+      expect(cards()).toHaveLength(7);
+      // 组内恒按智能体名称升序（输入顺序无关：solo 在输入里最前，排到组内最后）。
+      const page3Group = screen.getAllByTestId('agent-team-group')[0];
+      const cardNames = within(page3Group)
+        .getAllByRole('heading')
+        .filter((heading) => heading.textContent !== '无团队 · 7 个智能体')
+        .map((heading) => heading.textContent);
+      expect(cardNames).toEqual(['pn-0', 'pn-1', 'pn-2', 'pn-3', 'pn-4', 'pn-5', 'solo']);
+    } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
+  });
+
+  it('sorts groups: team asc/desc and admin asc/desc (no-admin groups always last)', () => {
+    localStorage.setItem('teamAgents.sort', 'team:desc');
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.getAllByTestId('agent-team-group').map((group) => group.getAttribute('data-team'))).toEqual(['beta', 'alpha', '']);
+    cleanup();
+    // admin 键：alpha 有 admin(boss)，beta 无 admin——无 admin 组恒最后（升降序都是）。
+    localStorage.setItem('teamAgents.sort', 'admin:asc');
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.getAllByTestId('agent-team-group').map((group) => group.getAttribute('data-team'))).toEqual(['alpha', 'beta', '']);
+    cleanup();
+    localStorage.setItem('teamAgents.sort', 'admin:desc');
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.getAllByTestId('agent-team-group').map((group) => group.getAttribute('data-team'))).toEqual(['alpha', 'beta', '']);
+  });
+
+  it('collapses a group (header keeps name + count) and persists across re-render via localStorage', () => {
+    renderSection('#console/resources/workers', 'agents');
+    const groups = screen.getAllByTestId('agent-team-group');
+    expect(within(groups[0]).getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+    fireEvent.click(within(groups[0]).getByRole('button', { name: '折叠分组 Alpha' }));
+    const collapsed = screen.getAllByTestId('agent-team-group')[0];
+    // 折叠后组头保留（团队名 + 数量），卡片隐藏，按钮变「展开」。
+    expect(within(collapsed).getByRole('heading', { level: 2, name: /Alpha\s*·\s*2 个智能体/ })).toBeInTheDocument();
+    expect(within(collapsed).queryByRole('heading', { name: 'lead' })).toBeNull();
+    expect(within(collapsed).queryByRole('heading', { name: 'w1' })).toBeNull();
+    expect(within(collapsed).getByRole('button', { name: '展开分组 Alpha' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('teamAgents.groupCollapsed') ?? '[]')).toContain('alpha');
+    // 重挂载（等效刷新）→ 折叠状态保持；展开后卡片恢复。
+    cleanup();
+    renderSection('#console/resources/workers', 'agents');
+    const stillCollapsed = screen.getAllByTestId('agent-team-group')[0];
+    expect(within(stillCollapsed).queryByRole('heading', { name: 'lead' })).toBeNull();
+    fireEvent.click(within(stillCollapsed).getByRole('button', { name: '展开分组 Alpha' }));
+    expect(within(screen.getAllByTestId('agent-team-group')[0]).getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+  });
+
+  it('grouped off: flat grid of 12 per page, sort key falls back to name, page resets, preferences persist', () => {
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const extra = Array.from({ length: 26 }, (_, index) => worker(`paged-${index}`, 'alpha'));
+    workersFixture.push(...extra);
+    try {
+      renderSection('#console/resources/workers', 'agents');
+      const cards = () => within(screen.getByLabelText('智能体卡片')).getAllByRole('button', { name: '详情' });
+      fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+      expect(cards()).toHaveLength(2);
+      // 关闭分组：排序键 team 不适用 → 回落到 name（asc）；回第 1 页；平铺网格（无组头）。
+      fireEvent.click(screen.getByRole('switch', { name: '按团队分类' }));
+      expect(cards()).toHaveLength(12);
+      expect(screen.queryByTestId('agent-team-group')).toBeNull();
+      expect(screen.getByText('共 30 个智能体 · 第 1 / 3 页')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
+      expect(localStorage.getItem('teamAgents.grouped')).toBe('0');
+      expect(localStorage.getItem('teamAgents.sort')).toBe('name:asc');
+      // 排序键控件只剩「智能体名称」；方向切换继续持久化。
+      expect(screen.getByText('智能体名称')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '升序' }));
+      expect(localStorage.getItem('teamAgents.sort')).toBe('name:desc');
+      // 重挂载 → 平铺 + 偏好持久化。
+      cleanup();
+      renderSection('#console/resources/workers', 'agents');
+      expect(screen.queryByTestId('agent-team-group')).toBeNull();
+      expect(within(screen.getByLabelText('智能体卡片')).getAllByRole('button', { name: '详情' })).toHaveLength(12);
+      expect(localStorage.getItem('teamAgents.sort')).toBe('name:desc');
     } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
   });
 
@@ -376,7 +486,7 @@ describe('Team and Agent resource cards', () => {
     expect(screen.queryByRole('heading', { name: 'w1' })).not.toBeInTheDocument();
   });
 
-  it('renders Agent detail and edit into different containers', async () => {
+  it('renders Agent detail and edit into different containers (edit drawer = Inspector + section dialog, ③⑧)', async () => {
     renderSection('#console/resources/workers', 'agents');
     // 详情 → 只读详情弹窗（WorkerDetailDialog，标题带 Worker 名）。
     fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
@@ -385,11 +495,18 @@ describe('Team and Agent resource cards', () => {
     expect(within(detail).queryByText('agent-profile:lead')).toBeNull();
     fireEvent.click(within(detail).getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Worker 详情 - lead' })).toBeNull());
-    // 编辑 → 编辑抽屉（WorkerDrawer，标题固定「Worker 详情」）：不同容器、不同标题。
+    // 编辑 → 编辑抽屉（WorkerDrawer，标题固定「Worker 详情」）：复用 Inspector——
+    // 分区按钮列表 + 按钮下方常驻只读详情（②），不再是全量编辑面。
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     const drawer = await screen.findByRole('dialog', { name: 'Worker 详情' });
-    expect(within(drawer).getByText('agent-profile:lead')).toBeInTheDocument();
-    expect(within(drawer).queryByText('容器状态')).toBeNull();
+    expect(within(drawer).getByText('只读详情')).toBeInTheDocument();
+    expect(within(drawer).getByText('容器状态')).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: '基础配置' })).toBeInTheDocument();
+    expect(within(drawer).queryByText('agent-profile:lead')).toBeNull();
+    // 点分区按钮 → 可编辑分区弹窗（与工作台 section 弹窗同映射，标题「lead · MCP」）。
+    fireEvent.click(within(drawer).getByRole('button', { name: 'MCP' }));
+    const sectionDialog = await screen.findByRole('dialog', { name: 'lead · MCP' });
+    expect(within(sectionDialog).getByText('agent-profile:lead')).toBeInTheDocument();
   });
 
   it('groups Agent cards by team, ungrouped last, group header links to team detail', () => {

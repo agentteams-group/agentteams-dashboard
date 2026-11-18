@@ -2,9 +2,12 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { OverflowText } from '@/components/dashboard/overflow-text';
@@ -27,7 +30,18 @@ import { WorkerCreateDialog } from '../workers/worker-create-dialog';
 import { WorkerDetailDialog } from '../workers/worker-detail-dialog';
 import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { WorkerDrawer } from '../workers/worker-drawer';
-import { filterTeamRows, groupAgentsByTeam, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
+import {
+  agentSortKeys,
+  fallbackAgentSort,
+  filterTeamRows,
+  formatAgentSortPreference,
+  paginateAgentCards,
+  parseAgentSortPreference,
+  teamMemberWorkers,
+  teamAgentsInitialIntentFromHash,
+  type AgentSortKey,
+  type AgentSortState,
+} from './team-agents-logic';
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
 import { TeamAgentsWorkbench } from './team-agents-workbench';
@@ -61,6 +75,79 @@ function readStoredView(): TeamPageView | null {
 function resolvePageView(urlView: string | null): TeamPageView {
   if (urlView === 'cards' || urlView === 'topology') return urlView;
   return readStoredView() ?? 'cards';
+}
+
+// 智能体卡片：分组开关 / 排序 / 组折叠的持久化（④；键形 team:asc / admin:desc / name:asc）。
+const GROUPED_STORAGE_KEY = 'teamAgents.grouped';
+const SORT_STORAGE_KEY = 'teamAgents.sort';
+const COLLAPSED_STORAGE_KEY = 'teamAgents.groupCollapsed';
+
+/** 「无团队」组的折叠键（团队名不存在，用固定哨兵）。 */
+export const NO_TEAM_GROUP_KEY = '__none__';
+
+/** 排序键显示名：分组开 = 团队名称 / Human 名称；分组关 = 智能体名称。 */
+const AGENT_SORT_KEY_LABELS: Record<AgentSortKey, string> = {
+  team: '团队名称',
+  admin: 'Human 名称',
+  name: '智能体名称',
+};
+
+/** localStorage `teamAgents.grouped`（'1'/'0'），默认开；非法值忽略。 */
+function readStoredGrouped(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(GROUPED_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** localStorage `teamAgents.sort`；非法值或当前分组模式下不适用 → 该模式默认键（asc）。 */
+function readStoredAgentSort(grouped: boolean): AgentSortState {
+  if (typeof window === 'undefined') return { key: grouped ? 'team' : 'name', dir: 'asc' };
+  try {
+    const parsed = parseAgentSortPreference(window.localStorage.getItem(SORT_STORAGE_KEY));
+    return parsed ? fallbackAgentSort(parsed, grouped) : { key: grouped ? 'team' : 'name', dir: 'asc' };
+  } catch {
+    return { key: grouped ? 'team' : 'name', dir: 'asc' };
+  }
+}
+
+/** localStorage `teamAgents.groupCollapsed`（JSON string[]，含「无团队」哨兵键）；非法值忽略。 */
+function readStoredCollapsedGroups(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredGrouped(grouped: boolean) {
+  try {
+    window.localStorage.setItem(GROUPED_STORAGE_KEY, grouped ? '1' : '0');
+  } catch {
+    // 隐私模式等写入失败：偏好丢失可接受。
+  }
+}
+
+function writeStoredAgentSort(sort: AgentSortState) {
+  try {
+    window.localStorage.setItem(SORT_STORAGE_KEY, formatAgentSortPreference(sort));
+  } catch {
+    // 同上。
+  }
+}
+
+function writeStoredCollapsedGroups(groups: string[]) {
+  try {
+    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(groups));
+  } catch {
+    // 同上。
+  }
 }
 
 function readLocation() {
@@ -100,6 +187,10 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
   const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
+  // ④ 智能体卡片分组 / 排序 / 组折叠：localStorage 持久化（分组默认开）。
+  const [agentGrouped, setAgentGrouped] = useState(() => readStoredGrouped());
+  const [agentSort, setAgentSort] = useState<AgentSortState>(() => readStoredAgentSort(readStoredGrouped()));
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>(() => readStoredCollapsedGroups());
 
   useEffect(() => {
     const sync = () => setLocation({ ...readLocation(), ...(view ? { tab: view } : {}) });
@@ -142,6 +233,34 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     }
   }
 
+  // ④ 分组开关：当前排序键在新模式下不适用 → 回落到该模式默认键（dir 保留）；
+  // resetKey 变化 → 回第 1 页。
+  function handleGroupedChange(next: boolean) {
+    const sort = fallbackAgentSort(agentSort, next);
+    setAgentGrouped(next);
+    setAgentSort(sort);
+    writeStoredGrouped(next);
+    writeStoredAgentSort(sort);
+  }
+  function handleSortKeyChange(next: AgentSortKey) {
+    const sort = { ...agentSort, key: next };
+    setAgentSort(sort);
+    writeStoredAgentSort(sort);
+  }
+  function handleSortDirToggle() {
+    const sort: AgentSortState = { ...agentSort, dir: agentSort.dir === 'asc' ? 'desc' : 'asc' };
+    setAgentSort(sort);
+    writeStoredAgentSort(sort);
+  }
+  // ④ 组折叠（仅分组开生效；「无团队」组键 = NO_TEAM_GROUP_KEY）。
+  function toggleGroupCollapsed(key: string) {
+    const next = collapsedGroups.includes(key)
+      ? collapsedGroups.filter((item) => item !== key)
+      : [...collapsedGroups, key];
+    setCollapsedGroups(next);
+    writeStoredCollapsedGroups(next);
+  }
+
   const teams = teamsQuery.data ?? [];
   const workers = workersQuery.data ?? [];
   const query = `${searchQuery} ${search}`.trim().toLowerCase();
@@ -151,7 +270,18 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   ].sort((a, b) => a.name.localeCompare(b.name));
   const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
   const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
-  const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
+  // ① 智能体卡片分页：分组开 = 按整组切页（组不跨页）；分组关 = 平铺每 12 条。
+  // 页码为 useListPagination 之外的最小 state，沿用同一同步模式：
+  // resetKey（tab + 搜索 + 分组 + 排序键 + 方向）变化 → 回第 1 页；超总页数 → 收拢。
+  const agentPaging = paginateAgentCards(agents, teams, { grouped: agentGrouped, sort: agentSort }, 12);
+  const agentPageResetKey = `${location.tab}:${query}:${agentGrouped ? 'g' : 'f'}:${agentSort.key}:${agentSort.dir}`;
+  const [agentPageState, setAgentPageState] = useState({ key: agentPageResetKey, page: 1 });
+  const agentPageTotal = Math.max(1, agentPaging.totalPages);
+  const agentPage = agentPageState.key === agentPageResetKey ? Math.min(agentPageState.page, agentPageTotal) : 1;
+  if (agentPageState.key !== agentPageResetKey || agentPageState.page !== agentPage) {
+    setAgentPageState({ key: agentPageResetKey, page: agentPage });
+  }
+  const agentPageGroups = agentPaging.pages[agentPage - 1] ?? [];
   const selectedTeam = teams.find((team) => team.name === location.team);
   const selectedWorker = workers.find((worker) => worker.name === location.agent);
   const isDetail = Boolean(location.team || location.agent);
@@ -207,6 +337,35 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         <TabsTrigger value="agents">智能体 <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
         <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或智能体" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
+        {location.tab === 'agents' && (
+          // ④ 智能体分组 / 排序控件（仅智能体 tab）：分组开关 + 排序键 + 升降序。
+          <div role="group" aria-label="分组与排序" className="flex flex-wrap items-center gap-2">
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+              <Switch checked={agentGrouped} onCheckedChange={handleGroupedChange} aria-label="按团队分类" />
+              按团队分类
+            </label>
+            <Select value={agentSort.key} onValueChange={(value) => handleSortKeyChange(value as AgentSortKey)}>
+              <SelectTrigger aria-label="排序键" className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {agentSortKeys(agentGrouped).map((key) => (
+                  <SelectItem key={key} value={key}>{AGENT_SORT_KEY_LABELS[key]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={agentSort.dir === 'asc' ? '升序' : '降序'}
+              aria-pressed={agentSort.dir === 'asc'}
+              title={agentSort.dir === 'asc' ? '升序' : '降序'}
+              onClick={handleSortDirToggle}
+            >
+              {agentSort.dir === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />}
+            </Button>
+          </div>
+        )}
         {viewToggle}
       </div>}
       actions={pageView === 'topology' ? undefined : isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
@@ -240,32 +399,57 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
         </div> : agents.length === 0 ? <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的智能体' : '暂无智能体'}</p> : (
-          // 按团队分组（③）：组头 = 团队名（可点，跳团队详情）+ 成员数；
-          // 「无团队」组永远最后；组内沿用 RESOURCE_CARD_GRID 网格。
-          // 分页保持平铺：useListPagination 作用于过滤后的全量列表，
-          // 分组只作用于当前页的 items（页内重排，不跨页）。
-          <div className="space-y-6" aria-label="智能体卡片">
-            {groupAgentsByTeam(agentPage.items).map((group) => {
-              const groupTeam = group.team ? teams.find((item) => item.name === group.team) : undefined;
-              const groupTitle = groupTeam ? groupTeam.teamName || groupTeam.name : '无团队';
-              return <section key={group.team || 'none'} data-testid="agent-team-group" data-team={group.team} className="min-w-0">
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
-                  {groupTeam
-                    ? <button type="button" onClick={() => navigate('teams', 'team', groupTeam.name)} className="min-w-0 hover:underline" title={`打开团队详情 ${groupTitle}`}>{groupTitle}</button>
-                    : <span className="text-muted-foreground">{groupTitle}</span>}
-                  <span className="text-xs font-normal tabular-nums text-muted-foreground">· {group.agents.length} 个智能体</span>
-                </h2>
-                <div className={RESOURCE_CARD_GRID}>
-                  {group.agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
-                    onOpen={() => navigate('agents', agent.kind, agent.name)}
-                    onView={() => setDetailWorker(agent)}
-                    onEdit={() => setEditWorker(agent)} />)}
-                </div>
-              </section>;
-            })}
-          </div>
+          // 分组 / 平铺 + 分页（①④）：
+          // 分组开 = 按整组切页（组不跨页），组头 = 团队名（可点，跳团队详情）
+          // + 成员数 + 折叠 chevron；「无团队」组恒最后；组内恒按名称升序。
+          // 分组关 = 无组头平铺网格，按智能体名升/降序每 12 条切页。
+          agentGrouped ? (
+            <div className="space-y-6" aria-label="智能体卡片">
+              {agentPageGroups.map((group) => {
+                const groupTeam = group.team ? teams.find((item) => item.name === group.team) : undefined;
+                const groupTitle = groupTeam ? groupTeam.teamName || groupTeam.name : '无团队';
+                const collapsedKey = group.team === '' ? NO_TEAM_GROUP_KEY : group.team;
+                const collapsed = collapsedGroups.includes(collapsedKey);
+                return <section key={group.team || 'none'} data-testid="agent-team-group" data-team={group.team} className="min-w-0">
+                  <h2 className="mb-3 flex min-h-11 items-center gap-2 text-sm font-medium sm:min-h-0">
+                    {groupTeam
+                      ? <button type="button" onClick={() => navigate('teams', 'team', groupTeam.name)} className="min-w-0 hover:underline" title={`打开团队详情 ${groupTitle}`}>{groupTitle}</button>
+                      : <span className="text-muted-foreground">{groupTitle}</span>}
+                    <span className="text-xs font-normal tabular-nums text-muted-foreground">· {group.agents.length} 个智能体</span>
+                    <button
+                      type="button"
+                      aria-expanded={!collapsed}
+                      aria-label={collapsed ? `展开分组 ${groupTitle}` : `折叠分组 ${groupTitle}`}
+                      title={collapsed ? `展开分组 ${groupTitle}` : `折叠分组 ${groupTitle}`}
+                      onClick={() => toggleGroupCollapsed(collapsedKey)}
+                      className="ml-auto flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:size-9"
+                    >
+                      {collapsed ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}
+                    </button>
+                  </h2>
+                  {!collapsed && (
+                    <div className={RESOURCE_CARD_GRID}>
+                      {group.agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+                        onOpen={() => navigate('agents', agent.kind, agent.name)}
+                        onView={() => setDetailWorker(agent)}
+                        onEdit={() => setEditWorker(agent)} />)}
+                    </div>
+                  )}
+                </section>;
+              })}
+            </div>
+          ) : (
+            <div className={RESOURCE_CARD_GRID} aria-label="智能体卡片">
+              {agentPageGroups.flatMap((group) => group.agents).map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+                onOpen={() => navigate('agents', agent.kind, agent.name)}
+                onView={() => setDetailWorker(agent)}
+                onEdit={() => setEditWorker(agent)} />)}
+            </div>
+          )
         )}
-      {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : '智能体'} />}
+      {!teamsQuery.isLoading && !workersQuery.isLoading && (location.tab === 'teams'
+        ? <ListPagination {...teamPage} label="团队" />
+        : <ListPagination page={agentPage} totalPages={agentPageTotal} totalItems={agentPaging.totalItems} label="智能体" onChange={(page) => setAgentPageState({ key: agentPageResetKey, page })} />)}
     </>}
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}
@@ -285,6 +469,8 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
       modelOptions={modelOptions}
       sessionIssue={sessionIssue}
       userLevel={userLevel}
+      teams={teams}
+      workers={workers}
       onChanged={refresh}
       onDeleted={() => { setEditWorker(null); navigate('agents'); }}
     />

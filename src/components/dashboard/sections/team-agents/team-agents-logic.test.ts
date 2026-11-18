@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import {
+  agentSortKeys,
   compareTeamRows,
   contentColumnCount,
+  defaultAgentSortKey,
+  fallbackAgentSort,
   filterTeamRows,
+  formatAgentSortPreference,
   groupAgentsByTeam,
   layoutForWidth,
   leaderWorker,
   memberRole,
   memberSessionCount,
+  paginateAgentCards,
+  paginateGroupIndexes,
+  parseAgentSortPreference,
   shellGridClass,
   shouldShowEnsureReady,
+  sortAgentGroups,
   teamAgentCounts,
   teamAgentsInitialIntentFromHash,
   teamHealthLabel,
@@ -250,5 +258,166 @@ describe('智能体卡片按团队分组（③：组按团队名排序，无团�
     expect(groups).toHaveLength(1);
     expect(groups[0]?.team).toBe('');
     expect(groups[0]?.agents.map((agent) => agent.name)).toEqual(['s1', 's2']);
+  });
+});
+
+describe('智能体卡片：排序键 / 偏好解析 / 模式回落（④）', () => {
+  it('offers team/admin keys when grouped and name key when flat', () => {
+    expect(agentSortKeys(true)).toEqual(['team', 'admin']);
+    expect(agentSortKeys(false)).toEqual(['name']);
+    expect(defaultAgentSortKey(true)).toBe('team');
+    expect(defaultAgentSortKey(false)).toBe('name');
+  });
+
+  it('parses and serializes teamAgents.sort, rejecting malformed values', () => {
+    expect(parseAgentSortPreference('team:asc')).toEqual({ key: 'team', dir: 'asc' });
+    expect(parseAgentSortPreference('admin:desc')).toEqual({ key: 'admin', dir: 'desc' });
+    expect(parseAgentSortPreference('name:desc')).toEqual({ key: 'name', dir: 'desc' });
+    expect(parseAgentSortPreference(null)).toBeNull();
+    expect(parseAgentSortPreference('')).toBeNull();
+    expect(parseAgentSortPreference('team')).toBeNull();
+    expect(parseAgentSortPreference('team:up')).toBeNull();
+    expect(parseAgentSortPreference('bogus:asc')).toBeNull();
+    expect(parseAgentSortPreference('team:asc:extra')).toBeNull();
+    expect(formatAgentSortPreference({ key: 'team', dir: 'asc' })).toBe('team:asc');
+    expect(formatAgentSortPreference(parseAgentSortPreference('admin:desc')!)).toBe('admin:desc');
+  });
+
+  it('falls back to the mode default key when the key no longer applies (dir kept)', () => {
+    expect(fallbackAgentSort({ key: 'team', dir: 'asc' }, false)).toEqual({ key: 'name', dir: 'asc' });
+    expect(fallbackAgentSort({ key: 'admin', dir: 'desc' }, false)).toEqual({ key: 'name', dir: 'desc' });
+    expect(fallbackAgentSort({ key: 'name', dir: 'desc' }, true)).toEqual({ key: 'team', dir: 'desc' });
+    expect(fallbackAgentSort({ key: 'team', dir: 'desc' }, true)).toEqual({ key: 'team', dir: 'desc' });
+    expect(fallbackAgentSort({ key: 'name', dir: 'asc' }, false)).toEqual({ key: 'name', dir: 'asc' });
+  });
+});
+
+describe('智能体卡片：组排序（④：无团队恒最后，无 admin 组恒最后）', () => {
+  const groups = [
+    { team: 'zeta', agents: [{ ...worker('z1'), adminName: 'alice' }] },
+    { team: 'alpha', agents: [{ ...worker('a1'), adminName: 'carol' }] },
+    { team: 'mid', agents: [worker('m1')] },
+    { team: '', agents: [worker('solo')] },
+  ];
+
+  it('sorts by team name, ungrouped last in both directions', () => {
+    expect(sortAgentGroups(groups, 'team', 'asc').map((group) => group.team)).toEqual([
+      'alpha',
+      'mid',
+      'zeta',
+      '',
+    ]);
+    expect(sortAgentGroups(groups, 'team', 'desc').map((group) => group.team)).toEqual([
+      'zeta',
+      'mid',
+      'alpha',
+      '',
+    ]);
+  });
+
+  it('sorts by admin name, no-admin groups (and ungrouped) last, name tiebreak within tiers', () => {
+    expect(sortAgentGroups(groups, 'admin', 'asc').map((group) => group.team)).toEqual([
+      'zeta', // alice
+      'alpha', // carol
+      'mid', // 无 admin
+      '',
+    ]);
+    expect(sortAgentGroups(groups, 'admin', 'desc').map((group) => group.team)).toEqual([
+      'alpha',
+      'zeta',
+      'mid',
+      '',
+    ]);
+  });
+
+  it('treats the name key as the team key in grouped mode', () => {
+    expect(sortAgentGroups(groups, 'name', 'asc').map((group) => group.team)).toEqual(
+      sortAgentGroups(groups, 'team', 'asc').map((group) => group.team),
+    );
+  });
+});
+
+describe('智能体卡片：整组分页（①：组不跨页，单组超页可溢出）', () => {
+  it('keeps whole groups on one page', () => {
+    expect(paginateGroupIndexes([5, 4, 3], 12)).toEqual([[0, 1, 2]]);
+    expect(paginateGroupIndexes([5, 4, 3], 8)).toEqual([[0], [1, 2]]);
+    expect(paginateGroupIndexes([12, 1], 12)).toEqual([[0], [1]]);
+    expect(paginateGroupIndexes([], 12)).toEqual([]);
+  });
+
+  it('lets a single group overflow its page instead of splitting it', () => {
+    expect(paginateGroupIndexes([20], 12)).toEqual([[0]]);
+    expect(paginateGroupIndexes([20, 2], 12)).toEqual([[0], [1]]);
+  });
+});
+
+describe('智能体卡片：分页 + 排序入口 paginateAgentCards（①④）', () => {
+  const makeAgents = (name: string, team: string, count: number) =>
+    Array.from({ length: count }, (_, index) => worker(`${name}-${String(index + 1).padStart(2, '0')}`, { team }));
+
+  it('flat mode pages by 12 name-ordered items (asc/desc), single bucket per page', () => {
+    const agents = makeAgents('a', 'alpha', 14);
+    const asc = paginateAgentCards(agents, [], { grouped: false, sort: { key: 'name', dir: 'asc' } }, 12);
+    expect(asc.totalItems).toBe(14);
+    expect(asc.totalPages).toBe(2);
+    expect(asc.pages[0]?.[0]?.team).toBe('');
+    expect(asc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(
+      agents.map((agent) => agent.name).sort((x, y) => x.localeCompare(y, 'zh')),
+    );
+    expect(asc.pages[1]?.[0]?.agents).toHaveLength(2);
+    const desc = paginateAgentCards(agents, [], { grouped: false, sort: { key: 'name', dir: 'desc' } }, 12);
+    expect(desc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(
+      asc.pages[0]?.[0]?.agents.map((agent) => agent.name).reverse(),
+    );
+  });
+
+  it('grouped mode pages by whole group: 31 agents in 12/12/7 become 3 pages, no group crosses pages', () => {
+    const teams = [
+      team({ name: 'alpha', admin: { name: 'carol' } }),
+      team({ name: 'beta', admin: null }),
+    ];
+    const agents = [
+      ...makeAgents('a', 'alpha', 12),
+      ...makeAgents('b', 'beta', 12),
+      ...makeAgents('n', '', 7),
+    ];
+    const result = paginateAgentCards(agents, teams, { grouped: true, sort: { key: 'team', dir: 'asc' } }, 12);
+    expect(result.totalItems).toBe(31);
+    expect(result.totalPages).toBe(3);
+    expect(result.pages.map((page) => page.map((group) => group.team))).toEqual([
+      ['alpha'],
+      ['beta'],
+      [''],
+    ]);
+    // 组内恒按智能体名称升序（即使输入乱序）。
+    const shuffled = [
+      ...makeAgents('a', 'alpha', 12).sort((x, y) => y.name.localeCompare(x.name, 'zh')),
+      ...makeAgents('b', 'beta', 12),
+      ...makeAgents('n', '', 7),
+    ];
+    const rerun = paginateAgentCards(shuffled, teams, { grouped: true, sort: { key: 'team', dir: 'asc' } }, 12);
+    expect(rerun.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(
+      makeAgents('a', 'alpha', 12).map((agent) => agent.name).sort((x, y) => x.localeCompare(y, 'zh')),
+    );
+  });
+
+  it('grouped mode orders by admin with no-admin teams last', () => {
+    const teams = [
+      team({ name: 'alpha', admin: { name: 'carol' } }),
+      team({ name: 'beta', admin: null }),
+    ];
+    const agents = [...makeAgents('a', 'alpha', 3), ...makeAgents('b', 'beta', 3)];
+    const result = paginateAgentCards(agents, teams, { grouped: true, sort: { key: 'admin', dir: 'asc' } }, 12);
+    expect(result.pages[0]?.map((group) => group.team)).toEqual(['alpha', 'beta']);
+    const desc = paginateAgentCards(agents, teams, { grouped: true, sort: { key: 'admin', dir: 'desc' } }, 12);
+    // beta 无 admin，升降序都恒在最后。
+    expect(desc.pages[0]?.map((group) => group.team)).toEqual(['alpha', 'beta']);
+  });
+
+  it('returns one empty page for an empty agent list', () => {
+    const result = paginateAgentCards([], [], { grouped: true, sort: { key: 'team', dir: 'asc' } }, 12);
+    expect(result.totalItems).toBe(0);
+    expect(result.totalPages).toBe(1);
+    expect(result.pages).toEqual([]);
   });
 });
