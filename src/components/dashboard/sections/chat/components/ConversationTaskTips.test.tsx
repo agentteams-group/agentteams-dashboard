@@ -8,10 +8,13 @@ import { extractConfirmationFromEvent, useHitlInboxStore } from '@/lib/hitl-inbo
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { useSectionStore } from '@/lib/section-store';
 import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
+import type { IndexedTask } from '@/hooks/use-projects';
 import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import type { RoomInfo } from '../room-info';
 
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [] }) }));
+const index = vi.hoisted(() => ({ tasks: [] as IndexedTask[] }));
+vi.mock('@/hooks/use-projects', () => ({ useTaskIndex: () => ({ data: { tasks: index.tasks } }) }));
 vi.mock('@/hooks/use-worker-session-state', () => ({ useSessionTick: () => Date.now() }));
 const room: RoomInfo = { id: '!assistant:test', name: '平台助手', type: 'manager', agentRole: 'operations', members: [], access: 'joined' };
 const execution: RoomInfo = { id: '!execution:test', name: '网站改版', type: 'project', projectId: 'project', teamId: 'design', members: [], access: 'joined' };
@@ -30,6 +33,7 @@ function view(taskFeed = feed(), rooms = [room, execution]) {
 }
 
 beforeEach(() => {
+  index.tasks = [];
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   useHitlInboxStore.setState({ confirmations: {}, pendingChatRoomId: null, pendingProjectKey: null });
   useSectionStore.setState({ activeSection: 'chat' });
@@ -37,6 +41,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('conversation task tips', () => {
+  it('shows independent main tasks alongside project tasks and opens their exact task room', () => {
+    const taskRoom: RoomInfo = { ...execution, id: '!standalone:test' };
+    index.tasks = [{ task_id: 'standalone', main_task_id: 'standalone', title: '独立任务', status: 'assigned', source_room_id: room.id, room_id: taskRoom.id }];
+    render(view(feed(), [room, execution, taskRoom]));
+    expect(screen.getByRole('button', { name: '收起对话任务' })).toHaveTextContent('任务 2');
+    fireEvent.click(screen.getByRole('button', { name: '独立任务，已分配，进入协作空间' }));
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(taskRoom.id);
+  });
   it('shows a running task without requiring human intervention and opens its execution room', () => {
     render(view());
     fireEvent.click(screen.getByRole('button', { name: '首页设计，执行中，进入协作空间' }));

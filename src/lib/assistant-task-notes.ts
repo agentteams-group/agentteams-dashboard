@@ -1,3 +1,4 @@
+import type { IndexedTask } from '@/hooks/use-projects';
 import type { WorkflowResponse } from './agentteams-projects-api';
 import type { HitlConfirmation } from './hitl-inbox';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
@@ -120,9 +121,9 @@ export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
 }
 
 /** Conversation tips use explicit origin links, not platform/team-wide scope. */
-export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowResponse[]): AssistantTaskNoteItem[] {
+export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowResponse[], taskIndex: IndexedTask[] = []): AssistantTaskNoteItem[] {
   const matches = (value: unknown) => typeof value === 'string' && value.replace(/^room:/, '') === room.id;
-  return workflows.flatMap(workflow => {
+  const items = workflows.flatMap(workflow => {
     const fromConversation = matches(workflow.source_room_id)
       || workflow.reply_route?.channel === 'matrix' && matches(workflow.reply_route.target_session);
     const taskIds = new Set((workflow.tasks_detail ?? []).filter(task => matches(task.source_room_id)).map(task => task.task_id));
@@ -136,4 +137,24 @@ export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowRespons
       roomId: item.roomId === room.id ? undefined : item.roomId,
     }));
   });
+
+  const byId = new Map(items.map(item => [item.id, item]));
+  for (const task of taskIndex) {
+    if (task.main_task_id !== task.task_id || !matches(task.source_room_id)) continue;
+    const projectId = task.project_id || undefined;
+    const id = JSON.stringify([task.team_id, projectId, task.task_id]);
+    const executionRoom = task.room_id?.replace(/^room:/, '');
+    byId.set(id, {
+      ...byId.get(id),
+      id,
+      title: task.title || task.task_id,
+      group: taskGroup(task.status),
+      status: task.status,
+      projectId,
+      teamId: task.team_id,
+      assignee: task.assigned_to,
+      roomId: executionRoom === room.id ? undefined : executionRoom,
+    });
+  }
+  return [...byId.values()];
 }

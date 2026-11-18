@@ -4,6 +4,8 @@ import { useId, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ListTodo, Loader2, Hand, CircleX, CirclePause, Circle, CircleAlert, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAssistantTaskFeed, type AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
+import { useTaskIndex } from '@/hooks/use-projects';
+import { ApiError } from '@/lib/api-error';
 import { useSessionTick } from '@/hooks/use-worker-session-state';
 import { conversationTaskNotes, taskDuration, TASK_NOTE_GROUPS, type AssistantTaskNoteItem } from '@/lib/assistant-task-notes';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
@@ -23,7 +25,9 @@ export function ConversationTaskTips({ room, rooms, taskFeed }: {
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const localFeed = useAssistantTaskFeed(room, !taskFeed);
   const { workflows, loading, degraded, partialError } = taskFeed ?? localFeed;
-  const items = conversationTaskNotes(room, workflows).filter(item => item.group !== 'completed').map(item => ({
+  const taskIndex = useTaskIndex();
+  const taskIndexError = taskIndex.isError && !(taskIndex.error instanceof ApiError && taskIndex.error.status === 404);
+  const items = conversationTaskNotes(room, workflows, taskIndex.data?.tasks).filter(item => item.group !== 'completed').map(item => ({
     ...item,
     needsApproval: item.group !== 'cancelled' && Object.values(confirmations).some(confirmation =>
       !confirmation.question && confirmation.roomId === item.roomId
@@ -75,7 +79,7 @@ export function ConversationTaskTips({ room, rooms, taskFeed }: {
         </motion.button>;
       })}
       </AnimatePresence>
-      {(loading || degraded || partialError) && <p role="status" className="border-t border-border/40 px-3 py-2 text-xs text-muted-foreground">{degraded || partialError ? '状态待更新' : '同步中…'}</p>}
+      {(loading || degraded || partialError || taskIndex.isLoading || taskIndexError) && <p role="status" className="border-t border-border/40 px-3 py-2 text-xs text-muted-foreground">{degraded || partialError || taskIndexError ? '状态待更新' : '同步中…'}</p>}
     </div>}
   </motion.aside>}</AnimatePresence>;
 }

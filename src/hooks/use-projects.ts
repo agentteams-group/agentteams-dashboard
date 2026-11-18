@@ -382,18 +382,22 @@ export function mergeMainTaskIndex(tasks: BoardTask[], index: IndexedTask[]): Bo
   return [...merged.values()];
 }
 
-/** Primary task-board source: Controller projects + per-project workflow
- * (cap 20), mapped to the board shapes. Falls back to the MinIO board when
- * the API is degraded (list 404 = not deployed / 500 = controller error). */
-export function useApiTaskBoard() {
-  const listQuery = useProjects();
-  const taskIndex = useQuery({
+export function useTaskIndex() {
+  return useQuery({
     queryKey: ['agentteams-task-index'],
     queryFn: () => requestJson<{ tasks: IndexedTask[] }>(apiUrl('/api/agentteams/tasks')),
     refetchInterval: 5000,
     retry: 1,
     throwOnError: false,
   });
+}
+
+/** Primary task-board source: Controller projects + per-project workflow
+ * (cap 20), mapped to the board shapes. Falls back to the MinIO board when
+ * the API is degraded (list 404 = not deployed / 500 = controller error). */
+export function useApiTaskBoard() {
+  const listQuery = useProjects();
+  const taskIndex = useTaskIndex();
   const queryClient = useQueryClient();
 
   const projects = useMemo(

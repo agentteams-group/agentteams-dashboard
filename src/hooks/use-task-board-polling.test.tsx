@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useApiTaskBoard } from './use-projects';
+import { useApiTaskBoard, useTaskIndex } from './use-projects';
 import { useAssistantTaskFeed } from './use-assistant-task-feed';
 import { conversationTaskNotes } from '@/lib/assistant-task-notes';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
@@ -94,5 +94,30 @@ it('discovers new conversation tasks, refreshes their status and hides completed
   vi.mocked(getProjectWorkflow).mockResolvedValue({ ...workflow, nodes: [{ id: 'task2', name: 'Follow-up', status: 'pending' }] });
   await act(async () => { await vi.advanceTimersByTimeAsync(5_050); });
   expect(result.current.items[0]?.title).toBe('Follow-up');
+  client.clear();
+});
+
+
+it('discovers a standalone main task from this conversation without a project', async () => {
+  vi.useFakeTimers();
+  const room: RoomInfo = { id: '!assistant:test', name: 'Assistant', type: 'manager', agentRole: 'operations', members: [], access: 'joined' };
+  const main = { task_id: 'main', main_task_id: 'main', team_id: 'travel', title: 'Standalone task', source_room_id: `room:${room.id}`, room_id: 'room:!execution:test', status: 'assigned' };
+  vi.mocked(requestJson).mockResolvedValue({ tasks: [
+    main,
+    { ...main, task_id: 'child', parent_task_id: 'main', title: 'Child task' },
+    { ...main, task_id: 'other', main_task_id: 'other', source_room_id: '!other:test' },
+  ] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const { result } = renderHook(() => {
+    const index = useTaskIndex();
+    return conversationTaskNotes(room, [], index.data?.tasks).filter(item => item.group !== 'completed');
+  }, { wrapper });
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+  expect(result.current).toHaveLength(1);
+  expect(result.current[0]).toMatchObject({ title: 'Standalone task', roomId: '!execution:test', status: 'assigned', group: 'running' });
+  vi.mocked(requestJson).mockResolvedValue({ tasks: [{ ...main, status: 'completed' }] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_050); });
+  expect(result.current).toHaveLength(0);
   client.clear();
 });
