@@ -10,6 +10,7 @@ import { useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { RoomAttachments } from './components/RoomAttachments';
 import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
@@ -170,11 +171,11 @@ export function ChatRoom({
     setInternalContextPanel(panel);
     onContextPanelChange?.(panel);
   }, [onContextPanelChange]);
-  const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<{ file: PreviewAttachment; returnTo: 'files' | null } | null>(null);
   const openAttachmentPreview = useCallback((file: PreviewAttachment) => {
-    setPreviewAttachment(file);
+    setPreviewAttachment({ file, returnTo: contextPanel === 'files' ? 'files' : null });
     setContextPanel('attachment-preview');
-  }, [setContextPanel]);
+  }, [contextPanel, setContextPanel]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [threadMention, setThreadMention] = useState<DisplayMessage | null>(null);
@@ -248,13 +249,13 @@ export function ChatRoom({
   const runtimeMap = useRuntimeMap();
 
   const allEvents = useMemo<MatrixEvent[]>(() => {
-    if (!messagesQuery.isSuccess || !messagesQuery.data) return [];
+    if (!messagesQuery.data) return [];
     const events: MatrixEvent[] = [];
     for (const page of messagesQuery.data.pages) {
       if (page.chunk) events.push(...page.chunk);
     }
     return events;
-  }, [messagesQuery.data, messagesQuery.isSuccess]);
+  }, [messagesQuery.data]);
 
   useEffect(() => {
     if (currentUserId) ingestHitlTimelineEvents(roomId, allEvents, currentUserId);
@@ -1012,7 +1013,7 @@ export function ChatRoom({
       )}
 
       {contextPanel === 'attachment-preview' && previewAttachment && (
-        <AttachmentPreviewPanel file={previewAttachment} onClose={() => setContextPanel(null)} />
+        <AttachmentPreviewPanel file={previewAttachment.file} onClose={() => setContextPanel(previewAttachment.returnTo)} />
       )}
       {contextPanel !== null && contextPanel !== 'attachment-preview' && !(taskRoom && contextPanel === 'tasks') && (
         <RoomContextPanel
@@ -1021,6 +1022,15 @@ export function ChatRoom({
           showMembers={!agentRole}
           roomId={roomId}
           fileScope={fileScope}
+          roomAttachments={<RoomAttachments
+            events={allEvents}
+            homeserver={homeserver}
+            isLoading={messagesQuery.isLoading}
+            hasError={messagesQuery.isError}
+            hasOlder={!!hasOlderMessages}
+            isLoadingOlder={fetchingOlderMessages}
+            onLoadOlder={() => void loadMore()}
+          />}
           activeTab={contextPanel}
           onTabChange={setContextPanel}
           onClose={() => setContextPanel(null)}
