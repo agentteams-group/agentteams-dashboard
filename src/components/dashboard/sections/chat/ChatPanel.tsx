@@ -73,7 +73,7 @@ export function ChatPanel({
             <RoomArchiveAction room={room} />
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
-            {(room.agentRole || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
+            {(room.agentRole === 'leader' || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
           </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
