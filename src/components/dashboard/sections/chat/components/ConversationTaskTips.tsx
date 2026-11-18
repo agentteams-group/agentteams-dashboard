@@ -1,14 +1,13 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ListTodo, Loader2, Hand, CircleX, CirclePause, Circle, CircleAlert, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
+import { ListTodo, Loader2, Hand, CircleX, CirclePause, CircleDashed, CircleAlert, ChevronDown, ChevronUp, ChevronRight, Clock3, ClipboardCheck, CircleHelp, CircleMinus, Undo2, CircleCheck } from 'lucide-react';
 import { useAssistantTaskFeed, type AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { useTaskIndex } from '@/hooks/use-projects';
 import { useArchivedRooms } from '@/hooks/use-room-archive';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import { ApiError } from '@/lib/api-error';
-import { useSessionTick } from '@/hooks/use-worker-session-state';
 import { conversationTaskNotes, taskDuration, TASK_NOTE_GROUPS } from '@/lib/assistant-task-notes';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
@@ -20,14 +19,26 @@ const createdTime = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
 
+const statusIcons = {
+  confirmation: Hand,
+  review: ClipboardCheck,
+  failed: CircleX,
+  blocked: CirclePause,
+  revision: Undo2,
+  pending: CircleDashed,
+  completed: CircleCheck,
+  cancelled: CircleMinus,
+  unknown: CircleHelp,
+};
+
 export function ConversationTaskTips({ room, taskFeed }: {
   room: RoomInfo;
   taskFeed?: AssistantTaskFeed;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
   const reduceMotion = useReducedMotion();
   const listId = useId();
-  const now = useSessionTick();
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const localFeed = useAssistantTaskFeed(room, !taskFeed);
   const { workflows, loading, degraded, partialError } = taskFeed ?? localFeed;
@@ -38,14 +49,23 @@ export function ConversationTaskTips({ room, taskFeed }: {
   const taskIndexError = taskIndex.isError && !(taskIndex.error instanceof ApiError && taskIndex.error.status === 404);
   const items = conversationTaskNotes(room, workflows, taskIndex.data?.tasks).filter(item =>
     item.group !== 'completed' && (!item.roomId || !archivedIds.has(item.roomId)),
-  ).map(item => ({
-    ...item,
-    needsApproval: item.group !== 'cancelled' && Object.values(confirmations).some(confirmation =>
-      !confirmation.question && confirmation.roomId === item.roomId
-      && confirmation.sender === item.assignee),
-  }));
+  ).map(item => {
+    const pending = Object.values(confirmations).filter(confirmation =>
+      item.group !== 'cancelled' && confirmation.roomId === item.roomId && confirmation.sender === item.assignee,
+    );
+    const waitingFor = pending.some(confirmation => !confirmation.question) ? 'approval' : pending.length ? 'confirmation' : null;
+    return { ...item, waitingFor };
+  });
 
-  const attention = items.filter(item => item.needsApproval || TASK_NOTE_GROUPS.some(group => group.id === item.group && group.attention)).length;
+  // The backend status polls every five seconds. Only the displayed clock ticks locally.
+  const ticking = expanded && items.some(item => item.group === 'running' && (item.startedAt || item.createdAt));
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+
+  const attention = items.filter(item => item.waitingFor || TASK_NOTE_GROUPS.some(group => group.id === item.group && group.attention)).length;
   const joinedIds = new Set(roomAccess.state === 'joined' ? roomAccess.joinedRooms : []);
 
   return <AnimatePresence initial={false}>{items.length > 0 && <motion.aside
@@ -62,24 +82,24 @@ export function ConversationTaskTips({ room, taskFeed }: {
     {expanded && <div id={listId} className="relative max-h-64 overflow-y-auto border-t border-border/60 custom-scrollbar">
       <AnimatePresence initial={false} mode="popLayout">
       {items.map(item => {
-        const state = item.needsApproval ? 'confirmation' : item.group;
+        const state = item.waitingFor ? 'confirmation' : item.group;
         const group = TASK_NOTE_GROUPS.find(group => group.id === state)!;
         const assigned = ['assigned', 'delegated'].includes(item.status ?? '');
         const running = state === 'running' && !assigned;
-        const label = state === 'confirmation' ? '待审批' : state === 'running' ? assigned ? '已分配' : '执行中' : group.label;
-        const Icon = running ? Loader2 : state === 'confirmation' || state === 'review' ? Hand : state === 'failed' ? CircleX : state === 'blocked' ? CirclePause : Circle;
+        const label = item.waitingFor === 'approval' ? '待审批' : item.waitingFor === 'confirmation' ? '待确认' : state === 'running' ? assigned ? '已分配' : '执行中' : group.label;
+        const Icon = state === 'running' ? assigned ? Clock3 : Loader2 : item.waitingFor === 'confirmation' ? CircleHelp : statusIcons[state];
         const color = state === 'failed' ? 'text-red-600 dark:text-red-400' : group.attention ? 'text-amber-700 dark:text-amber-400' : running ? 'text-primary' : 'text-muted-foreground';
         const target = item.roomId && joinedIds.has(item.roomId) ? item.roomId : undefined;
         const duration = taskDuration(item, now);
         const created = item.createdAt ? Date.parse(item.createdAt) : NaN;
         const detailsId = `${listId}-${encodeURIComponent(item.id)}`;
-        const iconLabel = state === 'confirmation' ? '任务需要审批' : state === 'failed' ? '任务失败' : state === 'blocked' ? '任务阻塞' : running ? '任务执行中' : undefined;
-        return <motion.button key={`${item.id}:${item.status}:${state}`} type="button"
+        const iconLabel = item.waitingFor === 'approval' ? '任务需要审批' : `任务${label}`;
+        return <motion.button key={`${item.id}:${item.status}:${label}`} type="button"
           layout={reduceMotion ? false : 'position'}
           initial={{ opacity: 0, y: reduceMotion ? 0 : 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduceMotion ? 0 : -4 }}
           transition={{ duration: reduceMotion ? 0 : 0.16 }}
           onClick={() => { if (target) openChatRoom(target, item.mainTaskId); }} aria-disabled={!target} aria-describedby={detailsId} aria-label={item.title + '，' + label + '，' + (target ? '进入协作空间' : '协作空间暂不可用')} className="flex w-full items-start gap-2 border-b border-border/40 px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary aria-disabled:cursor-default">
-          <Icon aria-label={iconLabel} aria-hidden={!iconLabel} className={cn('mt-0.5 size-3.5 shrink-0', color, running && 'animate-spin motion-reduce:animate-none')} />
+          <Icon aria-label={iconLabel} className={cn('mt-0.5 size-3.5 shrink-0', color, running && 'animate-spin motion-reduce:animate-none')} />
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 text-xs leading-5 text-foreground">{item.title}</span>
             <span id={detailsId} className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-4">

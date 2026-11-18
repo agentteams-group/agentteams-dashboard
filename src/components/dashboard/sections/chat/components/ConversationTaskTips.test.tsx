@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +17,6 @@ const index = vi.hoisted(() => ({ tasks: [] as IndexedTask[], archivedRooms: [] 
 vi.mock('@/hooks/use-projects', () => ({ useTaskIndex: () => ({ data: { tasks: index.tasks } }) }));
 vi.mock('@/hooks/use-room-archive', () => ({ useArchivedRooms: () => ({ data: { rooms: index.archivedRooms } }) }));
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: () => ({ state: 'joined', joinedRooms: [...index.joinedRooms, ...index.projectedRooms.filter(room => room.access === 'joined').map(room => room.id)] }) }));
-vi.mock('@/hooks/use-worker-session-state', () => ({ useSessionTick: () => Date.parse('2026-11-18T08:36:00Z') }));
 const room: RoomInfo = { id: '!assistant:test', name: '平台助手', type: 'manager', agentRole: 'operations', members: [], access: 'joined' };
 const execution: RoomInfo = { id: '!execution:test', name: '网站改版', type: 'project', projectId: 'project', teamId: 'design', members: [], access: 'joined' };
 const workflow: WorkflowResponse = {
@@ -36,6 +35,7 @@ function view(taskFeed = feed(), rooms = [room, execution]) {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(new Date('2026-11-18T08:36:00Z'));
   index.tasks = [];
   index.archivedRooms = [];
   index.joinedRooms = [];
@@ -43,7 +43,7 @@ beforeEach(() => {
   useHitlInboxStore.setState({ confirmations: {}, pendingChatRoomId: null, pendingProjectKey: null });
   useSectionStore.setState({ activeSection: 'chat' });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('conversation task tips', () => {
   it('shows creation time and elapsed time, and opens a joined task room even before its name syncs', () => {
@@ -52,9 +52,22 @@ describe('conversation task tips', () => {
     index.tasks = [{ task_id: 'standalone', main_task_id: 'standalone', title: '独立任务', status: 'in_progress', source_room_id: room.id, room_id: roomId, created_at: '2026-11-18T08:26:00Z' }];
     render(view(feed([])));
     expect(screen.getByText(/创建于/).querySelector('time')).toHaveAttribute('datetime', '2026-11-18T08:26:00Z');
-    expect(screen.getByText('耗时 10 分钟')).toBeVisible();
+    expect(screen.getByText('耗时 10 分 00 秒')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '独立任务，执行中，进入协作空间' }));
     expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'standalone', roomId });
+  });
+
+  it('updates active elapsed time every second without waiting for new task data or replacing the row', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date('2026-11-18T08:36:00Z'));
+    const taskId = 'standalone';
+    index.tasks = [{ task_id: taskId, main_task_id: taskId, title: '独立任务', status: 'assigned', source_room_id: room.id, created_at: '2026-11-18T08:35:58Z' }];
+    render(view(feed([])));
+    const row = screen.getByRole('button', { name: /^独立任务，已分配/ });
+    expect(row).toHaveTextContent('耗时 2 秒');
+    expect(screen.queryByLabelText('任务执行中')).toBeNull();
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(row).toHaveTextContent('耗时 3 秒');
   });
 
   it('removes archived task rooms and their counts even while the task index and workflow still report running', async () => {
@@ -92,8 +105,9 @@ describe('conversation task tips', () => {
     render(view(feed([{ ...workflow, tasks_detail: [{ task_id: 'task', room_id: execution.id, status: 'submitted', history }] }])));
     expect(screen.getByText('首页设计')).toBeVisible();
     expect(screen.getByText('待验收')).toBeVisible();
+    expect(screen.getByLabelText('任务待验收')).not.toHaveClass('animate-spin');
     expect(screen.getByText(/创建于/).querySelector('time')).toHaveAttribute('datetime', '2026-11-14T09:55:00Z');
-    expect(screen.getByText('耗时 33 分钟')).toBeVisible();
+    expect(screen.getByText('耗时 33 分 00 秒')).toBeVisible();
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
@@ -145,10 +159,12 @@ describe('conversation task tips', () => {
     expect(useHitlInboxStore.getState().confirmations[confirmation.id]).toEqual(confirmation);
   });
 
-  it('does not label an intervention question as a tool approval', () => {
+  it('marks an intervention question as pending confirmation rather than tool approval', () => {
     useHitlInboxStore.setState({ confirmations: { question: { id: 'question', roomId: execution.id, eventId: '$question', sender: 'designer', toolName: 'intervention', question: '请选择方案', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
     render(view());
     expect(screen.queryByText('待审批')).toBeNull();
+    expect(screen.getByText('待确认')).toBeVisible();
+    expect(screen.getByLabelText('任务待确认')).not.toHaveClass('animate-spin');
   });
 
   it.each([['!unrelated:test', 'designer'], [execution.id, 'other-worker']])('does not attribute an unrelated approval to this task (%s, %s)', (roomId, sender) => {

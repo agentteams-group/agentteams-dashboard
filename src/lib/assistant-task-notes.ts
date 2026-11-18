@@ -2,7 +2,6 @@ import type { IndexedTask } from '@/hooks/use-projects';
 import type { WorkflowResponse } from './agentteams-projects-api';
 import type { HitlConfirmation } from './hitl-inbox';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
-import { formatDurationZh } from './worker-activity';
 
 export const TASK_NOTE_GROUPS = [
   { id: 'confirmation', label: '待人工确认', attention: true },
@@ -123,7 +122,18 @@ export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
   const finished = ['review', 'completed', 'failed', 'cancelled'].includes(item.group);
   if (finished && !item.finishedAt) return '耗时待同步';
   const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
-  return Number.isFinite(end) ? formatDurationZh(since, end) ?? '耗时待同步' : '耗时待同步';
+  const start = Date.parse(since);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '耗时待同步';
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  return [
+    days > 0 && `${days} 天`,
+    hours > 0 && `${hours % 24} 小时`,
+    minutes > 0 && `${minutes % 60} 分`,
+    `${String(seconds % 60).padStart(minutes > 0 ? 2 : 1, '0')} 秒`,
+  ].filter(Boolean).join(' ');
 }
 
 /** Conversation tips use explicit origin links, not platform/team-wide scope. */
