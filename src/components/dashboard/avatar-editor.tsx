@@ -74,7 +74,7 @@ export function AvatarEditor({ kind, name, onClose }: {
                 event.currentTarget.value = '';
                 if (!file) return;
                 if (file.size > MAX_AVATAR_BYTES || !AVATAR_IMAGE_TYPES.includes(file.type)) {
-                  setError('请选择 2 MB 以内的 PNG、JPEG 或 WebP 图片');
+                  setError('请选择 2 MB 以内的 PNG、JPEG、WebP 或 GIF 图片');
                   return;
                 }
                 setUpload({ file, preview: URL.createObjectURL(file) });

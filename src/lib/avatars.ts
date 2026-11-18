@@ -12,7 +12,7 @@ export const AVATAR_PRESETS = AVATAR_SERIES.flatMap(({ id, label }) =>
   [1, 2, 3, 4, 5, 6].map(number => ({ id: `${id}-${number}`, series: id, label: `${label} ${number}` })),
 );
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
-export const AVATAR_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+export const AVATAR_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
 export function defaultAvatarPreset(kind: AvatarKind, name: string) {
   const series = kind === 'agent' ? 'pixelbot' : 'open-peeps';

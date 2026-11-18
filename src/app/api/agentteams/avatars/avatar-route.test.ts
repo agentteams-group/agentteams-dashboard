@@ -54,3 +54,18 @@ it('rejects another member, allows the administrator to edit an Agent, and norma
   const normalized = await GET(request('alice', 2), human);
   expect(await sharp(Buffer.from(await normalized.arrayBuffer())).metadata()).toMatchObject({ format: 'png', width: 192, height: 192 });
 });
+
+it.each(['gif', 'webp'] as const)('keeps animated %s frames and timing when stored as WebP', async format => {
+  const frameSize = 32 * 24 * 3;
+  const pixels = Buffer.concat([Buffer.alloc(frameSize, 30), Buffer.alloc(frameSize, 220)]);
+  const source = sharp(pixels, { raw: { width: 32, height: 48, pageHeight: 24, channels: 3 } });
+  const settings = { delay: [120, 240], loop: 3 };
+  const data = await (format === 'gif' ? source.gif(settings) : source.webp(settings)).toBuffer();
+  const saved = await PUT(request('alice', 2, new Uint8Array(data), `image/${format}`), human);
+  expect(saved.status).toBe(204);
+  const result = await GET(request('alice', 2), human);
+  expect(result.headers.get('content-type')).toBe('image/webp');
+  expect(await sharp(Buffer.from(await result.arrayBuffer()), { animated: true }).metadata()).toMatchObject({
+    format: 'webp', pages: 2, delay: [120, 240], loop: 3,
+  });
+});

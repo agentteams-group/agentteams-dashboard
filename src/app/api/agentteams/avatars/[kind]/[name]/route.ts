@@ -16,9 +16,11 @@ export async function GET(request: NextRequest, { params }: Params) {
   const { kind, name } = await params;
   if (!validTarget(kind, name)) return new NextResponse(null, { status: 404 });
   const image = await readAvatar(kind, name);
+  const contentType = image.toString('ascii', 0, 4) === 'RIFF' && image.toString('ascii', 8, 12) === 'WEBP'
+    ? 'image/webp' : 'image/png';
   return new NextResponse(new Uint8Array(image), {
     headers: {
-      'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=60',
+      'Content-Type': contentType, 'Cache-Control': 'private, max-age=60',
       'Vary': 'Cookie, Authorization', 'X-Content-Type-Options': 'nosniff',
     },
   });
@@ -42,7 +44,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   const limit = isPreset ? 256 : MAX_AVATAR_BYTES;
   const reader = request.body?.getReader();
   if (!reader || (!isPreset && !AVATAR_IMAGE_TYPES.includes(contentType))) {
-    return NextResponse.json({ error: '请选择预设头像，或上传 PNG、JPEG、WebP 图片' }, { status: 400 });
+    return NextResponse.json({ error: '请选择预设头像，或上传 PNG、JPEG、WebP、GIF 图片' }, { status: 400 });
   }
   const chunks: Uint8Array[] = [];
   let bytes = 0;
@@ -65,10 +67,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
       if (!AVATAR_PRESETS.some(entry => entry.id === preset)) throw new Error('Invalid preset');
       image = await readAvatarPreset(preset);
     } else {
-      const source = sharp(data, { limitInputPixels: 16_000_000 });
-      const { format } = await source.metadata();
+      const source = sharp(data, { animated: true, limitInputPixels: 16_000_000 });
+      const { format, pages = 1, width, height, pageHeight, delay, loop } = await source.metadata();
       if (!format || !AVATAR_IMAGE_TYPES.includes(`image/${format}`)) throw new Error('Invalid image');
-      image = await source.rotate().resize(192, 192, { fit: 'cover' }).png().toBuffer();
+      if (pages > 1) {
+        if (pages > 120 || width * (pageHeight ?? height) * pages > 16_000_000) {
+          return NextResponse.json({ error: '动图帧数或尺寸过大，请选择较短或较小的动图' }, { status: 400 });
+        }
+        image = await source.resize(192, 192, { fit: 'cover', withoutEnlargement: true })
+          .webp({ delay, loop, quality: 82 }).toBuffer();
+      } else {
+        image = await source.rotate().resize(192, 192, { fit: 'cover' }).png().toBuffer();
+      }
     }
   } catch {
     return NextResponse.json({ error: '无法读取所选头像，请换一张图片' }, { status: 400 });
