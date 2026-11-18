@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
   const setReadMarkerMutate = vi.fn();
   const sendMutate = vi.fn();
+  const olderMessages = { hasNextPage: false, fetchNextPage: vi.fn() };
   const uploadMutateAsync = vi.fn().mockResolvedValue({ content_uri: 'mxc://hs.test/file' });
   const roomMessagesChunk: unknown[] = [
     {
@@ -49,6 +51,7 @@ const mocks = vi.hoisted(() => {
     sendReceiptMutate,
     setReadMarkerMutate,
     sendMutate,
+    olderMessages,
     uploadMutateAsync,
     roomMessagesChunk,
     virtuoso,
@@ -91,10 +94,10 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
           },
         ],
       },
-      hasNextPage: false,
+      hasNextPage: mocks.olderMessages.hasNextPage,
       isFetchingNextPage: false,
       isLoading: false,
-      fetchNextPage: vi.fn(),
+      fetchNextPage: mocks.olderMessages.fetchNextPage,
     }),
     useMatrixRoomMembers: () => ({ data: { chunk: mocks.roomMembersChunk }, isSuccess: true }),
     useMatrixRoomState: () => mocks.roomState,
@@ -130,10 +133,12 @@ vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
 }));
 
 function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
+  const queryClient = new QueryClient();
   return render(
     <ChatProvider>
       <ChatRoom roomId="!room:test" roomName="测试房间" {...props} />
-    </ChatProvider>
+    </ChatProvider>,
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> },
   );
 }
 
@@ -192,6 +197,7 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.roomMembersChunk.length = 0;
     mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
+    mocks.olderMessages.hasNextPage = false;
     mocks.setAgentStatusMap({});
     useSectionStore.setState({ mentionRoomId: null });
   });
@@ -334,10 +340,39 @@ describe('ChatRoom read-position dual-write', () => {
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
-    expect(screen.getByText(/此会话没有共享文件目录/)).toBeInTheDocument();
+    expect(screen.getByText('当前会话暂无附件')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
-    expect(screen.queryByText(/此会话没有共享文件目录/)).toBeNull();
+    expect(screen.queryByText('当前会话暂无附件')).toBeNull();
+  });
+
+  it('lists room attachments, skips redacted files, and returns to the list after preview', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
+    mocks.olderMessages.hasNextPage = true;
+    const event = {
+      event_id: '$file', type: 'm.room.message', sender: '@peer:test', origin_server_ts: 3000,
+      content: { body: 'report.md', msgtype: 'm.file', url: 'mxc://hs.test/report' },
+    };
+    mocks.roomMessagesChunk.push(
+      event, event,
+      { ...event, event_id: '$removed', content: { ...event.content, body: 'deleted.md' } },
+      { event_id: '$redaction', type: 'm.room.redaction', sender: '@peer:test', origin_server_ts: 4000, content: { redacts: '$removed' } },
+      { ...event, event_id: '$thread-file', content: { ...event.content, body: 'thread.html', 'm.relates_to': { rel_type: 'm.thread', event_id: '$new' } } },
+    );
+    renderChatRoom();
+    fireEvent.click(screen.getByTitle('显示文件'));
+    const files = within(screen.getByRole('region', { name: '会话附件' }));
+    expect(files.getByRole('link', { name: '下载 report.md' })).toBeInTheDocument();
+    expect(files.getByRole('button', { name: '查看 thread.html' })).toBeInTheDocument();
+    expect(files.queryByText('deleted.md')).toBeNull();
+    fireEvent.click(files.getByRole('button', { name: '加载更早附件' }));
+    expect(mocks.olderMessages.fetchNextPage).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(files.getByRole('button', { name: '查看 report.md' }));
+    const preview = within(screen.getByRole('complementary', { name: '文件预览' }));
+    expect(preview.getByRole('heading', { name: 'report.md' })).toBeInTheDocument();
+    fireEvent.click(preview.getByRole('button', { name: '关闭文件预览' }));
+    expect(screen.getByRole('region', { name: '会话附件' })).toBeInTheDocument();
   });
 
   it('shows the session dot on worker avatars (and only workers) in the member list', () => {

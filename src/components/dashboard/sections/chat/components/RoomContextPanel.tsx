@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { MessagesSquare, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage, RoomMember } from '@/hooks/use-matrix';
@@ -19,6 +20,7 @@ interface RoomContextPanelProps {
   showTasks?: boolean;
   roomId: string;
   fileScope?: CollaborationFileScope;
+  roomAttachments: ReactNode;
   activeTab: RoomContextTab;
   onTabChange: (_tab: RoomContextTab) => void;
   onClose: () => void;
@@ -41,6 +43,7 @@ export function RoomContextPanel({
   canSend = true,
   roomId,
   fileScope,
+  roomAttachments,
   activeTab,
   onTabChange,
   onClose,
@@ -79,7 +82,7 @@ export function RoomContextPanel({
 
         {activeTab === 'files' && (
           fileScope ? <FilesBrowserPanel key={'team' in fileScope ? fileScope.team : fileScope.room} scope={fileScope} />
-            : <p className="p-4 text-sm text-muted-foreground">此会话没有共享文件目录。Agent 工作区文件可在 Agent 管理中查看。</p>
+            : roomAttachments
         )}
 
         {activeTab === 'thread' && (
