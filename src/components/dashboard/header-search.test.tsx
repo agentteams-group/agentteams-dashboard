@@ -35,7 +35,7 @@ it('shows search guidance and an empty result instead of silently doing nothing'
   render(<TooltipProvider><DashboardHeader isConnected workerCount={0} teamCount={0} managerCount={0} versionString={undefined} isRefreshingAll={false} searchQuery="" onSearchChange={vi.fn()} onNavClick={vi.fn()} onRefreshAll={vi.fn()} onOpenMobileMenu={vi.fn()} onOpenSettings={vi.fn()} /></TooltipProvider>);
   const input = screen.getByRole('textbox', { name: '搜索工作区' });
   fireEvent.focus(input);
-  expect(screen.getByText('输入名称搜索 Agent、任务或页面')).toBeVisible();
+  expect(screen.getByText('输入名称搜索智能体、任务或页面')).toBeVisible();
   fireEvent.change(input, { target: { value: '不存在的任务' } });
   expect(screen.getByText('没有找到匹配结果')).toBeVisible();
 });

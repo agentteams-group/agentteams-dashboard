@@ -1,8 +1,8 @@
 'use client';
 
-// 团队设置面板（无 Sheet / 无 Dialog 的 body）——「团队与Agent」页内联详情与
+// 团队设置面板（无 Sheet / 无 Dialog 的 body）——「团队与智能体」页内联详情与
 // TeamDrawer 共用的唯一实现（F7 单一数据源）。对齐工作台插件「配置团队」
-// 基本信息 / 成员管理 / Agent 管理三个标签页。
+// 基本信息 / 成员管理 / 智能体管理三个标签页。
 //
 // 保存边界（与插件一致）：
 //   · 基本信息（含 心跳间隔 / 子代理默认模型）+ 团队 LLM 调优 = 同一次
@@ -287,7 +287,7 @@ export function TeamSettingsPanel({
             <TabsList aria-label="团队编辑" className="grid h-10 w-full max-w-lg grid-cols-3">
               <TabsTrigger value="basic">基本信息</TabsTrigger>
               <TabsTrigger value="users">成员管理 <span className="text-xs text-muted-foreground">{humanNames.size}</span></TabsTrigger>
-              <TabsTrigger value="agents">Agent 管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
+              <TabsTrigger value="agents">智能体管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
             </TabsList>
           </div>
         )}
@@ -313,9 +313,9 @@ export function TeamSettingsPanel({
 
             <dl className="grid grid-cols-1 gap-x-8 gap-y-5 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
               <div className="space-y-1"><dt className="text-xs text-muted-foreground">团队 Admin</dt><dd className="text-sm">{humans.find((human) => human.name === team.admin?.name)?.displayName || team.admin?.name || '未设置'}</dd></div>
-              <div className="space-y-1"><dt className="text-xs text-muted-foreground">Leader Agent</dt><dd className="break-all text-sm">{team.leaderName || '未设置'}</dd></div>
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">Leader 智能体</dt><dd className="break-all text-sm">{team.leaderName || '未设置'}</dd></div>
               <div className="space-y-1"><dt className="text-xs text-muted-foreground">成员数</dt><dd className="text-sm">{humanNames.size}</dd></div>
-              <div className="space-y-1"><dt className="text-xs text-muted-foreground">Agent 数</dt><dd className="text-sm">{agentCount}</dd></div>
+              <div className="space-y-1"><dt className="text-xs text-muted-foreground">智能体数</dt><dd className="text-sm">{agentCount}</dd></div>
             </dl>
             <div className="space-y-4">
             <div className="space-y-1">
@@ -463,7 +463,7 @@ export function TeamSettingsPanel({
                   删除团队
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  成员 Worker 保留（变为 Agent）；团队房间与团队配置删除后不可恢复。
+                  成员 Worker 保留（变为智能体）；团队房间与团队配置删除后不可恢复。
                 </p>
               </>
             ) : (
@@ -482,7 +482,7 @@ export function TeamSettingsPanel({
           </TabsContent>}
 
           {visitedTabs.has('agents') && <TabsContent value="agents" forceMount hidden={tab !== 'agents'} className="m-0 space-y-5">
-            <div><h3 className="text-sm font-medium">Agent 管理</h3><p className="mt-1 text-xs text-muted-foreground">查看 Leader 和 Worker，添加或移除 Agent，并调整模型。</p></div>
+            <div><h3 className="text-sm font-medium">智能体管理</h3><p className="mt-1 text-xs text-muted-foreground">查看 Leader 和 Worker，添加或移除智能体，并调整模型。</p></div>
             <TeamMembersPanel team={team} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onChanged={onChanged} />
         <SettingsSection
           title="团队技能"
@@ -507,7 +507,7 @@ export function TeamSettingsPanel({
           <DialogHeader>
             <DialogTitle>删除团队 {team.name}</DialogTitle>
             <DialogDescription>
-              团队房间与团队配置将删除；成员 Worker 保留（变为 Agent）。请核对团队名后确认。
+              团队房间与团队配置将删除；成员 Worker 保留（变为智能体）。请核对团队名后确认。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">

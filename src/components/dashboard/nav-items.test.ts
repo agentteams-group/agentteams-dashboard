@@ -21,7 +21,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       'artifacts',
       'coding-runs',
       'loops',
-      // 三级资源导航：团队（卡片 / 拓扑视图可切换）/ 用户（L1）/ Agent /
+      // 三级资源导航：团队（卡片 / 拓扑视图可切换）/ 用户（L1）/ 智能体 /
       // Managers（L1）；旧 resources / team-agents 入口已删（id 由
       // sectionMap + hash 解析承接旧深链）。
       'teams',
@@ -68,7 +68,7 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
-    // 三级资源导航：团队 / 用户 / Agent / Managers（旧 resources / team-agents
+    // 三级资源导航：团队 / 用户 / 智能体 / Managers（旧 resources / team-agents
     // 入口已删，id 由 sectionMap + hash 解析承接旧深链）。
     expect(byId.get('teams')).toMatchObject({
       label: '团队',
@@ -77,7 +77,7 @@ describe('Navigation with groups (Workbench IA)', () => {
       legacyGroup: 'runtime',
     });
     expect(byId.get('workers')).toMatchObject({
-      label: 'Agent',
+      label: '智能体',
       area: 'console',
       group: 'resources',
       legacyGroup: 'runtime',

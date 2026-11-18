@@ -159,7 +159,7 @@ export function EntityInspector({
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
         <p className="text-sm font-semibold">未选中实体</p>
         <p className="text-xs text-muted-foreground">
-          从列表或拓扑中选择一个团队 / Agent / Manager，
+          从列表或拓扑中选择一个团队 / 智能体 / Manager，
           <br />
           这里会显示它的详情与快速操作。
         </p>
@@ -439,7 +439,7 @@ export function EntityInspector({
             <AlertDialogDescription>
               {deleteTarget?.kind === 'worker'
                 ? '容器与相关配置将被删除，不可恢复。'
-                : '团队房间与团队配置将删除；成员 Worker 保留（变为 Agent）。'}
+                : '团队房间与团队配置将删除；成员 Worker 保留（变为智能体）。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

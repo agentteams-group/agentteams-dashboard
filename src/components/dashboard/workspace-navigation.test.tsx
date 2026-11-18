@@ -54,8 +54,8 @@ describe('compact workspace navigation', () => {
     fireEvent.click(within(nav).getByRole('button', { name: '资源' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
     const members = within(screen.getByRole('group', { name: '资源分类' }));
-    // 三级资源导航：团队 / 用户 / Agent / Managers（L1 可见）。
-    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['团队', '用户', 'Agent', 'Managers']);
+    // 三级资源导航：团队 / 用户 / 智能体 / Managers（L1 可见）。
+    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['团队', '用户', '智能体', 'Managers']);
     fireEvent.click(members.getByRole('button', { name: '团队' }));
     expect(props.onNavClick).toHaveBeenCalledWith('teams');
   });
@@ -117,9 +117,9 @@ describe('compact workspace navigation', () => {
   it('hides privileged member pages from Team accounts and selects a deep-linked child', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });
     render(<Sidebar {...props} activeSection="teams" collapsed={false} onToggleCollapse={vi.fn()} />);
-    // 团队 / Agent 对 L2 可见（团队级内容）；特权「用户 / Managers」隐藏。
+    // 团队 / 智能体 对 L2 可见（团队级内容）；特权「用户 / Managers」隐藏。
     expect(screen.getByRole('button', { name: '团队' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '智能体' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '用户' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Managers' })).toBeNull();
   });

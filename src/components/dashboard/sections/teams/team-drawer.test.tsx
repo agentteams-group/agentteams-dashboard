@@ -330,13 +330,13 @@ describe('TeamDrawer · 分区与骨架', () => {
 
   it('uses three direct tabs and keeps secondary settings collapsed', () => {
     renderDrawer();
-    for (const title of ['基本信息', '成员管理', 'Agent 管理']) {
+    for (const title of ['基本信息', '成员管理', '智能体管理']) {
       expect(screen.getByRole('tab', { name: new RegExp(title) })).toBeInTheDocument();
     }
     expect(screen.getByRole('button', { name: '高级设置' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: '危险区' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByPlaceholderText('搜索技能…')).toBeNull();
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /智能体管理/ }), { button: 0 });
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     expect(screen.getByPlaceholderText('搜索技能…')).toBeInTheDocument();
   });
@@ -364,7 +364,7 @@ describe('TeamDrawer · 分区与骨架', () => {
     expect(screen.getByTestId('danger-delete')).toBeInTheDocument();
   });
 
-  it('千锻入口不在团队设置抽屉（只在「团队与Agent」拓扑头部，对齐插件）', () => {
+  it('千锻入口不在团队设置抽屉（只在「团队与智能体」拓扑头部，对齐插件）', () => {
     renderDrawer();
     expect(screen.queryByTestId('millforge-card')).toBeNull();
     expect(screen.queryByTestId('millforge-logo')).toBeNull();
@@ -379,13 +379,13 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
     fireEvent.change(screen.getByLabelText('描述'), { target: { value: '未保存的描述' } });
     fireEvent.mouseDown(screen.getByRole('tab', { name: /成员管理/ }), { button: 0 });
     fireEvent.change(screen.getByLabelText('Team Admin'), { target: { value: 'bob' } });
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /智能体管理/ }), { button: 0 });
     fireEvent.click(screen.getByRole('button', { name: '移除 w1' }));
     fireEvent.mouseDown(screen.getByRole('tab', { name: '基本信息' }), { button: 0 });
     expect(screen.getByLabelText('描述')).toHaveValue('未保存的描述');
     fireEvent.mouseDown(screen.getByRole('tab', { name: /成员管理/ }), { button: 0 });
     expect(screen.getByLabelText('Team Admin')).toHaveValue('bob');
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /智能体管理/ }), { button: 0 });
     expect(screen.queryByTestId('member-w1')).not.toBeInTheDocument();
     expect(screen.getByTestId('members-save')).toBeEnabled();
   });
@@ -425,7 +425,7 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
 
 describe('TeamDrawer · 团队成员', () => {
   it('changes Leader without dropping the former Leader or other Agents', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     const leaderSelect = selectAllOptions().find((select) => select.value === 'lead')!;
     fireEvent.change(leaderSelect, { target: { value: 'w1' } });
     expect(within(screen.getByTestId('member-w1')).getByText('Leader')).toBeInTheDocument();
@@ -435,7 +435,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('批量 Leader 模型只刷 Leader 行，保存只写该行 updateWorker', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     expect(within(screen.getByTestId('batch-leader')).getByText('leader-batch')).toBeInTheDocument();
     expect(screen.getByTestId('member-lead')).toHaveTextContent('leader-batch');
@@ -452,7 +452,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('Workers 批量只刷 worker 行', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     await paintBatch('batch-workers', '批量设置模型 - Workers 批', 'worker-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalledTimes(2));
@@ -464,7 +464,7 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('行内「改模型」打开统一模型弹窗，保存走 updateWorker', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     const rows = screen.getAllByRole('button', { name: '改模型' });
     fireEvent.click(rows[1]);
     const input = await screen.findByPlaceholderText('例如 team-chat');
@@ -491,7 +491,7 @@ describe('TeamDrawer · 团队成员', () => {
         onOpenChange={vi.fn()}
       />,
     );
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /智能体管理/ }), { button: 0 });
     expect(screen.getByText(/以下 Worker 不存在/)).toHaveTextContent('ghost');
     expect(screen.getByTestId('members-save')).toBeDisabled();
 
@@ -512,7 +512,7 @@ describe('TeamDrawer · 团队成员', () => {
         onOpenChange={vi.fn()}
       />,
     );
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /Agent 管理/ }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /智能体管理/ }), { button: 0 });
     const addSelect = selectAllOptions().find((select) =>
       select.value !== 'lead' && Array.from(select.options).some((option) => option.value === 'w9'),
     );
@@ -530,22 +530,22 @@ describe('TeamDrawer · 团队成员', () => {
   });
 
   it('只改模型时不再重复 PUT 团队成员', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     await paintBatch('batch-leader', '批量设置模型 - Leader 批', 'leader-batch');
     fireEvent.click(screen.getByTestId('members-save'));
     await waitFor(() => expect(mocks.updateWorkerAsync).toHaveBeenCalled());
     expect(mocks.updateTeamAsync).not.toHaveBeenCalled();
   });
 
-  it('Agent 池为空 → 显示「没有可添加的 Agent」', () => {
-    renderDrawer(3, 'Agent 管理');
-    expect(screen.getByText('没有可添加的 Agent')).toBeInTheDocument();
+  it('智能体池为空 → 显示「没有可添加的智能体」', () => {
+    renderDrawer(3, '智能体管理');
+    expect(screen.getByText('没有可添加的智能体')).toBeInTheDocument();
   });
 });
 
 describe('TeamDrawer · 团队技能（独立保存）', () => {
   it('分配矩阵保存走 updateWorker{skills}，不触发团队 PUT', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     fireEvent.click(screen.getByLabelText('w1 s1'));
     fireEvent.click(screen.getByTestId('skills-save'));
@@ -559,7 +559,7 @@ describe('TeamDrawer · 团队技能（独立保存）', () => {
   });
 
   it('MCP 卡保存写 updateWorker{mcpServers}，独立于团队保存', async () => {
-    renderDrawer(3, 'Agent 管理');
+    renderDrawer(3, '智能体管理');
     fireEvent.click(screen.getByRole('button', { name: '团队技能' }));
     fireEvent.click(screen.getByRole('button', { name: '编辑 w1 MCP' }));
     fireEvent.click(screen.getByRole('button', { name: '选择 MCP' }));

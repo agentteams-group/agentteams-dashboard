@@ -77,7 +77,7 @@ const FilesSection = lazy(() => import('./sections/files-section').then(m => ({ 
 const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
 // 三级导航：teams / team-agents / resources（旧 id）→ TeamsSection（团队页，
-// 卡片 / 拓扑视图可切换）；workers → AgentsSection（独立 Agent 页）。
+// 卡片 / 拓扑视图可切换）；workers → AgentsSection（智能体页）。
 export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
   tasks: TasksSection,

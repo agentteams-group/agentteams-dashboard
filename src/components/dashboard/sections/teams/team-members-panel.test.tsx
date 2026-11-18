@@ -87,7 +87,7 @@ describe('TeamMembersPanel · 成员行布局', () => {
     const name = within(leaderRow).getByText(LONG_NAME);
     expect(name).toHaveAttribute('title', LONG_NAME);
     expect(name.className).toContain('truncate');
-    expect(screen.getByRole('columnheader', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '智能体' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '模型' })).toBeInTheDocument();
     expect(screen.getByText('批量设置模型').closest('details')).not.toHaveAttribute('open');
 

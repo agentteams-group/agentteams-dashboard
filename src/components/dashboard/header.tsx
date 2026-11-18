@@ -163,7 +163,7 @@ export function DashboardHeader({
         <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${paletteOpen ? 'block' : 'hidden sm:block'} w-4 h-4 text-muted-foreground z-10`} />
         <Input
           ref={searchInputRef}
-          placeholder="搜索 Agent、任务和工具…"
+          placeholder="搜索智能体、任务和工具…"
           aria-label="搜索工作区"
           value={debouncedQuery}
           onChange={(e) => setDebouncedQuery(e.target.value)}
@@ -199,7 +199,7 @@ export function DashboardHeader({
         )}
         {paletteOpen && searchResults.length === 0 && (
           <div role="status" className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-border bg-popover p-4 text-sm text-muted-foreground shadow-lg">
-            {debouncedQuery.trim() ? '没有找到匹配结果' : '输入名称搜索 Agent、任务或页面'}
+            {debouncedQuery.trim() ? '没有找到匹配结果' : '输入名称搜索智能体、任务或页面'}
           </div>
         )}
       </div>

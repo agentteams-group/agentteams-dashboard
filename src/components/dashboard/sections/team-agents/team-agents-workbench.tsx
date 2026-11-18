@@ -316,7 +316,7 @@ function StandaloneWorkerRow({
   );
 }
 
-/** A4：列表底部「Agent（N）」可折叠行（空 = 不渲染）。 */
+/** A4：列表底部「智能体（N）」可折叠行（空 = 不渲染）。 */
 function StandaloneWorkersRow({
   workers,
   selectedName,
@@ -338,7 +338,7 @@ function StandaloneWorkersRow({
         onClick={onToggle}
         className="flex min-h-11 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        <span className="min-w-0 truncate">Agent（{workers.length}）</span>
+        <span className="min-w-0 truncate">智能体（{workers.length}）</span>
         {expanded ? (
           <ChevronDown className="ml-auto size-3.5 shrink-0" aria-hidden="true" />
         ) : (
@@ -348,7 +348,7 @@ function StandaloneWorkersRow({
       {expanded && (
         <div className="space-y-0.5 p-1.5">
           <p className="px-1 text-xs text-muted-foreground">
-            Agent——能运行、能被私聊，不参与团队任务；点名字看详情，在团队设置里可加进团队。
+            智能体——能运行、能被私聊，不参与团队任务；点名字看详情，在团队设置里可加进团队。
           </p>
           {workers.map((worker) => (
             <StandaloneWorkerRow
@@ -364,22 +364,22 @@ function StandaloneWorkersRow({
   );
 }
 
-/** 选中未加入团队的 Agent 时的中栏上下文卡（替代「团队不存在」空态）。 */
+/** 选中未加入团队的智能体时的中栏上下文卡（替代「团队不存在」空态）。 */
 function StandaloneWorkerContextCard({ name, onBack }: { name: string; onBack: () => void }) {
   return (
     <div className="space-y-2.5 p-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{name}</span>
         <Badge variant="outline" className="shrink-0 text-xs">
-          Agent（不属于任何团队）
+          智能体（不属于任何团队）
         </Badge>
       </div>
       <div className="flex items-start gap-2 rounded-md border bg-muted/20 p-2 text-xs">
         <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <p className="min-w-0">
-          Agent（不属于任何团队）：能运行、能被私聊，但不参与团队任务。
+          智能体（不属于任何团队）：能运行、能被私聊，但不参与团队任务。
           <span className="mt-1 block text-muted-foreground">
-            加进团队：打开目标团队 → 团队设置 →「添加 Agent」一键加入。
+            加进团队：打开目标团队 → 团队设置 →「添加智能体」一键加入。
           </span>
         </p>
       </div>
@@ -412,12 +412,12 @@ function StaleSelectionState({
 }
 
 /**
- * 「团队与 Agent」工作台（#233 三栏工作台 − 右侧详情栏 + R2 详情大弹窗）。
+ * 「团队与智能体」工作台（#233 三栏工作台 − 右侧详情栏 + R2 详情大弹窗）。
  *
  * 列表（F1 无页签）：Manager 行（仅 L1 可见）+ 团队行（leader 名排序）+
- * 底部「Agent」折叠行；中间 = InteractiveTeamTopology。
+ * 底部「智能体」折叠行；中间 = InteractiveTeamTopology。
  * 详情不再占栏：团队（拓扑头部齿轮 → 按布局分派：多栏选中、单栏弹窗）、
- * Agent（拓扑成员行 / Agent 行）、Manager（列表 Manager 行）各自打开
+ * 智能体（拓扑成员行 / 智能体行）、Manager（列表 Manager 行）各自打开
  * 承载当前 main 版面板的自适应大弹窗（见 *-detail-dialog.tsx）。
  * dual 断点下 Inspector 走右侧真 Sheet 抽屉（R3：Esc / 遮罩只关抽屉，
  * 保留选中；URL ?inspect=1 反映开合）。
@@ -947,7 +947,7 @@ export function TeamAgentsWorkbench() {
   const listPane = (
     <Pane label="团队列表">
       <PaneHeader
-        title="团队与 Agent"
+        title="团队与智能体"
         meta={hasSearch ? `${teamRows.length} / ${teams?.length ?? 0}` : `${teams?.length ?? 0}`}
       />
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden p-1.5 custom-scrollbar">
@@ -1021,7 +1021,7 @@ export function TeamAgentsWorkbench() {
   return (
     <div className="space-y-3" data-testid="team-agents-section" data-layout={layout}>
       <SectionHeader
-        title="团队与 Agent"
+        title="团队与智能体"
         description="团队 / Manager / Worker 统一管理：拓扑、详情与团队设置"
         isLive={isConnected}
         onRefresh={refresh}
@@ -1035,7 +1035,7 @@ export function TeamAgentsWorkbench() {
               onClick={() => setCreateWorkerOpen(true)}
             >
               <Bot className="size-3.5" aria-hidden="true" />
-              创建 Agent
+              创建智能体
             </Button>
             <Button
               size="sm"
@@ -1108,7 +1108,7 @@ export function TeamAgentsWorkbench() {
               }}
             >
               <SheetTitle className="sr-only">实体详情</SheetTitle>
-              <SheetDescription className="sr-only">当前选中实体（团队 / Agent / Manager）的详情分区</SheetDescription>
+              <SheetDescription className="sr-only">当前选中实体（团队 / 智能体 / Manager）的详情分区</SheetDescription>
               {inspectorEntity && (
                 <EntityInspector
                   entity={inspectorEntity}

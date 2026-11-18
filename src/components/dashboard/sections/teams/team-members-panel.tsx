@@ -197,9 +197,9 @@ export function TeamMembersPanel({
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label>Leader Agent</Label>
+        <Label>Leader 智能体</Label>
         <Select value={currentLeader} onValueChange={selectLeader} disabled={saving}>
-          <SelectTrigger className="w-full sm:max-w-md" aria-label="Leader Agent"><SelectValue placeholder="选择已有 Agent 作为 Leader…" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:max-w-md" aria-label="Leader 智能体"><SelectValue placeholder="选择已有智能体作为 Leader…" /></SelectTrigger>
           <SelectContent>
             {currentLeader && !leaderOptions.some((worker) => worker.name === currentLeader) && <SelectItem value={currentLeader} disabled>{currentLeader}（不存在）</SelectItem>}
             {leaderOptions.map((worker) => <SelectItem key={worker.name} value={worker.name}>{worker.name}</SelectItem>)}
@@ -210,7 +210,7 @@ export function TeamMembersPanel({
       <div className="overflow-hidden rounded-lg border">
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-muted/40 text-muted-foreground">
-            <tr><th className="p-3 font-medium">Agent</th><th className="w-20 p-3 font-medium">角色</th><th className="hidden p-3 font-medium sm:table-cell">模型</th><th className="w-32 p-3 font-medium">操作</th></tr>
+            <tr><th className="p-3 font-medium">智能体</th><th className="w-20 p-3 font-medium">角色</th><th className="hidden p-3 font-medium sm:table-cell">模型</th><th className="w-32 p-3 font-medium">操作</th></tr>
           </thead>
           <tbody>{rows.map((row) => {
             const changed = row.model.trim() && row.model.trim() !== row.baseModel.trim();
@@ -236,12 +236,12 @@ export function TeamMembersPanel({
 
       {/* 添加成员：只从已有 Worker 选 */}
       <div className="space-y-1">
-        <Label className="text-xs">添加 Agent</Label>
+        <Label className="text-xs">添加智能体</Label>
         {addOptions.length > 0 ? (
           // key 按成员数重挂载：选完立刻回到占位符（与 MemberPicker 同款手法）。
           <Select key={rows.length} onValueChange={addMember}>
-            <SelectTrigger className="min-h-11 w-full sm:min-h-9" aria-label="添加 Agent">
-              <SelectValue placeholder="选择已有 Agent…" />
+            <SelectTrigger className="min-h-11 w-full sm:min-h-9" aria-label="添加智能体">
+              <SelectValue placeholder="选择已有智能体…" />
             </SelectTrigger>
             <SelectContent>
               {addOptions.map((worker) => (
@@ -254,7 +254,7 @@ export function TeamMembersPanel({
         ) : (
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <Plus className="size-3.5" aria-hidden="true" />
-            没有可添加的 Agent
+            没有可添加的智能体
           </p>
         )}
       </div>
@@ -327,7 +327,7 @@ export function TeamMembersPanel({
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground break-words">
-          选择后应用到对应 Agent，也可逐个调整。点击「保存 Agent」后生效。
+          选择后应用到对应智能体，也可逐个调整。点击「保存智能体」后生效。
         </p>
         {sessionIssue ? (
           <p className="mt-2 text-xs text-amber-600 break-words">
@@ -351,12 +351,12 @@ export function TeamMembersPanel({
           ) : (
             <Check className="size-3.5" aria-hidden="true" />
           )}
-          保存 Agent
+          保存智能体
         </Button>
         <span className="text-xs text-muted-foreground">
           {modelChanges.length > 0
-            ? `将更新 ${modelChanges.length} 个 Agent 的模型`
-            : '保存后应用 Agent 变更'}
+            ? `将更新 ${modelChanges.length} 个智能体的模型`
+            : '保存后应用智能体变更'}
         </span>
       </div>
 
