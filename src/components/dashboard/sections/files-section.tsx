@@ -36,6 +36,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useHumans } from '@/hooks/use-agentteams-humans';
+import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   FILE_SORT_STORAGE_KEY,
@@ -127,6 +128,7 @@ import { FileSearchResults, type SearchRowActions } from './files/file-search-re
 import { GridView, ListView, TreeView, type EntryActions } from './files/file-views';
 import { TrashDialog } from './files/trash-dialog';
 import { UploadQueuePanel } from './files/upload-panel';
+import { FilesBrowserPanel } from './chat/views/worker-files-panel';
 
 const ROOT_LABEL = '我的文件';
 
@@ -175,7 +177,52 @@ export interface FilesSectionProps {
   initialHuman?: string;
 }
 
-export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
+export function FilesSection(props: FilesSectionProps = {}) {
+  const teamsQuery = useTeams();
+  const teams = teamsQuery.data ?? [];
+  const [showTeamFiles, setShowTeamFiles] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState('');
+  const team = teams.find((entry) => entry.name === selectedTeam) ?? teams[0];
+
+  return (
+    <div className="space-y-4">
+      <div role="group" aria-label="文件范围" className="inline-flex gap-1 rounded-lg bg-muted p-1">
+        <Button variant={showTeamFiles ? 'ghost' : 'secondary'} size="sm" aria-pressed={!showTeamFiles} onClick={() => setShowTeamFiles(false)}>
+          个人文件
+        </Button>
+        <Button variant={showTeamFiles ? 'secondary' : 'ghost'} size="sm" aria-pressed={showTeamFiles} onClick={() => setShowTeamFiles(true)}>
+          团队文件
+        </Button>
+      </div>
+      <div hidden={showTeamFiles}>
+        <PersonalFilesSection {...props} active={!showTeamFiles} />
+      </div>
+      {showTeamFiles && (team ? (
+        <div className="space-y-3">
+          <Select value={team.name} onValueChange={setSelectedTeam}>
+            <SelectTrigger aria-label="选择团队" className="w-64 max-w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {teams.map((entry) => (
+                <SelectItem key={entry.name} value={entry.name}>{entry.teamName || entry.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="h-[min(65vh,44rem)] min-h-96">
+            <FilesBrowserPanel key={team.name} scope={{ team: team.name }} readOnly />
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground" role="status">
+          {teamsQuery.isPending ? '正在加载团队…' : teamsQuery.isError ? '团队列表加载失败' : '暂无可查看的团队文件'}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { active: boolean }) {
   const queryClient = useQueryClient();
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
@@ -654,6 +701,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
   }, []);
 
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (trashOpen || quotaOpen || newFolderOpen || renameTarget || moveTarget || editTarget || deleteTarget) return;
@@ -667,6 +715,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [
+    active,
     clearFocusAndSelection,
     clearSearch,
     deleteTarget,
@@ -900,6 +949,7 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
       try {
         await humanFilesApi.uploadFile(humanName, item.path, file, { signal: ctrl.signal });
         setUploadItems((prev) => markUploadStatus(prev, item.id, 'success'));
+        uploadFiles.current.delete(item.id);
         // 逐项落进当前目录缓存：队列跑完不再整页刷新，只有「收尾」才做一次校正。
         upsertInDir(parent, {
           name: item.path.split('/').pop() ?? item.name,
@@ -933,15 +983,18 @@ export function FilesSection({ initialHuman }: FilesSectionProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadItems]);
 
-  const completedRef = useRef('');
+  const completedRef = useRef<UploadItem[] | null>(null);
+  const { finished, success, total } = progress;
   useEffect(() => {
-    if (progress.total === 0) return;
-    const key = `${progress.success}:${progress.failed}:${progress.total}`;
-    if (progress.finished === progress.total && progress.success > 0 && completedRef.current !== key) {
-      completedRef.current = key;
-      mutateDone();
+    if (finished !== total || success === 0 || completedRef.current === uploadItems) return;
+    completedRef.current = uploadItems;
+    mutateDone();
+    if (success === total) {
+      toast.success('上传成功');
+      const completed = new Set(uploadItems.map((item) => item.id));
+      setUploadItems((prev) => prev.filter((item) => !completed.has(item.id)));
     }
-  }, [mutateDone, progress]);
+  }, [finished, mutateDone, success, total, uploadItems]);
 
   const cancelUpload = (id: string) => {
     uploadAborts.current.get(id)?.abort();

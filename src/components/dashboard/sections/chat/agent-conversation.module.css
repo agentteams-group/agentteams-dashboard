@@ -39,10 +39,6 @@
   translate: none;
 }
 
-.conversation :global([data-chat-message='user'] [data-chat-avatar]) {
-  display: none;
-}
-
 .conversation :global([data-chat-message-meta]) {
   margin-bottom: 0.5rem;
 }

@@ -39,6 +39,7 @@ export type TaskOutcome = 'SUCCESS' | 'SUCCESS_WITH_NOTES' | 'REVISION_NEEDED' |
 export interface BoardTask {
   runId: string;
   parentTaskId?: string;
+  kind?: 'main' | 'project-summary';
   title: string;
   status: TaskStatus;
   assignedTo: string;

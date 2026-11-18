@@ -9,10 +9,11 @@ import {
   validateClientAddress,
 } from '@/lib/client-config-store';
 import { AlertCircle, KeyRound, LogIn, RefreshCw, Server } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { SignInLayout } from './sign-in-layout';
 
 interface StatelessLoginPageProps {
   onLoginSuccess?: () => void;
@@ -164,8 +165,7 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <SignInLayout>
         <CardHeader className="space-y-1">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -280,7 +280,7 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
           <Button
             onClick={handleLogin}
             disabled={isLoading || !username || !password}
-            className="w-full"
+            className="w-full h-11 rounded-xl bg-[#1bc67b] text-[#092b20] hover:bg-[#6cdda8]"
           >
             {isLoading ? (
               <>
@@ -295,7 +295,6 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
             )}
           </Button>
         </CardContent>
-      </Card>
-    </div>
+    </SignInLayout>
   );
 }

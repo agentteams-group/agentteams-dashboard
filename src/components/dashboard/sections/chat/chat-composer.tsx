@@ -12,6 +12,8 @@ import type { FileRef } from '@/lib/file-refs';
 import { VoiceInput } from './voice-input';
 import { useImeGuard } from './use-ime-guard';
 import type { DirectExecution } from '@/lib/direct-execution';
+import type { DisplayMessage } from '@/hooks/use-matrix';
+import { ComposerReply } from './views/ReplyQuote';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -49,6 +51,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 interface ChatComposerProps {
+  replyTo?: DisplayMessage | null;
+  onCancelReply?: () => void;
   execution?: DirectExecution | null;
   onStop?: () => void;
   roomId?: string;
@@ -77,6 +81,8 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  replyTo,
+  onCancelReply,
   execution,
   onStop,
   roomId,
@@ -107,6 +113,9 @@ export function ChatComposer({
     onMentionsChange?.(mentions);
   }, [mentions, onMentionsChange]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (replyTo) inputRef.current?.focus({ preventScroll: true });
+  }, [replyTo]);
   const ime = useImeGuard();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -526,6 +535,8 @@ export function ChatComposer({
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
       <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-ring">
+        {replyTo && onCancelReply && !editSession && <ComposerReply target={replyTo}
+          memberMap={Object.fromEntries(members.map(member => [member.userId, member.displayName]))} onCancel={onCancelReply} />}
         <input
           ref={fileInputRef}
           type="file"

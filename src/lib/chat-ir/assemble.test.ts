@@ -99,6 +99,60 @@ describe('ChatIR turn assembly', () => {
     expect(latestEventId).toBe('answer');
   });
 
+  it('keeps each QwenPaw process with its own answer when two mentioned agents interleave', () => {
+    const leader = '@leader:server';
+    const planner = '@planner:server';
+    const events = [
+      ev('ask-leader', ME, '@leader 你好', 0, { 'm.mentions': { user_ids: [leader] } }),
+      notice('leader-root', leader, '处理中...', 100),
+      ev('ask-planner', ME, '@planner 你好', 200, { 'm.mentions': { user_ids: [planner] } }),
+      notice('planner-root', planner, '处理中...', 300),
+      notice('planner-think', planner, 'Thinking:\n\n预算思考', 400, threadOf('planner-root')),
+      notice('leader-think', leader, 'Thinking:\n\n队长思考', 500, threadOf('leader-root')),
+      ev('planner-reply', planner, '* 预算答复', 600, replaceOf('planner-root', '预算答复')),
+      notice('leader-think-more', leader, 'Thinking:\n\n队长补充思考', 700, threadOf('leader-root')),
+      ev('leader-reply', leader, '* 队长答复', 800, replaceOf('leader-root', '队长答复')),
+    ];
+    const render = (raw: MatrixEvent[]) => assembleChatTimeline(formatMatrixEvents(raw, ME), raw, {
+      currentUserId: ME,
+      runtimeMap: { [leader]: { runtime: 'qwenpaw', workerName: 'leader' }, [planner]: { runtime: 'qwenpaw', workerName: 'planner' } },
+      now: BASE_TS + 900,
+    });
+
+    const preview = render(events.slice(0, 6));
+    expect(preview.turns).toHaveLength(2);
+    expect(preview.messages.find(message => message.id === 'leader-root')?.sourceEventIds).toContain('leader-think');
+
+    const { messages, turns } = render(events.toReversed());
+    expect(messages).toHaveLength(4);
+    expect(turns).toHaveLength(2);
+    expect(messages.find(message => message.id === 'planner-root')).toMatchObject({
+      content: '预算答复', turnState: 'finalized', latestEventId: 'planner-reply',
+      precomputedBlocks: [{ type: 'thinking', content: '预算思考' }, { type: 'text', text: '预算答复' }],
+    });
+    expect(messages.find(message => message.id === 'leader-root')).toMatchObject({
+      content: '队长答复', turnState: 'finalized', latestEventId: 'leader-reply',
+      precomputedBlocks: [
+        { type: 'thinking', content: '队长思考' },
+        { type: 'thinking', content: '队长补充思考' },
+        { type: 'text', text: '队长答复' },
+      ],
+    });
+  });
+
+  it('settles earlier process tiles when a final edit arrives after an independent message', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('step', '@w:server', '正在完成项目', 1_000, threadOf('root')),
+      ev('report', '@service:server', '项目已验收', 2_000),
+      ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
+    ];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined, 'finalized']);
+    expect(messages[0].content).toBe('');
+    expect(messages[2].content).toBe('最终答案');
+  });
+
   it('keeps qwenpaw thread narration inside the process fold', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),

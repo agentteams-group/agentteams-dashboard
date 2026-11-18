@@ -47,18 +47,11 @@ describe('chat task note entry points', () => {
     renderChat({ id: '!leader:test', name: '团队助手', type: 'manager', agentRole: 'leader', members: [] }, 'lead');
     expect(screen.queryByRole('button', { name: '平台助手设置' })).toBeNull();
   });
-  it('shows a scoped task note in a Team group without changing it into an assistant DM', async () => {
+  it('omits the pending action in a Team group while preserving team chat', () => {
     useHitlInboxStore.setState({ confirmations: { approval: { id: 'approval', roomId: teamRoom.id, eventId: '$approval', sender: '@leader:test', toolName: '发布', question: '现在发布吗？', timestamp: 1, approveReply: 'yes', rejectReply: 'no' } } });
     renderChat(teamRoom);
-    expect(screen.getByText('设计群聊')).toBeInTheDocument();
     expect(screen.getByText('设计群聊').closest('[data-integrated-sidebar]')).toHaveAttribute('data-integrated-sidebar', 'true');
-    fireEvent.click(await screen.findByRole('button', { name: /待我处理，2 项待处理/ }));
-    expect(screen.getByText('首页设计')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /待验收/ })).toBeInTheDocument();
-    expect(api.getProjectWorkflow).toHaveBeenCalledTimes(1);
-    expect(api.getProjectWorkflow).toHaveBeenCalledWith('project', { includeTasks: true, teamId: 'design' });
-    fireEvent.click(screen.getByRole('button', { name: '去确认：现在发布吗？' }));
-    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(teamRoom.id);
+    expect(screen.queryByRole('button', { name: /待我处理/ })).toBeNull();
     expect(useHitlInboxStore.getState().confirmations.approval).toBeDefined();
   });
 

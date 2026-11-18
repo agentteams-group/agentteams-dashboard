@@ -21,6 +21,7 @@ export type { ChatContextPanel } from './ChatRoom';
 
 interface ChatPanelProps {
   room: RoomInfo;
+  taskId?: string;
   /** Rooms used to scope human intervention tasks. */
   rooms?: RoomInfo[];
   contextPanel: ChatContextPanel;
@@ -37,6 +38,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({
   room,
+  taskId,
   rooms,
   contextPanel,
   onContextPanelChange,
@@ -55,15 +57,16 @@ export function ChatPanel({
     <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
-          taskRoom={archiveStatus.data?.is_task_room === true}
+          taskRoom={!!taskId || archiveStatus.data?.is_task_room === true}
+          taskId={taskId}
           headerLeading={headerLeading}
           headerTitle={headerTitle}
           integratedSidebar={!!room.agentRole || room.type === 'team'}
           roomId={room.id}
           roomName={room.name}
+          roomWorkerName={room.workerName}
           agentRole={room.agentRole}
           team={room.team}
-          defaultWorkerName={room.workerName}
           workerMatrixUserIds={room.workerMatrixUserIds ?? (room.matrixUserId ? [room.matrixUserId] : undefined)}
           roomPhase={room.phase}
           roomRuntime={room.runtime}
@@ -73,7 +76,8 @@ export function ChatPanel({
             <RoomArchiveAction room={room} />
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
-            {(room.agentRole || room.type === 'team') && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
+            {room.agentRole === 'leader' && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
+            {contextPanel === null && (room.agentRole || room.type === 'team' || taskFeed) && <ConversationTaskTips key={room.id} room={room} taskFeed={taskFeed} />}
           </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
@@ -82,7 +86,6 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
-      {contextPanel === null && (room.agentRole || room.type === 'team' || taskFeed) && <ConversationTaskTips key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
       {contextPanel === null && (room.agentRole || room.type === 'team') && <div className="w-10 shrink-0 border-l border-border bg-muted/20"><RoomContextTabs activeTab={null} vertical showMembers={!room.agentRole} onTabChange={onContextPanelChange} /></div>}
 
     </div>

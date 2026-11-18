@@ -29,12 +29,14 @@ import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
   filterHumans,
+  isManagedHuman,
   sortHumans,
 } from './humans/human-selectors';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
 import { HumanDrawer } from './humans/human-drawer';
+import { HumanPasswordResetDialog } from './humans/human-password-reset-dialog';
 import { currentHashParams } from '@/lib/nav-hash';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { PERMISSION_LABELS } from './humans/human-types';
@@ -68,7 +70,7 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 
 export function HumansSection() {
   const { data: allHumans, isLoading, isError, refetch, isRefetching } = useHumans();
-  const humans = useMemo(() => allHumans?.filter(human => !human.systemAdmin), [allHumans]);
+  const humans = useMemo(() => allHumans?.filter(isManagedHuman), [allHumans]);
   const {
     data: teams,
     isLoading: teamsLoading,
@@ -87,6 +89,7 @@ export function HumansSection() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<HumanResponse | null>(null);
   // 详情 = 只读弹窗；编辑 = 右侧抽屉（四卡）。
   const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
   const [drawerHuman, setDrawerHuman] = useState<HumanResponse | null>(null);
@@ -220,6 +223,7 @@ export function HumansSection() {
           onView={setDetailHuman}
           onEdit={setDrawerHuman}
           onDelete={setDeleteTarget}
+          onResetPassword={userLevel >= 3 ? setPasswordTarget : undefined}
         />
       )}
       {!isLoading && <ListPagination {...pagination} label="用户" />}
@@ -274,6 +278,11 @@ export function HumansSection() {
         onConfirm={handleDelete}
         isLoading={deleteHuman.isPending}
       />
+      {passwordTarget && userLevel >= 3 && <HumanPasswordResetDialog
+        key={passwordTarget.name}
+        human={passwordTarget}
+        onClose={() => setPasswordTarget(null)}
+      />}
     </div>
   );
 }

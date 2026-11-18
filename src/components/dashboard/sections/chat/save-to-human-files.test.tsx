@@ -6,7 +6,8 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { humanFilesApi } from '@/lib/human-files-api';
-import { SaveToHumanFiles } from './save-to-human-files';
+import type { TeamResponse } from '@/lib/agentteams-api';
+import { AttachmentTeamsContext, SaveToHumanFiles } from './save-to-human-files';
 
 vi.mock('@/lib/agentteams-api', () => ({ agentteamsApi: { getHuman: vi.fn(), listHumans: vi.fn() } }));
 vi.mock('@/lib/human-files-api', () => ({ humanFilesApi: { uploadFile: vi.fn() } }));
@@ -30,6 +31,23 @@ function show(filename = 'report.md') {
 }
 
 describe('SaveToHumanFiles', () => {
+  it('asks for a destination when the account has multiple teams and saves only to the chosen team', async () => {
+    const teams = [{ name: 'alpha', teamName: '甲组' }, { name: 'beta', teamName: '乙组' }] as TeamResponse[];
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, blob: async () => new Blob(['abc'], { type: 'text/markdown' }) } as Response)
+      .mockResolvedValueOnce(Response.json({ key: '聊天附件/saved.md' }));
+    render(<QueryClientProvider client={new QueryClient()}><AttachmentTeamsContext.Provider value={{ teams }}>
+      <SaveToHumanFiles filename="report.md" mediaUrl="mxc://test/media" homeserver="http://test" />
+    </AttachmentTeamsContext.Provider></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: '保存到团队文件区' }));
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '乙组' }));
+    expect(await screen.findByRole('button', { name: '已保存到 乙组' })).toBeDisabled();
+    const [uploadUrl, uploadOptions] = vi.mocked(fetch).mock.calls[1];
+    expect(new URL(uploadUrl as string, 'http://localhost').searchParams.get('team')).toBe('beta');
+    expect((uploadOptions?.body as FormData).get('file')).toMatchObject({ name: 'report.md', size: 3 });
+    expect(humanFilesApi.uploadFile).not.toHaveBeenCalled();
+  });
+
   it('copies authenticated media to the current Human and refreshes their file queries', async () => {
     const invalidate = show('../report.md');
     fireEvent.click(screen.getByRole('button', { name: '保存到我的文件' }));

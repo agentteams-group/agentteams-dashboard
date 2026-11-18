@@ -5,6 +5,7 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
  *
  * A continuation hides the sender avatar/name when the previous message was
  * sent by the same person within 5 minutes and on the same day.
+ * Each assembled Agent turn starts its own group.
  */
 export interface GroupedMessage {
   message: DisplayMessage;
@@ -35,8 +36,9 @@ export function buildGroupedMessages(messages: DisplayMessage[]): GroupedMessage
       const withinInterval = timeDiff <= CONTINUATION_MAX_INTERVAL_MS;
       const sameDay = !isDifferentDay(prev.timestamp, msg.timestamp);
       const sameType = prev.type === msg.type;
+      const sameTurn = prev.turnId === msg.turnId;
 
-      if (sameSender && withinInterval && sameDay && sameType) {
+      if (sameSender && withinInterval && sameDay && sameType && sameTurn) {
         showSender = false;
         isContinuation = true;
       }

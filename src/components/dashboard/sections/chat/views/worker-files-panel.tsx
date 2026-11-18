@@ -6,7 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useWorkerFiles, useUploadWorkerFile, useTeamFiles, useUploadTeamFile } from '@/hooks/use-agentteams-storage';
+import { useCollaborationFiles, useUploadCollaborationFile } from '@/hooks/use-collaboration-files';
+import { collaborationFilesUrl, type CollaborationFileScope } from '@/lib/collaboration-files';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useUploadWorkerFile, useWorkerFiles } from '@/hooks/use-agentteams-storage';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import {
   File as FileIcon,
@@ -65,27 +68,22 @@ export function computeNextPrefix(currentPrefix: string, prefixKey: string): str
   return basePrefix ? `${basePrefix}${cleanRel}/` : `${cleanRel}/`;
 }
 
-interface FilesBrowserPanelProps {
-  /** Storage owner: 'worker' browses {worker}/|agents/{worker}/, 'team' browses teams/{team}/shared/. */
-  kind: 'worker' | 'team';
-  ownerName: string;
-}
-
-export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
+export function FilesBrowserPanel({ scope, readOnly = false }: { scope: CollaborationFileScope | { worker: string }; readOnly?: boolean }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [currentPrefix, setCurrentPrefix] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Both hooks run unconditionally (Rules of Hooks); the inactive kind is
-  // disabled by an empty owner name so only one query fires.
-  const workerQuery = useWorkerFiles(kind === 'worker' ? ownerName : '', currentPrefix || undefined);
-  const teamQuery = useTeamFiles(kind === 'team' ? ownerName : '', currentPrefix || undefined);
-  const { data: objects, isLoading, error, refetch } = kind === 'worker' ? workerQuery : teamQuery;
+  const userLevel = useAgentTeamsStore(state => state.userLevel);
+  const worker = 'worker' in scope ? scope.worker : undefined;
+  const workerQuery = useWorkerFiles(worker ?? '', currentPrefix);
+  const collaboration = useCollaborationFiles('worker' in scope ? undefined : scope, currentPrefix);
+  const { isLoading, error, refetch } = worker ? workerQuery : collaboration;
+  const teamUpload = useUploadCollaborationFile();
   const workerUpload = useUploadWorkerFile();
-  const teamUpload = useUploadTeamFile();
-  const uploadMutation = kind === 'worker' ? workerUpload : teamUpload;
-
+  const team = 'team' in scope ? scope.team : undefined;
+  const title = worker ? 'Agent 存储' : team ? '团队共享文件' : '任务文件';
+  const root = worker ?? collaboration.data?.root;
+  const objects = worker ? workerQuery.data : collaboration.data?.objects;
   const safeObjects = objects?.filter((obj) => isSafe(obj.key)) ?? [];
   const dirs = safeObjects.filter((o) => o.isPrefix);
   const files = safeObjects.filter((o) => !o.isPrefix);
@@ -112,19 +110,8 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      if (kind === 'worker') {
-        await workerUpload.mutateAsync({
-          workerName: ownerName,
-          file,
-          prefix: currentPrefix || undefined,
-        });
-      } else {
-        await teamUpload.mutateAsync({
-          teamName: ownerName,
-          file,
-          prefix: currentPrefix || undefined,
-        });
-      }
+      if (worker) await workerUpload.mutateAsync({ workerName: worker, file, prefix: currentPrefix });
+      else if (team) await teamUpload.mutateAsync({ team, file, prefix: currentPrefix });
       setLastSyncTime(new Date());
     } catch {
       // error handled by mutation state
@@ -132,26 +119,9 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const downloadUrl = useCallback(
-    (key: string) =>
-      kind === 'worker'
-        ? agentteamsApi.downloadWorkerFileUrl(ownerName, key)
-        : agentteamsApi.downloadTeamFileUrl(ownerName, key),
-    [kind, ownerName],
-  );
-
-  if (!ownerName) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <div className="text-center text-muted-foreground">
-            <Folder className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">请输入{kind === 'worker' ? ' Worker' : ' Team'}名称</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const downloadUrl = useCallback((key: string) => 'worker' in scope
+    ? agentteamsApi.downloadWorkerFileUrl(scope.worker, key)
+    : collaborationFilesUrl(scope, { key }), [scope]);
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -169,13 +139,8 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
           ) : (
             <>
               <Folder className="h-5 w-5 text-emerald-500 shrink-0" />
-              <span className="font-semibold text-sm truncate">{ownerName}</span>
-              <Badge variant="secondary" className="text-xs shrink-0">
-                {kind === 'team' ? '团队共享空间' : '工作目录'}
-              </Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                / {kind === 'team' ? `teams/${ownerName}/` : `${ownerName}/`}
-              </span>
+              <Badge variant="secondary" className="text-xs shrink-0">{title}</Badge>
+              <span className="text-xs font-mono text-muted-foreground truncate" title={root}>{root}</span>
             </>
           )}
         </div>
@@ -185,6 +150,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
               同步于 {lastSyncTime.toLocaleTimeString('zh-CN')}
             </span>
           )}
+          {!readOnly && (team || worker) && userLevel >= 3 && <>
           <input
             ref={fileInputRef}
             type="file"
@@ -196,11 +162,12 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
             size="icon"
             className="h-7 w-7"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
+            disabled={teamUpload.isPending || workerUpload.isPending}
             title="上传文件"
           >
             <Upload className="h-3.5 w-3.5" />
           </Button>
+          </>}
           <Button
             variant="ghost"
             size="icon"
@@ -234,17 +201,12 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
               ) : error ? (
                 <div className="p-4 text-center text-sm text-red-500 flex items-center justify-center gap-2">
                   <AlertCircle className="h-4 w-4" />
-                  加载失败
+                  {error instanceof Error ? error.message : '加载失败'}
                 </div>
               ) : dirs.length === 0 && files.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
                   <Folder className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>该目录为空</p>
-                  <p className="mt-1 text-xs">
-                    {kind === 'team' && !currentPrefix
-                      ? `团队协作产物将生成于 teams/${ownerName}/shared/`
-                      : '点击上方上传按钮添加文件'}
-                  </p>
                 </div>
               ) : (
                 <div className="py-1">
@@ -316,9 +278,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
               {selectedKey && (
                 <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs" asChild>
                   <a
-                    href={kind === 'worker'
-                      ? agentteamsApi.downloadWorkerFileUrl(ownerName, selectedKey)
-                      : agentteamsApi.downloadTeamFileUrl(ownerName, selectedKey)}
+                    href={downloadUrl(selectedKey)}
                     download
                     title={`下载 ${selectedKey.split('/').pop() || selectedKey}`}
                   >
@@ -331,7 +291,7 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
           </CardHeader>
           <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
             {selectedKey ? (
-              <FilePreview key={selectedKey} kind={kind} ownerName={ownerName} objectKey={selectedKey} />
+              <FilePreview key={selectedKey} url={downloadUrl(selectedKey)} objectKey={selectedKey} />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                 <div className="text-center">
@@ -347,14 +307,11 @@ export function FilesBrowserPanel({ kind, ownerName }: FilesBrowserPanelProps) {
   );
 }
 
-function FilePreview({ kind, ownerName, objectKey }: { kind: 'worker' | 'team'; ownerName: string; objectKey: string }) {
+function FilePreview({ url, objectKey }: { url: string; objectKey: string }) {
   const [expanded, setExpanded] = useState(false);
   const ext = objectKey.split('.').pop()?.toLowerCase();
   const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'htm', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
-  const url = kind === 'worker'
-    ? agentteamsApi.downloadWorkerFileUrl(ownerName, objectKey)
-    : agentteamsApi.downloadTeamFileUrl(ownerName, objectKey);
 
   if (isImage) {
     return (
@@ -404,18 +361,15 @@ function FilePreview({ kind, ownerName, objectKey }: { kind: 'worker' | 'team'; 
     );
   }
 
-  return <TextViewer kind={kind} ownerName={ownerName} objectKey={objectKey} ext={ext} />;
+  return <TextViewer url={url} objectKey={objectKey} ext={ext} />;
 }
 
-function TextViewer({ kind, ownerName, objectKey, ext }: { kind: 'worker' | 'team'; ownerName: string; objectKey: string; ext?: string }) {
+function TextViewer({ url, objectKey, ext }: { url: string; objectKey: string; ext?: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const url = kind === 'worker'
-      ? agentteamsApi.downloadWorkerFileUrl(ownerName, objectKey)
-      : agentteamsApi.downloadTeamFileUrl(ownerName, objectKey);
     fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -437,7 +391,7 @@ function TextViewer({ kind, ownerName, objectKey, ext }: { kind: 'worker' | 'tea
     return () => {
       cancelled = true;
     };
-  }, [kind, ownerName, objectKey]);
+  }, [url]);
 
   if (error) {
     return (
@@ -453,15 +407,12 @@ function TextViewer({ kind, ownerName, objectKey, ext }: { kind: 'worker' | 'tea
   }
 
   if (ext === 'html' || ext === 'htm') {
-    const baseHref = kind === 'worker'
-      ? agentteamsApi.downloadWorkerFileUrl(ownerName, objectKey)
-      : agentteamsApi.downloadTeamFileUrl(ownerName, objectKey);
     return (
       <div className="p-2">
         <HtmlPreview
           html={content}
           title={objectKey}
-          baseHref={baseHref}
+          baseHref={url}
           className="h-[560px] min-h-[320px] w-full rounded-md border bg-white"
         />
       </div>

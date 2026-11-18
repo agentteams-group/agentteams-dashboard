@@ -11,7 +11,7 @@ import {
   Shield,
   Trash2,
 } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -221,11 +221,7 @@ function HumanDrawerContent({
         <SheetContent side="right" className="w-full gap-0 overflow-x-hidden p-0 sm:max-w-[480px]">
           <SheetHeader className="border-b pr-12">
             <div className="flex items-start gap-2.5">
-              <Avatar className="size-9 shrink-0">
-                <AvatarFallback className="text-sm">
-                  {human.name.slice(0, 1).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <AccountAvatar kind="human" name={human.name} className="size-9" />
               <div className="min-w-0 flex-1">
                 <SheetTitle className="flex flex-wrap items-center gap-1.5 text-base">
                   <span>编辑人员</span>

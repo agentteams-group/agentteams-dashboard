@@ -1,8 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { RuntimeMapProvider } from './runtime-map-context';
 import { ChatProvider } from './ChatStore';
 import {
   ChatRoom,
@@ -15,12 +18,13 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
-import { matrixApi, MatrixRequestError } from '@/lib/matrix-api';
+import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
   const setReadMarkerMutate = vi.fn();
   const sendMutate = vi.fn();
+  const olderMessages = { hasNextPage: false, fetchNextPage: vi.fn() };
   const uploadMutateAsync = vi.fn().mockResolvedValue({ content_uri: 'mxc://hs.test/file' });
   const roomMessagesChunk: unknown[] = [
     {
@@ -44,15 +48,18 @@ const mocks = vi.hoisted(() => {
   };
   // Per-test overrides (member list / session dots).
   const roomMembersChunk: unknown[] = [];
+  const threadMessagesChunk: MatrixEvent[] = [];
   let agentStatusMap: Record<string, unknown> = {};
   return {
     sendReceiptMutate,
     setReadMarkerMutate,
     sendMutate,
+    olderMessages,
     uploadMutateAsync,
     roomMessagesChunk,
     virtuoso,
     roomMembersChunk,
+    threadMessagesChunk,
     roomState: { data: null as null | { type: string; state_key: string; content: { membership: string } }[] },
     getAgentStatusMap: () => agentStatusMap,
     setAgentStatusMap: (v: Record<string, unknown>) => {
@@ -91,16 +98,16 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
           },
         ],
       },
-      hasNextPage: false,
+      hasNextPage: mocks.olderMessages.hasNextPage,
       isFetchingNextPage: false,
       isLoading: false,
-      fetchNextPage: vi.fn(),
+      fetchNextPage: mocks.olderMessages.fetchNextPage,
     }),
     useMatrixRoomMembers: () => ({ data: { chunk: mocks.roomMembersChunk }, isSuccess: true }),
     useMatrixRoomState: () => mocks.roomState,
     useMatrixReadMarker: () => ({ data: { event_id: '$old' }, isSuccess: true, isError: false }),
     useMatrixReadReceipts: () => ({}),
-    useMatrixThreadMessages: () => ({ data: { chunk: [] }, isLoading: false, isError: false }),
+    useMatrixThreadMessages: () => ({ data: { chunk: mocks.threadMessagesChunk }, isLoading: false, isError: false }),
     useMatrixSetReadMarker: () => ({ mutate: mocks.setReadMarkerMutate, isPending: false }),
     useMatrixSendReadReceipt: () => ({ mutate: mocks.sendReceiptMutate }),
     useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, isPending: false, error: null }),
@@ -129,15 +136,123 @@ vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
   MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
-function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
+function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}, runtimeMap?: Parameters<typeof RuntimeMapProvider>[0]['map']) {
+  const queryClient = new QueryClient();
   return render(
     <ChatProvider>
       <ChatRoom roomId="!room:test" roomName="测试房间" {...props} />
-    </ChatProvider>
+    </ChatProvider>,
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}><TooltipProvider><RuntimeMapProvider map={runtimeMap ?? {}}>{children}</RuntimeMapProvider></TooltipProvider></QueryClientProvider> },
   );
 }
 
 describe('ChatRoom read-position dual-write', () => {
+  it('quotes a specific message when composing and sending a reply', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    renderChatRoom();
+    const original = screen.getByText('第一条').closest<HTMLElement>('[data-chat-message]')!;
+    fireEvent.mouseEnter(original.querySelector('[data-chat-message-body]')!);
+    fireEvent.click(within(original).getByRole('button', { name: '回复' }));
+    expect(screen.getByText('回复给：peer')).toBeInTheDocument();
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '取消引用回复' }));
+    expect(screen.queryByText('回复给：peer')).not.toBeInTheDocument();
+    fireEvent.click(within(original).getByRole('button', { name: '回复' }));
+    fireEvent.change(input, { target: { value: '针对第一条的回复' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(mocks.sendMutate).toHaveBeenCalledWith(expect.objectContaining({
+      body: '针对第一条的回复',
+      relatesTo: { 'm.in_reply_to': { event_id: '$old' } },
+    }), expect.anything());
+    expect(screen.getByText('回复给：peer')).toBeInTheDocument();
+  });
+
+  it('renders an edited historical reply with a quote that jumps to the original', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomMessagesChunk.push(
+      { event_id: '$reply', sender: '@me:test', type: 'm.room.message', origin_server_ts: 3000,
+        content: { msgtype: 'm.text', body: '原来的回复', 'm.relates_to': { 'm.in_reply_to': { event_id: '$old' } } } },
+      { event_id: '$edit', sender: '@me:test', type: 'm.room.message', origin_server_ts: 4000,
+        content: { msgtype: 'm.text', body: '* 修改后的回复', 'm.relates_to': { rel_type: 'm.replace', event_id: '$reply' },
+          'm.new_content': { msgtype: 'm.text', body: '修改后的回复' } } },
+    );
+    renderChatRoom();
+    const reply = screen.getByText('修改后的回复').closest<HTMLElement>('[data-chat-message]')!;
+    const quote = within(reply).getByRole('button', { name: /回复给：peer.*第一条/ });
+    fireEvent.click(quote);
+    expect(mocks.virtuoso.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0, align: 'center' }));
+  });
+
+  it('lists nested quoted replies together under the original message as a topic', async () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const quoted = '这是一段很长的原文，时间线只展示开头的几个字，完整内容可以在浮层里阅读。';
+    const originalEvent = mocks.roomMessagesChunk[0] as { content: { body: string } };
+    originalEvent.content.body = quoted;
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    mocks.roomMessagesChunk.push(
+      { event_id: '$first', sender: '@me:test', type: 'm.room.message', origin_server_ts: 3000,
+        content: { msgtype: 'm.text', body: '客服回复', 'm.relates_to': { 'm.in_reply_to': { event_id: '$old' } } } },
+      { event_id: '$second', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000,
+        content: { msgtype: 'm.text', body: '继续跟进', 'm.relates_to': { 'm.in_reply_to': { event_id: '$first' } } } },
+    );
+    try {
+      renderChatRoom();
+      const reply = screen.getAllByText('客服回复').find(node => node.localName === 'div')!.closest<HTMLElement>('[data-chat-message]')!;
+      const quote = within(reply).getByRole('button', { name: /回复给：peer/ });
+      expect(quote).toHaveTextContent('…');
+      expect(quote).not.toHaveTextContent('完整内容可以在浮层里阅读');
+      fireEvent.focus(quote);
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(quoted);
+      fireEvent.blur(quote);
+
+      const original = screen.getByText(quoted).closest<HTMLElement>('[data-chat-message]')!;
+      fireEvent.click(within(original).getByRole('button', { name: /2 条回复/ }));
+      const panel = within(screen.getByRole('complementary'));
+      expect(panel.getByText('客服回复', { selector: 'div' })).toBeInTheDocument();
+      expect(panel.getByText('继续跟进')).toBeInTheDocument();
+      expect(panel.getByText(quoted, { selector: 'div' })).toBeInTheDocument();
+      fireEvent.click(panel.getByRole('button', { name: '返回话题列表' }));
+      expect(panel.getByRole('button', { name: /2 条回复/ })).toBeInTheDocument();
+    } finally {
+      originalEvent.content.body = '第一条';
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('opens topics from message actions and groups Agent steps with their answers', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const agent = '@worker:test';
+    const entry = (id: string, seconds: number, body: string, runId: string): MatrixEvent => ({
+      event_id: id, origin_server_ts: seconds * 1000, sender: agent, type: 'm.room.message',
+      content: { msgtype: 'm.text', body, 'org.agentteams.run_id': runId,
+        'm.relates_to': { rel_type: 'm.thread', event_id: '$old' } },
+    });
+    mocks.threadMessagesChunk.push(
+      entry('$step1', 3, 'Thinking:\n\n验证第一条', 'run1'),
+      entry('$tool1', 4, 'Thinking:\n\n继续验证', 'run1'),
+      entry('$answer1', 5, '第一次处理已完成', 'run1'),
+      entry('$step2', 6, 'Thinking:\n\n验证第二条', ''),
+      entry('$answer2', 7, '第二次处理已完成', ''),
+    );
+    renderChatRoom({}, { [agent]: { workerName: 'worker', runtime: 'qwenpaw' } });
+    const original = screen.getByText('第一条').closest<HTMLElement>('[data-chat-message]')!;
+    fireEvent.mouseEnter(original.querySelector('[data-chat-message-body]')!);
+    fireEvent.click(within(original).getByRole('button', { name: '查看话题' }));
+    const panel = within(screen.getByRole('complementary'));
+    const first = panel.getByText('第一次处理已完成').closest<HTMLElement>('[data-chat-message]')!;
+    const second = panel.getByText('第二次处理已完成').closest<HTMLElement>('[data-chat-message]')!;
+    expect(panel.getAllByText('过程', { exact: true })).toHaveLength(2);
+    expect(first).not.toBe(second);
+    expect(within(first).getByText('思考 2')).toBeInTheDocument();
+    expect(within(second).getByText('思考 1')).toBeInTheDocument();
+    expect(panel.getByText('2 条回复')).toBeInTheDocument();
+  });
+
   it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'test' });
     useSectionStore.setState({ mentionRoomId: '!room:test' });
@@ -190,8 +305,10 @@ describe('ChatRoom read-position dual-write', () => {
     cleanup();
     vi.clearAllMocks();
     mocks.roomMembersChunk.length = 0;
+    mocks.threadMessagesChunk.length = 0;
     mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
+    mocks.olderMessages.hasNextPage = false;
     mocks.setAgentStatusMap({});
     useSectionStore.setState({ mentionRoomId: null });
   });
@@ -334,10 +451,39 @@ describe('ChatRoom read-position dual-write', () => {
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
-    expect(screen.getByText('工作目录')).toBeInTheDocument();
+    expect(screen.getByText('当前会话暂无附件')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
-    expect(screen.queryByText('工作目录')).toBeNull();
+    expect(screen.queryByText('当前会话暂无附件')).toBeNull();
+  });
+
+  it('lists room attachments, skips redacted files, and returns to the list after preview', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
+    mocks.olderMessages.hasNextPage = true;
+    const event = {
+      event_id: '$file', type: 'm.room.message', sender: '@peer:test', origin_server_ts: 3000,
+      content: { body: 'report.md', msgtype: 'm.file', url: 'mxc://hs.test/report' },
+    };
+    mocks.roomMessagesChunk.push(
+      event, event,
+      { ...event, event_id: '$removed', content: { ...event.content, body: 'deleted.md' } },
+      { event_id: '$redaction', type: 'm.room.redaction', sender: '@peer:test', origin_server_ts: 4000, content: { redacts: '$removed' } },
+      { ...event, event_id: '$thread-file', content: { ...event.content, body: 'thread.html', 'm.relates_to': { rel_type: 'm.thread', event_id: '$new' } } },
+    );
+    renderChatRoom();
+    fireEvent.click(screen.getByTitle('显示文件'));
+    const files = within(screen.getByRole('region', { name: '会话附件' }));
+    expect(files.getByRole('link', { name: '下载 report.md' })).toBeInTheDocument();
+    expect(files.getByRole('button', { name: '查看 thread.html' })).toBeInTheDocument();
+    expect(files.queryByText('deleted.md')).toBeNull();
+    fireEvent.click(files.getByRole('button', { name: '加载更早附件' }));
+    expect(mocks.olderMessages.fetchNextPage).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(files.getByRole('button', { name: '查看 report.md' }));
+    const preview = within(screen.getByRole('complementary', { name: '文件预览' }));
+    expect(preview.getByRole('heading', { name: 'report.md' })).toBeInTheDocument();
+    fireEvent.click(preview.getByRole('button', { name: '关闭文件预览' }));
+    expect(screen.getByRole('region', { name: '会话附件' })).toBeInTheDocument();
   });
 
   it('shows the session dot on worker avatars (and only workers) in the member list', () => {

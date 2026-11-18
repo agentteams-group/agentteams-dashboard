@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -521,9 +523,13 @@ export function ModelsSection() {
   };
   if (!consoleAccess.canManage) return <ModelsSessionFallback reason={consoleAccess.reason} isLoading={consoleAccess.isLoading} />;
   return <div className="space-y-4">
-    <SectionHeader title="模型管理" meta={<span className="text-sm text-muted-foreground">{providers.length} 个模型连接 · {routes.length} 条路由</span>} />
+    <SectionHeader title="模型管理" meta={
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-muted-foreground">{providers.length} 个模型连接 · {routes.length} 条路由</span>
+        <RuntimeStatusControl higress={infrastructure?.higress} />
+      </div>
+    } />
     <ManagerModelSetup />
-    <RuntimeStatusCard higress={infrastructure?.higress} />
     <Tabs defaultValue="providers" className="gap-4">
       <TabsList aria-label="模型配置分类" className="max-w-full justify-start overflow-x-auto [&>[role=tab]]:shrink-0">
         <TabsTrigger value="providers">模型连接</TabsTrigger>
@@ -695,10 +701,9 @@ function ConsumerSection() {
 
 // ============ Runtime Model Access Status ============
 
-function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) {
+function RuntimeStatusControl({ higress }: { higress: HigressStatus | undefined }) {
   const gateway = higress?.gateway;
   const console_ = higress?.console;
-  const [expanded, setExpanded] = useState(false);
   if (!higress) return null;
 
   const modeLabel = higress.mode === 'external' ? '外部适配' : '嵌入直连';
@@ -717,19 +722,23 @@ function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) 
       ? `嵌入模式经 Gateway 访问：${gatewayLabel}`
       : 'Controller 直连 LLM Provider（未启用 Gateway 数据平面）';
 
-  return <div className="space-y-3">
-    <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-4">
-      <Zap className={`size-4 shrink-0 ${higress.healthy ? 'text-emerald-500' : 'text-amber-500'}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">运行时模型访问方式</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={summary}>{summary}</p>
+  return <Popover>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 text-xs" aria-label="运行时模型访问方式">
+            <Zap className={`size-3.5 ${higress.healthy ? 'text-emerald-500' : 'text-amber-500'}`} aria-hidden="true" />
+            {modeLabel}
+          </Button>
+        </PopoverTrigger>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs break-words">{summary}</TooltipContent>
+    </Tooltip>
+    <PopoverContent align="start" aria-label="运行时模型访问方式" className="grid w-[min(30rem,calc(100vw_-_2rem))] gap-3 text-xs">
+      <div className="space-y-1">
+        <p className="font-medium">运行时模型访问方式</p>
+        <p className="break-words text-muted-foreground">{summary}</p>
       </div>
-      <Badge variant="secondary" className="shrink-0 text-xs">{modeLabel}</Badge>
-      <button className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? '收起详情' : '展开详情'}>
-        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-      </button>
-    </div>
-    {expanded && <div className="grid gap-3 rounded-lg border border-border/50 bg-card/50 p-4 text-xs">
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="space-y-1">
           <p className="font-medium flex items-center gap-1.5"><Globe className="size-3.5 text-cyan-500" />Gateway 数据平面</p>
@@ -757,8 +766,8 @@ function RuntimeStatusCard({ higress }: { higress: HigressStatus | undefined }) 
         </div>
       </div>
       <p className="text-xs text-muted-foreground">健康状态以 Gateway POST /v1/chat/completions 探测为准；仅 404 表示 AI 路由未代理。Console 为可选管理端，不影响运行时可用状态。</p>
-    </div>}
-  </div>;
+    </PopoverContent>
+  </Popover>;
 }
 
 // ============ Rate Limit Plugin Configuration ============

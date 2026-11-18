@@ -7,9 +7,12 @@ import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
 import { useOutboundMessages } from './hooks/useOutboundMessages';
-import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { indexRoomReplies } from './room-replies';
+import { RoomAttachments } from './components/RoomAttachments';
+import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -65,7 +68,7 @@ import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
-export type ChatContextPanel = RoomContextTab | null;
+export type ChatContextPanel = RoomContextTab | 'attachment-preview' | null;
 
 /**
  * 命令面板命中跳房间消息时写的是 `#workbench/space/<roomId>?q=<词>`（方案 v3 B-1 延伸），
@@ -106,13 +109,12 @@ export function resetRoomSearchDeepLinkForTests(): void {
 
 interface ChatRoomProps {
   taskRoom?: boolean;
+  taskId?: string;
   agentRole?: RoomInfo['agentRole'];
   roomId: string;
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
-  /** Worker resource name owning this room; auto-selected in the files panel. */
-  defaultWorkerName?: string;
   /** Worker phase shown in the conversation header. */
   roomPhase?: string;
   /** Worker runtime shown in the conversation header. */
@@ -123,6 +125,7 @@ interface ChatRoomProps {
   workerMatrixUserIds?: string[];
   topic?: string;
   avatar?: string;
+  roomWorkerName?: string;
   /** Retained for callers passing workspace rooms. */
   rooms?: RoomInfo[];
   members?: RoomMember[];
@@ -139,16 +142,17 @@ interface ChatRoomProps {
 
 export function ChatRoom({
   taskRoom = false,
+  taskId,
   agentRole,
   roomId,
   roomName,
   team,
-  defaultWorkerName,
   roomPhase,
   roomRuntime,
   workerMatrixUserIds,
   topic,
   avatar,
+  roomWorkerName,
   members: initialMembers = [],
   canSend = true,
   onSendMessage,
@@ -170,6 +174,11 @@ export function ChatRoom({
     setInternalContextPanel(panel);
     onContextPanelChange?.(panel);
   }, [onContextPanelChange]);
+  const [previewAttachment, setPreviewAttachment] = useState<{ file: PreviewAttachment; returnTo: 'files' | null } | null>(null);
+  const openAttachmentPreview = useCallback((file: PreviewAttachment) => {
+    setPreviewAttachment({ file, returnTo: contextPanel === 'files' ? 'files' : null });
+    setContextPanel('attachment-preview');
+  }, [contextPanel, setContextPanel]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [threadMention, setThreadMention] = useState<DisplayMessage | null>(null);
@@ -243,13 +252,13 @@ export function ChatRoom({
   const runtimeMap = useRuntimeMap();
 
   const allEvents = useMemo<MatrixEvent[]>(() => {
-    if (!messagesQuery.isSuccess || !messagesQuery.data) return [];
+    if (!messagesQuery.data) return [];
     const events: MatrixEvent[] = [];
     for (const page of messagesQuery.data.pages) {
       if (page.chunk) events.push(...page.chunk);
     }
     return events;
-  }, [messagesQuery.data, messagesQuery.isSuccess]);
+  }, [messagesQuery.data]);
 
   useEffect(() => {
     if (currentUserId) ingestHitlTimelineEvents(roomId, allEvents, currentUserId);
@@ -288,38 +297,36 @@ export function ChatRoom({
   // ChatIR: format raw Matrix events once, then assemble runtime turns. The
   // assembly adds turn ids, canonical/latest event ids (receipts), runtime
   // states and attachment placement on top of the formatted timeline.
+  const matrixMessages = useMemo(
+    // Execution notices drive the composer, independently of the timeline.
+    () => formatMatrixEvents(allEvents.filter(event => !(
+      workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
+    )), currentUserId),
+    [allEvents, currentUserId, workerMatrixUserIds],
+  );
   const chatIr = useMemo(
-    () => assembleChatTimeline(
-      // Execution notices drive the composer; keep them out of the runtime's
-      // thought/tool timeline while retaining raw events for read receipts.
-      formatMatrixEvents(allEvents.filter(event => !(
-        workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
-      )), currentUserId),
-      allEvents,
-      { currentUserId, runtimeMap },
-    ),
-    [allEvents, currentUserId, runtimeMap, workerMatrixUserIds],
+    () => assembleChatTimeline(matrixMessages, allEvents, { currentUserId, runtimeMap, now: sessionTick }),
+    [matrixMessages, allEvents, currentUserId, runtimeMap, sessionTick],
   );
   const formattedMessages = useMemo(() => markStoppedMessages(
     chatIr.messages, allEvents, workerMatrixUserIds,
   ), [chatIr.messages, allEvents, workerMatrixUserIds]);
 
-  // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
-  // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里
-  // 只展示当前已同步、确有回复的根消息，不另造索引。
-  //
-  // Pure worker-run threads (every participant is a worker MXID) are runs,
-  // not conversations: they stay in the timeline and out of the topic list.
-  // Detached roots are always listed so their replies remain reachable.
+  const roomReplies = useMemo(
+    () => indexRoomReplies(formattedMessages, allEvents), [formattedMessages, allEvents],
+  );
+  const messagesWithReplyCounts = useMemo(() => formattedMessages.map(message => {
+    const count = roomReplies.repliesByRoot.get(message.id)?.length;
+    return count ? { ...message, replyCount: (message.replyCount ?? 0) + count } : message;
+  }), [formattedMessages, roomReplies]);
   const threadRoots = useMemo(
-    () => formattedMessages.filter((message) => {
-      if (message.detached) return true;
+    () => messagesWithReplyCounts.filter((message) => {
+      if (message.detached || roomReplies.repliesByRoot.has(message.id)) return true;
       if ((message.replyCount ?? 0) === 0) return false;
       const participants = chatIr.threadParticipants[message.id] ?? [];
-      if (participants.length === 0) return true;
-      return participants.some((sender) => !runtimeMap[sender]);
+      return participants.length === 0 || participants.some((sender) => !runtimeMap[sender]);
     }),
-    [formattedMessages, chatIr.threadParticipants, runtimeMap],
+    [messagesWithReplyCounts, roomReplies, chatIr.threadParticipants, runtimeMap],
   );
 
   const loadMore = useCallback(async () => {
@@ -359,6 +366,7 @@ export function ChatRoom({
 
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
+  const unreadAnchor = taskRoom ? null : readEventId;
 
   // Persist the read marker and send an m.read receipt whenever the user is
   // pinned to the bottom (on arrival of new messages or on scroll-back-down).
@@ -424,13 +432,13 @@ export function ChatRoom({
     if (didInitialScrollRef.current) return;
     didInitialScrollRef.current = true;
     const lastId = chatIr.latestEventId;
-    const hasUnreadDivider = Boolean(readEventId && lastId && readEventId !== lastId);
+    const hasUnreadDivider = Boolean(unreadAnchor && lastId && unreadAnchor !== lastId);
     if (hasUnreadDivider) {
-      scrollRef.current?.scrollToItem(`read-marker-${readEventId}`);
+      scrollRef.current?.scrollToItem(`read-marker-${unreadAnchor}`);
     } else {
       scrollRef.current?.scrollToBottom({ smooth: false });
     }
-  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
+  }, [messagesQuery.isSuccess, formattedMessages, unreadAnchor, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
 
   // Outbound message cluster (optimistic bubbles + system notices + send),
   // extracted verbatim; markAllRead is injected because sending a message
@@ -649,13 +657,8 @@ export function ChatRoom({
   }, [pendingMention, messagesReady, hasOlderMessages, fetchingOlderMessages, fetchOlderMessages, allEvents, userId, roomId, homeserver, accessToken, handleAutoScrollChange, setContextPanel]);
 
   const handleReply = useCallback((message: DisplayMessage) => {
+    if (message.status || !message.eventId?.startsWith('$')) return;
     setReplyTo(message);
-    // f5-1: 定位改走 timeline 索引空间（scrollToEvent 匹配 id/eventId/
-    // sourceEventIds），未读分割线的 +1 偏移由 MessageList 修正；找不到时
-    // 维持原来的回底兜底。
-    if (!scrollRef.current?.scrollToEvent(message.eventId || message.id)) {
-      scrollRef.current?.scrollToBottom({ smooth: true });
-    }
   }, []);
 
   const { copy: copyToClipboard } = useCopyToClipboard({ resetMs: 1600 });
@@ -777,38 +780,23 @@ export function ChatRoom({
     [roomMembers]
   );
 
-  const {
-    workerOptions,
-    effectiveSelectedWorker,
-    selectedIsTeamShared,
-    setSelectedWorker,
-  } = useWorkerFileOptions({ team, roomMembers, runtimeMap, defaultWorkerName });
-
-  // Workspace space the composer can reference files from (#87): the selected
-  // worker's private space, or the team's shared space when shared is selected
-  // or no worker is resolvable in this room.
-  const fileRefTarget = effectiveSelectedWorker && !selectedIsTeamShared
-    ? { kind: 'worker' as const, ownerName: effectiveSelectedWorker }
-    : team?.name
-      ? { kind: 'team' as const, ownerName: team.name }
-      : undefined;
-
-  // "查看工作目录" on an agent bubble: open the worker files panel with that
-  // message's sender pre-selected (resolved via the runtime map).
-  const handleOpenWorkerFiles = useCallback((message: DisplayMessage) => {
-    const workerName = message.workerName || runtimeMap[message.sender]?.workerName;
-    if (!workerName) return;
-    setSelectedWorker(workerName);
+  const fileScope: CollaborationFileScope | undefined = taskRoom
+    ? { room: roomId, taskId: taskId ?? roomName.match(/^TASK[：:]\s*(.+)$/i)?.[1] }
+    : team?.name ? { team: team.name } : undefined;
+  const fileRefTarget = team?.name ? { kind: 'team' as const, ownerName: team.name } : undefined;
+  const handleOpenRoomFiles = useCallback(() => {
     setActiveThread(null);
     setContextPanel('files');
-  }, [runtimeMap, setSelectedWorker, setContextPanel]);
+  }, [setContextPanel]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
-    setSelectedWorker(null);
-    setThreadMention(null);
-    setActiveThread(message);
+    const root = roomReplies.rootByReply.get(message.id)
+      ?? (message.threadId ? messagesWithReplyCounts.find(item => item.id === message.threadId) : undefined)
+      ?? message;
+    setThreadMention(root.id === message.id ? null : message);
+    setActiveThread(root);
     setContextPanel('thread');
-  }, [setSelectedWorker, setContextPanel]);
+  }, [roomReplies, messagesWithReplyCounts, setContextPanel]);
 
   const handleTogglePanel = useCallback((panel: RoomContextTab) => {
     setContextPanel(contextPanel === panel ? null : panel);
@@ -816,6 +804,7 @@ export function ChatRoom({
 
   return (
     <MessageReadRoomContext.Provider value={roomId}>
+    <AttachmentPreviewContext.Provider value={openAttachmentPreview}>
     <div
       ref={chatLayoutRef}
       data-mention-event={focusedMentionId ?? threadMention?.id ?? undefined}
@@ -835,6 +824,7 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          workerName={roomWorkerName}
           taskAction={taskRoom ? <TaskTopologyPopover key={roomId} roomId={roomId} /> : undefined}
           compact={integratedSidebar}
           headerActions={headerActions}
@@ -851,7 +841,7 @@ export function ChatRoom({
           sessionDot={sessionDot}
           memberCount={roomMembers.length}
           threadCount={threadRoots.length}
-          activePanel={contextPanel}
+          activePanel={contextPanel === 'attachment-preview' ? null : contextPanel}
           onTogglePanel={handleTogglePanel}
         />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
@@ -891,20 +881,6 @@ export function ChatRoom({
               </Button>
             </div>
           )}
-          {replyTo && (
-            <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/60 border-b border-border text-xs text-muted-foreground shrink-0">
-              <span>回复 {replyTo.senderShort}:</span>
-              <span className="truncate flex-1">{replyTo.content.slice(0, 80)}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 w-5 p-0 shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setReplyTo(null)}
-              >
-                <PanelRightClose className="w-3 h-3" />
-              </Button>
-            </div>
-          )}
           {searchOpen && (
             <RoomSearchBar
               // 换一次深链就重挂载搜索条：预填词是它的初始值，不追打外部变化；
@@ -924,9 +900,11 @@ export function ChatRoom({
           )}
           <MessageList
             ref={scrollRef}
-            messages={formattedMessages}
+            roomId={roomId}
+            onRevealReply={handleRevealEvent}
+            messages={messagesWithReplyCounts}
             localMessages={localMessages}
-            readEventId={readEventId}
+            readEventId={unreadAnchor}
             focusedMentionId={focusedMentionId}
             hasNextPage={messagesQuery.hasNextPage || false}
             isFetchingNextPage={messagesQuery.isFetchingNextPage}
@@ -934,7 +912,7 @@ export function ChatRoom({
             loading={messagesQuery.isLoading}
             _canSend={canSend && isLoggedIn && !membershipDenied}
             _onSend={handleSend}
-            onReply={canSend ? handleReply : undefined}
+            onReply={canSend && isLoggedIn && !membershipDenied ? handleReply : undefined}
             onCopy={handleCopy}
             onOpenThread={handleOpenThread}
             onEdit={canSend ? handleEditSubmit : undefined}
@@ -942,7 +920,7 @@ export function ChatRoom({
             onResend={canSend ? handleResendLocal : undefined}
             onCancel={handleCancelLocal}
             onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-            onOpenWorkerFiles={handleOpenWorkerFiles}
+            onOpenRoomFiles={fileScope ? handleOpenRoomFiles : undefined}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
             notices={systemNotices}
@@ -989,6 +967,8 @@ export function ChatRoom({
           {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
             execution={directExecution}
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
             onStop={handleStopExecution}
             roomId={roomId}
             value={inputValue}
@@ -996,7 +976,7 @@ export function ChatRoom({
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
-            placeholder={replyTo ? `回复 ${replyTo.senderShort}…` : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
+            placeholder={replyTo ? '写下你的回复…' : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
             disabled={!canSend || !isLoggedIn || membershipDenied}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
             fileRefTarget={fileRefTarget}
@@ -1023,35 +1003,45 @@ export function ChatRoom({
         />
       )}
 
-      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
+      {contextPanel === 'attachment-preview' && previewAttachment && (
+        <AttachmentPreviewPanel file={previewAttachment.file} onClose={() => setContextPanel(previewAttachment.returnTo)} />
+      )}
+      {contextPanel !== null && contextPanel !== 'attachment-preview' && !(taskRoom && contextPanel === 'tasks') && (
         <RoomContextPanel
           showTasks={!taskRoom}
           canSend={canSend}
           showMembers={!agentRole}
           roomId={roomId}
-          team={team}
+          fileScope={fileScope}
+          roomAttachments={<RoomAttachments
+            events={allEvents}
+            homeserver={homeserver}
+            isLoading={messagesQuery.isLoading}
+            hasError={messagesQuery.isError}
+            hasOlder={!!hasOlderMessages}
+            isLoadingOlder={fetchingOlderMessages}
+            onLoadOlder={() => void loadMore()}
+          />}
           activeTab={contextPanel}
           onTabChange={setContextPanel}
           onClose={() => setContextPanel(null)}
           roomMembers={roomMembers}
           senderStatusMap={senderStatusMap}
-          workerOptions={workerOptions}
-          effectiveSelectedWorker={effectiveSelectedWorker}
-          selectedIsTeamShared={selectedIsTeamShared}
-          onSelectWorker={setSelectedWorker}
-          activeThread={activeThread}
+          activeThread={activeThread && (messagesWithReplyCounts.find(message => message.id === activeThread.id && !message.detached) ?? activeThread)}
           threadMention={threadMention}
           threadRoots={threadRoots}
-          onOpenThread={(message) => {
+          quotedReplies={activeThread ? roomReplies.repliesByRoot.get(activeThread.id) : undefined}
+          onOpenThread={handleOpenThread}
+          onBackToThreads={() => {
+            setActiveThread(null);
             setThreadMention(null);
-            setActiveThread(message);
-            setContextPanel('thread');
           }}
           memberMap={memberMap}
           workerMatrixUserIds={workerMatrixUserIds}
         />
       )}
     </div>
+    </AttachmentPreviewContext.Provider>
     </MessageReadRoomContext.Provider>
   );
 }

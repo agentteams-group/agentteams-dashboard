@@ -15,7 +15,7 @@ import { AgentPresenceCard, buildPresenceRows, pickAgentNode } from './agent-pre
 import type { AgentPresenceCardProps } from './agent-presence-card';
 import { MessageBubble } from './views/MessageBubble';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { roomHash, tasksHash } from '@/lib/nav-hash';
+import { tasksHash } from '@/lib/nav-hash';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useTaskStore } from '@/lib/task-store';
 import type { WorkerAgentStatusInfo } from '@/lib/worker-session-state';
@@ -211,7 +211,7 @@ describe('AgentPresenceCard（C-5 此刻在做什么）', () => {
     expect(avatar).toBeEnabled();
   });
 
-  it('只有状态表没有任务：不出节点行，链接退成本空间深链', async () => {
+  it('只有状态表没有任务：不出节点行，也不加当前空间的链接', async () => {
     seedHeartbeat({ agentStatus: 'running', runningTaskCount: 1 });
 
     const { avatar } = renderPresenceCard();
@@ -222,7 +222,7 @@ describe('AgentPresenceCard（C-5 此刻在做什么）', () => {
     expect(screen.queryByText('当前节点')).not.toBeInTheDocument();
     expect(screen.queryByText('本房间当前')).not.toBeInTheDocument();
     expect(screen.queryByText('房间级')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /在本空间查看/ })).toHaveAttribute('href', roomHash(ROOM));
+    expect(screen.queryByRole('link')).toBeNull();
   });
 
   it('四项全缺：只剩一句「服务端未回报」，不猜数据也不叠推断 chip', async () => {

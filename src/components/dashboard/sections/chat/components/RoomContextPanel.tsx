@@ -1,12 +1,13 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { MessagesSquare, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage, RoomMember } from '@/hooks/use-matrix';
-import type { TeamResponse } from '@/lib/agentteams-api';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { ThreadPanel } from '../structures/ThreadPanel';
-import { FilesPanel, type WorkerFileOption } from './WorkersFilesSidebar';
+import { FilesBrowserPanel } from '../views/worker-files-panel';
 import { MembersPanel } from './MembersSidebar';
 import { RoomTasksPanel } from './RoomTasksPanel';
 import { RoomContextTabs } from './RoomContextTabs';
@@ -18,19 +19,18 @@ interface RoomContextPanelProps {
   showMembers?: boolean;
   showTasks?: boolean;
   roomId: string;
-  team?: TeamResponse;
+  fileScope?: CollaborationFileScope;
+  roomAttachments: ReactNode;
   activeTab: RoomContextTab;
   onTabChange: (_tab: RoomContextTab) => void;
   onClose: () => void;
   roomMembers: RoomMember[];
   senderStatusMap: Record<string, WorkerSessionState>;
-  workerOptions: WorkerFileOption[];
-  effectiveSelectedWorker: string | null;
-  selectedIsTeamShared: boolean;
-  onSelectWorker: (_worker: string | null) => void;
   activeThread: DisplayMessage | null;
   threadMention?: DisplayMessage | null;
   threadRoots: DisplayMessage[];
+  quotedReplies?: DisplayMessage[];
+  onBackToThreads: () => void;
   onOpenThread: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
@@ -44,19 +44,18 @@ interface RoomContextPanelProps {
 export function RoomContextPanel({
   canSend = true,
   roomId,
-  team,
+  fileScope,
+  roomAttachments,
   activeTab,
   onTabChange,
   onClose,
   roomMembers,
   senderStatusMap,
-  workerOptions,
-  effectiveSelectedWorker,
-  selectedIsTeamShared,
-  onSelectWorker,
   activeThread,
   threadMention,
   threadRoots,
+  quotedReplies,
+  onBackToThreads,
   onOpenThread,
   memberMap,
   workerMatrixUserIds,
@@ -86,22 +85,20 @@ export function RoomContextPanel({
         )}
 
         {activeTab === 'files' && (
-          <FilesPanel
-            team={team}
-            workerOptions={workerOptions}
-            effectiveSelectedWorker={effectiveSelectedWorker}
-            selectedIsTeamShared={selectedIsTeamShared}
-            onSelectWorker={onSelectWorker}
-          />
+          fileScope ? <FilesBrowserPanel key={'team' in fileScope ? fileScope.team : fileScope.room} scope={fileScope} />
+            : roomAttachments
         )}
 
         {activeTab === 'thread' && (
           activeThread ? (
             <ThreadPanel
+              key={activeThread.id}
               canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}
               focusedMessage={threadMention}
+              quotedReplies={quotedReplies}
+              onBack={onBackToThreads}
               memberMap={memberMap}
               workerMatrixUserIds={workerMatrixUserIds}
             />

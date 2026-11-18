@@ -6,10 +6,14 @@ import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-error';
 import { humanFilesApi, type HumanFileListResponse } from '@/lib/human-files-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import * as collaborationFiles from '@/lib/collaboration-files';
 import { FilesSection } from './files-section';
 
 vi.mock('@/hooks/use-agentteams-humans', () => ({
   useHumans: () => ({ data: [], isLoading: false, isError: false }),
+}));
+vi.mock('@/hooks/use-agentteams-teams', () => ({
+  useTeams: () => ({ data: [{ name: 'travel', teamName: '旅行团队' }], isPending: false, isError: false }),
 }));
 
 class ResizeObserverStub {
@@ -67,6 +71,20 @@ afterEach(() => {
 });
 
 describe('FilesSection 布局与焦点', () => {
+  it('在团队文件范围内浏览团队共享目录，切回后仍可查看个人文件', async () => {
+    const list = vi.spyOn(collaborationFiles, 'listCollaborationFiles').mockResolvedValue({
+      root: 'teams/旅行团队/shared/',
+      objects: [{ key: 'team-guide.md', size: 128, isPrefix: false }],
+    });
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: '团队文件' }));
+    expect(await screen.findByRole('button', { name: /team-guide.md/ })).toBeInTheDocument();
+    expect(list).toHaveBeenCalledWith({ team: 'travel' }, '');
+    expect(screen.queryByRole('button', { name: 'readme.md' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('group', { name: '文件范围' })).getByRole('button', { name: '个人文件' }));
+    expect(await screen.findByRole('button', { name: 'readme.md' })).toBeInTheDocument();
+  });
   it('默认无复选框；无修饰点击只设焦点并显示圆角详情卡', async () => {
     renderSection();
     const row = await screen.findByRole('button', { name: 'readme.md' });
@@ -242,7 +260,8 @@ describe('FilesSection 全局搜索', () => {
 });
 
 describe('FilesSection 操作', () => {
-  it('上传队列：选择文件 → uploadFile 到当前目录', async () => {
+  it('上传队列：成功后提示并清空队列，下一批独立提示', async () => {
+    const success = vi.spyOn(toast, 'success');
     renderSection();
     await screen.findByRole('button', { name: 'readme.md' });
     const input = screen.getByTestId('files-upload-input') as HTMLInputElement;
@@ -253,7 +272,27 @@ describe('FilesSection 操作', () => {
     const [name, path] = vi.mocked(humanFilesApi.uploadFile).mock.calls[0];
     expect(name).toBe('alice');
     expect(path).toBe('a.txt');
-    expect(await screen.findByTestId('upload-queue')).toBeInTheDocument();
+    await waitFor(() => expect(success).toHaveBeenCalledWith('上传成功'));
+    expect(screen.queryByTestId('upload-queue')).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [new File(['next'], 'next.txt')] } });
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('upload-queue')).not.toBeInTheDocument();
+  });
+
+  it('上传队列：部分失败时保留重试入口，全部完成后才收起', async () => {
+    const success = vi.spyOn(toast, 'success');
+    vi.mocked(humanFilesApi.uploadFile).mockRejectedValueOnce(new Error('上传失败'));
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.change(screen.getByTestId('files-upload-input'), {
+      target: { files: [new File(['a'], 'a.txt'), new File(['b'], 'b.txt')] },
+    });
+    expect(await screen.findByText('失败 1')).toBeInTheDocument();
+    expect(success).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByTestId('upload-queue')).getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('upload-queue')).not.toBeInTheDocument();
   });
 
   it('重命名：读 → 写新名 → 删旧名', async () => {

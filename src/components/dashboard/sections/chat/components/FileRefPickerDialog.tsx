@@ -11,7 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { PersonalFilePicker } from './PersonalFilePicker';
 import { Button } from '@/components/ui/button';
-import { useWorkerFiles, useTeamFiles } from '@/hooks/use-agentteams-storage';
+import { useWorkerFiles } from '@/hooks/use-agentteams-storage';
+import { useCollaborationFiles } from '@/hooks/use-collaboration-files';
 import type { StorageObject } from '@/lib/agentteams-api';
 import type { FileRef } from '@/lib/file-refs';
 
@@ -63,8 +64,9 @@ export function FileRefPickerDialog({
   // Both hooks run unconditionally (Rules of Hooks); the inactive kind is
   // disabled by an empty owner name.
   const workerQuery = useWorkerFiles(open && source === 'workspace' && kind === 'worker' && ownerName ? ownerName : '', prefix || undefined);
-  const teamQuery = useTeamFiles(open && source === 'workspace' && kind === 'team' && ownerName ? ownerName : '', prefix || undefined);
-  const { data: objects, isLoading } = kind === 'worker' ? workerQuery : teamQuery;
+  const teamQuery = useCollaborationFiles(open && source === 'workspace' && kind === 'team' && ownerName ? { team: ownerName } : undefined, prefix);
+  const objects = kind === 'worker' ? workerQuery.data : teamQuery.data?.objects;
+  const isLoading = kind === 'worker' ? workerQuery.isLoading : teamQuery.isLoading;
 
   const [selected, setSelected] = useState<Map<string, FileRef>>(new Map());
 
@@ -96,7 +98,8 @@ export function FileRefPickerDialog({
       if (next.has(object.key)) {
         next.delete(object.key);
       } else {
-        next.set(object.key, { ...toFileRef(object), workspace: { kind, ownerName } });
+        const key = kind === 'team' ? (teamQuery.data?.root ?? '') + object.key : object.key;
+        next.set(object.key, { ...toFileRef(object), key, workspace: { kind, ownerName } });
       }
       return next;
     });
@@ -116,7 +119,7 @@ export function FileRefPickerDialog({
 
         {onSendPersonalFile && <div className="flex gap-2" aria-label="文件来源">
           <Button variant={source === 'personal' ? 'secondary' : 'ghost'} aria-pressed={source === 'personal'} onClick={() => setSource('personal')}>我的文件</Button>
-          {ownerName && <Button variant={source === 'workspace' ? 'secondary' : 'ghost'} aria-pressed={source === 'workspace'} onClick={() => setSource('workspace')}>工作空间</Button>}
+          {ownerName && <Button variant={source === 'workspace' ? 'secondary' : 'ghost'} aria-pressed={source === 'workspace'} onClick={() => setSource('workspace')}>{kind === 'team' ? '团队共享文件' : '工作空间'}</Button>}
         </div>}
         {source === 'personal' && onSendPersonalFile ? <PersonalFilePicker onSend={onSendPersonalFile} onDone={() => onOpenChange(false)} /> : <>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

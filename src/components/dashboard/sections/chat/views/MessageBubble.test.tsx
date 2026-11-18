@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { RuntimeMapProvider } from '../runtime-map-context';
 
 it('shows a decision activity instead of exposing its transport command', () => {
   renderWithProvider(<MessageBubble message={{ id: '$decision', sender: '@me:test', senderShort: 'me', content: '/approve 0 thread:turn', timestamp: 0, type: 'm.text', isMe: true, rawContent: { 'com.agentteams.answer': { confirmation_id: '0', answer: 'approved' } } }} showSender isContinuation={false} />);
@@ -130,6 +131,17 @@ describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
     );
     expect(screen.getByText('已编辑')).toHaveAttribute('title', '已编辑（服务端未回报编辑次数）');
   });
+
+  it('keeps the badge for another human but hides it on an Agent reply assembled from edits', () => {
+    renderWithProvider(<RuntimeMapProvider map={{ '@planner:example.com': { runtime: 'qwenpaw', workerName: 'planner' } }}>
+      <MessageBubble message={{ ...base, id: '$agent-edit', sender: '@planner:example.com', isMe: false, content: 'Agent 最终回复', isEdited: true }} showSender isContinuation={false} />
+      <MessageBubble message={{ ...base, id: '$human-edit', sender: '@alice:example.com', senderShort: 'alice', isMe: false, content: '人工编辑后的消息', isEdited: true }} showSender isContinuation={false} />
+    </RuntimeMapProvider>);
+    expect(screen.getByText('Agent 最终回复')).toBeVisible();
+    expect(screen.getByText('人工编辑后的消息')).toBeVisible();
+    expect(screen.getAllByText('已编辑')).toHaveLength(1);
+    expect(screen.getByText('已编辑').closest('[data-chat-message-meta]')).toHaveTextContent('alice');
+  });
 });
 
 describe('MessageBubble', () => {
@@ -142,16 +154,16 @@ describe('MessageBubble', () => {
     );
     const body = container.querySelector('[data-chat-message-body]')!;
     const actions = container.querySelector('[aria-label="消息操作"]')!;
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0', 'focus-within:opacity-100');
     fireEvent.mouseEnter(container.firstElementChild!);
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0');
     fireEvent.mouseEnter(body);
-    expect(actions).toHaveClass('visible');
+    expect(actions).not.toHaveClass('opacity-0');
     expect(body.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(actions).not.toHaveClass('md:absolute');
     expect(actions).toHaveClass(isMe ? 'self-end' : 'self-start');
     fireEvent.mouseLeave(actions.parentElement!);
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0');
     expect(actions).toBeInTheDocument();
   });
 
