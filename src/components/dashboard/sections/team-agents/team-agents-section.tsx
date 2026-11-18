@@ -88,9 +88,6 @@ function workbenchSectionIdFromHash(hash: string): string {
   return 'team-agents';
 }
 
-/** 本页消费的深链参数（#251 口径 + A4 的 manager / panel + R3 的 inspect）。 */
-const WORKBENCH_DEEPLINK_PARAMS = ['team', 'agent', 'manager', 'edit', 'panel', 'inspect'] as const;
-
 /**
  * A2 容器宽度断点：ResizeObserver 量壳的宽度（不是 window.innerWidth——
  * 侧栏折叠 / 容器限宽时两者不一致）。jsdom 无 ResizeObserver → 回落
@@ -493,12 +490,15 @@ export function TeamAgentsSection() {
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
   const [millforgeTeam, setMillforgeTeam] = useState<TeamResponse | null>(null);
 
-  // A4：refs 赋值（渲染体同步，供 hashchange 监听读最新值）。
-  selectionRef.current = selection;
-  detailOpenRef.current = detailOpen;
-  dialogPanelRef.current = dialogPanel;
-  layoutRef.current = layout;
-  drawerOpenRef.current = drawerOpen;
+  // A4：refs 同步（供 hashchange 监听读最新值）。React Compiler 规则禁止渲染期写 ref，
+  // 因此放到每次渲染后的 effect（无依赖数组）里；事件监听在 paint 后才可能触发。
+  useEffect(() => {
+    selectionRef.current = selection;
+    detailOpenRef.current = detailOpen;
+    dialogPanelRef.current = dialogPanel;
+    layoutRef.current = layout;
+    drawerOpenRef.current = drawerOpen;
+  });
 
   // 数据到位后应用一次初始选择：?manager= > ?agent= > ?team= 深链优先
   // （#251「选中资源与编辑意图」+ A5 manager 深链），再按意图兜底
@@ -685,7 +685,9 @@ export function TeamAgentsSection() {
     () => computeStandaloneWorkers(teams, workers),
     [teams, workers],
   );
-  standaloneRef.current = standalone;
+  useEffect(() => {
+    standaloneRef.current = standalone;
+  });
 
   const selectedTeam = useMemo(
     () =>

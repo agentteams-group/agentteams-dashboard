@@ -118,7 +118,7 @@ export interface EntityInspectorProps {
   /** Dashboard 会话等级：3 = 管理员（插件侧 L1）。 */
   userLevel: number;
   /** 打开详情大弹窗并直达分区（panel id 由 section 写入 URL ?panel=）。 */
-  onOpenSection: (panel: string) => void;
+  onOpenSection: (_panel: string) => void;
   /** 动作成功后刷新列表 / 拓扑数据。 */
   onChanged?: () => void;
   /** 删除成功后（section 清选中 / 关覆盖层 / 关弹窗）。 */

@@ -44,11 +44,11 @@ export function MillforgeEntryCard({
           className="h-5 w-auto shrink-0"
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[11px] font-medium text-muted-foreground">千锻</span>
-          <span className="truncate text-[11px] text-muted-foreground">
+          <span className="truncate text-xs font-medium text-muted-foreground">千锻</span>
+          <span className="truncate text-xs text-muted-foreground">
             SOUL 注入 · 协作模块更新 · 自定义团队
           </span>
-          <span className="truncate text-[11px] text-muted-foreground/80">
+          <span className="truncate text-xs text-muted-foreground/80">
             注入 / 自定义 / 模块更新 / 历史
           </span>
         </span>

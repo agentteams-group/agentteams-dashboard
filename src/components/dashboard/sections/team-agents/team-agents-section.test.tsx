@@ -101,12 +101,12 @@ const refetchTeams = vi.hoisted(() => vi.fn());
 const roState = vi.hoisted(() => ({
   width: 1920,
   instances: [] as Array<{
-    callback: (entries: Array<{ contentRect: { width: number } }>) => void;
+    callback: (_entries: Array<{ contentRect: { width: number } }>) => void;
   }>,
 }));
 class MockResizeObserver {
-  callback: (entries: Array<{ contentRect: { width: number } }>) => void;
-  constructor(callback: (entries: Array<{ contentRect: { width: number } }>) => void) {
+  callback: (_entries: Array<{ contentRect: { width: number } }>) => void;
+  constructor(callback: (_entries: Array<{ contentRect: { width: number } }>) => void) {
     this.callback = callback;
     roState.instances.push(this);
   }
