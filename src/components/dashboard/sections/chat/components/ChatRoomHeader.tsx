@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import type { TeamResponse } from '@/lib/agentteams-api';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { RUNTIME_LABELS, TEAM_PHASE_LABELS } from '@/lib/phase-colors';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { RoomContextTab } from './RoomContextPanel';
 import type { RoomInfo } from '../room-info';
@@ -96,8 +96,9 @@ export function ChatRoomHeader({
   onTogglePanel,
 }: ChatRoomHeaderProps) {
   const teamName = team ? team.teamName || team.name : '';
+  const compactTeam = compact && !!team && !!headerTitle && !agentRole;
   return (
-    <div data-chat-room-header className="flex min-h-18 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 sm:flex-nowrap sm:px-6">
+    <div data-chat-room-header className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 sm:flex-nowrap sm:px-6 ${compactTeam ? 'min-h-14 py-2' : 'min-h-18 py-3'}`}>
       {headerLeading}
       <div className="relative shrink-0">
       {avatar ? (
@@ -116,9 +117,9 @@ export function ChatRoomHeader({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <div className="min-w-0">{headerTitle ?? <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>}</div>
-          {!agentRole && roomPhase && (
+          {!agentRole && roomPhase && (!compactTeam || roomPhase !== 'Active') && (
             <Badge variant="outline" className="text-xs px-1 py-0 h-4 shrink-0">
-              {roomPhase}
+              {compactTeam ? TEAM_PHASE_LABELS[roomPhase] ?? roomPhase : roomPhase}
             </Badge>
           )}
           {!agentRole && roomRuntime && (
@@ -129,7 +130,7 @@ export function ChatRoomHeader({
         </div>
         {agentRole ? !headerTitle && (
           <p className="mt-1 truncate text-sm text-muted-foreground">{agentRole === 'operations' ? '你的平台管理助手 · 资源、部署与日常运维' : '你的团队助手 · 目标拆解、任务协调与交付'}</p>
-        ) : team ? (
+        ) : compactTeam ? null : team ? (
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {teamName && teamName !== roomName && (
               <span className="inline-flex min-w-0 shrink items-center gap-1" title={teamName}>
