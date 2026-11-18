@@ -56,7 +56,7 @@ export function TeamHealthPanel({
           <div className="grid grid-cols-2 gap-2">
             {Array.from(analytics.memberHealth.entries()).map(([name, score]) => (
               <div key={name} className="flex items-center gap-2 p-1.5 rounded bg-background/50">
-                <HealthRingCompact score={score} size={20} />
+                <HealthRingCompact score={score} size={24} />
                 <span className="text-xs truncate">{name}</span>
               </div>
             ))}
