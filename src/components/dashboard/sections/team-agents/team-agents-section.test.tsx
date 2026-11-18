@@ -462,20 +462,27 @@ describe('Team and Agent resource cards', () => {
     expect(window.location.hash).toContain('human=reviewer');
   });
 
-  it('opens the team edit dialog and keeps the in-page detail with the team configuration tool', () => {
+  it('separates team 详情 (read-only dialog) from 编辑 (editable dialog); in-page detail stays reachable by deep link', () => {
     renderSection();
-    // 编辑 → 团队编辑弹窗（复用 TeamDetailDialog；面板 mock 为 team-profile:*）。
+    // 编辑 → 可编辑分区弹窗（TeamDetailDialog，面板 mock 为 team-profile:*）。
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
-    const dialog = screen.getByRole('dialog', { name: 'alpha · 基本信息' });
-    expect(within(dialog).getByText('team-profile:alpha')).toBeInTheDocument();
-    // 关闭编辑弹窗（模态弹窗会把背景 aria-hidden，先关再点卡片上的「详情」）。
-    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    const editDialog = screen.getByRole('dialog', { name: 'alpha · 基本信息' });
+    expect(within(editDialog).getByText('team-profile:alpha')).toBeInTheDocument();
+    fireEvent.click(within(editDialog).getByRole('button', { name: '关闭' }));
     expect(screen.queryByRole('dialog', { name: 'alpha · 基本信息' })).toBeNull();
-    // 详情 → 页内只读详情（「详情 · Alpha」）：与编辑弹窗是两个容器。
+    // 详情 → 只读弹窗（TeamDetailReadonlyDialog + TeamDetailSummary）：显示所属人，不含可编辑面板。
     fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
+    const readOnly = screen.getByRole('dialog', { name: '团队详情 - Alpha' });
+    expect(within(readOnly).getByText('所属人')).toBeInTheDocument();
+    expect(within(readOnly).getByText('boss')).toBeInTheDocument();
+    expect(within(readOnly).queryByText('team-profile:alpha')).toBeNull();
+    expect(within(readOnly).queryByRole('textbox')).toBeNull();
+    fireEvent.click(within(readOnly).getByRole('button', { name: '关闭' }));
+    // 页内团队管理面（TeamSettingsPanel）仍由深链进入，并保留千锻入口。
+    cleanup();
+    renderSection('#console/resources/teams?team=alpha');
     expect(screen.getByRole('heading', { name: '详情 · Alpha' })).toBeInTheDocument();
-    expect(screen.getAllByText('team-profile:alpha')).toHaveLength(1);
-    // 页内详情保留千锻工具。
+    expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '千锻 · 团队配置' }));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent('millforge-dialog:alpha');
   });

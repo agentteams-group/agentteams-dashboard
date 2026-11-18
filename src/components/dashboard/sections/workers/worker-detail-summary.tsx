@@ -54,10 +54,11 @@ export function WorkerDetailSummary({ worker }: { worker: WorkerResponse }) {
       {[...DETAIL_FIELDS.map(([label, read]) => [label, read(worker)]), ...activityFields].map(([label, value]) => (
         <div
           key={label}
-          className="flex justify-between py-1 border-b border-border/50"
+          className="flex min-w-0 items-baseline justify-between gap-3 py-1 border-b border-border/50"
         >
-          <span className="text-muted-foreground">{label}</span>
-          <span className="font-mono text-xs max-w-[75%] text-right break-all">
+          {/* 标签不换行、不被压扁：窄列（抽屉 420px / 分区弹窗）里逐字换行会让数值看起来「没跟着走」。 */}
+          <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
+          <span className="min-w-0 max-w-[75%] break-all text-right font-mono text-xs">
             {value}
           </span>
         </div>
@@ -71,9 +72,10 @@ function WorkerHealthBreakdown({ worker }: { worker: WorkerResponse }) {
   if (!health) return null;
 
   return (
-    <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 border border-border/50">
+    <div className="flex flex-wrap items-center gap-4 p-3 rounded-lg bg-muted/30 border border-border/50">
       <HealthRing score={health.overall} size={56} strokeWidth={4} label={health.label} />
-      <div className="flex-1 space-y-1.5">
+      {/* 窄容器里三项指标整体换到环下方（保底 180px），否则刻度条被压成 0、数值脱离刻度。 */}
+      <div className="min-w-[180px] flex-1 space-y-1.5">
         <HealthBar label="可用性" value={health.availability} />
         <HealthBar label="稳定性" value={health.stability} />
         <HealthBar label="就绪度" value={health.readiness} />
@@ -85,15 +87,15 @@ function WorkerHealthBreakdown({ worker }: { worker: WorkerResponse }) {
 function HealthBar({ label, value }: { label: string; value: number }) {
   const color = value >= 80 ? 'bg-emerald-500' : value >= 60 ? 'bg-green-500' : value >= 40 ? 'bg-amber-500' : 'bg-red-500';
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-muted-foreground w-10">{label}</span>
-      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{label}</span>
+      <div className="h-1.5 min-w-6 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           className={`h-full rounded-full transition-all duration-500 ${color}`}
           style={{ width: `${value}%` }}
         />
       </div>
-      <span className="text-xs font-mono w-6 text-right">{value}</span>
+      <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums">{value}</span>
     </div>
   );
 }

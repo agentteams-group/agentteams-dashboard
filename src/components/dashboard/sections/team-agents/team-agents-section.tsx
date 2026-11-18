@@ -46,6 +46,7 @@ import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
 import { TeamAgentsWorkbench } from './team-agents-workbench';
 import { TeamDetailDialog } from './team-detail-dialog';
+import { TeamDetailReadonlyDialog } from './team-detail-readonly-dialog';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -187,6 +188,8 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
   const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
+  // 团队「详情」= 只读弹窗（与「编辑」= TeamDetailDialog 分开，两种组件不许混用）。
+  const [detailTeam, setDetailTeam] = useState<TeamResponse | null>(null);
   // ④ 智能体卡片分组 / 排序 / 组折叠：localStorage 持久化（分组默认开）。
   const [agentGrouped, setAgentGrouped] = useState(() => readStoredGrouped());
   const [agentSort, setAgentSort] = useState<AgentSortState>(() => readStoredAgentSort(readStoredGrouped()));
@@ -387,7 +390,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
             const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
             return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
-              <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} 智能体`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
+              <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} 智能体`} kind="team" phase={team.phase} onView={() => setDetailTeam(team)} />
               <OverflowText text={team.description || ''} multiline className="h-10 text-xs leading-5 text-muted-foreground" />
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm">
                 <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd className="h-7 min-w-0">{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
@@ -395,7 +398,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
                 <dt className="pt-1 text-muted-foreground">Leader</dt><dd className="h-7 min-w-0">{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
                 <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="h-7 min-w-0">{teamWorkers.length ? memberList(teamWorkers.map((worker) => worker.name), agentChip, `${team.teamName || team.name}的 Workers`, 'Workers') : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
               </dl>
-            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => setEditTeam(team)}>编辑</Button></div></Card>;
+            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => setDetailTeam(team)}>详情</Button><Button variant="outline" size="sm" onClick={() => setEditTeam(team)}>编辑</Button></div></Card>;
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
         </div> : agents.length === 0 ? <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的智能体' : '暂无智能体'}</p> : (
@@ -476,6 +479,12 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
       workers={workers}
       onChanged={refresh}
       onDeleted={() => { setEditWorker(null); navigate('agents'); }}
+    />
+    <TeamDetailReadonlyDialog
+      open={!!detailTeam}
+      onOpenChange={(open) => !open && setDetailTeam(null)}
+      team={detailTeam}
+      workers={workers}
     />
     <TeamDetailDialog
       open={!!editTeam}
