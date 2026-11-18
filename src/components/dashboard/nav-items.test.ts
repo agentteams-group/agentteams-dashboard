@@ -21,12 +21,13 @@ describe('Navigation with groups (Workbench IA)', () => {
       'artifacts',
       'coding-runs',
       'loops',
-      // Separate member pages; assistant settings has no standalone Manager menu.
-      'resources',
-      // R4 导航合并：统一工作台入口 + Managers（L1）；旧 workers/teams 入口已并入。
-      'team-agents',
-      'managers',
+      // 三级资源导航：团队（卡片 / 拓扑视图可切换）/ 用户（L1）/ Agent /
+      // Managers（L1）；旧 resources / team-agents 入口已删（id 由
+      // sectionMap + hash 解析承接旧深链）。
+      'teams',
       'humans',
+      'workers',
+      'managers',
       'platform-assistant-settings',
       'skills',
       'models',
@@ -67,12 +68,22 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('assigns items to console groups (附录 A 归属)', () => {
     const byId = new Map(navItems.map((item) => [item.id, item]));
-    expect(byId.get('resources')).toMatchObject({ area: 'console', group: 'resources' });
-    // R4 导航合并：workers / teams 不再单列入口（id 由 sectionMap + hash 解析承接旧深链）。
-    expect(byId.has('workers')).toBe(false);
-    expect(byId.has('teams')).toBe(false);
+    // 三级资源导航：团队 / 用户 / Agent / Managers（旧 resources / team-agents
+    // 入口已删，id 由 sectionMap + hash 解析承接旧深链）。
+    expect(byId.get('teams')).toMatchObject({
+      label: '团队',
+      area: 'console',
+      group: 'resources',
+      legacyGroup: 'runtime',
+    });
+    expect(byId.get('workers')).toMatchObject({
+      label: 'Agent',
+      area: 'console',
+      group: 'resources',
+      legacyGroup: 'runtime',
+    });
     expect(byId.get('humans')?.mergedInto).toBeUndefined();
-    // R4：Managers 恢复为 L1-only 独立入口（#233 口径，mergedInto 仅影响 Workbench 变体）。
+    // Managers 为 L1-only 独立入口（#233 口径，mergedInto 仅影响 Workbench 变体）。
     expect(byId.get('managers')).toMatchObject({
       label: 'Managers',
       area: 'console',
@@ -81,12 +92,8 @@ describe('Navigation with groups (Workbench IA)', () => {
       minLevel: 3,
       mergedInto: 'resources',
     });
-    expect(byId.get('team-agents')).toMatchObject({
-      label: '团队与 Agent',
-      area: 'console',
-      group: 'resources',
-      legacyGroup: 'runtime',
-    });
+    expect(byId.has('team-agents')).toBe(false);
+    expect(byId.has('resources')).toBe(false);
     expect(byId.get('skills')?.mergedInto).toBeUndefined(); // 市场/模型/知识库不并入
     expect(byId.get('platform-assistant-settings')).toMatchObject({ area: 'workbench', minLevel: 3 });
     expect(byId.get('humans')).toMatchObject({ area: 'console', group: 'resources' });
@@ -120,9 +127,11 @@ describe('UI level gate (M19 dual track)', () => {
       .map((item) => item.id);
     expect(ids).not.toContain('platform-assistant-settings');
     expect(ids).not.toContain('humans');
+    expect(ids).not.toContain('managers');
     expect(ids).toContain('tracing');
     // Team-scoped surfaces stay visible for L2.
-    expect(ids).toContain('team-agents');
+    expect(ids).toContain('teams');
+    expect(ids).toContain('workers');
     expect(ids).toContain('audit');
   });
 

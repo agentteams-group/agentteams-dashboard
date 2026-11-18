@@ -18,9 +18,10 @@ export const workspaceMenus = [
   { id: 'my-teams', label: '我的团队', icon: Users, sections: ['my-teams'] },
   { id: 'workbench', label: '工作台', icon: Hammer, sections: ['tasks', 'artifacts', 'coding-runs', 'loops'] },
   { id: 'models', label: '资产中心', icon: Library, sections: ['models', 'tools', 'skills', 'knowledge', 'files'] },
-  // R4：侧栏只列统一工作台 + 用户 + Managers；workers/teams 的 id 仍在
-  // navItems/sectionMap 中，旧深链可达（功能零删减），只是不再单列。
-  { id: 'resources', label: '成员与团队', icon: Users, sections: ['resources', 'team-agents', 'humans', 'managers'] },
+  // 资源三级：团队（卡片 / 拓扑视图可切换）+ 用户（L1）+ Agent + Managers（L1）。
+  // 旧 team-agents / resources 入口已删，其 hash 仍由 nav-hash 解析 + sectionMap
+  // 落到团队页（旧深链可达，功能零删减）。
+  { id: 'resources', label: '资源', icon: Users, sections: ['teams', 'humans', 'workers', 'managers'] },
   { id: 'tracing', label: '观测与治理', icon: Activity, sections: ['plugin-route:monitor-panel/monitor', 'tracing', 'audit'] },
 ];
 

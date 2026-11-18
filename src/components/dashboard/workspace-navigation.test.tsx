@@ -10,7 +10,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './sections/chat/room-info';
 
-const labels = ['助手', '我的团队', '工作台', '资产中心', '成员与团队', '观测与治理'];
+const labels = ['助手', '我的团队', '工作台', '资产中心', '资源', '观测与治理'];
 const props = { activeSection: 'models', countMap: { 'my-workbench': 3 }, sectionsWithNotifications: new Set<string>(), onNavClick: vi.fn(), mode: 'embedded' as const };
 
 beforeEach(() => {
@@ -51,13 +51,13 @@ describe('compact workspace navigation', () => {
     const nav = screen.getByRole('navigation', { name: '主要功能' });
     expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(6);
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
-    fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
+    fireEvent.click(within(nav).getByRole('button', { name: '资源' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
-    const members = within(screen.getByRole('group', { name: '成员与团队分类' }));
-    // R4 合并后：统一工作台入口 + 用户 + Managers（L1 可见）。
-    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['团队与 Agent', '用户', 'Managers']);
-    fireEvent.click(members.getByRole('button', { name: '团队与 Agent' }));
-    expect(props.onNavClick).toHaveBeenCalledWith('team-agents');
+    const members = within(screen.getByRole('group', { name: '资源分类' }));
+    // 三级资源导航：团队 / 用户 / Agent / Managers（L1 可见）。
+    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['团队', '用户', 'Agent', 'Managers']);
+    fireEvent.click(members.getByRole('button', { name: '团队' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('teams');
   });
 
   it('groups only active operations plugins and highlights their existing deep links', () => {
@@ -116,9 +116,10 @@ describe('compact workspace navigation', () => {
 
   it('hides privileged member pages from Team accounts and selects a deep-linked child', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });
-    render(<Sidebar {...props} activeSection="team-agents" collapsed={false} onToggleCollapse={vi.fn()} />);
-    // R4 合并入口对 L2 可见（团队级内容）；特权「用户 / Managers」隐藏。
-    expect(screen.getByRole('button', { name: '团队与 Agent' })).toHaveAttribute('aria-current', 'page');
+    render(<Sidebar {...props} activeSection="teams" collapsed={false} onToggleCollapse={vi.fn()} />);
+    // 团队 / Agent 对 L2 可见（团队级内容）；特权「用户 / Managers」隐藏。
+    expect(screen.getByRole('button', { name: '团队' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '用户' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Managers' })).toBeNull();
   });

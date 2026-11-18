@@ -91,16 +91,16 @@ export const navItems: NavItem[] = [
   { id: 'loops', label: '自动化', icon: RefreshCcw, area: 'workbench', group: 'loop' },
 
   // ── 控制台（二级：资源与治理合并） ──
-  // 成员管理：团队与 Agent 合并为一个拓扑工作台（R4）；用户 / Managers 保留独立入口。
-  { id: 'resources', label: '成员与团队', icon: Users, area: 'console', group: 'resources' },
-  // R4 统一工作台入口（拓扑 + 详情大弹窗）。旧 workers/teams 不再单列入口：
-  // 其 id 仍保留在 sectionMap + 工作台 hash 解析里，旧深链（#console/resources/workers 等）直达同一工作台。
-  { id: 'team-agents', label: '团队与 Agent', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
-  { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
+  // 成员管理三级：团队（卡片 / 拓扑工作台视图可切换，?view=topology 进工作台）、
+  // 用户、Agent 各自独立页面；Managers 仅 L1 可见。旧 team-agents / resources
+  // 入口已删，其 id 仍保留在 sectionMap + hash 解析里（旧深链直达团队页）。
+  { id: 'teams', label: '团队', icon: Users, area: 'console', group: 'resources', legacyGroup: 'runtime' },
   // L1-only (minLevel 3): the Controller's A2 chain 403s L2 (Matrix token)
   // reads on managers, and the humans list exposes sensitive fields
   // (initialPassword) that must not be visible to team-level users.
   { id: 'humans', label: '用户', icon: UserCheck, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3 },
+  { id: 'workers', label: 'Agent', icon: Bot, area: 'console', group: 'resources', legacyGroup: 'runtime' },
+  { id: 'managers', label: 'Managers', icon: Crown, area: 'console', group: 'resources', legacyGroup: 'runtime', minLevel: 3, mergedInto: 'resources' },
   { id: 'platform-assistant-settings', label: '平台助手设置', icon: Bot, area: 'workbench', group: 'space', minLevel: 3 },
   { id: 'skills', label: '技能', icon: Sparkles, area: 'console', group: 'resources', legacyGroup: 'resource' },
   { id: 'models', label: '模型', icon: Brain, area: 'console', group: 'resources', legacyGroup: 'resource' },
@@ -177,8 +177,8 @@ export interface CreateAction {
 }
 
 export const createActions: readonly CreateAction[] = [
-  { id: 'create-worker', label: '创建 Agent', icon: Bot, section: 'team-agents', hash: '#console/resources/team-agents?tab=agents', group: 'resources' },
-  { id: 'create-team', label: '创建团队', icon: Users, section: 'team-agents', hash: '#console/resources/team-agents?tab=teams', group: 'resources' },
+  { id: 'create-worker', label: '创建 Agent', icon: Bot, section: 'workers', hash: '#console/resources/workers', group: 'resources' },
+  { id: 'create-team', label: '创建团队', icon: Users, section: 'teams', hash: '#console/resources/teams', group: 'resources' },
   { id: 'create-human', label: '创建 Human', icon: UserCheck, section: 'humans', group: 'resources', minLevel: 3 },
   { id: 'open-chat', label: '打开协作空间', icon: MessageSquare, section: 'chat', group: 'space' },
 ] as const;

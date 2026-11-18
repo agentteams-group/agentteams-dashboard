@@ -76,11 +76,8 @@ const KnowledgeSection = lazy(() => import('./sections/knowledge-section').then(
 const FilesSection = lazy(() => import('./sections/files-section').then(m => ({ default: m.FilesSection })));
 const McpServersSection = lazy(() => import('./sections/mcps/mcp-servers-section').then(m => ({ default: m.McpServersSection })));
 
-// A5：四个工作台 id（resources / team-agents / workers / teams）统一挂
-// TeamsSection——旧代码里 workers 走 AgentsSection、其余走 TeamsSection，
-// 组件类型 + motion key 都不同，shell 的 hashchange 在 resolved id 间
-// 切换（agent 参数 → 'workers'，其余 → 'teams'）会触发 AnimatePresence
-// 重挂载闪烁。同类型 + 同 key = 状态不丢、不闪。
+// 三级导航：teams / team-agents / resources（旧 id）→ TeamsSection（团队页，
+// 卡片 / 拓扑视图可切换）；workers → AgentsSection（独立 Agent 页）。
 export const sectionMap: Record<string, React.ComponentType> = {
   overview: OverviewSection,
   tasks: TasksSection,
@@ -89,7 +86,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
   loops: LoopsSection,
   resources: TeamsSection,
   'team-agents': TeamsSection,
-  workers: TeamsSection,
+  workers: AgentsSection,
   skills: ResourceCenterSection,
   teams: TeamsSection,
   managers: ManagersSection,
@@ -180,10 +177,6 @@ export function AgentTeamsDashboard() {
       return;
     }
     if (!visibleNavItems.some((n) => n.id === activeSection)) {
-      // A5：'workers' / 'teams' 已并入 'team-agents' 导航项（navItems 里
-      // 不再有这两个 id），但 hash 解析（旧链接 / 搜索深链）仍会落到它们
-      // 上面——豁免守卫，不能把它们弹回 overview（否则搜索深链跳首页）。
-      if (activeSection === 'workers' || activeSection === 'teams') return;
       // Flag-hidden sections (taskBoard beta toggle) keep their route
       // reachable per the agentteams-store contract: "hidden = the nav item
       // is removed, the section route still works if navigated to directly".
@@ -254,13 +247,6 @@ export function AgentTeamsDashboard() {
   const ActiveSectionComponent = activeItem?.minLevel && userLevel < activeItem.minLevel
     ? AgentsSection
     : sectionMap[activeSection] || OverviewSection;
-  // A5：四个工作台 id 合并后的 resolved id（workers / teams / resources）
-  // 没有独立导航项——面包屑回落「团队与Agent」标签，避免显示「总览」。
-  const isWorkbenchMerged =
-    activeSection === 'workers' || activeSection === 'teams' || activeSection === 'resources';
-  // A5：四个工作台 id 共享同一个 motion key（与 sectionMap 的组件统一配套）
-  // ——resolved id 在 'workers' ↔ 'teams' 间切换时不重挂载、不闪。
-  const sectionMotionKey = isWorkbenchMerged || activeSection === 'team-agents' ? 'workbench' : activeSection;
   const activePluginRoute = useMemo(() => {
     const parsed = parsePluginSectionId(activeSection);
     if (!parsed) return null;
@@ -272,7 +258,7 @@ export function AgentTeamsDashboard() {
   }, [activeSection, pluginRoutes]);
   const activeLabel = isPluginSection
     ? activePluginRoute?.contribution.title ?? '插件页面'
-    : activeItem?.label ?? (isWorkbenchMerged ? navItems.find((n) => n.id === 'team-agents')?.label : undefined) ?? '总览';
+    : activeItem?.label || '总览';
   const activeMenu = workspaceMenuFor(activeSection);
 
   const workerCount = workers?.length ?? 0;
@@ -434,7 +420,7 @@ export function AgentTeamsDashboard() {
                 <main className="flex-1 overflow-y-auto custom-scrollbar p-5 md:px-6 md:pb-6 md:pt-3">
                   <AnimatePresence mode="wait">
                     <motion.div
-                      key={sectionMotionKey}
+                      key={activeSection}
                       className={sectionWrapperClass(activeSection)}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
