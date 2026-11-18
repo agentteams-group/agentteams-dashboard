@@ -20,6 +20,7 @@ interface Snapshot {
   etag: string | null;
   active_start?: { runtime: string };
   handoff?: Handoff;
+  target_failure?: string;
 }
 
 const phases: Record<string, string> = {
@@ -38,7 +39,8 @@ async function readSnapshot(response: Response): Promise<Snapshot> {
   if (state?.kind !== 'WorkerRuntimeState' || state.schema_version !== 1) {
     throw new Error('Controller 未返回支持的运行时交接状态。');
   }
-  return { active_start: state.active_start, handoff: state.handoff, etag: response.headers.get('ETag') };
+  return { active_start: state.active_start, handoff: state.handoff,
+    target_failure: state.target_failure, etag: response.headers.get('ETag') };
 }
 
 export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime: string }) {
@@ -116,6 +118,7 @@ export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime:
         {runtimeLabel(op.source.runtime)} → {runtimeLabel(op.target_runtime)} · {phases[op.phase] || op.phase}
         <span className="block break-all">请求 {op.id}</span>
       </p>}
+      {snapshot?.target_failure && <p role="alert" className="text-xs text-destructive">目标实例启动异常。{snapshot.target_failure}</p>}
       {readError && <p role="alert" className="text-xs text-destructive">{readError}</p>}
       {writeError && <p role="alert" className="text-xs text-destructive">{writeError}</p>}
       {readError ? <Button type="button" size="sm" variant="outline" onClick={() => setRefresh((n) => n + 1)}>重新读取交接状态</Button>
