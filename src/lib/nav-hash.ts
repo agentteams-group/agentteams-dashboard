@@ -117,29 +117,24 @@ export function teamAgentsHash(tab?: TeamAgentsTab): string {
 }
 
 /**
- * 深链：工作台并选中实体（A5 搜索深链 / A4 URL 状态）。
- * 在 teamAgentsHash 之上组合：
- * - worker → `?tab=agents&agent=<name>`；
- * - team   → `?tab=teams&team=<name>`；
- * - manager → `?manager=<name>`（不带 tab：resolver 把
- *   manager 无 tab 的 team-agents 链接落到工作台 'teams'，带 tab 仍落
- *   platform-assistant-settings——见 resolveLayeredHash）。
- * 不带 edit=true：只选中实体（右栏 / 抽屉展示），不自动打开分区弹窗
- * （编辑意图只由工作台内用户动作写入）。
+ * 深链：团队页拓扑视图并选中实体（搜索深链）。
+ * 统一输出 `#console/resources/teams?view=topology&<kind>=<name>`
+ * （kind = team / agent / manager）：落到 teams section（团队页），
+ * view=topology 把团队页切到工作台（拓扑）视图，实体参数只选中
+ * （工作台右栏 / 抽屉展示），不自动打开分区弹窗（编辑意图只由
+ * 工作台内用户动作写入）。
  */
 export function teamAgentsEntityHash(params: {
-  tab?: TeamAgentsTab;
   team?: string;
   agent?: string;
   manager?: string;
 }): string {
-  const base = teamAgentsHash(params.tab);
   const query = new URLSearchParams();
+  query.set('view', 'topology');
   if (params.team) query.set('team', params.team);
   if (params.agent) query.set('agent', params.agent);
   if (params.manager) query.set('manager', params.manager);
-  const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}${query.toString()}`;
+  return `#${SECTION_TO_HASH.teams}?${query.toString()}`;
 }
 
 /**
@@ -318,14 +313,16 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
     // Old merged-page links keep the selected resource on the separate pages.
     if (path === 'console/resources/team-agents') {
       // manager + tab = 旧「成员管理」深链 → 平台助手设置（member-navigation
-      // 口径）；manager 不带 tab = A5 搜索深链 → 工作台（选中 Manager 行，
-      // 右栏 / 抽屉展示，不自动开分区弹窗）。
+      // 口径）；manager 不带 tab = 搜索深链 → 团队页拓扑视图（选中 Manager 行，
+      // 右栏 / 抽屉展示，不自动开分区弹窗），补 view=topology 与搜索深链一致。
       const hasManager = params?.has('manager') ?? false;
       const hasTab = params?.has('tab') ?? false;
       const section = hasManager
         ? hasTab ? 'platform-assistant-settings' : 'teams'
         : params?.get('tab') === 'agents' || params?.has('agent') ? 'workers' : 'teams';
-      return { section, params };
+      const resolvedParams = new URLSearchParams(params?.toString() ?? '');
+      if (section === 'teams' && hasManager && !hasTab) resolvedParams.set('view', 'topology');
+      return { section, params: resolvedParams };
     }
     const consoleMap: Record<string, string> = {
       'resources': 'workers',

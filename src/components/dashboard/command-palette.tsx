@@ -303,10 +303,9 @@ export function useGlobalSearch(
           name: w.name,
           subtitle: `${w.runtime} · ${w.model || '无模型'}`,
           phase: w.phase,
-          // A5：搜索深链走合并工作台（旧 'workers' 路由在 c25dac4a 后已不在
-          // navItems，会被守卫弹回 overview）。
-          section: 'team-agents',
-          hash: teamAgentsEntityHash({ tab: 'agents', agent: w.name }),
+          // 搜索深链：团队页拓扑视图（?view=topology）选中该 Agent，不弹分区弹窗。
+          section: 'teams',
+          hash: teamAgentsEntityHash({ agent: w.name }),
         });
       }
     });
@@ -323,8 +322,8 @@ export function useGlobalSearch(
           name: t.teamName || t.name,
           subtitle: `${t.readyWorkers}/${t.totalWorkers} Workers · ${t.leaderName}`,
           phase: t.phase,
-          section: 'team-agents',
-          hash: teamAgentsEntityHash({ tab: 'teams', team: t.name }),
+          section: 'teams',
+          hash: teamAgentsEntityHash({ team: t.name }),
         });
       }
     });
@@ -341,9 +340,9 @@ export function useGlobalSearch(
           name: m.name,
           subtitle: `${m.runtime || '-'} · ${m.model || '-'}`,
           phase: m.phase,
-          // A5：manager 不带 tab → resolver 落到工作台（选中 Manager 行 +
-          // 详情弹窗），不再跳平台助手设置页。
-          section: 'team-agents',
+          // manager 深链：团队页拓扑视图选中 Manager 行（右栏 / 抽屉展示，
+          // 不自动开分区弹窗）。
+          section: 'teams',
           hash: teamAgentsEntityHash({ manager: m.name }),
         });
       }

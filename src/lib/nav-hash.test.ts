@@ -238,26 +238,37 @@ describe('深链构造器与参数读取（方案 v3 C-2）', () => {
     expect(resolveHash('workbench/tasks', isKnown)?.params).toBeUndefined();
   });
 
-  it('A5 实体深链：worker / team / manager 三种形态都能反向解析（只选中、无 edit 意图）', () => {
-    const workerHash = teamAgentsEntityHash({ tab: 'agents', agent: 'w1' });
-    expect(workerHash).toBe('#console/resources/team-agents?tab=agents&agent=w1');
+  it('搜索深链：worker / team / manager 统一落团队页拓扑视图（只选中、无 edit 意图）', () => {
+    const workerHash = teamAgentsEntityHash({ agent: 'w1' });
+    expect(workerHash).toBe('#console/resources/teams?view=topology&agent=w1');
     const workerResolved = resolveHash(workerHash.slice(1), isKnown);
-    expect(workerResolved?.section).toBe('workers');
+    expect(workerResolved?.section).toBe('teams');
+    expect(workerResolved?.params?.get('view')).toBe('topology');
     expect(workerResolved?.params?.get('agent')).toBe('w1');
     expect(workerResolved?.params?.get('edit')).toBeNull();
 
-    const teamHash = teamAgentsEntityHash({ tab: 'teams', team: 'alpha' });
-    expect(teamHash).toBe('#console/resources/team-agents?tab=teams&team=alpha');
+    const teamHash = teamAgentsEntityHash({ team: 'alpha' });
+    expect(teamHash).toBe('#console/resources/teams?view=topology&team=alpha');
     expect(resolveHash(teamHash.slice(1), isKnown)?.section).toBe('teams');
+    expect(resolveHash(teamHash.slice(1), isKnown)?.params?.get('view')).toBe('topology');
     expect(resolveHash(teamHash.slice(1), isKnown)?.params?.get('team')).toBe('alpha');
 
-    // manager 不带 tab → 工作台（选中 Manager 行，右栏 / 抽屉展示），不是平台助手设置页。
+    // manager → 团队页拓扑视图（选中 Manager 行，右栏 / 抽屉展示），不是平台助手设置页。
     const managerHash = teamAgentsEntityHash({ manager: 'boss' });
-    expect(managerHash).toBe('#console/resources/team-agents?manager=boss');
+    expect(managerHash).toBe('#console/resources/teams?view=topology&manager=boss');
     const managerResolved = resolveHash(managerHash.slice(1), isKnown);
     expect(managerResolved?.section).toBe('teams');
+    expect(managerResolved?.params?.get('view')).toBe('topology');
     expect(managerResolved?.params?.get('manager')).toBe('boss');
     expect(managerResolved?.params?.get('edit')).toBeNull();
+  });
+
+  it('旧式 manager 深链（team-agents 路径、无 tab）落到团队页并补 view=topology', () => {
+    const resolved = resolveHash('console/resources/team-agents?manager=boss', isKnown);
+    expect(resolved?.section).toBe('teams');
+    expect(resolved?.params?.get('view')).toBe('topology');
+    expect(resolved?.params?.get('manager')).toBe('boss');
+    expect(resolved?.params?.get('edit')).toBeNull();
   });
 
   it('manager + tab 的旧「成员管理」深链仍落平台助手设置页', () => {
