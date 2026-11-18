@@ -29,6 +29,7 @@ import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
   filterHumans,
+  isManagedHuman,
   sortHumans,
 } from './humans/human-selectors';
 import { HumanTable } from './humans/human-table';
@@ -68,7 +69,7 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 
 export function HumansSection() {
   const { data: allHumans, isLoading, isError, refetch, isRefetching } = useHumans();
-  const humans = useMemo(() => allHumans?.filter(human => !human.systemAdmin), [allHumans]);
+  const humans = useMemo(() => allHumans?.filter(isManagedHuman), [allHumans]);
   const {
     data: teams,
     isLoading: teamsLoading,

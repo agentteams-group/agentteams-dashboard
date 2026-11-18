@@ -52,6 +52,7 @@ import {
 import { pluginEventBus, HOST_EVENTS } from '@/lib/plugins/event-bus';
 import { buildRooms } from './sections/chat/room-builders';
 import { withLeaderAccess } from './sections/chat/agent-conversations';
+import { isManagedHuman } from './sections/humans/human-selectors';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import styles from './workspace.module.css';
 import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
@@ -258,6 +259,7 @@ export function AgentTeamsDashboard() {
   const activeMenu = workspaceMenuFor(activeSection);
 
   const workerCount = workers?.length ?? 0;
+  const humanCount = useMemo(() => humans?.filter(isManagedHuman).length ?? 0, [humans]);
   const teamCount = teams?.length ?? 0;
   const managerCount = managers?.length ?? 0;
   const roomMeta = useRoomMetaStore((s) => s.meta);
@@ -274,11 +276,12 @@ export function AgentTeamsDashboard() {
 
   const countMap: Record<string, number> = useMemo(() => ({
     workers: workerCount,
+    humans: humanCount,
     teams: teamCount,
     chat: chatCount,
     'my-teams': teamChatCount,
     'my-workbench': workbenchCount,
-  }), [workerCount, teamCount, chatCount, teamChatCount, workbenchCount]);
+  }), [workerCount, humanCount, teamCount, chatCount, teamChatCount, workbenchCount]);
 
   const sectionsWithNotifications = useMemo(() => {
     const sectionSet = new Set<string>();
