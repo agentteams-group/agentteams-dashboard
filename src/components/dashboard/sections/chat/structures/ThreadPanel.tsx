@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
+import { ChevronLeft, Send } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -23,6 +23,8 @@ interface ThreadPanelProps {
   roomId: string;
   rootMessage: DisplayMessage;
   focusedMessage?: DisplayMessage | null;
+  quotedReplies?: DisplayMessage[];
+  onBack: () => void;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
 }
@@ -33,6 +35,8 @@ export function ThreadPanel({
   roomId,
   rootMessage,
   focusedMessage,
+  quotedReplies,
+  onBack,
   memberMap,
   workerMatrixUserIds,
 }: ThreadPanelProps) {
@@ -71,16 +75,16 @@ export function ThreadPanel({
 
   const replies = useMemo<DisplayMessage[]>(() => {
     const chunk = threadQuery.data?.chunk ?? [];
-    const messages: DisplayMessage[] = [];
+    const messages = new Map(quotedReplies?.map(message => [message.id, message]));
     for (const event of chunk) {
       const formatted = formatMatrixEvent(event, userId);
-      if (formatted) messages.push(formatted);
+      if (formatted) messages.set(formatted.id, formatted);
     }
-    if (focusedMessage && !messages.some(message => message.id === focusedMessage.id)) {
-      messages.push(focusedMessage);
+    if (focusedMessage && !messages.has(focusedMessage.id)) {
+      messages.set(focusedMessage.id, focusedMessage);
     }
-    return messages.sort((a, b) => a.timestamp - b.timestamp);
-  }, [threadQuery.data, userId, focusedMessage]);
+    return Array.from(messages.values()).sort((a, b) => a.timestamp - b.timestamp);
+  }, [threadQuery.data, userId, focusedMessage, quotedReplies]);
 
   useEffect(() => {
     focusedRef.current?.scrollIntoView({ block: 'center' });
@@ -153,6 +157,10 @@ export function ThreadPanel({
       {/* Root summary; the tab strip already carries the panel title. */}
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="flex min-w-0 items-start gap-2">
+          <Button type="button" size="icon" variant="ghost" className="size-6 shrink-0"
+            aria-label="返回话题列表" title="返回话题列表" onClick={onBack}>
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </Button>
           <Avatar className="w-5 h-5 shrink-0">
             <div className="w-full h-full rounded-full flex items-center justify-center text-xs font-medium bg-muted text-muted-foreground">
               {rootMessage.senderShort.slice(0, 2).toUpperCase()}
@@ -181,39 +189,40 @@ export function ThreadPanel({
           onSendConfirmation={canSend ? handleSendConfirmation : undefined}
           memberMap={memberMap}
         />
-        {threadQuery.isLoading ? (
+        {threadQuery.isLoading && (
           <div className="px-3 py-2 text-xs text-muted-foreground">加载话题回复...</div>
-        ) : threadQuery.isError ? (
+        )}
+        {threadQuery.isError && (
           <div className="px-3 py-2 flex flex-col items-start gap-1.5">
             <span className="text-xs text-red-500">话题加载失败</span>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => threadQuery.refetch()}>
               重试
             </Button>
           </div>
-        ) : replies.length === 0 ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">暂无回复，成为第一个回复的人</div>
-        ) : (
-          replies.map((reply, idx) => {
-            const prev = replies[idx - 1];
-            const isContinuation = !!prev && prev.sender === reply.sender;
-            return (
-              <div key={reply.id} ref={reply.id === focusedMessage?.id ? focusedRef : undefined}
-                className={reply.id === focusedMessage?.id ? 'rounded-lg bg-blue-500/5 ring-1 ring-blue-500/30' : undefined}>
-                <MessageBubble
-                  message={reply}
-                  showSender={!isContinuation}
-                  isContinuation={isContinuation}
-                  replyQuote={replyQuote(reply)}
-                  onReply={canSend && isLoggedIn ? selectReply : undefined}
-                  onEdit={canSend ? handleEdit : undefined}
-                  onDelete={canSend ? handleDelete : undefined}
-                  onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-                  memberMap={memberMap}
-                />
-              </div>
-            );
-          })
         )}
+        {replies.length === 0 && !threadQuery.isLoading && !threadQuery.isError && (
+          <div className="px-3 py-2 text-xs text-muted-foreground">暂无回复，成为第一个回复的人</div>
+        )}
+        {replies.map((reply, idx) => {
+          const prev = replies[idx - 1];
+          const isContinuation = !!prev && prev.sender === reply.sender;
+          return (
+            <div key={reply.id} ref={reply.id === focusedMessage?.id ? focusedRef : undefined}
+              className={reply.id === focusedMessage?.id ? 'rounded-lg bg-blue-500/5 ring-1 ring-blue-500/30' : undefined}>
+              <MessageBubble
+                message={reply}
+                showSender={!isContinuation}
+                isContinuation={isContinuation}
+                replyQuote={replyQuote(reply)}
+                onReply={canSend && isLoggedIn ? selectReply : undefined}
+                onEdit={canSend ? handleEdit : undefined}
+                onDelete={canSend ? handleDelete : undefined}
+                onSendConfirmation={canSend ? handleSendConfirmation : undefined}
+                memberMap={memberMap}
+              />
+            </div>
+          );
+        })}
         {sendMutation.isError && (
           <div className="px-3 py-1.5 text-xs text-red-500">发送失败: {sendMutation.error?.message}</div>
         )}

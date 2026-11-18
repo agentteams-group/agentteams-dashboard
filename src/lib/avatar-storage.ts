@@ -2,10 +2,29 @@ import { createHash, randomUUID, randomInt } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { configFilePath } from './backend-config';
-import { AVATAR_PRESETS, defaultAvatarPreset, type AvatarKind } from './avatars';
+import { avatarAssetPath, builtInAvatarCatalog, defaultAvatarPreset, defaultAvatarSeries, type AvatarCatalog, type AvatarKind } from './avatars';
+
+function avatarAssetsDir() {
+  return join(process.cwd(), 'public', 'avatars');
+}
+
+export async function readAvatarCatalog(kind: AvatarKind): Promise<AvatarCatalog> {
+  const builtIn = builtInAvatarCatalog(kind);
+  if (kind === 'agent') return builtIn;
+  try {
+    const local: AvatarCatalog = JSON.parse(await readFile(join(avatarAssetsDir(), 'local', 'catalog.json'), 'utf8'));
+    return {
+      series: [...local.series, ...builtIn.series],
+      presets: [...local.presets.filter(({ id }) => /^local-[a-z0-9-]+$/.test(id)), ...builtIn.presets],
+    };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    return builtIn;
+  }
+}
 
 export function readAvatarPreset(preset: string) {
-  return readFile(join(process.cwd(), 'public', 'avatars', `${preset}.png`));
+  return readFile(join(avatarAssetsDir(), avatarAssetPath(preset)));
 }
 
 function avatarPath(kind: AvatarKind, name: string) {
@@ -35,8 +54,8 @@ export async function writeAvatar(kind: AvatarKind, name: string, image: Buffer)
 }
 
 export async function assignRandomAvatar(kind: AvatarKind, name: string) {
-  const series = kind === 'agent' ? 'pixelbot' : 'open-peeps';
-  const choices = AVATAR_PRESETS.filter(preset => preset.series === series);
+  const series = defaultAvatarSeries(kind);
+  const choices = builtInAvatarCatalog(kind).presets.filter(preset => preset.series === series);
   await writeAvatar(kind, name, await readAvatarPreset(choices[randomInt(choices.length)].id));
 }
 

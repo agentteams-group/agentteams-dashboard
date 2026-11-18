@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChatProvider } from './ChatStore';
 import {
   ChatRoom,
@@ -138,7 +139,7 @@ function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
     <ChatProvider>
       <ChatRoom roomId="!room:test" roomName="测试房间" {...props} />
     </ChatProvider>,
-    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> },
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider> },
   );
 }
 
@@ -178,6 +179,46 @@ describe('ChatRoom read-position dual-write', () => {
     const quote = within(reply).getByRole('button', { name: /回复给：peer.*第一条/ });
     fireEvent.click(quote);
     expect(mocks.virtuoso.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0, align: 'center' }));
+  });
+
+  it('lists nested quoted replies together under the original message as a topic', async () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const quoted = '这是一段很长的原文，时间线只展示开头的几个字，完整内容可以在浮层里阅读。';
+    const originalEvent = mocks.roomMessagesChunk[0] as { content: { body: string } };
+    originalEvent.content.body = quoted;
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    mocks.roomMessagesChunk.push(
+      { event_id: '$first', sender: '@me:test', type: 'm.room.message', origin_server_ts: 3000,
+        content: { msgtype: 'm.text', body: '客服回复', 'm.relates_to': { 'm.in_reply_to': { event_id: '$old' } } } },
+      { event_id: '$second', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000,
+        content: { msgtype: 'm.text', body: '继续跟进', 'm.relates_to': { 'm.in_reply_to': { event_id: '$first' } } } },
+    );
+    try {
+      renderChatRoom();
+      const reply = screen.getAllByText('客服回复').find(node => node.localName === 'div')!.closest<HTMLElement>('[data-chat-message]')!;
+      const quote = within(reply).getByRole('button', { name: /回复给：peer/ });
+      expect(quote).toHaveTextContent('…');
+      expect(quote).not.toHaveTextContent('完整内容可以在浮层里阅读');
+      fireEvent.focus(quote);
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(quoted);
+      fireEvent.blur(quote);
+
+      const original = screen.getByText(quoted).closest<HTMLElement>('[data-chat-message]')!;
+      fireEvent.click(within(original).getByRole('button', { name: /2 条回复/ }));
+      const panel = within(screen.getByRole('complementary'));
+      expect(panel.getByText('客服回复', { selector: 'div' })).toBeInTheDocument();
+      expect(panel.getByText('继续跟进')).toBeInTheDocument();
+      expect(panel.getByText(quoted, { selector: 'div' })).toBeInTheDocument();
+      fireEvent.click(panel.getByRole('button', { name: '返回话题列表' }));
+      expect(panel.getByRole('button', { name: /2 条回复/ })).toBeInTheDocument();
+    } finally {
+      originalEvent.content.body = '第一条';
+      vi.unstubAllGlobals();
+    }
   });
 
   it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {

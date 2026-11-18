@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Shuffle, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { extractErrorDetail } from '@/lib/api-base';
-import { avatarAssetUrl, avatarEndpoint, AVATAR_IMAGE_TYPES, AVATAR_PRESETS, AVATAR_SERIES, MAX_AVATAR_BYTES, type AvatarKind } from '@/lib/avatars';
+import { apiUrl, extractErrorDetail, requestJson } from '@/lib/api-base';
+import { avatarAssetUrl, avatarEndpoint, AVATAR_IMAGE_TYPES, builtInAvatarCatalog, defaultAvatarSeries, MAX_AVATAR_BYTES, type AvatarCatalog, type AvatarKind } from '@/lib/avatars';
 import { AccountAvatar, refreshAccountAvatar } from './account-avatar';
 
 export function AvatarEditor({ kind, name, onClose }: {
@@ -15,12 +16,19 @@ export function AvatarEditor({ kind, name, onClose }: {
   name: string;
   onClose: () => void;
 }) {
-  const [series, setSeries] = useState<string>(kind === 'agent' ? 'pixelbot' : 'open-peeps');
+  const [series, setSeries] = useState<string>(defaultAvatarSeries(kind));
   const [preset, setPreset] = useState<string | null>(null);
   const [upload, setUpload] = useState<{ file: File; preview: string } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const choices = AVATAR_PRESETS.filter(item => item.series === series);
+  const catalogQuery = useQuery<AvatarCatalog>({
+    queryKey: ['avatar-presets', kind],
+    queryFn: () => requestJson<AvatarCatalog>(apiUrl('/api/agentteams/avatars/presets?kind=human')),
+    enabled: kind === 'human',
+    staleTime: 60_000,
+  });
+  const catalog = catalogQuery.data ?? builtInAvatarCatalog(kind);
+  const choices = catalog.presets.filter(item => item.series === series);
   const preview = upload?.preview ?? (preset ? avatarAssetUrl(preset) : null);
 
   useEffect(() => () => { if (upload) URL.revokeObjectURL(upload.preview); }, [upload]);
@@ -54,7 +62,7 @@ export function AvatarEditor({ kind, name, onClose }: {
 
   return (
     <Dialog open onOpenChange={open => { if (!open && !pending) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>更换头像</DialogTitle>
           <DialogDescription>{name}</DialogDescription>
@@ -62,7 +70,7 @@ export function AvatarEditor({ kind, name, onClose }: {
         <div className="flex flex-wrap items-center gap-3">
           {preview ? <Avatar className="size-16 rounded-xl"><AvatarImage src={preview} alt="头像预览" className="object-cover" /></Avatar>
             : <AccountAvatar kind={kind} name={name} className="size-16 rounded-xl" />}
-          <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => {
+          <Button type="button" size="sm" variant="outline" disabled={pending || choices.every(item => item.id === preset)} onClick={() => {
             const available = choices.filter(item => item.id !== preset);
             choosePreset(available[Math.floor(Math.random() * available.length)].id);
           }}><Shuffle aria-hidden="true" />随机换一个</Button>
@@ -84,14 +92,14 @@ export function AvatarEditor({ kind, name, onClose }: {
           </label>
         </div>
         <div role="group" aria-label="头像系列" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-          {AVATAR_SERIES.map(item => (
+          {catalog.series.map(item => (
             <Button key={item.id} size="sm" variant={series === item.id ? 'outline' : 'ghost'}
               aria-pressed={series === item.id} disabled={pending} onClick={() => setSeries(item.id)}>{item.label}</Button>
           ))}
         </div>
         <div role="group" aria-label="预设头像" className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {choices.map(item => (
-            <button key={item.id} type="button" aria-label={item.label} aria-pressed={preset === item.id} disabled={pending}
+            <button key={item.id} type="button" aria-label={item.label} aria-pressed={preset === item.id} title={item.label} disabled={pending}
               className={`rounded-lg border p-1 transition-colors hover:bg-muted ${preset === item.id ? 'border-emerald-600 bg-emerald-500/10 ring-1 ring-emerald-600' : 'border-border'}`}
               onClick={() => choosePreset(item.id)}>
               <Avatar className="aspect-square h-auto w-full rounded-md"><AvatarImage src={avatarAssetUrl(item.id)} alt="" /></Avatar>

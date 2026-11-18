@@ -10,6 +10,7 @@ import { useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { indexRoomReplies } from './room-replies';
 import { RoomAttachments } from './components/RoomAttachments';
 import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
@@ -311,22 +312,21 @@ export function ChatRoom({
     chatIr.messages, allEvents, workerMatrixUserIds,
   ), [chatIr.messages, allEvents, workerMatrixUserIds]);
 
-  // 话题 tab 的根消息来自 Matrix 已同步事件的聚合回复数；底座只有
-  // 「按 root event 查 relations」接口，没有房间级话题列表，所以这里
-  // 只展示当前已同步、确有回复的根消息，不另造索引。
-  //
-  // Pure worker-run threads (every participant is a worker MXID) are runs,
-  // not conversations: they stay in the timeline and out of the topic list.
-  // Detached roots are always listed so their replies remain reachable.
+  const roomReplies = useMemo(
+    () => indexRoomReplies(formattedMessages, allEvents), [formattedMessages, allEvents],
+  );
+  const messagesWithReplyCounts = useMemo(() => formattedMessages.map(message => {
+    const count = roomReplies.repliesByRoot.get(message.id)?.length;
+    return count ? { ...message, replyCount: (message.replyCount ?? 0) + count } : message;
+  }), [formattedMessages, roomReplies]);
   const threadRoots = useMemo(
-    () => formattedMessages.filter((message) => {
-      if (message.detached) return true;
+    () => messagesWithReplyCounts.filter((message) => {
+      if (message.detached || roomReplies.repliesByRoot.has(message.id)) return true;
       if ((message.replyCount ?? 0) === 0) return false;
       const participants = chatIr.threadParticipants[message.id] ?? [];
-      if (participants.length === 0) return true;
-      return participants.some((sender) => !runtimeMap[sender]);
+      return participants.length === 0 || participants.some((sender) => !runtimeMap[sender]);
     }),
-    [formattedMessages, chatIr.threadParticipants, runtimeMap],
+    [messagesWithReplyCounts, roomReplies, chatIr.threadParticipants, runtimeMap],
   );
 
   const loadMore = useCallback(async () => {
@@ -791,9 +791,9 @@ export function ChatRoom({
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
     setThreadMention(null);
-    setActiveThread(message);
+    setActiveThread(roomReplies.rootByReply.get(message.id) ?? message);
     setContextPanel('thread');
-  }, [setContextPanel]);
+  }, [roomReplies, setContextPanel]);
 
   const handleTogglePanel = useCallback((panel: RoomContextTab) => {
     setContextPanel(contextPanel === panel ? null : panel);
@@ -899,7 +899,7 @@ export function ChatRoom({
             ref={scrollRef}
             roomId={roomId}
             onRevealReply={handleRevealEvent}
-            messages={formattedMessages}
+            messages={messagesWithReplyCounts}
             localMessages={localMessages}
             readEventId={unreadAnchor}
             focusedMentionId={focusedMentionId}
@@ -1024,13 +1024,14 @@ export function ChatRoom({
           onClose={() => setContextPanel(null)}
           roomMembers={roomMembers}
           senderStatusMap={senderStatusMap}
-          activeThread={activeThread}
+          activeThread={activeThread && (messagesWithReplyCounts.find(message => message.id === activeThread.id && !message.detached) ?? activeThread)}
           threadMention={threadMention}
           threadRoots={threadRoots}
-          onOpenThread={(message) => {
+          quotedReplies={activeThread ? roomReplies.repliesByRoot.get(activeThread.id) : undefined}
+          onOpenThread={handleOpenThread}
+          onBackToThreads={() => {
+            setActiveThread(null);
             setThreadMention(null);
-            setActiveThread(message);
-            setContextPanel('thread');
           }}
           memberMap={memberMap}
           workerMatrixUserIds={workerMatrixUserIds}

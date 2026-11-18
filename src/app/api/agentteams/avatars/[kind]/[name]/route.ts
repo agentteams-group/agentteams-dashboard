@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { readServerIdentity } from '@/lib/server-auth';
-import { AVATAR_IMAGE_TYPES, AVATAR_PRESETS, MAX_AVATAR_BYTES, type AvatarKind } from '@/lib/avatars';
-import { readAvatar, readAvatarPreset, writeAvatar } from '@/lib/avatar-storage';
+import { AVATAR_IMAGE_TYPES, MAX_AVATAR_BYTES, type AvatarKind } from '@/lib/avatars';
+import { readAvatar, readAvatarCatalog, readAvatarPreset, writeAvatar } from '@/lib/avatar-storage';
 import { getControllerUrl, proxyToAgentTeams } from '../../../proxy-helper';
 
 type Params = { params: Promise<{ kind: string; name: string }> };
@@ -64,7 +64,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
   try {
     if (isPreset) {
       const { preset } = JSON.parse(data.toString('utf8'));
-      if (!AVATAR_PRESETS.some(entry => entry.id === preset)) throw new Error('Invalid preset');
+      const { presets } = await readAvatarCatalog(kind);
+      if (!presets.some(entry => entry.id === preset)) throw new Error('Invalid preset');
       image = await readAvatarPreset(preset);
     } else {
       const source = sharp(data, { animated: true, limitInputPixels: 16_000_000 });
