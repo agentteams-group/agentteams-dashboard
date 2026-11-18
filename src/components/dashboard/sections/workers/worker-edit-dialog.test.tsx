@@ -205,7 +205,7 @@ describe('WorkerEditDialog 运行时交接', () => {
       if (init.method === 'POST') {
         posts.push(init);
         if (posts.length === 1) throw new Error('模拟响应丢失');
-        return Response.json({ ...idle, handoff: { id: JSON.parse(String(init.body)).request_id, phase: 'draining',
+        return Response.json({ ...idle, handoff: { id: JSON.parse(String(init.body)).request_id, phase: 'stopping',
           source: { runtime: 'hermes' }, target_runtime: 'qwenpaw' } });
       }
       return Response.json(idle, { headers: etag ? { ETag: etag } : {} });

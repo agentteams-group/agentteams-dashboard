@@ -25,7 +25,7 @@ interface Snapshot {
 const phases: Record<string, string> = {
   preflight: '预检中', draining: '停止领取新工作', checkpointed: '已保存检查点',
   stopping: '正在停止旧实例', stopped: '已确认旧实例停止', creating: '正在创建目标实例',
-  recovering: '目标实例正在恢复工作', completed: '交接完成',
+  recovering: '等待新实例就绪', completed: '运行时已切换',
 };
 
 async function readSnapshot(response: Response): Promise<Snapshot> {
