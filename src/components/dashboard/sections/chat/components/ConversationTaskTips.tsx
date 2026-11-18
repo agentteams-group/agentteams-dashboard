@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ListTodo, Loader2, Hand, CircleX, CirclePause, CircleDashed, CircleAlert, ChevronDown, ChevronUp, ChevronRight, Clock3, ClipboardCheck, CircleHelp, CircleMinus, Undo2, CircleCheck } from 'lucide-react';
+import { ListTodo, Loader2, Hand, CircleX, CirclePause, CircleDashed, CircleAlert, ChevronDown, ChevronRight, Clock3, ClipboardCheck, CircleHelp, CircleMinus, Undo2, CircleCheck } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAssistantTaskFeed, type AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { useTaskIndex } from '@/hooks/use-projects';
 import { useArchivedRooms } from '@/hooks/use-room-archive';
@@ -35,7 +37,7 @@ export function ConversationTaskTips({ room, taskFeed }: {
   room: RoomInfo;
   taskFeed?: AssistantTaskFeed;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const reduceMotion = useReducedMotion();
   const listId = useId();
@@ -68,18 +70,25 @@ export function ConversationTaskTips({ room, taskFeed }: {
   const attention = items.filter(item => item.waitingFor || TASK_NOTE_GROUPS.some(group => group.id === item.group && group.attention)).length;
   const joinedIds = new Set(roomAccess.state === 'joined' ? roomAccess.joinedRooms : []);
 
-  return <AnimatePresence initial={false}>{items.length > 0 && <motion.aside
-    role="region" aria-label="当前对话的任务"
-    initial={{ opacity: 0, x: reduceMotion ? 0 : 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
-    transition={{ duration: reduceMotion ? 0 : 0.16 }}
-    className={cn('mt-3 mr-3 self-start shrink-0 overflow-hidden rounded-lg border border-border/70 bg-background', expanded ? 'w-64 max-w-[30vw]' : 'w-14')}>
-    <button type="button" aria-label={expanded ? '收起对话任务' : '展开对话任务'} aria-expanded={expanded} aria-controls={listId} onClick={() => setExpanded(value => !value)} className={cn('flex w-full items-center text-xs text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-primary', expanded ? 'gap-2 px-3 py-2.5' : 'flex-col gap-1 py-2.5')}>
-      <ListTodo className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className={expanded ? 'flex-1 text-left' : ''}>任务 <span className="font-mono">{items.length}</span></span>
-      {attention > 0 && <span aria-label={attention + ' 项需要关注'} className="flex items-center gap-1 text-amber-700 dark:text-amber-400"><CircleAlert className="size-3" aria-hidden="true" />{expanded && attention}</span>}
-      {expanded ? <ChevronDown className="size-3.5" aria-hidden="true" /> : <ChevronUp className="size-3" aria-hidden="true" />}
-    </button>
-    {expanded && <div id={listId} className="relative max-h-64 overflow-y-auto border-t border-border/60 custom-scrollbar">
+  if (items.length === 0) return null;
+  return <Popover open={expanded} onOpenChange={setExpanded}>
+    <PopoverTrigger asChild>
+      <Button variant="outline" size="sm" aria-label={`当前对话的任务，共 ${items.length} 项`}
+        className="gap-1.5 border-emerald-600/25 bg-emerald-600/5 text-emerald-800 hover:bg-emerald-600/10 hover:text-emerald-900 data-[state=open]:bg-emerald-600/10 max-sm:px-2 dark:text-emerald-300 dark:hover:text-emerald-200">
+        <ListTodo className="size-4" aria-hidden="true" />
+        <span className="max-sm:sr-only">任务</span>
+        <span className="rounded-full bg-emerald-600/10 px-1.5 font-mono text-xs">{items.length}</span>
+        {attention > 0 && <span aria-label={attention + ' 项需要关注'} className="flex items-center text-amber-700 dark:text-amber-400"><CircleAlert className="size-3" aria-hidden="true" /></span>}
+        <ChevronDown className={cn('size-3 transition-transform motion-reduce:transition-none max-sm:hidden', expanded && 'rotate-180')} aria-hidden="true" />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent aria-label="当前对话的任务" align="end" sideOffset={10} collisionPadding={12}
+      className="flex max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border-emerald-600/25 p-0 shadow-lg shadow-emerald-950/10 motion-reduce:animate-none">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-emerald-600/15 bg-emerald-600/5 px-3 py-2.5">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800 dark:text-emerald-300"><ListTodo className="size-4" aria-hidden="true" />当前对话的任务</span>
+        {attention > 0 && <span className="text-xs text-amber-700 dark:text-amber-400">{attention} 项需要关注</span>}
+      </div>
+      <div className="relative min-h-0 max-h-72 overflow-y-auto custom-scrollbar">
       <AnimatePresence initial={false} mode="popLayout">
       {items.map(item => {
         const state = item.waitingFor ? 'confirmation' : item.group;
@@ -88,7 +97,7 @@ export function ConversationTaskTips({ room, taskFeed }: {
         const running = state === 'running' && !assigned;
         const label = item.waitingFor === 'approval' ? '待审批' : item.waitingFor === 'confirmation' ? '待确认' : state === 'running' ? assigned ? '已分配' : '执行中' : group.label;
         const Icon = state === 'running' ? assigned ? Clock3 : Loader2 : item.waitingFor === 'confirmation' ? CircleHelp : statusIcons[state];
-        const color = state === 'failed' ? 'text-red-600 dark:text-red-400' : group.attention ? 'text-amber-700 dark:text-amber-400' : running ? 'text-primary' : 'text-muted-foreground';
+        const color = state === 'failed' ? 'text-red-600 dark:text-red-400' : group.attention ? 'text-amber-700 dark:text-amber-400' : running ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground';
         const target = item.roomId && joinedIds.has(item.roomId) ? item.roomId : undefined;
         const duration = taskDuration(item, now);
         const created = item.createdAt ? Date.parse(item.createdAt) : NaN;
@@ -98,7 +107,7 @@ export function ConversationTaskTips({ room, taskFeed }: {
           layout={reduceMotion ? false : 'position'}
           initial={{ opacity: 0, y: reduceMotion ? 0 : 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduceMotion ? 0 : -4 }}
           transition={{ duration: reduceMotion ? 0 : 0.16 }}
-          onClick={() => { if (target) openChatRoom(target, item.mainTaskId); }} aria-disabled={!target} aria-describedby={detailsId} aria-label={item.title + '，' + label + '，' + (target ? '进入协作空间' : '协作空间暂不可用')} className="flex w-full items-start gap-2 border-b border-border/40 px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary aria-disabled:cursor-default">
+          onClick={() => { if (target) { setExpanded(false); openChatRoom(target, item.mainTaskId); } }} aria-disabled={!target} aria-describedby={detailsId} aria-label={item.title + '，' + label + '，' + (target ? '进入协作空间' : '协作空间暂不可用')} className="flex w-full items-start gap-2 border-b border-border/40 px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-emerald-600/5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-600 aria-disabled:cursor-default">
           <Icon aria-label={iconLabel} className={cn('mt-0.5 size-3.5 shrink-0', color, running && 'animate-spin motion-reduce:animate-none')} />
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 text-xs leading-5 text-foreground">{item.title}</span>
@@ -115,6 +124,7 @@ export function ConversationTaskTips({ room, taskFeed }: {
       })}
       </AnimatePresence>
       {(loading || degraded || partialError || taskIndex.isLoading || taskIndexError) && <p role="status" className="border-t border-border/40 px-3 py-2 text-xs text-muted-foreground">{degraded || partialError || taskIndexError ? '状态待更新' : '同步中…'}</p>}
-    </div>}
-  </motion.aside>}</AnimatePresence>;
+      </div>
+    </PopoverContent>
+  </Popover>;
 }

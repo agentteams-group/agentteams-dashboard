@@ -43,6 +43,7 @@ import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
 import { formatMessageTime } from '../format';
 import { TaskAssignmentCard } from '../task-assignment-card';
+import { useRuntimeMap } from '../runtime-map-context';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -369,6 +370,8 @@ export function MessageBubble({
     || senderShort
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
+  const senderOwner = useRuntimeMap()[message.sender];
+  const isAgentMessage = !message.isMe && Boolean(senderOwner || message.workerName || message.runtime || message.agentStatus || message.isStreaming);
   const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
     && (message.workerName || message.runtime || isManagerSender(message.sender, senderLabel))
     ? parseWorkflowNotice(message.content, message.runtime) : null;
@@ -558,7 +561,7 @@ export function MessageBubble({
             <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
               {senderLabel}
             </span>
-            {message.isEdited && (
+            {message.isEdited && !isAgentMessage && (
               <span
                 className="shrink-0 text-xs text-muted-foreground italic"
                 title={

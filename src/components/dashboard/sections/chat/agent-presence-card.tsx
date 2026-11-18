@@ -45,7 +45,7 @@ import type { WorkflowItem } from '@/lib/a2ui/workflow';
 import { formatAgoZh, formatDurationZh } from '@/lib/worker-activity';
 import { PHASE_STATUS_TOKEN, statusBadgeClass } from '@/lib/status-tokens';
 import type { StatusToken } from '@/lib/status-tokens';
-import { roomHash, tasksHash } from '@/lib/nav-hash';
+import { tasksHash } from '@/lib/nav-hash';
 
 /** 指针从头像移到卡片之间留一点余量，否则鼠标一走到卡上就关了。 */
 const HOVER_CLOSE_GRACE_MS = 150;
@@ -479,12 +479,8 @@ function PresenceCard({
   // 一条直达链接：项目 overlay 认出来的 project_id 最可信，其次用房间任务的
   // runId（项目工作流卡的 runId 就是项目 id；workerflow 的 run-xxxx 认不出来时，
   // 任务看板按 isStaleProjectSelection 忽略未知选中，落点是「打开看板」）。
-  const link = useMemo(() => {
-    const projectTarget = enriched.projectId ?? roomTask?.runId;
-    if (projectTarget) return { hash: tasksHash(projectTarget), label: '在任务看板打开' };
-    if (roomId) return { hash: roomHash(roomId), label: '在本空间查看' };
-    return null;
-  }, [enriched.projectId, roomTask?.runId, roomId]);
+  const projectTarget = enriched.projectId ?? roomTask?.runId;
+  const boardHash = projectTarget ? tasksHash(projectTarget) : null;
 
   const chip = rows.length > 0 ? buildHeaderChip(status, senderStatus) : null;
 
@@ -544,23 +540,23 @@ function PresenceCard({
               </div>
             ))}
           </dl>
-          {link && (
+          {boardHash && (
             <a
-              href={link.hash}
+              href={boardHash}
               onClick={(event) => {
                 // 单一导航路径约定（与 mobile-quick-bar / header 同一口径）：
                 // 只写 hash，剩下的交给 use-active-section 的 hashchange 解析，
                 // 卡片自己绝不调 setActiveSection。href 仍然保留，右键拷贝链接
                 // 和禁用 JS 时都指向同一个落点。
                 event.preventDefault();
-                window.location.hash = link.hash;
+                window.location.hash = boardHash;
                 onClose();
               }}
               autoFocus={autoFocusLink}
               className="mt-2.5 inline-flex items-center gap-1.5 self-start rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>{link.label}</span>
+              <span>在任务看板打开</span>
             </a>
           )}
         </>
