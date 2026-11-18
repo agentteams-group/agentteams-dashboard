@@ -1003,7 +1003,11 @@ export function mergeAnswerFragments(messages: DisplayMessage[]): DisplayMessage
  * on demand by the thread panel. Keeping them out of the main timeline
  * prevents runtime replies from appearing as duplicate top-level messages.
  */
-export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
+export function formatMatrixEvents(
+  events: MatrixEvent[],
+  currentUserId: string,
+  { includeThreadReplies = false } = {},
+): DisplayMessage[] {
   const messages = new Map<string, DisplayMessage>();
   const pendingRevisions = new Map<string, { message: DisplayMessage; count: number }>();
   const replyCounts = new Map<string, number>();
@@ -1089,7 +1093,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     // 2. When the root is the current user's message and the reply is from an
     //    agent — the agent's final answer should stay in the main timeline,
     //    not be hidden in a sub-thread.
-    if (formatted.isThreadReply && formatted.threadId) {
+    if (!includeThreadReplies && formatted.isThreadReply && formatted.threadId) {
       const rootMessage = messages.get(formatted.threadId);
       if (!rootMessage) {
         // The root is outside the loaded window (pagination / sync gap). The

@@ -790,10 +790,13 @@ export function ChatRoom({
   }, [setContextPanel]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
-    setThreadMention(null);
-    setActiveThread(roomReplies.rootByReply.get(message.id) ?? message);
+    const root = roomReplies.rootByReply.get(message.id)
+      ?? (message.threadId ? messagesWithReplyCounts.find(item => item.id === message.threadId) : undefined)
+      ?? message;
+    setThreadMention(root.id === message.id ? null : message);
+    setActiveThread(root);
     setContextPanel('thread');
-  }, [roomReplies, setContextPanel]);
+  }, [roomReplies, messagesWithReplyCounts, setContextPanel]);
 
   const handleTogglePanel = useCallback((panel: RoomContextTab) => {
     setContextPanel(contextPanel === panel ? null : panel);

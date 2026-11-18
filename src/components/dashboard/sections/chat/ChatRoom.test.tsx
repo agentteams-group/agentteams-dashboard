@@ -5,6 +5,7 @@ import { forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { RuntimeMapProvider } from './runtime-map-context';
 import { ChatProvider } from './ChatStore';
 import {
   ChatRoom,
@@ -17,7 +18,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
-import { matrixApi, MatrixRequestError } from '@/lib/matrix-api';
+import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
@@ -47,6 +48,7 @@ const mocks = vi.hoisted(() => {
   };
   // Per-test overrides (member list / session dots).
   const roomMembersChunk: unknown[] = [];
+  const threadMessagesChunk: MatrixEvent[] = [];
   let agentStatusMap: Record<string, unknown> = {};
   return {
     sendReceiptMutate,
@@ -57,6 +59,7 @@ const mocks = vi.hoisted(() => {
     roomMessagesChunk,
     virtuoso,
     roomMembersChunk,
+    threadMessagesChunk,
     roomState: { data: null as null | { type: string; state_key: string; content: { membership: string } }[] },
     getAgentStatusMap: () => agentStatusMap,
     setAgentStatusMap: (v: Record<string, unknown>) => {
@@ -104,7 +107,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     useMatrixRoomState: () => mocks.roomState,
     useMatrixReadMarker: () => ({ data: { event_id: '$old' }, isSuccess: true, isError: false }),
     useMatrixReadReceipts: () => ({}),
-    useMatrixThreadMessages: () => ({ data: { chunk: [] }, isLoading: false, isError: false }),
+    useMatrixThreadMessages: () => ({ data: { chunk: mocks.threadMessagesChunk }, isLoading: false, isError: false }),
     useMatrixSetReadMarker: () => ({ mutate: mocks.setReadMarkerMutate, isPending: false }),
     useMatrixSendReadReceipt: () => ({ mutate: mocks.sendReceiptMutate }),
     useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, isPending: false, error: null }),
@@ -133,13 +136,13 @@ vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
   MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
-function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
+function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}, runtimeMap?: Parameters<typeof RuntimeMapProvider>[0]['map']) {
   const queryClient = new QueryClient();
   return render(
     <ChatProvider>
       <ChatRoom roomId="!room:test" roomName="测试房间" {...props} />
     </ChatProvider>,
-    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider> },
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}><TooltipProvider><RuntimeMapProvider map={runtimeMap ?? {}}>{children}</RuntimeMapProvider></TooltipProvider></QueryClientProvider> },
   );
 }
 
@@ -221,6 +224,35 @@ describe('ChatRoom read-position dual-write', () => {
     }
   });
 
+  it('opens topics from message actions and groups Agent steps with their answers', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    const agent = '@worker:test';
+    const entry = (id: string, seconds: number, body: string, runId: string): MatrixEvent => ({
+      event_id: id, origin_server_ts: seconds * 1000, sender: agent, type: 'm.room.message',
+      content: { msgtype: 'm.text', body, 'org.agentteams.run_id': runId,
+        'm.relates_to': { rel_type: 'm.thread', event_id: '$old' } },
+    });
+    mocks.threadMessagesChunk.push(
+      entry('$step1', 3, 'Thinking:\n\n验证第一条', 'run1'),
+      entry('$tool1', 4, 'Thinking:\n\n继续验证', 'run1'),
+      entry('$answer1', 5, '第一次处理已完成', 'run1'),
+      entry('$step2', 6, 'Thinking:\n\n验证第二条', ''),
+      entry('$answer2', 7, '第二次处理已完成', ''),
+    );
+    renderChatRoom({}, { [agent]: { workerName: 'worker', runtime: 'qwenpaw' } });
+    const original = screen.getByText('第一条').closest<HTMLElement>('[data-chat-message]')!;
+    fireEvent.mouseEnter(original.querySelector('[data-chat-message-body]')!);
+    fireEvent.click(within(original).getByRole('button', { name: '查看话题' }));
+    const panel = within(screen.getByRole('complementary'));
+    const first = panel.getByText('第一次处理已完成').closest<HTMLElement>('[data-chat-message]')!;
+    const second = panel.getByText('第二次处理已完成').closest<HTMLElement>('[data-chat-message]')!;
+    expect(panel.getAllByText('过程', { exact: true })).toHaveLength(2);
+    expect(first).not.toBe(second);
+    expect(within(first).getByText('思考 2')).toBeInTheDocument();
+    expect(within(second).getByText('思考 1')).toBeInTheDocument();
+    expect(panel.getByText('2 条回复')).toBeInTheDocument();
+  });
+
   it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'test' });
     useSectionStore.setState({ mentionRoomId: '!room:test' });
@@ -273,6 +305,7 @@ describe('ChatRoom read-position dual-write', () => {
     cleanup();
     vi.clearAllMocks();
     mocks.roomMembersChunk.length = 0;
+    mocks.threadMessagesChunk.length = 0;
     mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
     mocks.olderMessages.hasNextPage = false;

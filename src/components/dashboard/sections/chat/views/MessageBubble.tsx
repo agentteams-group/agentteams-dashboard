@@ -853,7 +853,7 @@ export function MessageBubble({
               onOpenThread(message);
             }}
             className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-primary"
-            title="在话题中查看回复"
+            title="查看话题"
           >
             <span>↩</span>
             {message.replyCount} 条回复
@@ -886,7 +886,7 @@ export function MessageBubble({
               <ActionButton title="回复" icon={ICON_PATHS.reply} onClick={() => onReply(message)} />
             )}
             {onOpenThread && (
-              <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
+              <ActionButton title="查看话题" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
           </div>
