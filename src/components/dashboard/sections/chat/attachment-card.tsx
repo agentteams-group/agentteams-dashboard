@@ -1,159 +1,64 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Download, FileText, ChevronDown, ChevronRight, Loader2, AlertTriangle } from 'lucide-react';
+import { useContext, useState } from 'react';
+import { Download, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { SaveToHumanFiles } from './save-to-human-files';
+import { AttachmentPreviewContext, AttachmentPreviewDrawer, attachmentPreviewKind } from './attachment-preview';
+import { cn } from '@/lib/utils';
 
 interface AttachmentCardProps {
-  payload: { url: string; filename: string; mimetype: string };
-  /** Optional homeserver override (used to resolve mxc:// to a download URL). */
+  payload: { url: string; filename: string; mimetype: string; size?: number };
   homeserver?: string;
-  /** One-line variant for a full-text link inside the process fold. */
   compact?: boolean;
 }
 
-const TEXT_MIME = /^(text\/|application\/json|application\/xml|application\/x-|image\/svg)/;
-const PREVIEW_LIMIT = 256 * 1024;
-
-function friendlyMimeType(mimetype: string): string {
-  if (mimetype.startsWith('text/')) return '文本';
-  if (mimetype.startsWith('image/')) return '图片';
+function attachmentType(mimetype: string, kind: ReturnType<typeof attachmentPreviewKind>) {
+  if (kind === 'html') return 'HTML';
+  if (kind === 'markdown') return 'Markdown';
+  if (kind === 'text') return '文本';
   if (mimetype.startsWith('application/pdf')) return 'PDF';
-  if (mimetype.startsWith('application/json')) return 'JSON';
-  if (mimetype.startsWith('application/x-') || mimetype.includes('shell')) return '脚本';
-  if (mimetype.startsWith('application/zip') || mimetype.includes('archive')) return '压缩包';
-  return mimetype || '附件';
+  if (mimetype.startsWith('application/zip')) return '压缩包';
+  return '文件';
 }
 
 export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardProps) {
   const { homeserver: storeHomeserver } = useMatrixStore();
-  const base = homeserver || storeHomeserver;
-  const downloadUrl = mxcToDownloadUrl(payload.url, base);
-  // ?download=true makes the homeserver send Content-Disposition: attachment
-  // so browsers download instead of previewing the file inline.
-  const forcedDownloadUrl = downloadUrl
-    ? `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}download=true`
-    : undefined;
-  const isHtml = payload.mimetype === 'text/html' || /\.html?$/i.test(payload.filename);
-  const [open, setOpen] = useState(isHtml);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const canPreview = TEXT_MIME.test(payload.mimetype);
-
-  const loadPreview = useCallback(async () => {
-    if (!downloadUrl) return;
-    setLoading(true);
-    setPreviewError(null);
-    try {
-      const res = await fetch(downloadUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      if (isHtml && text.length > PREVIEW_LIMIT) {
-        setPreviewError('HTML 文件过大，请下载后查看');
-        return;
-      }
-      setPreview(text.length > PREVIEW_LIMIT ? `${text.slice(0, PREVIEW_LIMIT)}…（内容已截断）` : text);
-    } catch {
-      setPreviewError('预览加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [downloadUrl, isHtml]);
-
-  useEffect(() => {
-    if (!isHtml || !open || preview || previewError || loading) return;
-    void loadPreview();
-  }, [isHtml, open, preview, previewError, loading, loadPreview]);
-
-  if (compact) {
-    return (
-      <div className="flex max-w-full items-center gap-2 rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
-        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={payload.filename}>
-          全文附件 · {payload.filename}
-        </span>
-        {forcedDownloadUrl && (
-          <a
-            href={forcedDownloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex shrink-0 items-center gap-1 text-xs text-emerald-600 hover:underline"
-            title="下载全文"
-          >
-            <Download className="h-3 w-3" />
-            下载
-          </a>
-        )}
-      </div>
-    );
-  }
+  const openPreview = useContext(AttachmentPreviewContext);
+  const [standalonePreview, setStandalonePreview] = useState(false);
+  const file = { ...payload, homeserver: homeserver || storeHomeserver };
+  const download = mxcToDownloadUrl(file.url, file.homeserver, { download: true });
+  const kind = attachmentPreviewKind(file);
+  const type = attachmentType(payload.mimetype, kind);
+  const size = file.size ? (file.size >= 1_048_576 ? `${(file.size / 1_048_576).toFixed(1)} MB` : `${(file.size / 1024).toFixed(1)} KB`) : null;
 
   return (
-    <div className="my-2 rounded-lg border border-border/60 bg-muted/30 overflow-hidden max-w-full">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium truncate">{payload.filename}</p>
-          <p className="text-xs text-muted-foreground">{friendlyMimeType(payload.mimetype)} · 全文附件</p>
+    <div className={cn('group/attachment my-2 max-w-full rounded-xl border border-border/70 bg-card transition-colors hover:border-border focus-within:border-border', compact && 'my-1 rounded-lg')}>
+      <div className={cn('flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 p-3', compact && 'gap-x-2 p-2')}>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground', compact && 'size-8')}>
+            <FileText className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold" title={file.filename}>{file.filename}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{type}{size ? ` · ${size}` : ''}</p>
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {canPreview && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => {
-                const next = !open;
-                setOpen(next);
-                if (next && !preview && !previewError) loadPreview();
-              }}
-            >
-              {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-              {open ? '收起' : '预览'}
-            </Button>
-          )}
-          {forcedDownloadUrl && (
-            <a
-              href={forcedDownloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline px-2 h-7"
-              title="下载全文"
-            >
-              <Download className="w-3.5 h-3.5" />
-              下载
-            </a>
-          )}
-        </div>
+        {download && <div className="ml-auto flex shrink-0 items-center gap-1">
+          <SaveToHumanFiles filename={file.filename} mediaUrl={file.url} homeserver={file.homeserver} iconsOnly />
+          <Button asChild variant="ghost" size="icon" className="size-8 text-muted-foreground">
+            <a href={download} download target="_blank" rel="noopener noreferrer" aria-label={`下载 ${file.filename}`} title="下载"><Download className="size-4" /></a>
+          </Button>
+          {kind && <Button variant="outline" size="sm" className="h-8 rounded-lg px-2.5"
+            aria-label={`查看 ${file.filename}`}
+            onClick={event => { event.stopPropagation(); if (openPreview) openPreview(file); else setStandalonePreview(true); }}>
+            查看
+          </Button>}
+        </div>}
       </div>
-      {open && (
-        <div className="px-3 pb-3 border-t border-border/30">
-          {loading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              加载预览...
-            </div>
-          ) : previewError ? (
-            <div className="flex items-center gap-2 text-xs text-red-500 py-2">
-              <AlertTriangle className="w-3 h-3" />
-              {previewError}
-            </div>
-          ) : preview && isHtml ? (
-            <div className="mt-2">
-              <HtmlPreview html={preview} title={payload.filename} baseHref={downloadUrl} />
-            </div>
-          ) : preview ? (
-            <pre className="mt-2 text-xs whitespace-pre-wrap break-all font-mono text-muted-foreground max-h-96 overflow-y-auto">
-              {preview}
-            </pre>
-          ) : null}
-        </div>
-      )}
+      {standalonePreview && <AttachmentPreviewDrawer file={file} onClose={() => setStandalonePreview(false)} />}
     </div>
   );
 }

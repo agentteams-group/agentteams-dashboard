@@ -1,5 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MessageBubble } from './MessageBubble';
@@ -32,9 +33,11 @@ function makeMessage(overrides: Partial<DisplayMessage>): DisplayMessage {
 
 function renderBubble(message: DisplayMessage) {
   return render(
-    <TooltipProvider>
-      <MessageBubble message={message} showSender={false} isContinuation={false} />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <MessageBubble message={message} showSender={false} isContinuation={false} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -148,10 +151,11 @@ describe('MessageBubble live run progress', () => {
     );
     expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
     expandProcess();
-    expect(screen.getByText('长消息叙述')).toBeInTheDocument();
-    // Compact full-text link: one line, filename + download.
-    expect(screen.getByText(/全文附件 · log\.txt/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+    const process = within(screen.getByTestId('run-process-preview'));
+    expect(process.getByText('长消息叙述')).toBeInTheDocument();
+    expect(process.getByText('log.txt')).toBeInTheDocument();
+    expect(process.getByRole('link', { name: '下载 log.txt' })).toBeInTheDocument();
+    expect(process.getByRole('button', { name: '查看 log.txt' })).toBeInTheDocument();
   });
 
   it('scrolls an over-long narration inside a bounded process panel', () => {

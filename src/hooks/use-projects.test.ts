@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { workflowToBoard, mergeMainTaskIndex } from './use-projects';
+import { workflowToBoard, mergeMainTaskIndex, groupLegacyProjectTasks } from './use-projects';
+import { mainTasks, subtaskProgress } from '@/lib/task-hierarchy';
 import type { WorkflowResponse, ProjectSummary, WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 
 function proj(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
@@ -160,4 +161,20 @@ describe('main Task index', () => {
     const rows = ['alpha', 'beta'].map(team_id => ({ task_id: 'main', main_task_id: 'main', title: 'Main', team_id, status: 'completed' }));
     expect(mergeMainTaskIndex([], rows)).toHaveLength(2);
   });
+});
+
+
+it('shows one completed board card for a legacy project and keeps its execution nodes in the hierarchy', () => {
+  const { tasks, projects } = workflowToBoard([proj({ status: 'completed' })], new Map([['p1', wf({
+    status: 'completed',
+    nodes: [{ id: 'plan', name: 'Plan', status: 'completed' }, { id: 'review', name: 'Review', status: 'completed' }],
+    edges: [{ source: 'plan', target: 'review' }],
+    tasks_detail: [{ task_id: 'plan', room_id: 'room:!task:test' }, { task_id: 'review', room_id: 'room:!task:test' }],
+  })]]));
+  const grouped = groupLegacyProjectTasks(tasks, projects);
+  const roots = mainTasks(grouped);
+  expect(roots).toHaveLength(1);
+  expect(roots[0]).toMatchObject({ runId: 'p1', status: 'completed', executionRoomId: '!task:test' });
+  expect(subtaskProgress(roots[0], grouped)).toEqual({ completed: 2, total: 2, percent: 100 });
+  expect(grouped.find(task => task.runId === 'review')).toMatchObject({ parentTaskId: 'p1', dependsOn: ['plan'] });
 });

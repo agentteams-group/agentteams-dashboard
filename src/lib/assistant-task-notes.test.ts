@@ -17,8 +17,8 @@ describe('assistant task notes', () => {
       { ts: '2026-11-14T10:35:00Z', to: 'submitted', action: 'submit_task' },
     ];
     const [item] = conversationTaskNotes(room, [workflow({ source_room_id: room.id, tasks_detail: [{ task_id: 'task', status: 'submitted', history }] })]);
-    expect(taskDuration(item, Date.parse('2026-11-14T14:00:00Z'))).toBe('33 分钟');
-    expect(taskDuration({ ...item, group: 'running', finishedAt: undefined }, Date.parse('2026-11-14T10:40:00Z'))).toBe('38 分钟');
+    expect(taskDuration(item, Date.parse('2026-11-14T14:00:00Z'))).toBe('33 分 00 秒');
+    expect(taskDuration({ ...item, group: 'running', finishedAt: undefined }, Date.parse('2026-11-14T11:40:07Z'))).toBe('1 小时 38 分 07 秒');
     expect(taskDuration({ ...item, startedAt: undefined }, Date.now())).toBe('耗时待同步');
     expect(taskDuration({ ...item, group: 'pending', startedAt: undefined }, Date.now())).toBe('未开始');
   });

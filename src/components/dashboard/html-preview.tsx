@@ -17,11 +17,13 @@ export function HtmlPreview({
   title,
   baseHref,
   className,
+  interactive = true,
 }: {
   html: string;
   title: string;
   baseHref?: string;
   className?: string;
+  interactive?: boolean;
 }) {
   const document = useMemo(() => {
     if (!baseHref) return html;
@@ -33,7 +35,7 @@ export function HtmlPreview({
 
   return (
     <iframe
-      sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
+      sandbox={interactive ? 'allow-scripts allow-forms allow-modals allow-popups allow-downloads' : ''}
       referrerPolicy="no-referrer"
       srcDoc={document}
       title={title}

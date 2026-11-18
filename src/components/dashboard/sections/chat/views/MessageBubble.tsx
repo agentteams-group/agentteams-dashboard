@@ -43,6 +43,7 @@ import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
 import { formatMessageTime } from '../format';
 import { TaskAssignmentCard } from '../task-assignment-card';
+import { useRuntimeMap } from '../runtime-map-context';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
@@ -56,8 +57,8 @@ interface MessageBubbleProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
-  /** Opens the owning worker's files panel (team rooms: multi-worker source). */
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  /** Opens the task or team file panel from an assignment card. */
+  onOpenRoomFiles?: () => void;
   /**
    * Opens the owning worker's read-only QwenPaw sessions (C / #1295).
    * Only worker senders get a clickable avatar; humans do not.
@@ -343,7 +344,7 @@ export function MessageBubble({
   onResend,
   onCancel,
   onSendConfirmation,
-  onOpenWorkerFiles,
+  onOpenRoomFiles,
   onOpenWorkerChats,
   senderShort,
   memberMap,
@@ -369,6 +370,8 @@ export function MessageBubble({
     || senderShort
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
+  const senderOwner = useRuntimeMap()[message.sender];
+  const isAgentMessage = !message.isMe && Boolean(senderOwner || message.workerName || message.runtime || message.agentStatus || message.isStreaming);
   const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
     && (message.workerName || message.runtime || isManagerSender(message.sender, senderLabel))
     ? parseWorkflowNotice(message.content, message.runtime) : null;
@@ -497,7 +500,7 @@ export function MessageBubble({
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
   }
   if (workflowNotice && parsedBlocks.every(block => block.type === 'text')) {
-    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenWorkerFiles ? () => onOpenWorkerFiles(message) : undefined} />;
+    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenRoomFiles} />;
     return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
   }
 
@@ -558,7 +561,7 @@ export function MessageBubble({
             <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
               {senderLabel}
             </span>
-            {message.isEdited && (
+            {message.isEdited && !isAgentMessage && (
               <span
                 className="shrink-0 text-xs text-muted-foreground italic"
                 title={
@@ -848,7 +851,7 @@ export function MessageBubble({
           </div>
         )}
 
-        {!!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
+        {message.isMe && !!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button
@@ -893,9 +896,6 @@ export function MessageBubble({
               <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
-            {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
-              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
-            )}
           </div>
       </div>
     </div>

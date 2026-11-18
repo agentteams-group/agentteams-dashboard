@@ -162,12 +162,22 @@ export function RunProcessDisclosure({
         >
           <div ref={contentRef} className="space-y-1.5">
           {blocks.map((block, idx) => {
+            const tool = toolPayloadOf(block);
+            const payload = active === false && tool
+              ? {
+                  ...tool,
+                  isStreaming: false,
+                  status: !tool.status || ['pending', 'running', 'in_progress', 'queued'].includes(tool.status)
+                    ? '结果未确认'
+                    : tool.status,
+                }
+              : block.payload;
             if (block.type === 'thinking') {
               return (
                 <ThinkingCard
                   key={`thinking-${idx}`}
                   content={block.content || ''}
-                  isStreaming={block.isStreaming ?? isStreaming}
+                  isStreaming={active === false ? false : block.isStreaming ?? isStreaming}
                   runtime={block.runtimeHint ?? runtime}
                   eventId={eventId}
                   revisionCount={revisionCount}
@@ -179,7 +189,7 @@ export function RunProcessDisclosure({
               return (
                 <ToolCallView
                   key={`tool-${idx}`}
-                  payload={(block.payload ?? {}) as ToolCallPayload}
+                  payload={(payload ?? {}) as ToolCallPayload}
                   runtime={block.runtimeHint ?? runtime}
                   eventId={eventId}
                   revisionCount={revisionCount}
@@ -190,7 +200,7 @@ export function RunProcessDisclosure({
             if (block.type === 'card') {
               return (
                 <div key={`card-${idx}`} className="w-full [&>div]:my-0">
-                  <StreamingCard payload={block.payload as Record<string, unknown>} />
+                  <StreamingCard payload={payload as Record<string, unknown>} />
                 </div>
               );
             }
@@ -200,7 +210,7 @@ export function RunProcessDisclosure({
                   key={`text-${idx}`}
                   className="w-full px-1 py-0.5 text-sm leading-relaxed"
                 >
-                  <MarkdownMessage content={block.text ?? ''} isStreaming={block.isStreaming ?? isStreaming} />
+                  <MarkdownMessage content={block.text ?? ''} isStreaming={active === false ? false : block.isStreaming ?? isStreaming} />
                 </div>
               );
             }

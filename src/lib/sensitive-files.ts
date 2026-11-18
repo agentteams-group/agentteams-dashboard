@@ -4,6 +4,7 @@
 // 知识库 v2（docker-proxy 数据面）server 侧过滤需要同一定义 → 提为共享 lib。
 export const SENSITIVE_PATTERNS: readonly RegExp[] = [
   /^\.hermes\/config\.yaml$/,
+  /^\.(?:qwenpaw|copaw)\.secret(?:\/|$)/,
   /^\.ssh\//,
   // 插件 _kb_is_sensitive 双规则：credentials 目录本身 + 其下内容
   /^credentials$/,

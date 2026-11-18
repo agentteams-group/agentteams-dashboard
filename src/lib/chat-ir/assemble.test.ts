@@ -99,6 +99,19 @@ describe('ChatIR turn assembly', () => {
     expect(latestEventId).toBe('answer');
   });
 
+  it('settles earlier process tiles when a final edit arrives after an independent message', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('step', '@w:server', '正在完成项目', 1_000, threadOf('root')),
+      ev('report', '@service:server', '项目已验收', 2_000),
+      ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
+    ];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined, 'finalized']);
+    expect(messages[0].content).toBe('');
+    expect(messages[2].content).toBe('最终答案');
+  });
+
   it('keeps qwenpaw thread narration inside the process fold', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),

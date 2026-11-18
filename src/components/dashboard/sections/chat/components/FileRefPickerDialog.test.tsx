@@ -4,7 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { FileRefPickerDialog, computeRefPrefix } from './FileRefPickerDialog';
 
 vi.mock('./PersonalFilePicker', () => ({ PersonalFilePicker: ({ onSend, onDone }: { onSend: (_file: File) => void; onDone: () => void }) => <button onClick={() => { onSend(new File(['hello'], 'personal.txt')); onDone(); }}>发送个人附件</button> }));
-vi.mock('@/hooks/use-agentteams-storage', () => ({ useWorkerFiles: () => ({ data: [{ key: 'work.txt', size: 5, isPrefix: false }], isLoading: false }), useTeamFiles: () => ({ data: [], isLoading: false }) }));
+vi.mock('@/hooks/use-agentteams-storage', () => ({ useWorkerFiles: () => ({ data: [{ key: 'work.txt', size: 5, isPrefix: false }], isLoading: false }) }));
+vi.mock('@/hooks/use-collaboration-files', () => ({ useCollaborationFiles: () => ({ data: { objects: [], root: 'teams/team/shared/' }, isLoading: false }) }));
 afterEach(cleanup);
 it('keeps personal attachments separate from workspace references', () => {
   const send = vi.fn();

@@ -1,7 +1,7 @@
+import type { IndexedTask } from '@/hooks/use-projects';
 import type { WorkflowResponse } from './agentteams-projects-api';
 import type { HitlConfirmation } from './hitl-inbox';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
-import { formatDurationZh } from './worker-activity';
 
 export const TASK_NOTE_GROUPS = [
   { id: 'confirmation', label: '待人工确认', attention: true },
@@ -22,10 +22,12 @@ export interface AssistantTaskNoteItem {
   title: string;
   projectId?: string;
   projectTitle?: string;
+  mainTaskId?: string;
   teamId?: string;
   assignee?: string;
   roomId?: string;
   status?: string;
+  createdAt?: string;
   startedAt?: string;
   finishedAt?: string;
   confirmationId?: string;
@@ -87,6 +89,8 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
       const detail = detailById.get(taskId);
       const status = node?.status === 'completed' ? 'completed' : detail?.status || node?.status;
       const history = detail?.history ?? [];
+      // Legacy project steps materialize their execution task on preparation.
+      const createdAt = history[0]?.from === 'planned' && history[0]?.to === 'prepared' ? history[0].ts : undefined;
       const startedAt = history.find(event => ['in_progress', 'in-progress', 'running'].includes(event.to))?.ts
         ?? history.find(event => ['assigned', 'delegated'].includes(event.to))?.ts;
       const finishedAt = ['submitted', 'completed', 'failed', 'error', 'cancelled', 'canceled'].includes(status ?? '')
@@ -96,6 +100,7 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
         id: JSON.stringify([workflow.team_id, workflow.project_id, taskId]),
         group: taskGroup(status),
         status,
+        createdAt,
         startedAt,
         finishedAt,
         title: node?.name || taskId,
@@ -112,17 +117,29 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
 
 /** Execution time stops on submission; acceptance waiting is not execution. */
 export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
-  if (!item.startedAt) return item.group === 'pending' ? '未开始' : '耗时待同步';
+  const since = item.startedAt ?? (item.group === 'running' ? item.createdAt : undefined);
+  if (!since) return item.group === 'pending' ? '未开始' : '耗时待同步';
   const finished = ['review', 'completed', 'failed', 'cancelled'].includes(item.group);
   if (finished && !item.finishedAt) return '耗时待同步';
   const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
-  return Number.isFinite(end) ? formatDurationZh(item.startedAt, end) ?? '耗时待同步' : '耗时待同步';
+  const start = Date.parse(since);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '耗时待同步';
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  return [
+    days > 0 && `${days} 天`,
+    hours > 0 && `${hours % 24} 小时`,
+    minutes > 0 && `${minutes % 60} 分`,
+    `${String(seconds % 60).padStart(minutes > 0 ? 2 : 1, '0')} 秒`,
+  ].filter(Boolean).join(' ');
 }
 
 /** Conversation tips use explicit origin links, not platform/team-wide scope. */
-export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowResponse[]): AssistantTaskNoteItem[] {
+export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowResponse[], taskIndex: IndexedTask[] = []): AssistantTaskNoteItem[] {
   const matches = (value: unknown) => typeof value === 'string' && value.replace(/^room:/, '') === room.id;
-  return workflows.flatMap(workflow => {
+  const items = workflows.flatMap(workflow => {
     const fromConversation = matches(workflow.source_room_id)
       || workflow.reply_route?.channel === 'matrix' && matches(workflow.reply_route.target_session);
     const taskIds = new Set((workflow.tasks_detail ?? []).filter(task => matches(task.source_room_id)).map(task => task.task_id));
@@ -136,4 +153,27 @@ export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowRespons
       roomId: item.roomId === room.id ? undefined : item.roomId,
     }));
   });
+
+  const byId = new Map(items.map(item => [item.id, item]));
+  for (const task of taskIndex) {
+    if (task.main_task_id !== task.task_id || !matches(task.source_room_id)) continue;
+    const projectId = task.project_id || undefined;
+    const id = JSON.stringify([task.team_id, projectId, task.task_id]);
+    const executionRoom = task.room_id?.replace(/^room:/, '');
+    const existing = byId.get(id);
+    byId.set(id, {
+      ...existing,
+      id,
+      mainTaskId: task.task_id,
+      title: task.title || task.task_id,
+      group: taskGroup(task.status),
+      status: task.status,
+      createdAt: task.created_at || existing?.createdAt,
+      projectId,
+      teamId: task.team_id,
+      assignee: task.assigned_to,
+      roomId: executionRoom === room.id ? undefined : executionRoom,
+    });
+  }
+  return [...byId.values()];
 }

@@ -334,10 +334,10 @@ describe('ChatRoom read-position dual-write', () => {
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
-    expect(screen.getByText('工作目录')).toBeInTheDocument();
+    expect(screen.getByText(/此会话没有共享文件目录/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
-    expect(screen.queryByText('工作目录')).toBeNull();
+    expect(screen.queryByText(/此会话没有共享文件目录/)).toBeNull();
   });
 
   it('shows the session dot on worker avatars (and only workers) in the member list', () => {

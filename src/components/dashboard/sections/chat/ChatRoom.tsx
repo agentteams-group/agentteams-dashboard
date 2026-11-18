@@ -7,9 +7,10 @@ import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
 import { useOutboundMessages } from './hooks/useOutboundMessages';
-import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -65,7 +66,7 @@ import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
-export type ChatContextPanel = RoomContextTab | null;
+export type ChatContextPanel = RoomContextTab | 'attachment-preview' | null;
 
 /**
  * 命令面板命中跳房间消息时写的是 `#workbench/space/<roomId>?q=<词>`（方案 v3 B-1 延伸），
@@ -106,13 +107,12 @@ export function resetRoomSearchDeepLinkForTests(): void {
 
 interface ChatRoomProps {
   taskRoom?: boolean;
+  taskId?: string;
   agentRole?: RoomInfo['agentRole'];
   roomId: string;
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
-  /** Worker resource name owning this room; auto-selected in the files panel. */
-  defaultWorkerName?: string;
   /** Worker phase shown in the conversation header. */
   roomPhase?: string;
   /** Worker runtime shown in the conversation header. */
@@ -139,11 +139,11 @@ interface ChatRoomProps {
 
 export function ChatRoom({
   taskRoom = false,
+  taskId,
   agentRole,
   roomId,
   roomName,
   team,
-  defaultWorkerName,
   roomPhase,
   roomRuntime,
   workerMatrixUserIds,
@@ -170,6 +170,11 @@ export function ChatRoom({
     setInternalContextPanel(panel);
     onContextPanelChange?.(panel);
   }, [onContextPanelChange]);
+  const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
+  const openAttachmentPreview = useCallback((file: PreviewAttachment) => {
+    setPreviewAttachment(file);
+    setContextPanel('attachment-preview');
+  }, [setContextPanel]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [threadMention, setThreadMention] = useState<DisplayMessage | null>(null);
@@ -288,17 +293,16 @@ export function ChatRoom({
   // ChatIR: format raw Matrix events once, then assemble runtime turns. The
   // assembly adds turn ids, canonical/latest event ids (receipts), runtime
   // states and attachment placement on top of the formatted timeline.
+  const matrixMessages = useMemo(
+    // Execution notices drive the composer, independently of the timeline.
+    () => formatMatrixEvents(allEvents.filter(event => !(
+      workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
+    )), currentUserId),
+    [allEvents, currentUserId, workerMatrixUserIds],
+  );
   const chatIr = useMemo(
-    () => assembleChatTimeline(
-      // Execution notices drive the composer; keep them out of the runtime's
-      // thought/tool timeline while retaining raw events for read receipts.
-      formatMatrixEvents(allEvents.filter(event => !(
-        workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
-      )), currentUserId),
-      allEvents,
-      { currentUserId, runtimeMap },
-    ),
-    [allEvents, currentUserId, runtimeMap, workerMatrixUserIds],
+    () => assembleChatTimeline(matrixMessages, allEvents, { currentUserId, runtimeMap, now: sessionTick }),
+    [matrixMessages, allEvents, currentUserId, runtimeMap, sessionTick],
   );
   const formattedMessages = useMemo(() => markStoppedMessages(
     chatIr.messages, allEvents, workerMatrixUserIds,
@@ -359,6 +363,7 @@ export function ChatRoom({
 
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
+  const unreadAnchor = taskRoom ? null : readEventId;
 
   // Persist the read marker and send an m.read receipt whenever the user is
   // pinned to the bottom (on arrival of new messages or on scroll-back-down).
@@ -424,13 +429,13 @@ export function ChatRoom({
     if (didInitialScrollRef.current) return;
     didInitialScrollRef.current = true;
     const lastId = chatIr.latestEventId;
-    const hasUnreadDivider = Boolean(readEventId && lastId && readEventId !== lastId);
+    const hasUnreadDivider = Boolean(unreadAnchor && lastId && unreadAnchor !== lastId);
     if (hasUnreadDivider) {
-      scrollRef.current?.scrollToItem(`read-marker-${readEventId}`);
+      scrollRef.current?.scrollToItem(`read-marker-${unreadAnchor}`);
     } else {
       scrollRef.current?.scrollToBottom({ smooth: false });
     }
-  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
+  }, [messagesQuery.isSuccess, formattedMessages, unreadAnchor, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
 
   // Outbound message cluster (optimistic bubbles + system notices + send),
   // extracted verbatim; markAllRead is injected because sending a message
@@ -777,38 +782,20 @@ export function ChatRoom({
     [roomMembers]
   );
 
-  const {
-    workerOptions,
-    effectiveSelectedWorker,
-    selectedIsTeamShared,
-    setSelectedWorker,
-  } = useWorkerFileOptions({ team, roomMembers, runtimeMap, defaultWorkerName });
-
-  // Workspace space the composer can reference files from (#87): the selected
-  // worker's private space, or the team's shared space when shared is selected
-  // or no worker is resolvable in this room.
-  const fileRefTarget = effectiveSelectedWorker && !selectedIsTeamShared
-    ? { kind: 'worker' as const, ownerName: effectiveSelectedWorker }
-    : team?.name
-      ? { kind: 'team' as const, ownerName: team.name }
-      : undefined;
-
-  // "查看工作目录" on an agent bubble: open the worker files panel with that
-  // message's sender pre-selected (resolved via the runtime map).
-  const handleOpenWorkerFiles = useCallback((message: DisplayMessage) => {
-    const workerName = message.workerName || runtimeMap[message.sender]?.workerName;
-    if (!workerName) return;
-    setSelectedWorker(workerName);
+  const fileScope: CollaborationFileScope | undefined = taskRoom
+    ? { room: roomId, taskId: taskId ?? roomName.match(/^TASK[：:]\s*(.+)$/i)?.[1] }
+    : team?.name ? { team: team.name } : undefined;
+  const fileRefTarget = team?.name ? { kind: 'team' as const, ownerName: team.name } : undefined;
+  const handleOpenRoomFiles = useCallback(() => {
     setActiveThread(null);
     setContextPanel('files');
-  }, [runtimeMap, setSelectedWorker, setContextPanel]);
+  }, [setContextPanel]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
-    setSelectedWorker(null);
     setThreadMention(null);
     setActiveThread(message);
     setContextPanel('thread');
-  }, [setSelectedWorker, setContextPanel]);
+  }, [setContextPanel]);
 
   const handleTogglePanel = useCallback((panel: RoomContextTab) => {
     setContextPanel(contextPanel === panel ? null : panel);
@@ -816,6 +803,7 @@ export function ChatRoom({
 
   return (
     <MessageReadRoomContext.Provider value={roomId}>
+    <AttachmentPreviewContext.Provider value={openAttachmentPreview}>
     <div
       ref={chatLayoutRef}
       data-mention-event={focusedMentionId ?? threadMention?.id ?? undefined}
@@ -851,7 +839,7 @@ export function ChatRoom({
           sessionDot={sessionDot}
           memberCount={roomMembers.length}
           threadCount={threadRoots.length}
-          activePanel={contextPanel}
+          activePanel={contextPanel === 'attachment-preview' ? null : contextPanel}
           onTogglePanel={handleTogglePanel}
         />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
@@ -926,7 +914,7 @@ export function ChatRoom({
             ref={scrollRef}
             messages={formattedMessages}
             localMessages={localMessages}
-            readEventId={readEventId}
+            readEventId={unreadAnchor}
             focusedMentionId={focusedMentionId}
             hasNextPage={messagesQuery.hasNextPage || false}
             isFetchingNextPage={messagesQuery.isFetchingNextPage}
@@ -942,7 +930,7 @@ export function ChatRoom({
             onResend={canSend ? handleResendLocal : undefined}
             onCancel={handleCancelLocal}
             onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-            onOpenWorkerFiles={handleOpenWorkerFiles}
+            onOpenRoomFiles={fileScope ? handleOpenRoomFiles : undefined}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
             notices={systemNotices}
@@ -1023,22 +1011,21 @@ export function ChatRoom({
         />
       )}
 
-      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
+      {contextPanel === 'attachment-preview' && previewAttachment && (
+        <AttachmentPreviewPanel file={previewAttachment} onClose={() => setContextPanel(null)} />
+      )}
+      {contextPanel !== null && contextPanel !== 'attachment-preview' && !(taskRoom && contextPanel === 'tasks') && (
         <RoomContextPanel
           showTasks={!taskRoom}
           canSend={canSend}
           showMembers={!agentRole}
           roomId={roomId}
-          team={team}
+          fileScope={fileScope}
           activeTab={contextPanel}
           onTabChange={setContextPanel}
           onClose={() => setContextPanel(null)}
           roomMembers={roomMembers}
           senderStatusMap={senderStatusMap}
-          workerOptions={workerOptions}
-          effectiveSelectedWorker={effectiveSelectedWorker}
-          selectedIsTeamShared={selectedIsTeamShared}
-          onSelectWorker={setSelectedWorker}
           activeThread={activeThread}
           threadMention={threadMention}
           threadRoots={threadRoots}
@@ -1052,6 +1039,7 @@ export function ChatRoom({
         />
       )}
     </div>
+    </AttachmentPreviewContext.Provider>
     </MessageReadRoomContext.Provider>
   );
 }
