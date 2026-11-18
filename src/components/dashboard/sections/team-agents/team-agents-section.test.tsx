@@ -357,11 +357,13 @@ describe('Team and Agent resource cards', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     const dialog = screen.getByRole('dialog', { name: 'alpha · 基本信息' });
     expect(within(dialog).getByText('team-profile:alpha')).toBeInTheDocument();
+    // 关闭编辑弹窗（模态弹窗会把背景 aria-hidden，先关再点卡片上的「详情」）。
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    expect(screen.queryByRole('dialog', { name: 'alpha · 基本信息' })).toBeNull();
     // 详情 → 页内只读详情（「详情 · Alpha」）：与编辑弹窗是两个容器。
     fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
     expect(screen.getByRole('heading', { name: '详情 · Alpha' })).toBeInTheDocument();
-    expect(screen.getAllByText('team-profile:alpha')).toHaveLength(2);
-    expect(within(dialog).queryByRole('heading', { name: '详情 · Alpha' })).toBeNull();
+    expect(screen.getAllByText('team-profile:alpha')).toHaveLength(1);
     // 页内详情保留千锻工具。
     fireEvent.click(screen.getByRole('button', { name: '千锻 · 团队配置' }));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent('millforge-dialog:alpha');
