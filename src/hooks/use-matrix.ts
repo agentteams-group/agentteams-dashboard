@@ -757,6 +757,8 @@ export interface DisplayMessage {
   isThreadReply?: boolean;
   /** Number of replies in thread */
   replyCount?: number;
+  /** Matrix event targeted by a quoted reply in the current room. */
+  replyToEventId?: string;
   /** Whether this message has been edited */
   isEdited?: boolean;
   /** Number of m.replace revisions merged into this message (edit-chain count). */
@@ -840,17 +842,25 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
   }
 
   // A thread reply carries an m.thread relation pointing at the thread root.
-  const threadRelation = content['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;
+  const threadRelation = content['m.relates_to'] as {
+    rel_type?: string; event_id?: string; is_falling_back?: boolean; 'm.in_reply_to'?: { event_id?: string };
+  } | undefined;
   const isThreadReply = threadRelation?.rel_type === 'm.thread';
   const threadRootId = isThreadReply ? threadRelation?.event_id : undefined;
+  const target = threadRelation?.['m.in_reply_to']?.event_id;
+  const replyToEventId = typeof target === 'string' && target.startsWith('$') &&
+    (!isThreadReply || !threadRelation?.is_falling_back) ? target : undefined;
+  const body = normalizeMatrixMessageBody(content.body);
+  const replyBody = replyToEventId && body.startsWith('> <@') ? body.replace(/^(?:> [^\r\n]*\r?\n)+\r?\n/, '') : body;
+  const formattedBody = replyToEventId ? content.formatted_body?.replace(/^<mx-reply>[\s\S]*?<\/mx-reply>\s*/i, '') : content.formatted_body;
 
   const isStreaming = isMatrixStreaming(content);
   return {
     id: event.event_id,
     sender: event.sender,
     senderShort,
-    content: normalizeMatrixMessageBody(content.body),
-    formattedContent: content.formatted_body,
+    content: replyBody,
+    formattedContent: formattedBody,
     timestamp: event.origin_server_ts,
     type: content.msgtype || 'm.text',
     isMe: event.sender === currentUserId,
@@ -862,7 +872,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
       ? content['agentteams.workflow']
       : undefined,
     agentBlocks: parseAgentRunBlocks(content['org.agentteams.run'], isStreaming),
-    rawContent: content as Record<string, unknown>,
+    rawContent: replyToEventId ? { ...content, body: replyBody, formatted_body: formattedBody } : content as Record<string, unknown>,
     isEdited,
     eventId: event.event_id,
     canonicalEventId: threadRootId ?? event.event_id,
@@ -870,6 +880,7 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     runId: readAgentRunId(content),
     threadId: isThreadReply ? threadRootId : undefined,
     isThreadReply,
+    replyToEventId,
   };
 }
 
@@ -948,6 +959,7 @@ function canAppendAnswerFragment(head: DisplayMessage, fragment: DisplayMessage)
   if ((fragment.revisionCount ?? 0) > 0) return false;
   if (head.sender !== fragment.sender) return false;
   if (head.threadId !== fragment.threadId) return false;
+  if (fragment.replyToEventId) return false;
   if (fragment.timestamp - head.timestamp > ANSWER_FRAGMENT_MAX_GAP_MS) return false;
   return isPlainAgentText(head) && isPlainAgentText(fragment);
 }
@@ -1041,6 +1053,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
           id: rootId,
           rawContent: { ...formatted.rawContent, [READ_AUDIENCE_KEY]: root.rawContent?.[READ_AUDIENCE_KEY] },
           eventId: rootId,
+          replyToEventId: root.replyToEventId,
           canonicalEventId: rootId,
           latestEventId: event.event_id,
           sourceEventIds: [...new Set(editIds.filter((id): id is string => Boolean(id)))],
@@ -1105,6 +1118,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
             id: event.event_id,
             rawContent: { ...revision.message.rawContent, [READ_AUDIENCE_KEY]: formatted.rawContent?.[READ_AUDIENCE_KEY] },
             eventId: event.event_id,
+            replyToEventId: formatted.replyToEventId,
             revisionCount: revision.count,
             // Same policy as the in-place merge above: agent answers sort at
             // the edit time, human edits stay at the original position.

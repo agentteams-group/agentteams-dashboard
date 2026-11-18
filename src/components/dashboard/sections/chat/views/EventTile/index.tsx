@@ -10,6 +10,7 @@ interface EventTileProps {
   _message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
+  replyQuote?: React.ReactNode;
   onReply?: (_message: DisplayMessage) => void;
   onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
@@ -32,6 +33,7 @@ export function EventTile({
   _message,
   showSender,
   isContinuation,
+  replyQuote,
   onReply,
   onCopy,
   onOpenThread,
@@ -52,6 +54,7 @@ export function EventTile({
       message={_message}
       showSender={showSender}
       isContinuation={isContinuation}
+      replyQuote={replyQuote}
       onReply={onReply}
       onCopy={onCopy}
       onOpenThread={onOpenThread}

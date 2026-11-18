@@ -64,6 +64,7 @@ export function ChatPanel({
           integratedSidebar={!!room.agentRole || room.type === 'team'}
           roomId={room.id}
           roomName={room.name}
+          roomWorkerName={room.workerName}
           agentRole={room.agentRole}
           team={room.team}
           workerMatrixUserIds={room.workerMatrixUserIds ?? (room.matrixUserId ? [room.matrixUserId] : undefined)}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImper
 import { TimelinePanel, buildTimelineItems } from './TimelinePanel';
 import type { ScrollPanelHandle } from './ScrollPanel';
 import { buildGroupedMessages, type GroupedMessage } from '../grouper/MainGrouper';
+import { ReplyQuote } from '../views/ReplyQuote';
 import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
 import { EventTile } from '../views/EventTile';
 import type { DisplayMessage } from '@/hooks/use-matrix';
@@ -150,6 +151,8 @@ export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessa
 }
 
 interface MessageListProps {
+  roomId?: string;
+  onRevealReply?: (_eventId: string) => boolean;
   focusedMentionId?: string | null;
   messages: DisplayMessage[];
   /** Locally tracked outbound messages (sending/failed) shown above the composer. */
@@ -207,6 +210,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   {
     messages,
     focusedMentionId,
+    roomId,
+    onRevealReply,
     localMessages = [],
     readEventId,
     hasNextPage,
@@ -242,6 +247,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // disconnected bubbles.
   const displayMessages = useMemo(() => coalesceWorkerTurns(messages), [messages]);
   const grouped = useMemo(() => buildGroupedMessages(displayMessages), [displayMessages]);
+  const messagesByEventId = useMemo(() => {
+    const index = new Map<string, DisplayMessage>();
+    for (const message of displayMessages) {
+      for (const id of [message.id, message.eventId, ...(message.sourceEventIds ?? [])]) {
+        if (id) index.set(id, message);
+      }
+    }
+    return index;
+  }, [displayMessages]);
 
   // f5-1: timeline index space used by scrollToEvent. Same pure function and
   // same inputs as TimelinePanel's internal computation (fold on chatIr.messages
@@ -251,6 +265,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   const itemContent = useCallback((_index: number, gm: GroupedMessage) => {
     if (!gm) return null;
+    const replyToId = gm.message.replyToEventId;
+    const replyTarget = replyToId ? messagesByEventId.get(replyToId) : undefined;
     const focused = Boolean(focusedMentionId && (gm.message.id === focusedMentionId || gm.message.eventId === focusedMentionId || gm.message.sourceEventIds?.includes(focusedMentionId)));
     return (
       <div key={gm.message.id} className={focused ? 'rounded-lg border border-blue-500/30 bg-blue-500/5 px-2' : undefined}>
@@ -258,6 +274,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         _message={gm.message}
         showSender={gm.showSender}
         isContinuation={gm.isContinuation}
+        replyQuote={replyToId && <ReplyQuote roomId={roomId} eventId={replyToId} target={replyTarget} memberMap={memberMap}
+          onJump={replyTarget && onRevealReply ? () => onRevealReply(replyTarget.eventId || replyTarget.id) : undefined} />}
         onReply={onReply}
         onCopy={onCopy}
         onOpenThread={onOpenThread}
@@ -275,7 +293,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         />
       </div>
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenRoomFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenRoomFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId, messagesByEventId, onRevealReply, roomId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would
@@ -385,6 +403,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 _message={toLocalDisplayMessage(local)}
                 showSender
                 isContinuation={false}
+                replyQuote={local.replyTo && <ReplyQuote eventId={local.replyTo.eventId || local.replyTo.id} target={local.replyTo} memberMap={memberMap} />}
                 onDelete={onDelete}
                 onResend={onResend}
                 onCancel={onCancel}

@@ -16,6 +16,7 @@ import {
 import { MessageBubble } from '../views/MessageBubble';
 import { useImeGuard } from '../use-ime-guard';
 import { buildAnswerContent, buildConfirmationReply, type ConfirmationAnswerField } from '../confirmation-reply';
+import { ComposerReply, ReplyQuote } from '../views/ReplyQuote';
 
 interface ThreadPanelProps {
   canSend?: boolean;
@@ -37,6 +38,8 @@ export function ThreadPanel({
 }: ThreadPanelProps) {
   const { userId, isLoggedIn } = useMatrixStore();
   const [inputValue, setInputValue] = useState('');
+  const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const { isImeKey, onCompositionStart, onCompositionEnd } = useImeGuard();
   const [actionError, setActionError] = useState<string | null>(null);
   const focusedRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,16 @@ export function ThreadPanel({
   }, [focusedMessage?.id, threadQuery.isLoading]);
 
   const rootSender = memberMap?.[rootMessage.sender] ?? rootMessage.senderShort;
+  const selectReply = (message: DisplayMessage) => {
+    setReplyTo(message);
+    inputRef.current?.focus({ preventScroll: true });
+  };
+  const replyQuote = (message: DisplayMessage) => {
+    const eventId = message.replyToEventId;
+    if (!eventId) return null;
+    const target = [rootMessage, ...replies].find(item => item.id === eventId || item.eventId === eventId);
+    return <ReplyQuote roomId={roomId} eventId={eventId} target={target} memberMap={memberMap} />;
+  };
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
@@ -91,10 +104,13 @@ export function ThreadPanel({
     sendMutation.mutate({
       roomId,
       body: trimmed,
-      relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
-    });
+      relatesTo: {
+        rel_type: 'm.thread', event_id: rootMessage.id,
+        ...(replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : {}),
+      },
+    }, { onSuccess: () => setReplyTo(null) });
     setInputValue('');
-  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id, canSend]);
+  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id, canSend, replyTo]);
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, _eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     if (!isLoggedIn || sendMutation.isPending) return Promise.resolve(false);
@@ -158,6 +174,8 @@ export function ThreadPanel({
           message={rootMessage}
           showSender
           isContinuation={false}
+          replyQuote={replyQuote(rootMessage)}
+          onReply={canSend && isLoggedIn ? selectReply : undefined}
           onEdit={canSend ? handleEdit : undefined}
           onDelete={canSend ? handleDelete : undefined}
           onSendConfirmation={canSend ? handleSendConfirmation : undefined}
@@ -185,6 +203,8 @@ export function ThreadPanel({
                   message={reply}
                   showSender={!isContinuation}
                   isContinuation={isContinuation}
+                  replyQuote={replyQuote(reply)}
+                  onReply={canSend && isLoggedIn ? selectReply : undefined}
                   onEdit={canSend ? handleEdit : undefined}
                   onDelete={canSend ? handleDelete : undefined}
                   onSendConfirmation={canSend ? handleSendConfirmation : undefined}
@@ -201,7 +221,9 @@ export function ThreadPanel({
 
       {/* Composer */}
       <div className="border-t border-border px-3 py-2 shrink-0 bg-card/20">
+        {replyTo && <ComposerReply target={replyTo} memberMap={memberMap} onCancel={() => setReplyTo(null)} />}
         <textarea
+          ref={inputRef}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}

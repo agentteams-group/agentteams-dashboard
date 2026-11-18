@@ -143,6 +143,43 @@ function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}) {
 }
 
 describe('ChatRoom read-position dual-write', () => {
+  it('quotes a specific message when composing and sending a reply', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    renderChatRoom();
+    const original = screen.getByText('第一条').closest<HTMLElement>('[data-chat-message]')!;
+    fireEvent.mouseEnter(original.querySelector('[data-chat-message-body]')!);
+    fireEvent.click(within(original).getByRole('button', { name: '回复' }));
+    expect(screen.getByText('回复给：peer')).toBeInTheDocument();
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '取消引用回复' }));
+    expect(screen.queryByText('回复给：peer')).not.toBeInTheDocument();
+    fireEvent.click(within(original).getByRole('button', { name: '回复' }));
+    fireEvent.change(input, { target: { value: '针对第一条的回复' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(mocks.sendMutate).toHaveBeenCalledWith(expect.objectContaining({
+      body: '针对第一条的回复',
+      relatesTo: { 'm.in_reply_to': { event_id: '$old' } },
+    }), expect.anything());
+    expect(screen.getByText('回复给：peer')).toBeInTheDocument();
+  });
+
+  it('renders an edited historical reply with a quote that jumps to the original', () => {
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomMessagesChunk.push(
+      { event_id: '$reply', sender: '@me:test', type: 'm.room.message', origin_server_ts: 3000,
+        content: { msgtype: 'm.text', body: '原来的回复', 'm.relates_to': { 'm.in_reply_to': { event_id: '$old' } } } },
+      { event_id: '$edit', sender: '@me:test', type: 'm.room.message', origin_server_ts: 4000,
+        content: { msgtype: 'm.text', body: '* 修改后的回复', 'm.relates_to': { rel_type: 'm.replace', event_id: '$reply' },
+          'm.new_content': { msgtype: 'm.text', body: '修改后的回复' } } },
+    );
+    renderChatRoom();
+    const reply = screen.getByText('修改后的回复').closest<HTMLElement>('[data-chat-message]')!;
+    const quote = within(reply).getByRole('button', { name: /回复给：peer.*第一条/ });
+    fireEvent.click(quote);
+    expect(mocks.virtuoso.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0, align: 'center' }));
+  });
+
   it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'test' });
     useSectionStore.setState({ mentionRoomId: '!room:test' });

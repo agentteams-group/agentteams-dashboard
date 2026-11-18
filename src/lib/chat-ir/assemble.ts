@@ -726,6 +726,7 @@ function projectTurn(
       ? processBlocks.map(block => block.isStreaming ? { ...block, isStreaming: false } : block)
       : processBlocks,
     replyCount: rootMessage.replyCount,
+    replyToEventId: answer?.message.replyToEventId ?? rootMessage.replyToEventId,
     threadId: rootMessage.threadId,
     threadParticipants: rootMessage.threadId
       ? index.threadParticipants.get(rootMessage.threadId)

@@ -88,6 +88,7 @@ export function RoomContextPanel({
         {activeTab === 'thread' && (
           activeThread ? (
             <ThreadPanel
+              key={activeThread.id}
               canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}

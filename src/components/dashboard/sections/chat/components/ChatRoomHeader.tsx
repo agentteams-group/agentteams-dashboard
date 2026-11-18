@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { Avatar } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +27,7 @@ interface ChatRoomHeaderProps {
   headerTitle?: ReactNode;
   agentRole?: RoomInfo['agentRole'];
   roomName: string;
+  workerName?: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
   /** Worker phase shown in the conversation header. */
@@ -83,6 +85,7 @@ export function ChatRoomHeader({
   headerTitle,
   agentRole,
   roomName,
+  workerName,
   team,
   topic,
   avatar,
@@ -101,7 +104,9 @@ export function ChatRoomHeader({
     <div data-chat-room-header className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 sm:flex-nowrap sm:px-6 ${compactTeam ? 'min-h-14 py-2' : 'min-h-18 py-3'}`}>
       {headerLeading}
       <div className="relative shrink-0">
-      {avatar ? (
+      {workerName ? (
+        <AccountAvatar kind="agent" name={workerName} label={roomName} className="size-8 rounded-lg" />
+      ) : avatar ? (
         <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
         </Avatar>

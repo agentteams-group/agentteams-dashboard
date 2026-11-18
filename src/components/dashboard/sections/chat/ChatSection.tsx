@@ -339,7 +339,8 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
 
   return (
     <ChatProvider>
-      <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map((human) => human.matrixUserID)}>
+      <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map(human => human.matrixUserID)}
+        humanNames={Object.fromEntries((humans ?? []).filter(human => human.matrixUserID).map(human => [human.matrixUserID, human.name]))}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {!taskCollaboration && <div className="shrink-0 px-4"><WelcomeSteps visible={isLoggedIn && availableRooms.length === 0} /></div>}
         {taskCollaboration && (

@@ -124,6 +124,7 @@ interface ChatRoomProps {
   workerMatrixUserIds?: string[];
   topic?: string;
   avatar?: string;
+  roomWorkerName?: string;
   /** Retained for callers passing workspace rooms. */
   rooms?: RoomInfo[];
   members?: RoomMember[];
@@ -150,6 +151,7 @@ export function ChatRoom({
   workerMatrixUserIds,
   topic,
   avatar,
+  roomWorkerName,
   members: initialMembers = [],
   canSend = true,
   onSendMessage,
@@ -655,13 +657,8 @@ export function ChatRoom({
   }, [pendingMention, messagesReady, hasOlderMessages, fetchingOlderMessages, fetchOlderMessages, allEvents, userId, roomId, homeserver, accessToken, handleAutoScrollChange, setContextPanel]);
 
   const handleReply = useCallback((message: DisplayMessage) => {
+    if (message.status || !message.eventId?.startsWith('$')) return;
     setReplyTo(message);
-    // f5-1: 定位改走 timeline 索引空间（scrollToEvent 匹配 id/eventId/
-    // sourceEventIds），未读分割线的 +1 偏移由 MessageList 修正；找不到时
-    // 维持原来的回底兜底。
-    if (!scrollRef.current?.scrollToEvent(message.eventId || message.id)) {
-      scrollRef.current?.scrollToBottom({ smooth: true });
-    }
   }, []);
 
   const { copy: copyToClipboard } = useCopyToClipboard({ resetMs: 1600 });
@@ -824,6 +821,7 @@ export function ChatRoom({
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatRoomHeader
+          workerName={roomWorkerName}
           taskAction={taskRoom ? <TaskTopologyPopover key={roomId} roomId={roomId} /> : undefined}
           compact={integratedSidebar}
           headerActions={headerActions}
@@ -880,20 +878,6 @@ export function ChatRoom({
               </Button>
             </div>
           )}
-          {replyTo && (
-            <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/60 border-b border-border text-xs text-muted-foreground shrink-0">
-              <span>回复 {replyTo.senderShort}:</span>
-              <span className="truncate flex-1">{replyTo.content.slice(0, 80)}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 w-5 p-0 shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setReplyTo(null)}
-              >
-                <PanelRightClose className="w-3 h-3" />
-              </Button>
-            </div>
-          )}
           {searchOpen && (
             <RoomSearchBar
               // 换一次深链就重挂载搜索条：预填词是它的初始值，不追打外部变化；
@@ -913,6 +897,8 @@ export function ChatRoom({
           )}
           <MessageList
             ref={scrollRef}
+            roomId={roomId}
+            onRevealReply={handleRevealEvent}
             messages={formattedMessages}
             localMessages={localMessages}
             readEventId={unreadAnchor}
@@ -923,7 +909,7 @@ export function ChatRoom({
             loading={messagesQuery.isLoading}
             _canSend={canSend && isLoggedIn && !membershipDenied}
             _onSend={handleSend}
-            onReply={canSend ? handleReply : undefined}
+            onReply={canSend && isLoggedIn && !membershipDenied ? handleReply : undefined}
             onCopy={handleCopy}
             onOpenThread={handleOpenThread}
             onEdit={canSend ? handleEditSubmit : undefined}
@@ -978,6 +964,8 @@ export function ChatRoom({
           {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
             execution={directExecution}
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
             onStop={handleStopExecution}
             roomId={roomId}
             value={inputValue}
@@ -985,7 +973,7 @@ export function ChatRoom({
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
-            placeholder={replyTo ? `回复 ${replyTo.senderShort}…` : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
+            placeholder={replyTo ? '写下你的回复…' : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
             disabled={!canSend || !isLoggedIn || membershipDenied}
             members={roomMembers.map(m => ({ userId: m.userId, displayName: m.displayName }))}
             fileRefTarget={fileRefTarget}
