@@ -1,7 +1,7 @@
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 
 /**
- * 「团队与Agent」合并页的纯逻辑：成员归属、角色、计数、搜索命中、断点。
+ * 「团队与智能体」合并页的纯逻辑：成员归属、角色、计数、搜索命中、断点。
  *
  * 成员归属只有一条规则（全页共用）：`team.workerNames` 非空时以它为准；
  * 为空时回退到 `worker.team === team.name`。leader 一定来自 Worker 列表，
@@ -241,4 +241,27 @@ export function teamAgentsInitialIntentFromHash(hash: string): TeamAgentsInitial
   if (path === 'workers' || path === 'console/resources/workers') return 'agents';
   if (path === 'teams' || path === 'console/resources/teams') return 'teams';
   return 'teams';
+}
+
+/**
+ * 智能体卡片视图按团队分组：按 `team` 分桶，空团队 → `team: ''`（视图渲染
+ * 「无团队」组）永远排最后；其余组按团队名 zh 排序；组内保持输入顺序
+ * （调用方已按名称排好序）。
+ */
+export function groupAgentsByTeam<T extends { team?: string }>(
+  agents: T[],
+): Array<{ team: string; agents: T[] }> {
+  const buckets = new Map<string, T[]>();
+  for (const agent of agents) {
+    const key = (agent.team ?? '').trim();
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(agent);
+    else buckets.set(key, [agent]);
+  }
+  const keys = [...buckets.keys()];
+  const ordered = [
+    ...keys.filter((key) => key !== '').sort((a, b) => a.localeCompare(b, 'zh')),
+    ...keys.filter((key) => key === ''),
+  ];
+  return ordered.map((key) => ({ team: key, agents: buckets.get(key)! }));
 }

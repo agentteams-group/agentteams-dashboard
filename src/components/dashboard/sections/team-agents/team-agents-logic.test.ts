@@ -4,6 +4,7 @@ import {
   compareTeamRows,
   contentColumnCount,
   filterTeamRows,
+  groupAgentsByTeam,
   layoutForWidth,
   leaderWorker,
   memberRole,
@@ -215,5 +216,39 @@ describe('hash → 初始选择意图（旧路由别名，无页签 UI）', () =
     expect(teamAgentsInitialIntentFromHash('#console/resources/team-agents?tab=agents')).toBe('agents');
     expect(teamAgentsInitialIntentFromHash('#console/resources/team-agents')).toBe('teams');
     expect(teamAgentsInitialIntentFromHash('')).toBe('teams');
+  });
+});
+
+describe('智能体卡片按团队分组（③：组按团队名排序，无团队永远最后，组内保序）', () => {
+  it('buckets by team and orders groups by name, ungrouped last', () => {
+    const groups = groupAgentsByTeam([
+      worker('solo', { team: '' }),
+      worker('b1', { team: 'zeta' }),
+      worker('a1', { team: 'alpha' }),
+      worker('a2', { team: 'alpha' }),
+      worker('b2', { team: 'zeta' }),
+    ]);
+    // 输入顺序是 zeta 在前，输出按团队名排序（alpha < zeta），与输入顺序无关。
+    expect(groups.map((group) => group.team)).toEqual(['alpha', 'zeta', '']);
+    expect(groups[0]?.agents.map((agent) => agent.name)).toEqual(['a1', 'a2']);
+    expect(groups[1]?.agents.map((agent) => agent.name)).toEqual(['b1', 'b2']);
+    expect(groups[2]?.agents.map((agent) => agent.name)).toEqual(['solo']);
+  });
+
+  it('normalizes blank and missing team values into the ungrouped bucket', () => {
+    const groups = groupAgentsByTeam([
+      worker('w1', { team: '   ' }),
+      worker('w2', { team: undefined }),
+      worker('w3', { team: 'alpha' }),
+    ]);
+    expect(groups.map((group) => group.team)).toEqual(['alpha', '']);
+    expect(groups[1]?.agents.map((agent) => agent.name)).toEqual(['w1', 'w2']);
+  });
+
+  it('returns a single ungrouped bucket when every agent has no team', () => {
+    const groups = groupAgentsByTeam([worker('s1', { team: '' }), worker('s2', { team: '' })]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.team).toBe('');
+    expect(groups[0]?.agents.map((agent) => agent.name)).toEqual(['s1', 's2']);
   });
 });
