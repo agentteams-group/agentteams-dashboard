@@ -51,8 +51,8 @@ vi.mock('@/hooks/use-agentteams-infrastructure', () => ({
     data: {
       higress: {
         mode: 'external',
-        gateway: { state: 'reachable', endpoint: 'http://aigw-local.agentteams.io:8080' },
-        console: { state: 'reachable', endpoint: 'http://console.local' },
+        gateway: { configured: true, state: 'reachable', endpoint: 'http://aigw-local.agentteams.io:8080' },
+        console: { configured: true, state: 'reachable', endpoint: 'http://console.local' },
         healthy: true,
       },
       services: [],
@@ -101,6 +101,21 @@ function renderSection(tab: 'providers' | 'routes' | 'access' = 'providers') {
 }
 
 describe('ModelsSection', { timeout: 20_000 }, () => {
+  it('keeps runtime access in the header and opens the diagnostics in a popover', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    renderSection();
+    const trigger = screen.getByRole('button', { name: '运行时模型访问方式' });
+    expect(trigger.closest('[data-slot="section-header"]')).not.toBeNull();
+    expect(screen.queryByText('Gateway 数据平面')).toBeNull();
+    fireEvent.focus(trigger);
+    expect((await screen.findByRole('tooltip')).textContent).toContain('http://aigw-local.agentteams.io:8080');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '运行时模型访问方式' }).textContent).toContain('Console 管理端');
+  });
   it('opens model connections directly without the usage overview', () => {
     renderSection();
     expect(screen.getByRole('tab', { name: '模型连接' }).getAttribute('aria-selected')).toBe('true');
@@ -113,6 +128,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     vi.unstubAllGlobals();
     mockRouteOverrides.value = undefined;
   });
