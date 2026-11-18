@@ -1,0 +1,24 @@
+.surface {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #f4faf7;
+  background:
+    radial-gradient(ellipse at 85% 95%, #17414b 0, transparent 54%),
+    radial-gradient(ellipse at 30% 110%, #164b3b 0, transparent 55%),
+    #101e26;
+}
+
+.surface::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 1100px;
+  height: 1100px;
+  right: -130px;
+  bottom: -965px;
+  border: 1px solid #7ae3bc24;
+  border-radius: 50%;
+  box-shadow: 0 0 0 48px #7ae3bc06, 0 0 0 96px #7ae3bc04;
+  pointer-events: none;
+}

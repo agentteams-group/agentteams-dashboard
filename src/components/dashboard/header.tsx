@@ -13,7 +13,7 @@ import {
   Contrast,
   Settings,
   Menu,
-  UserCircle,
+  ImageIcon,
   LogOut,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/api-base';
@@ -38,6 +38,8 @@ import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-button
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
 import { openChatRoom } from '@/lib/open-chat-room';
+import { AccountAvatar } from './account-avatar';
+import { AvatarEditor } from './avatar-editor';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
 
 interface DashboardHeaderProps {
@@ -86,6 +88,7 @@ export function DashboardHeader({
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
 
   // 只在命令面板真的打开时才拉四类新实体（方案 v3 C-2）：
   // 顶栏不输字的时候不该多带两份后台请求。
@@ -262,7 +265,7 @@ export function DashboardHeader({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-sm" aria-label={sessionUser}>
-                <UserCircle className="h-4 w-4" />
+                <AccountAvatar kind="human" name={sessionUser} className="size-6" />
                 <span className="hidden sm:inline max-w-[120px] truncate">{sessionUser}</span>
               </Button>
             </DropdownMenuTrigger>
@@ -272,6 +275,10 @@ export function DashboardHeader({
                 {sessionUser} · {levelLabel}
               </div>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setAvatarOpen(true)}>
+                <ImageIcon className="mr-2 h-4 w-4" />
+                更换我的头像
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400">
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
@@ -306,6 +313,7 @@ export function DashboardHeader({
           <Settings className="w-4 h-4" aria-hidden="true" />
         </Button>
       </div>
+      {avatarOpen && sessionUser && <AvatarEditor key={sessionUser} kind="human" name={sessionUser} onClose={() => setAvatarOpen(false)} />}
     </header>
   );
 }

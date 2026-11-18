@@ -52,6 +52,20 @@ describe('team switcher', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('keeps a single collaboration room compact and shows details in its title menu', async () => {
+    const group: RoomInfo = {
+      id: '!design-group:test', name: '设计团队', type: 'team', parentTeam: 'design', teamRole: 'admin', members: [],
+      team: { teamName: '设计团队', phase: 'Active', readyWorkers: 2, totalWorkers: 3, leaderName: 'design-leader' } as RoomInfo['team'],
+    };
+    render(<ConversationSwitcher rooms={[group]} selectedRoomId={group.id} attention={{}} onSelectRoom={vi.fn()} />);
+    expect(screen.getByText('设计团队')).toBeInTheDocument();
+    expect(screen.queryByText(/管理员|design-leader/)).toBeNull();
+    fireEvent.pointerDown(screen.getByRole('button', { name: /查看团队详情/ }), { button: 0, ctrlKey: false });
+    const menu = await screen.findByRole('menu');
+    for (const text of ['管理员', '活跃', '2/3', 'design-leader']) expect(within(menu).getByText(text)).toBeVisible();
+    expect(within(menu).queryByRole('menuitemradio')).toBeNull();
+  });
+
   it('switches between teams and distinguishes task attention from unread messages', async () => {
     const design = leader('design'), dev = leader('dev'), onSelectRoom = vi.fn();
     render(<ConversationSwitcher rooms={[design, { ...dev, unreadCount: 20 }]} selectedRoomId={design.id} attention={{ [dev.id]: { confirmation: 1, review: 2, failed: 3 } }} onSelectRoom={onSelectRoom} />);

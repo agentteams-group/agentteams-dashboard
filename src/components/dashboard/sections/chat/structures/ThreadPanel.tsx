@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
-import { Avatar } from '@/components/ui/avatar';
+import { ChevronLeft, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
-  formatMatrixEvent,
+  formatMatrixEvents,
   useMatrixSendMessage,
   useMatrixThreadMessages,
   useMatrixEditMessage,
@@ -16,12 +15,18 @@ import {
 import { MessageBubble } from '../views/MessageBubble';
 import { useImeGuard } from '../use-ime-guard';
 import { buildAnswerContent, buildConfirmationReply, type ConfirmationAnswerField } from '../confirmation-reply';
+import { ComposerReply, ReplyQuote } from '../views/ReplyQuote';
+import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
+import { useRuntimeMap } from '../runtime-map-context';
+import { isManagerSender } from '@/lib/chat-lifecycle-notice';
 
 interface ThreadPanelProps {
   canSend?: boolean;
   roomId: string;
   rootMessage: DisplayMessage;
   focusedMessage?: DisplayMessage | null;
+  quotedReplies?: DisplayMessage[];
+  onBack: () => void;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
 }
@@ -32,11 +37,16 @@ export function ThreadPanel({
   roomId,
   rootMessage,
   focusedMessage,
+  quotedReplies,
+  onBack,
   memberMap,
   workerMatrixUserIds,
 }: ThreadPanelProps) {
   const { userId, isLoggedIn } = useMatrixStore();
+  const runtimeMap = useRuntimeMap();
   const [inputValue, setInputValue] = useState('');
+  const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const { isImeKey, onCompositionStart, onCompositionEnd } = useImeGuard();
   const [actionError, setActionError] = useState<string | null>(null);
   const focusedRef = useRef<HTMLDivElement>(null);
@@ -66,24 +76,43 @@ export function ThreadPanel({
     );
   }, [roomId, redactMutation]);
 
-  const replies = useMemo<DisplayMessage[]>(() => {
-    const chunk = threadQuery.data?.chunk ?? [];
-    const messages: DisplayMessage[] = [];
-    for (const event of chunk) {
-      const formatted = formatMatrixEvent(event, userId);
-      if (formatted) messages.push(formatted);
+  const replies = useMemo(() => {
+    const rootIds = new Set([rootMessage.id, rootMessage.eventId, ...(rootMessage.sourceEventIds ?? [])]);
+    const messages = new Map(quotedReplies?.map(message => [message.id, message]));
+    for (const message of formatMatrixEvents(threadQuery.data?.chunk ?? [], userId, { includeThreadReplies: true })) {
+      if (rootIds.has(message.id)) continue;
+      const owner = runtimeMap[message.sender];
+      messages.set(message.id, {
+        ...message,
+        runtime: owner?.runtime,
+        workerName: owner?.workerName ?? (
+          workerMatrixUserIds?.includes(message.sender) || isManagerSender(message.sender) ? message.senderShort : undefined
+        ),
+      });
     }
-    if (focusedMessage && !messages.some(message => message.id === focusedMessage.id)) {
-      messages.push(focusedMessage);
+    if (focusedMessage && !messages.has(focusedMessage.id) && !rootIds.has(focusedMessage.id)) {
+      messages.set(focusedMessage.id, focusedMessage);
     }
-    return messages.sort((a, b) => a.timestamp - b.timestamp);
-  }, [threadQuery.data, userId, focusedMessage]);
+    return coalesceWorkerTurns(
+      Array.from(messages.values()).sort((a, b) => a.timestamp - b.timestamp),
+      { topic: true },
+    );
+  }, [threadQuery.data, userId, rootMessage, focusedMessage, quotedReplies, runtimeMap, workerMatrixUserIds]);
 
   useEffect(() => {
-    focusedRef.current?.scrollIntoView({ block: 'center' });
+    focusedRef.current?.scrollIntoView?.({ block: 'center' });
   }, [focusedMessage?.id, threadQuery.isLoading]);
 
-  const rootSender = memberMap?.[rootMessage.sender] ?? rootMessage.senderShort;
+  const selectReply = (message: DisplayMessage) => {
+    setReplyTo(message);
+    inputRef.current?.focus({ preventScroll: true });
+  };
+  const replyQuote = (message: DisplayMessage) => {
+    const eventId = message.replyToEventId;
+    if (!eventId) return null;
+    const target = [rootMessage, ...replies].find(item => item.id === eventId || item.eventId === eventId || item.sourceEventIds?.includes(eventId));
+    return <ReplyQuote roomId={roomId} eventId={eventId} target={target} memberMap={memberMap} />;
+  };
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
@@ -91,10 +120,13 @@ export function ThreadPanel({
     sendMutation.mutate({
       roomId,
       body: trimmed,
-      relatesTo: { rel_type: 'm.thread', event_id: rootMessage.id },
-    });
+      relatesTo: {
+        rel_type: 'm.thread', event_id: rootMessage.id,
+        ...(replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } } : {}),
+      },
+    }, { onSuccess: () => setReplyTo(null) });
     setInputValue('');
-  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id, canSend]);
+  }, [inputValue, isLoggedIn, sendMutation, roomId, rootMessage.id, canSend, replyTo]);
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, _eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     if (!isLoggedIn || sendMutation.isPending) return Promise.resolve(false);
@@ -134,23 +166,15 @@ export function ThreadPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Root summary; the tab strip already carries the panel title. */}
-      <div className="shrink-0 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <Avatar className="w-5 h-5 shrink-0">
-            <div className="w-full h-full rounded-full flex items-center justify-center text-xs font-medium bg-muted text-muted-foreground">
-              {rootMessage.senderShort.slice(0, 2).toUpperCase()}
-            </div>
-          </Avatar>
-          <p className="text-xs text-muted-foreground min-w-0">
-            <span className="font-medium text-foreground">{rootSender}</span>
-            <span className="block truncate">{rootMessage.content.slice(0, 80)}</span>
-          </p>
-        </div>
+      <div className="shrink-0 border-b border-border px-2 py-1">
+        <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 px-1.5 text-xs"
+          aria-label="返回话题列表" onClick={onBack}>
+          <ChevronLeft className="size-4" aria-hidden="true" />
+          返回话题列表
+        </Button>
       </div>
 
-      {/* Messages: root + thread replies */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 custom-scrollbar">
         {actionError && (
           <div className="px-3 py-1.5 text-xs text-red-500">{actionError}</div>
         )}
@@ -158,42 +182,48 @@ export function ThreadPanel({
           message={rootMessage}
           showSender
           isContinuation={false}
+          replyQuote={replyQuote(rootMessage)}
+          onReply={canSend && isLoggedIn ? selectReply : undefined}
           onEdit={canSend ? handleEdit : undefined}
           onDelete={canSend ? handleDelete : undefined}
           onSendConfirmation={canSend ? handleSendConfirmation : undefined}
           memberMap={memberMap}
         />
-        {threadQuery.isLoading ? (
+        {threadQuery.isLoading && (
           <div className="px-3 py-2 text-xs text-muted-foreground">加载话题回复...</div>
-        ) : threadQuery.isError ? (
+        )}
+        {threadQuery.isError && (
           <div className="px-3 py-2 flex flex-col items-start gap-1.5">
             <span className="text-xs text-red-500">话题加载失败</span>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => threadQuery.refetch()}>
               重试
             </Button>
           </div>
-        ) : replies.length === 0 ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">暂无回复，成为第一个回复的人</div>
-        ) : (
-          replies.map((reply, idx) => {
-            const prev = replies[idx - 1];
-            const isContinuation = !!prev && prev.sender === reply.sender;
-            return (
-              <div key={reply.id} ref={reply.id === focusedMessage?.id ? focusedRef : undefined}
-                className={reply.id === focusedMessage?.id ? 'rounded-lg bg-blue-500/5 ring-1 ring-blue-500/30' : undefined}>
-                <MessageBubble
-                  message={reply}
-                  showSender={!isContinuation}
-                  isContinuation={isContinuation}
-                  onEdit={canSend ? handleEdit : undefined}
-                  onDelete={canSend ? handleDelete : undefined}
-                  onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-                  memberMap={memberMap}
-                />
-              </div>
-            );
-          })
         )}
+        {replies.length === 0 && !threadQuery.isLoading && !threadQuery.isError && (
+          <div className="px-3 py-2 text-xs text-muted-foreground">暂无回复，成为第一个回复的人</div>
+        )}
+        {replies.map((reply, idx) => {
+          const prev = replies[idx - 1];
+          const isContinuation = !!prev && prev.sender === reply.sender;
+          const focused = !!focusedMessage && (reply.id === focusedMessage.id || reply.sourceEventIds?.includes(focusedMessage.id));
+          return (
+            <div key={reply.id} ref={focused ? focusedRef : undefined}
+              className={focused ? 'rounded-lg bg-blue-500/5 ring-1 ring-blue-500/30' : undefined}>
+              <MessageBubble
+                message={reply}
+                showSender={!isContinuation}
+                isContinuation={isContinuation}
+                replyQuote={replyQuote(reply)}
+                onReply={canSend && isLoggedIn ? selectReply : undefined}
+                onEdit={canSend ? handleEdit : undefined}
+                onDelete={canSend ? handleDelete : undefined}
+                onSendConfirmation={canSend ? handleSendConfirmation : undefined}
+                memberMap={memberMap}
+              />
+            </div>
+          );
+        })}
         {sendMutation.isError && (
           <div className="px-3 py-1.5 text-xs text-red-500">发送失败: {sendMutation.error?.message}</div>
         )}
@@ -201,7 +231,9 @@ export function ThreadPanel({
 
       {/* Composer */}
       <div className="border-t border-border px-3 py-2 shrink-0 bg-card/20">
+        {replyTo && <ComposerReply target={replyTo} memberMap={memberMap} onCancel={() => setReplyTo(null)} />}
         <textarea
+          ref={inputRef}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}

@@ -154,16 +154,16 @@ describe('MessageBubble', () => {
     );
     const body = container.querySelector('[data-chat-message-body]')!;
     const actions = container.querySelector('[aria-label="消息操作"]')!;
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0', 'focus-within:opacity-100');
     fireEvent.mouseEnter(container.firstElementChild!);
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0');
     fireEvent.mouseEnter(body);
-    expect(actions).toHaveClass('visible');
+    expect(actions).not.toHaveClass('opacity-0');
     expect(body.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(actions).not.toHaveClass('md:absolute');
     expect(actions).toHaveClass(isMe ? 'self-end' : 'self-start');
     fireEvent.mouseLeave(actions.parentElement!);
-    expect(actions).toHaveClass('invisible');
+    expect(actions).toHaveClass('opacity-0');
     expect(actions).toBeInTheDocument();
   });
 

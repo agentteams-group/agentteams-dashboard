@@ -92,7 +92,7 @@ interface TurnEntry {
   blocks: ParsedA2uiBlock[];
 }
 
-function buildTurnMessage(entries: TurnEntry[]): DisplayMessage {
+function buildTurnMessage(entries: TurnEntry[], topic: boolean): DisplayMessage {
   const first = entries[0].message;
   const last = entries[entries.length - 1].message;
   // When the answer is an edit of the placeholder root, that root sorts after
@@ -100,7 +100,7 @@ function buildTurnMessage(entries: TurnEntry[]): DisplayMessage {
   const laneRoot = first.threadId
     ? entries.map((entry) => entry.message).find((message) => message.id === first.threadId)
     : undefined;
-  const canonical = laneRoot ?? first;
+  const canonical = topic ? last : laneRoot ?? first;
 
   const processBlocks: ParsedA2uiBlock[] = [];
   const outputBlocks: ParsedA2uiBlock[] = [];
@@ -162,10 +162,11 @@ function buildTurnMessage(entries: TurnEntry[]): DisplayMessage {
     revisionCount: last.revisionCount,
     precomputedBlocks: renderedBlocks,
     sourceEventIds,
+    replyToEventId: topic ? last.replyToEventId ?? first.replyToEventId : first.replyToEventId,
   };
 }
 
-export function coalesceWorkerTurns(messages: DisplayMessage[]): DisplayMessage[] {
+export function coalesceWorkerTurns(messages: DisplayMessage[], { topic = false } = {}): DisplayMessage[] {
   const result: DisplayMessage[] = [];
   let index = 0;
 
@@ -182,12 +183,19 @@ export function coalesceWorkerTurns(messages: DisplayMessage[]): DisplayMessage[
     let cursor = index + 1;
     while (cursor < messages.length) {
       const candidate = messages[cursor];
-      const previous = entries[entries.length - 1].message;
+      const previous = entries[entries.length - 1];
       if (candidate.sender !== anchor.sender) break;
       if (!sameConversationLane(anchor, candidate)) break;
-      if (candidate.timestamp - previous.timestamp > TURN_MAX_GAP_MS) break;
+      if (candidate.timestamp - previous.message.timestamp > TURN_MAX_GAP_MS) break;
       const blocks = turnBlocksOf(candidate);
       if (!blocks) break;
+      if (topic) {
+        // A conversation thread can contain several turns by the same Agent.
+        if (anchor.runId && candidate.runId && anchor.runId !== candidate.runId) break;
+        if ((!anchor.runId || !candidate.runId) && blocks.some(isProcessBlock) && previous.blocks.some(block =>
+          block.type === 'text' && block.text?.trim() && !isAgentPlaceholderBody(block.text),
+        )) break;
+      }
       entries.push({ message: candidate, blocks });
       cursor += 1;
     }
@@ -198,7 +206,7 @@ export function coalesceWorkerTurns(messages: DisplayMessage[]): DisplayMessage[
       // from folding process steps, not from re-bubbling plain answers.
       for (const entry of entries) result.push(entry.message);
     } else {
-      result.push(buildTurnMessage(entries));
+      result.push(buildTurnMessage(entries, topic));
     }
     index = cursor;
   }

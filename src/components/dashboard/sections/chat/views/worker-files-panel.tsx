@@ -68,7 +68,7 @@ export function computeNextPrefix(currentPrefix: string, prefixKey: string): str
   return basePrefix ? `${basePrefix}${cleanRel}/` : `${cleanRel}/`;
 }
 
-export function FilesBrowserPanel({ scope }: { scope: CollaborationFileScope | { worker: string } }) {
+export function FilesBrowserPanel({ scope, readOnly = false }: { scope: CollaborationFileScope | { worker: string }; readOnly?: boolean }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [currentPrefix, setCurrentPrefix] = useState<string>('');
@@ -150,7 +150,7 @@ export function FilesBrowserPanel({ scope }: { scope: CollaborationFileScope | {
               同步于 {lastSyncTime.toLocaleTimeString('zh-CN')}
             </span>
           )}
-          {(team || worker) && userLevel >= 3 && <>
+          {!readOnly && (team || worker) && userLevel >= 3 && <>
           <input
             ref={fileInputRef}
             type="file"

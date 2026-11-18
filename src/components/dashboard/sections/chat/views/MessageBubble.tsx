@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useImeGuard } from '../use-ime-guard';
-import { Avatar } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
@@ -43,12 +44,13 @@ import { AgentPresenceCard } from '../agent-presence-card';
 import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
 import { formatMessageTime } from '../format';
 import { TaskAssignmentCard } from '../task-assignment-card';
-import { useRuntimeMap } from '../runtime-map-context';
+import { useHumanNames, useRuntimeMap } from '../runtime-map-context';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
+  replyQuote?: React.ReactNode;
   onReply?: (_message: DisplayMessage) => void;
   onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
@@ -211,22 +213,6 @@ function senderPalette(sender: string) {
   return SENDER_PALETTE[senderPaletteIndex(sender)];
 }
 
-function AvatarWithInitials({ sender, label, isMe }: { sender: string; label: string; isMe: boolean }) {
-  const palette = senderPalette(sender);
-  return (
-    <Avatar className="h-[30px] w-[30px] shrink-0 rounded-[9px]">
-      <div
-        className={`flex h-full w-full items-center justify-center rounded-[9px] border border-border text-xs font-semibold ${
-          isMe ? 'bg-primary/15 text-primary' : palette.avatar
-        }`}
-        title={label}
-      >
-        {label.slice(0, 2).toUpperCase()}
-      </div>
-    </Avatar>
-  );
-}
-
 // A17 task status dot (9/18 convention), now shared: the visual lives in
 // `WorkerSessionCornerDot` so message avatars and the member list use the
 // exact same dot (one source of truth — 9/19 member-list addition).
@@ -336,6 +322,7 @@ export function MessageBubble({
   message,
   showSender,
   isContinuation,
+  replyQuote,
   onReply,
   onCopy,
   onOpenThread,
@@ -371,6 +358,9 @@ export function MessageBubble({
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
   const senderOwner = useRuntimeMap()[message.sender];
+  const humanName = useHumanNames()[message.sender];
+  const ownAccount = useAgentTeamsStore(state => message.isMe ? state.sessionUser : null);
+  const avatarWorker = message.workerName ?? senderOwner?.workerName;
   const isAgentMessage = !message.isMe && Boolean(senderOwner || message.workerName || message.runtime || message.agentStatus || message.isStreaming);
   const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
     && (message.workerName || message.runtime || isManagerSender(message.sender, senderLabel))
@@ -548,7 +538,9 @@ export function MessageBubble({
                   : 'relative h-[30px] w-[30px]'
               }
             >
-              <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
+              <AccountAvatar kind={avatarWorker ? 'agent' : 'human'} name={avatarWorker || ownAccount || humanName || message.senderShort}
+                label={senderLabel} className="size-[30px] rounded-[9px]"
+                fallbackClassName={`rounded-[9px] text-xs font-semibold ${message.isMe ? 'bg-primary/15 text-primary' : senderPalette(message.sender).avatar}`} />
               {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
             </button>
           </AgentPresenceCard>
@@ -633,6 +625,7 @@ export function MessageBubble({
             </div>
           ) : (
             <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
+              {replyQuote}
               {parsedBlocks.map((block, idx) => {
                 const processRun = processSegments.runs.get(idx);
                 if (processRun) {
@@ -860,7 +853,7 @@ export function MessageBubble({
               onOpenThread(message);
             }}
             className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-primary"
-            title="在话题中查看回复"
+            title="查看话题"
           >
             <span>↩</span>
             {message.replyCount} 条回复
@@ -870,7 +863,7 @@ export function MessageBubble({
           <div
             role="group"
             aria-label="消息操作"
-            className={`mt-1 flex min-h-7 items-center gap-1 text-muted-foreground ${actionsVisible ? 'visible' : 'invisible'} ${message.isMe ? 'self-end' : 'self-start'}`}
+            className={`mt-1 flex min-h-7 items-center gap-1 text-muted-foreground ${actionsVisible ? '' : 'pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100'} ${message.isMe ? 'self-end' : 'self-start'}`}
             onMouseEnter={() => setIsHovered(true)}
             onClick={(e) => e.stopPropagation()}
           >
@@ -889,11 +882,11 @@ export function MessageBubble({
             {message.isMe && !message.status && onDelete && (
               <ActionButton title="删除" icon={ICON_PATHS.trash} onClick={() => onDelete(message)} />
             )}
-            {onReply && (
+            {onReply && !message.status && (
               <ActionButton title="回复" icon={ICON_PATHS.reply} onClick={() => onReply(message)} />
             )}
             {onOpenThread && (
-              <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
+              <ActionButton title="查看话题" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
           </div>

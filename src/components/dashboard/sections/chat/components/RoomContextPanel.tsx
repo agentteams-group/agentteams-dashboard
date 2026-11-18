@@ -29,6 +29,8 @@ interface RoomContextPanelProps {
   activeThread: DisplayMessage | null;
   threadMention?: DisplayMessage | null;
   threadRoots: DisplayMessage[];
+  quotedReplies?: DisplayMessage[];
+  onBackToThreads: () => void;
   onOpenThread: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
@@ -52,6 +54,8 @@ export function RoomContextPanel({
   activeThread,
   threadMention,
   threadRoots,
+  quotedReplies,
+  onBackToThreads,
   onOpenThread,
   memberMap,
   workerMatrixUserIds,
@@ -88,10 +92,13 @@ export function RoomContextPanel({
         {activeTab === 'thread' && (
           activeThread ? (
             <ThreadPanel
+              key={activeThread.id}
               canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}
               focusedMessage={threadMention}
+              quotedReplies={quotedReplies}
+              onBack={onBackToThreads}
               memberMap={memberMap}
               workerMatrixUserIds={workerMatrixUserIds}
             />

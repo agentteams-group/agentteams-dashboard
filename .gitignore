@@ -73,3 +73,6 @@ server.log
 dist/
 
 DASH_QUEUE_TODO.md
+
+# Avatar packs installed for the local deployment
+/public/avatars/local/

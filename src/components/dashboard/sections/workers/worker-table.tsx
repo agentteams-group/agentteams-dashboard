@@ -1,6 +1,7 @@
 'use client';
 
-import { Bot, CheckSquare, Eye, MessageSquare, Square } from 'lucide-react';
+import { CheckSquare, Eye, MessageSquare, Square } from 'lucide-react';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
@@ -92,7 +93,7 @@ export function WorkerTable({
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={worker.phase} />
-                  <Bot className="w-4 h-4 text-emerald-500 shrink-0" aria-hidden="true" />
+                  <AccountAvatar kind="agent" name={worker.name} className="size-6" />
                   <WorkerSessionName worker={worker} className="max-w-[180px]" />
                 </div>
               </TableCell>

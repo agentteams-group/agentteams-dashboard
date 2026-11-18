@@ -7,6 +7,7 @@ import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import type { WorkerRuntime } from '@/lib/agentteams-api';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { buildGroupedMessages } from './grouper/MainGrouper';
 import { MessageBubble } from './views/MessageBubble';
 
 vi.mock('./markdown-message', () => ({ MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div> }));
@@ -31,6 +32,36 @@ function view(events: MatrixEvent[], runtime: WorkerRuntime, onSendConfirmation 
 
 beforeEach(() => useHitlInboxStore.setState({ confirmations: {}, resolutions: {} }));
 afterEach(cleanup);
+
+it('shows independent threads from the same Agent as separate replies', () => {
+  const thread = (root: string) => ({ 'm.relates_to': { rel_type: 'm.thread', event_id: root } });
+  const final = (root: string, body: string) => ({
+    'm.relates_to': { rel_type: 'm.replace', event_id: root },
+    'm.new_content': { msgtype: 'm.text', body },
+  });
+  const events = [
+    event('$first', '处理中...', { msgtype: 'm.notice' }),
+    event('$second', '处理中...', { msgtype: 'm.notice' }),
+    event('$think-first', 'Thinking:\n\n第一轮思考', { msgtype: 'm.notice', ...thread('$first') }),
+    event('$think-second', 'Thinking:\n\n第二轮思考', { msgtype: 'm.notice', ...thread('$second') }),
+    event('$reply-first', '第一轮回复', final('$first', '第一轮回复')),
+    event('$reply-second', '第二轮回复', final('$second', '第二轮回复')),
+  ].map((item, index) => ({ ...item, origin_server_ts: item.origin_server_ts + index }));
+  const grouped = buildGroupedMessages(messages(events, 'qwenpaw'));
+  expect(grouped.map(({ message, showSender, isContinuation }) => [message.content, showSender, isContinuation]))
+    .toEqual([['第一轮回复', true, false], ['第二轮回复', true, false]]);
+  expect(grouped.map(({ message }) => message.precomputedBlocks?.[0])).toMatchObject([
+    { type: 'thinking', content: '第一轮思考' },
+    { type: 'thinking', content: '第二轮思考' },
+  ]);
+
+  const humanEvents = [
+    { ...event('$human-first', '你好'), sender: '@me:server' },
+    { ...event('$human-second', '请看一下'), sender: '@me:server' },
+  ];
+  expect(buildGroupedMessages(messages(humanEvents, 'qwenpaw')).map(({ isContinuation }) => isContinuation))
+    .toEqual([false, true]);
+});
 
 describe.each(harnesses)('%s task presentation through Matrix and ChatIR', runtime => {
   it('keeps task notifications separate from the answer and folds transport details', () => {

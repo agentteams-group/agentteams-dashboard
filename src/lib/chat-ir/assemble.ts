@@ -250,6 +250,10 @@ function isExplicitLane(message: DisplayMessage): boolean {
   return Boolean(message.runId || message.isThreadReply || message.detached);
 }
 
+function senderLaneKey(sender: string, lane: string): string {
+  return `${sender}\u0000${lane}`;
+}
+
 /** Files/images a runtime delivers mid-run (thread announcement or upload). */
 function isRunMedia(message: DisplayMessage): boolean {
   return Boolean(message.mediaUrl)
@@ -492,19 +496,28 @@ export function assembleChatTimeline(
     | { kind: 'turn'; turn: WorkingTurn }
     | { kind: 'message'; message: DisplayMessage };
   const placements: Placement[] = [];
+  // A root placeholder has no thread relation itself. Its replies establish
+  // the lane even while the root is still streaming or waiting for an edit.
+  const explicitLanes = new Set(sorted.filter(isExplicitLane)
+    .map(message => senderLaneKey(message.sender, laneOf(message))));
+  const explicitTurns = new Map<string, WorkingTurn>();
   let open: WorkingTurn | null = null;
 
   for (const message of sorted) {
     const blocks = turnBlocksOf(message);
-    const explicit = isExplicitLane(message);
     const key = laneOf(message);
+    const senderLane = senderLaneKey(message.sender, key);
+    const explicit = explicitLanes.has(senderLane);
+    const laneTurn = explicitTurns.get(senderLane);
     const entry = entryOf(message, index);
 
     if (blocks) {
       const profile = resolveRuntimeProfile(message.runtime);
-      if (open && open.sender === message.sender && canJoin(open, message, entry, key, index)) {
-        open.entries.push(entry);
-        open.answered = open.answered || isAnswerEntry(profile, entry, open.detached);
+      const candidate: WorkingTurn | null | undefined = explicit ? laneTurn : open;
+      if (candidate?.sender === message.sender && canJoin(candidate, message, entry, key, index)) {
+        candidate.entries.push(entry);
+        candidate.answered ||= isAnswerEntry(profile, entry, candidate.detached);
+        open = candidate;
         continue;
       }
       open = {
@@ -520,6 +533,7 @@ export function assembleChatTimeline(
         detached: !!message.detached,
         startedAt: message.timestamp,
       };
+      if (explicit) explicitTurns.set(senderLane, open);
       placements.push({ kind: 'turn', turn: open });
       continue;
     }
@@ -527,12 +541,18 @@ export function assembleChatTimeline(
     // Interactive output, media, human messages: their own tiles. A runtime's
     // own files / long-message fallbacks do not end its run — closing here
     // split one QwenPaw run into several answerless bubbles.
-    const sameLane = open && open.sender === message.sender && laneOf(message) === open.key;
+    const sameLane = open && open.sender === message.sender && key === open.key;
+    const runMedia = isRunMedia(message);
     const mediaInRun = open
       && open.sender === message.sender
-      && isRunMedia(message)
+      && runMedia
       && message.timestamp - lastTsOf(open) <= TOP_LEVEL_TURN_MAX_GAP_MS;
-    if (!sameLane && !mediaInRun) open = null;
+    if (!sameLane && !mediaInRun) {
+      open = null;
+      // Sending another message or receiving a file can interrupt adjacency,
+      // but an explicitly identified turn still owns its replies.
+      if (!laneTurn && !message.isMe && !runMedia) explicitTurns.clear();
+    }
     placements.push({ kind: 'message', message });
   }
 
@@ -544,7 +564,7 @@ export function assembleChatTimeline(
     const turn = placement.turn;
     if (turn.profile === 'qwenpaw' && !turn.detached && turn.entries.some(entry =>
       entry.message.isEdited && !entry.message.isStreaming && isAnswerEntry(turn.profile, entry, false)
-    )) answeredQwenPawLanes.add(turn.key);
+    )) answeredQwenPawLanes.add(senderLaneKey(turn.sender, turn.key));
   }
 
   for (const placement of placements) {
@@ -552,7 +572,8 @@ export function assembleChatTimeline(
       projected.push(enrichStandalone(placement.message, index));
       continue;
     }
-    const turn = projectTurn(placement.turn, index, pauses, now, index.latestTopLevelEventId, answeredQwenPawLanes.has(placement.turn.key));
+    const lane = senderLaneKey(placement.turn.sender, placement.turn.key);
+    const turn = projectTurn(placement.turn, index, pauses, now, index.latestTopLevelEventId, answeredQwenPawLanes.has(lane));
     if (turn.message) projected.push(turn.message);
     if (turn.turn) turns.push(turn.turn);
   }
@@ -705,6 +726,7 @@ function projectTurn(
       ? processBlocks.map(block => block.isStreaming ? { ...block, isStreaming: false } : block)
       : processBlocks,
     replyCount: rootMessage.replyCount,
+    replyToEventId: answer?.message.replyToEventId ?? rootMessage.replyToEventId,
     threadId: rootMessage.threadId,
     threadParticipants: rootMessage.threadId
       ? index.threadParticipants.get(rootMessage.threadId)

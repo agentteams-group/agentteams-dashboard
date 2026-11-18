@@ -205,6 +205,7 @@ export interface TeamAttentionResponse {
 
 export interface HumanResponse {
   systemAdmin?: boolean;
+  passwordResetAvailable?: boolean;
   name: string;
   phase: HumanPhase;
   displayName: string;
@@ -1521,6 +1522,12 @@ export const agentteamsApi = {
 
   updateHuman: (name: string, data: UpdateHumanRequest) =>
     proxyRequest<HumanResponse>(`/humans/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  resetHumanPassword: (name: string, newPassword: string) =>
+    proxyRequest<void>(`/humans/${encodeURIComponent(name)}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    }),
 
   // 配置面（详情抽屉四卡）：回读原始人 CR、配额、共享表清单、PATCH 兜底。
   getHumanConfig: (name: string) =>

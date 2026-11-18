@@ -396,11 +396,11 @@ describe('separate assistants and my teams with mixed roles', () => {
     const sidebar = within(screen.getByTestId('sidebar-stub'));
     expect(sidebar.getAllByRole('button', { name: /team-[a-d] 团队房间/ })).toHaveLength(4);
     expect(screen.getByText('Team A')).toBeInTheDocument();
-    expect(screen.getByText('团队协作 · 管理员')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /切换团队.*Team A.*管理员/ })).toBeInTheDocument();
     fireEvent.click(sidebar.getByRole('button', { name: 'team-c 团队房间' }));
     await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group-c:test'));
     expect(screen.getByText('Team C')).toBeInTheDocument();
-    expect(screen.getByText('团队协作 · 成员')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /切换团队.*Team C.*成员/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
   });
 

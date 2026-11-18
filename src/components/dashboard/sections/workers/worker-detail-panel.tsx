@@ -23,7 +23,8 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { AvatarEditor } from '@/components/dashboard/avatar-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ResourceDetailTabs } from '@/components/dashboard/resource-detail-tabs';
@@ -132,6 +133,7 @@ export function WorkerDetailPanel({
   const [llmOpen, setLlmOpen] = useState(false);
   const [expandedCards, setExpandedCards] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -513,9 +515,10 @@ export function WorkerDetailPanel({
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
       <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
         <div className="flex items-start gap-3">
-          <Avatar className="size-9 shrink-0">
-            <AvatarFallback className="text-sm">{view.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          {userLevel >= 3 ? <button type="button" className="shrink-0 rounded-full hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`更换 ${view.name} 的头像`} title="更换头像" onClick={() => setAvatarOpen(true)}>
+            <AccountAvatar kind="agent" name={view.name} className="size-9" />
+          </button> : <AccountAvatar kind="agent" name={view.name} className="size-9" />}
           <div className="min-w-0 flex-1">
             <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
               <span className="truncate">{view.name}</span>
@@ -724,6 +727,7 @@ export function WorkerDetailPanel({
         </AlertDialogContent>
       </AlertDialog>
 
+      {avatarOpen && userLevel >= 3 && <AvatarEditor key={view.name} kind="agent" name={view.name} onClose={() => setAvatarOpen(false)} />}
       <AlertDialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -6,6 +6,7 @@ import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { OverflowText } from '@/components/dashboard/overflow-text';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import {
   Table,
@@ -26,11 +27,13 @@ export function HumanTable({
   onView,
   onEdit,
   onDelete,
+  onResetPassword,
 }: {
   humans: HumanResponse[];
   onView: (_human: HumanResponse) => void;
   onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
+  onResetPassword?: (_human: HumanResponse) => void;
 }) {
   return (
     <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
@@ -55,6 +58,7 @@ export function HumanTable({
               >
                 <TableCell>
                   <div className="flex min-w-0 items-center gap-2">
+                    <AccountAvatar kind="human" name={human.name} label={human.displayName || human.name} className="size-6" />
                     <button
                       type="button"
                       className="max-w-[180px] truncate text-left font-medium hover:underline"
@@ -95,6 +99,9 @@ export function HumanTable({
                     </Button>
                     <ResourceListMenu label={`${human.name} 更多操作`} items={[
                       { label: '编辑', onSelect: () => onEdit(human) },
+                      ...(onResetPassword && human.passwordResetAvailable
+                        ? [{ label: '重置密码', onSelect: () => onResetPassword(human) }]
+                        : []),
                       { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
                     ]} />
                   </div>
