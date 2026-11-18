@@ -11,7 +11,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import type { Root, RootContent } from 'mdast';
 import { escapeHtml } from '@/lib/utils';
 import { chatMarkdownSchema } from './sanitize-schema';
-import { Copy, Check, Download, FileText, Play, Volume2 } from 'lucide-react';
+import { Copy, Check, Download, Play, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MermaidRenderer } from './mermaid-renderer';
 import { MediaViewer } from './media-viewer';
@@ -23,8 +23,7 @@ import {
   resolveMentionsToDisplayNames,
 } from './format';
 import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
-import { HtmlPreview } from '@/components/dashboard/html-preview';
-import { SaveToHumanFiles } from './save-to-human-files';
+import { AttachmentCard } from './attachment-card';
 import { parseObservabilityLink } from '@/lib/observability-links';
 
 interface MarkdownMessageProps {
@@ -139,72 +138,6 @@ function linkifyMxcUris(text: string, homeserver?: string): string {
     const url = mxcToDownloadUrl(match, homeserver, { download: true });
     return url ? `[${match}](${url})` : match;
   });
-}
-
-const HTML_INLINE_LIMIT = 512 * 1024;
-
-/** Renders an HTML file attachment inline in the conversation (sandboxed). */
-function HtmlFileMessage({
-  url,
-  filename,
-  downloadUrl,
-  size,
-}: {
-  url: string;
-  filename: string;
-  downloadUrl?: string;
-  size?: number;
-}) {
-  const [html, setHtml] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((text) => {
-        if (cancelled) return;
-        if (text.length > HTML_INLINE_LIMIT) {
-          setError('HTML 文件过大，请下载后查看');
-          return;
-        }
-        setHtml(text);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '预览加载失败');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  return (
-    <div className="matrix-message-content space-y-2">
-      {html ? (
-        <HtmlPreview html={html} title={filename} baseHref={url} />
-      ) : (
-        <div className="flex h-24 items-center justify-center rounded-md border bg-muted/20 text-xs text-muted-foreground">
-          {error ? `预览失败：${error}` : '加载 HTML 预览…'}
-        </div>
-      )}
-      {downloadUrl && (
-        <a
-          href={downloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs text-primary underline underline-offset-2"
-          title="下载文件"
-        >
-          <Download className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          下载 {filename}
-          {size && <span className="text-muted-foreground">{formatFileSize(size)}</span>}
-        </a>
-      )}
-    </div>
-  );
 }
 
 function formatFileSize(size?: number): string {
@@ -379,37 +312,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  if (msgType === 'm.file' && resolvedMediaUrl) {
-    const isHtmlFile =
-      mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(content);
-    if (isHtmlFile) {
-      return (
-        <div><HtmlFileMessage
-          url={resolvedMediaUrl}
-          filename={content}
-          downloadUrl={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
-          size={mediaInfo?.size}
-        /><SaveToHumanFiles filename={content} mediaUrl={mediaUrl!} homeserver={resolvedHomeserver} /></div>
-      );
-    }
-    return (
-      <div className="matrix-message-content">
-        <a
-          href={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm text-primary underline underline-offset-2"
-          title="下载文件"
-        >
-          <FileText className="w-4 h-4 shrink-0" />
-          <span className="truncate">{content}</span>
-          {mediaInfo?.size && (
-            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(mediaInfo.size)}</span>
-          )}
-        </a>
-        <SaveToHumanFiles filename={content} mediaUrl={mediaUrl!} homeserver={resolvedHomeserver} />
-      </div>
-    );
+  if (msgType === 'm.file' && mediaUrl && resolvedMediaUrl) {
+    return <AttachmentCard homeserver={resolvedHomeserver} payload={{
+      url: mediaUrl, filename: content, mimetype: mediaInfo?.mimetype ?? '', size: mediaInfo?.size,
+    }} />;
   }
 
   // For HTML formatted_body, render directly (card/thinking already split off

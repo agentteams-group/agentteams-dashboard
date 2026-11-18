@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render as renderComponent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderComponent, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachmentCard } from './attachment-card';
+import { AttachmentPreviewContext } from './attachment-preview';
 
 vi.mock('@/lib/matrix-store', () => ({
   useMatrixStore: () => ({ homeserver: 'https://hs.test' }),
 }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function render(ui: React.ReactElement) {
   return renderComponent(ui, {
@@ -30,7 +31,7 @@ describe('AttachmentCard', () => {
     render(<AttachmentCard payload={makePayload()} />);
 
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
-    expect(screen.getByText('文本 · 全文附件')).toBeInTheDocument();
+    expect(screen.getByText('文本')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '保存到我的文件' })).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /下载/ });
     // Media is proxied through the Next.js API (browsers cannot reach the
@@ -54,68 +55,61 @@ describe('AttachmentCard', () => {
     expect(screen.queryByRole('link', { name: /下载/ })).toBeNull();
   });
 
-  it('renders download and save actions without preview in compact mode', () => {
-    render(<AttachmentCard payload={makePayload()} compact />);
-
-    expect(screen.getByText('全文附件 · full-reply.txt')).toBeInTheDocument();
+  it('opens the room preview from a compact attachment', () => {
+    const open = vi.fn();
+    render(<AttachmentPreviewContext.Provider value={open}><AttachmentCard payload={makePayload()} compact /></AttachmentPreviewContext.Provider>);
+    expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
-    // Compact mode is used inside the process fold: no preview affordance.
-    expect(screen.queryByRole('button', { name: /预览/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '保存到我的文件' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存到我的文件' })).toHaveAttribute('title', '添加到个人文件区');
+    fireEvent.click(screen.getByRole('button', { name: '查看 full-reply.txt' }));
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ filename: 'full-reply.txt' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('expands a text preview on demand and truncates above the limit', async () => {
-    const longBody = 'x'.repeat(300 * 1024);
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => longBody,
-    }) as unknown as typeof fetch;
+  it('renders Markdown returned with a binary MIME type as headings and tables', async () => {
+    const read = vi.fn().mockResolvedValue(new Response('# 项目计划\n\n| 名称 | 状态 |\n|---|---|\n| 验收 | 完成 |'));
+    vi.stubGlobal('fetch', read);
+    render(<AttachmentCard payload={makePayload({ filename: 'plan.md', mimetype: 'application/octet-stream' })} />);
+    expect(read).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '查看 plan.md' }));
+    expect(await screen.findByRole('heading', { name: '项目计划' })).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveTextContent('完成');
+  });
 
+  it('bounds text preview size', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('x'.repeat(530 * 1024))));
     render(<AttachmentCard payload={makePayload()} />);
-    fireEvent.click(screen.getByRole('button', { name: /预览/ }));
-
+    fireEvent.click(screen.getByRole('button', { name: '查看 full-reply.txt' }));
     expect(await screen.findByText(/内容已截断/)).toBeInTheDocument();
-    expect(global.fetch).toHaveBeenCalledWith(
-      '/api/matrix/media/v3/download/example.com/abc123/?homeserver=https%3A%2F%2Fhs.test'
-    );
   });
 
-  it('shows an inline error when the preview download fails', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    }) as unknown as typeof fetch;
-
+  it('shows a retryable error when the preview download fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     render(<AttachmentCard payload={makePayload()} />);
-    fireEvent.click(screen.getByRole('button', { name: /预览/ }));
-
-    expect(await screen.findByText('预览加载失败')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看 full-reply.txt' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('预览加载失败');
+    expect(screen.getByRole('button', { name: '重试' })).toBeEnabled();
   });
 
-  it('renders an HTML attachment inline with a download link', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => '<html><body><h1>Hello</h1></body></html>',
-    }) as unknown as typeof fetch;
-
-    render(
-      <AttachmentCard
-        payload={makePayload({ filename: 'index.html', mimetype: 'text/html' })}
-      />
-    );
-
-    const frame = await screen.findByTitle('index.html');
-    expect(frame.tagName).toBe('IFRAME');
-    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
-    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+  it('renders an HTML attachment in a script-free sandbox after clicking View', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html><body><h1>Hello</h1></body></html>')));
+    render(<AttachmentCard payload={makePayload({ filename: 'index.html', mimetype: 'application/octet-stream' })} />);
+    expect(document.querySelector('iframe')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看 index.html' }));
+    const frame = await waitFor(() => {
+      const iframe = document.querySelector('iframe[title="index.html"]');
+      expect(iframe).not.toBeNull();
+      return iframe!;
+    });
+    expect(frame).toHaveAttribute('sandbox', '');
     expect(frame.getAttribute('srcdoc')).toContain('<h1>Hello</h1>');
-    expect(screen.getByRole('link', { name: /下载/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '关闭文件预览' }));
+    expect(document.querySelector('iframe')).toBeNull();
   });
 
-  it('does not offer preview for binary mime types', () => {
-    render(<AttachmentCard payload={makePayload({ mimetype: 'application/zip' })} />);
-
-    expect(screen.queryByRole('button', { name: /预览/ })).toBeNull();
-    expect(screen.getByText('压缩包 · 全文附件')).toBeInTheDocument();
+  it('only offers download for binary formats without a preview renderer', () => {
+    render(<AttachmentCard payload={makePayload({ filename: 'backup.zip', mimetype: 'application/zip' })} />);
+    expect(screen.queryByRole('button', { name: /查看/ })).toBeNull();
+    expect(screen.getByText('压缩包')).toBeInTheDocument();
   });
 });

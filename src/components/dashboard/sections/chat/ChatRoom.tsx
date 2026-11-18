@@ -10,6 +10,7 @@ import { useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -65,7 +66,7 @@ import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
-export type ChatContextPanel = RoomContextTab | null;
+export type ChatContextPanel = RoomContextTab | 'attachment-preview' | null;
 
 /**
  * 命令面板命中跳房间消息时写的是 `#workbench/space/<roomId>?q=<词>`（方案 v3 B-1 延伸），
@@ -169,6 +170,11 @@ export function ChatRoom({
     setInternalContextPanel(panel);
     onContextPanelChange?.(panel);
   }, [onContextPanelChange]);
+  const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
+  const openAttachmentPreview = useCallback((file: PreviewAttachment) => {
+    setPreviewAttachment(file);
+    setContextPanel('attachment-preview');
+  }, [setContextPanel]);
   const [replyTo, setReplyTo] = useState<DisplayMessage | null>(null);
   const [activeThread, setActiveThread] = useState<DisplayMessage | null>(null);
   const [threadMention, setThreadMention] = useState<DisplayMessage | null>(null);
@@ -797,6 +803,7 @@ export function ChatRoom({
 
   return (
     <MessageReadRoomContext.Provider value={roomId}>
+    <AttachmentPreviewContext.Provider value={openAttachmentPreview}>
     <div
       ref={chatLayoutRef}
       data-mention-event={focusedMentionId ?? threadMention?.id ?? undefined}
@@ -832,7 +839,7 @@ export function ChatRoom({
           sessionDot={sessionDot}
           memberCount={roomMembers.length}
           threadCount={threadRoots.length}
-          activePanel={contextPanel}
+          activePanel={contextPanel === 'attachment-preview' ? null : contextPanel}
           onTogglePanel={handleTogglePanel}
         />
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
@@ -1004,7 +1011,10 @@ export function ChatRoom({
         />
       )}
 
-      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
+      {contextPanel === 'attachment-preview' && previewAttachment && (
+        <AttachmentPreviewPanel file={previewAttachment} onClose={() => setContextPanel(null)} />
+      )}
+      {contextPanel !== null && contextPanel !== 'attachment-preview' && !(taskRoom && contextPanel === 'tasks') && (
         <RoomContextPanel
           showTasks={!taskRoom}
           canSend={canSend}
@@ -1029,6 +1039,7 @@ export function ChatRoom({
         />
       )}
     </div>
+    </AttachmentPreviewContext.Provider>
     </MessageReadRoomContext.Provider>
   );
 }

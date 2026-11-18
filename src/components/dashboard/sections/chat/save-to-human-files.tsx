@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Check, Loader2, Users } from 'lucide-react';
+import { FolderPlus, Check, Loader2, Users } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { agentteamsApi } from '@/lib/agentteams-api';
@@ -28,7 +29,10 @@ function attachmentName(filename: string) {
   return base === '.' || base === '..' ? '附件' : base;
 }
 
-export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { filename: string; mediaUrl: string; homeserver: string; inline?: boolean }) {
+const ICON_ACTION = 'size-8 justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring';
+const ICON_ERROR = 'absolute right-0 top-full z-10 mt-1 w-48 rounded-md border bg-popover p-2 shadow';
+
+export function SaveToHumanFiles({ filename, mediaUrl, homeserver, iconsOnly }: { filename: string; mediaUrl: string; homeserver: string; iconsOnly?: boolean }) {
   const queryClient = useQueryClient();
   const sessionUser = useAgentTeamsStore(state => state.sessionUser);
   const userLevel = useAgentTeamsStore(state => state.userLevel);
@@ -63,20 +67,23 @@ export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { f
     }
   };
 
-  return <div className={inline ? "px-2 text-xs" : "mt-2 text-xs"}>
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-    <button type="button" onClick={event => { event.stopPropagation(); void save(); }} disabled={saving || !!savedPath || !sessionUser || !userId} title={savedPath || '保存到当前账号的 Human 文件区'} className="inline-flex items-center gap-1.5 text-primary hover:underline disabled:cursor-default disabled:no-underline">
-      {saving ? <Loader2 className="size-3.5 animate-spin" /> : savedPath ? <Check className="size-3.5" /> : <Download className="size-3.5" />}
-      {saving ? '正在保存…' : savedPath ? '已保存到我的文件' : '保存到我的文件'}
+  const label = saving ? '正在保存…' : savedPath ? '已保存到我的文件' : '保存到我的文件';
+  return <div className={cn('relative text-xs', iconsOnly && 'transition-opacity motion-reduce:transition-none [@media(hover:hover)]:opacity-0 group-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100')}>
+    <div className={cn('flex items-center', iconsOnly ? 'gap-0.5' : 'flex-wrap gap-x-3 gap-y-1')}>
+    <button type="button" onClick={event => { event.stopPropagation(); void save(); }} disabled={saving || !!savedPath || !sessionUser || !userId}
+      aria-label={label} title={savedPath || '添加到个人文件区'}
+      className={cn('inline-flex items-center gap-1.5 disabled:cursor-default', iconsOnly ? ICON_ACTION : 'text-primary hover:underline disabled:no-underline')}>
+      {saving ? <Loader2 className="size-4 animate-spin" /> : savedPath ? <Check className="size-4 text-emerald-600" /> : <FolderPlus className="size-4" />}
+      {!iconsOnly && label}
     </button>
-      <SaveToTeamFiles filename={filename} mediaUrl={mediaUrl} homeserver={homeserver} />
+      <SaveToTeamFiles filename={filename} mediaUrl={mediaUrl} homeserver={homeserver} iconsOnly={iconsOnly} />
     </div>
-    {savedPath && <p role="status" className="mt-1 break-all text-muted-foreground">{savedPath}</p>}
-    {error && <p role="alert" className="mt-1 text-status-failed">{error}</p>}
+    {savedPath && <p role="status" className={iconsOnly ? 'sr-only' : 'mt-1 break-all text-muted-foreground'}>{savedPath}</p>}
+    {error && <p role="alert" className={cn('mt-1 text-status-failed', iconsOnly && ICON_ERROR)}>{error}</p>}
   </div>;
 }
 
-function SaveToTeamFiles({ filename, mediaUrl, homeserver }: { filename: string; mediaUrl: string; homeserver: string }) {
+function SaveToTeamFiles({ filename, mediaUrl, homeserver, iconsOnly }: { filename: string; mediaUrl: string; homeserver: string; iconsOnly?: boolean }) {
   const { teams, preferredTeam } = useContext(AttachmentTeamsContext);
   const { userId, accessToken } = useMatrixStore();
   const upload = useUploadCollaborationFile();
@@ -104,13 +111,14 @@ function SaveToTeamFiles({ filename, mediaUrl, homeserver }: { filename: string;
     }
   }
 
-  const button = <button type="button" disabled={saving || !!savedTeam}
+  const label = saving ? '正在保存到团队…' : savedTeam ? `已保存到 ${savedTeam}` : '保存到团队文件区';
+  const button = <button type="button" disabled={saving || !!savedTeam} aria-label={label} title={savedTeam ? label : '添加到团队文件区'}
     onClick={event => { event.stopPropagation(); if (target) void save(target); }}
-    className="inline-flex items-center gap-1.5 text-primary hover:underline disabled:cursor-default disabled:no-underline">
-    {saving ? <Loader2 className="size-3.5 animate-spin" /> : savedTeam ? <Check className="size-3.5" /> : <Users className="size-3.5" />}
-    {saving ? '正在保存到团队…' : savedTeam ? `已保存到 ${savedTeam}` : '保存到团队文件区'}
+    className={cn('inline-flex items-center gap-1.5 disabled:cursor-default', iconsOnly ? ICON_ACTION : 'text-primary hover:underline disabled:no-underline')}>
+    {saving ? <Loader2 className="size-4 animate-spin" /> : savedTeam ? <Check className="size-4 text-emerald-600" /> : <Users className="size-4" />}
+    {!iconsOnly && label}
   </button>;
-  return <div>
+  return <div className="relative">
     {target ? button : <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{button}</PopoverTrigger>
       <PopoverContent align="end" aria-label="选择保存团队" className="w-56 space-y-1 p-2">
@@ -121,6 +129,7 @@ function SaveToTeamFiles({ filename, mediaUrl, homeserver }: { filename: string;
         </button>)}
       </PopoverContent>
     </Popover>}
-    {error && <p role="alert" className="mt-1 text-status-failed">{error}</p>}
+    {savedTeam && iconsOnly && <p role="status" className="sr-only">{label}</p>}
+    {error && <p role="alert" className={cn('mt-1 text-status-failed', iconsOnly && ICON_ERROR)}>{error}</p>}
   </div>;
 }

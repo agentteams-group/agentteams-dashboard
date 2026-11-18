@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { act, cleanup, fireEvent, render as renderUI, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderUI, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownMessage } from './markdown-message';
@@ -344,38 +344,25 @@ describe('MarkdownMessage', () => {
     expect(link?.getAttribute('href')).toBe(
       '/api/matrix/media/v3/download/example.org/doc1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
     );
-    expect(screen.getByText('(2.0 KB)')).toBeInTheDocument();
+    expect(screen.getByText('PDF · 2.0 KB')).toBeInTheDocument();
   });
 
-  it('renders an HTML file message inline with a download link', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        text: async () => '<html><body><h1>Hello</h1></body></html>',
-      })
-    );
+  it('uses the attachment card for HTML file messages, without loading a preview until clicked', async () => {
+    const read = vi.fn().mockResolvedValue(new Response('<html><body><h1>Hello</h1></body></html>'));
+    vi.stubGlobal('fetch', read);
+    render(<MarkdownMessage content="index.html" msgType="m.file" mediaUrl="mxc://example.org/page1"
+      mediaInfo={{ mimetype: 'text/html', size: 1234 }} homeserver="https://hs.example.org" />);
 
-    render(
-      <MarkdownMessage
-        content="index.html"
-        msgType="m.file"
-        mediaUrl="mxc://example.org/page1"
-        mediaInfo={{ mimetype: 'text/html', size: 1234 }}
-        homeserver="https://hs.example.org"
-      />
-    );
-
-    const frame = await screen.findByTitle('index.html');
-    expect(frame.tagName).toBe('IFRAME');
-    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
-    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: '下载 index.html' })).toHaveAttribute('href',
+      '/api/matrix/media/v3/download/example.org/page1/?homeserver=https%3A%2F%2Fhs.example.org&download=true');
+    fireEvent.click(screen.getByRole('button', { name: '查看 index.html' }));
+    const frame = await waitFor(() => {
+      const iframe = document.querySelector('iframe[title="index.html"]');
+      expect(iframe).not.toBeNull();
+      return iframe!;
+    });
     expect(frame.getAttribute('srcdoc')).toContain('<h1>Hello</h1>');
-
-    const link = screen.getByRole('link', { name: /下载 index\.html/ });
-    expect(link.getAttribute('href')).toBe(
-      '/api/matrix/media/v3/download/example.org/page1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
-    );
   });
 
   it('linkifies bare mxc:// URIs in plain text bodies', () => {
