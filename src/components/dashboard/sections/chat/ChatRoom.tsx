@@ -7,7 +7,7 @@ import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
 import { useOutboundMessages } from './hooks/useOutboundMessages';
-import { useWorkerFileOptions } from './hooks/useWorkerFileOptions';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
 import { TaskTopologyPopover } from './components/TaskTopologyPopover';
@@ -106,13 +106,12 @@ export function resetRoomSearchDeepLinkForTests(): void {
 
 interface ChatRoomProps {
   taskRoom?: boolean;
+  taskId?: string;
   agentRole?: RoomInfo['agentRole'];
   roomId: string;
   roomName: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
-  /** Worker resource name owning this room; auto-selected in the files panel. */
-  defaultWorkerName?: string;
   /** Worker phase shown in the conversation header. */
   roomPhase?: string;
   /** Worker runtime shown in the conversation header. */
@@ -139,11 +138,11 @@ interface ChatRoomProps {
 
 export function ChatRoom({
   taskRoom = false,
+  taskId,
   agentRole,
   roomId,
   roomName,
   team,
-  defaultWorkerName,
   roomPhase,
   roomRuntime,
   workerMatrixUserIds,
@@ -777,38 +776,20 @@ export function ChatRoom({
     [roomMembers]
   );
 
-  const {
-    workerOptions,
-    effectiveSelectedWorker,
-    selectedIsTeamShared,
-    setSelectedWorker,
-  } = useWorkerFileOptions({ team, roomMembers, runtimeMap, defaultWorkerName });
-
-  // Workspace space the composer can reference files from (#87): the selected
-  // worker's private space, or the team's shared space when shared is selected
-  // or no worker is resolvable in this room.
-  const fileRefTarget = effectiveSelectedWorker && !selectedIsTeamShared
-    ? { kind: 'worker' as const, ownerName: effectiveSelectedWorker }
-    : team?.name
-      ? { kind: 'team' as const, ownerName: team.name }
-      : undefined;
-
-  // "查看工作目录" on an agent bubble: open the worker files panel with that
-  // message's sender pre-selected (resolved via the runtime map).
-  const handleOpenWorkerFiles = useCallback((message: DisplayMessage) => {
-    const workerName = message.workerName || runtimeMap[message.sender]?.workerName;
-    if (!workerName) return;
-    setSelectedWorker(workerName);
+  const fileScope: CollaborationFileScope | undefined = taskRoom
+    ? { room: roomId, taskId: taskId ?? roomName.match(/^TASK[：:]\s*(.+)$/i)?.[1] }
+    : team?.name ? { team: team.name } : undefined;
+  const fileRefTarget = team?.name ? { kind: 'team' as const, ownerName: team.name } : undefined;
+  const handleOpenRoomFiles = useCallback(() => {
     setActiveThread(null);
     setContextPanel('files');
-  }, [runtimeMap, setSelectedWorker, setContextPanel]);
+  }, [setContextPanel]);
 
   const handleOpenThread = useCallback((message: DisplayMessage) => {
-    setSelectedWorker(null);
     setThreadMention(null);
     setActiveThread(message);
     setContextPanel('thread');
-  }, [setSelectedWorker, setContextPanel]);
+  }, [setContextPanel]);
 
   const handleTogglePanel = useCallback((panel: RoomContextTab) => {
     setContextPanel(contextPanel === panel ? null : panel);
@@ -942,7 +923,7 @@ export function ChatRoom({
             onResend={canSend ? handleResendLocal : undefined}
             onCancel={handleCancelLocal}
             onSendConfirmation={canSend ? handleSendConfirmation : undefined}
-            onOpenWorkerFiles={handleOpenWorkerFiles}
+            onOpenRoomFiles={fileScope ? handleOpenRoomFiles : undefined}
             memberMap={memberMap}
             onAtBottomChange={handleAtBottomChange}
             notices={systemNotices}
@@ -1029,16 +1010,12 @@ export function ChatRoom({
           canSend={canSend}
           showMembers={!agentRole}
           roomId={roomId}
-          team={team}
+          fileScope={fileScope}
           activeTab={contextPanel}
           onTabChange={setContextPanel}
           onClose={() => setContextPanel(null)}
           roomMembers={roomMembers}
           senderStatusMap={senderStatusMap}
-          workerOptions={workerOptions}
-          effectiveSelectedWorker={effectiveSelectedWorker}
-          selectedIsTeamShared={selectedIsTeamShared}
-          onSelectWorker={setSelectedWorker}
           activeThread={activeThread}
           threadMention={threadMention}
           threadRoots={threadRoots}

@@ -1,13 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Check, Loader2 } from 'lucide-react';
+import { Download, Check, Loader2, Users } from 'lucide-react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { humanFilesApi } from '@/lib/human-files-api';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
+import type { TeamResponse } from '@/lib/agentteams-api';
+import { CHAT_ATTACHMENT_DIRECTORY } from '@/lib/collaboration-files';
+import { useUploadCollaborationFile } from '@/hooks/use-collaboration-files';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+export const AttachmentTeamsContext = createContext<{ teams: TeamResponse[]; preferredTeam?: string }>({ teams: [] });
+
+async function readAttachment(mediaUrl: string, homeserver: string, accessToken: string) {
+  const url = mxcToDownloadUrl(mediaUrl, homeserver);
+  if (!url) throw new Error('附件地址无效');
+  const response = await fetch(url, { headers: mediaUrl.startsWith('mxc://') ? { Authorization: `Bearer ${accessToken}` } : {} });
+  if (!response.ok) throw new Error(`附件读取失败（${response.status}）`);
+  return response.blob();
+}
+
+function attachmentName(filename: string) {
+  const base = filename.split(/[\\/]/).pop() || '附件';
+  return base === '.' || base === '..' ? '附件' : base;
+}
 
 export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { filename: string; mediaUrl: string; homeserver: string; inline?: boolean }) {
   const queryClient = useQueryClient();
@@ -31,14 +50,8 @@ export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { f
         if (!human) throw new Error('当前账号的 Human 个人文件区尚未就绪，请稍后重试');
         name = human.name;
       }
-      const url = mxcToDownloadUrl(mediaUrl, homeserver);
-      if (!url) throw new Error('附件地址无效');
-      // Only the local Matrix proxy receives Matrix credentials.
-      const response = await fetch(url, { headers: mediaUrl.startsWith('mxc://') ? { Authorization: `Bearer ${accessToken}` } : {} });
-      if (!response.ok) throw new Error(`附件读取失败（${response.status}）`);
-      const blob = await response.blob();
-      const base = filename.split(/[\\/]/).pop() || '附件';
-      const safeName = base === '.' || base === '..' ? '附件' : base;
+      const blob = await readAttachment(mediaUrl, homeserver, accessToken);
+      const safeName = attachmentName(filename);
       const path = `聊天附件/${Date.now()}-${safeName}`;
       await humanFilesApi.uploadFile(name, path, blob, { fileName: safeName });
       setSavedPath(path);
@@ -51,11 +64,63 @@ export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { f
   };
 
   return <div className={inline ? "px-2 text-xs" : "mt-2 text-xs"}>
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
     <button type="button" onClick={event => { event.stopPropagation(); void save(); }} disabled={saving || !!savedPath || !sessionUser || !userId} title={savedPath || '保存到当前账号的 Human 文件区'} className="inline-flex items-center gap-1.5 text-primary hover:underline disabled:cursor-default disabled:no-underline">
       {saving ? <Loader2 className="size-3.5 animate-spin" /> : savedPath ? <Check className="size-3.5" /> : <Download className="size-3.5" />}
       {saving ? '正在保存…' : savedPath ? '已保存到我的文件' : '保存到我的文件'}
     </button>
+      <SaveToTeamFiles filename={filename} mediaUrl={mediaUrl} homeserver={homeserver} />
+    </div>
     {savedPath && <p role="status" className="mt-1 break-all text-muted-foreground">{savedPath}</p>}
+    {error && <p role="alert" className="mt-1 text-status-failed">{error}</p>}
+  </div>;
+}
+
+function SaveToTeamFiles({ filename, mediaUrl, homeserver }: { filename: string; mediaUrl: string; homeserver: string }) {
+  const { teams, preferredTeam } = useContext(AttachmentTeamsContext);
+  const { userId, accessToken } = useMatrixStore();
+  const upload = useUploadCollaborationFile();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedTeam, setSavedTeam] = useState('');
+  const [error, setError] = useState('');
+  const target = teams.find(team => team.name === preferredTeam) ?? (teams.length === 1 ? teams[0] : undefined);
+  if (teams.length === 0 || !userId) return null;
+
+  async function save(team: TeamResponse) {
+    if (saving || savedTeam) return;
+    setOpen(false);
+    setSaving(true);
+    setError('');
+    try {
+      const blob = await readAttachment(mediaUrl, homeserver, accessToken);
+      const file = new File([blob], attachmentName(filename), { type: blob.type });
+      await upload.mutateAsync({ team: team.name, file, prefix: CHAT_ATTACHMENT_DIRECTORY });
+      setSavedTeam(team.teamName || team.name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const button = <button type="button" disabled={saving || !!savedTeam}
+    onClick={event => { event.stopPropagation(); if (target) void save(target); }}
+    className="inline-flex items-center gap-1.5 text-primary hover:underline disabled:cursor-default disabled:no-underline">
+    {saving ? <Loader2 className="size-3.5 animate-spin" /> : savedTeam ? <Check className="size-3.5" /> : <Users className="size-3.5" />}
+    {saving ? '正在保存到团队…' : savedTeam ? `已保存到 ${savedTeam}` : '保存到团队文件区'}
+  </button>;
+  return <div>
+    {target ? button : <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{button}</PopoverTrigger>
+      <PopoverContent align="end" aria-label="选择保存团队" className="w-56 space-y-1 p-2">
+        {teams.map(team => <button key={team.name} type="button"
+          className="block w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+          onClick={event => { event.stopPropagation(); void save(team); }}>
+          {team.teamName || team.name}
+        </button>)}
+      </PopoverContent>
+    </Popover>}
     {error && <p role="alert" className="mt-1 text-status-failed">{error}</p>}
   </div>;
 }

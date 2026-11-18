@@ -57,8 +57,8 @@ interface MessageBubbleProps {
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
-  /** Opens the owning worker's files panel (team rooms: multi-worker source). */
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  /** Opens the task or team file panel from an assignment card. */
+  onOpenRoomFiles?: () => void;
   /**
    * Opens the owning worker's read-only QwenPaw sessions (C / #1295).
    * Only worker senders get a clickable avatar; humans do not.
@@ -344,7 +344,7 @@ export function MessageBubble({
   onResend,
   onCancel,
   onSendConfirmation,
-  onOpenWorkerFiles,
+  onOpenRoomFiles,
   onOpenWorkerChats,
   senderShort,
   memberMap,
@@ -500,7 +500,7 @@ export function MessageBubble({
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
   }
   if (workflowNotice && parsedBlocks.every(block => block.type === 'text')) {
-    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenWorkerFiles ? () => onOpenWorkerFiles(message) : undefined} />;
+    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenRoomFiles} />;
     return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
   }
 
@@ -896,9 +896,6 @@ export function MessageBubble({
               <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
             {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
-            {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
-              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
-            )}
           </div>
       </div>
     </div>

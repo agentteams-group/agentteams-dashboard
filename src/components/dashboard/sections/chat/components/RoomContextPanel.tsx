@@ -3,10 +3,10 @@
 import { MessagesSquare, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage, RoomMember } from '@/hooks/use-matrix';
-import type { TeamResponse } from '@/lib/agentteams-api';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { ThreadPanel } from '../structures/ThreadPanel';
-import { FilesPanel, type WorkerFileOption } from './WorkersFilesSidebar';
+import { FilesBrowserPanel } from '../views/worker-files-panel';
 import { MembersPanel } from './MembersSidebar';
 import { RoomTasksPanel } from './RoomTasksPanel';
 import { RoomContextTabs } from './RoomContextTabs';
@@ -18,16 +18,12 @@ interface RoomContextPanelProps {
   showMembers?: boolean;
   showTasks?: boolean;
   roomId: string;
-  team?: TeamResponse;
+  fileScope?: CollaborationFileScope;
   activeTab: RoomContextTab;
   onTabChange: (_tab: RoomContextTab) => void;
   onClose: () => void;
   roomMembers: RoomMember[];
   senderStatusMap: Record<string, WorkerSessionState>;
-  workerOptions: WorkerFileOption[];
-  effectiveSelectedWorker: string | null;
-  selectedIsTeamShared: boolean;
-  onSelectWorker: (_worker: string | null) => void;
   activeThread: DisplayMessage | null;
   threadMention?: DisplayMessage | null;
   threadRoots: DisplayMessage[];
@@ -44,16 +40,12 @@ interface RoomContextPanelProps {
 export function RoomContextPanel({
   canSend = true,
   roomId,
-  team,
+  fileScope,
   activeTab,
   onTabChange,
   onClose,
   roomMembers,
   senderStatusMap,
-  workerOptions,
-  effectiveSelectedWorker,
-  selectedIsTeamShared,
-  onSelectWorker,
   activeThread,
   threadMention,
   threadRoots,
@@ -86,13 +78,8 @@ export function RoomContextPanel({
         )}
 
         {activeTab === 'files' && (
-          <FilesPanel
-            team={team}
-            workerOptions={workerOptions}
-            effectiveSelectedWorker={effectiveSelectedWorker}
-            selectedIsTeamShared={selectedIsTeamShared}
-            onSelectWorker={onSelectWorker}
-          />
+          fileScope ? <FilesBrowserPanel key={'team' in fileScope ? fileScope.team : fileScope.room} scope={fileScope} />
+            : <p className="p-4 text-sm text-muted-foreground">此会话没有共享文件目录。Agent 工作区文件可在 Agent 管理中查看。</p>
         )}
 
         {activeTab === 'thread' && (

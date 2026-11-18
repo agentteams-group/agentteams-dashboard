@@ -172,7 +172,7 @@ interface MessageListProps {
   onCancel?: (_message: DisplayMessage) => void;
   onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
   /** Opens the worker files panel for the message's owning worker. */
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  onOpenRoomFiles?: () => void;
   memberMap?: Record<string, string>;
   /** Called whenever the scroller enters or leaves the bottom position. */
   onAtBottomChange?: (_atBottom: boolean) => void;
@@ -222,7 +222,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     onResend,
     onCancel,
     onSendConfirmation,
-    onOpenWorkerFiles,
+    onOpenRoomFiles,
     memberMap,
     onAtBottomChange,
     notices = [],
@@ -266,7 +266,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         onResend={onResend}
         onCancel={onCancel}
         onSendConfirmation={onSendConfirmation}
-        onOpenWorkerFiles={onOpenWorkerFiles}
+        onOpenRoomFiles={onOpenRoomFiles}
         memberMap={memberMap}
         readReceipts={readReceipts}
         currentUserId={currentUserId}
@@ -275,7 +275,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         />
       </div>
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenWorkerFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenRoomFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would

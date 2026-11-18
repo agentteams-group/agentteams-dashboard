@@ -56,6 +56,7 @@ import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerSkillUploadDialog } from './worker-skill-upload-dialog';
 import { WorkerToolsPanel } from './worker-tools-panel';
 import { WorkerWorkspaceFilesPanel } from './worker-workspace-files-panel';
+import { FilesBrowserPanel } from '../chat/views/worker-files-panel';
 import { useNowTick } from '@/hooks/use-now-tick';
 import {
   useDeleteWorker,
@@ -450,9 +451,12 @@ export function WorkerDetailPanel({
     {
       id: 'workspace-files',
       title: '工作区文件',
-      desc: 'MEMORY / memory / digest · 文本可编辑',
+      desc: 'Agent 工作区和存储文件',
       render: () => (
-        <WorkerWorkspaceFilesPanel key={`ws-${view.name}`} workerName={view.name} />
+        <div className="space-y-4">
+          <WorkerWorkspaceFilesPanel key={`ws-${view.name}`} workerName={view.name} />
+          <div className="h-[36rem] border-t pt-3"><FilesBrowserPanel key={`storage-${view.name}`} scope={{ worker: view.name }} /></div>
+        </div>
       ),
     },
     {

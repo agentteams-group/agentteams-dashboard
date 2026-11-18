@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
+import { belongsToTeam } from '@/lib/collaboration-files';
+import { AttachmentTeamsContext } from './save-to-human-files';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -416,9 +418,14 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
               // key forces a fresh ChatRoom instance per room so input,
               // in-flight local messages and scroll state never leak across
               // rooms when switching conversations.
+              <AttachmentTeamsContext.Provider value={{
+                teams: (teams ?? []).filter(team => belongsToTeam(team, sessionUser)),
+                preferredTeam: selectedRoom.team?.name ?? teams?.find(team => team.name === selectedRoom.parentTeam || team.teamName === selectedRoom.parentTeam)?.name,
+              }}>
               <ChatPanel
                 key={selectedRoom.id}
                 room={selectedRoom}
+                taskId={taskCollaboration?.roomId === selectedRoom.id ? taskCollaboration.taskId : undefined}
                 managerName={selectedRoom.agentRole === 'operations' ? managers?.find((manager) => manager.roomID === selectedRoom.id)?.name : undefined}
                 rooms={availableRooms}
                 contextPanel={contextPanel}
@@ -429,6 +436,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 headerActions={<RelatedConversationButton rooms={availableRooms.filter(room => !room.archived)} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
 
               />
+              </AttachmentTeamsContext.Provider>
             ) : (
               <ChatEmptyState
                 isLoggedIn={isLoggedIn}
