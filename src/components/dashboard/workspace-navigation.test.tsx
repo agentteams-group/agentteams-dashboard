@@ -47,14 +47,14 @@ describe('compact workspace navigation', () => {
   });
 
   it('keeps the same six destinations in the mobile drawer', () => {
-    render(<MobileSidebar {...props} open onClose={vi.fn()} />);
+    render(<MobileSidebar {...props} countMap={{ ...props.countMap, humans: 1 }} open onClose={vi.fn()} />);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
     expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(6);
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
     const members = within(screen.getByRole('group', { name: '成员与团队分类' }));
-    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['Agent', '用户', '团队']);
+    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['Agent', '用户1', '团队']);
     expect(members.queryByRole('button', { name: 'Managers' })).toBeNull();
     fireEvent.click(members.getByRole('button', { name: 'Agent' }));
     expect(props.onNavClick).toHaveBeenCalledWith('workers');
