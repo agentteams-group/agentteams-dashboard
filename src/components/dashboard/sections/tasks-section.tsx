@@ -440,6 +440,7 @@ function TaskCard({
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-2">
           <OverflowText text={task.title} multiline className="min-w-0 flex-1 text-sm font-medium leading-6" />
+          {task.kind === 'project-summary' && <Badge variant="outline">项目</Badge>}
           {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
         </div>
         <SubtaskProgress task={task} tasks={tasks} />
@@ -487,20 +488,20 @@ function TaskCard({
 
 function ProjectCard({
   project,
-  taskCount,
+  tasks,
   onSelect,
   selected,
   onMetaSaved,
 }: {
   project: BoardProject;
-  taskCount: number;
+  tasks: BoardTask[];
   onSelect: (_id: string) => void;
   selected: boolean;
   onMetaSaved?: () => void;
 }) {
   const allItems = project.phases.flatMap((p) => p.items);
-  const done = allItems.filter((i) => i.done).length;
-  const total = allItems.length;
+  const done = allItems.length ? allItems.filter((i) => i.done).length : tasks.filter(task => task.status === 'completed').length;
+  const total = allItems.length || tasks.length;
   const inProgress = allItems.filter((i) => i.inProgress).length;
   const blocked = allItems.filter((i) => i.blocked).length;
   const progressPct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -525,7 +526,7 @@ function ProjectCard({
           </Badge>
           <Badge variant="outline" className="text-xs gap-1">
             <ListTodo className="h-2.5 w-2.5" />
-            {taskCount} 任务
+            {tasks.length} 任务
           </Badge>
         </div>
         <div>
@@ -549,7 +550,7 @@ function ProjectCard({
         </div>
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>plan 进度</span>
+            <span>{allItems.length ? '计划进度' : '任务进度'}</span>
             <span>
               {done}/{total} · {progressPct}%
             </span>
@@ -875,8 +876,9 @@ export function TasksSection() {
 
   const tasksForProject = useCallback(
     (projectId: string) =>
-      filteredTasks.filter((t) => t.projectId === projectId),
-    [filteredTasks],
+      filteredTasks.filter(task => task.projectId === projectId).flatMap(task =>
+        task.kind === 'project-summary' ? subtasksOf(task, board.tasks) : [task]),
+    [filteredTasks, board.tasks],
   );
 
   // Group by status for the kanban view
@@ -1108,7 +1110,7 @@ export function TasksSection() {
                     <ProjectCard
                       key={p.runId}
                       project={p}
-                      taskCount={tasksForProject(p.runId).length}
+                      tasks={tasksForProject(p.runId)}
                       onSelect={setSelectedProjectId}
                       selected={p.runId === effectiveProjectId}
                       onMetaSaved={() => board.refetch()}
@@ -1158,7 +1160,7 @@ export function TasksSection() {
                     tasks={tasksForProject(selectedProject.runId)}
                   />
                   {selectedProject.source === 'api' ? (
-                    <div className="space-y-4"><section aria-label="项目主任务" className="space-y-2"><h4 className="text-sm font-medium">主任务（{tasksForProject(selectedProject.runId).length}）</h4><div className="grid grid-cols-1 gap-2 md:grid-cols-2">{tasksForProject(selectedProject.runId).map(task => <TaskCard key={task.runId} task={task} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(task.runId)} />)}</div></section><details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">项目管理与完整执行记录</summary><div className="mt-4"><WorkflowDetail
+                    <div className="space-y-4"><section aria-label="项目主任务" className="space-y-2"><h4 className="text-sm font-medium">项目任务（{tasksForProject(selectedProject.runId).length}）</h4><div className="grid grid-cols-1 gap-2 md:grid-cols-2">{tasksForProject(selectedProject.runId).map(task => <TaskCard key={task.runId} task={task} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(task.runId)} />)}</div></section><details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">项目管理与完整执行记录</summary><div className="mt-4"><WorkflowDetail
                       projectId={selectedProject.runId}
                       teamId={selectedProject.teamId}
                     /></div></details></div>

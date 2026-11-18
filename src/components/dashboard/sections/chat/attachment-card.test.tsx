@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderComponent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachmentCard } from './attachment-card';
 
 vi.mock('@/lib/matrix-store', () => ({
@@ -8,6 +9,12 @@ vi.mock('@/lib/matrix-store', () => ({
 }));
 
 afterEach(cleanup);
+
+function render(ui: React.ReactElement) {
+  return renderComponent(ui, {
+    wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>,
+  });
+}
 
 function makePayload(overrides: Partial<{ url: string; filename: string; mimetype: string }> = {}) {
   return {
@@ -24,6 +31,7 @@ describe('AttachmentCard', () => {
 
     expect(screen.getByText('full-reply.txt')).toBeInTheDocument();
     expect(screen.getByText('文本 · 全文附件')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存到我的文件' })).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /下载/ });
     // Media is proxied through the Next.js API (browsers cannot reach the
     // homeserver directly); ?download=true forces Content-Disposition.

@@ -9,7 +9,7 @@ import { agentteamsApi } from '@/lib/agentteams-api';
 import { humanFilesApi } from '@/lib/human-files-api';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 
-export function SaveToHumanFiles({ filename, mediaUrl, homeserver }: { filename: string; mediaUrl: string; homeserver: string }) {
+export function SaveToHumanFiles({ filename, mediaUrl, homeserver, inline }: { filename: string; mediaUrl: string; homeserver: string; inline?: boolean }) {
   const queryClient = useQueryClient();
   const sessionUser = useAgentTeamsStore(state => state.sessionUser);
   const userLevel = useAgentTeamsStore(state => state.userLevel);
@@ -50,7 +50,7 @@ export function SaveToHumanFiles({ filename, mediaUrl, homeserver }: { filename:
     }
   };
 
-  return <div className="mt-2 text-xs">
+  return <div className={inline ? "px-2 text-xs" : "mt-2 text-xs"}>
     <button type="button" onClick={event => { event.stopPropagation(); void save(); }} disabled={saving || !!savedPath || !sessionUser || !userId} title={savedPath || '保存到当前账号的 Human 文件区'} className="inline-flex items-center gap-1.5 text-primary hover:underline disabled:cursor-default disabled:no-underline">
       {saving ? <Loader2 className="size-3.5 animate-spin" /> : savedPath ? <Check className="size-3.5" /> : <Download className="size-3.5" />}
       {saving ? '正在保存…' : savedPath ? '已保存到我的文件' : '保存到我的文件'}

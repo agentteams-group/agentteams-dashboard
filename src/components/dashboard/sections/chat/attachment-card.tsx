@@ -5,6 +5,7 @@ import { Download, FileText, ChevronDown, ChevronRight, Loader2, AlertTriangle }
 import { Button } from '@/components/ui/button';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { useMatrixStore } from '@/lib/matrix-store';
+import { SaveToHumanFiles } from './save-to-human-files';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 
 interface AttachmentCardProps {
@@ -77,6 +78,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={payload.filename}>
           全文附件 · {payload.filename}
         </span>
+        {downloadUrl && <SaveToHumanFiles filename={payload.filename} mediaUrl={payload.url} homeserver={base} inline />}
         {forcedDownloadUrl && (
           <a
             href={forcedDownloadUrl}
@@ -101,7 +103,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
           <p className="text-xs font-medium truncate">{payload.filename}</p>
           <p className="text-xs text-muted-foreground">{friendlyMimeType(payload.mimetype)} · 全文附件</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {canPreview && (
             <Button
               variant="ghost"
@@ -117,6 +119,7 @@ export function AttachmentCard({ payload, homeserver, compact }: AttachmentCardP
               {open ? '收起' : '预览'}
             </Button>
           )}
+          {downloadUrl && <SaveToHumanFiles filename={payload.filename} mediaUrl={payload.url} homeserver={base} inline />}
           {forcedDownloadUrl && (
             <a
               href={forcedDownloadUrl}

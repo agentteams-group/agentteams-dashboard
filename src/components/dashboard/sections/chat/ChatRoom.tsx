@@ -288,17 +288,16 @@ export function ChatRoom({
   // ChatIR: format raw Matrix events once, then assemble runtime turns. The
   // assembly adds turn ids, canonical/latest event ids (receipts), runtime
   // states and attachment placement on top of the formatted timeline.
+  const matrixMessages = useMemo(
+    // Execution notices drive the composer, independently of the timeline.
+    () => formatMatrixEvents(allEvents.filter(event => !(
+      workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
+    )), currentUserId),
+    [allEvents, currentUserId, workerMatrixUserIds],
+  );
   const chatIr = useMemo(
-    () => assembleChatTimeline(
-      // Execution notices drive the composer; keep them out of the runtime's
-      // thought/tool timeline while retaining raw events for read receipts.
-      formatMatrixEvents(allEvents.filter(event => !(
-        workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
-      )), currentUserId),
-      allEvents,
-      { currentUserId, runtimeMap },
-    ),
-    [allEvents, currentUserId, runtimeMap, workerMatrixUserIds],
+    () => assembleChatTimeline(matrixMessages, allEvents, { currentUserId, runtimeMap, now: sessionTick }),
+    [matrixMessages, allEvents, currentUserId, runtimeMap, sessionTick],
   );
   const formattedMessages = useMemo(() => markStoppedMessages(
     chatIr.messages, allEvents, workerMatrixUserIds,
@@ -359,6 +358,7 @@ export function ChatRoom({
 
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
+  const unreadAnchor = taskRoom ? null : readEventId;
 
   // Persist the read marker and send an m.read receipt whenever the user is
   // pinned to the bottom (on arrival of new messages or on scroll-back-down).
@@ -424,13 +424,13 @@ export function ChatRoom({
     if (didInitialScrollRef.current) return;
     didInitialScrollRef.current = true;
     const lastId = chatIr.latestEventId;
-    const hasUnreadDivider = Boolean(readEventId && lastId && readEventId !== lastId);
+    const hasUnreadDivider = Boolean(unreadAnchor && lastId && unreadAnchor !== lastId);
     if (hasUnreadDivider) {
-      scrollRef.current?.scrollToItem(`read-marker-${readEventId}`);
+      scrollRef.current?.scrollToItem(`read-marker-${unreadAnchor}`);
     } else {
       scrollRef.current?.scrollToBottom({ smooth: false });
     }
-  }, [messagesQuery.isSuccess, formattedMessages, readEventId, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
+  }, [messagesQuery.isSuccess, formattedMessages, unreadAnchor, chatIr.latestEventId, readMarkerQuery.isSuccess, readMarkerQuery.isError, pendingMention]);
 
   // Outbound message cluster (optimistic bubbles + system notices + send),
   // extracted verbatim; markAllRead is injected because sending a message
@@ -926,7 +926,7 @@ export function ChatRoom({
             ref={scrollRef}
             messages={formattedMessages}
             localMessages={localMessages}
-            readEventId={readEventId}
+            readEventId={unreadAnchor}
             focusedMentionId={focusedMentionId}
             hasNextPage={messagesQuery.hasNextPage || false}
             isFetchingNextPage={messagesQuery.isFetchingNextPage}

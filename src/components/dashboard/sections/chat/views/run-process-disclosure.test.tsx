@@ -16,6 +16,9 @@ describe('live process preview', () => {
     rerender(<RunProcessDisclosure blocks={blocks} active={false} />);
     expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
     expect(screen.queryByText('正在处理')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
+    expect(screen.getByText('结果未确认')).toBeVisible();
+    expect(screen.queryByText('进行中')).not.toBeInTheDocument();
   });
 
   it('resets a manual expansion on completion and lets the user reopen the history', () => {

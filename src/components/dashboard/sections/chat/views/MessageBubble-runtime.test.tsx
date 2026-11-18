@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -32,9 +33,11 @@ function makeMessage(overrides: Partial<DisplayMessage>): DisplayMessage {
 
 function renderBubble(message: DisplayMessage) {
   return render(
-    <TooltipProvider>
-      <MessageBubble message={message} showSender={false} isContinuation={false} />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <MessageBubble message={message} showSender={false} isContinuation={false} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 

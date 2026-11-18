@@ -308,6 +308,40 @@ export function workflowToBoard(
   return { tasks: boardTasks, projects: boardProjects };
 }
 
+/** Legacy projects store only execution nodes. Use the project as their board root. */
+export function groupLegacyProjectTasks(tasks: BoardTask[], projects: BoardProject[]): BoardTask[] {
+  const grouped = [...tasks];
+  for (const project of projects) {
+    const children = tasks.filter(task => task.projectId === project.runId && task.teamId === project.teamId);
+    if (!children.length || children.some(task => task.kind === 'main' || task.parentTaskId || task.runId === project.runId)) continue;
+    const rooms = new Set(children.map(task => task.executionRoomId).filter(Boolean));
+    const status: TaskStatus = project.status === 'completed' ? 'completed'
+      : project.status === 'paused' ? 'blocked'
+      : project.status === 'active' ? 'in_progress'
+      : project.status === 'planning' ? 'pending' : 'unknown';
+    grouped.push({
+      runId: project.runId,
+      kind: 'project-summary',
+      title: project.name,
+      assignedTo: project.leader ?? '',
+      projectId: project.runId,
+      teamId: project.teamId,
+      status,
+      roomId: project.roomId,
+      executionRoomId: rooms.size === 1 ? children.find(task => task.executionRoomId)?.executionRoomId : undefined,
+      dependsOn: [],
+      createdAt: project.createdAt,
+      completedAt: project.completedAt,
+      outcome: null,
+      source: project.source,
+    });
+    for (const child of children) {
+      grouped[tasks.indexOf(child)] = { ...child, parentTaskId: project.runId };
+    }
+  }
+  return grouped;
+}
+
 export interface IndexedTask {
   task_id: string;
   main_task_id?: string;
@@ -330,7 +364,8 @@ export function mergeMainTaskIndex(tasks: BoardTask[], index: IndexedTask[]): Bo
     if (!task.main_task_id) continue;
     merged.set(`${task.team_id ?? ''}/${task.task_id}`, {
       runId: task.task_id,
-      parentTaskId: task.parent_task_id || undefined,
+      kind: task.main_task_id === task.task_id ? 'main' : undefined,
+      parentTaskId: task.parent_task_id || (task.main_task_id !== task.task_id ? task.main_task_id : undefined),
       projectId: task.project_id || undefined,
       teamId: task.team_id,
       title: task.title || task.task_id,
@@ -403,7 +438,7 @@ export function useApiTaskBoard() {
     if (q.data && projects[i]) workflows.set(projects[i].project_id, q.data);
   });
   const board = workflowToBoard(projects, workflows);
-  board.tasks = mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []);
+  board.tasks = groupLegacyProjectTasks(mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []), board.projects);
 
   // Refresh must re-pull the per-project workflows too — the list query
   // alone would leave stale workflow data behind (staleTime 5s).

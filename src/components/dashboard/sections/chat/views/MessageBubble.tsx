@@ -848,7 +848,7 @@ export function MessageBubble({
           </div>
         )}
 
-        {!!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
+        {message.isMe && !!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button
