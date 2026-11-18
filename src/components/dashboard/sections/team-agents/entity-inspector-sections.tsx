@@ -4,7 +4,7 @@ import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import type { EntityInspectorEntity } from './entity-inspector';
 import { ManagerDetailDialog } from './manager-detail-dialog';
-import { TeamDetailDialog } from './team-detail-dialog';
+import { TeamSectionDialog } from './team-section-dialog';
 import { WorkerDetailDialog } from './worker-detail-dialog';
 
 export interface EntitySectionDialogsProps {
@@ -55,7 +55,7 @@ export function EntitySectionDialogs({
   const manager = entity?.kind === 'manager' ? entity.manager : null;
   return (
     <>
-      <TeamDetailDialog
+      <TeamSectionDialog
         open={open && entity?.kind === 'team'}
         onOpenChange={onOpenChange}
         team={team}

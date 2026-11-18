@@ -20,13 +20,15 @@ const TEAM_PANELS: Record<string, { tab: string; title: string }> = {
 };
 
 /**
+ * 团队分区大弹窗（可编辑分区直出；与 teams/team-detail-dialog 的只读详情是两个组件）
+ *
  * 团队详情大弹窗（R1 分区直出）：以 chrome={chrome} 嵌入
  * TeamSettingsPanel —— 弹窗标题承担实体身份（`<实体名> · <分区名>`），
  * body 只渲染 initialTab 命中的分区；initialTab 缺失/无效时面板回退
  * 'full'（标题栏 + 横向 tab 列表，行为与旧版一致）。面板自带滚动链
  * （内部 min-h-0 flex-1 overflow-y-auto），body 用 flex 定高 + overflow-hidden。
  */
-export function TeamDetailDialog({
+export function TeamSectionDialog({
   open,
   onOpenChange,
   team,

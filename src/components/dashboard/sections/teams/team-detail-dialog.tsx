@@ -13,6 +13,7 @@ const DETAIL_FIELDS: Array<[string, (_t: TeamResponse) => string]> = [
   ['名称', (t) => t.name],
   ['团队名称', (t) => t.teamName || '-'],
   ['描述', (t) => t.description || '-'],
+  ['所属人', (t) => t.admin?.name || '-'],
   ['Leader', (t) => t.leaderName || '-'],
   ['Leader 就绪', (t) => (t.leaderReady ? '是' : '否')],
   ['Workers', (t) => `${t.readyWorkers}/${t.totalWorkers}`],
@@ -82,10 +83,10 @@ export function TeamDetailDialog({
             {DETAIL_FIELDS.map(([label, read]) => (
               <div
                 key={label}
-                className="flex justify-between py-1 border-b border-border/50"
+                className="flex min-w-0 items-baseline justify-between gap-3 py-1 border-b border-border/50"
               >
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-mono text-xs max-w-[60%] text-right break-all">
+                <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
+                <span className="min-w-0 max-w-[60%] break-all text-right font-mono text-xs">
                   {read(team)}
                 </span>
               </div>

@@ -48,8 +48,8 @@ vi.mock('../team-agents/worker-detail-dialog', () => ({
     );
   },
 }));
-vi.mock('../team-agents/team-detail-dialog', () => ({
-  TeamDetailDialog: () => null,
+vi.mock('../team-agents/team-section-dialog', () => ({
+  TeamSectionDialog: () => null,
 }));
 vi.mock('../team-agents/manager-detail-dialog', () => ({
   ManagerDetailDialog: () => null,

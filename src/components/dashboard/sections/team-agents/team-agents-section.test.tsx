@@ -472,12 +472,13 @@ describe('Team and Agent resource cards', () => {
     expect(screen.queryByRole('dialog', { name: 'alpha · 基本信息' })).toBeNull();
     // 详情 → 只读弹窗（TeamDetailReadonlyDialog + TeamDetailSummary）：显示所属人，不含可编辑面板。
     fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
-    const readOnly = screen.getByRole('dialog', { name: '团队详情 - Alpha' });
+    const readOnly = screen.getByRole('dialog', { name: '团队详情 - alpha' });
     expect(within(readOnly).getByText('所属人')).toBeInTheDocument();
     expect(within(readOnly).getByText('boss')).toBeInTheDocument();
     expect(within(readOnly).queryByText('team-profile:alpha')).toBeNull();
     expect(within(readOnly).queryByRole('textbox')).toBeNull();
-    fireEvent.click(within(readOnly).getByRole('button', { name: '关闭' }));
+    // main 的只读详情用 Radix 默认关闭按钮（sr-only "Close"）。
+    fireEvent.click(within(readOnly).getByRole('button', { name: /close/i }));
     // 页内团队管理面（TeamSettingsPanel）仍由深链进入，并保留千锻入口。
     cleanup();
     renderSection('#console/resources/teams?team=alpha');

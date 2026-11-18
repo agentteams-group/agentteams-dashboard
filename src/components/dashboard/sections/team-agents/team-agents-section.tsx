@@ -45,8 +45,10 @@ import {
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
 import { TeamAgentsWorkbench } from './team-agents-workbench';
-import { TeamDetailDialog } from './team-detail-dialog';
-import { TeamDetailReadonlyDialog } from './team-detail-readonly-dialog';
+import { TeamSectionDialog } from './team-section-dialog';
+// 团队详情 = 复用 main 的只读详情弹窗（sections/teams/team-detail-dialog：字段表 + 健康 + 成员 + 关注面板），
+// 不再自建 TeamDetailReadonlyDialog（禁双实现）。
+import { TeamDetailDialog } from '../teams/team-detail-dialog';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -188,7 +190,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
   const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
-  // 团队「详情」= 只读弹窗（与「编辑」= TeamDetailDialog 分开，两种组件不许混用）。
+  // 团队「详情」= 复用 teams/team-detail-dialog（只读）；「编辑」= TeamSectionDialog（可编辑分区）。
   const [detailTeam, setDetailTeam] = useState<TeamResponse | null>(null);
   // ④ 智能体卡片分组 / 排序 / 组折叠：localStorage 持久化（分组默认开）。
   const [agentGrouped, setAgentGrouped] = useState(() => readStoredGrouped());
@@ -467,7 +469,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     {/* 卡片「详情/编辑」入口（整改①，两个按钮必须落到不同 UI）：
         智能体详情 = 只读弹窗（复用 WorkerDetailDialog，传当前 worker 对象）；
         智能体编辑 = 编辑抽屉（WorkerDrawer，内含唯一实现 WorkerDetailPanel）；
-        团队编辑 = 编辑弹窗（复用 TeamDetailDialog，chrome=full 暴露全部分区）。 */}
+        团队编辑 = 分区弹窗 TeamSectionDialog（chrome=full 暴露全部分区）。 */}
     <WorkerDetailDialog worker={detailWorker} onOpenChange={(open) => !open && setDetailWorker(null)} />
     <WorkerDrawer
       worker={editWorker}
@@ -480,13 +482,12 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
       onChanged={refresh}
       onDeleted={() => { setEditWorker(null); navigate('agents'); }}
     />
-    <TeamDetailReadonlyDialog
-      open={!!detailTeam}
-      onOpenChange={(open) => !open && setDetailTeam(null)}
+    <TeamDetailDialog
       team={detailTeam}
       workers={workers}
+      onOpenChange={(open) => !open && setDetailTeam(null)}
     />
-    <TeamDetailDialog
+    <TeamSectionDialog
       open={!!editTeam}
       onOpenChange={(open) => !open && setEditTeam(null)}
       team={editTeam}
