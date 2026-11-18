@@ -12,6 +12,7 @@ import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { EntityInspector, type EntityInspectorEntity } from '../team-agents/entity-inspector';
 import { EntitySectionDialogs } from '../team-agents/entity-inspector-sections';
+import { drawerDismissGuards } from '../team-agents/drawer-dismiss-guards';
 
 type WorkerDrawerProps = {
   worker: WorkerResponse | null;
@@ -77,10 +78,13 @@ export function WorkerDrawer({
 
   return (
     <>
-      <Dialog open onOpenChange={onOpenChange}>
+      {/* 非模态：与工作台 dual 抽屉同一条规矩（真抽屉 + 分区弹窗同时在场；
+          modal 会让 Radix 把兄弟节点的分区弹窗 aria-hidden 掉，弹窗不可交互）。 */}
+      <Dialog open modal={false} onOpenChange={onOpenChange}>
         <DialogContent
           className="left-auto right-0 top-0 h-full max-h-full w-full max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-l p-0 sm:w-[min(92vw,560px)] sm:max-w-[560px] data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
           showCloseButton={false}
+          {...drawerDismissGuards(sectionOpen)}
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Worker 详情</DialogTitle>

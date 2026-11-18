@@ -361,14 +361,12 @@ describe('智能体卡片：分页 + 排序入口 paginateAgentCards（①④）
     expect(asc.totalItems).toBe(14);
     expect(asc.totalPages).toBe(2);
     expect(asc.pages[0]?.[0]?.team).toBe('');
-    expect(asc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(
-      agents.map((agent) => agent.name).sort((x, y) => x.localeCompare(y, 'zh')),
-    );
+    const ascNames = agents.map((agent) => agent.name).sort((x, y) => x.localeCompare(y, 'zh'));
+    // 平铺模式第 1 页 = 排序后前 12 条（页容量 12），不是全量。
+    expect(asc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(ascNames.slice(0, 12));
     expect(asc.pages[1]?.[0]?.agents).toHaveLength(2);
     const desc = paginateAgentCards(agents, [], { grouped: false, sort: { key: 'name', dir: 'desc' } }, 12);
-    expect(desc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual(
-      asc.pages[0]?.[0]?.agents.map((agent) => agent.name).reverse(),
-    );
+    expect(desc.pages[0]?.[0]?.agents.map((agent) => agent.name)).toEqual([...ascNames].reverse().slice(0, 12));
   });
 
   it('grouped mode pages by whole group: 31 agents in 12/12/7 become 3 pages, no group crosses pages', () => {

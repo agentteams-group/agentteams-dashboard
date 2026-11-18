@@ -44,6 +44,7 @@ import { standaloneWorkers as computeStandaloneWorkers } from '../teams/team-dra
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
 import { InteractiveTeamTopology } from './interactive-team-topology';
 import { EntityInspector, type EntityInspectorEntity } from './entity-inspector';
+import { drawerDismissGuards } from './drawer-dismiss-guards';
 import { EntitySectionDialogs } from './entity-inspector-sections';
 import {
   compareTeamRows,
@@ -1095,15 +1096,7 @@ export function TeamAgentsWorkbench() {
               data-testid="inspector-drawer"
               className="w-[min(420px,92vw)] gap-0 p-0 sm:max-w-none"
               // B：分区弹窗打开期间抽屉不因焦点/外部交互被 dismiss（与弹窗共存）。
-              onInteractOutside={(event) => {
-                if (detailOpen) event.preventDefault();
-              }}
-              onPointerDownOutside={(event) => {
-                if (detailOpen) event.preventDefault();
-              }}
-              onFocusOutside={(event) => {
-                if (detailOpen) event.preventDefault();
-              }}
+              {...drawerDismissGuards(detailOpen)}
             >
               <SheetTitle className="sr-only">实体详情</SheetTitle>
               <SheetDescription className="sr-only">当前选中实体（团队 / 智能体 / Manager）的详情分区</SheetDescription>

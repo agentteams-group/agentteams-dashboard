@@ -15,7 +15,7 @@ const dialogState = vi.hoisted(() => ({
   workerName: null as string | null,
   initialTab: undefined as string | undefined,
   chrome: undefined as string | undefined,
-  lastOpenChange: null as ((open: boolean) => void) | null,
+  lastOpenChange: null as ((_open: boolean) => void) | null,
 }));
 
 vi.mock('../team-agents/worker-detail-dialog', () => ({
@@ -250,7 +250,7 @@ describe('WorkerDrawer（③：Inspector + 分区弹窗共享接线）', () => {
     const onDeleted = vi.fn();
     // 状态化父组件：onOpenChange(false) → 清 worker（模拟列表页真实行为，抽屉随之卸载）。
     function Parent() {
-      const [target, setTarget] = useState(workerA);
+      const [target, setTarget] = useState<WorkerResponse | null>(workerA);
       return (
         <WorkerDrawer
           worker={target}

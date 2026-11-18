@@ -287,7 +287,8 @@ describe('Team and Agent resource cards', () => {
       const page3Group = screen.getAllByTestId('agent-team-group')[0];
       const cardNames = within(page3Group)
         .getAllByRole('heading')
-        .filter((heading) => heading.textContent !== '无团队 · 7 个智能体')
+        // 组头也是 heading（文案「无团队· 7 个智能体」，flex gap 无字面空格）→ 按数量后缀剔除。
+        .filter((heading) => !heading.textContent?.includes('个智能体'))
         .map((heading) => heading.textContent);
       expect(cardNames).toEqual(['pn-0', 'pn-1', 'pn-2', 'pn-3', 'pn-4', 'pn-5', 'solo']);
     } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
