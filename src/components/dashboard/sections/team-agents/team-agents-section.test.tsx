@@ -467,6 +467,17 @@ describe('团队页视图切换（卡片 / 拓扑）', () => {
     renderTeams('#console/resources/teams?view=topology');
     expect(screen.getByTestId('team-agents-shell')).toBeInTheDocument();
   });
+
+  it('智能体页不继承拓扑偏好：偏好/URL 都是 topology 时仍渲染卡片网格', () => {
+    localStorage.setItem('teamAgents.view', 'topology');
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.queryByTestId('team-agents-shell')).toBeNull();
+    expect(screen.getByLabelText('智能体卡片')).toBeInTheDocument();
+    cleanup();
+    renderSection('#console/resources/workers?view=topology', 'agents');
+    expect(screen.queryByTestId('team-agents-shell')).toBeNull();
+    expect(screen.getByLabelText('智能体卡片')).toBeInTheDocument();
+  });
 });
 
 describe('搜索深链：团队页拓扑视图选中实体（只选中、无分区弹窗）', () => {

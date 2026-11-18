@@ -87,7 +87,9 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
   const [location, setLocation] = useState<ReturnType<typeof readLocation>>(() => ({ ...readLocation(), ...(view ? { tab: view } : {}) }));
-  const pageView: TeamPageView = resolvePageView(location.view);
+  // 视图偏好只作用于团队页：智能体页/其它 tab 恒为卡片视图，
+  // 避免 localStorage 里残留的 topology 把智能体页渲染成团队拓扑。
+  const pageView: TeamPageView = location.tab === 'teams' ? resolvePageView(location.view) : 'cards';
   const [search, setSearch] = useState('');
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
