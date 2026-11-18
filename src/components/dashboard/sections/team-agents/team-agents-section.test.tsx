@@ -517,6 +517,8 @@ describe('Team and Agent resource cards', () => {
     expect(groups.map((group) => group.getAttribute('data-team'))).toEqual(['alpha', 'beta', '']);
     // 归位：alpha 组含 lead/w1；beta 组含 lead2；solo 落入「无团队」组。
     expect(within(groups[0]).getByRole('heading', { level: 2, name: /Alpha\s*·\s*2 个智能体/ })).toBeInTheDocument();
+    // 组头显示所属人（= Team admin，排序键「Human 名称」的可见依据）。
+    expect(within(groups[0]).getByText(/所属人 boss/)).toBeInTheDocument();
     expect(within(groups[0]).getByRole('heading', { name: 'lead' })).toBeInTheDocument();
     expect(within(groups[0]).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
     expect(within(groups[0]).queryByRole('heading', { name: 'solo' })).toBeNull();

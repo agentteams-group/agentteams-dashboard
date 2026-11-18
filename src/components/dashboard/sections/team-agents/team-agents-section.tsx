@@ -416,6 +416,9 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
                       ? <button type="button" onClick={() => navigate('teams', 'team', groupTeam.name)} className="min-w-0 hover:underline" title={`打开团队详情 ${groupTitle}`}>{groupTitle}</button>
                       : <span className="text-muted-foreground">{groupTitle}</span>}
                     <span className="text-xs font-normal tabular-nums text-muted-foreground">· {group.agents.length} 个智能体</span>
+                  {/* 所属人 = 团队 spec.admin（单个人类）；排序键「Human 名称」用的就是它，
+                      显示出来才能核对组顺序。 */}
+                  {groupTeam?.admin?.name && <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">· 所属人 {groupTeam.admin.name}</span>}
                     <button
                       type="button"
                       aria-expanded={!collapsed}
