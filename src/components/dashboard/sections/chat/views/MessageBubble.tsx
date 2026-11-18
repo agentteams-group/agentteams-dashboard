@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useImeGuard } from '../use-ime-guard';
 import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
@@ -358,6 +359,7 @@ export function MessageBubble({
   const senderColor = senderPalette(message.sender).name;
   const senderOwner = useRuntimeMap()[message.sender];
   const humanName = useHumanNames()[message.sender];
+  const ownAccount = useAgentTeamsStore(state => message.isMe ? state.sessionUser : null);
   const avatarWorker = message.workerName ?? senderOwner?.workerName;
   const isAgentMessage = !message.isMe && Boolean(senderOwner || message.workerName || message.runtime || message.agentStatus || message.isStreaming);
   const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
@@ -536,7 +538,7 @@ export function MessageBubble({
                   : 'relative h-[30px] w-[30px]'
               }
             >
-              <AccountAvatar kind={avatarWorker ? 'agent' : 'human'} name={avatarWorker || humanName || message.senderShort}
+              <AccountAvatar kind={avatarWorker ? 'agent' : 'human'} name={avatarWorker || ownAccount || humanName || message.senderShort}
                 label={senderLabel} className="size-[30px] rounded-[9px]"
                 fallbackClassName={`rounded-[9px] text-xs font-semibold ${message.isMe ? 'bg-primary/15 text-primary' : senderPalette(message.sender).avatar}`} />
               {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
