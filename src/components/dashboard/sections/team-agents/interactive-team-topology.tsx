@@ -93,8 +93,10 @@ function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
  * - Manager 展示用 `team.admin`；
  * - 成员行是 div[role=button]（行内「拉起就绪」是嵌套按钮，HTML 不允许
  *   button 套 button）：点击 / Enter / Space 打开 Worker 详情大弹窗；
- * - 头部齿轮是团队设置唯一入口（R2：详情不再内联；Inspector 团队分区按钮
- *   走同一 onOpenTeamSettings）。
+ * - 头部齿轮是「查看团队详情」入口（R2：详情不再内联）：section 按布局
+ *   分派——多栏 = 选中该团队（常驻右栏 / dual 抽屉，不弹窗），single =
+ *   整面板弹窗；「基本信息」分区弹窗走 Inspector 团队分区按钮（同一
+ *   onOpenTeamSettings）。
  */
 export function InteractiveTeamTopology({
   team,
@@ -179,14 +181,14 @@ export function InteractiveTeamTopology({
               )}
             </p>
           </div>
-          {/* R2：单一入口——头部只有齿轮（≥44px 触控目标）打开团队设置大弹窗，
-              与 Inspector 团队分区入口共用同一 onOpenTeamSettings。 */}
+          {/* 「查看团队详情」齿轮（≥44px 触控目标）：section 按布局分派——
+              多栏选中该团队（常驻右栏 / dual 抽屉，不弹窗），single 开整面板。 */}
           <Button
             variant="outline"
             size="icon"
             className="min-h-11 min-w-11 shrink-0"
-            aria-label="团队设置"
-            title="团队设置"
+            aria-label="查看团队详情"
+            title="查看团队详情"
             onClick={() => onOpenTeamSettings(team)}
           >
             <Settings className="size-4" aria-hidden="true" />
@@ -247,7 +249,7 @@ export function InteractiveTeamTopology({
                       </Avatar>
                       <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <span
-                          className={`truncate text-xs ${role === 'leader' ? 'font-semibold' : 'font-medium'}`}
+                          className={`truncate text-xs hover:underline ${role === 'leader' ? 'font-semibold' : 'font-medium'}`}
                         >
                           {worker.name}
                         </span>
@@ -258,7 +260,7 @@ export function InteractiveTeamTopology({
                           {ROLE_LABELS[role]}
                         </Badge>
                         {worker.team && (
-                          <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                          <span className="inline-flex min-w-0 items-center gap-1 rounded-md border border-transparent px-1 text-xs text-muted-foreground transition-colors hover:border-emerald-500/25 hover:bg-emerald-500/5">
                             <Bot className="size-3 shrink-0" aria-hidden="true" />
                             <span className="truncate">{worker.team}</span>
                           </span>

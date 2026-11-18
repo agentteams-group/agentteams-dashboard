@@ -90,18 +90,49 @@ describe('InteractiveTeamTopology · 头部', () => {
     expect(within(header).getByText('异常')).toBeInTheDocument(); // health badge
   });
 
-  it('R2 single settings entry: only the gear (≥44px) opens team settings', () => {
+  it('header gear (≥44px, 查看团队详情) requests team details', () => {
     const { onOpenTeamSettings } = renderTopology();
     const header = screen.getByTestId('team-topology-header');
     // A 轮「团队设置」文本按钮已删。
     expect(screen.queryByRole('button', { name: '打开团队设置' })).toBeNull();
-    // 头部只剩一个齿轮入口（触控目标 ≥44px）。
-    const gears = header.querySelectorAll('button[aria-label="团队设置"]');
+    // 头部只剩一个齿轮入口（触控目标 ≥44px），aria-label = 查看团队详情
+    //（不再是「打开团队设置」——多栏下齿轮不再弹窗，语义按布局分派）。
+    const gears = header.querySelectorAll('button[aria-label="查看团队详情"]');
     expect(gears).toHaveLength(1);
     expect(gears[0]).toHaveClass('min-h-11');
-    fireEvent.click(screen.getByRole('button', { name: '团队设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看团队详情' }));
     expect(onOpenTeamSettings).toHaveBeenCalledTimes(1);
     expect(onOpenTeamSettings).toHaveBeenCalledWith(alpha);
+  });
+});
+
+describe('InteractiveTeamTopology · 悬浮 affordance（对齐 shiyiyue1102）', () => {
+  it('成员名 hover:underline；行尾团队 chip 带 emerald hover 类', () => {
+    renderTopology();
+    const lead = screen.getByText('lead').closest('[data-worker-name]') as HTMLElement;
+    // 可点击成员名（行 = 可点 → 名字加下划线反馈）。
+    expect(within(lead).getByText('lead')).toHaveClass('hover:underline');
+    // 行尾团队 chip（shiyiyue1102 原样式：emerald 描边 + 底 hover）。
+    const chipText = Array.from(lead.querySelectorAll('span')).find(
+      (span) => span.childElementCount === 0 && span.textContent?.trim() === 'alpha',
+    );
+    expect(chipText).toBeTruthy();
+    expect(chipText?.parentElement).toHaveClass(
+      'transition-colors',
+      'hover:border-emerald-500/25',
+      'hover:bg-emerald-500/5',
+    );
+  });
+
+  it('成员行 hover:bg-muted/50 + focus-visible 环齐备', () => {
+    renderTopology();
+    const lead = screen.getByText('lead').closest('[data-worker-name]') as HTMLElement;
+    expect(lead).toHaveClass('hover:bg-muted/50');
+    expect(lead).toHaveClass(
+      'focus-visible:ring-2',
+      'focus-visible:ring-ring',
+      'focus-visible:outline-none',
+    );
   });
 });
 

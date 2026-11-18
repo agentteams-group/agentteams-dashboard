@@ -309,9 +309,12 @@ function clickTopologyMember(name: string) {
   fireEvent.click(node);
 }
 
-/** 点拓扑头部齿轮（R2 单一入口）打开团队设置大弹窗（落在基本信息分区）。 */
-async function openTeamSettingsDialog() {
-  fireEvent.click(screen.getByRole('button', { name: '团队设置' }));
+/**
+ * 经 Inspector「基本信息」分区按钮打开团队大弹窗（落在基本信息分区）。
+ * 齿轮语义修正后多栏不再弹窗（按布局分派），分区直达路径不变。
+ */
+async function openBasicDialogViaInspector() {
+  fireEvent.click(within(inspectorRegion()).getByRole('button', { name: '基本信息' }));
   return screen.findByRole('dialog', { name: 'alpha · 基本信息' });
 }
 
@@ -748,24 +751,26 @@ describe('TeamAgentsSection · 单栏钻取（single <840，行为不变）', ()
 });
 
 describe('TeamAgentsSection · 详情大弹窗（R1 分区直出 + R2 单一入口 + A3 直达分区）', () => {
-  it('头部只有齿轮一个团队设置入口（≥44px）；点击开设置弹窗落在基本信息分区', async () => {
+  it('头部只剩「查看团队详情」齿轮（≥44px）；分区弹窗仍由 Inspector 按钮进入', async () => {
     renderSection();
     await layoutIs('triple');
 
-    // R2：A 轮文本按钮已删，头部仅剩齿轮（触控目标 min-h-11/min-w-11）。
+    // R2：A 轮文本按钮已删，头部仅剩齿轮（触控目标 min-h-11/min-w-11），
+    // aria-label = 查看团队详情（语义修正：多栏齿轮不再弹「基本信息」）。
     expect(screen.queryByRole('button', { name: '打开团队设置' })).toBeNull();
     const header = topologyHeader();
-    const gears = header.querySelectorAll('button[aria-label="团队设置"]');
+    const gears = header.querySelectorAll('button[aria-label="查看团队详情"]');
     expect(gears).toHaveLength(1);
     expect(gears[0]).toHaveClass('min-h-11');
 
-    const dialog = await openTeamSettingsDialog();
+    // 「基本信息」大弹窗仍可由 Inspector 分区按钮进入（齿轮路径见分派 describe）。
+    const dialog = await openBasicDialogViaInspector();
     // 标题承担实体身份：`<实体名> · <分区名>`。
     expect(within(dialog).getByText('alpha · 基本信息')).toBeInTheDocument();
     // R1 分区直出：无 tab 列表；basic 分区保留保存按钮（功能控件）。
     expect(within(dialog).queryByRole('tablist')).toBeNull();
     expect(within(dialog).getByText('保存基本信息')).toBeInTheDocument();
-    // 齿轮路径：URL 带 panel=basic + edit。
+    // Inspector 分区路径：URL 带 panel=basic + edit。
     expect(window.location.hash).toContain('panel=basic');
     expect(window.location.hash).toContain('edit=true');
   });
@@ -775,7 +780,7 @@ describe('TeamAgentsSection · 详情大弹窗（R1 分区直出 + R2 单一入�
     await layoutIs('triple');
 
     clickListButton(listRegion(), 'alpha');
-    await openTeamSettingsDialog();
+    await openBasicDialogViaInspector();
     const close = detailDialog().querySelector('header button') as HTMLButtonElement;
     fireEvent.click(close);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -787,7 +792,7 @@ describe('TeamAgentsSection · 详情大弹窗（R1 分区直出 + R2 单一入�
     renderSection();
     await layoutIs('triple');
 
-    await openTeamSettingsDialog();
+    await openBasicDialogViaInspector();
     expect(window.location.hash).toContain('edit=true');
     fireEvent.keyDown(detailDialog(), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -809,6 +814,90 @@ describe('TeamAgentsSection · 详情大弹窗（R1 分区直出 + R2 单一入�
     expect(dialog.className).toContain('sm:max-h-[88vh]');
     // 内容区独立滚动（body 可滚、外壳裁切）。
     expect(dialog.className).toContain('overflow-hidden');
+  });
+});
+
+describe('TeamAgentsSection · 齿轮按布局分派（查看团队详情）', () => {
+  it('triple：点齿轮 → 无弹窗；团队被选中 + 右栏短暂高亮后移除', async () => {
+    renderSection();
+    await layoutIs('triple');
+    // 先选中 Worker（w1），让「团队被选中」的断言有意义（选择从 worker → team）。
+    clickListButton(listRegion(), 'alpha');
+    clickTopologyMember('w1');
+    await waitFor(() =>
+      expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '查看团队详情' }));
+
+    // 多栏不弹任何弹窗（UI 无 role=dialog）。
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 团队被选中：拓扑头 alpha + 列表行 aria-current + Inspector 回到团队。
+    expect(within(topologyHeader()).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
+    expect(listRegion().querySelector('button[aria-current="true"]')).not.toBeNull();
+    expect(within(inspectorRegion()).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
+    expect(document.querySelector('[data-worker-name="w1"]')).not.toHaveAttribute(
+      'data-highlighted',
+    );
+    // URL 无 edit / panel（没开弹窗）。
+    expect(window.location.hash).not.toContain('edit=true');
+    expect(window.location.hash).not.toContain('panel=');
+    // 右栏一次短暂高亮（ring），600ms 后 timeout 清理。
+    const inspector = inspectorRegion();
+    expect(inspector).toHaveClass('ring-2', 'ring-primary/40');
+    await waitFor(() => expect(inspector).not.toHaveClass('ring-2'), { timeout: 2000 });
+  });
+
+  it('dual：点齿轮 → 抽屉开到该团队（关闭后再点一键重开）', async () => {
+    setWidth(1024);
+    renderSection();
+    await layoutIs('dual');
+    const drawer = await screen.findByTestId('inspector-drawer');
+    expect(within(drawer).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
+
+    // 先关抽屉（选中保留），再点齿轮 → 抽屉重开到该团队。
+    fireEvent.click(within(drawer).getByRole('button', { name: '关闭 Inspector' }));
+    await waitFor(() => expect(screen.queryByTestId('inspector-drawer')).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: '查看团队详情' }));
+    const again = await screen.findByTestId('inspector-drawer');
+    expect(within(again).getByRole('heading', { name: 'alpha' })).toBeInTheDocument();
+    // 抽屉不是「基本信息」大弹窗（分区弹窗只走 Inspector 按钮）。
+    expect(screen.queryByRole('dialog', { name: /基本信息/ })).toBeNull();
+    await waitFor(() => expect(window.location.hash).toContain('inspect=1'));
+  });
+
+  it('single：点齿轮 → 整面板弹窗（chrome=full，含 tablist）', async () => {
+    setWidth(768);
+    renderSection();
+    await layoutIs('single');
+    clickListButton(listRegion(), 'alpha');
+    expect(topologyHeader()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看团队详情' }));
+    const dialog = await screen.findByRole('dialog', { name: 'alpha · 基本信息' });
+    // 整面板：标题栏 + 横向 tab 列表（full chrome，与旧版一致）。
+    expect(within(dialog).getByRole('tablist')).toBeInTheDocument();
+  });
+});
+
+describe('TeamAgentsSection · 悬浮 affordance（列表侧，对齐 shiyiyue1102）', () => {
+  it('列表团队名 / Manager 名 hover:underline；拓扑成员名 hover:underline', async () => {
+    renderSection();
+    await layoutIs('triple');
+    const list = listRegion();
+    // Manager 行名（可点击行 → 名字下划线反馈）。
+    expect(within(list).getByText('boss')).toHaveClass('hover:underline');
+    // 团队行名（初始兜底选中 = alpha）。
+    const alphaRow = list.querySelector('button[aria-current="true"]') as HTMLElement;
+    const alphaName = Array.from(alphaRow.querySelectorAll('span')).find(
+      (span) => span.childElementCount === 0 && span.textContent?.trim() === 'alpha',
+    );
+    expect(alphaName).toBeTruthy();
+    expect(alphaName).toHaveClass('hover:underline');
+    // 拓扑成员名（alpha 已选中 → 拓扑在列）。
+    const leadRow = document.querySelector('[data-worker-name="lead"]') as HTMLElement;
+    expect(within(leadRow).getByText('lead')).toHaveClass('hover:underline');
   });
 });
 
@@ -1022,7 +1111,7 @@ describe('TeamAgentsSection · 创建入口与团队设置草稿', () => {
     await layoutIs('triple');
 
     clickListButton(listRegion(), 'alpha');
-    const dialog = await openTeamSettingsDialog();
+    const dialog = await openBasicDialogViaInspector();
     const desc = within(dialog).getByLabelText('描述');
     fireEvent.change(desc, { target: { value: '草稿不丢' } });
 

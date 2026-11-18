@@ -190,7 +190,7 @@ function ManagerRow({
       </Avatar>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-xs font-semibold">{manager.name}</span>
+          <span className="truncate text-xs font-semibold hover:underline">{manager.name}</span>
           <Badge
             variant="outline"
             className="shrink-0 border-violet-500/40 bg-violet-500/10 text-xs text-violet-600 dark:text-violet-400"
@@ -251,7 +251,7 @@ function TeamListRow({
         </Avatar>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-xs font-medium">{team.name}</span>
+            <span className="truncate text-xs font-medium hover:underline">{team.name}</span>
             {leader && <WorkerSessionDot state={sessionState} />}
             {attentionCount > 0 && (
               <Badge
@@ -419,8 +419,8 @@ function StaleSelectionState({
  *
  * 列表（F1 无页签）：Manager 行（仅 L1 可见）+ 团队行（leader 名排序）+
  * 底部「Agent」折叠行；中间 = InteractiveTeamTopology。
- * 详情不再占栏：团队（拓扑头部齿轮，R2 单一入口）、Agent
- * （拓扑成员行 / Agent 行）、Manager（列表 Manager 行）各自打开
+ * 详情不再占栏：团队（拓扑头部齿轮 → 按布局分派：多栏选中、单栏弹窗）、
+ * Agent（拓扑成员行 / Agent 行）、Manager（列表 Manager 行）各自打开
  * 承载当前 main 版面板的自适应大弹窗（见 *-detail-dialog.tsx）。
  * dual 断点下 Inspector 走右侧真 Sheet 抽屉（R3：Esc / 遮罩只关抽屉，
  * 保留选中；URL ?inspect=1 反映开合）。
@@ -476,12 +476,16 @@ export function TeamAgentsSection() {
   const [narrowView, setNarrowView] = useState<'list' | 'topology'>('list');
   const [standaloneExpanded, setStandaloneExpanded] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  // A3：当前大弹窗应直达的分区 id（Inspector 分区按钮 / 齿轮写 'basic'，
+  // A3：当前大弹窗应直达的分区 id（Inspector 分区按钮 / single 齿轮写 'basic'，
   // 深链 ?panel= 写入）；null = 弹窗落在面板默认分区。
   const [dialogPanel, setDialogPanel] = useState<string | null>(null);
   // R3：dual 抽屉（真 Sheet）开合——Esc / 遮罩 / X 只关抽屉，保留选中；
   // 再点同一行一键重开（选择变化 effect 负责）。
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // 齿轮反馈（triple / triple-compact）：右栏常驻、不弹窗——一次短暂
+  // 高亮提示请求已落地，600ms 后 timeout 清理。
+  const [inspectorFlash, setInspectorFlash] = useState(false);
+  const inspectorFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -746,14 +750,39 @@ export function TeamAgentsSection() {
     }
   }, [layout]);
 
-  // 拓扑头部齿轮 / 显式「团队设置」按钮：选中团队 + 打开设置大弹窗
-  // （落在「基本信息」分区）。
-  const handleOpenTeamSettings = useCallback((team: TeamResponse) => {
-    setSelection({ kind: 'team', name: team.name });
-    if (layout === 'single') setNarrowView('topology');
-    setDialogPanel('basic');
-    setDetailOpen(true);
-  }, [layout]);
+  // 齿轮反馈：短暂高亮常驻右栏（triple / triple-compact 不弹窗）。
+  const flashInspector = useCallback(() => {
+    if (inspectorFlashTimer.current) clearTimeout(inspectorFlashTimer.current);
+    setInspectorFlash(true);
+    inspectorFlashTimer.current = setTimeout(() => setInspectorFlash(false), 600);
+  }, []);
+  useEffect(
+    () => () => {
+      if (inspectorFlashTimer.current) clearTimeout(inspectorFlashTimer.current);
+    },
+    [],
+  );
+
+  // 「查看团队详情」请求（拓扑头部齿轮）：按布局分派——
+  // triple / triple-compact：选中团队（常驻右栏 Inspector，不弹窗）+ 短暂高亮；
+  // dual：选中 + 开右侧抽屉；
+  // single：维持整面板弹窗（chrome='full'，单栏无常驻 Inspector）。
+  // 「基本信息」大弹窗只由 Inspector 分区按钮进入（handleOpenSection）。
+  const handleTeamSettingsRequest = useCallback(
+    (team: TeamResponse) => {
+      setSelection({ kind: 'team', name: team.name });
+      if (layout === 'single') {
+        setNarrowView('topology');
+        setDialogPanel('basic');
+        setDetailOpen(true);
+      } else if (layout === 'dual') {
+        setDrawerOpen(true);
+      } else {
+        flashInspector();
+      }
+    },
+    [layout, flashInspector],
+  );
 
   // Manager 行：多栏 = 选中（Inspector 展示）；单栏 = 选中 + 打开大弹窗。
   // 不切 narrow 视图，关弹窗后停在列表（拓扑引导空态不是更好的落点）。
@@ -839,7 +868,7 @@ export function TeamAgentsSection() {
         workers={workers}
         searchQuery={searchQuery}
         onOpenWorker={handleOpenWorker}
-        onOpenTeamSettings={handleOpenTeamSettings}
+        onOpenTeamSettings={handleTeamSettingsRequest}
         onOpenMillforge={setMillforgeTeam}
         onBack={narrowBack}
         userLevel={userLevel}
@@ -873,7 +902,7 @@ export function TeamAgentsSection() {
           searchQuery={searchQuery}
           highlightWorkerName={selectedWorker.name}
           onOpenWorker={handleOpenWorker}
-          onOpenTeamSettings={handleOpenTeamSettings}
+          onOpenTeamSettings={handleTeamSettingsRequest}
           onOpenMillforge={setMillforgeTeam}
           onBack={narrowBack}
           userLevel={userLevel}
@@ -1043,7 +1072,7 @@ export function TeamAgentsSection() {
           </motion.div>
         )}
         {(layout === 'triple' || layout === 'triple-compact') && (
-          <Pane label="实体详情">
+          <Pane label="实体详情" className={inspectorFlash ? 'ring-2 ring-primary/40' : ''}>
             <EntityInspector
               entity={inspectorEntity}
               workers={workers ?? []}

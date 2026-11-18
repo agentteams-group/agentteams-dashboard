@@ -131,7 +131,8 @@ function roleBadgeClass(label: string): string {
   if (label === '负责人') return 'border-primary/40 bg-primary/10 text-primary';
   if (label === '评审') return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
   if (label === 'Manager') return 'border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400';
-  if (label === 'Team') return 'border-status-done/40 bg-status-done/10 text-status-done';
+  if (label === 'Team')
+    return 'border-status-done/40 bg-status-done/10 text-status-done transition-colors hover:border-emerald-500/25 hover:bg-emerald-500/5';
   return 'border-border bg-muted/40 text-muted-foreground';
 }
 
