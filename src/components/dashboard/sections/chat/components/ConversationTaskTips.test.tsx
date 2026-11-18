@@ -13,9 +13,11 @@ import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import type { RoomInfo } from '../room-info';
 
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [] }) }));
-const index = vi.hoisted(() => ({ tasks: [] as IndexedTask[] }));
+const index = vi.hoisted(() => ({ tasks: [] as IndexedTask[], archivedRooms: [] as { room_id: string }[], joinedRooms: [] as string[], projectedRooms: [] as RoomInfo[] }));
 vi.mock('@/hooks/use-projects', () => ({ useTaskIndex: () => ({ data: { tasks: index.tasks } }) }));
-vi.mock('@/hooks/use-worker-session-state', () => ({ useSessionTick: () => Date.now() }));
+vi.mock('@/hooks/use-room-archive', () => ({ useArchivedRooms: () => ({ data: { rooms: index.archivedRooms } }) }));
+vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: () => ({ state: 'joined', joinedRooms: [...index.joinedRooms, ...index.projectedRooms.filter(room => room.access === 'joined').map(room => room.id)] }) }));
+vi.mock('@/hooks/use-worker-session-state', () => ({ useSessionTick: () => Date.parse('2026-11-18T08:36:00Z') }));
 const room: RoomInfo = { id: '!assistant:test', name: '平台助手', type: 'manager', agentRole: 'operations', members: [], access: 'joined' };
 const execution: RoomInfo = { id: '!execution:test', name: '网站改版', type: 'project', projectId: 'project', teamId: 'design', members: [], access: 'joined' };
 const workflow: WorkflowResponse = {
@@ -27,13 +29,16 @@ const workflow: WorkflowResponse = {
 const feed = (workflows = [workflow]): AssistantTaskFeed => ({ workflows: workflows.map(workflow => ({ ...workflow, team_id: workflow.team_id })), loading: false, degraded: false, partialError: false, refresh: vi.fn() });
 
 function view(taskFeed = feed(), rooms = [room, execution]) {
+  index.projectedRooms = rooms;
   return <QueryClientProvider client={new QueryClient()}><TooltipProvider delayDuration={0}>
-    <ConversationTaskTips room={room} rooms={rooms} taskFeed={taskFeed} />
+    <ConversationTaskTips room={room} taskFeed={taskFeed} />
   </TooltipProvider></QueryClientProvider>;
 }
 
 beforeEach(() => {
   index.tasks = [];
+  index.archivedRooms = [];
+  index.joinedRooms = [];
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   useHitlInboxStore.setState({ confirmations: {}, pendingChatRoomId: null, pendingProjectKey: null });
   useSectionStore.setState({ activeSection: 'chat' });
@@ -41,6 +46,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('conversation task tips', () => {
+  it('shows creation time and elapsed time, and opens a joined task room even before its name syncs', () => {
+    const roomId = '!standalone:test';
+    index.joinedRooms = [roomId];
+    index.tasks = [{ task_id: 'standalone', main_task_id: 'standalone', title: '独立任务', status: 'in_progress', source_room_id: room.id, room_id: roomId, created_at: '2026-11-18T08:26:00Z' }];
+    render(view(feed([])));
+    expect(screen.getByText(/创建于/).querySelector('time')).toHaveAttribute('datetime', '2026-11-18T08:26:00Z');
+    expect(screen.getByText('耗时 10 分钟')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '独立任务，执行中，进入协作空间' }));
+    expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'standalone', roomId });
+  });
+
+  it('removes archived task rooms and their counts even while the task index and workflow still report running', async () => {
+    const roomId = '!standalone:test';
+    index.tasks = [{ task_id: 'standalone', main_task_id: 'standalone', title: '独立任务', status: 'in_progress', source_room_id: room.id, room_id: roomId }];
+    const { rerender } = render(view());
+    expect(screen.getByRole('button', { name: '收起对话任务' })).toHaveTextContent('任务 2');
+    index.archivedRooms = [{ room_id: roomId }];
+    rerender(view());
+    await waitFor(() => expect(screen.queryByText('独立任务')).toBeNull());
+    expect(screen.getByRole('button', { name: '收起对话任务' })).toHaveTextContent('任务 1');
+    index.archivedRooms.push({ room_id: execution.id });
+    rerender(view());
+    await waitFor(() => expect(screen.queryByRole('region')).toBeNull());
+  });
+
   it('shows independent main tasks alongside project tasks and opens their exact task room', () => {
     const taskRoom: RoomInfo = { ...execution, id: '!standalone:test' };
     index.tasks = [{ task_id: 'standalone', main_task_id: 'standalone', title: '独立任务', status: 'assigned', source_room_id: room.id, room_id: taskRoom.id }];
@@ -58,10 +88,11 @@ describe('conversation task tips', () => {
   });
 
   it('shows task name, status and duration directly without a hover interaction', () => {
-    const history = [{ ts: '2026-11-14T10:00:00Z', to: 'in_progress', action: 'ack_task' }, { ts: '2026-11-14T10:33:00Z', to: 'submitted', action: 'submit_task' }];
+    const history = [{ ts: '2026-11-14T09:55:00Z', from: 'planned', to: 'prepared', action: 'delegate_task' }, { ts: '2026-11-14T10:00:00Z', to: 'in_progress', action: 'ack_task' }, { ts: '2026-11-14T10:33:00Z', to: 'submitted', action: 'submit_task' }];
     render(view(feed([{ ...workflow, tasks_detail: [{ task_id: 'task', room_id: execution.id, status: 'submitted', history }] }])));
     expect(screen.getByText('首页设计')).toBeVisible();
     expect(screen.getByText('待验收')).toBeVisible();
+    expect(screen.getByText(/创建于/).querySelector('time')).toHaveAttribute('datetime', '2026-11-14T09:55:00Z');
     expect(screen.getByText('耗时 33 分钟')).toBeVisible();
     expect(screen.queryByRole('tooltip')).toBeNull();
   });

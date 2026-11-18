@@ -23,10 +23,12 @@ export interface AssistantTaskNoteItem {
   title: string;
   projectId?: string;
   projectTitle?: string;
+  mainTaskId?: string;
   teamId?: string;
   assignee?: string;
   roomId?: string;
   status?: string;
+  createdAt?: string;
   startedAt?: string;
   finishedAt?: string;
   confirmationId?: string;
@@ -88,6 +90,8 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
       const detail = detailById.get(taskId);
       const status = node?.status === 'completed' ? 'completed' : detail?.status || node?.status;
       const history = detail?.history ?? [];
+      // Legacy project steps materialize their execution task on preparation.
+      const createdAt = history[0]?.from === 'planned' && history[0]?.to === 'prepared' ? history[0].ts : undefined;
       const startedAt = history.find(event => ['in_progress', 'in-progress', 'running'].includes(event.to))?.ts
         ?? history.find(event => ['assigned', 'delegated'].includes(event.to))?.ts;
       const finishedAt = ['submitted', 'completed', 'failed', 'error', 'cancelled', 'canceled'].includes(status ?? '')
@@ -97,6 +101,7 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
         id: JSON.stringify([workflow.team_id, workflow.project_id, taskId]),
         group: taskGroup(status),
         status,
+        createdAt,
         startedAt,
         finishedAt,
         title: node?.name || taskId,
@@ -113,11 +118,12 @@ export function workflowTaskNotes(workflows: WorkflowResponse[]): AssistantTaskN
 
 /** Execution time stops on submission; acceptance waiting is not execution. */
 export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
-  if (!item.startedAt) return item.group === 'pending' ? '未开始' : '耗时待同步';
+  const since = item.startedAt ?? (item.group === 'running' ? item.createdAt : undefined);
+  if (!since) return item.group === 'pending' ? '未开始' : '耗时待同步';
   const finished = ['review', 'completed', 'failed', 'cancelled'].includes(item.group);
   if (finished && !item.finishedAt) return '耗时待同步';
   const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
-  return Number.isFinite(end) ? formatDurationZh(item.startedAt, end) ?? '耗时待同步' : '耗时待同步';
+  return Number.isFinite(end) ? formatDurationZh(since, end) ?? '耗时待同步' : '耗时待同步';
 }
 
 /** Conversation tips use explicit origin links, not platform/team-wide scope. */
@@ -144,12 +150,15 @@ export function conversationTaskNotes(room: RoomInfo, workflows: WorkflowRespons
     const projectId = task.project_id || undefined;
     const id = JSON.stringify([task.team_id, projectId, task.task_id]);
     const executionRoom = task.room_id?.replace(/^room:/, '');
+    const existing = byId.get(id);
     byId.set(id, {
-      ...byId.get(id),
+      ...existing,
       id,
+      mainTaskId: task.task_id,
       title: task.title || task.task_id,
       group: taskGroup(task.status),
       status: task.status,
+      createdAt: task.created_at || existing?.createdAt,
       projectId,
       teamId: task.team_id,
       assignee: task.assigned_to,
