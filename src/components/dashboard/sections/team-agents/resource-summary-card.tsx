@@ -38,24 +38,31 @@ export function ResourceIdentity({ name, role, kind, phase, onView }: {
   </div>;
 }
 
-export function AgentSummaryCard({ agent, onView, onEdit }: {
-  agent: AgentSummary; onView: () => void; onEdit: () => void;
+/**
+ * 智能体摘要卡片。三个入口各司其职（详情页整改①，不允许落到同一 UI）：
+ * - `onOpen`  名称点击 → 页内主页；
+ * - `onView`  「详情」→ 只读详情（复用 WorkerDetailDialog，传当前 worker 对象）；
+ * - `onEdit`  「编辑」→ 可编辑面（WorkerDrawer / 对应编辑弹窗）；
+ *   未提供时不渲染「编辑」按钮（Manager 无编辑面的场景）。
+ */
+export function AgentSummaryCard({ agent, onOpen, onView, onEdit }: {
+  agent: AgentSummary; onOpen?: () => void; onView: () => void; onEdit?: () => void;
 }) {
   return <Card className="h-[300px] min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md sm:h-[280px]">
     <CardContent className="flex flex-1 flex-col gap-5 p-5">
-      <ResourceIdentity name={agent.name} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onView} />
+      <ResourceIdentity name={agent.name} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onOpen} />
       <div className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3">
         <span className="shrink-0 text-xs text-muted-foreground">模型</span>
         <OverflowText text={agent.model || '未设置'} className="flex-1 text-sm font-medium" />
       </div>
       <dl className="mt-auto grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         <dt className="text-muted-foreground">运行时</dt><dd className="min-w-0"><OverflowText text={runtimeLabel(agent.runtime)} className="text-right" /></dd>
-        <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '独立 Agent'} className="text-right leading-5" /></dd>
+        <dt className="text-muted-foreground">所属团队</dt><dd className="min-w-0"><OverflowText text={agent.kind === 'manager' ? '平台' : agent.team || '独立智能体'} className="text-right leading-5" /></dd>
       </dl>
     </CardContent>
     <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3">
       <Button variant="outline" size="sm" onClick={onView}>详情</Button>
-      <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>
+      {onEdit && <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>}
     </div>
   </Card>;
 }

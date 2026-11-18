@@ -18,17 +18,20 @@ import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useSearch } from '@/lib/search-context';
 import { currentHashParams, hashForSection, type TeamAgentsTab } from '@/lib/nav-hash';
-import type { CreateTeamRequest, CreateWorkerRequest } from '@/lib/agentteams-api';
+import type { CreateTeamRequest, CreateWorkerRequest, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { teamHumanMembers } from '@/lib/agentteams-api';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
+import { WorkerDetailDialog } from '../workers/worker-detail-dialog';
 import { WorkerDetailPanel } from '../workers/worker-detail-panel';
-import { filterTeamRows, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
+import { WorkerDrawer } from '../workers/worker-drawer';
+import { filterTeamRows, groupAgentsByTeam, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
 import { TeamAgentsWorkbench } from './team-agents-workbench';
+import { TeamDetailDialog } from './team-detail-dialog';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -91,6 +94,10 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
   const [millforgeTeam, setMillforgeTeam] = useState<string | null>(null);
+  // 卡片「详情/编辑」入口（整改①）：详情 = 只读弹窗；编辑 = 可编辑面。
+  const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
+  const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
+  const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
 
   useEffect(() => {
     const sync = () => setLocation({ ...readLocation(), ...(view ? { tab: view } : {}) });
@@ -156,11 +163,17 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     </MemberPreview>;
   }
   function agentChip(name: string) {
+    const worker = workers.find((item) => item.name === name);
     const agent = allAgents.find((item) => item.kind === 'agent' && item.name === name)
       ?? { name, model: '', runtime: '', phase: '', team: '', kind: 'agent' as const, label: 'Worker' };
-    const onView = () => navigate('agents', 'agent', name);
-    return <MemberPreview key={name} name={name} onOpen={onView}>
-      <AgentSummaryCard agent={agent} onView={onView} onEdit={() => navigate('agents', 'agent', name, true)} />
+    const onOpen = () => navigate('agents', 'agent', name);
+    return <MemberPreview key={name} name={name} onOpen={onOpen}>
+      <AgentSummaryCard
+        agent={agent}
+        onOpen={onOpen}
+        onView={() => { if (worker) setDetailWorker(worker); }}
+        onEdit={() => { if (worker) setEditWorker(worker); }}
+      />
     </MemberPreview>;
   }
   function memberList(names: string[], renderMember: (_name: string) => ReactNode, label: string, title: string) {
@@ -185,22 +198,22 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   ) : null;
 
   return <div className="space-y-4" data-testid="team-agents-section">
-    <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
+    <SectionHeader title={view === 'agents' ? '智能体' : view === 'teams' ? '团队' : '团队与智能体'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
       meta={pageView === 'topology' && viewToggle ? viewToggle
         : !isDetail && <div className="flex min-w-0 flex-wrap items-center gap-3">{!view && <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
         <TabsTrigger value="teams">团队 <span className="text-muted-foreground tabular-nums">{teams.length}</span></TabsTrigger>
-        <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
+        <TabsTrigger value="agents">智能体 <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
-        <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
+        <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或智能体" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
         {viewToggle}
       </div>}
       actions={pageView === 'topology' ? undefined : isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
-        <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
+        <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建智能体'}</Button>} />
 
     {pageView === 'topology' ? <TeamAgentsWorkbench />
       : isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
       {!selectedWorker && <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-        <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent}`} /></h2>
+        <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '详情'} · ${selectedTeam?.teamName || location.team || location.agent}`} /></h2>
         {selectedTeam && <Button size="sm" variant="outline" onClick={() => setMillforgeTeam(selectedTeam.name)}>千锻 · 团队配置</Button>}
       </div>}
       {selectedTeam ? <TeamSettingsPanel key={selectedTeam.name} team={selectedTeam} allTeams={teams} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} onChanged={refresh} onDeleted={() => navigate('teams')} /> :
@@ -213,7 +226,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
             const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
             return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
-              <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} Agent`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
+              <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} 智能体`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
               <OverflowText text={team.description || ''} multiline className="h-10 text-xs leading-5 text-muted-foreground" />
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm">
                 <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd className="h-7 min-w-0">{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
@@ -221,16 +234,36 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
                 <dt className="pt-1 text-muted-foreground">Leader</dt><dd className="h-7 min-w-0">{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
                 <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="h-7 min-w-0">{teamWorkers.length ? memberList(teamWorkers.map((worker) => worker.name), agentChip, `${team.teamName || team.name}的 Workers`, 'Workers') : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
               </dl>
-            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name, true)}>编辑</Button></div></Card>;
+            </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => setEditTeam(team)}>编辑</Button></div></Card>;
           })}
           {teamRows.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的团队' : '暂无团队，创建团队开始协作。'}</p>}
-        </div> : <div className={RESOURCE_CARD_GRID} aria-label="Agent 卡片">
-          {agentPage.items.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
-            onView={() => navigate('agents', agent.kind, agent.name)}
-            onEdit={() => navigate('agents', agent.kind, agent.name, true)} />)}
-          {agents.length === 0 && <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的 Agent' : '暂无 Agent'}</p>}
-        </div>}
-      {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : 'Agent'} />}
+        </div> : agents.length === 0 ? <p className="py-12 text-sm text-muted-foreground">{query ? '没有匹配的智能体' : '暂无智能体'}</p> : (
+          // 按团队分组（③）：组头 = 团队名（可点，跳团队详情）+ 成员数；
+          // 「无团队」组永远最后；组内沿用 RESOURCE_CARD_GRID 网格。
+          // 分页保持平铺：useListPagination 作用于过滤后的全量列表，
+          // 分组只作用于当前页的 items（页内重排，不跨页）。
+          <div className="space-y-6" aria-label="智能体卡片">
+            {groupAgentsByTeam(agentPage.items).map((group) => {
+              const groupTeam = group.team ? teams.find((item) => item.name === group.team) : undefined;
+              const groupTitle = groupTeam ? groupTeam.teamName || groupTeam.name : '无团队';
+              return <section key={group.team || 'none'} data-testid="agent-team-group" data-team={group.team} className="min-w-0">
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  {groupTeam
+                    ? <button type="button" onClick={() => navigate('teams', 'team', groupTeam.name)} className="min-w-0 hover:underline" title={`打开团队详情 ${groupTitle}`}>{groupTitle}</button>
+                    : <span className="text-muted-foreground">{groupTitle}</span>}
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">· {group.agents.length} 个智能体</span>
+                </h2>
+                <div className={RESOURCE_CARD_GRID}>
+                  {group.agents.map((agent) => <AgentSummaryCard key={`${agent.kind}-${agent.name}`} agent={agent}
+                    onOpen={() => navigate('agents', agent.kind, agent.name)}
+                    onView={() => setDetailWorker(agent)}
+                    onEdit={() => setEditWorker(agent)} />)}
+                </div>
+              </section>;
+            })}
+          </div>
+        )}
+      {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : '智能体'} />}
     </>}
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}
@@ -238,5 +271,33 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     <WorkerCreateDialog open={createWorkerOpen} onOpenChange={setCreateWorkerOpen} value={newWorker} onChange={setNewWorker} isPending={createWorker.isPending} modelOptions={modelOptions} sessionIssue={sessionIssue}
       onSubmit={() => createWorker.mutate(newWorker, { onSuccess: (created) => { setCreateWorkerOpen(false); setNewWorker(EMPTY_WORKER); if (created?.name) navigate('agents', 'agent', created.name); } })} />
     {forgingTeam && <MillforgeDialog open team={forgingTeam} workers={workers} canInstall={userLevel >= 3} modelAliases={modelOptions.map((option) => option.alias)} onOpenChange={(open) => !open && setMillforgeTeam(null)} onInjected={refresh} />}
+
+    {/* 卡片「详情/编辑」入口（整改①，两个按钮必须落到不同 UI）：
+        智能体详情 = 只读弹窗（复用 WorkerDetailDialog，传当前 worker 对象）；
+        智能体编辑 = 编辑抽屉（WorkerDrawer，内含唯一实现 WorkerDetailPanel）；
+        团队编辑 = 编辑弹窗（复用 TeamDetailDialog，chrome=full 暴露全部分区）。 */}
+    <WorkerDetailDialog worker={detailWorker} onOpenChange={(open) => !open && setDetailWorker(null)} />
+    <WorkerDrawer
+      worker={editWorker}
+      onOpenChange={(open) => !open && setEditWorker(null)}
+      modelOptions={modelOptions}
+      sessionIssue={sessionIssue}
+      userLevel={userLevel}
+      onChanged={refresh}
+      onDeleted={() => { setEditWorker(null); navigate('agents'); }}
+    />
+    <TeamDetailDialog
+      open={!!editTeam}
+      onOpenChange={(open) => !open && setEditTeam(null)}
+      team={editTeam}
+      allTeams={teams}
+      workers={workers}
+      modelOptions={modelOptions}
+      sessionIssue={sessionIssue}
+      userLevel={userLevel}
+      chrome="full"
+      onChanged={refresh}
+      onDeleted={() => { setEditTeam(null); navigate('teams'); }}
+    />
   </div>;
 }

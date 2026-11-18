@@ -212,11 +212,11 @@ afterEach(cleanup);
 describe('Team and Agent resource cards', () => {
   it('shows the independent Agent page without page tabs or Managers', () => {
     renderSection('#console/resources/workers', 'agents');
-    expect(screen.getByRole('heading', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '智能体' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).toBeNull();
-    const header = screen.getByRole('heading', { name: 'Agent' }).closest('[data-slot="section-header"]') as HTMLElement;
-    expect(within(header).getByRole('textbox', { name: '搜索团队或 Agent' })).toBeInTheDocument();
-    expect(screen.queryByText('4 个 Agent')).toBeNull();
+    const header = screen.getByRole('heading', { name: '智能体' }).closest('[data-slot="section-header"]') as HTMLElement;
+    expect(within(header).getByRole('textbox', { name: '搜索团队或智能体' })).toBeInTheDocument();
+    expect(screen.queryByText('4 个智能体')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'boss' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'lead' })).toBeInTheDocument();
   });
@@ -234,17 +234,18 @@ describe('Team and Agent resource cards', () => {
     workersFixture.push(...extra);
     try {
       renderSection('#console/resources/team-agents?tab=agents');
-      const cards = () => within(screen.getByLabelText('Agent 卡片')).getAllByRole('heading', { level: 2 });
+      // 卡片计数用「详情」按钮（每卡一个；组头按钮是团队名，不会混入）。
+      const cards = () => within(screen.getByLabelText('智能体卡片')).getAllByRole('button', { name: '详情' });
       expect(cards()).toHaveLength(12);
       fireEvent.click(screen.getByRole('button', { name: '第 3 页' }));
       expect(cards()).toHaveLength(6);
-      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: 'solo' } });
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或智能体' }), { target: { value: 'solo' } });
       expect(cards()).toHaveLength(1);
-      expect(screen.getByText('共 1 个Agent · 第 1 / 1 页')).toBeInTheDocument();
-      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: '' } });
+      expect(screen.getByText('共 1 个智能体 · 第 1 / 1 页')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或智能体' }), { target: { value: '' } });
       fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
       selectTab(/^团队/);
-      selectTab(/^Agent/);
+      selectTab(/^智能体/);
       expect(screen.getByRole('button', { name: '第 1 页' })).toHaveAttribute('aria-current', 'page');
     } finally { workersFixture.splice(-extra.length); HTMLElement.prototype.scrollIntoView = scrollIntoView; }
   });
@@ -287,8 +288,10 @@ describe('Team and Agent resource cards', () => {
     fireEvent.mouseLeave(member);
     fireEvent.mouseEnter(preview);
     expect(preview).toBeInTheDocument();
+    // 详情 → 只读详情弹窗（WorkerDetailDialog），不再是页内编辑面。
     fireEvent.click(within(preview).getByRole('button', { name: '详情' }));
-    expect(screen.getByText('agent-profile:w1')).toBeInTheDocument();
+    const detail = await screen.findByRole('dialog', { name: 'Worker 详情 - w1' });
+    expect(within(detail).getByText('容器状态')).toBeInTheDocument();
   });
 
   it('shows a human profile card on focus and closes it with Escape', async () => {
@@ -309,13 +312,13 @@ describe('Team and Agent resource cards', () => {
     expect(within(cards).getByRole('button', { name: '查看 boss 的主页' })).toHaveTextContent('团队管理员');
     expect(within(cards).getByRole('button', { name: '查看 reviewer 的主页' })).toHaveTextContent('评审成员');
     expect(within(cards).getByText('Workers · 1')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Agent 卡片')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('智能体卡片')).not.toBeInTheDocument();
   });
 
   it('shows all agents in their own tab with models and edit controls', () => {
     renderSection();
-    selectTab(/^Agent/);
-    const cards = screen.getByLabelText('Agent 卡片');
+    selectTab(/^智能体/);
+    const cards = screen.getByLabelText('智能体卡片');
     for (const name of ['lead', 'w1', 'lead2', 'solo']) expect(within(cards).getByRole('heading', { name })).toBeInTheDocument();
     expect(within(cards).queryByRole('heading', { name: 'boss' })).not.toBeInTheDocument();
     expect(within(cards).getByText('w1-model')).toBeInTheDocument();
@@ -329,7 +332,7 @@ describe('Team and Agent resource cards', () => {
     expect(screen.getByText('agent-profile:w1')).toBeInTheDocument();
     expect(window.location.hash).toContain('agent=w1');
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
-    expect(screen.getByLabelText('Agent 卡片')).toBeInTheDocument();
+    expect(screen.getByLabelText('智能体卡片')).toBeInTheDocument();
   });
 
   it('preserves a direct profile link on refresh and responds to browser navigation', async () => {
@@ -348,19 +351,62 @@ describe('Team and Agent resource cards', () => {
     expect(window.location.hash).toContain('human=reviewer');
   });
 
-  it('opens the team settings and retains the team configuration tool', () => {
+  it('opens the team edit dialog and keeps the in-page detail with the team configuration tool', () => {
     renderSection();
+    // 编辑 → 团队编辑弹窗（复用 TeamDetailDialog；面板 mock 为 team-profile:*）。
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
-    expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'alpha · 基本信息' });
+    expect(within(dialog).getByText('team-profile:alpha')).toBeInTheDocument();
+    // 详情 → 页内只读详情（「详情 · Alpha」）：与编辑弹窗是两个容器。
+    fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
+    expect(screen.getByRole('heading', { name: '详情 · Alpha' })).toBeInTheDocument();
+    expect(screen.getAllByText('team-profile:alpha')).toHaveLength(2);
+    expect(within(dialog).queryByRole('heading', { name: '详情 · Alpha' })).toBeNull();
+    // 页内详情保留千锻工具。
     fireEvent.click(screen.getByRole('button', { name: '千锻 · 团队配置' }));
     expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent('millforge-dialog:alpha');
   });
 
   it('supports legacy Agent links and searches model names', () => {
     renderSection('#console/resources/workers');
-    fireEvent.change(screen.getByLabelText('搜索团队或 Agent'), { target: { value: 'solo-model' } });
+    fireEvent.change(screen.getByLabelText('搜索团队或智能体'), { target: { value: 'solo-model' } });
     expect(screen.getByRole('heading', { name: 'solo' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'w1' })).not.toBeInTheDocument();
+  });
+
+  it('renders Agent detail and edit into different containers', async () => {
+    renderSection('#console/resources/workers', 'agents');
+    // 详情 → 只读详情弹窗（WorkerDetailDialog，标题带 Worker 名）。
+    fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
+    const detail = await screen.findByRole('dialog', { name: 'Worker 详情 - lead' });
+    expect(within(detail).getByText('容器状态')).toBeInTheDocument();
+    expect(within(detail).queryByText('agent-profile:lead')).toBeNull();
+    fireEvent.click(within(detail).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Worker 详情 - lead' })).toBeNull());
+    // 编辑 → 编辑抽屉（WorkerDrawer，标题固定「Worker 详情」）：不同容器、不同标题。
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
+    const drawer = await screen.findByRole('dialog', { name: 'Worker 详情' });
+    expect(within(drawer).getByText('agent-profile:lead')).toBeInTheDocument();
+    expect(within(drawer).queryByText('容器状态')).toBeNull();
+  });
+
+  it('groups Agent cards by team, ungrouped last, group header links to team detail', () => {
+    renderSection('#console/resources/workers', 'agents');
+    const groups = screen.getAllByTestId('agent-team-group');
+    // 组序：团队名 zh 排序，无团队永远最后。
+    expect(groups.map((group) => group.getAttribute('data-team'))).toEqual(['alpha', 'beta', '']);
+    // 归位：alpha 组含 lead/w1；beta 组含 lead2；solo 落入「无团队」组。
+    expect(within(groups[0]).getByRole('heading', { level: 2, name: /Alpha\s*·\s*2 个智能体/ })).toBeInTheDocument();
+    expect(within(groups[0]).getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+    expect(within(groups[0]).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(within(groups[0]).queryByRole('heading', { name: 'solo' })).toBeNull();
+    expect(within(groups[1]).getByRole('heading', { name: 'lead2' })).toBeInTheDocument();
+    expect(within(groups[2]).getByRole('heading', { level: 2, name: /无团队\s*·\s*1 个智能体/ })).toBeInTheDocument();
+    expect(within(groups[2]).getByRole('heading', { name: 'solo' })).toBeInTheDocument();
+    // 组头可点 → 页内团队详情（标题「详情 · Alpha」）。
+    fireEvent.click(within(groups[0]).getByRole('button', { name: 'Alpha' }));
+    expect(window.location.hash).toContain('team=alpha');
+    expect(screen.getByRole('heading', { name: '详情 · Alpha' })).toBeInTheDocument();
   });
 });
 
