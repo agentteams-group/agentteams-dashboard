@@ -62,10 +62,11 @@ describe('useActiveSection', () => {
       expect(window.location.hash).toBe('#workbench/space');
       expect(useSectionStore.getState().taskCollaboration).toBeNull();
     });
-    it('defaults to the collaboration space when no hash or localStorage is set', () => {
+    it('defaults to the homepage when no hash is set', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
+      expect(window.location.hash).toBe('#console/system/overview');
     });
 
     it('resolves the layered space hash (PRD §5.3)', () => {
@@ -111,24 +112,30 @@ describe('useActiveSection', () => {
     });
 
     it('routes the legacy grouped hash through to the fallback default', () => {
-      // Unknown grouped hashes were never a supported surface; they fall
-      // through to the collaboration-space default.
       setHash('#overview/overview');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
     });
 
-    it('opens the assistant at the product root even after visiting a tool page', () => {
+    it('opens the homepage at the product root even after visiting a tool page', () => {
       setHash('');
       localStorage.setItem(STORAGE_KEY, 'teams');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
     });
 
-    it('falls back to chat when hash is invalid', () => {
+    it('falls back to the homepage when hash is invalid', () => {
       setHash('#unknown-section');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
+    });
+
+    it('returns to the homepage when the URL hash is cleared', () => {
+      setHash('#workbench/tasks');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => { setHash(''); window.dispatchEvent(new Event('hashchange')); });
+      expect(result.current.activeSection).toBe('overview');
+      expect(window.location.hash).toBe('#console/system/overview');
     });
 
     it('does not clobber the URL hash with the stale pre-resolution default', () => {
