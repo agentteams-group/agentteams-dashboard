@@ -1,10 +1,11 @@
 'use client';
 
 import { NativeSelect } from '@/components/ui/native-select';
-import { useState } from 'react';
+import { useId, useState, type ReactElement } from 'react';
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useArchivedRooms, useRoomArchiveStatus, useSetRoomArchived, useDeleteArchivedRoom } from '@/hooks/use-room-archive';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -46,21 +47,61 @@ export function ArchivedRoomsDialog({ onSelectRoom }: { onSelectRoom: (_id: stri
   </Dialog>;
 }
 
+function RoomActionConfirm({ trigger, title, description, action, destructive, onConfirm }: {
+  trigger: ReactElement;
+  title: string;
+  description: string;
+  action: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+    <PopoverContent role="alertdialog" aria-labelledby={titleId} aria-describedby={descriptionId} side="top" align="end" sideOffset={8} collisionPadding={12}
+      className="w-72 max-w-[calc(100vw-1.5rem)] space-y-3 rounded-xl shadow-lg"
+      onClick={event => event.stopPropagation()}>
+      <h3 id={titleId} className="text-sm font-semibold">{title}</h3>
+      <p id={descriptionId} className="text-xs leading-5 text-muted-foreground">{description}</p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
+        <Button type="button" variant={destructive ? 'destructive' : 'default'} size="sm" onClick={() => {
+          setOpen(false);
+          onConfirm();
+        }}>{action}</Button>
+      </div>
+    </PopoverContent>
+  </Popover>;
+}
+
 export function CompletedTaskArchiveAction({ title, resolveRooms }: { title: string; resolveRooms: () => Promise<string[]> }) {
   const change = useSetRoomArchived();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const archive = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const rooms = [...new Set(await resolveRooms())];
+      if (!rooms.length) throw new Error('协作房间尚未创建，无法归档');
+      for (const roomId of rooms) await change.mutateAsync({ roomId, archived: true });
+    } catch (error) {
+      setError(archiveError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
   return <span className="inline-flex flex-wrap items-center gap-1" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-    <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" aria-label={`归档任务 ${title}`} title="归档已完成任务，保留历史消息和产物" disabled={busy} onClick={async () => {
-      if (!window.confirm('归档此已完成任务？历史消息和产物保留，所有成员将停止同步其任务房间。')) return;
-      setBusy(true); setError(null);
-      try {
-        const rooms = [...new Set(await resolveRooms())];
-        if (!rooms.length) throw new Error('协作房间尚未创建，无法归档');
-        for (const roomId of rooms) await change.mutateAsync({ roomId, archived: true });
-      } catch (error) { setError(archiveError(error)); }
-      finally { setBusy(false); }
-    }}><Archive className="size-3.5" />{busy ? '归档中…' : '归档'}</Button>
+    <RoomActionConfirm
+      trigger={<Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" aria-label={`归档任务 ${title}`} title="归档已完成任务，保留历史消息和产物" disabled={busy}><Archive className="size-3.5" />{busy ? '归档中…' : '归档'}</Button>}
+      title="归档已完成的任务？"
+      description="历史消息和产物会保留，所有成员将停止同步该任务的协作房间。"
+      action="确认归档"
+      onConfirm={() => void archive()}
+    />
     {error && <span role="alert" className="text-xs text-destructive">{error}</span>}
   </span>;
 }
@@ -74,13 +115,23 @@ export function RoomArchiveAction({ room }: { room: RoomInfo }) {
   const busy = change.isPending || remove.isPending;
   return <div className="flex items-center gap-1">
     {archived && <span className="whitespace-nowrap text-xs text-muted-foreground">已归档<span className="hidden lg:inline"> · 只读</span></span>}
-    {canArchive && <Button variant="ghost" size="sm" aria-label={archived ? '取消归档' : '归档'} title={archived ? '取消归档' : '归档'} disabled={busy} onClick={() => {
-      if (!archived && !window.confirm('归档后所有成员将停止同步此任务房间。请确认任务已完成，产物已同步到工作区。')) return;
-      change.mutate({ roomId: room.id, archived: !archived });
-    }}>{archived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}<span>{archived ? '取消归档' : '归档'}</span></Button>}
-    {archived && canDelete && <Button variant="ghost" size="sm" aria-label="删除房间" title="删除房间" disabled={busy} onClick={() => {
-      if (window.confirm('永久删除此归档任务房间？房间消息将无法恢复，工作区产物保留。')) remove.mutate(room.id);
-    }}><Trash2 className="size-4" /><span className="hidden xl:inline">删除房间</span></Button>}
+    {canArchive && (archived
+      ? <Button variant="ghost" size="sm" aria-label="取消归档" title="取消归档" disabled={busy} onClick={() => change.mutate({ roomId: room.id, archived: false })}><ArchiveRestore className="size-4" />取消归档</Button>
+      : <RoomActionConfirm
+        trigger={<Button variant="ghost" size="sm" aria-label="归档" title="归档" disabled={busy}><Archive className="size-4" />归档</Button>}
+        title="归档任务房间？"
+        description="归档后，所有成员将停止同步此房间。请确认任务已完成，且产物已同步到工作区。"
+        action="确认归档"
+        onConfirm={() => change.mutate({ roomId: room.id, archived: true })}
+      />)}
+    {archived && canDelete && <RoomActionConfirm
+      trigger={<Button variant="ghost" size="sm" aria-label="删除房间" title="删除房间" disabled={busy}><Trash2 className="size-4" /><span className="hidden xl:inline">删除房间</span></Button>}
+      title="永久删除房间？"
+      description="房间消息将无法恢复。工作区产物会保留。"
+      action="永久删除"
+      destructive
+      onConfirm={() => remove.mutate(room.id)}
+    />}
     {(change.isError || remove.isError) && <span role="alert" className="text-xs text-destructive">{archiveError(change.error || remove.error)}</span>}
   </div>;
 }
