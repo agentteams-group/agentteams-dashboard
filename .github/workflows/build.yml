@@ -30,6 +30,7 @@ jobs:
       value: ${{ steps.version.outputs.value }}
       source_tree: ${{ steps.version.outputs.source_tree }}
       ready: ${{ steps.existing.outputs.ready }}
+      unified_ready: ${{ steps.unified.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
       - name: Resolve version
@@ -63,6 +64,12 @@ jobs:
       - name: Reuse summary
         if: steps.existing.outputs.ready == 'true'
         run: echo 'Reused the existing amd64/arm64 image with the exact source tree; build and push skipped.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Check existing unified-entry image
+        id: unified
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          SOURCE_TREE: ${{ steps.version.outputs.source_tree }}
+        run: node scripts/check-published-image.mjs "$REGISTRY/$REPO/agentteams-dashboard:$VERSION-unified" "$SOURCE_TREE"
 
   publish:
     name: Build and push ${{ matrix.arch }} image
@@ -145,3 +152,61 @@ jobs:
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Image: \`${IMAGE}\`" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Platforms: \`linux/amd64, linux/arm64\`" >> "${GITHUB_STEP_SUMMARY}"
+
+  publish-unified:
+    name: Build unified-entry ${{ matrix.arch }} image
+    needs: version
+    if: needs.version.outputs.unified_ready != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPO }}/agentteams-dashboard:${{ needs.version.outputs.value }}-unified-${{ matrix.arch }}
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=/dashboard
+            DASHBOARD_BUILD_ID=${{ needs.version.outputs.value }}
+          cache-from: type=gha,scope=dashboard-unified-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=dashboard-unified-${{ matrix.arch }},ignore-error=true,timeout=2m
+
+  merge-unified:
+    name: Publish unified-entry multi-arch manifest
+    needs: [version, publish-unified]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Merge unified-entry platform images
+        run: |
+          make push-manifest PUSH_LATEST= \
+            SOURCE_TREE="${{ needs.version.outputs.source_tree }}" \
+            VERSION="${{ needs.version.outputs.value }}-unified" \
+            REGISTRY="${{ env.REGISTRY }}" REPO="${{ env.REPO }}"

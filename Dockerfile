@@ -53,6 +53,9 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+ARG NEXT_PUBLIC_BASE_PATH=
+LABEL io.agentteams.dashboard-base-path=${NEXT_PUBLIC_BASE_PATH}
+
 ENV NODE_ENV=production
 ENV PORT=3000
 # Next.js 15+ standalone server defaults to localhost; bind to all interfaces for LAN access.

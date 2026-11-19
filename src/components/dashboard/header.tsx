@@ -103,7 +103,7 @@ export function DashboardHeader({
     // The login UI is rendered at the ROOT path (page.tsx shows LoginPage when
     // unauthenticated) — there is no /login route (404).
     void fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' }).finally(() => {
-      window.location.replace('/');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
     });
   };
 

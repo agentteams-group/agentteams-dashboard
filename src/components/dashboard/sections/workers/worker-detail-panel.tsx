@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+
 // Worker 详情面板（F7 唯一实现）：WorkerDrawer 与「团队与Agent」页内联详情
 // 共用本组件。对齐工作台插件 WorkerDetailPane：
 // - 状态叙述 + 心跳/最近活动/在跑任务/上次运行/上次完成/loop 预算（D2）；
@@ -208,7 +210,7 @@ export function WorkerDetailPanel({
       return;
     }
     let alive = true;
-    fetch('/api/agentteams/observability', { cache: 'no-store' })
+    fetch(apiUrl('/api/agentteams/observability'), { cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { enabled?: boolean; publicUrl?: string; langfuseUrl?: string };

@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/api-base';
 // React Query hooks for AI Model management via Higress Console API
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { higressApi } from '@/lib/higress-api';
@@ -87,7 +88,7 @@ export function useSglangModels(enabled = true) {
   return useQuery<SglangModelsResponse>({
     queryKey: sglangQueryKey,
     queryFn: async () => {
-      const res = await fetch('/api/agentteams/sglang-models', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/agentteams/sglang-models'), { cache: 'no-store' });
       if (!res.ok) return { enabled: true, models: [] };
       return (await res.json()) as SglangModelsResponse;
     },

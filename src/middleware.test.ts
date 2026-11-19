@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
 import { middleware } from './middleware';
@@ -11,6 +11,18 @@ import {
 import { __resetStaticIdentityCacheForTests } from '@/lib/static-identity';
 
 const SECRET = 'f'.repeat(64);
+
+it('serves a Dashboard built for /dashboard without the legacy redirect and keeps API authentication', async () => {
+  vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/dashboard');
+  try {
+    const page = new NextRequest('http://dashboard.test/dashboard/', { nextConfig: { basePath: '/dashboard' } });
+    expect((await middleware(page)).headers.get('location')).toBeNull();
+    const api = new NextRequest('http://dashboard.test/dashboard/api/agentteams/teams/', { nextConfig: { basePath: '/dashboard' } });
+    expect((await middleware(api)).status).toBe(401);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function dataRequest(path: string, cookie?: string) {
   const headers = new Headers();

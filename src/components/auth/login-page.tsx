@@ -267,7 +267,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
               variant="ghost"
               size="sm"
               className="text-xs text-muted-foreground h-9"
-              onClick={() => window.location.assign('/?setup=1')}
+              onClick={() => window.location.assign(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/?setup=1`)}
             >
               <Settings2 className="w-3.5 h-3.5 mr-1" />
               配置后端地址

@@ -25,7 +25,7 @@ export function Sidebar({ agentRooms, activeSection, countMap, sectionsWithNotif
   return (
     <aside aria-label="主导航" className={`hidden min-h-0 shrink-0 flex-col border-r border-border bg-sidebar md:flex ${collapsed ? 'w-16' : 'w-[232px]'}`}>
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-        <Image src="/agentteams-logo.svg" alt="AgentTeams" width={28} height={28} className="shrink-0 rounded-lg" />
+        <Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="AgentTeams" width={28} height={28} className="shrink-0 rounded-lg" />
         {!collapsed && <div className="min-w-0">
           <span className="block text-base font-semibold tracking-tight">AgentTeams</span>
           <span className="text-xs text-muted-foreground">{userLevel >= 3 ? '管理工作区' : '团队工作区'}</span>

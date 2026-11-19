@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+
 import { useEffect, useState } from 'react';
 
 // MCP deployment catalog (Controller `GET /api/v1/mcp-servers`, upstream
@@ -48,7 +50,7 @@ export function useMcpCatalog(): MCPCatalogState {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/agentteams/mcp-catalog', { cache: 'no-store' });
+        const res = await fetch(apiUrl('/api/agentteams/mcp-catalog'), { cache: 'no-store' });
         if (cancelled) return;
         if (res.status === 404) {
           setState({ off: true, loading: false, workersByServer: new Map(), servers: [] });

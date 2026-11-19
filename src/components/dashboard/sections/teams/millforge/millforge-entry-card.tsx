@@ -34,7 +34,7 @@ export function MillforgeEntryCard({
         }`}
       >
         <Image
-          src="/millforge-logo.svg"
+          src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/millforge-logo.svg`}
           alt=""
           width={42}
           height={30}

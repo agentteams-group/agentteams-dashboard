@@ -7,7 +7,7 @@ export function SignInLayout({ children }: { children: ReactNode }) {
   return (
     <div className={`${styles.surface} flex min-h-dvh flex-col px-5 sm:px-10 lg:px-14`}>
       <header className="mx-auto flex w-full max-w-7xl items-center gap-3 border-b border-white/10 py-5 sm:py-6">
-        <Image src="/agentteams-logo.svg" alt="" width={32} height={32} />
+        <Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="" width={32} height={32} />
         <span className="text-lg font-semibold tracking-tight">AgentTeams</span>
       </header>
       <div className="mx-auto grid w-full max-w-7xl flex-1 items-center gap-10 py-8 lg:grid-cols-[1.1fr_1fr] lg:py-14">
