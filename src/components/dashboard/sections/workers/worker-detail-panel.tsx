@@ -111,6 +111,8 @@ export type WorkerDetailPanelProps = {
   onDm?: (_mxid: string, _roomId?: string) => void;
   /** 根节点附加 class（内联页面用 min-h-0 flex-1 参与父级 flex 布局）。 */
   className?: string;
+  initialTab?: string;
+  chrome?: 'full' | 'section';
   onChanged?: () => void;
   onDeleted?: () => void;
 };
@@ -123,6 +125,8 @@ export function WorkerDetailPanel({
   onClose,
   onDm,
   className,
+  initialTab,
+  chrome = 'full',
   onChanged,
   onDeleted,
 }: WorkerDetailPanelProps) {
@@ -499,7 +503,7 @@ export function WorkerDetailPanel({
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
-      <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
+      {chrome === 'full' && <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
         <div className="flex items-start gap-3">
           {userLevel >= 3 ? <button type="button" className="shrink-0 rounded-full hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={`更换 ${view.name} 的头像`} title="更换头像" onClick={() => setAvatarOpen(true)}>
@@ -588,9 +592,9 @@ export function WorkerDetailPanel({
             </Button>
           )}
         </div>
-      </div>
+      </div>}
 
-      <ResourceDetailTabs key={workerName} label="Agent 配置" items={[
+      <ResourceDetailTabs key={workerName} label="Agent 配置" initialTab={initialTab} chrome={chrome} items={[
         { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
         <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
           <Row label="运行时" value={runtimeName} />

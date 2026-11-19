@@ -19,6 +19,7 @@
 // builtin 频道表单 = lib/channel-field-templates.ts（单一数据表+通用渲染器，字段集=pydantic 正源）。
 // 降级：Controller 无端点 / qwenpaw 无 channel router → 404 → 占位横幅（版本门双源）。
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -590,7 +591,7 @@ function FieldControl({
   }
   if (field.type === 'select') {
     return (
-      <select
+      <NativeSelect
         className="h-8 w-full rounded-md border bg-transparent px-2 text-xs"
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
@@ -601,7 +602,7 @@ function FieldControl({
             {o}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     );
   }
   if (field.type === 'list') {

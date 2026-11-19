@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useState, useMemo, useCallback } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -120,7 +121,7 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                   className="pl-9"
                 />
               </div>
-              <select
+              <NativeSelect
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as 'all' | 'custom' | 'nacos')}
                 className="rounded-md border border-input bg-background px-2 py-1 text-sm shrink-0"
@@ -128,7 +129,7 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                 <option value="all">全部</option>
                 <option value="custom">自定义</option>
                 <option value="nacos">Nacos</option>
-              </select>
+              </NativeSelect>
             </div>
 
             <div className="max-h-60 min-h-0 overflow-y-auto space-y-1">

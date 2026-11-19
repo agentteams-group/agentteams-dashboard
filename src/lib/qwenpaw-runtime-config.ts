@@ -27,13 +27,14 @@ export interface QwenpawRuntimeConfigSnapshot {
   etag: string | null;
 }
 
-const configPath = (workerName: string) =>
-  apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/runtime-config`);
+const configPath = (workerName: string, kind = 'workers') =>
+  apiUrl(`/api/agentteams/${kind}/${encodeURIComponent(workerName)}/runtime-config`);
 
 export async function fetchQwenpawRuntimeConfig(
   workerName: string,
+  kind: 'workers' | 'managers' = 'workers',
 ): Promise<QwenpawRuntimeConfigSnapshot> {
-  const url = configPath(workerName);
+  const url = configPath(workerName, kind);
   let res: Response;
   try {
     res = await fetch(url, { cache: 'no-store' });
@@ -54,8 +55,9 @@ export async function putQwenpawRuntimeConfig(
   workerName: string,
   patch: Rc,
   ifMatch: string | null,
+  kind: 'workers' | 'managers' = 'workers',
 ): Promise<void> {
-  const url = configPath(workerName);
+  const url = configPath(workerName, kind);
   let res: Response;
   try {
     res = await fetch(url, {

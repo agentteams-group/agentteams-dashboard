@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Shield, Check, X, Ban, AlertTriangle, Clock, Terminal, Loader2 } from 'lucide-react';
+import { Shield, Check, X, Ban, AlertTriangle, Clock, Terminal, Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { buildApprovalFeedback } from '@/lib/approval-feedback';
 import { ApprovalSeverityBadge } from '@/components/dashboard/approval-severity-badge';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
@@ -23,11 +25,12 @@ export interface ConfirmationCardPayload {
   /**
    * #235：运行时请求 ID。有它才能把按钮精确绑定到本次请求
    * （`/approval approve <id>` + `com.agentteams.answer` 回写）；
-   * 缺失时禁绑按钮——无 ID 的命令会命中运行时队列首的任意请求。
+   * 缺失时发送上下文意见，不发送会命中队首的无 ID 命令。
    */
   requestId?: string;
   runtimeApproval?: boolean;
   resolutionKey?: string;
+  sourceEventId?: string;
   /** #235：取消命令（`/approval cancel <id>`），运行时提供时才出现。 */
   cancelReply?: string;
   /** #235：过期时间戳（毫秒）；过期后只读并标「已超时」。 */
@@ -85,7 +88,8 @@ const DECISION_LABEL: Record<Decision, string> = {
 export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: ConfirmationCardProps) {
   const currentUserId = useMatrixStore((s) => s.userId);
   const resolutionKey = payload.resolutionKey ?? payload.requestId;
-  const awaitsReceipt = payload.runtimeApproval === true || /^\/approval\s/.test(payload.approveReply);
+  const feedbackOnly = !payload.requestId;
+  const awaitsReceipt = !feedbackOnly && (payload.runtimeApproval === true || /^\/approval\s/.test(payload.approveReply));
   // 带请求 ID 时与收件箱互通：别处（或别的客户端）处理掉，本卡同步只读。
   const resolution = useHitlInboxStore((s) =>
     resolutionKey ? s.resolutions[resolutionKey] : undefined,
@@ -95,9 +99,9 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
   // 发送中 / 未写入房间：撑起「点了不等于已答复」的诚实反馈，失败可重试。
   const [submitting, setSubmitting] = useState(false);
   const [sendFailed, setSendFailed] = useState(false);
+  const [comment, setComment] = useState('');
   const [now, setNow] = useState(() => Date.now());
 
-  const actionable = Boolean(payload.requestId) || !/^\/approval\s/.test(payload.approveReply);
   const settled = decision !== null || resolution?.status === 'answered' || resolution?.status === 'submitted';
   const expired = resolution?.status === 'expired'
     || (resolution?.status !== 'answered' && typeof payload.expiresAt === 'number' && now >= payload.expiresAt);
@@ -116,7 +120,7 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
   }, [payload.expiresAt, resolution?.status]);
 
   const submit = async (kind: Decision) => {
-    const reply = kind === 'approve'
+    const reply = feedbackOnly ? buildApprovalFeedback(payload, kind, comment) : kind === 'approve'
       ? payload.approveReply
       : kind === 'reject'
         ? payload.rejectReply
@@ -164,6 +168,7 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
   };
 
   const settledLabel = expired ? '已超时'
+    : feedbackOnly ? '审批意见已发送'
     : resolution?.status === 'answered' && awaitsReceipt
       ? ({ approved: '已批准', rejected: '已拒绝', cancelled: '已取消' }[resolution.answer ?? ''] ?? '已处理')
     : awaitsReceipt && (decision || resolution?.status === 'submitted')
@@ -182,11 +187,11 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
     command = typeof parameters.command === 'string' ? parameters.command : payload.parameters;
     directory = typeof parameters.cwd === 'string' ? parameters.cwd : undefined;
   } catch { /* Plain-text tool parameters remain readable. */ }
-  const outcome = resolution?.status === 'answered' && awaitsReceipt
+  const outcome = feedbackOnly ? undefined : resolution?.status === 'answered' && awaitsReceipt
     ? resolution.answer
     : decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : decision === 'cancel' ? 'cancelled' : undefined;
-  const waiting = !expired && settled && (resolution?.status === 'submitted' || (awaitsReceipt && resolution?.status !== 'answered'));
-  const Icon = expired ? Clock : waiting ? Loader2 : outcome === 'approved' ? Check : outcome === 'rejected' ? X : Ban;
+  const waiting = !feedbackOnly && !expired && settled && (resolution?.status === 'submitted' || (awaitsReceipt && resolution?.status !== 'answered'));
+  const Icon = expired ? Clock : feedbackOnly ? Send : waiting ? Loader2 : outcome === 'approved' ? Check : outcome === 'rejected' ? X : Ban;
   const outcomeTone = expired ? 'text-amber-600' : waiting ? 'text-muted-foreground' : outcome === 'approved' ? 'text-emerald-600 dark:text-emerald-400' : outcome === 'rejected' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground';
 
   const complete = settled || expired;
@@ -214,16 +219,16 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
         {payload.riskDetails && <div className="flex items-start gap-2 rounded-lg bg-muted/35 p-3"><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /><p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{payload.riskDetails}</p></div>}
         {payload.triggeredBy && <p className="text-xs text-muted-foreground">触发来源：{payload.triggeredBy}</p>}
         <details className="text-xs text-muted-foreground"><summary className="cursor-pointer hover:text-foreground">请求详情</summary><div className="mt-2 space-y-2 break-all"><div>请求 ID：{payload.requestId ?? '未提供'}</div>{payload.parameters && <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{payload.parameters}</pre>}</div></details>
-        {!actionable && !complete && <p role="alert" className="text-xs text-amber-700">运行时未提供请求 ID，无法精确绑定本次请求。请让 Agent 重新发起审批。</p>}
+        {feedbackOnly && !complete && <div className="space-y-2"><p className="text-xs text-muted-foreground">审批意见将连同原请求内容发送给 Agent。</p><Textarea aria-label="补充审批意见（可选）" placeholder="补充审批意见（可选）" value={comment} onChange={event => setComment(event.target.value)} disabled={submitting} className="min-h-16 text-sm" /></div>}
         {sendFailed && <p role="alert" className="text-xs text-red-600">发送失败，请重试</p>}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-4 py-3">
         {complete
-          ? <p className={`flex items-center gap-1.5 text-xs ${outcomeTone}`}><Icon className={`size-3.5 ${waiting ? 'animate-spin' : ''}`} aria-hidden="true" />{waiting ? '正在等待 Agent 确认，请稍候' : outcome === 'approved' ? '已允许本次操作，执行进展见后续回复' : outcome === 'rejected' ? '本次操作未获允许' : expired ? '此请求已不可操作' : '此请求已处理'}</p>
-          : <><span className="text-xs text-muted-foreground">授权仅对本次操作生效</span><div className="flex flex-wrap items-center gap-3">
-            {payload.cancelReply && onCancel && <Button size="sm" variant="ghost" disabled={submitting || !actionable} onClick={() => void submit('cancel')}>取消</Button>}
-            <Button size="sm" variant="outline" className="min-w-24" disabled={submitting || !actionable} onClick={() => void submit('reject')}><X className="mr-1.5 size-3.5" />拒绝本次</Button>
-            <Button size="sm" className="min-w-24" disabled={submitting || !actionable} onClick={() => void submit('approve')}><Check className="mr-1.5 size-3.5" />{submitting ? '提交中…' : '批准本次'}</Button>
+          ? <p className={`flex items-center gap-1.5 text-xs ${outcomeTone}`}><Icon className={`size-3.5 ${waiting ? 'animate-spin' : ''}`} aria-hidden="true" />{expired ? '此请求已不可操作' : feedbackOnly ? '已发送给 Agent，请等待处理回复' : waiting ? '正在等待 Agent 确认，请稍候' : outcome === 'approved' ? '已允许本次操作，执行进展见后续回复' : outcome === 'rejected' ? '本次操作未获允许' : '此请求已处理'}</p>
+          : <><span className="text-xs text-muted-foreground">{feedbackOnly ? '意见仅针对当前操作' : '授权仅对本次操作生效'}</span><div className="flex flex-wrap items-center gap-3">
+            {payload.cancelReply && onCancel && <Button size="sm" variant="ghost" disabled={submitting} onClick={() => void submit('cancel')}>{feedbackOnly ? '取消并发送' : '取消'}</Button>}
+            <Button size="sm" variant="outline" className="min-w-24" disabled={submitting} onClick={() => void submit('reject')}><X className="mr-1.5 size-3.5" />{feedbackOnly ? '拒绝并发送' : '拒绝本次'}</Button>
+            <Button size="sm" className="min-w-24" disabled={submitting} onClick={() => void submit('approve')}><Check className="mr-1.5 size-3.5" />{submitting ? '提交中…' : feedbackOnly ? '同意并发送' : '批准本次'}</Button>
           </div></>}
       </div>
     </section>

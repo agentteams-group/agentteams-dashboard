@@ -42,6 +42,7 @@ import { PluginsTab } from './settings/plugins-tab';
 import { BackendTab } from './settings/backend-tab';
 import { SpeechSettings } from './settings/speech-settings';
 import { ClientConfigTab } from './settings/client-config-tab';
+import { ChatConnectionSettings } from './settings/chat-connection-settings';
 import { UpdateTab } from './settings/update-tab';
 import { ManagementTab, navigateFromSettings } from './settings/management-tab';
 
@@ -208,6 +209,7 @@ export function SettingsDialog() {
           )}
 
           <TabsContent value="connection" className="space-y-5 py-4">
+            <ChatConnectionSettings />
             {/* Controller URL — L1 only (F1b): the per-request ?controllerUrl=
                 override is ignored server-side for non-admin sessions, so the
                 field is hidden for them instead of silently mis-tested. */}

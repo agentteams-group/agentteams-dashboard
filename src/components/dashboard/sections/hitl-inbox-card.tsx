@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useMemo, useState } from 'react';
 import { ShieldAlert, PauseCircle, MessageSquare, GitBranch, ChevronDown, ChevronRight, TimerReset } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -182,7 +183,7 @@ function TimeoutPicker({ timeoutMs }: { timeoutMs: number }) {
     <label className="flex items-center gap-1 text-xs text-muted-foreground">
       <TimerReset className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>干预等待窗口</span>
-      <select
+      <NativeSelect
         value={timeoutMs}
         onChange={(e) => setInterventionTimeoutMs(Number(e.target.value))}
         className="h-5 rounded-md border border-border/60 bg-background px-1 text-xs text-foreground"
@@ -192,7 +193,7 @@ function TimeoutPicker({ timeoutMs }: { timeoutMs: number }) {
             {preset.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { isDesktopHover } from '@/lib/desktop-interactions';
+
 // 知识库 v3（9/17 装验定案「照插件做」三件：3D / 预览与图谱分离 /
 // 团队聚合图谱 + v4 2D 簇块布局——workbench 插件 KnowledgeBase.tsx 同款结构）。
 //   · 数据面（v2 不变）：/api/agentteams/workers/[name]/workspace-files/{tree|file-metadata|file-content}
@@ -26,6 +28,7 @@
 // 小工具）、api（数据面抓取）、graph（assembleGraph 纯函数）、view2d
 // （2D 簇块布局纯函数族）、graph-2d（2D 图谱组件）、tree-rows（文件树行）。
 
+import { NativeSelect } from '@/components/ui/native-select';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -445,7 +448,7 @@ export function KnowledgeSection() {
         description="集群 Worker 记忆只读视图（workbench 插件同款数据面：Controller Docker 代理）：档案 / 文件 / 日记 memory/** / 知识库 digest/** + wikilink 图谱（2D/3D · 团队聚合）"
         actions={
           <div className="flex items-center gap-2">
-            <select
+            <NativeSelect
               className="h-8 max-w-[220px] rounded-md border bg-transparent px-2 text-xs"
               value={effectiveWorker}
               onChange={(e) => setWorker(e.target.value)}
@@ -461,7 +464,7 @@ export function KnowledgeSection() {
                   ))}
                 </optgroup>
               ))}
-            </select>
+            </NativeSelect>
             <Button
               variant="ghost"
               size="sm"
@@ -522,7 +525,7 @@ export function KnowledgeSection() {
               </Button>
             </div>
             {graphMode === 'merged' && teamGroups.length > 0 && (
-              <select
+              <NativeSelect
                 className="h-8 rounded-md border bg-transparent px-2 text-xs"
                 value={effectiveKbTeam}
                 onChange={(e) => setKbTeam(e.target.value)}
@@ -534,7 +537,7 @@ export function KnowledgeSection() {
                     {g.team}（{g.workers.length}）
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
               {graphMode === 'merged'
@@ -642,6 +645,7 @@ export function KnowledgeSection() {
                         size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => setViewMode('3d')}
+                        onPointerEnter={event => { if (isDesktopHover(event)) setViewMode('3d'); }}
                       >
                         3D
                       </Button>
@@ -650,6 +654,7 @@ export function KnowledgeSection() {
                         size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => setViewMode('2d')}
+                        onPointerEnter={event => { if (isDesktopHover(event)) setViewMode('2d'); }}
                       >
                         2D
                       </Button>

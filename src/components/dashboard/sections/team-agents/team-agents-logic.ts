@@ -1,7 +1,7 @@
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 
 /**
- * 「团队与Agent」合并页的纯逻辑：成员归属、角色、计数、搜索命中、断点。
+ * 「团队与智能体」合并页的纯逻辑：成员归属、角色、计数、搜索命中、断点。
  *
  * 成员归属只有一条规则（全页共用）：`team.workerNames` 非空时以它为准；
  * 为空时回退到 `worker.team === team.name`。leader 一定来自 Worker 列表，
@@ -13,7 +13,14 @@ import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
  * 只把它翻译成一次性的初始选中：teams → 首个团队，agents → 独立 Worker）。
  */
 export type TeamAgentsInitialIntent = 'teams' | 'agents';
-export type TeamAgentsLayout = 'xwide' | 'wide' | 'medium' | 'narrow';
+/**
+ * 三档多栏 + 单栏（容器宽度断点，A2）：
+ * - triple        ≥1600  列表 + 拓扑 + Inspector 三栏；
+ * - triple-compact 1200–1599 三栏（列宽收窄）；
+ * - dual          840–1199  列表 + 拓扑两栏，Inspector 为右覆盖层；
+ * - single        <840    单栏 drill-down（列表 → 拓扑 → 详情）。
+ */
+export type TeamAgentsLayout = 'triple' | 'triple-compact' | 'dual' | 'single';
 export type TeamMemberRole = 'leader' | 'critic' | 'worker';
 
 export interface TeamAgentMember {
@@ -34,10 +41,10 @@ export interface TeamAgentRow {
   matchedMembers: string[];
 }
 
-/** 页面断点（方案：xwide ≥1440 / wide 1280–1439 / medium 1024–1279 / narrow <1024）。 */
-export const XWIDE_MIN_WIDTH = 1440;
-export const WIDE_MIN_WIDTH = 1280;
-export const MEDIUM_MIN_WIDTH = 1024;
+/** 页面断点（A2，按容器宽度：triple ≥1600 / triple-compact 1200–1599 / dual 840–1199 / single <840）。 */
+export const TRIPLE_MIN_WIDTH = 1600;
+export const TRIPLE_COMPACT_MIN_WIDTH = 1200;
+export const DUAL_MIN_WIDTH = 840;
 
 const READY_PHASES = new Set(['Running', 'Ready', 'Active']);
 const SLEEPING_PHASES = new Set(['Sleeping', 'Stopped']);
@@ -193,29 +200,33 @@ export function filterTeamRows(
 }
 
 export function layoutForWidth(width: number): TeamAgentsLayout {
-  if (width >= XWIDE_MIN_WIDTH) return 'xwide';
-  if (width >= WIDE_MIN_WIDTH) return 'wide';
-  if (width >= MEDIUM_MIN_WIDTH) return 'medium';
-  return 'narrow';
+  if (width >= TRIPLE_MIN_WIDTH) return 'triple';
+  if (width >= TRIPLE_COMPACT_MIN_WIDTH) return 'triple-compact';
+  if (width >= DUAL_MIN_WIDTH) return 'dual';
+  return 'single';
 }
 
-/** 内容区栅格列数（不含全局侧栏）：xwide 3 / wide 2 / medium 2 / narrow 1。 */
+/** 内容区栅格列数（不含全局侧栏）：triple / triple-compact 3 / dual 2 / single 1。 */
 export function contentColumnCount(layout: TeamAgentsLayout): 1 | 2 | 3 {
-  if (layout === 'xwide') return 3;
-  if (layout === 'narrow') return 1;
+  if (layout === 'triple' || layout === 'triple-compact') return 3;
+  if (layout === 'single') return 1;
   return 2;
 }
 
-/** 栅格类；测试按断点断言列定义，避免布局漂移。 */
+/**
+ * 栅格类（A2，测试按断点断言列定义，避免布局漂移）：
+ * triple `[320px_1fr_420px]` / triple-compact `[280px_1fr_360px]` /
+ * dual `[300px_1fr]`（Inspector 走右覆盖层，不占栅格列）/ single `grid-cols-1`。
+ */
 export function shellGridClass(layout: TeamAgentsLayout): string {
   switch (layout) {
-    case 'xwide':
-      return 'grid-cols-[minmax(240px,300px)_minmax(0,1fr)_minmax(280px,340px)]';
-    case 'wide':
-      return 'grid-cols-[minmax(240px,300px)_minmax(0,1fr)]';
-    case 'medium':
-      return 'grid-cols-[minmax(220px,280px)_minmax(0,1fr)]';
-    case 'narrow':
+    case 'triple':
+      return 'grid-cols-[320px_minmax(0,1fr)_420px]';
+    case 'triple-compact':
+      return 'grid-cols-[280px_minmax(0,1fr)_360px]';
+    case 'dual':
+      return 'grid-cols-[300px_minmax(0,1fr)]';
+    case 'single':
     default:
       return 'grid-cols-1';
   }

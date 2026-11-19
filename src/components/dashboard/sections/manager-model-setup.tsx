@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -65,7 +66,7 @@ function SetupForm({ manager, returnTo }: { manager: string; returnTo: string })
       <p className="text-sm text-muted-foreground">保存并验证后返回对话，已输入的草稿会保留。</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2"><Label htmlFor="setup-provider">模型服务</Label>
-          <select id="setup-provider" className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={pending} value={preset} onChange={(event) => {
+          <NativeSelect id="setup-provider" className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={pending} value={preset} onChange={(event) => {
             const next = event.target.value;
             setPreset(next);
             if (next === 'existing') setModel(selection.options.find((option) => option.binding?.available)?.alias ?? '');
@@ -73,12 +74,12 @@ function SetupForm({ manager, returnTo }: { manager: string; returnTo: string })
           }}>
             {Object.entries(PRESETS).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
             {selection.options.some((option) => option.binding?.available) && <option value="existing">使用已配置的模型</option>}
-          </select>
+          </NativeSelect>
         </div>
         <div className="space-y-2"><Label htmlFor="setup-model">模型名称</Label>
-          {existing ? <select id="setup-model" className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={pending} value={model} onChange={(event) => setModel(event.target.value)}>
+          {existing ? <NativeSelect id="setup-model" className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={pending} value={model} onChange={(event) => setModel(event.target.value)}>
             {selection.options.filter((option) => option.binding?.available).map((option) => <option key={option.alias} value={option.alias}>{option.alias}</option>)}
-          </select> : <Input id="setup-model" value={model} disabled={pending} onChange={(event) => setModel(event.target.value)} />}
+          </NativeSelect> : <Input id="setup-model" value={model} disabled={pending} onChange={(event) => setModel(event.target.value)} />}
         </div>
         {!existing && <>
           <div className="space-y-2"><Label htmlFor="setup-api-key">API Key</Label><Input id="setup-api-key" type="password" autoComplete="off" value={apiKey} disabled={pending} onChange={(event) => setApiKey(event.target.value)} /></div>

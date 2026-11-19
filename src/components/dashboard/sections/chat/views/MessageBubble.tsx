@@ -482,7 +482,6 @@ export function MessageBubble({
   const bubbleClasses = [
     'break-words text-sm leading-relaxed text-foreground',
     isTextBubble ? 'w-fit max-w-full' : 'w-full',
-    message.status === 'error' ? 'ring-1 ring-status-failed/70' : '',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
@@ -656,11 +655,13 @@ export function MessageBubble({
                       </div>
                     );
                   }
+                  const confirmation = toConfirmationCardPayload(block.payload ?? {});
+                  const sourceEventId = message.eventId ?? message.id;
                   return (
                     <div key={idx} className="w-full">
                       <ConfirmationCard
-                        payload={{ ...toConfirmationCardPayload(block.payload ?? {}),
-                          ...(block.payload?.runtimeApproval === true ? { resolutionKey: message.eventId } : {}),
+                        payload={{ ...confirmation, sourceEventId,
+                          ...(confirmation.runtimeApproval || !confirmation.requestId ? { resolutionKey: sourceEventId } : {}),
                         }}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}

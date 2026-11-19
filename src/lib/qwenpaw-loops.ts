@@ -36,15 +36,15 @@ export interface WorkerLoopCustomMode {
   gates?: WorkerLoopGate[];
 }
 
-const loopsPath = (workerName: string) =>
-  apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/loops`);
+const loopsPath = (workerName: string, kind: 'workers' | 'managers') =>
+  apiUrl(`/api/agentteams/${kind}/${encodeURIComponent(workerName)}/loops`);
 
-const customPath = (workerName: string) =>
-  apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/loops/custom`);
+const customPath = (workerName: string, kind: 'workers' | 'managers') =>
+  apiUrl(`/api/agentteams/${kind}/${encodeURIComponent(workerName)}/loops/custom`);
 
-const customModePath = (workerName: string, modeId: string) =>
+const customModePath = (workerName: string, modeId: string, kind: 'workers' | 'managers') =>
   apiUrl(
-    `/api/agentteams/workers/${encodeURIComponent(workerName)}/loops/custom/${encodeURIComponent(modeId)}`,
+    `/api/agentteams/${kind}/${encodeURIComponent(workerName)}/loops/custom/${encodeURIComponent(modeId)}`,
   );
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -62,21 +62,22 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchWorkerLoopModes(workerName: string): Promise<WorkerLoopModeInfo[]> {
-  const body = await call<WorkerLoopModeInfo[]>(loopsPath(workerName));
+export async function fetchWorkerLoopModes(workerName: string, kind: 'workers' | 'managers' = 'workers'): Promise<WorkerLoopModeInfo[]> {
+  const body = await call<WorkerLoopModeInfo[]>(loopsPath(workerName, kind));
   return Array.isArray(body) ? body : [];
 }
 
-export async function fetchWorkerLoopCustoms(workerName: string): Promise<WorkerLoopCustomMode[]> {
-  const body = await call<WorkerLoopCustomMode[]>(customPath(workerName));
+export async function fetchWorkerLoopCustoms(workerName: string, kind: 'workers' | 'managers' = 'workers'): Promise<WorkerLoopCustomMode[]> {
+  const body = await call<WorkerLoopCustomMode[]>(customPath(workerName, kind));
   return Array.isArray(body) ? body : [];
 }
 
 export async function createWorkerLoopCustom(
   workerName: string,
   mode: WorkerLoopCustomMode,
+  kind: 'workers' | 'managers' = 'workers',
 ): Promise<WorkerLoopCustomMode> {
-  return call<WorkerLoopCustomMode>(customPath(workerName), {
+  return call<WorkerLoopCustomMode>(customPath(workerName, kind), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(mode),
@@ -86,16 +87,17 @@ export async function createWorkerLoopCustom(
 export async function updateWorkerLoopCustom(
   workerName: string,
   mode: WorkerLoopCustomMode,
+  kind: 'workers' | 'managers' = 'workers',
 ): Promise<WorkerLoopCustomMode> {
-  return call<WorkerLoopCustomMode>(customModePath(workerName, mode.id), {
+  return call<WorkerLoopCustomMode>(customModePath(workerName, mode.id, kind), {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(mode),
   });
 }
 
-export async function deleteWorkerLoopCustom(workerName: string, modeId: string): Promise<void> {
-  await call<void>(customModePath(workerName, modeId), { method: 'DELETE' });
+export async function deleteWorkerLoopCustom(workerName: string, modeId: string, kind: 'workers' | 'managers' = 'workers'): Promise<void> {
+  await call<void>(customModePath(workerName, modeId, kind), { method: 'DELETE' });
 }
 
 // ── Loop templates (ported from the workbench plugin runtimeCfg/helpers.ts) ──

@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useState } from 'react';
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,9 +30,9 @@ export function ArchivedRoomsDialog({ onSelectRoom }: { onSelectRoom: (_id: stri
       <DialogTitle>归档任务</DialogTitle>
       <DialogDescription>保留历史消息和附件。取消归档后可继续协作。</DialogDescription>
       <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); setFilters(role === 'all' ? {} : { [role]: account.trim() || userId || '' }); }}>
-        <select aria-label="按账号角色查询" value={role} onChange={event => setRole(event.target.value as typeof role)} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+        <NativeSelect aria-label="按账号角色查询" value={role} onChange={event => setRole(event.target.value as typeof role)} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
           <option value="all">我可访问的全部</option><option value="team_admin">团队管理员</option><option value="human_member">人类成员</option>
-        </select>
+        </NativeSelect>
         {role !== 'all' && <Input className="min-w-0 flex-1 basis-40" aria-label="Matrix 账号" placeholder={userId ?? '@账号:服务器'} value={account} onChange={event => setAccount(event.target.value)} />}
         <Button type="submit" variant="secondary" size="sm" className="h-9">查询</Button>
       </form>

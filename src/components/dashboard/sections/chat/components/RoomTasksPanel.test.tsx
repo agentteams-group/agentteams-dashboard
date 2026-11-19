@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,9 @@ import { useSectionStore } from '@/lib/section-store';
 const getProjectWorkflow = vi.fn();
 const board = vi.hoisted(() => ({ tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
 vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => ({ tasks: board.tasks }) }));
+vi.mock('@/hooks/use-chat-room-access', () => ({
+  useChatRoomAccess: () => ({ state: 'joined', joinedRooms: ['!execution:test'] }),
+}));
 
 vi.mock('@/lib/agentteams-projects-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/agentteams-projects-api')>();
@@ -50,17 +53,67 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
       { ...base, dependsOn: [], runId: 'other', title: '其他任务', status: 'assigned', executionRoomId: '!other:test' },
     ];
     renderPanel();
-    expect(screen.getByRole('group', { name: '任务拓扑' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '项目任务分工与依赖' })).toBeNull();
     expect(screen.getByText('子任务 1/2 已完成')).toBeInTheDocument();
     expect(screen.queryByText('其他任务')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '验证 · leader' }));
-    expect(screen.getByText('执行中 · leader')).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: '查看详情' });
+    fireEvent.click(trigger);
+    const detail = within(screen.getByRole('dialog', { name: '主任务' }));
+    const topology = within(detail.getByRole('group', { name: '项目任务分工与依赖' }));
+    fireEvent.click(topology.getByRole('button', { name: '验证 · leader' }));
+    expect(detail.getByText('所选任务：验证')).toBeInTheDocument();
+    expect(useSectionStore.getState().activeSection).toBe('chat');
+  });
+  it('adds newly polled tasks ahead of completed tasks without replacing the conversation', () => {
+    const base = { assignedTo: 'leader', dependsOn: [], roomId: '!room:test', createdAt: 1, outcome: null, source: 'controller', teamId: 'team' } as const;
+    board.tasks = [{ ...base, dependsOn: [], runId: 'old', title: '已完成的旧任务', status: 'completed', completedAt: 61001 }];
+    const view = renderPanel();
+    board.tasks = [...board.tasks,
+      { ...base, dependsOn: [], runId: 'new', title: '当前会话的新任务', status: 'pending', createdAt: 2 },
+      { ...base, dependsOn: [], runId: 'other', title: '其他会话的新任务', status: 'in_progress', roomId: '!other:test' },
+    ];
+    view.rerender(<QueryClientProvider client={new QueryClient()}><RoomTasksPanel roomId="!room:test" /></QueryClientProvider>);
+    const cards = screen.getAllByRole('article');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent('当前会话的新任务');
+    expect(cards[1]).toHaveTextContent('已完成的旧任务');
+    expect(screen.queryByText('其他会话的新任务')).toBeNull();
+  });
+  it('opens the task execution room and disables collaboration before dispatch', () => {
+    const base = { assignedTo: 'leader', dependsOn: [], roomId: '!room:test', createdAt: 1, outcome: null, source: 'controller' } as const;
+    board.tasks = [
+      { ...base, dependsOn: [], runId: 'travel', teamId: 'travel-crew', title: '旅行规划', status: 'in_progress' },
+      { ...base, dependsOn: [], runId: 'itinerary', teamId: 'travel-crew', title: '行程', parentTaskId: 'travel', status: 'assigned', executionRoomId: 'room:!execution:test' },
+      { ...base, dependsOn: [], runId: 'pending', teamId: 'travel-crew', title: '未派发任务', status: 'pending' },
+    ];
+    renderPanel();
+    const card = within(screen.getByRole('article', { name: '旅行规划' }));
+    fireEvent.click(card.getByRole('button', { name: '进入协作房间' }));
+    expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'travel', roomId: '!execution:test' });
+    const pending = within(screen.getByRole('article', { name: '未派发任务' }));
+    expect(pending.getByRole('button', { name: '进入协作房间' })).toBeDisabled();
+  });
+  it('reads total elapsed time from historical completion metadata', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      created_at: '2026-11-19T08:29:48Z',
+      completed_at: '2026-11-19T08:38:26Z',
+    })));
+    vi.stubGlobal('fetch', fetch);
+    board.tasks = [{
+      runId: 'travel', title: '已完成的旅行规划', teamId: 'travel-crew', kind: 'main', roomId: '!room:test',
+      status: 'completed', dependsOn: [], createdAt: 0, assignedTo: 'leader', outcome: null, source: 'api',
+    }];
+    renderPanel();
+    expect(await screen.findByText('总耗时 8 分 38 秒')).toBeInTheDocument();
+    const url = new URL(fetch.mock.calls[0][0], window.location.href);
+    expect(url.pathname.replace(/\/$/, '')).toBe('/api/agentteams/tasks/travel/meta');
+    expect(url.searchParams.get('team')).toBe('travel-crew');
   });
   beforeEach(() => {
     board.tasks = [];
     useTaskStore.getState().clearTasks();
-    useHitlInboxStore.setState({ pendingProjectKey: null });
-    useSectionStore.setState({ activeSection: 'chat' });
+    useHitlInboxStore.setState({ pendingProjectKey: null, pendingChatRoomId: null });
+    useSectionStore.setState({ activeSection: 'chat', taskCollaboration: null });
     getProjectWorkflow.mockResolvedValue({
       project_id: 'proj-1',
       title: '产品介绍页生产线（正源）',
@@ -79,6 +132,7 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('只展示当前房间的工作流任务，并用项目正源覆盖状态', async () => {
@@ -100,7 +154,7 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
     // 等正源 overlay 落地后再点，deep-link 才能带上 Controller 的 team_id。
     await screen.findByText('live');
 
-    fireEvent.click(screen.getByRole('button', { name: /任务中心/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看项目详情' }));
 
     await waitFor(() => {
       expect(useHitlInboxStore.getState().pendingProjectKey).toEqual({ id: 'proj-1', team: 'team-1' });

@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useMemo, useState } from 'react';
 import { ArchiveRestore, Loader2, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -135,7 +136,7 @@ export function TrashDialog({
               className="h-9 pl-8"
             />
           </div>
-          <select
+          <NativeSelect
             aria-label="回收站排序"
             value={sort}
             onChange={(e) =>
@@ -146,7 +147,7 @@ export function TrashDialog({
             <option value="deletedAt">删除时间</option>
             <option value="size">大小</option>
             <option value="name">名称</option>
-          </select>
+          </NativeSelect>
           <Button variant="ghost" size="sm" className="h-9" onClick={onReload} disabled={busyId !== null}>
             <RefreshCw className={cn('size-3.5', busyId === '*' && 'animate-spin')} />
             刷新

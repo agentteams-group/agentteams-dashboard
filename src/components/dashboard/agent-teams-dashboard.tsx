@@ -4,10 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } fro
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Home,
-  ChevronRight as ChevronSep,
-} from 'lucide-react';
-import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -54,8 +50,11 @@ import { buildRooms } from './sections/chat/room-builders';
 import { withLeaderAccess } from './sections/chat/agent-conversations';
 import { isManagedHuman } from './sections/humans/human-selectors';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { isTeamAdmin } from '@/lib/team-access';
 import styles from './workspace.module.css';
 import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
+import { isComposing, useDesktopInputFocus } from '@/lib/desktop-interactions';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -100,6 +99,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
 };
 
 export function AgentTeamsDashboard() {
+  useDesktopInputFocus();
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
   const isConversationSection = activeSection === 'chat' || activeSection === 'my-teams';
@@ -119,6 +119,7 @@ export function AgentTeamsDashboard() {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
+  const matrixUserId = useMatrixStore((s) => s.userId);
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
@@ -134,7 +135,7 @@ export function AgentTeamsDashboard() {
   const { data: managers } = useManagers();
   const { data: humans } = useHumans();
   const conversationAccess = useChatRoomAccess();
-  const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? room.team?.admin ? room.team.admin.name === sessionUser : userLevel >= 3 : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, conversationAccess.joinedRooms, conversationAccess.state]);
+  const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? !!room.team && isTeamAdmin(room.team, sessionUser, matrixUserId) : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, matrixUserId, conversationAccess.joinedRooms, conversationAccess.state]);
 
   // Plugin system: discover + activate plugins once per session.
   usePluginSystem();
@@ -196,6 +197,7 @@ export function AgentTeamsDashboard() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || isComposing()) return;
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (isCmdOrCtrl) {
@@ -203,8 +205,9 @@ export function AgentTeamsDashboard() {
         if (e.key >= '1' && e.key <= '4') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
-          if (index < workspaceMenus.length) {
-            setActiveSection(workspaceMenus[index].id);
+          const destinations = workspaceMenus.filter(menu => menu.id !== 'overview');
+          if (index < destinations.length) {
+            setActiveSection(destinations[index].id);
             setMobileMenuOpen(false);
           }
         }
@@ -357,6 +360,8 @@ export function AgentTeamsDashboard() {
 
           <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
             <DashboardHeader
+              pageLabel={activeLabel}
+              groupLabel={activeMenu?.label}
               isConnected={isConnected}
               workerCount={workerCount}
               teamCount={teamCount}
@@ -394,19 +399,6 @@ export function AgentTeamsDashboard() {
             <div
               className={`flex-1 flex flex-col min-h-0 ${isConversationSection ? '' : 'bg-background'}`}
             >
-              {!isConversationSection && (
-                <div className="px-5 py-3 md:px-6 bg-background">
-                  <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Home className="w-3.5 h-3.5" />
-                    <ChevronSep className="w-3 h-3" />
-                    <span className="font-medium text-foreground">AgentTeams</span>
-                    <ChevronSep className="w-3 h-3" />
-                    {activeMenu && activeMenu.label !== activeLabel && <><span>{activeMenu.label}</span><ChevronSep className="w-3 h-3" /></>}
-                    <span>{activeLabel}</span>
-                  </nav>
-                </div>
-              )}
-
               {isConversationSection ? (
                 <div className="flex-1 flex flex-col min-h-0">
                   <SectionErrorBoundary sectionName={activeLabel}>
@@ -416,11 +408,11 @@ export function AgentTeamsDashboard() {
                   </SectionErrorBoundary>
                 </div>
               ) : (
-                <main className="flex-1 overflow-y-auto custom-scrollbar p-5 md:px-6 md:pb-6 md:pt-3">
+                <main className="workspace-content flex-1 overflow-y-auto custom-scrollbar py-4">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeSection}
-                      className="mx-auto w-full max-w-[1440px]"
+                      className="w-full"
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}

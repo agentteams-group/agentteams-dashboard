@@ -23,6 +23,13 @@ export function ManagementTab() {
         {navItems.filter(item => !workspaceMenuFor(item.id) && isNavItemVisible(item, undefined, true, userLevel)).map(item => <button key={item.id} type="button" onClick={() => navigateFromSettings(item.id)} className="flex min-h-11 items-center rounded-lg border px-4 text-sm hover:bg-muted">{item.label}</button>)}
       </div>
     </div>
+    <details className="rounded-lg border border-border">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">自动化</summary>
+      <div className="space-y-3 border-t px-4 py-3">
+        <p className="text-xs text-muted-foreground">管理流程模板与循环编排。</p>
+        <button type="button" onClick={() => navigateFromSettings('loops')} className="flex min-h-11 items-center rounded-lg border px-4 text-sm hover:bg-muted">打开自动化</button>
+      </div>
+    </details>
     <PluginNavItems activeSection={activeSection} collapsed={false} onNavClick={navigateFromSettings} excludePluginIds={OBSERVABILITY_PLUGIN_IDS} />
   </div>;
 }

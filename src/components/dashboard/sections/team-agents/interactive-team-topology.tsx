@@ -1,25 +1,34 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, ArrowLeft, Bot, Loader2, Play, Settings, Users } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, Play, Settings, Users, WandSparkles } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
-import { StatusDot } from '@/components/dashboard/status-dot';
-import { useEnsureReadyWorker } from '@/hooks/use-agentteams-mutations';
-import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import { useEnsureReadyWorker, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
+import { useHumans } from '@/hooks/use-agentteams-humans';
+import { teamHumanMembers, type TeamResponse, type WorkerResponse } from '@/lib/agentteams-api';
 import { isUnsupportedEndpointError } from '@/lib/api-error';
-import { MillforgeEntryCard } from '../teams/millforge/millforge-entry-card';
+import { cn } from '@/lib/utils';
+import { TeamAssistantButton } from '../teams/team-assistant-button';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { FilesBrowserPanel } from '../chat/views/worker-files-panel';
+import { TeamUsersPanel } from '../teams/team-users-panel';
+import { TeamSettingsPanel } from '../teams/team-settings-panel';
+import { standaloneWorkers } from '../teams/team-drawer-logic';
+import type { ModelSelectionOption } from '@/lib/model-catalog';
+import { formatErrorMessage } from '@/lib/api-error';
 import {
   ROLE_LABELS,
   isAbnormalPhase,
-  leaderWorker,
   memberSessionCount,
   shouldShowEnsureReady,
   teamAgentCounts,
-  teamHealthLabel,
   teamMembers,
 } from './team-agents-logic';
 
@@ -32,12 +41,21 @@ export interface InteractiveTeamTopologyProps {
   highlightWorkerName?: string | null;
   onOpenWorker: (_worker: WorkerResponse) => void;
   onOpenTeamSettings: (_team: TeamResponse) => void;
-  /** 拓扑头部的千锻入口（对齐插件 TeamSection：卡在 header 下、成员列表上）。 */
+  /** 团队头部设置旁的千锻入口。 */
   onOpenMillforge?: (_team: TeamResponse) => void;
+  onOpenMembers?: () => void;
+  inlinePanel?: string;
+  onCloseInlinePanel?: () => void;
+  allTeams?: TeamResponse[];
+  modelOptions?: ModelSelectionOption[];
+  sessionIssue?: string | null;
+  onChanged?: () => void;
   /** narrow 单栏：返回团队列表。 */
   onBack?: () => void;
   /** Dashboard 会话等级：3 = 管理员（插件侧 L1），行内「拉起就绪」仅 L1 可见。 */
   userLevel?: number;
+  /** 宿主布局类（工作台两栏模式传 "h-full" 让 Card 撑满中栏、成员列表内部滚动）。 */
+  className?: string;
 }
 
 /**
@@ -77,20 +95,14 @@ function MemberEnsureReadyButton({ workerName }: { workerName: string }) {
   );
 }
 
-function roleBadgeClass(role: 'leader' | 'critic' | 'worker'): string {
-  if (role === 'leader') return 'border-primary/40 bg-primary/10 text-primary';
-  if (role === 'critic') return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
-  return 'border-border bg-muted/40 text-muted-foreground';
-}
-
 /**
  * 可交互团队拓扑（团队与Agent 合并页的唯一拓扑实现）。
  *
  * - leader 只从 Worker 列表解析（`team.leaderName` 是 Worker 名，不是 Manager）；
- * - Manager 展示用 `team.admin`；
+ * - `team.admin` 与普通用户单独展示在人类成员分区；
  * - 成员行是 div[role=button]（行内「拉起就绪」是嵌套按钮，HTML 不允许
- *   button 套 button）：点击 / Enter / Space 打开 Worker 详情；
- * - 头部齿轮打开团队设置（合并页 = 选中该团队，内联设置面板）。
+ *   button 套 button）：点击 / Enter / Space 展示 Agent 详情；
+ * - 描述、成员与设置均在中栏编辑，文件通过独立 Tab 浏览。
  */
 export function InteractiveTeamTopology({
   team,
@@ -100,12 +112,50 @@ export function InteractiveTeamTopology({
   onOpenWorker,
   onOpenTeamSettings,
   onOpenMillforge,
+  onOpenMembers,
+  inlinePanel,
+  onCloseInlinePanel,
+  allTeams,
+  modelOptions = [],
+  sessionIssue,
+  onChanged,
   onBack,
   userLevel,
+  className,
 }: InteractiveTeamTopologyProps) {
+  const updateTeam = useUpdateTeam();
+  const [description, setDescription] = useState<string | null>(null);
+  const [newAgent, setNewAgent] = useState('');
+  const [editError, setEditError] = useState('');
+  const availableAgents = standaloneWorkers(allTeams ?? [team], workers).filter(worker => !worker.team && worker.role !== 'manager');
+  const saveDescription = async () => {
+    try {
+      setEditError('');
+      await updateTeam.mutateAsync({ name: team.name, data: { description: description ?? team.description } });
+      setDescription(null);
+      onChanged?.();
+    } catch (error) { setEditError(formatErrorMessage(error)); }
+  };
+  const addAgent = async () => {
+    if (!availableAgents.some(worker => worker.name === newAgent)) return;
+    try {
+      setEditError('');
+      await updateTeam.mutateAsync({ name: team.name, data: { leader: { name: team.leaderName }, workerNames: [...(team.workerNames ?? []), newAgent] } });
+      setNewAgent('');
+      onChanged?.();
+    } catch (error) { setEditError(formatErrorMessage(error)); }
+  };
   const allMembers = teamMembers(team, workers);
+  const humansQuery = useHumans();
+  const humans = humansQuery.data ?? [];
+  const humanMembers = teamHumanMembers(team).filter(member => member.name !== team.admin?.name);
+  for (const human of humans) {
+    if (human.accessibleTeams?.includes(team.name) && human.name !== team.admin?.name && !humanMembers.some(member => member.name === human.name)) {
+      humanMembers.push({ name: human.name, role: 'coordinator' });
+    }
+  }
+  const people = [...(team.admin?.name ? [{ name: team.admin.name, role: 'admin' }] : []), ...humanMembers];
   const counts = teamAgentCounts(allMembers);
-  const leader = leaderWorker(team, workers);
   const query = searchQuery.trim().toLowerCase();
   const teamHit =
     !query ||
@@ -118,17 +168,17 @@ export function InteractiveTeamTopology({
     : allMembers.filter(({ worker }) => worker.name.toLowerCase().includes(query));
 
   return (
-    <Card className="glass-card flex min-h-0 flex-col overflow-hidden">
+    <Card role="region" aria-label="团队拓扑" className={cn('flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card py-0 shadow-none', className)}>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-0">
         <header
           data-testid="team-topology-header"
-          className="flex flex-wrap items-start gap-2 border-b px-3 py-2.5"
+          className="flex flex-wrap items-center gap-3 border-b px-4 py-3"
         >
           {onBack && (
             <Button
               variant="ghost"
               size="sm"
-              className="min-h-11 shrink-0 gap-1 px-2 text-xs md:hidden"
+              className="min-h-11 shrink-0 gap-1 px-2 text-xs"
               onClick={onBack}
             >
               <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -137,25 +187,12 @@ export function InteractiveTeamTopology({
           )}
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <Users className="size-4 shrink-0 text-status-done" aria-hidden="true" />
-              <h2 className="truncate text-sm font-semibold">{team.name}</h2>
+              <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <h2 className="truncate text-sm font-semibold" title={team.name}>{team.teamName || team.name}</h2>
               <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
-              <Badge variant="outline" className="shrink-0 text-xs">
-                {teamHealthLabel(counts)}
-              </Badge>
-              {team.admin?.name && (
-                <Badge variant="outline" className="shrink-0 text-xs">
-                  Manager · {team.admin.name}
-                </Badge>
-              )}
             </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <StatusDot phase={leader?.phase ?? team.phase} />
-                Leader {leader?.name ?? team.leaderName ?? '未指定'}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>{counts.total} 名成员</span>
+              <span>{counts.total} 个 Agent</span>
               <span aria-hidden="true">·</span>
               <span>
                 就绪 {counts.ready}/{counts.total}
@@ -169,39 +206,72 @@ export function InteractiveTeamTopology({
                   异常 {counts.abnormal}
                 </span>
               )}
-              {team.teamName && team.teamName !== team.name && (
-                <span className="truncate">{team.teamName}</span>
-              )}
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          <TeamAssistantButton team={team} />
+          {onOpenMillforge && <Button
+            variant="outline"
+            size="sm"
+            aria-label="打开千锻"
+            title={(userLevel ?? 0) < 3 ? '千锻注入需管理员（L1）权限' : '千锻'}
+            disabled={(userLevel ?? 0) < 3}
+            onClick={() => onOpenMillforge(team)}
+          ><WandSparkles className="size-3.5" aria-hidden="true" />千锻</Button>}
+          {/* 「查看团队详情」齿轮（≥44px 触控目标）：section 按布局分派——
+              多栏选中该团队（常驻右栏 / dual 抽屉，不弹窗），single 开整面板。 */}
           <Button
             variant="outline"
             size="icon"
             className="min-h-11 min-w-11 shrink-0"
-            aria-label="团队设置"
-            title="团队设置"
+            aria-label="查看团队详情"
+            title="查看团队详情"
             onClick={() => onOpenTeamSettings(team)}
           >
             <Settings className="size-4" aria-hidden="true" />
           </Button>
+          </div>
         </header>
 
-        {onOpenMillforge ? (
-          <div className="px-3">
-            <MillforgeEntryCard
-              onClick={() => onOpenMillforge(team)}
-              disabled={(userLevel ?? 0) < 3}
-              disabledReason="千锻注入需管理员（L1）权限"
-            />
-          </div>
-        ) : null}
-
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 custom-scrollbar">
+        {inlinePanel && inlinePanel !== 'users' ? <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
+          <Button variant="ghost" size="sm" className="mb-3 w-fit" onClick={onCloseInlinePanel}><ArrowLeft />返回团队详情</Button>
+          <TeamSettingsPanel key={team.name} team={team} allTeams={allTeams} workers={workers ?? []} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel ?? 0} onChanged={onChanged} initialTab={inlinePanel === 'agents' || inlinePanel === 'team-skills' ? 'agents' : 'basic'} />
+        </div> : <Tabs key={team.name} defaultValue="overview" className="min-h-0 flex-1 gap-3 px-4 pb-4">
+          <TabsList aria-label="团队详情视图" className="shrink-0">
+            <TabsTrigger value="overview">基础信息</TabsTrigger>
+            <TabsTrigger value="files">团队文件</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="min-h-0 space-y-5 overflow-y-auto overflow-x-hidden custom-scrollbar">
+          <section aria-label="基础信息" className="space-y-2">
+            {description !== null ? <div className="space-y-2">
+              <Textarea aria-label="团队描述" value={description} onChange={event => setDescription(event.target.value)} disabled={updateTeam.isPending} />
+              <div className="flex gap-2"><Button size="sm" disabled={updateTeam.isPending} onClick={() => void saveDescription()}>保存描述</Button><Button size="sm" variant="ghost" disabled={updateTeam.isPending} onClick={() => setDescription(null)}>取消</Button></div>
+            </div> : <div className="flex items-start justify-between gap-2">
+              <p className="text-sm leading-relaxed text-muted-foreground">{team.description || '暂无团队描述'}</p>
+              {(userLevel ?? 0) >= 3 && <Button size="sm" variant="ghost" onClick={() => setDescription(team.description || '')}>编辑描述</Button>}
+            </div>}
+            {editError && <p role="alert" className="text-xs text-destructive">{editError}</p>}
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-muted/30 p-3 text-xs">
+              <div><dt className="text-muted-foreground">团队标识</dt><dd className="mt-1 break-all">{team.name}</dd></div>
+              <div><dt className="text-muted-foreground">负责人</dt><dd className="mt-1 break-all">{team.leaderName || '未设置'}</dd></div>
+              <div><dt className="text-muted-foreground">成员</dt><dd className="mt-1">{people.length} 位人类 · {counts.total} 个 Agent</dd></div>
+              <div><dt className="text-muted-foreground">空闲休眠</dt><dd className="mt-1">{team.workerIdleTimeout || '默认策略'}</dd></div>
+            </dl>
+          </section>
+          <section aria-label="Agent 成员" className="space-y-2">
+          <h3 className="text-sm font-semibold">Agent 成员 <span className="ml-1 font-normal text-muted-foreground">{counts.total}</span></h3>
           {query && !teamHit && (
             <p className="px-1 pb-1 text-xs text-muted-foreground" role="status">
               匹配 {members.length} / {allMembers.length} 名成员
             </p>
           )}
+          {(userLevel ?? 0) >= 3 && <div className="flex flex-wrap items-center gap-2 pt-2">
+            <NativeSelect aria-label="添加未归属团队的 Agent" value={newAgent} disabled={updateTeam.isPending || availableAgents.length === 0} className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs" onChange={event => setNewAgent(event.target.value)}>
+              <option value="">{availableAgents.length ? '选择未归属团队的 Agent…' : '暂无未归属团队的 Agent'}</option>
+              {availableAgents.map(worker => <option key={worker.name} value={worker.name}>{worker.name} · {worker.model}</option>)}
+            </NativeSelect>
+            <Button size="sm" variant="outline" disabled={!newAgent || updateTeam.isPending} onClick={() => void addAgent()}>添加 Agent</Button>
+          </div>}
           {members.length === 0 ? (
             <p className="px-2 py-8 text-center text-xs text-muted-foreground">
               {allMembers.length === 0 ? '暂无成员' : '没有匹配的成员'}
@@ -229,7 +299,7 @@ export function InteractiveTeamTopology({
                       }}
                       className={`flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
                         highlighted
-                          ? 'border-primary/50 bg-primary/5'
+                          ? 'border-border bg-muted/50'
                           : 'border-transparent hover:bg-muted/50'
                       }`}
                     >
@@ -238,24 +308,21 @@ export function InteractiveTeamTopology({
                           {worker.name.slice(0, 1).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <span
-                          className={`truncate text-xs ${role === 'leader' ? 'font-semibold' : 'font-medium'}`}
+                          className={`truncate text-xs hover:underline ${role === 'leader' ? 'font-semibold' : 'font-medium'}`}
                         >
                           {worker.name}
                         </span>
                         <Badge
                           variant="outline"
-                          className={`shrink-0 text-xs ${roleBadgeClass(role)}`}
+                          className="shrink-0 border-border bg-muted/40 text-xs text-muted-foreground"
                         >
                           {ROLE_LABELS[role]}
                         </Badge>
-                        {worker.team && (
-                          <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                            <Bot className="size-3 shrink-0" aria-hidden="true" />
-                            <span className="truncate">{worker.team}</span>
-                          </span>
-                        )}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-muted-foreground" title={`${worker.runtime} · ${worker.model}`}>{worker.runtime} · {worker.model}</span>
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                         {worker.runningTaskCount != null && worker.runningTaskCount > 0 && (
@@ -270,7 +337,6 @@ export function InteractiveTeamTopology({
                             异常
                           </span>
                         )}
-                        <StatusDot phase={worker.phase} />
                         <PhaseBadge kind="worker" phase={worker.phase} />
                       </span>
                       {showEnsureReady && <MemberEnsureReadyButton workerName={worker.name} />}
@@ -280,7 +346,31 @@ export function InteractiveTeamTopology({
               })}
             </ul>
           )}
-        </div>
+          </section>
+          <section aria-label="人类成员" className="space-y-2 border-t pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">人类成员 <span className="ml-1 font-normal text-muted-foreground">{people.length}</span></h3>
+              {onOpenMembers && (userLevel ?? 0) >= 3 && <Button size="sm" variant="outline" onClick={inlinePanel === 'users' ? onCloseInlinePanel : onOpenMembers}>{inlinePanel === 'users' ? '收起管理' : '管理成员'}</Button>}
+            </div>
+            {inlinePanel === 'users' ? <TeamUsersPanel key={team.name} team={team} onChanged={onChanged} /> : <>
+            <ul className="space-y-1" aria-label="团队人类成员">
+              {people.map(person => {
+                const displayName = humans.find(human => human.name === person.name)?.displayName || person.name;
+                return <li key={person.name} className="flex items-center gap-2 py-2 text-xs">
+                <AccountAvatar kind="human" name={person.name} className="size-7 shrink-0" />
+                <span className="min-w-0 flex-1"><span className="block truncate font-medium">{displayName}</span>{displayName !== person.name && <span className="block truncate text-muted-foreground">{person.name}</span>}</span>
+                <Badge variant="outline">{person.role === 'admin' ? '管理员' : person.role === 'coordinator' ? '协调用户' : '成员'}</Badge>
+              </li>; })}
+            </ul>
+            {humansQuery.isError && <p role="alert" className="text-xs text-muted-foreground">部分用户信息加载失败</p>}
+            {people.length === 0 && <p className="py-2 text-xs text-muted-foreground">暂无人类成员</p>}
+            </>}
+          </section>
+          </TabsContent>
+          <TabsContent value="files" className="min-h-0 overflow-hidden">
+            <FilesBrowserPanel scope={{ team: team.name }} readOnly />
+          </TabsContent>
+        </Tabs>}
       </CardContent>
     </Card>
   );

@@ -36,7 +36,7 @@ function AssistantSettings({ userLevel }: { userLevel: number }) {
   if (isError) return <ApiErrorState onRetry={() => void refetch()} />;
   return <div className="space-y-4">
     <SectionHeader title="平台助手设置" onRefresh={() => void refetch()} isRefreshing={isRefetching}
-      actions={<><ManagersSection compact selectedManager={selected} /><Button size="sm" variant="outline" onClick={() => {
+      actions={<>{managers.length === 0 && <ManagersSection compact />}<Button size="sm" variant="outline" onClick={() => {
         if (selected?.roomID) openChatRoom(selected.roomID);
         else window.location.hash = hashForSection('chat');
       }}><ArrowLeft className="size-4" />返回对话</Button></>} />

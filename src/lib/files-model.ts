@@ -410,8 +410,9 @@ export function effectiveLayoutMode(o: {
 }): FilesLayoutMode {
   const base = layoutMode(o.containerWidth);
   if (base !== 'split') return base;
-  const listW =
-    o.listMeasured && o.listWidth > 0 ? o.listWidth : estimatedListWidth(o.containerWidth, base);
+  // Decide from the available container width. Measuring the current list
+  // feeds the split result back into its own breakpoint and makes it oscillate.
+  const listW = estimatedListWidth(o.containerWidth, base);
   if (listW <= 0) return base;
   return listW < LIST_MIN_SPLIT_WIDTH ? 'drawer' : base;
 }

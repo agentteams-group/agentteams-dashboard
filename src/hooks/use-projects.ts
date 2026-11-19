@@ -382,11 +382,12 @@ export function mergeMainTaskIndex(tasks: BoardTask[], index: IndexedTask[]): Bo
   return [...merged.values()];
 }
 
-export function useTaskIndex() {
+export function useTaskIndex({ enabled = true, refetchInterval = 5000 }: { enabled?: boolean; refetchInterval?: number | false } = {}) {
   return useQuery({
     queryKey: ['agentteams-task-index'],
     queryFn: () => requestJson<{ tasks: IndexedTask[] }>(apiUrl('/api/agentteams/tasks')),
-    refetchInterval: 5000,
+    enabled,
+    refetchInterval,
     retry: 1,
     throwOnError: false,
   });

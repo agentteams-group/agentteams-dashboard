@@ -140,6 +140,15 @@ afterEach(() => {
 });
 
 describe('QwenpawRuntimeConfigPanel', () => {
+  it('reuses the editor for Manager while keeping reads and writes on Manager endpoints', async () => {
+    const fetchMock = installFetch();
+    renderPanel({ workerName: 'default', memberKind: 'managers' });
+    fireEvent.change(await screen.findByLabelText('最大输入长度'), { target: { value: '160000' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
+    await waitFor(() => expect(callsTo(fetchMock, '/managers/default/runtime-config', 'PUT')).toHaveLength(1));
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes('/managers/default/'))).toBe(true);
+    expect(callsTo(fetchMock, '/managers/default/loops')).not.toHaveLength(0);
+  });
   it('loads through the legacy runtime-config end and never calls the surface', async () => {
     const fetchMock = installFetch();
     renderPanel();

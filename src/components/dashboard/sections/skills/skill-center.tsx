@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { NativeSelect } from '@/components/ui/native-select';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { currentHashParams, hashForSection } from '@/lib/nav-hash';
 import { AlertCircle } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { OverflowText } from '@/components/dashboard/overflow-text';
@@ -51,6 +53,17 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const deleteMutation = useDeleteSkill();
 
+  useEffect(() => {
+    const syncSearch = () => {
+      if (window.location.hash.split('?')[0] !== `#${hashForSection('skills')}`) return;
+      setSearch(currentHashParams()?.get('q') ?? '');
+      setPage(1);
+    };
+    syncSearch();
+    window.addEventListener('hashchange', syncSearch);
+    return () => window.removeEventListener('hashchange', syncSearch);
+  }, []);
+
   const handleRefresh = useCallback(() => {
     refetch();
     onRefresh?.();
@@ -87,9 +100,9 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
       <SectionHeader title={`技能 · ${total}`} onRefresh={handleRefresh} isRefreshing={isRefetching}
         meta={<div className="flex flex-wrap items-center gap-2">
           <Input aria-label="搜索技能" placeholder="搜索技能..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-9 w-64" />
-          <select aria-label="技能来源" value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value as typeof sourceFilter); setPage(1); }} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+          <NativeSelect aria-label="技能来源" value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value as typeof sourceFilter); setPage(1); }} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
             <option value="all">全部来源</option><option value="builtin">内置</option><option value="custom">自定义</option><option value="nacos">Nacos</option>
-          </select>
+          </NativeSelect>
         </div>}
         actions={<><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></>} />
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Mic, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -200,20 +201,20 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
           <PopoverContent align="end" className="space-y-2 text-xs">
             <label className="block space-y-1">
               <span>语音识别方式</span>
-              <select aria-label="语音识别方式" value={provider} onChange={event => setProvider(event.target.value as 'local' | 'dashscope')}
+              <NativeSelect aria-label="语音识别方式" value={provider} onChange={event => setProvider(event.target.value as 'local' | 'dashscope')}
                 className="w-full rounded-md border bg-background p-2 text-sm">
                 <option value="local">本地免费（音频不上传）</option>
                 <option value="dashscope" disabled={!dashscopeAvailable}>百炼（按量付费）</option>
-              </select>
+              </NativeSelect>
             </label>
             <label className="block space-y-1">
               <span>识别语言</span>
-              <select aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
+              <NativeSelect aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
                 className="w-full rounded-md border bg-background p-2 text-sm">
                 <option value="zh">中文（简体）</option>
                 <option value="en">English</option>
                 <option value="auto">自动识别</option>
-              </select>
+              </NativeSelect>
             </label>
             <p className="text-muted-foreground">本地模型首次使用需要加载，之后会缓存。每次最多录制 60 秒，转写后可编辑再发送。</p>
             {!dashscopeAvailable && <p className="text-muted-foreground">请管理员在「设置 → 后端 → 语音识别」配置百炼 API Key 后启用。</p>}

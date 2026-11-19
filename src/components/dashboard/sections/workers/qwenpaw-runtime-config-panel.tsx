@@ -44,6 +44,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { restartWorkerForConfig, describeRestartError } from '@/lib/worker-config-apply';
+import { agentteamsApi } from '@/lib/agentteams-api';
 import {
   buildRuntimeConfigDiff,
   num,
@@ -78,6 +79,7 @@ type Banner = { kind: 'ok' | 'warn' | 'err' | 'info'; text: string };
 
 export interface QwenpawRuntimeConfigPanelProps {
   workerName: string;
+  memberKind?: 'workers' | 'managers';
   /** L1 write permission (dashboard level 3). The controller still enforces
    * its own RBAC: L2 writes outside the whitelist answer 403. */
   canWrite?: boolean;
@@ -135,6 +137,7 @@ function SectionCard({ title, children }: { title?: string; children: React.Reac
 
 export function QwenpawRuntimeConfigPanel({
   workerName,
+  memberKind = 'workers',
   canWrite = true,
   onChanged,
 }: QwenpawRuntimeConfigPanelProps) {
@@ -189,8 +192,8 @@ export function QwenpawRuntimeConfigPanel({
     setLoopsError('');
     try {
       const [catalog, custom] = await Promise.all([
-        fetchWorkerLoopModes(workerName),
-        fetchWorkerLoopCustoms(workerName),
+        fetchWorkerLoopModes(workerName, memberKind),
+        fetchWorkerLoopCustoms(workerName, memberKind),
       ]);
       setLoops(catalog);
       setCustoms(custom);
@@ -201,13 +204,13 @@ export function QwenpawRuntimeConfigPanel({
     } finally {
       setLoopsLoading(false);
     }
-  }, [workerName]);
+  }, [workerName, memberKind]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const snapshot = await fetchQwenpawRuntimeConfig(workerName);
+      const snapshot = await fetchQwenpawRuntimeConfig(workerName, memberKind);
       setConfig(snapshot.config);
       setEtag(snapshot.etag);
       resetDrafts();
@@ -219,7 +222,7 @@ export function QwenpawRuntimeConfigPanel({
     } finally {
       setLoading(false);
     }
-  }, [workerName, resetDrafts, loadLoops]);
+  }, [workerName, memberKind, resetDrafts, loadLoops]);
 
   useEffect(() => {
     // Defer past the effect's synchronous phase (react-hooks/set-state-in-effect).
@@ -289,11 +292,11 @@ export function QwenpawRuntimeConfigPanel({
     setSaving(true);
     setBanner(null);
     try {
-      await putQwenpawRuntimeConfig(workerName, result.diff, etag);
+      await putQwenpawRuntimeConfig(workerName, result.diff, etag, memberKind);
       // Refetch the authoritative merged values; a failed refetch must not
       // hide the successful write.
       try {
-        const fresh = await fetchQwenpawRuntimeConfig(workerName);
+        const fresh = await fetchQwenpawRuntimeConfig(workerName, memberKind);
         setConfig(fresh.config);
         setEtag(fresh.etag);
       } catch {
@@ -306,7 +309,7 @@ export function QwenpawRuntimeConfigPanel({
       setNeedsRestart(true);
       setBanner({
         kind: 'ok',
-        text: result.diff.loop
+        text: result.diff.loop && memberKind === 'workers'
           ? '已保存——loop 配置变更将通知团队 Leader；重启后生效'
           : '已保存——重启后生效',
       });
@@ -320,14 +323,15 @@ export function QwenpawRuntimeConfigPanel({
     } finally {
       setSaving(false);
     }
-  }, [config, noWrite, saving, edits, loopJson, doomStages, workerName, etag, onChanged]);
+  }, [config, noWrite, saving, edits, loopJson, doomStages, workerName, memberKind, etag, onChanged]);
 
   const handleRestart = useCallback(async () => {
     if (restarting) return;
     setRestarting(true);
     setBanner(null);
     try {
-      await restartWorkerForConfig(workerName);
+      if (memberKind === 'managers') await agentteamsApi.restartManager(workerName);
+      else await restartWorkerForConfig(workerName);
       setNeedsRestart(false);
       setBanner({ kind: 'ok', text: '已发送重启，配置将重新加载' });
       onChanged?.();
@@ -336,7 +340,7 @@ export function QwenpawRuntimeConfigPanel({
     } finally {
       setRestarting(false);
     }
-  }, [restarting, workerName, onChanged]);
+  }, [restarting, workerName, memberKind, onChanged]);
 
   // ── Custom loop CRUD ────────────────────────────────────────
   const createFromTemplate = useCallback(async () => {
@@ -362,6 +366,7 @@ export function QwenpawRuntimeConfigPanel({
           template,
           enabledGates: templateGates,
         }),
+        memberKind,
       );
       setCreateOpen(false);
       setTemplateName('');
@@ -382,6 +387,7 @@ export function QwenpawRuntimeConfigPanel({
     templateGates,
     customs,
     workerName,
+    memberKind,
     loadLoops,
   ]);
 
@@ -398,7 +404,7 @@ export function QwenpawRuntimeConfigPanel({
     setCreating(true);
     setLoopMessage(null);
     try {
-      await createWorkerLoopCustom(workerName, parsed);
+      await createWorkerLoopCustom(workerName, parsed, memberKind);
       setRawCreateOpen(false);
       setNewJson('');
       setLoopMessage({ kind: 'ok', text: '已创建' });
@@ -408,7 +414,7 @@ export function QwenpawRuntimeConfigPanel({
     } finally {
       setCreating(false);
     }
-  }, [newJson, workerName, loadLoops]);
+  }, [newJson, workerName, memberKind, loadLoops]);
 
   const toggleCustom = useCallback(
     async (mode: WorkerLoopCustomMode, enabled: boolean) => {
@@ -416,7 +422,7 @@ export function QwenpawRuntimeConfigPanel({
       setLoopMessage(null);
       try {
         // PUT replaces the whole object; we hold the full GET payload.
-        await updateWorkerLoopCustom(workerName, { ...mode, enabled });
+        await updateWorkerLoopCustom(workerName, { ...mode, enabled }, memberKind);
         setLoopMessage({ kind: 'ok', text: '已更新' });
         void loadLoops();
       } catch (err) {
@@ -425,7 +431,7 @@ export function QwenpawRuntimeConfigPanel({
         setBusyId('');
       }
     },
-    [workerName, loadLoops],
+    [workerName, memberKind, loadLoops],
   );
 
   const removeCustom = useCallback(
@@ -433,7 +439,7 @@ export function QwenpawRuntimeConfigPanel({
       setBusyId(mode.id);
       setLoopMessage(null);
       try {
-        await deleteWorkerLoopCustom(workerName, mode.id);
+        await deleteWorkerLoopCustom(workerName, mode.id, memberKind);
         setLoopMessage({ kind: 'ok', text: '已删除' });
         void loadLoops();
       } catch (err) {
@@ -442,7 +448,7 @@ export function QwenpawRuntimeConfigPanel({
         setBusyId('');
       }
     },
-    [workerName, loadLoops],
+    [workerName, memberKind, loadLoops],
   );
 
   const remeConfig = asObject(config?.reme_light_memory_config);

@@ -99,6 +99,46 @@ describe('ChatIR turn assembly', () => {
     expect(latestEventId).toBe('answer');
   });
 
+  it('folds a QwenPaw persisted quoted reply into its traced process and finalizes the turn', () => {
+    const trace = (span: string) => ({
+      'com.agentteams.trace': { traceparent: `00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-${span.repeat(16)}-01` },
+    });
+    const events = [
+      ev('$prompt', ME, '介绍一下团队', 0),
+      notice('$root', '@w:server', '处理中...', 100, trace('1')),
+      notice('$think', '@w:server', 'Thinking:\n\n正在整理团队信息', 200, { ...threadOf('$root'), ...trace('2'), streaming: true }),
+      ev('$tool', '@w:server', '🔧 **read_file**\n```json\n{"path":"team.md"}\n```', 300, { ...threadOf('$root'), ...trace('3') }),
+      ev('$interleaved', '@another:server', '另一条独立消息', 400),
+      ev('$answer', '@w:server', '这是团队介绍。', 500, {
+        ...trace('4'),
+        'org.agentteams.reply_txn': 'matrix-reply:durable',
+        'm.relates_to': { 'm.in_reply_to': { event_id: '$prompt' } },
+      }),
+    ];
+
+    const preview = assemble(events.slice(0, 5), 'qwenpaw');
+    expect(preview.messages.find(message => message.id === '$root')?.turnState).toBe('running');
+
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(3);
+    expect(messages.find(message => message.id === '$root')).toMatchObject({
+      content: '这是团队介绍。',
+      replyToEventId: '$prompt',
+      latestEventId: '$answer',
+      sourceEventIds: ['$root', '$think', '$tool', '$answer'],
+      turnState: 'finalized',
+      isStreaming: false,
+    });
+    expect(messages.find(message => message.id === '$root')?.precomputedBlocks?.map(block => block.type))
+      .toEqual(['thinking', 'tool_call', 'text']);
+
+    const differentTrace = {
+      ...events[5],
+      content: { ...events[5].content, 'com.agentteams.trace': { traceparent: '00-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-4444444444444444-01' } },
+    };
+    expect(assemble([...events.slice(0, 5), differentTrace], 'qwenpaw').messages).toHaveLength(4);
+  });
+
   it('keeps each QwenPaw process with its own answer when two mentioned agents interleave', () => {
     const leader = '@leader:server';
     const planner = '@planner:server';

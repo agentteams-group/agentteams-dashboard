@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleAlert, Download, Library, ListChecks, Play, RotateCcw, Save, Send, Upload } from 'lucide-react';
@@ -482,7 +483,7 @@ export function LoopsSection() {
                       <Save className="h-3 w-3" aria-hidden="true" />
                       存草稿
                     </Button>
-                    <select
+                    <NativeSelect
                       value={bindRoomId}
                       onChange={(e) => setBindRoomId(e.target.value)}
                       className="h-7 rounded-md border border-border/60 bg-background/60 px-1.5 text-xs"
@@ -494,7 +495,7 @@ export function LoopsSection() {
                           {r.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                     <Button
                       variant="outline"
                       size="sm"

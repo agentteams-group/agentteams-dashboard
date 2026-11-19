@@ -10,12 +10,13 @@
 //
 // 无新依赖：Popover 走已有的 @radix-ui/react-popover，样式 token 与 Select 一致。
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { useHoverOpen } from '@/lib/desktop-interactions';
 
 export interface ComboboxProps {
   value: string;
@@ -80,20 +81,20 @@ export function Combobox({
   const activeIndex = filtered.length > 0 && active >= 0 ? Math.min(active, filtered.length - 1) : -1;
   const showList = open && !disabled && (filtered.length > 0 || !allowCustom);
 
-  const clearCloseTimer = () => {
+  const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current !== null) {
       window.clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const close = () => {
+  const close = useCallback(() => {
     clearCloseTimer();
     setOpen(false);
     setSearch('');
     setActive(-1);
     setDraft(null);
-  };
+  }, [clearCloseTimer]);
 
   useEffect(() => {
     if (activeIndex < 0 || !listRef.current) return;
@@ -177,8 +178,9 @@ export function Combobox({
   };
 
   const CandidateList = portal ? PopoverContent : 'div';
+  const hover = useHoverOpen({ open: showList, onOpenChange: next => { if (next) openList(); else close(); } });
   const content = (
-    <div ref={containerRef} className={cn('relative w-full min-w-0', className)}>
+    <div ref={containerRef} className={cn('relative w-full min-w-0', className)} {...hover.triggerProps}>
       <Input
         id={id}
         role="combobox"
@@ -215,6 +217,7 @@ export function Combobox({
       {showList ? (
         <CandidateList
           ref={popupRef}
+          {...hover.contentProps}
           className={cn(
             'z-50 min-w-40 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
             portal

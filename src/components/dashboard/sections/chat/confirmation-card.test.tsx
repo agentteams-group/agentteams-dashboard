@@ -1,6 +1,6 @@
 /**
  * 工具审批卡（#235）单测：QwenPaw 运行时审批模板字段渲染、无请求 ID
- * 禁绑按钮、带 ID 精确绑定、提交中防重、失败可重试、收件箱互通只读、
+ * 上下文意见回传、带 ID 精确绑定、提交中防重、失败可重试、收件箱互通只读、
  * 过期只读、蛇形 v1 payload 适配。
  */
 
@@ -119,12 +119,38 @@ describe('ConfirmationCard（#235 审批交互）', () => {
     expect(screen.queryByText('WHO_KNOWS')).not.toBeInTheDocument();
   });
 
-  it('does not bind buttons without a request id (no guessing the queue head)', () => {
-    renderCard(unboundPayload);
-    expect(screen.getByRole('button', { name: /批准本次/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /拒绝本次/ })).toBeDisabled();
-    expect(screen.getByText(/无法精确绑定本次请求/)).toBeInTheDocument();
-    expect(screen.queryByText('/approval approve')).not.toBeInTheDocument();
+  it('sends original context and approval comments without guessing a runtime request id', async () => {
+    renderCard({ ...unboundPayload, parameters: '{"command":"rm /opt/ui-test.txt"}', riskDetails: '仅删除回归文件', sourceEventId: '$approval-original' });
+    fireEvent.change(screen.getByRole('textbox', { name: '补充审批意见（可选）' }), { target: { value: '同意，仅限本次回归文件。' } });
+    fireEvent.click(screen.getByRole('button', { name: '同意并发送' }));
+    await waitFor(() => expect(mockOnApprove).toHaveBeenCalledOnce());
+    const [reply, answer] = mockOnApprove.mock.calls[0];
+    expect(reply).toContain('【审批意见】');
+    expect(reply).toContain('同意本次操作');
+    expect(reply).toContain('同意，仅限本次回归文件。');
+    expect(reply).toContain('rm /opt/ui-test.txt');
+    expect(reply).toContain('仅删除回归文件');
+    expect(reply).toContain('$approval-original');
+    expect(reply).not.toContain('/approval approve');
+    expect(answer).toBeUndefined();
+    expect(await screen.findByText('审批意见已发送')).toBeInTheDocument();
+    expect(screen.queryByText('已批准')).not.toBeInTheDocument();
+    expect(screen.queryByText('已提交，等待运行时确认')).not.toBeInTheDocument();
+  });
+
+  it('sends a contextual rejection without a request id and keeps failed sends retryable', async () => {
+    mockOnReject.mockReturnValueOnce(false);
+    renderCard({ ...unboundPayload, sourceEventId: '$other-approval' });
+    fireEvent.click(screen.getByRole('button', { name: '拒绝并发送' }));
+    expect(await screen.findByText('发送失败，请重试')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '拒绝并发送' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '拒绝并发送' }));
+    expect(await screen.findByText('审批意见已发送')).toBeInTheDocument();
+    const [reply, answer] = mockOnReject.mock.calls[1];
+    expect(reply).toContain('拒绝本次操作');
+    expect(reply).toContain('$other-approval');
+    expect(reply).not.toContain('/approval deny');
+    expect(answer).toBeUndefined();
   });
 
   it('sends the id-bound command plus the structured answer field on approve', async () => {

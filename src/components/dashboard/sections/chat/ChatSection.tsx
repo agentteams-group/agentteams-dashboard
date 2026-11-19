@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { belongsToTeam } from '@/lib/collaboration-files';
@@ -14,15 +14,14 @@ import { WelcomeSteps } from '../welcome-steps';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
-import { AlertTriangle, ArrowLeft, PanelLeftOpen } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bot, ChevronDown, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { buildRooms, sortRoomsByRecency, type RoomMetaByRoomId } from './room-builders';
 import type { RoomInfo } from './room-info';
-import { ChatAuthBadge } from './chat-auth-badge';
-import { SyncStatusChip } from './sync-status-chip';
-import { ServerCapabilityPopover } from './server-capability-popover';
-import { ChatRoomSidebar } from './chat-room-sidebar';
+import { MatrixLoginForm } from './matrix-login-form';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ChatRoomSidebar, InviteInbox } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
 import { ChatPanel, type ChatContextPanel } from './ChatPanel';
 import { MatrixStatusBanner } from './matrix-status-banner';
@@ -34,22 +33,13 @@ import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import { useArchivedRooms } from '@/hooks/use-room-archive';
 import { useAssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
 import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes';
-import { ConversationSwitcher, RelatedConversationButton } from './conversation-switcher';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-
-const NARROW_MQ = '(max-width: 767px)';
-
-function subscribeNarrowViewport(onChange: () => void): () => void {
-  if (typeof window === 'undefined' || !window.matchMedia) return () => {};
-  const mq = window.matchMedia(NARROW_MQ);
-  mq.addEventListener('change', onChange);
-  return () => mq.removeEventListener('change', onChange);
-}
-
-function getNarrowViewport(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false;
-  return window.matchMedia(NARROW_MQ).matches;
-}
+import { RelatedConversationButton } from './conversation-switcher';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useHoverOpen } from '@/lib/desktop-interactions';
+import { useApiTaskBoard } from '@/hooks/use-projects';
+import { isTeamAdmin } from '@/lib/team-access';
+import { AssistantRoomList } from './assistant-room-list';
+import { TeamRoomList } from './team-room-list';
 
 function projectionHint(label: string, err: unknown): string {
   const status = err instanceof ApiError ? err.status : undefined;
@@ -93,12 +83,13 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     refetch: refetchHumans,
   } = useHumans();
   const { isConnected, userLevel, sessionUser } = useAgentTeamsStore();
-  const { isLoggedIn, userId, homeserver, logout } = useMatrixStore();
+  const { isLoggedIn, userId, homeserver } = useMatrixStore();
   const accountKey = conversationStorageKey(homeserver, userId || sessionUser || '');
   const selectionKey = accountKey && view !== 'all' ? `${accountKey}:${view}` : accountKey;
   const roomAccess = useChatRoomAccess();
   const archivedRooms = useArchivedRooms();
-  const switcherRef = useRef<HTMLButtonElement>(null);
+  const roomPicker = useHoverOpen({});
+  const setRoomPickerOpen = roomPicker.setOpen;
 
   const [selection, setSelection] = useState<{ scope: string | null; id: string | null }>({ scope: null, id: null });
   const taskCollaboration = useSectionStore((state) => state.taskCollaboration);
@@ -106,11 +97,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const pendingChatRoomId = useHitlInboxStore((state) => state.pendingChatRoomId);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [contextPanel, setContextPanel] = useState<ChatContextPanel>(null);
-  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(view !== 'teams');
-  const [mobileRoomListOpen, setMobileRoomListOpen] = useState(false);
-
-  // Keep SSR and the first client render consistent; narrow screens use a drawer.
-  const narrowViewport = useSyncExternalStore(subscribeNarrowViewport, getNarrowViewport, () => false);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
 
   const isLoading = workersLoading || teamsLoading || managersLoading || humansLoading;
   const hasError = !isConnected;
@@ -142,9 +129,14 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // source_room_id 仍能补齐侧栏房间。这里始终拉取（enabled=true），同一份
   // taskFeed 继续驱动 attention 徽标，不额外发起第二套 projects 查询。
   const taskFeed = useAssistantTaskFeed(undefined, true);
+  const taskBoard = useApiTaskBoard();
   const availableRooms = useMemo(
     () => {
       const projected = buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows);
+      for (const task of taskBoard.tasks) {
+        const id = task.executionRoomId?.replace(/^room:/, '');
+        if (id && !projected.some(room => room.id === id)) projected.push({ id, name: roomMeta[id]?.roomName || task.title, type: 'project', members: [], parentTeam: task.teamId, teamId: task.teamId, projectId: task.projectId });
+      }
       for (const archived of archivedRooms.data?.rooms ?? []) {
         const existing = projected.find(room => room.id === archived.room_id);
         if (existing) existing.archived = true;
@@ -158,22 +150,25 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
         }
       }
       return withLeaderAccess(sortRoomsByRecency(projected), roomAccess.joinedRooms, roomAccess.state)
-      .filter(room => room.access === 'joined' && (userLevel >= 3 || room.agentRole !== 'operations'))
-      .map(room => ({ ...room, teamRole: room.team ? (room.team.admin ? room.team.admin.name === sessionUser : userLevel >= 3) ? 'admin' as const : 'member' as const : undefined }));
+      .filter(room => (userLevel >= 3 || room.agentRole !== 'operations') && (room.agentRole !== 'leader' || !!room.team && isTeamAdmin(room.team, sessionUser, userId)))
+      .map(room => ({ ...room, teamRole: room.team ? isTeamAdmin(room.team, sessionUser, userId) ? 'admin' as const : 'member' as const : undefined }));
     },
-    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser, pendingChatRoomId, selectedRoomId, archivedRooms.data],
+    [workers, teams, managers, humans, roomMeta, taskFeed.workflows, taskBoard.tasks, roomAccess.joinedRooms, roomAccess.state, userLevel, sessionUser, userId, pendingChatRoomId, selectedRoomId, archivedRooms.data],
   );
   // Project deep links still open here; the sidebar lists joined teams only.
-  const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project', []);
-  const rooms = useMemo(() => availableRooms.filter(room => !room.archived && (view === 'all' || (view === 'teams' ? room.type === 'team' : room.agentRole === 'operations' || room.agentRole === 'leader' && room.teamRole === 'admin'))), [availableRooms, view]);
+  const isTeamViewRoom = useCallback((room: RoomInfo) => room.type === 'team' || room.type === 'project' || room.type === 'unknown' && /^TASK[：:]/i.test(room.name), []);
+  const rooms = useMemo(() => availableRooms.filter(room => !room.archived && (view === 'assistants'
+    ? !!room.agentRole
+    : canOpenConversation(room) && (view === 'all' || isTeamViewRoom(room)))), [availableRooms, view, isTeamViewRoom]);
   const confirmations = useHitlInboxStore(state => state.confirmations);
   const attention = useMemo(() => Object.fromEntries(rooms.filter(room => room.agentRole || room.type === 'team').map(room => [room.id, attentionCounts(assistantTaskNotes(room, rooms, taskFeed.workflows, confirmations))])), [rooms, taskFeed.workflows, confirmations]);
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
   const taskIdForRoom = useCallback((room: RoomInfo) => {
     if (room.type !== 'project' && room.type !== 'unknown') return undefined;
     return room.name.match(/^TASK[：:]\s*(.+)$/i)?.[1]
+      ?? taskBoard.tasks.find(task => task.executionRoomId?.replace(/^room:/, '') === room.id)?.runId
       ?? taskFeed.workflows.flatMap(workflow => workflow.tasks_detail ?? []).find(task => task.room_id?.replace(/^room:/, '') === room.id)?.task_id;
-  }, [taskFeed.workflows]);
+  }, [taskFeed.workflows, taskBoard.tasks]);
 
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
     const room = availableRooms.find(room => room.id === roomId);
@@ -192,6 +187,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       return;
     }
     if (remember) {
+      setRoomNotice(null);
       useHitlInboxStore.getState().takePendingChatRoomId();
       if (selectionKey) {
         try { window.localStorage.setItem(selectionKey, roomId); } catch { /* Non-persistent browser. */ }
@@ -200,8 +196,8 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     useRoomMetaStore.getState().setActiveRoomId(roomId);
     setSelection({ scope: selectionKey, id: roomId });
     setContextPanel(null);
-    setMobileRoomListOpen(false);
-  }, [availableRooms, selectionKey, view, isTeamViewRoom, taskIdForRoom]);
+    setRoomPickerOpen(false);
+  }, [availableRooms, selectionKey, view, isTeamViewRoom, taskIdForRoom, setRoomPickerOpen]);
 
 
   const projectionNotices = useMemo(() => {
@@ -283,6 +279,12 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   useEffect(() => {
     if (isLoading) return;
     if (pendingChatRoomId) {
+      const privateTeam = teams?.find(team => team.leaderDMRoomID === pendingChatRoomId);
+      if (privateTeam && !isTeamAdmin(privateTeam, sessionUser, userId)) {
+        useHitlInboxStore.getState().takePendingChatRoomId();
+        setRoomNotice('团队助手私聊仅对该团队的 Team Admin 开放。你可以在「我的团队」参与群聊。');
+        return;
+      }
       const target = availableRooms.find(room => room.id === pendingChatRoomId);
       if (target && canOpenConversation(target)) {
         useHitlInboxStore.getState().takePendingChatRoomId();
@@ -297,10 +299,10 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       try { rememberedId = window.localStorage.getItem(selectionKey); } catch { /* Non-persistent browser. */ }
     }
     const preferred = view === 'teams'
-      ? rooms.find(room => room.id === rememberedId) ?? [...rooms].sort((a, b) => (a.parentTeam ?? '').localeCompare(b.parentTeam ?? ''))[0]
+      ? rooms.find(room => room.type === 'team' && room.id === rememberedId) ?? [...rooms].filter(room => room.type === 'team').sort((a, b) => (a.parentTeam ?? '').localeCompare(b.parentTeam ?? ''))[0]
       : preferredAgentRoom(rooms, userLevel ?? 3, rememberedId);
     if (preferred) handleSelectRoom(preferred.id, false);
-  }, [isLoading, pendingChatRoomId, rooms, availableRooms, selectedRoomId, userLevel, handleSelectRoom, selectionKey, roomAccess.state, view]);
+  }, [isLoading, pendingChatRoomId, rooms, availableRooms, selectedRoomId, userLevel, handleSelectRoom, selectionKey, roomAccess.state, view, teams, sessionUser, userId]);
   const selectedRoom = useMemo(
     () => availableRooms.find((r) => r.id === selectedRoomId && canOpenConversation(r)) || null,
     [availableRooms, selectedRoomId],
@@ -317,24 +319,24 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
     return <ApiErrorState />;
   }
 
-  // The section-level bar was merged into the room layout: sync health and the
-  // Matrix session now live at the foot of the room list, which is the only
-  // place they stay visible while the chat fills the panel.
-  const sessionFooter = (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <SyncStatusChip />
-      {/* B-6：连接好不好与能力有没有是 two questions，后者需要一个能展开看原因的入口。 */}
-      <ServerCapabilityPopover />
-      <ChatAuthBadge
-        compact
-        isLoggedIn={isLoggedIn}
-        userId={userId}
-        onLogout={logout}
-        onLoginClick={() => setShowLoginDialog(true)}
-        showLoginDialog={showLoginDialog}
-        onLoginDialogChange={setShowLoginDialog}
-      />
-    </div>
+  const pickerLabel = view === 'assistants' ? '切换助手' : view === 'teams' ? '切换团队' : '切换团队及任务房间';
+  const roomSelector = (
+    <Popover open={roomPicker.open} onOpenChange={roomPicker.setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" {...roomPicker.triggerProps} aria-label={pickerLabel} className="max-w-full gap-2 rounded-lg">
+          {view === 'assistants' ? <Bot className="size-4 shrink-0" /> : <Users className="size-4 shrink-0" />}
+          <span className="min-w-0 truncate">{selectedRoom?.type === 'team' ? selectedRoom.team?.teamName || selectedRoom.parentTeam || selectedRoom.name : selectedRoom?.name || (view === 'assistants' ? '选择助手' : view === 'teams' ? '选择团队' : '选择团队及任务房间')}</span>
+          {view !== 'assistants' && selectedRoom?.teamRole && <span className="text-xs text-muted-foreground">{selectedRoom.teamRole === 'admin' ? '管理员' : '成员'}</span>}
+          <ChevronDown className="size-3.5 shrink-0" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent aria-label={pickerLabel} align="start" className={`${view === 'all' ? 'h-[min(520px,70dvh)]' : ''} w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl p-0`} {...roomPicker.contentProps} onOpenAutoFocus={roomPicker.preserveFocus} onCloseAutoFocus={roomPicker.preserveFocus}>
+        {view === 'assistants'
+          ? <AssistantRoomList rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />
+          : view === 'teams' ? <TeamRoomList rooms={rooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoading={isLoading} attention={attention} attentionPending={attentionPending} />
+          : <ChatRoomSidebar embedded rooms={rooms} title="团队及任务房间" showInvites={false} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => roomPicker.setOpen(false)} attention={attention} attentionPending={attentionPending} />}
+      </PopoverContent>
+    </Popover>
   );
 
   return (
@@ -342,6 +344,10 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map(human => human.matrixUserID)}
         humanNames={Object.fromEntries((humans ?? []).filter(human => human.matrixUserID).map(human => [human.matrixUserID, human.name]))}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="workspace-content flex shrink-0 flex-wrap items-center justify-between gap-2 py-2">
+          <p className="text-xs text-muted-foreground">{view === 'teams' ? '这里展示你已加入的团队群聊，包括你管理和参与的团队。' : taskCollaboration ? '跟进任务协作、执行进展与交付内容。' : '与 AT 助手或你管理团队的团队助手私聊，交代目标并跟进进展。'}</p>
+        </div>
+        {view !== 'assistants' && <div className="workspace-content"><InviteInbox /></div>}
         {!taskCollaboration && <div className="shrink-0 px-4"><WelcomeSteps visible={isLoggedIn && availableRooms.length === 0} /></div>}
         {taskCollaboration && (
           <nav aria-label="任务协作导航" className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-sm sm:px-6">
@@ -356,11 +362,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
         )}
         {!selectedRoom && (
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-1 sm:px-6">
-          <Button ref={switcherRef} variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed((value) => !value)}>
-            <PanelLeftOpen className="size-4" />
-          </Button>
-          <div className="min-w-0 flex-1"><ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} /></div>
-          <SyncStatusChip />
+          <div className="min-w-0 flex-1">{roomSelector}</div>
         </div>
         )}
         {projectionNotices.map((notice) => (
@@ -379,40 +381,21 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
 
         {roomAccess.state === 'error' && <div role="status" className="mx-4 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground"><span className="flex-1">对话成员身份暂时无法核验，请重试。</span><Button variant="ghost" size="sm" onClick={() => { void roomAccess.refetch(); }}>重新核验</Button></div>}
         {pendingChatRoomId && rooms.some(room => room.id === pendingChatRoomId && !canOpenConversation(room)) && <p role="status" className="mx-4 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{LEADER_ACCESS_LABELS[rooms.find(room => room.id === pendingChatRoomId)!.access as keyof typeof LEADER_ACCESS_LABELS]}</p>}
+        {roomNotice && <p role="status" className="mx-4 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{roomNotice}</p>}
         {/* Login banner */}
         {!isLoggedIn && (
           <MatrixStatusBanner isLoggedIn={isLoggedIn} onLoginClick={() => setShowLoginDialog(true)} />
         )}
+        <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+          <DialogContent className="max-w-[95vw] sm:max-w-sm">
+            <DialogHeader><DialogTitle>重新连接对话</DialogTitle></DialogHeader>
+            <MatrixLoginForm onLoginSuccess={() => setShowLoginDialog(false)} />
+          </DialogContent>
+        </Dialog>
 
         {/* Main content: 2 or 3 column flex */}
         <div className="flex-1 flex min-h-0">
           {/* Left: Room list */}
-          {!isRoomListCollapsed && !narrowViewport && (
-            <ChatRoomSidebar
-              rooms={rooms} teamList={view === 'teams'}
-              title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined}
-              showInvites={view !== 'assistants'}
-              selectedRoomId={selectedRoomId}
-              onSelectRoom={handleSelectRoom}
-              isLoggedIn={isLoggedIn}
-              userId={userId}
-              isLoading={isLoading}
-              onCollapse={() => setIsRoomListCollapsed(true)}
-              footer={sessionFooter}
-              attention={attention}
-              attentionPending={attentionPending}
-            />
-
-          )}
-
-          <Dialog open={narrowViewport && mobileRoomListOpen} onOpenChange={setMobileRoomListOpen}>
-            <DialogContent aria-modal="true" showCloseButton={false} className="inset-y-0 left-0 top-0 flex h-dvh w-fit max-w-[88vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-background p-0 sm:max-w-[88vw] [&>div]:h-full" onCloseAutoFocus={event => { event.preventDefault(); switcherRef.current?.focus(); }}>
-              <DialogTitle className="sr-only">切换对话</DialogTitle>
-              <DialogDescription className="sr-only">选择平台助手、团队助手或其他对话</DialogDescription>
-              <ChatRoomSidebar rooms={rooms} teamList={view === 'teams'} title={view === 'teams' ? '我的团队' : view === 'assistants' ? '助手' : undefined} showInvites={view !== 'assistants'} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} isLoggedIn={isLoggedIn} userId={userId} isLoading={isLoading} onCollapse={() => setMobileRoomListOpen(false)} footer={sessionFooter} attention={attention} attentionPending={attentionPending} />
-            </DialogContent>
-          </Dialog>
-
           {/* Center: Chat panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
             {selectedRoom ? (
@@ -428,13 +411,11 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
                 room={selectedRoom}
                 taskId={taskCollaboration?.roomId === selectedRoom.id ? taskCollaboration.taskId : undefined}
                 managerName={selectedRoom.agentRole === 'operations' ? managers?.find((manager) => manager.roomID === selectedRoom.id)?.name : undefined}
-                rooms={availableRooms}
                 contextPanel={contextPanel}
                 onContextPanelChange={setContextPanel}
-                taskFeed={taskFeed}
-                headerLeading={taskCollaboration ? undefined : <Button ref={switcherRef} variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" aria-label="打开空间列表" title="打开对话列表" onClick={() => narrowViewport ? setMobileRoomListOpen(true) : setIsRoomListCollapsed(value => !value)}><PanelLeftOpen className="size-4" /></Button>}
-                headerTitle={taskCollaboration ? <span className="truncate font-semibold">{selectedRoom.name}</span> : <ConversationSwitcher rooms={rooms} relatedRooms={availableRooms} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} attention={attention} pending={attentionPending} />}
-                headerActions={<RelatedConversationButton rooms={availableRooms.filter(room => !room.archived)} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
+                taskBoard={taskBoard}
+                headerTitle={taskCollaboration ? <span className="truncate font-semibold">{selectedRoom.name}</span> : roomSelector}
+                headerActions={<RelatedConversationButton rooms={availableRooms.filter(room => !room.archived && canOpenConversation(room))} selectedRoomId={selectedRoomId} onSelectRoom={handleSelectRoom} />}
 
               />
               </AttachmentTeamsContext.Provider>
