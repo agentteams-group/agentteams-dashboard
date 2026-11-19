@@ -12,13 +12,21 @@ const ANIMAL_NAMES = [
   '企鹅', '海獭', '小象', '小鹿', '刺猬', '考拉', '小狮子', '青蛙',
 ];
 
+const MODEL_GIRLS = [
+  ['deepseek', 'DeepSeek'], ['gpt', 'GPT'], ['qwen', '千问'], ['claude', 'Claude'],
+  ['kimi', 'Kimi'], ['glm', 'GLM'], ['gemini', 'Gemini'], ['grok', 'Grok'],
+] as const;
+
 export function builtInAvatarCatalog(kind: AvatarKind): AvatarCatalog {
   const series = kind === 'agent'
-    ? [{ id: 'animal', label: '卡通动物' }, { id: 'pixelbot', label: '像素机器人' }]
+    ? [{ id: 'animal', label: '卡通动物' }, { id: 'pixelbot', label: '像素机器人' }, { id: 'model-girl', label: '模型娘' }]
     : [{ id: 'open-peeps', label: '手绘人物' }, { id: 'shapes', label: '几何图形' }];
   return {
     series,
     presets: series.flatMap(({ id, label }) => {
+      if (id === 'model-girl') {
+        return MODEL_GIRLS.map(([key, name]) => ({ id: `${id}-${key}`, series: id, label: name }));
+      }
       const names = id === 'animal' ? ANIMAL_NAMES : Array.from({ length: 6 }, (_, i) => `${label} ${i + 1}`);
       return names.map((name, i) => ({ id: `${id}-${i + 1}`, series: id, label: name }));
     }),
