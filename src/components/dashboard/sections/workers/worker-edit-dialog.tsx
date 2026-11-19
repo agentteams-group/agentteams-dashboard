@@ -6,13 +6,7 @@ import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WorkerHeartbeatControl } from './worker-heartbeat-control';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { WorkerRuntimeHandoff } from './worker-runtime-handoff';
 import {
   Dialog,
   DialogContent,
@@ -30,8 +24,7 @@ import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
-import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
-import { runtimeLabel } from '@/lib/runtime-labels';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -77,10 +70,6 @@ export function WorkerEditDialog({
   }
   const modelCatalog = buildModelCandidateCatalog(modelOptions ?? []);
   const currentRuntime = value.runtime || '';
-  const currentRuntimeListed =
-    !currentRuntime ||
-    isLegacyCopaw(currentRuntime) ||
-    CREATABLE_WORKER_RUNTIMES.some((option) => option.value === currentRuntime);
   const handleModelChange = (nextProvider: string, nextModel: string) => {
     const trimmed = nextProvider.trim();
     setProvider(nextProvider);
@@ -120,49 +109,8 @@ export function WorkerEditDialog({
               </p>
             ) : null}
           </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-1">
-              <Label>运行时</Label>
-              {isLegacyCopaw(value.runtime) && (
-                <InfoTip label="CoPaw 升级说明">
-                  将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据，并避免在任务执行中切换。
-                </InfoTip>
-              )}
-            </div>
-            <Select
-              value={value.runtime || ''}
-              disabled
-            >
-              <SelectTrigger className="w-full min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {isLegacyCopaw(value.runtime) && (
-                  <SelectItem value="copaw" disabled>
-                    CoPaw（存量，请升级到 QwenPaw）
-                  </SelectItem>
-                )}
-                {!currentRuntimeListed && (
-                  <SelectItem value={currentRuntime} disabled>
-                    {runtimeLabel(currentRuntime)}（存量）
-                  </SelectItem>
-                )}
-                {CREATABLE_WORKER_RUNTIMES.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              运行时切换暂不可用（上游运行时适配尚未就绪）
-            </p>
-            {isLegacyCopaw(value.runtime) && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                CoPaw 已停止新建，保存后升级到 QwenPaw。
-              </p>
-            )}
-          </div>
+          {open && workerName && <WorkerRuntimeHandoff key={workerName} name={workerName} runtime={currentRuntime} />}
+          {isLegacyCopaw(currentRuntime) && <p className="text-xs text-muted-foreground">CoPaw 已停止新建，可选择 QwenPaw 作为目标运行时。</p>}
           {!basicOnly && currentRuntime === 'openclaw' ? (
             <WorkerHeartbeatControl
               enabled={value.llmHeartbeatEnabled}
