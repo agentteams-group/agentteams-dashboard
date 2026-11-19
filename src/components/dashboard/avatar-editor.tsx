@@ -11,6 +11,13 @@ import { apiUrl, extractErrorDetail, requestJson } from '@/lib/api-base';
 import { avatarAssetUrl, avatarEndpoint, AVATAR_IMAGE_TYPES, builtInAvatarCatalog, defaultAvatarSeries, MAX_AVATAR_BYTES, type AvatarCatalog, type AvatarKind } from '@/lib/avatars';
 import { AccountAvatar, refreshAccountAvatar } from './account-avatar';
 
+const animeSeriesIcons: Record<string, { icon: string; label: string }> = {
+  'local-dragon-ball': { icon: '🌟', label: '星球系列' },
+  'local-slam-dunk': { icon: '🏀', label: '篮球系列' },
+  'local-naruto': { icon: '🍥', label: '忍者系列' },
+  'local-lets-and-go': { icon: '🏎️', label: '赛车系列' },
+};
+
 export function AvatarEditor({ kind, name, onClose }: {
   kind: AvatarKind;
   name: string;
@@ -92,10 +99,13 @@ export function AvatarEditor({ kind, name, onClose }: {
           </label>
         </div>
         <div role="group" aria-label="头像系列" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-          {catalog.series.map(item => (
-            <Button key={item.id} size="sm" variant={series === item.id ? 'outline' : 'ghost'}
-              aria-pressed={series === item.id} disabled={pending} onClick={() => setSeries(item.id)}>{item.label}</Button>
-          ))}
+          {catalog.series.map(item => {
+            const symbol = animeSeriesIcons[item.id];
+            return <Button key={item.id} size="sm" className={symbol ? 'w-8 px-0' : undefined} variant={series === item.id ? 'outline' : 'ghost'}
+              aria-label={symbol?.label} title={symbol?.label} aria-pressed={series === item.id} disabled={pending} onClick={() => setSeries(item.id)}>
+              {symbol ? <span aria-hidden="true">{symbol.icon}</span> : item.label}
+            </Button>;
+          })}
         </div>
         <div role="group" aria-label="预设头像" className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {choices.map(item => (

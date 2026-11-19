@@ -23,7 +23,7 @@ function managerDisplayName(
   lookup: RoomMetaByRoomId,
   multiple: boolean,
 ): string {
-  if (rid === manager.roomID) return multiple ? `平台助手 · ${manager.name}` : '平台助手';
+  if (rid === manager.roomID) return multiple ? `AgentTeams助手 · ${manager.name}` : 'AgentTeams助手';
   const named = lookup[rid]?.roomName;
   if (named) return named;
   return `${manager.name} 对话`;
