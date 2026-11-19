@@ -26,26 +26,29 @@ describe('compact workspace navigation', () => {
     render(<Sidebar {...props} activeSection="tasks" collapsed={false} onToggleCollapse={vi.fn()} />);
     expect(screen.queryByRole('button', { name: '自动化' })).toBeNull();
   });
-  it('uses hover intent, cancels passing pointers and keeps keyboard focus separate from navigation', () => {
+  it('requires activation to expand groups and navigate from the sidebar', () => {
     vi.useFakeTimers();
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     render(<Sidebar {...props} activeSection="chat" collapsed={false} onToggleCollapse={vi.fn()} />);
     const home = screen.getByRole('button', { name: '首页' });
+    const assets = screen.getByRole('button', { name: '资产中心' });
     fireEvent.focus(home);
-    expect(props.onNavClick).not.toHaveBeenCalled();
-    fireEvent.pointerEnter(home, { pointerType: 'touch' });
-    act(() => vi.advanceTimersByTime(150));
-    expect(props.onNavClick).not.toHaveBeenCalled();
     fireEvent.pointerEnter(home, { pointerType: 'mouse' });
-    act(() => vi.advanceTimersByTime(100));
-    fireEvent.pointerLeave(home, { pointerType: 'mouse' });
-    act(() => vi.advanceTimersByTime(100));
+    act(() => vi.advanceTimersByTime(200));
     expect(props.onNavClick).not.toHaveBeenCalled();
-    fireEvent.pointerEnter(home, { pointerType: 'mouse' });
-    act(() => vi.advanceTimersByTime(139));
+
+    fireEvent.pointerEnter(assets, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(assets).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(assets);
+    const models = screen.getByRole('button', { name: '模型' });
+    fireEvent.pointerEnter(models, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
     expect(props.onNavClick).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(props.onNavClick).toHaveBeenCalledExactlyOnceWith('overview');
+
+    fireEvent.click(models);
+    fireEvent.click(home);
+    expect(props.onNavClick.mock.calls).toEqual([['models'], ['overview']]);
     expect(screen.getByRole('button', { name: '助手' })).toHaveAttribute('title', '助手');
   });
   it('moves Tracing into observability even before collection is configured', () => {
