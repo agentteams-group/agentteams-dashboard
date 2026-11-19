@@ -111,7 +111,7 @@ export function DashboardHeader({
     // The login UI is rendered at the ROOT path (page.tsx shows LoginPage when
     // unauthenticated) — there is no /login route (404).
     void fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' }).finally(() => {
-      window.location.replace('/');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
     });
   };
 
@@ -171,7 +171,7 @@ export function DashboardHeader({
       </Button>
 
       <nav aria-label="面包屑" className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-        <span className="hidden sm:inline">AgentTeams</span><Image src="/agentteams-logo.svg" alt="AgentTeams" width={20} height={20} className="shrink-0 sm:hidden" /><ChevronRight className="size-3 shrink-0" aria-hidden />
+        <span className="hidden sm:inline">AgentTeams</span><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="AgentTeams" width={20} height={20} className="shrink-0 sm:hidden" /><ChevronRight className="size-3 shrink-0" aria-hidden />
         {groupLabel && groupLabel !== pageLabel && <><span className="hidden sm:inline">{groupLabel}</span><ChevronRight className="hidden size-3 shrink-0 sm:block" aria-hidden /></>}
         <span aria-current="page" title={pageLabel} className="truncate font-semibold text-foreground">{pageLabel}</span>
       </nav>

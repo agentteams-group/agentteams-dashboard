@@ -101,6 +101,21 @@ describe('installClientAuthFetch (F7 fetch patch)', () => {
     expect(lastInit().headers.get('authorization')).toBe('Bearer matrix-tok');
   });
 
+  it('keeps credential injection under the unified Dashboard path', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/dashboard');
+    try {
+      await window.fetch('/dashboard/api/agentteams/teams/');
+      expect(lastInit().headers.get('authorization')).toBe('Bearer matrix-tok');
+      expect(urls().at(-1)).toBe('/dashboard/api/agentteams/teams/');
+      await window.fetch('https://other.example/dashboard/api/agentteams/teams/');
+      expect(lastInit().headers.get('authorization')).toBeNull();
+      await window.fetch('//other.example/dashboard/api/agentteams/teams/');
+      expect(lastInit().headers.get('authorization')).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('never overrides an existing Authorization header (chat passes its own)', async () => {
     await window.fetch('/api/matrix/sync', { headers: { authorization: 'Bearer chat-token' } });
     expect(lastInit().headers.get('authorization')).toBe('Bearer chat-token');

@@ -628,7 +628,7 @@ export function BackendSetupPage({ onDone, reconfigure = false }: { onDone: () =
                 // (which reads ?setup=1 and forceSetup) never runs again,
                 // so the setup screen stays visible. A full replace clears
                 // the query and remounts Home as the login gate.
-                window.location.replace('/');
+                window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
               }}
               className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
             >

@@ -1,6 +1,6 @@
 .home { display: grid; gap: 18px; }
 .hero { position: relative; isolation: isolate; overflow: hidden; min-height: 390px; border: 1px solid var(--border); border-radius: 25px; padding: 34px clamp(20px,3vw,42px); display: flex; align-items: center; background: var(--background); }
-.hero::before { content: ''; position: absolute; z-index: -1; inset: 10px 10px 10px auto; width: 48%; border-radius: 20px; background: url('/images/workspace-home.jpg') center 53% / cover; }
+.hero::before { content: ''; position: absolute; z-index: -1; inset: 10px 10px 10px auto; width: 48%; border-radius: 20px; background: url('../../../../public/images/workspace-home.jpg') center 53% / cover; }
 .copy { width: 51%; container-type: inline-size; }
 .overline { margin-bottom: 14px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .copy h1 { font-size: clamp(26px,11cqi,64px); font-weight: 590; line-height: 1.06; letter-spacing: -.07em; }

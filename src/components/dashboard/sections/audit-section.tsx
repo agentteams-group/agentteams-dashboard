@@ -1,5 +1,6 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -48,7 +49,7 @@ function AuditReplayLink({ auditRef }: { auditRef: ParsedAuditRef }) {
       setOpening(true);
       setNotice(null);
       try {
-        const res = await fetch(`/api/agentteams/replay/export?room=${encodeURIComponent(auditRef.roomId)}`);
+        const res = await fetch(apiUrl(`/api/agentteams/replay/export?room=${encodeURIComponent(auditRef.roomId)}`));
         if (res.ok) {
           const data = (await res.json()) as { found?: boolean; replayId?: string };
           if (data.replayId) {

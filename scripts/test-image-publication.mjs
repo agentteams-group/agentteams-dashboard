@@ -31,6 +31,21 @@ for (const version of ['v1.4.0', 'v1.4.0-rc.1']) {
   });
 }
 
+test('unified entry publishes a separate /dashboard image without changing the root image tag', () => {
+  const workflow = readFileSync(new URL('.github/workflows/build.yml', root), 'utf8');
+  const unified = workflow.slice(workflow.indexOf('  publish-unified:'));
+  assert.match(unified, /NEXT_PUBLIC_BASE_PATH=\/dashboard/);
+  assert.match(unified, /-unified-\$\{\{ matrix\.arch \}\}/);
+  assert.match(unified, /needs: \[version, publish-unified\]/);
+  const output = commands('push-manifest', 'VERSION=v1.4.2-unified', 'PUSH_LATEST=');
+  assert.ok(output.includes(`${image}:v1.4.2-unified-amd64`));
+  assert.ok(output.includes(`${image}:v1.4.2-unified-arm64`));
+  assert.ok(output.includes(`-t ${image}:v1.4.2-unified`));
+  assert.ok(!output.includes(`-t ${image}:latest`));
+  const dockerfile = readFileSync(new URL('Dockerfile', root), 'utf8');
+  assert.match(dockerfile, /LABEL io\.agentteams\.dashboard-base-path=\$\{NEXT_PUBLIC_BASE_PATH\}/);
+});
+
 test('publication uses native runners and merges only after both builds succeed', () => {
   const workflow = readFileSync(new URL('.github/workflows/build.yml', root), 'utf8');
   assert.match(workflow, /arch: amd64\s+runner: ubuntu-24\.04/);

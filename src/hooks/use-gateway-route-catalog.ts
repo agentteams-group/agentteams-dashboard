@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+
 import { useEffect, useState } from 'react';
 
 // Read-only model gateway route catalog (Controller
@@ -48,7 +50,7 @@ export function useGatewayRouteCatalog(): GatewayRouteCatalogState {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/agentteams/gateway/ai-routes', {
+        const res = await fetch(apiUrl('/api/agentteams/gateway/ai-routes'), {
           cache: 'no-store',
         });
         if (cancelled) return;
