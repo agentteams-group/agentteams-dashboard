@@ -98,6 +98,30 @@ export const sectionMap: Record<string, React.ComponentType> = {
   'my-teams': ChatSection,
 };
 
+export const pageDescriptions: Record<string, string> = {
+  overview: '查看工作区的任务进展、团队和资源概况。',
+  chat: '与 AT 助手或你管理团队的团队助手私聊，交代目标并跟进进展。',
+  'my-teams': '在已加入的团队群聊中查看协作记录并参与讨论。',
+  tasks: '按状态跟进任务，查看子任务、依赖和协作房间。',
+  artifacts: '浏览、预览和下载项目任务的交付文件。',
+  'coding-runs': '查看编码执行记录、结果和原始日志。',
+  loops: '定义、发布和复用自动化流程，查看执行记录。',
+  models: '管理模型连接、AI 路由、访问凭证和限流策略。',
+  tools: '登记和验证 MCP 服务，管理 Agent 的使用授权。',
+  skills: '查看、上传和分发工作区技能。',
+  knowledge: '浏览可访问的 Agent 知识库、记忆文件和引用关系。',
+  files: '浏览和管理个人文件及团队文件。',
+  resources: '查看团队、成员及 Agent 的协作关系。',
+  'team-agents': '查看团队成员、协作关系与配置。',
+  workers: '管理 Agent，查看运行状态和配置。',
+  humans: '管理工作区用户、权限和协作账号。',
+  teams: '查看团队成员、协作关系与配置。',
+  'platform-assistant-settings': '配置平台助手的模型、提示词、技能与运行参数。',
+  'plugin-route:monitor-panel/monitor': '查看 Agent 的资源用量、运行指标和日志。',
+  tracing: '查看 Agent 执行链路、耗时、用量和错误。',
+  audit: '查询工作区操作记录并跟踪变更。',
+};
+
 export function AgentTeamsDashboard() {
   useDesktopInputFocus();
   const queryClient = useQueryClient();
@@ -260,6 +284,11 @@ export function AgentTeamsDashboard() {
     ? activePluginRoute?.contribution.title ?? '插件页面'
     : activeItem?.label || '总览';
   const activeMenu = workspaceMenuFor(activeSection);
+  const pageDescription = taskCollaboration && activeSection === 'chat'
+    ? '跟进任务协作、执行进展与交付内容。'
+    : pageDescriptions[activeSection] ?? (isPluginSection
+      ? (activePluginRoute?.contribution.description?.trim() || '此页面由已启用的工作区插件提供。')
+      : pageDescriptions.overview);
 
   const workerCount = workers?.length ?? 0;
   const humanCount = useMemo(() => humans?.filter(isManagedHuman).length ?? 0, [humans]);
@@ -384,6 +413,9 @@ export function AgentTeamsDashboard() {
             />
 
             <ConnectionBanner />
+            <p data-slot="page-description" className="workspace-content shrink-0 py-3 text-xs leading-5 text-muted-foreground">
+              {pageDescription}
+            </p>
 
             {/*
               Single tree for every section. The chat layout only differs in
@@ -408,7 +440,7 @@ export function AgentTeamsDashboard() {
                   </SectionErrorBoundary>
                 </div>
               ) : (
-                <main className="workspace-content flex-1 overflow-y-auto custom-scrollbar py-4">
+                <main className="workspace-content flex-1 overflow-y-auto custom-scrollbar pt-1 pb-4">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeSection}

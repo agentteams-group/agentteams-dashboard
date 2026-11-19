@@ -445,7 +445,6 @@ export function KnowledgeSection() {
     <div className="space-y-4 p-4">
       <SectionHeader
         title="知识库"
-        description="集群 Worker 记忆只读视图（workbench 插件同款数据面：Controller Docker 代理）：档案 / 文件 / 日记 memory/** / 知识库 digest/** + wikilink 图谱（2D/3D · 团队聚合）"
         actions={
           <div className="flex items-center gap-2">
             <NativeSelect

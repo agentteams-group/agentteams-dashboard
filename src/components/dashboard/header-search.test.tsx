@@ -61,3 +61,19 @@ it('opens the current search field with the global shortcut and closes it with E
   fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
   expect(input).toHaveFocus();
 });
+
+it('keeps search open through the results and closes after the mouse leaves both', () => {
+  render(<TooltipProvider><DashboardHeader isConnected workerCount={0} teamCount={0} managerCount={0} versionString={undefined} isRefreshingAll={false} searchQuery="" onSearchChange={vi.fn()} onNavClick={vi.fn()} onRefreshAll={vi.fn()} onOpenMobileMenu={vi.fn()} onOpenSettings={vi.fn()} /></TooltipProvider>);
+  const input = screen.getByRole('textbox', { name: '搜索工作区' });
+  fireEvent.click(input);
+  const result = screen.getByRole('button', { name: '任务看板' });
+  const moveFrom = (from: Element, to: Element) => {
+    const event = new MouseEvent('pointerout', { bubbles: true, relatedTarget: to });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    fireEvent(from, event);
+  };
+  moveFrom(input, result);
+  expect(result).toBeVisible();
+  moveFrom(result, screen.getByRole('navigation', { name: '面包屑' }));
+  expect(screen.queryByRole('region', { name: '常用页面' })).toBeNull();
+});

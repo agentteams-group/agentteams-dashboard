@@ -344,9 +344,6 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       <RuntimeMapProvider map={runtimeMap} humanUserIds={humans?.map(human => human.matrixUserID)}
         humanNames={Object.fromEntries((humans ?? []).filter(human => human.matrixUserID).map(human => [human.matrixUserID, human.name]))}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="workspace-content flex shrink-0 flex-wrap items-center justify-between gap-2 py-2">
-          <p className="text-xs text-muted-foreground">{view === 'teams' ? '这里展示你已加入的团队群聊，包括你管理和参与的团队。' : taskCollaboration ? '跟进任务协作、执行进展与交付内容。' : '与 AT 助手或你管理团队的团队助手私聊，交代目标并跟进进展。'}</p>
-        </div>
         {view !== 'assistants' && <div className="workspace-content"><InviteInbox /></div>}
         {!taskCollaboration && <div className="shrink-0 px-4"><WelcomeSteps visible={isLoggedIn && availableRooms.length === 0} /></div>}
         {taskCollaboration && (

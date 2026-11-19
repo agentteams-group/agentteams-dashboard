@@ -1040,7 +1040,6 @@ export function TeamAgentsWorkbench({ toolbar, search = '' }: { toolbar?: ReactN
     <div className="space-y-3" data-testid="team-agents-section" data-layout={layout}>
       <SectionHeader
         title="团队与智能体"
-        description="查看团队成员、协作关系与配置。"
         onRefresh={refresh}
         isRefreshing={isRefetching}
         meta={toolbar}

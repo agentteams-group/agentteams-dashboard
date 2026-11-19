@@ -177,6 +177,11 @@ export function DashboardHeader({
       </nav>
       <div className="workspace-search relative min-w-0" data-open={paletteOpen}
         onPointerEnter={event => { if (isDesktopHover(event)) { setPaletteOpen(true); searchInputRef.current?.focus({ preventScroll: true }); } }}
+        onPointerLeave={event => {
+          if (event.pointerType !== 'mouse' || isComposing()) return;
+          setPaletteOpen(false);
+          if (document.activeElement === searchInputRef.current) searchInputRef.current?.blur();
+        }}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaletteOpen(false); }}>
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
