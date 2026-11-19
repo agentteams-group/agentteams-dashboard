@@ -156,7 +156,7 @@ describe('buildRooms', () => {
     const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1' })]);
     expect(rooms).toHaveLength(1);
     expect(rooms[0].type).toBe('manager');
-    expect(rooms[0].name).toBe('平台助手');
+    expect(rooms[0].name).toBe('AgentTeams助手');
   });
 
   it('distinguishes named platform assistants when multiple Managers exist', () => {
@@ -164,7 +164,7 @@ describe('buildRooms', () => {
       manager({ name: 'default', roomID: '!default:matrix' }),
       manager({ name: 'second', roomID: '!second:matrix' }),
     ]);
-    expect(rooms.map(room => room.name)).toEqual(['平台助手 · default', '平台助手 · second']);
+    expect(rooms.map(room => room.name)).toEqual(['AgentTeams助手 · default', 'AgentTeams助手 · second']);
   });
 
   it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
@@ -178,7 +178,7 @@ describe('buildRooms', () => {
       manager({ name: 'default', roomID: '!admin-dm:matrix', leaderDMRoomID: '!leader-dm:matrix' }),
     ]);
     expect(rooms.map((r) => r.id)).toEqual(['!admin-dm:matrix', '!leader-dm:matrix']);
-    expect(rooms.map((r) => r.name)).toEqual(['平台助手', 'default 对话']);
+    expect(rooms.map((r) => r.name)).toEqual(['AgentTeams助手', 'default 对话']);
     expect(rooms.every((r) => r.type === 'manager')).toBe(true);
   });
 
@@ -197,7 +197,7 @@ describe('buildRooms', () => {
       [manager({ name: 'default', roomID: '!sv0d:matrix' })],
       { '!sv0d:matrix': { roomName: 'Manager: default' } },
     );
-    expect(rooms[0].name).toBe('平台助手');
+    expect(rooms[0].name).toBe('AgentTeams助手');
   });
 
   it('builds human rooms from human.rooms', () => {
@@ -338,7 +338,7 @@ describe('buildRooms', () => {
     expect(rooms.filter((r) => r.id === '!team:matrix')).toHaveLength(1);
     expect(rooms.find((r) => r.id === '!team:matrix')).toMatchObject({ type: 'team', name: 'alpha 团队房间' });
     expect(rooms.find((r) => r.id === '!w:matrix')).toMatchObject({ type: 'worker', name: 'w1 房间' });
-    expect(rooms.find((r) => r.id === '!ops:matrix')).toMatchObject({ type: 'manager', name: '平台助手' });
+    expect(rooms.find((r) => r.id === '!ops:matrix')).toMatchObject({ type: 'manager', name: 'AgentTeams助手' });
   });
 });
 
