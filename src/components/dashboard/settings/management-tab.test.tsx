@@ -13,6 +13,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it('keeps automation collapsed in settings and opens the existing page explicitly', () => {
+  render(<ManagementTab />);
+  const summary = screen.getByText('自动化');
+  const section = summary.closest('details')!;
+  expect(section.open).toBe(false);
+  fireEvent.click(summary);
+  fireEvent.click(screen.getByRole('button', { name: '打开自动化', hidden: true }));
+  expect(useSectionStore.getState().activeSection).toBe('loops');
+  expect(useAgentTeamsStore.getState().settingsOpen).toBe(false);
+});
+
 it('points to observability from settings and dismisses the settings overlay', () => {
   render(<ManagementTab />);
   fireEvent.click(screen.getByRole('button', { name: '打开观测与治理' }));

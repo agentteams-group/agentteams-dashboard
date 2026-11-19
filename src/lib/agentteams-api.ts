@@ -115,7 +115,7 @@ export interface TeamResponse extends LlmTuningFields {
   teamName: string;
   phase: TeamPhase;
   description: string;
-  admin: { name: string } | null;
+  admin: { name: string; matrixUserId?: string } | null;
   humanMembers: (TeamHumanMember | string)[];
   leaderName: string;
   leaderHeartbeat: { enabled: boolean; every: string } | null;

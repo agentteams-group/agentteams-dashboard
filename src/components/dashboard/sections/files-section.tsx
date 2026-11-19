@@ -1,5 +1,7 @@
 'use client';
 
+
+import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMatrixStore } from '@/lib/matrix-store';
 import {
@@ -1306,14 +1308,14 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
       }}
     >
       {/* 顶部：人员 + 配额 + 工具条 */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {canAdmin ? (
-              <div className="space-y-1">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">人员</span>
                 <Select value={humanName} onValueChange={(v) => { setHumanName(v); enterDir(''); }}>
-                  <SelectTrigger className="h-11 w-[200px] md:h-9" aria-label="选择人员">
+                  <SelectTrigger className="h-11 w-40 md:h-9" aria-label="选择人员">
                     <SelectValue placeholder="选择人员" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1336,7 +1338,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
               <button
                 type="button"
                 onClick={() => setQuotaOpen(true)}
-                className="flex h-11 min-w-[190px] flex-col justify-center gap-1 rounded-md border px-3 text-left text-xs hover:bg-accent/40 md:h-9"
+                className="flex h-11 w-40 flex-col justify-center gap-1 rounded-md px-2 text-left text-xs hover:bg-accent/40 md:h-9"
                 aria-label="编辑配额"
               >
                 <span className="flex items-center justify-between gap-3">
@@ -1414,7 +1416,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
         </div>
 
         {/* 面包屑 + 全局搜索 + 视图切换 + 排序 */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
           {searchOn ? (
             <div className="flex min-w-0 flex-1 items-center gap-2 text-xs" data-testid="files-search-summary">
               <span className="truncate font-medium">搜索结果 · {searchRanked.matched} 项</span>
@@ -1509,7 +1511,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
                 ))}
               </div>
 
-              <select
+              <NativeSelect
                 aria-label="排序键"
                 value={sort.key}
                 onChange={(e) => setSort(nextFileSort(sort, e.target.value as FileSort['key']))}
@@ -1519,7 +1521,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
                 <option value="size">大小</option>
                 <option value="type">类型</option>
                 <option value="updatedAt">修改时间</option>
-              </select>
+              </NativeSelect>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1559,7 +1561,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
         <div
           role="status"
           aria-live="polite"
-          className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+          className="sr-only"
           data-testid="files-updating-bar"
         >
           <Loader2 className="size-3 animate-spin" />
@@ -1754,7 +1756,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
         </div>
 
         {panes.detail === 'detail' && detailNode(detailTarget())}
-        {panes.detail === 'empty-state' && (
+        {panes.detail === 'empty-state' && entries.length > 0 && (
           <div className="hidden w-[380px] shrink-0 md:block" data-testid="files-detail-rail">
             <DetailPlaceholder mode="pick" loading={loading} empty={entries.length === 0} />
           </div>

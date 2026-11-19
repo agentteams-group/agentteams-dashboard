@@ -10,7 +10,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import type { RoomInfo } from './sections/chat/room-info';
 
-const labels = ['助手', '我的团队', '工作台', '资产中心', '成员与团队', '观测与治理'];
+const labels = ['首页', '助手', '我的团队', '工作台', '资产中心', '成员与团队', '观测与治理'];
 const props = { activeSection: 'models', countMap: { 'my-workbench': 3 }, sectionsWithNotifications: new Set<string>(), onNavClick: vi.fn(), mode: 'embedded' as const };
 
 beforeEach(() => {
@@ -19,9 +19,38 @@ beforeEach(() => {
   useExtensionStore.getState().clear();
   useExtensionStore.getState().add('menuItems', 'monitor', { id: 'dashboard', label: '监控面板', target: { type: 'plugin-route', routeId: 'dashboard' } });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('compact workspace navigation', () => {
+  it('keeps automation out of the sidebar workbench group', () => {
+    render(<Sidebar {...props} activeSection="tasks" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '自动化' })).toBeNull();
+  });
+  it('requires activation to expand groups and navigate from the sidebar', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    render(<Sidebar {...props} activeSection="chat" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const home = screen.getByRole('button', { name: '首页' });
+    const assets = screen.getByRole('button', { name: '资产中心' });
+    fireEvent.focus(home);
+    fireEvent.pointerEnter(home, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(assets, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(assets).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(assets);
+    const models = screen.getByRole('button', { name: '模型' });
+    fireEvent.pointerEnter(models, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+
+    fireEvent.click(models);
+    fireEvent.click(home);
+    expect(props.onNavClick.mock.calls).toEqual([['models'], ['overview']]);
+    expect(screen.getByRole('button', { name: '助手' })).toHaveAttribute('title', '助手');
+  });
   it('moves Tracing into observability even before collection is configured', () => {
     render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
     const tracing = screen.getByRole('button', { name: 'Tracing' });
@@ -46,10 +75,10 @@ describe('compact workspace navigation', () => {
     expect(useAgentTeamsStore.getState().settingsOpen).toBe(true);
   });
 
-  it('keeps the same six destinations in the mobile drawer', () => {
+  it('keeps the same destinations in the mobile drawer', () => {
     render(<MobileSidebar {...props} countMap={{ ...props.countMap, humans: 1 }} open onClose={vi.fn()} />);
     const nav = screen.getByRole('navigation', { name: '主要功能' });
-    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(6);
+    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(7);
     for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
     expect(props.onNavClick).not.toHaveBeenCalled();
@@ -123,7 +152,7 @@ describe('compact workspace navigation', () => {
     expect(screen.queryByRole('button', { name: 'Managers' })).toBeNull();
   });
 
-  it('opens the existing Leader DM from the assistant entry for a Team user', () => {
+  it('opens the assistant area without overwriting its remembered private conversation', () => {
     useAgentTeamsStore.setState({ userLevel: 2 });
     useHitlInboxStore.setState({ pendingChatRoomId: null });
     const leader: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [], access: 'joined' };
@@ -131,7 +160,7 @@ describe('compact workspace navigation', () => {
     render(<Sidebar {...props} agentRooms={[leader]} collapsed={false} onToggleCollapse={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '助手' }));
     expect(props.onNavClick).toHaveBeenCalledWith('chat');
-    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe(leader.id);
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
   });
 
   it('leaves the remembered selection to ChatSection instead of forcing a default DM', () => {

@@ -165,7 +165,7 @@ export function ChatRoomHeader({
         {taskAction ?? <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
-          label="任务拓扑"
+          label="任务"
           onClick={() => onTogglePanel('tasks')}
         />}
         {!agentRole && <ContextChip

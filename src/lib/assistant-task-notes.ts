@@ -124,7 +124,11 @@ export function taskDuration(item: AssistantTaskNoteItem, now: number): string {
   const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
   const start = Date.parse(since);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return '耗时待同步';
-  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  return formatElapsedDuration(Math.max(0, end - start));
+}
+
+export function formatElapsedDuration(milliseconds: number): string {
+  const seconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);

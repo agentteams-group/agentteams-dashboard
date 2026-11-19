@@ -412,7 +412,7 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
     // Preserve the pre-existing Tool Guard interaction; QwenPaw's queue
     // commands require exact request IDs through the new contract.
-    expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '同意并发送' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /拒绝/ })).toBeInTheDocument();
   });
 
@@ -556,7 +556,7 @@ Type /approve to approve, or send any message to deny.`,
       assertRendered: () => {
         // Legacy rendering remains compatible; no new CoPaw integration.
         expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '同意并发送' })).toBeInTheDocument();
       },
     },
     {

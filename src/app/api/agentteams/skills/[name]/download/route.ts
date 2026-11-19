@@ -7,6 +7,8 @@ import {
   SkillEntry,
   SKILLS_BUCKET,
   SKILLS_METADATA_PREFIX,
+  GLOBAL_SKILLS_PREFIX,
+  CUSTOM_SKILL_MARKER,
 } from '@/lib/skill-center-types';
 import { saveSkillMetadata } from '@/lib/skill-center-storage';
 import { zipSync, unzipSync } from 'fflate';
@@ -29,13 +31,12 @@ async function getSkillMetadata(client: Client, skillName: string): Promise<Skil
   }
 }
 
-async function listSkillFiles(client: Client, skillName: string): Promise<string[]> {
-  const prefix = `${skillName}/`;
+async function listSkillFiles(client: Client, skillName: string, bucket = SKILLS_BUCKET, prefix = `${skillName}/`): Promise<string[]> {
   // Recursive listing is required: skills ship nested resources like
   // `scripts/**` and `references/**` that must be preserved when the package
   // is re-zipped for Worker distribution. The previous non-recursive mode
   // silently dropped everything under sub-directories.
-  const stream = client.listObjects(SKILLS_BUCKET, prefix, true);
+  const stream = client.listObjects(bucket, prefix, true);
 
   const files: string[] = [];
   for await (const obj of stream) {
@@ -45,6 +46,7 @@ async function listSkillFiles(client: Client, skillName: string): Promise<string
     if (!relative) continue;
     // Skip directory placeholder objects some backends emit.
     if (relative.endsWith('/')) continue;
+    if (relative === CUSTOM_SKILL_MARKER) continue;
     files.push(relative);
   }
 
@@ -65,9 +67,9 @@ function isMonorepoCache(fileNames: string[]): boolean {
   return rootSkillMds.length > 1;
 }
 
-async function readObject(client: Client, skillName: string, relativePath: string): Promise<Buffer> {
-  const key = `${skillName}/${relativePath}`;
-  const stream = await client.getObject(SKILLS_BUCKET, key);
+async function readObject(client: Client, skillName: string, relativePath: string, bucket = SKILLS_BUCKET, prefix = `${skillName}/`): Promise<Buffer> {
+  const key = `${prefix}${relativePath}`;
+  const stream = await client.getObject(bucket, key);
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -107,7 +109,16 @@ export async function GET(
     const client = createMinioClient();
     const metadata = await getSkillMetadata(client, name);
     if (!metadata) {
-      return NextResponse.json({ error: '技能不存在' }, { status: 404 });
+      const prefix = `${GLOBAL_SKILLS_PREFIX}${name}/`;
+      const files = await listSkillFiles(client, name, bucket, prefix);
+      if (!files.includes('SKILL.md')) {
+        return NextResponse.json({ error: '技能不存在' }, { status: 404 });
+      }
+      const entries: Record<string, Uint8Array> = {};
+      for (const file of files) {
+        entries[file] = new Uint8Array(await readObject(client, name, file, bucket, prefix));
+      }
+      return serveZip(name, zipSync(entries));
     }
 
     if (metadata.source === 'nacos') {

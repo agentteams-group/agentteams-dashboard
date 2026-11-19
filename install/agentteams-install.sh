@@ -73,7 +73,8 @@
 #   AGENTTEAMS_DASHBOARD              Install agentteams-dashboard management UI (default: 1)
 #   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.4.1, independent of AgentTeams version)
 #   AGENTTEAMS_PORT_DASHBOARD         Dashboard host port (default: 13000)
-#   AGENTTEAMS_UNIFIED_ENTRY          single-entry mode (0/1, default 0). When 1
+#   AGENTTEAMS_UNIFIED_ENTRY          single-entry mode (0/1, default 1 from Core 1.2.8;
+#                                     earlier versions keep the original ports). When 1
 #                                     only the Higress gateway port is published;
 #                                     Console/Element/dashboard stay internal and
 #                                     /api + /dashboard are served behind the entry.

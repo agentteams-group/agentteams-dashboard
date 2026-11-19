@@ -1,5 +1,100 @@
 .workspace {
   isolation: isolate;
+  --workspace-gutter: clamp(12px, 1.55vw, 24px);
+}
+
+.workspace :global(.workspace-header),
+.workspace :global(.workspace-content) {
+  padding-inline: var(--workspace-gutter);
+}
+
+.workspace :global([aria-label='面包屑']),
+.workspace :global([data-task-column-title]) { font-size: 0.9375rem; }
+
+.workspace :global([data-slot='section-header'] > div) { max-width: 100%; flex-wrap: wrap; }
+.workspace :global([data-slot='section-header'] .flex) { max-width: 100%; flex-wrap: wrap; }
+
+.workspace :global([data-nav-section]) {
+  height: 36px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.workspace :global([data-nav-section][aria-current='page']) {
+  background: #f1f2f2;
+  color: #22252a;
+}
+
+.workspace :global([data-nav-section][aria-current='page'])::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--action-primary);
+}
+
+.workspace :global(input:not([type='checkbox']):not([type='radio']):not([type='range'])),
+.workspace :global(textarea),
+.workspace :global([data-slot='select-trigger']) {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .workspace :global(input:not([type='checkbox']):not([type='radio']):not([type='range']):hover),
+  .workspace :global(textarea:hover),
+  .workspace :global([data-slot='select-trigger']:hover) {
+    border-color: #d9ded8;
+    box-shadow: 0 0 5px 2px rgb(60 60 60 / 8%);
+  }
+}
+
+.workspace :global(input:focus-visible),
+.workspace :global(textarea:focus-visible),
+.workspace :global([data-slot='select-trigger']:focus-visible) {
+  outline: 1px solid color-mix(in srgb, var(--ring) 65%, transparent);
+  outline-offset: -1px;
+  border-color: var(--border);
+  box-shadow: 0 0 5px 2px rgb(60 60 60 / 8%);
+}
+
+.workspace :global(.workspace-search) {
+  position: relative;
+  min-width: 154px;
+  flex: 0 1 176px;
+  transition: flex-basis 180ms ease;
+}
+
+.workspace :global(.workspace-header-main) { flex: 1; }
+
+.workspace :global(.workspace-search[data-open='true']) {
+  flex-basis: 310px;
+}
+
+.workspace :global(.workspace-search[data-open='true'] input) {
+  border-color: color-mix(in srgb, var(--foreground) 20%, var(--border));
+  box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
+}
+
+.workspace :global(.workspace-search[data-open='true'])::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  height: 6px;
+}
+
+@media (max-width: 767px) {
+  .workspace :global(.workspace-header-main) { flex-basis: 100%; flex-wrap: nowrap; }
+  .workspace :global(.workspace-search) { flex-grow: 1; flex-basis: 154px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace :global(.workspace-search) { transition: none; }
 }
 
 .workspace :global([data-slot='card']) {

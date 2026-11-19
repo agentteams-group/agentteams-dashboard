@@ -1,18 +1,15 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Bot,
   Users,
   MessageSquare,
-  Wifi,
-  WifiOff,
   Server,
   Cpu,
   Zap,
   GitBranch,
-  Clock,
   Activity,
   CheckCircle2,
   XCircle,
@@ -21,7 +18,6 @@ import {
   Plus,
   UserPlus,
   MessageCircle,
-  ExternalLink,
   ListTodo,
   ChevronRight,
 } from 'lucide-react';
@@ -32,14 +28,10 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { WorkerResponse, TeamResponse, ManagerResponse, InfrastructureInfo } from '@/lib/agentteams-api';
-import { useClusterStatus } from '@/hooks/use-agentteams-cluster-status';
-import { useVersion } from '@/hooks/use-agentteams-version';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
-import { useLatestVersions } from '@/hooks/use-latest-versions';
-import { DASHBOARD_REPOSITORY } from '@/lib/dashboard-runtime';
 import { computeInsights, type Insight } from '@/lib/insights-engine';
 import type { DeploymentMode } from '@/components/dashboard/nav-items';
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
@@ -56,39 +48,7 @@ import { mainTasks } from '@/lib/task-hierarchy';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { PluginWidgetsGrid } from '@/components/plugins/plugin-widgets';
 import { HitlInboxCard } from '@/components/dashboard/sections/hitl-inbox-card';
-
-// ============ Auto-refresh countdown hook ============
-// F-RefreshLoop: the previous implementation called `setCountdown` once per
-// second, and the parent OverviewSection re-rendered. Combined with the
-// section subscribing to the AgentTeams store without a selector (every
-// store update — including the per-poll connectionLatency — forced a
-// re-render), this pushed React 19 over its max-update-depth and tripped
-// minified error #185 on first paint. Use a ref for the start time and
-// a stable intervalMs; never setState from the render body.
-function useRefreshCountdown(intervalMs: number) {
-  const [countdown, setCountdown] = useState(() => Math.ceil(intervalMs / 1000));
-  const intervalRef = useRef(intervalMs);
-  // eslint-disable-next-line react-hooks/refs
-  intervalRef.current = intervalMs;
-
-  useEffect(() => {
-    let startTime = Date.now();
-    setCountdown(Math.ceil(intervalMs / 1000));
-    const tick = () => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, Math.ceil((intervalRef.current - elapsed) / 1000));
-      setCountdown(remaining);
-      if (remaining <= 0) {
-        startTime = Date.now();
-        setCountdown(Math.ceil(intervalRef.current / 1000));
-      }
-    };
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-
-  return countdown;
-}
+import { WorkspaceHome } from './workspace-home';
 
 // ============ AnimatedStat component (kept from original) ============
 function AnimatedStat({ value, label, icon: Icon, color, sub }: { value: number | null; label: string; icon: React.ComponentType<{ className?: string }>; color: string; sub?: React.ReactNode }) {
@@ -208,35 +168,6 @@ function HealthCard({ name, healthy, icon: Icon, detail }: { name: string; healt
   );
 }
 
-// ----- Repo quick links (top status bar) -----
-
-const FALLBACK_AGENTTEAMS_REPO = 'https://github.com/agentscope-ai/AgentTeams';
-
-function RepoLinks() {
-  const { data: latestVersions } = useLatestVersions();
-  const repos = [
-    { name: 'AgentTeams', href: latestVersions?.repositories.agentteams ?? FALLBACK_AGENTTEAMS_REPO },
-    { name: 'Dashboard', href: latestVersions?.repositories.dashboard ?? DASHBOARD_REPOSITORY },
-  ];
-  return (
-    <div className="hidden sm:flex items-center gap-2">
-      {repos.map((repo) => (
-        <a
-          key={repo.name}
-          className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-primary transition-colors"
-          href={repo.href}
-          target="_blank"
-          rel="noreferrer"
-          title={repo.href}
-        >
-          {repo.name}
-          <ExternalLink className="size-3 opacity-60" />
-        </a>
-      ))}
-    </div>
-  );
-}
-
 // ----- Active work panel (project-centric team view) -----
 
 const PROJECT_STATUS_META: Record<BoardProject['status'], { label: string; className: string }> = {
@@ -348,8 +279,6 @@ export function OverviewSection() {
   // re-render the entire overview (and every animated stat counter below)
   // on every poll — past max-update-depth on first paint under React 19.
   const isConnected = useAgentTeamsStore((s) => s.isConnected);
-  const { data: clusterStatus } = useClusterStatus();
-  const { data: versionData } = useVersion();
   const { data: workers } = useWorkers();
   const { data: teams } = useTeams();
   const { data: managers } = useManagers();
@@ -432,57 +361,9 @@ export function OverviewSection() {
       .slice(0, 10);
   }, [notifications]);
 
-  // Auto-refresh countdown (15s interval)
-  const countdown = useRefreshCountdown(15000);
-
   return (
     <div className="space-y-4">
-      {/* ===== Row 1: Compact Status Bar ===== */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-card p-3 flex flex-wrap items-center gap-2"
-      >
-        {/* Connection Status */}
-        <Badge
-          className={`gap-1 ${
-            isConnected
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-          }`}
-          variant="outline"
-        >
-          {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-          {isConnected ? '已连接' : '未连接'}
-        </Badge>
-
-        {/* Controller Version */}
-        {versionData?.controller && (
-          <Badge variant="outline" className="text-xs gap-1">
-            <GitBranch className="w-3 h-3" />
-            v{versionData.controller}
-          </Badge>
-        )}
-
-        {/* K8s Mode */}
-        {(clusterStatus?.kubeMode || versionData?.kubeMode) && (
-          <Badge variant="outline" className="text-xs gap-1 border-cyan-500/30 text-cyan-600 dark:text-cyan-400">
-            <Cpu className="w-3 h-3" />
-            K8s 模式
-          </Badge>
-        )}
-
-        {/* Repo quick links */}
-        <RepoLinks />
-
-        {/* Uptime / Last Connected */}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground ml-auto">
-          <Clock className="w-3 h-3" />
-          <span>自动刷新 {countdown}s</span>
-          <Activity className="w-3 h-3 ml-1 animate-pulse text-emerald-500" />
-        </div>
-      </motion.div>
-
+      <WorkspaceHome teams={teams} managers={managers} workerCount={workers?.length} tasks={taskBoard.tasks} loading={taskBoard.isLoading} degraded={taskBoard.degraded} />
       {/* ===== Row 2: Key Metrics (4 cards) ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>

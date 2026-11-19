@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
-import { CircleCheck, CircleX, ExternalLink, ListTodo, Loader2 } from 'lucide-react';
+import { CircleCheck, CircleX, ListTodo, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { selectTasksByRooms, useTaskStore, type TaskEntry } from '@/lib/task-store';
@@ -15,40 +15,32 @@ import type { WorkflowItem } from '@/lib/a2ui/workflow';
 import type { BoardTask } from '@/hooks/use-task-board';
 import { useApiTaskBoard } from '@/hooks/use-projects';
 import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
-import { buildTaskDag } from '@/lib/project-dag';
-import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
+import { TASK_STATUS, taskStatus } from '@/lib/task-status';
+import { TaskCollaborationActions } from '../../task-collaboration-actions';
+import { completedTaskDuration, TaskDetailSheet, taskMetaQuery } from '../../task-detail-sheet';
 
 const COMPLETE_STATUSES = new Set(['completed', 'success', 'done']);
 const ERROR_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
 
 function statusLabel(status?: string): string {
-  if (!status) return '等待中';
-  if (COMPLETE_STATUSES.has(status)) return '已完成';
-  if (ERROR_STATUSES.has(status)) return '失败';
-  if (status === 'in_progress' || status === 'running') return '进行中';
-  return status;
+  return taskStatus(status).label;
 }
 
 function StatusPill({ status }: { status?: string }) {
-  const className = COMPLETE_STATUSES.has(status ?? '')
-    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-    : ERROR_STATUSES.has(status ?? '')
-      ? 'bg-red-500/15 text-red-700 dark:text-red-400'
-      : 'bg-violet-500/15 text-violet-700 dark:text-violet-400';
-  return <Badge className={`${className} shrink-0 text-xs`}>{statusLabel(status)}</Badge>;
+  return <Badge variant="outline" className="shrink-0 gap-1.5 border-border bg-transparent text-xs text-foreground"><StepGlyph status={status} />{statusLabel(status)}</Badge>;
 }
 
 function StepGlyph({ status }: { status?: string }) {
   if (COMPLETE_STATUSES.has(status ?? '')) {
-    return <CircleCheck className="h-3 w-3 shrink-0 text-emerald-500" aria-hidden="true" />;
+    return <CircleCheck style={{ color: TASK_STATUS.completed.color }} className="h-3 w-3 shrink-0" aria-hidden="true" />;
   }
   if (ERROR_STATUSES.has(status ?? '')) {
-    return <CircleX className="h-3 w-3 shrink-0 text-red-500" aria-hidden="true" />;
+    return <CircleX style={{ color: TASK_STATUS.failed.color }} className="h-3 w-3 shrink-0" aria-hidden="true" />;
   }
   if (status === 'in_progress' || status === 'running') {
-    return <Loader2 className="h-3 w-3 shrink-0 animate-spin text-violet-500" aria-hidden="true" />;
+    return <Loader2 style={{ color: TASK_STATUS.in_progress.color }} className="h-3 w-3 shrink-0 motion-safe:animate-spin" aria-hidden="true" />;
   }
-  return <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-dashed border-muted-foreground/50" aria-hidden="true" />;
+  return <span style={{ backgroundColor: taskStatus(status).color }} className="h-2.5 w-2.5 shrink-0 rounded-full" aria-hidden="true" />;
 }
 
 function stepLabel(step: WorkflowItem, index: number): string {
@@ -95,6 +87,8 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
         <StatusPill status={status} />
       </div>
 
+      <div className="space-y-1 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {completed}/{steps.length} 已完成</span><span>{steps.length ? Math.round(completed / steps.length * 100) : COMPLETE_STATUSES.has(status ?? '') ? 100 : 0}%</span></div><progress aria-label="子任务进度" max={steps.length || 1} value={steps.length ? completed : COMPLETE_STATUSES.has(status ?? '') ? 1 : 0} className="h-1.5 w-full accent-[var(--action-primary)]" /></div>
+
       {steps.length > 0 ? (
         <ul className="space-y-1" aria-label="任务节点">
           {steps.map((step, index) => (
@@ -125,8 +119,7 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
           className="h-6 shrink-0 gap-1 px-2 text-xs"
           onClick={openProjectDetail}
         >
-          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          任务中心
+          查看项目详情
         </Button>
       </div>
     </div>
@@ -134,20 +127,41 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
 }
 
 /**
- * 房间「任务」tab：只聚合本房间真实产生的工作流消息（TaskStore 由全局
- * /sync 写入）。底座没有「按房间查任务」的服务端接口，因此不按项目/团队
- * 反查，避免把别的房间的任务塞进来；空态明确说明数据来源。
+ * 聚合当前来源房间或执行房间的任务；Controller 每五秒刷新，Matrix
+ * 工作流消息补充尚未进入任务索引的卡片。
  */
-export function RoomTasksPanel({ roomId }: { roomId: string }) {
+export type RoomTaskBoard = { tasks: BoardTask[]; isLoading?: boolean; degraded?: boolean };
+const EMPTY_TASK_BOARD: RoomTaskBoard = { tasks: [] };
+
+export function useRoomTaskData(roomId: string, board: RoomTaskBoard = EMPTY_TASK_BOARD) {
   const roomIds = useMemo(() => new Set([roomId]), [roomId]);
   const tasks = useTaskStore(useShallow((state) => selectTasksByRooms(state.tasks, roomIds)));
+  const roots = mainTasks(board.tasks).filter(task => task.roomId?.replace(/^room:/, '') === roomId || [task, ...subtasksOf(task, board.tasks)].some(child => child.executionRoomId?.replace(/^room:/, '') === roomId))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const snapshots = tasks.filter(task => !roots.some(root => root.runId === task.runId || root.projectId === task.runId));
+  return { board, roots, snapshots, count: roots.length + snapshots.length };
+}
+
+export type RoomTaskData = ReturnType<typeof useRoomTaskData>;
+
+export function RoomTasksPanel({ roomId, data }: { roomId: string; data?: RoomTaskData }) {
+  return data ? <RoomTaskCards data={data} /> : <StandaloneRoomTasks roomId={roomId} />;
+}
+
+function StandaloneRoomTasks({ roomId }: { roomId: string }) {
   const board = useApiTaskBoard();
+  const data = useRoomTaskData(roomId, board);
+  return <RoomTaskCards data={data} />;
+}
+
+function RoomTaskCards({ data: { board, roots, snapshots } }: { data: RoomTaskData }) {
   const boardTasks = board.tasks;
-  const root = mainTasks(boardTasks).find(task => [task, ...subtasksOf(task, boardTasks)].some(child => child.executionRoomId?.replace(/^room:/, '') === roomId));
+  const [selection, setSelection] = useState<{ id: string; team?: string } | null>(null);
+  const detailTrigger = useRef<HTMLButtonElement>(null);
+  const selectedTask = boardTasks.find(task => task.runId === selection?.id && task.teamId === selection.team) ?? null;
+  const selectTask = (task: BoardTask) => setSelection({ id: task.runId, team: task.teamId });
 
-  if (root) return <RoomTaskTopology root={root} tasks={boardTasks} roomId={roomId} />;
-
-  if (tasks.length === 0) {
+  if (roots.length === 0 && snapshots.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <ListTodo className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
@@ -161,28 +175,52 @@ export function RoomTasksPanel({ roomId }: { roomId: string }) {
 
   return (
     <div className="h-full space-y-2 overflow-y-auto custom-scrollbar p-2">
-      {tasks.map((task) => (
+      {roots.map(root => <RoomBoardTaskCard key={`${root.teamId ?? ''}/${root.runId}`} root={root} tasks={boardTasks} onOpenDetails={button => {
+        detailTrigger.current = button;
+        selectTask(root);
+      }} />)}
+      {snapshots.map((task) => (
         <RoomTaskCard key={task.runId} task={task} />
       ))}
+      {selection && <TaskDetailSheet
+        task={selectedTask}
+        tasks={boardTasks}
+        teamId={selectedTask?.teamId}
+        onSelectTask={selectTask}
+        onClose={() => setSelection(null)}
+        restoreFocus={() => detailTrigger.current?.focus({ preventScroll: true })}
+      />}
     </div>
   );
 }
 
-function RoomTaskTopology({ root, tasks, roomId }: { root: BoardTask; tasks: BoardTask[]; roomId: string }) {
-  const [selectedId, setSelectedId] = useState(root.runId);
-  const children = subtasksOf(root, tasks);
-  const family = [root, ...children];
-  const ids = new Set(family.map(task => task.runId));
-  const dag = buildTaskDag(family.map(task => ({ ...task, dependsOn: task.dependsOn.some(id => ids.has(id)) ? task.dependsOn.filter(id => ids.has(id)) : task.parentTaskId && ids.has(task.parentTaskId) ? [task.parentTaskId] : [] })));
-  const selected = family.find(task => task.runId === selectedId) ?? root;
+function RoomBoardTaskCard({ root, tasks, onOpenDetails }: {
+  root: BoardTask;
+  tasks: BoardTask[];
+  onOpenDetails: (_button: HTMLButtonElement) => void;
+}) {
+  const knownDuration = completedTaskDuration(root);
+  const detail = useQuery({
+    ...taskMetaQuery(root.runId, root.teamId),
+    enabled: root.status === 'completed' && !knownDuration && root.kind !== 'project-summary',
+  });
+  const duration = completedTaskDuration(root, detail.data);
   const progress = subtaskProgress(root, tasks);
-  const colors = { unknown: { fill: 'var(--muted)', stroke: 'var(--border)', text: 'var(--foreground)' } };
-  const labels: Record<string, string> = { pending: '待办', assigned: '已派发', in_progress: '执行中', submitted: '待验收', completed: '已完成', blocked: '阻塞', revision: '需修订', failed: '失败' };
-  return <div className="h-full overflow-auto space-y-3 p-4">
-    <h3 className="text-sm font-semibold">任务拓扑（依赖关系）<span className="ml-2 font-normal text-muted-foreground">{root.title}</span></h3>
-    {children.length > 0 && <div className="space-y-2 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {progress.completed}/{progress.total} 已完成</span><span>{progress.percent}%</span></div><progress className="h-1.5 w-full accent-primary" aria-label="子任务进度" max={100} value={progress.percent} /></div>}
-    <p className="text-xs text-muted-foreground">顶部为主任务，下方展示子任务及前置依赖。点击节点查看状态和执行者。</p>
-    <div className="flex justify-center overflow-auto rounded-xl border border-border/60 bg-muted/10 p-3"><ProjectDagSvg dag={dag} nodeColors={colors} statusLabels={labels} neutral nodeWidth={220} nodeHeight={40} gapY={84} title="任务拓扑" selectedNodeId={selected.runId} currentNodeId={family.find(task => task.executionRoomId?.replace(/^room:/, '') === roomId)?.runId} onNodeClick={setSelectedId} /></div>
-    <div className="space-y-2 border-t pt-3 text-sm"><p className="font-medium">{selected.title}</p><p>{labels[selected.status] ?? selected.status} · {selected.assignedTo || '未分配'}</p></div>
-  </div>;
+  const percent = progress.total ? progress.percent : root.status === 'completed' ? 100 : 0;
+  return <article aria-label={root.title} className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3">
+    <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{root.title}</h3><StatusPill status={root.status} /></div>
+    <div className="space-y-2 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {progress.completed}/{progress.total} 已完成</span><span>{percent}%</span></div><progress className="h-1.5 w-full accent-[var(--action-primary)]" aria-label="子任务进度" max={100} value={percent} /></div>
+    {root.status === 'completed' && (
+      <p className="text-xs tabular-nums text-muted-foreground">
+        总耗时 {duration ?? (detail.isLoading ? '读取中…' : '暂无记录')}
+      </p>
+    )}
+    <div className="border-t border-border/60 pt-2">
+      <TaskCollaborationActions task={root} tasks={tasks}>
+        <Button variant="ghost" size="sm" className="text-xs" onClick={event => onOpenDetails(event.currentTarget)}>
+          查看详情
+        </Button>
+      </TaskCollaborationActions>
+    </div>
+  </article>;
 }

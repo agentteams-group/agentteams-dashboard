@@ -9,16 +9,18 @@ import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { ThreadPanel } from '../structures/ThreadPanel';
 import { FilesBrowserPanel } from '../views/worker-files-panel';
 import { MembersPanel } from './MembersSidebar';
-import { RoomTasksPanel } from './RoomTasksPanel';
+import { RoomTasksPanel, type RoomTaskData } from './RoomTasksPanel';
 import { RoomContextTabs } from './RoomContextTabs';
 
 export type RoomContextTab = 'tasks' | 'members' | 'files' | 'thread';
 
 interface RoomContextPanelProps {
+  showCloseButton?: boolean;
   canSend?: boolean;
   showMembers?: boolean;
   showTasks?: boolean;
   roomId: string;
+  roomTaskData?: RoomTaskData;
   fileScope?: CollaborationFileScope;
   roomAttachments: ReactNode;
   activeTab: RoomContextTab;
@@ -37,13 +39,14 @@ interface RoomContextPanelProps {
 }
 
 /**
- * 房间右侧唯一的上下文面板（320px）：任务/成员/文件/话题共用一条
+ * 房间右侧悬浮的上下文面板（320px）：任务/成员/文件/话题共用一条
  * tab 头与关闭按钮，数据全部来自 AgentTeams 底座（Matrix + Controller），
  * <lg 统一收成右侧抽屉 —— 不再出现宽度 208/320/256~600 三套侧栏。
  */
 export function RoomContextPanel({
   canSend = true,
   roomId,
+  roomTaskData,
   fileScope,
   roomAttachments,
   activeTab,
@@ -61,11 +64,12 @@ export function RoomContextPanel({
   workerMatrixUserIds,
   showMembers = true,
   showTasks = true,
+  showCloseButton = true,
 }: RoomContextPanelProps) {
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(20rem,85vw)] max-lg:shadow-xl">
+    <aside aria-label="会话上下文面板" className="pointer-events-auto absolute inset-y-0 right-0 z-40 flex w-80 max-w-[85%] flex-col overflow-hidden border-l border-border bg-card shadow-xl max-lg:fixed max-lg:max-w-[85vw]">
       <RoomContextTabs activeTab={activeTab} showMembers={showMembers} showTasks={showTasks} onTabChange={tab => { if (tab) onTabChange(tab); }} memberCount={roomMembers.length} threadCount={threadRoots.length}>
-        <Button
+        {showCloseButton ? <Button
           variant="ghost"
           size="sm"
           className="ml-auto h-6 w-6 shrink-0 p-0"
@@ -74,11 +78,11 @@ export function RoomContextPanel({
           aria-label="关闭上下文面板"
         >
           <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
+        </Button> : <span className="ml-auto w-6 shrink-0" />}
       </RoomContextTabs>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === 'tasks' && <RoomTasksPanel roomId={roomId} />}
+        {activeTab === 'tasks' && <RoomTasksPanel roomId={roomId} data={roomTaskData} />}
 
         {activeTab === 'members' && (
           <MembersPanel roomMembers={roomMembers} senderStatusMap={senderStatusMap} />

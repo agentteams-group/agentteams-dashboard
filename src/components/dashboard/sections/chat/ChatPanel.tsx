@@ -9,10 +9,7 @@ import { ChatRoom, type ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 import styles from './agent-conversation.module.css';
-import { AssistantTaskNote } from './components/AssistantTaskNote';
-import { ConversationTaskTips } from './components/ConversationTaskTips';
-import { RoomContextTabs } from './components/RoomContextTabs';
-import type { AssistantTaskFeed } from '@/hooks/use-assistant-task-feed';
+import { useRoomTaskData, type RoomTaskBoard } from './components/RoomTasksPanel';
 import { ManagerModelGate } from './manager-model-gate';
 import { RoomArchiveAction } from './room-archive';
 import { useRoomArchiveStatus } from '@/hooks/use-room-archive';
@@ -22,14 +19,12 @@ export type { ChatContextPanel } from './ChatRoom';
 interface ChatPanelProps {
   room: RoomInfo;
   taskId?: string;
-  /** Rooms used to scope human intervention tasks. */
-  rooms?: RoomInfo[];
   contextPanel: ChatContextPanel;
   onContextPanelChange: (_panel: ChatContextPanel) => void;
   canSend?: boolean;
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   className?: string;
-  taskFeed?: AssistantTaskFeed;
+  taskBoard?: RoomTaskBoard;
   headerLeading?: ReactNode;
   headerTitle?: ReactNode;
   headerActions?: ReactNode;
@@ -39,13 +34,12 @@ interface ChatPanelProps {
 export function ChatPanel({
   room,
   taskId,
-  rooms,
   contextPanel,
   onContextPanelChange,
   canSend = true,
   onSendMessage,
   className = '',
-  taskFeed,
+  taskBoard,
   headerLeading,
   headerTitle,
   headerActions,
@@ -53,8 +47,9 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const userLevel = useAgentTeamsStore(state => state.userLevel);
   const archiveStatus = useRoomArchiveStatus(room.id);
+  const roomTaskData = useRoomTaskData(room.id, taskBoard);
   const renderPanel = (configured = true) => (
-    <div className={`${styles.conversation} flex h-full min-w-0 ${className}`}>
+    <div className={`${styles.conversation} relative flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
         <ChatRoom
           taskRoom={!!taskId || archiveStatus.data?.is_task_room === true}
@@ -66,6 +61,9 @@ export function ChatPanel({
           roomName={room.name}
           roomWorkerName={room.workerName}
           agentRole={room.agentRole}
+          roomTaskData={taskBoard ? roomTaskData : undefined}
+          managedTeam={room.team?.name ?? room.parentTeam}
+          managedTeamLabel={room.team?.teamName}
           team={room.team}
           workerMatrixUserIds={room.workerMatrixUserIds ?? (room.matrixUserId ? [room.matrixUserId] : undefined)}
           roomPhase={room.phase}
@@ -76,8 +74,6 @@ export function ChatPanel({
             <RoomArchiveAction room={room} />
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}
-            {room.agentRole === 'leader' && <AssistantTaskNote key={room.id} room={room} rooms={rooms ?? [room]} taskFeed={taskFeed} />}
-            {contextPanel === null && (room.agentRole || room.type === 'team' || taskFeed) && <ConversationTaskTips key={room.id} room={room} taskFeed={taskFeed} />}
           </>}
           contextPanel={contextPanel}
           onContextPanelChange={onContextPanelChange}
@@ -86,8 +82,6 @@ export function ChatPanel({
           className="h-full"
         />
       </div>
-      {contextPanel === null && (room.agentRole || room.type === 'team') && <div className="w-10 shrink-0 border-l border-border bg-muted/20"><RoomContextTabs activeTab={null} vertical showMembers={!room.agentRole} onTabChange={onContextPanelChange} /></div>}
-
     </div>
   );
   return managerName ? <ManagerModelGate name={managerName}>{renderPanel}</ManagerModelGate> : renderPanel();

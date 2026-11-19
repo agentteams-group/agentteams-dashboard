@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { WorkerDetailDialog } from './worker-detail-dialog';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 
-vi.mock('@/hooks/use-agent-health', () => ({ useAgentHealth: () => null }));
+vi.mock('@/hooks/use-agent-health', () => ({ useAgentHealth: () => ({ overall: 100, availability: 100, stability: 100, readiness: 100, label: '健康' }) }));
 
 const worker = {
   name: 'w1',
@@ -41,6 +41,11 @@ describe('WorkerDetailDialog（只读详情）', () => {
     expect(screen.queryByText('工具执行安全')).not.toBeInTheDocument();
     expect(screen.queryByText('运行时配置生效状态')).not.toBeInTheDocument();
     expect(screen.queryByText('已分发技能（磁盘文件）')).not.toBeInTheDocument();
+  });
+
+  it('omits health scores from Worker details', () => {
+    render(<WorkerDetailDialog worker={worker} onOpenChange={() => {}} />);
+    for (const label of ['可用性', '稳定性', '就绪度', '健康']) expect(screen.queryByText(label)).not.toBeInTheDocument();
   });
 
   it('keeps activity and diagnostic information available in details', () => {

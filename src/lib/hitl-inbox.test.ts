@@ -81,6 +81,28 @@ function interventionMsg(
 }
 
 describe('isHitlResolutionReply', () => {
+  it('uses the original message relation for id-less feedback without resolving another request', () => {
+    const store = useHitlInboxStore.getState();
+    store.clearConfirmations();
+    ingestHitlTimelineEvents('!feedback', [msg('$first', '@worker:test', 1, { body: RUNTIME_APPROVAL_BODY }), msg('$second', '@worker:test', 2, { body: RUNTIME_APPROVAL_BODY })], '@me:test');
+    const body = '【审批意见】\n审批意见：同意本次操作';
+    store.resolveRoomReply('!feedback', '@me:test', body, '@me:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(2);
+    store.resolveRoomReply('!feedback', '@me:test', body, '@me:test', '$second');
+    expect(Object.values(useHitlInboxStore.getState().confirmations).map(item => item.eventId)).toEqual(['$first']);
+    expect(useHitlInboxStore.getState().resolutions['$second'].answer).toBe(body);
+    store.clearConfirmations();
+  });
+
+  it('does not turn feedback into an authoritative result for a native request id', () => {
+    const store = useHitlInboxStore.getState();
+    store.clearConfirmations();
+    ingestHitlTimelineEvents('!feedback', [msg('$bound', '@worker:test', 1, { body: RUNTIME_APPROVAL_BODY + '\nRequest ID: req-bound' })], '@me:test');
+    store.resolveRoomReply('!feedback', '@me:test', '【审批意见】\n审批意见：同意本次操作', '@me:test', '$bound');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(1);
+    expect(useHitlInboxStore.getState().resolutions['$bound']).toBeUndefined();
+    store.clearConfirmations();
+  });
   it('recognises /approve and 拒绝', () => {
     expect(isHitlResolutionReply('/approve')).toBe(true);
     expect(isHitlResolutionReply('  拒绝  ')).toBe(true);

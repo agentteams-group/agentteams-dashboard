@@ -436,7 +436,6 @@ export function ArtifactsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="产物"
-        description="项目任务产物（Controller 项目端点）：全部 / 类型 / 项目→任务，点文件名直接预览与下载"
         isLive
         onRefresh={() => void refresh()}
         isRefreshing={loading}

@@ -447,7 +447,11 @@ describe('ChatRoom read-position dual-write', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     renderChatRoom();
 
+    const composer = screen.getByRole('textbox', { name: '消息' });
+    fireEvent.change(composer, { target: { value: '尚未发送的草稿' } });
+    const timeline = screen.getByTestId('virtuoso');
     fireEvent.click(screen.getByTitle('显示成员'));
+    expect(screen.getByRole('complementary', { name: '会话上下文面板' })).toHaveClass('absolute', 'right-0');
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
@@ -455,6 +459,48 @@ describe('ChatRoom read-position dual-write', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
     expect(screen.queryByText('当前会话暂无附件')).toBeNull();
+    expect(screen.getByTestId('virtuoso')).toBe(timeline);
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
+    expect(composer).toHaveValue('尚未发送的草稿');
+  });
+
+  it('opens the floating panel on mouse entry and closes only after leaving the whole panel', async () => {
+    vi.stubGlobal('PointerEvent', MouseEvent);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true } as MediaQueryList));
+    try {
+      renderChatRoom({ integratedSidebar: true, roomTaskData: { board: { tasks: [] }, roots: [], snapshots: [], count: 0 } });
+      const toggle = screen.getByRole('button', { name: '展开上下文面板' });
+      const composer = screen.getByRole('textbox', { name: '消息' });
+      const timeline = screen.getByTestId('virtuoso');
+      fireEvent.change(composer, { target: { value: '保留草稿和滚动位置' } });
+      expect(screen.getByRole('button', { name: '任务 0' })).toBeInTheDocument();
+
+      const pointer = (type: string, target: HTMLElement, relatedTarget?: HTMLElement) => {
+        const event = new MouseEvent(type, { bubbles: true, relatedTarget });
+        Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+        fireEvent(target, event);
+      };
+      pointer('pointerover', toggle);
+      const panel = screen.getByRole('complementary', { name: '会话上下文面板' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: '收起上下文面板' })).toBe(toggle);
+      pointer('pointerout', toggle, panel);
+      pointer('pointerover', panel, toggle);
+      expect(panel).toBeInTheDocument();
+      pointer('pointerout', panel, composer);
+      await waitFor(() => expect(panel).not.toBeInTheDocument());
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByTestId('virtuoso')).toBe(timeline);
+      expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
+      expect(composer).toHaveValue('保留草稿和滚动位置');
+
+      fireEvent.click(toggle, { detail: 0 });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.click(toggle, { detail: 0 });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('lists room attachments, skips redacted files, and returns to the list after preview', () => {
