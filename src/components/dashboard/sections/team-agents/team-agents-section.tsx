@@ -28,6 +28,7 @@ import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { filterTeamRows, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
+import { TeamTopologyView } from './team-topology-view';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -62,6 +63,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const createWorker = useCreateWorker();
   const [location, setLocation] = useState<ReturnType<typeof readLocation>>({ tab: view ?? 'teams', team: null, agent: null, edit: false });
   const [search, setSearch] = useState('');
+  const [teamView, setTeamView] = useState<'cards' | 'topology'>('cards');
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -137,6 +139,12 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
         <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
+        {view === 'teams' && (
+          <div role="group" aria-label="团队视图" className="inline-flex shrink-0 rounded-lg border p-0.5">
+            <Button size="sm" variant={teamView === 'cards' ? 'secondary' : 'ghost'} aria-pressed={teamView === 'cards'} onClick={() => setTeamView('cards')}>卡片</Button>
+            <Button size="sm" variant={teamView === 'topology' ? 'secondary' : 'ghost'} aria-pressed={teamView === 'topology'} onClick={() => setTeamView('topology')}>拓扑</Button>
+          </div>
+        )}
       </div>}
       actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
         <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
@@ -151,7 +159,15 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
             <p className="p-6 text-sm text-muted-foreground">{teamsQuery.isLoading || workersQuery.isLoading ? '正在加载…' : '未找到该资源，请返回列表刷新。'}</p>}
     </div> : <>
       {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
-        location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
+        view === 'teams' && teamView === 'topology' ? (
+          <TeamTopologyView
+            rows={teamPage.items}
+            workers={workers}
+            hasSearch={Boolean(query)}
+            onOpenTeam={(name) => navigate('teams', 'team', name)}
+            onOpenWorker={(name) => navigate('agents', 'agent', name)}
+          />
+        ) : location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
           {teamPage.items.map(({ team }) => {
             const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);

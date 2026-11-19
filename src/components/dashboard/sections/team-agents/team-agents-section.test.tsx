@@ -209,11 +209,62 @@ function selectTab(name: RegExp) {
 beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
 afterEach(cleanup);
 
+describe('Teams page view switch', () => {
+  it('defaults to the existing cards and switches only the body', () => {
+    renderSection('#console/resources/teams', 'teams');
+    const views = screen.getByRole('group', { name: '团队视图' });
+    const cards = within(views).getByRole('button', { name: '卡片' });
+    const topology = within(views).getByRole('button', { name: '拓扑' });
+    const search = screen.getByRole('textbox', { name: '搜索团队或 Agent' });
+    const create = screen.getByRole('button', { name: '创建团队' });
+    const refresh = screen.getByRole('button', { name: '刷新' });
+    expect(cards).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('团队卡片')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '团队拓扑' })).not.toBeInTheDocument();
+
+    fireEvent.click(topology);
+    expect(topology).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.hash).toBe('#console/resources/teams');
+    expect(screen.getByRole('textbox', { name: '搜索团队或 Agent' })).toBe(search);
+    expect(screen.getByRole('button', { name: '创建团队' })).toBe(create);
+    expect(screen.getByRole('button', { name: '刷新' })).toBe(refresh);
+    expect(screen.queryByLabelText('团队卡片')).not.toBeInTheDocument();
+
+    const teamSelector = screen.getByRole('group', { name: '选择团队' });
+    fireEvent.click(within(teamSelector).getByRole('button', { name: 'Beta' }));
+    expect(screen.getByRole('group', { name: 'Beta 拓扑图' })).toHaveTextContent('lead2');
+    fireEvent.change(search, { target: { value: 'w1' } });
+    expect(screen.getByRole('group', { name: 'Alpha 拓扑图' })).toHaveTextContent('w1');
+    expect(within(teamSelector).queryByRole('button', { name: 'Beta' })).not.toBeInTheDocument();
+
+    fireEvent.click(cards);
+    expect(screen.getByLabelText('团队卡片')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '搜索团队或 Agent' })).toHaveValue('w1');
+    expect(screen.queryByRole('region', { name: '团队拓扑' })).not.toBeInTheDocument();
+  });
+
+  it('opens the existing team and Agent destinations from topology nodes', () => {
+    renderSection('#console/resources/teams', 'teams');
+    fireEvent.click(screen.getByRole('button', { name: '拓扑' }));
+    let graph = screen.getByRole('group', { name: 'Alpha 拓扑图' });
+    fireEvent.click(within(graph).getByRole('button', { name: /Alpha/ }));
+    expect(window.location.hash).toBe('#console/resources/teams?team=alpha');
+    expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '团队视图' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+    graph = screen.getByRole('group', { name: 'Alpha 拓扑图' });
+    fireEvent.click(within(graph).getByRole('button', { name: /w1/ }));
+    expect(window.location.hash).toBe('#console/resources/workers?agent=w1');
+  });
+});
+
 describe('Team and Agent resource cards', () => {
   it('shows the independent Agent page without page tabs or Managers', () => {
     renderSection('#console/resources/workers', 'agents');
     expect(screen.getByRole('heading', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('group', { name: '团队视图' })).not.toBeInTheDocument();
     const header = screen.getByRole('heading', { name: 'Agent' }).closest('[data-slot="section-header"]') as HTMLElement;
     expect(within(header).getByRole('textbox', { name: '搜索团队或 Agent' })).toBeInTheDocument();
     expect(screen.queryByText('4 个 Agent')).toBeNull();
@@ -223,6 +274,7 @@ describe('Team and Agent resource cards', () => {
   it('shows an independent team page and preserves a selected team on refresh', () => {
     renderSection('#console/resources/teams?team=alpha&edit=true', 'teams');
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('group', { name: '团队视图' })).not.toBeInTheDocument();
     expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
     expect(window.location.hash).toBe('#console/resources/teams');
