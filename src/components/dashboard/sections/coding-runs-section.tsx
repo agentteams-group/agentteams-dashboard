@@ -90,7 +90,6 @@ export function CodingRunsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="编码执行记录"
-        description="编码 CLI 的一次性执行记录与原始日志（只读）。与聊天区的 QwenPaw 会话上下文不是同一数据源。"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
       />

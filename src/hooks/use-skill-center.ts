@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { SkillEntry } from '@/lib/skill-center-types';
 
-export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builtin' | null, page?: number, pageSize?: number) {
+export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builtin' | null, page?: number, pageSize?: number, { enabled = true }: { enabled?: boolean } = {}) {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (source) params.set('source', source);
@@ -12,6 +12,7 @@ export function useSkills(search?: string, source?: 'custom' | 'nacos' | 'builti
 
   return useQuery<{ skills: SkillEntry[]; total: number }, Error>({
     queryKey: ['agentteams-skills', query],
+    enabled,
     queryFn: () => agentteamsApi.listSkills(query),
     placeholderData: { skills: [], total: 0 },
     throwOnError: false,

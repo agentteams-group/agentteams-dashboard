@@ -1,7 +1,8 @@
 'use client';
 
 import { OverflowText } from '@/components/dashboard/overflow-text';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { currentHashParams, hashForSection } from '@/lib/nav-hash';
 import { Wifi } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
@@ -48,6 +49,16 @@ export function McpServersSection() {
   // 「谁接了它」列（上游 #1250 部署目录，Controller 只读）——MinIO 注册表不带
   // 接线关系，此目录是权威源。旧 Controller 404 → catalog.off=true → 隐藏列。
   const catalog = useMcpCatalog();
+
+  useEffect(() => {
+    const syncSearch = () => {
+      if (window.location.hash.split('?')[0] !== `#${hashForSection('tools')}`) return;
+      setSearch(currentHashParams()?.get('q') ?? '');
+    };
+    syncSearch();
+    window.addEventListener('hashchange', syncSearch);
+    return () => window.removeEventListener('hashchange', syncSearch);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     refetch();

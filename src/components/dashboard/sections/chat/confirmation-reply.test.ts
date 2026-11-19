@@ -25,6 +25,11 @@ describe('interaction activity presentation', () => {
 });
 
 describe('buildConfirmationReply', () => {
+  it('routes contextual approval feedback to the original owner instead of another projected worker', () => {
+    const reply = buildConfirmationReply('【审批意见】\n审批意见：拒绝本次操作', WORKER_2, [WORKER]);
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+    expect(reply.content).toContain('审批意见：拒绝本次操作');
+  });
   it('targets a native approval owner when a task room has no Worker projection', () => {
     const reply = buildConfirmationReply('/approval approve req-1', WORKER_2, undefined);
     expect(reply.content).toBe('@other /approval approve req-1');

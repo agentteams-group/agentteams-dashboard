@@ -78,6 +78,7 @@ function buildRequest(name: string): NextRequest {
 describe('GET /api/agentteams/skills/[name]/download', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockList.mockImplementation(() => makeListIterator([]));
   });
 
   it('returns 400 for an invalid skill name', async () => {
@@ -93,6 +94,23 @@ describe('GET /api/agentteams/skills/[name]/download', () => {
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toContain('技能不存在');
+  });
+
+  it('downloads a Controller-published skill with nested resources from the global catalog', async () => {
+    const prefix = 'agents/global/skills/travel-card/';
+    mockList.mockImplementation((bucket, key) => makeListIterator(bucket === 'agentteams-fs' && key === prefix
+      ? [{ name: prefix + 'SKILL.md' }, { name: prefix + 'scripts/render.py' }]
+      : []));
+    mockGet.mockImplementation(async (bucket, key) => {
+      if (bucket === 'agentteams-fs' && key.startsWith(prefix)) return makeStream(key.endsWith('SKILL.md') ? validSkillMd : scriptContent);
+      throw new Error('not found');
+    });
+    const res = await GET(buildRequest('travel-card'), { params: Promise.resolve({ name: 'travel-card' }) });
+    expect(res.status).toBe(200);
+    const { unzipSync } = await import('fflate');
+    const files = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    expect(Object.keys(files).sort()).toEqual(['SKILL.md', 'scripts/render.py']);
+    expect(Array.from(files['scripts/render.py'])).toEqual(Array.from(scriptContent));
   });
 
   it('returns 400 for nacos-sourced skills when nacos is not configured', async () => {

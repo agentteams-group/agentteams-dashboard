@@ -36,11 +36,10 @@ function AssistantSettings({ userLevel }: { userLevel: number }) {
   if (isError) return <ApiErrorState onRetry={() => void refetch()} />;
   return <div className="space-y-4">
     <SectionHeader title="平台助手设置" onRefresh={() => void refetch()} isRefreshing={isRefetching}
-      actions={<><ManagersSection compact selectedManager={selected} /><Button size="sm" variant="outline" onClick={() => {
+      actions={<>{managers.length === 0 && <ManagersSection compact />}<Button size="sm" variant="outline" onClick={() => {
         if (selected?.roomID) openChatRoom(selected.roomID);
         else window.location.hash = hashForSection('chat');
       }}><ArrowLeft className="size-4" />返回对话</Button></>} />
-    <p className="text-sm text-muted-foreground">配置平台助手的模型、提示词、技能与运行参数。</p>
     {managers.length > 1 && <div className="flex items-center gap-3">
       <label id="assistant-instance-label" className="text-sm font-medium">助手实例</label>
       <Select value={selected?.name ?? ''} onValueChange={name => {

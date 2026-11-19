@@ -127,6 +127,7 @@ export interface RouteComponentProps {
 export interface RouteContribution {
   id: string;
   title: string;
+  description?: string;
   component: ComponentType<RouteComponentProps>;
 }
 

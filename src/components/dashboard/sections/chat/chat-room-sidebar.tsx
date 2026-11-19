@@ -119,7 +119,7 @@ function shortUserId(userId: string | null | undefined): string | null {
  *  server-side join/leave proxy (matrixApi.joinRoom / leaveRoom). On a 4xx
  *  response we surface `errcode`/`error` inline; on success the sync loop
  *  drops the entry automatically. */
-function InviteInbox() {
+export function InviteInbox() {
   const invites = useInviteStore((s) => s.invites);
   const homeserver = useMatrixStore((s) => s.homeserver);
   const accessToken = useMatrixStore((s) => s.accessToken);
@@ -256,6 +256,7 @@ export function ChatRoomSidebar({
   title = '协作空间',
   showInvites = true,
   teamList = false,
+  embedded = false,
 }: {
   rooms: RoomInfo[];
   selectedRoomId: string | null;
@@ -271,6 +272,7 @@ export function ChatRoomSidebar({
   title?: string;
   showInvites?: boolean;
   teamList?: boolean;
+  embedded?: boolean;
 }) {
   const [filter, setFilter] = useState('');
   // 12.15（装验反馈「加上像插件那样的分类」）：空间/全部/群组/私聊——群组=成员>2
@@ -343,11 +345,11 @@ export function ChatRoomSidebar({
 
   return (
     <div
-      className={`relative shrink-0 flex flex-col border-r border-border bg-muted/20 overflow-hidden ${isResizing ? 'select-none' : ''}`}
-      style={{ width, maxWidth: '88vw' }}
+      className={`relative shrink-0 flex flex-col bg-background overflow-hidden ${embedded ? 'h-full w-full' : 'border-r border-border'} ${isResizing ? 'select-none' : ''}`}
+      style={embedded ? undefined : { width, maxWidth: '88vw' }}
     >
       {/* Drag handle: right edge, Element-style col-resize */}
-      <div
+      {!embedded && <div
         role="separator"
         aria-orientation="vertical"
         aria-label="调整会话列表宽度"
@@ -367,7 +369,7 @@ export function ChatRoomSidebar({
           persistSidebarWidth(next);
         }}
         className={`absolute top-0 right-[-2px] w-1 h-full cursor-col-resize z-10 transition-colors focus:bg-primary/60 focus:outline-none ${isResizing ? 'bg-primary/60' : 'bg-transparent hover:bg-primary/40'}`}
-      />
+      />}
       {/* 面板头固定 56px：标题 + 三个图标控件（分类/排序/收起）。分类与
           搜索下沉到列表工具条，避免头部堆文字；分隔线与房间头水平对齐。 */}
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">

@@ -5,11 +5,16 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useHoverOpen } from "@/lib/desktop-interactions"
+
+const SelectHoverContext = React.createContext<ReturnType<typeof useHoverOpen> | null>(null)
 
 function Select({
+  open, defaultOpen, onOpenChange,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  const hover = useHoverOpen({ open, defaultOpen, onOpenChange })
+  return <SelectHoverContext.Provider value={hover}><SelectPrimitive.Root data-slot="select" {...props} open={hover.open} onOpenChange={hover.setOpen} /></SelectHoverContext.Provider>
 }
 
 function SelectGroup({
@@ -28,10 +33,14 @@ function SelectTrigger({
   className,
   size = "default",
   children,
+  onPointerEnter, onPointerLeave, onPointerDown, onKeyDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  const hover = React.useContext(SelectHoverContext)
+  // Radix disables outside pointer events while open. Keep the trigger
+  // hit-testable so a stationary mouse does not cause close/reopen loops.
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -41,6 +50,12 @@ function SelectTrigger({
         className
       )}
       {...props}
+      style={hover?.open ? { ...props.style, pointerEvents: "auto" } : props.style}
+      data-hover-region={hover?.triggerProps['data-hover-region']}
+      onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented && !props.disabled) hover?.triggerProps.onPointerEnter(event) }}
+      onPointerLeave={event => { onPointerLeave?.(event); if (!event.defaultPrevented) hover?.triggerProps.onPointerLeave(event) }}
+      onPointerDown={event => { hover?.triggerProps.onPointerDown(); onPointerDown?.(event) }}
+      onKeyDown={event => { hover?.triggerProps.onKeyDown(); onKeyDown?.(event) }}
     >
       {children}
       <SelectPrimitive.Icon asChild>
@@ -54,8 +69,10 @@ function SelectContent({
   className,
   children,
   position = "popper",
+  onPointerEnter, onPointerLeave, onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const hover = React.useContext(SelectHoverContext)
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -68,6 +85,10 @@ function SelectContent({
         )}
         position={position}
         {...props}
+        data-hover-region={hover?.contentProps['data-hover-region']}
+        onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerEnter(event) }}
+        onPointerLeave={event => { onPointerLeave?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerLeave(event) }}
+        onCloseAutoFocus={event => { onCloseAutoFocus?.(event); hover?.preserveFocus(event) }}
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport

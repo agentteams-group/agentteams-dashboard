@@ -30,6 +30,8 @@ describe('assistant context controls', () => {
   it('names counted controls by their purpose and opens the corresponding panel', () => {
     const onTogglePanel = vi.fn();
     render(<ChatRoomHeader roomName="设计团队助手" sessionDot={{ state: 'idle', runningOnly: false }} memberCount={2} threadCount={7} activePanel={null} onTogglePanel={onTogglePanel} />);
+    fireEvent.pointerEnter(screen.getByRole('button', { name: '显示成员' }), { pointerType: 'mouse' });
+    expect(onTogglePanel).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '显示成员' }));
     expect(onTogglePanel).toHaveBeenLastCalledWith('members');
     fireEvent.click(screen.getByRole('button', { name: '显示话题' }));

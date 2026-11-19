@@ -19,7 +19,6 @@ const DETAIL_FIELDS: Array<[string, (_t: TeamResponse) => string]> = [
   ['人类成员', (t) => (t.humanMembers || []).map((member) => typeof member === 'string' ? member : member.name).join(', ') || '-'],
   ['Worker 列表', (t) => (t.workerNames || []).join(', ') || '-'],
   ['团队房间', (t) => t.teamRoomID || '-'],
-  ['Leader DM 房间', (t) => t.leaderDMRoomID || '-'],
   ['空闲超时', (t) => t.workerIdleTimeout || '-'],
   ['消息', (t) => t.message || '-'],
 ];

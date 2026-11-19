@@ -7,6 +7,7 @@ import { OverflowText } from '@/components/dashboard/overflow-text';
 import { runtimeLabel } from '@/lib/runtime-labels';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS } from '../humans/human-types';
+import { Users } from 'lucide-react';
 
 export interface AgentSummary {
   name: string;
@@ -27,7 +28,7 @@ export function ResourceIdentity({ name, role, kind, phase, onView }: {
 }) {
   const initials = name.split(/[-\s]+/).filter(Boolean).at(-1)?.slice(0, 2).toUpperCase();
   return <div className="flex min-w-0 items-start gap-3">
-    <div aria-hidden="true" className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">{initials}</div>
+    <div aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-semibold text-foreground">{kind === 'team' ? <Users className="size-5" /> : initials}</div>
     <div className="min-w-0 flex-1 space-y-1">
       <h2 className="min-w-0 text-base font-semibold leading-6">
         <OverflowText text={name} onClick={onView} className={onView ? 'hover:underline' : undefined} />

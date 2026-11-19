@@ -102,7 +102,7 @@ function PreviewHeader({ file, onClose, modal }: { file: PreviewAttachment; onCl
 }
 
 export function AttachmentPreviewPanel({ file, onClose }: { file: PreviewAttachment; onClose: () => void }) {
-  return <aside aria-label="文件预览" className="flex w-[min(42vw,36rem)] shrink-0 flex-col overflow-hidden border-l border-border bg-background max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(36rem,92vw)] max-lg:shadow-xl">
+  return <aside aria-label="文件预览" className="absolute inset-y-0 right-0 z-40 flex w-[min(42vw,36rem)] flex-col overflow-hidden border-l border-border bg-background shadow-xl max-lg:fixed max-lg:w-[min(36rem,92vw)]">
     <PreviewHeader file={file} onClose={onClose} />
     <div className="min-h-0 flex-1"><PreviewContent file={file} /></div>
   </aside>;

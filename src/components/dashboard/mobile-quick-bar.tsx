@@ -66,7 +66,7 @@ function BarButton({ label, Icon, active, count, onClick }: BarButtonProps) {
         />
       )}
       <Icon className="h-5 w-5" aria-hidden="true" />
-      <span className="leading-tight">{label}</span>
+      <span className="max-w-full truncate whitespace-nowrap leading-tight" title={label}>{label}</span>
       {typeof count === 'number' && count > 0 && (
         <span
           className={cn(

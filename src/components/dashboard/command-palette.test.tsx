@@ -7,6 +7,7 @@ import type { MatrixEvent } from '@/lib/matrix-api';
 import type { RoomMeta } from '@/hooks/use-matrix';
 import type { RoomSearchResult } from '@/lib/matrix-search';
 import { roomHash } from '@/lib/nav-hash';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 // 面板只负责「hook 给什么就渲染什么」；上游 /search 的请求与解析由
 // matrix-search、代理路由各自的测试覆盖。外部变量名必须以 mock 开头：
@@ -18,6 +19,8 @@ const mockRoomMeta: Record<string, RoomMeta> = {
 const mockBoard = { tasks: [], projects: [] };
 const mockAudit = { data: { events: [] } };
 const mockOnSelect = vi.fn();
+const mockSkills = vi.fn();
+const mockTools = vi.fn();
 
 vi.mock('@/hooks/use-matrix', () => ({
   // 面板要的是「房间 id → 房间名」这份现成的取法（和 room 实体同一个来源）。
@@ -28,6 +31,12 @@ vi.mock('@/hooks/use-matrix', () => ({
 }));
 
 vi.mock('@/hooks/use-task-board', () => ({ useMergedTaskBoard: () => mockBoard }));
+vi.mock('@/hooks/use-projects', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/hooks/use-projects')>()),
+  useTaskIndex: () => ({ data: { tasks: [] } }),
+}));
+vi.mock('@/hooks/use-skill-center', () => ({ useSkills: (...args: unknown[]) => mockSkills(...args) }));
+vi.mock('@/hooks/use-agentteams-mcps', () => ({ useMcpServers: (...args: unknown[]) => mockTools(...args) }));
 vi.mock('@/hooks/use-audit-events', () => ({ useAuditEvents: () => mockAudit }));
 // 循环草案读的是 localStorage，面板测试不关心它，也别真去读。
 vi.mock('@/components/dashboard/sections/loops-section', () => ({ readDrafts: () => [] }));
@@ -53,7 +62,7 @@ function renderPalette(query: string) {
     const results = useGlobalSearch(query, undefined, undefined, undefined, undefined, {
       enabled: true,
     });
-    return <CommandPalette results={results} onSelect={mockOnSelect} onClose={vi.fn()} />;
+    return <CommandPalette query={query} results={results} onSelect={mockOnSelect} onClose={vi.fn()} />;
   }
   render(<Harness />);
 }
@@ -69,6 +78,9 @@ beforeAll(() => {
 
 beforeEach(() => {
   mockMessageSearch.mockReset();
+  mockSkills.mockReset().mockReturnValue({ data: { skills: [] } });
+  mockTools.mockReset().mockReturnValue({ data: [] });
+  useAgentTeamsStore.setState({ taskBoardVisible: true, userLevel: 3 });
   mockOnSelect.mockReset();
   // 默认：还没发过请求（词太短 / 面板没开）。
   mockMessageSearch.mockReturnValue({ data: undefined, isError: false, isFetching: false });
@@ -79,12 +91,33 @@ it('supports a single Chinese character for local resource and page searches', (
   expect(screen.getByRole('button', { name: /任务看板/ })).toBeVisible();
 });
 
-it('Enter selects the highlighted rendered result rather than the unsorted input order', () => {
+it('uses the same order for the highlighted result and keyboard navigation', () => {
   const worker = { entity: 'worker' as const, name: '工程师', subtitle: '', phase: 'Running', section: 'workers' };
   const task = { entity: 'task' as const, name: '验收任务', subtitle: '', phase: 'completed', section: 'tasks' };
   render(<CommandPalette results={[worker, task]} onSelect={mockOnSelect} onClose={vi.fn()} />);
+  fireEvent.keyDown(window, { key: 'ArrowDown' });
   fireEvent.keyDown(window, { key: 'Enter' });
   expect(mockOnSelect).toHaveBeenCalledWith(task);
+});
+
+it('shows only available shortcuts and avoids remote searches before typing', () => {
+  useAgentTeamsStore.setState({ taskBoardVisible: false });
+  renderPalette('');
+  expect(screen.getByRole('button', { name: '首页' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '我的团队' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: '任务看板' })).toBeNull();
+  expect(mockSkills).toHaveBeenCalledWith(undefined, null, 1, 5, { enabled: false });
+  expect(mockTools).toHaveBeenCalledWith({ enabled: false });
+});
+
+it('labels skill and tool matches and selects their filtered destinations', () => {
+  mockSkills.mockReturnValue({ data: { skills: [{ name: 'release-notes', description: '发布说明' }] } });
+  mockTools.mockReturnValue({ data: [{ name: 'release-tool' }] });
+  renderPalette('release');
+  fireEvent.click(screen.getByRole('button', { name: 'release-notes 技能' }));
+  expect(mockOnSelect).toHaveBeenLastCalledWith(expect.objectContaining({ hash: '#console/resources/skills?q=release-notes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'release-tool 工具' }));
+  expect(mockOnSelect).toHaveBeenLastCalledWith(expect.objectContaining({ hash: '#console/resources/tools?q=release-tool' }));
 });
 
 describe('CommandPalette 跨房间消息（方案 v3 B-1 延伸）', () => {

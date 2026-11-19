@@ -254,6 +254,22 @@ function senderLaneKey(sender: string, lane: string): string {
   return `${sender}\u0000${lane}`;
 }
 
+function qwenPawTraceKey(message: DisplayMessage): string | undefined {
+  if (resolveRuntimeProfile(message.runtime) !== 'qwenpaw') return;
+  const trace = message.rawContent?.['com.agentteams.trace'] as { traceparent?: unknown } | undefined;
+  if (typeof trace?.traceparent !== 'string') return;
+  const traceId = /^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/i.exec(trace.traceparent)?.[1];
+  if (traceId && traceId !== '00000000000000000000000000000000') {
+    return senderLaneKey(message.sender, traceId.toLowerCase());
+  }
+}
+
+function isPersistedQuotedReply(message: DisplayMessage): boolean {
+  const transaction = message.rawContent?.['org.agentteams.reply_txn'];
+  return !message.isThreadReply && !message.isStreaming && message.type === 'm.text'
+    && !!message.replyToEventId && typeof transaction === 'string' && transaction.startsWith('matrix-reply:');
+}
+
 /** Files/images a runtime delivers mid-run (thread announcement or upload). */
 function isRunMedia(message: DisplayMessage): boolean {
   return Boolean(message.mediaUrl)
@@ -415,7 +431,8 @@ function chooseAnswer(
   }
   const root = entries.find((entry) => !entry.message.isThreadReply) ?? null;
   if (profile === 'qwenpaw') {
-    return root && root.text && !root.narration ? root : null;
+    const quotedReply = answerable.findLast(entry => isPersistedQuotedReply(entry.message));
+    return quotedReply ?? (root && root.text && !root.narration ? root : null);
   }
   if (profile === 'openclaw' || profile === 'manager') {
     return answerable[answerable.length - 1];
@@ -501,6 +518,7 @@ export function assembleChatTimeline(
   const explicitLanes = new Set(sorted.filter(isExplicitLane)
     .map(message => senderLaneKey(message.sender, laneOf(message))));
   const explicitTurns = new Map<string, WorkingTurn>();
+  const tracedPlaceholders = new Map<string, WorkingTurn | null>();
   let open: WorkingTurn | null = null;
 
   for (const message of sorted) {
@@ -513,8 +531,15 @@ export function assembleChatTimeline(
 
     if (blocks) {
       const profile = resolveRuntimeProfile(message.runtime);
-      const candidate: WorkingTurn | null | undefined = explicit ? laneTurn : open;
-      if (candidate?.sender === message.sender && canJoin(candidate, message, entry, key, index)) {
+      const trace = qwenPawTraceKey(message);
+      // The durable reply is a top-level quote of the user's input. The
+      // placeholder and its process use a different Matrix lane, but share
+      // the runtime trace. Only pair an unambiguous, still-open placeholder.
+      const traced = trace && entry.text && isPersistedQuotedReply(message) ? tracedPlaceholders.get(trace) : undefined;
+      const matchedReply = traced && !traced.answered
+        && message.timestamp - lastTsOf(traced) <= TOP_LEVEL_TURN_MAX_GAP_MS ? traced : undefined;
+      const candidate: WorkingTurn | null | undefined = matchedReply ?? (explicit ? laneTurn : open);
+      if (candidate?.sender === message.sender && canJoin(candidate, message, entry, matchedReply?.key ?? key, index)) {
         candidate.entries.push(entry);
         candidate.answered ||= isAnswerEntry(profile, entry, candidate.detached);
         open = candidate;
@@ -534,6 +559,9 @@ export function assembleChatTimeline(
         startedAt: message.timestamp,
       };
       if (explicit) explicitTurns.set(senderLane, open);
+      if (trace && open.topLevel && isAgentPlaceholderBody(message.content)) {
+        tracedPlaceholders.set(trace, tracedPlaceholders.has(trace) ? null : open);
+      }
       placements.push({ kind: 'turn', turn: open });
       continue;
     }
@@ -557,13 +585,14 @@ export function assembleChatTimeline(
   }
 
   // Workflow notifications can split a QwenPaw turn into several tiles.
-  // A final root edit closes every tile in that thread.
+  // A final root edit or persisted quoted reply closes its process tiles.
   const answeredQwenPawLanes = new Set<string>();
   for (const placement of placements) {
     if (placement.kind !== 'turn') continue;
     const turn = placement.turn;
     if (turn.profile === 'qwenpaw' && !turn.detached && turn.entries.some(entry =>
-      entry.message.isEdited && !entry.message.isStreaming && isAnswerEntry(turn.profile, entry, false)
+      (entry.message.isEdited || isPersistedQuotedReply(entry.message))
+      && !entry.message.isStreaming && isAnswerEntry(turn.profile, entry, false)
     )) answeredQwenPawLanes.add(senderLaneKey(turn.sender, turn.key));
   }
 

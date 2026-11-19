@@ -42,6 +42,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TeamAssistantButton } from './team-assistant-button';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
@@ -124,6 +125,8 @@ export type TeamSettingsPanelProps = {
   onChanged?: () => void;
   /** 删除成功后回调（抽屉 = 关抽屉；内联页 = 清选中回落）。 */
   onDeleted?: () => void;
+  initialTab?: string;
+  chrome?: 'full' | 'section';
 };
 
 /**
@@ -138,10 +141,13 @@ export function TeamSettingsPanel({
   userLevel,
   onChanged,
   onDeleted,
+  initialTab,
+  chrome = 'full',
 }: TeamSettingsPanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [tab, setTab] = useState('basic');
-  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['basic']));
+  const initial = initialTab && ['basic', 'users', 'agents'].includes(initialTab) ? initialTab : 'basic';
+  const [tab, setTab] = useState(initial);
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([initial]));
   const { data: humans = [] } = useHumans();
   const humanNames = new Set([
     ...teamHumanMembers(team).map((member) => member.name),
@@ -263,27 +269,27 @@ export function TeamSettingsPanel({
 
   return (
     <div data-slot="team-drawer-body" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
-        <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      {(chrome === 'full' || tab === 'basic') && <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
+        {chrome === 'full' && <><Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>
-        <PhaseBadge kind="team" phase={team.phase} className="shrink-0" />
+        <PhaseBadge kind="team" phase={team.phase} className="shrink-0" /></>}
         {tab === 'basic' && <Button size="sm" data-testid="basic-save" disabled={saving} onClick={() => void handleSaveBasic()}>
           {saving ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
           保存基本信息
         </Button>}
-      </div>
+      </div>}
 
       <Tabs value={tab} onValueChange={(next) => {
         setTab(next);
         setVisitedTabs((previous) => new Set([...previous, next]));
       }} className="min-h-0 flex-1 gap-0">
-        <div className="shrink-0 border-b px-4 py-3">
+        {chrome === 'full' && <div className="shrink-0 border-b px-4 py-3">
           <TabsList aria-label="团队编辑" className="grid h-10 w-full max-w-lg grid-cols-3">
             <TabsTrigger value="basic">基本信息</TabsTrigger>
             <TabsTrigger value="users">成员管理 <span className="text-xs text-muted-foreground">{humanNames.size}</span></TabsTrigger>
             <TabsTrigger value="agents">Agent 管理 <span className="text-xs text-muted-foreground">{agentCount}</span></TabsTrigger>
           </TabsList>
-        </div>
+        </div>}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           <TabsContent value="basic" forceMount hidden={tab !== 'basic'} className="m-0 space-y-5">
             {team.phase === 'Failed' && team.message ? (
@@ -431,6 +437,7 @@ export function TeamSettingsPanel({
               </div>
             </SettingsSection>
             <SettingsSection title="运行状态与房间信息" icon={Users} expanded={expanded.has('status')} onToggle={() => toggle('status')}>
+            <div className="mb-2"><TeamAssistantButton team={team} /></div>
             <div className="space-y-1 rounded-md bg-muted/20 p-2">
               <SummaryRow label="阶段">
                 <span className="flex items-center gap-1.5">
@@ -451,16 +458,6 @@ export function TeamSettingsPanel({
                   <span className="flex min-w-0 items-center gap-1">
                     <span className="truncate font-mono">{team.teamRoomID}</span>
                     <CopyButton text={team.teamRoomID} />
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </SummaryRow>
-              <SummaryRow label="Leader DM">
-                {team.leaderDMRoomID ? (
-                  <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono">{team.leaderDMRoomID}</span>
-                    <CopyButton text={team.leaderDMRoomID} />
                   </span>
                 ) : (
                   '-'

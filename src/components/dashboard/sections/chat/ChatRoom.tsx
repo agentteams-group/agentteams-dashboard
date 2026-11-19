@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useChatStore } from './ChatStore';
 import { MessageList, type MessageListHandle } from './structures/MessageList';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
@@ -10,6 +10,9 @@ import { useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import { RoomContextTabs } from './components/RoomContextTabs';
+import { RoomTaskActivity } from './components/RoomTaskActivity';
+import type { RoomTaskData } from './components/RoomTasksPanel';
 import { indexRoomReplies } from './room-replies';
 import { RoomAttachments } from './components/RoomAttachments';
 import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
@@ -37,7 +40,8 @@ import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker-chats-panel';
-import { PanelRightClose, ArrowDown } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen, ArrowDown } from 'lucide-react';
+import { isDesktopHover } from '@/lib/desktop-interactions';
 import { Button } from '@/components/ui/button';
 import { ChatComposer, type MentionEntry } from './chat-composer';
 import { getDirectExecution, executionControl, EXECUTION_KEY, markStoppedMessages } from '@/lib/direct-execution';
@@ -133,6 +137,9 @@ interface ChatRoomProps {
   onSendMessage?: (_content: string, _options?: { html?: boolean }, _mentions?: MentionEntry[]) => void;
   contextPanel?: ChatContextPanel;
   integratedSidebar?: boolean;
+  roomTaskData?: RoomTaskData;
+  managedTeam?: string;
+  managedTeamLabel?: string;
   headerActions?: ReactNode;
   headerLeading?: ReactNode;
   headerTitle?: ReactNode;
@@ -158,6 +165,9 @@ export function ChatRoom({
   onSendMessage,
   contextPanel: controlledContextPanel,
   integratedSidebar = false,
+  roomTaskData,
+  managedTeam,
+  managedTeamLabel,
   headerActions,
   headerLeading,
   headerTitle,
@@ -168,12 +178,40 @@ export function ChatRoom({
   const [autoScroll, setAutoScrollLocal] = useState(true);
   const pendingMention = useSectionStore(state => state.mentionRoomId === roomId);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const [tasksInFlight, setTasksInFlight] = useState(0);
   const [internalContextPanel, setInternalContextPanel] = useState<ChatContextPanel>(null);
   const contextPanel = controlledContextPanel === undefined ? internalContextPanel : controlledContextPanel;
   const setContextPanel = useCallback((panel: ChatContextPanel) => {
     setInternalContextPanel(panel);
     onContextPanelChange?.(panel);
   }, [onContextPanelChange]);
+  const lastContextTab = useRef<RoomContextTab>('tasks');
+  const hoverOpenedFromToggle = useRef(false);
+  const contextCloseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(contextCloseTimer.current), []);
+
+  const enterContextRegion = (event: PointerEvent<HTMLDivElement>) => {
+    if (!isDesktopHover(event) || !(event.target instanceof Element) || !event.currentTarget.contains(event.target)) return;
+    clearTimeout(contextCloseTimer.current);
+    if (contextPanel !== null) return;
+    const tab = event.target.closest<HTMLElement>('[data-context-tab]')?.dataset.contextTab as RoomContextTab | undefined;
+    hoverOpenedFromToggle.current = !!event.target.closest('[data-context-toggle]');
+    setContextPanel(tab ?? lastContextTab.current);
+  };
+
+  const leaveContextRegion = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || contextPanel === 'attachment-preview') return;
+    hoverOpenedFromToggle.current = false;
+    if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+    clearTimeout(contextCloseTimer.current);
+    contextCloseTimer.current = setTimeout(() => {
+      if (!document.querySelector('[data-slot="dialog-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]')) setContextPanel(null);
+    }, 120);
+  };
+  useEffect(() => {
+    if (contextPanel && contextPanel !== 'attachment-preview') lastContextTab.current = contextPanel;
+  }, [contextPanel]);
+  const toggleContextPanel = () => setContextPanel(contextPanel ? null : lastContextTab.current);
   const [previewAttachment, setPreviewAttachment] = useState<{ file: PreviewAttachment; returnTo: 'files' | null } | null>(null);
   const openAttachmentPreview = useCallback((file: PreviewAttachment) => {
     setPreviewAttachment({ file, returnTo: contextPanel === 'files' ? 'files' : null });
@@ -807,6 +845,7 @@ export function ChatRoom({
     <AttachmentPreviewContext.Provider value={openAttachmentPreview}>
     <div
       ref={chatLayoutRef}
+      data-chat-layout
       data-mention-event={focusedMentionId ?? threadMention?.id ?? undefined}
       data-mention-pending={pendingMention || undefined}
       className={`flex h-full relative ${className}`}
@@ -822,10 +861,10 @@ export function ChatRoom({
         description={`支持多文件，发送到 ${roomName}`}
       />
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div data-chat-main className={`flex-1 flex flex-col min-w-0 min-h-0 ${integratedSidebar ? 'pr-10' : ''}`}>
         <ChatRoomHeader
           workerName={roomWorkerName}
-          taskAction={taskRoom ? <TaskTopologyPopover key={roomId} roomId={roomId} /> : undefined}
+          taskAction={taskRoom ? <TaskTopologyPopover key={roomId} roomId={roomId} taskId={taskId} roomTaskData={roomTaskData} /> : undefined}
           compact={integratedSidebar}
           headerActions={headerActions}
           headerLeading={headerLeading}
@@ -994,7 +1033,7 @@ export function ChatRoom({
           </div>
         </div>
 
-      {contextPanel !== null && !(taskRoom && contextPanel === 'tasks') && (
+      {contextPanel !== null && (
         <button
           type="button"
           aria-label="关闭上下文遮罩"
@@ -1006,38 +1045,75 @@ export function ChatRoom({
       {contextPanel === 'attachment-preview' && previewAttachment && (
         <AttachmentPreviewPanel file={previewAttachment.file} onClose={() => setContextPanel(previewAttachment.returnTo)} />
       )}
-      {contextPanel !== null && contextPanel !== 'attachment-preview' && !(taskRoom && contextPanel === 'tasks') && (
-        <RoomContextPanel
-          showTasks={!taskRoom}
-          canSend={canSend}
-          showMembers={!agentRole}
-          roomId={roomId}
-          fileScope={fileScope}
-          roomAttachments={<RoomAttachments
-            events={allEvents}
-            homeserver={homeserver}
-            isLoading={messagesQuery.isLoading}
-            hasError={messagesQuery.isError}
-            hasOlder={!!hasOlderMessages}
-            isLoadingOlder={fetchingOlderMessages}
-            onLoadOlder={() => void loadMore()}
-          />}
-          activeTab={contextPanel}
-          onTabChange={setContextPanel}
-          onClose={() => setContextPanel(null)}
-          roomMembers={roomMembers}
-          senderStatusMap={senderStatusMap}
-          activeThread={activeThread && (messagesWithReplyCounts.find(message => message.id === activeThread.id && !message.detached) ?? activeThread)}
-          threadMention={threadMention}
-          threadRoots={threadRoots}
-          quotedReplies={activeThread ? roomReplies.repliesByRoot.get(activeThread.id) : undefined}
-          onOpenThread={handleOpenThread}
-          onBackToThreads={() => {
-            setActiveThread(null);
-            setThreadMention(null);
+      <div
+        className="pointer-events-none absolute inset-0 z-40"
+        onPointerEnter={integratedSidebar ? enterContextRegion : undefined}
+        onPointerLeave={integratedSidebar ? leaveContextRegion : undefined}
+      >
+        {integratedSidebar && contextPanel !== 'attachment-preview' && <Button
+          variant="ghost" size="sm"
+          className="pointer-events-auto absolute right-2 top-1.5 z-50 h-6 w-6 p-0"
+          data-context-toggle
+          aria-label={contextPanel ? '收起上下文面板' : '展开上下文面板'}
+          title={contextPanel ? '收起面板' : '展开面板'}
+          aria-expanded={contextPanel !== null}
+          onClick={event => {
+            if (event.detail === 0 || !hoverOpenedFromToggle.current) toggleContextPanel();
+            hoverOpenedFromToggle.current = false;
           }}
-          memberMap={memberMap}
-          workerMatrixUserIds={workerMatrixUserIds}
+        >{contextPanel ? <PanelRightClose className="size-3.5" /> : <PanelRightOpen className="size-3.5" />}</Button>}
+        {integratedSidebar && contextPanel === null && (
+          <div className="pointer-events-auto absolute inset-y-0 right-0 w-10 border-l border-border bg-card pt-9">
+            <RoomContextTabs activeTab={null} vertical showMembers={!agentRole} taskCount={roomTaskData && Math.max(0, roomTaskData.count - tasksInFlight)} onTabChange={setContextPanel} />
+          </div>
+        )}
+        {contextPanel !== null && contextPanel !== 'attachment-preview' && (
+          <RoomContextPanel
+            showCloseButton={!integratedSidebar}
+            showTasks
+            canSend={canSend}
+            showMembers={!agentRole}
+            roomId={roomId}
+            roomTaskData={roomTaskData}
+            fileScope={fileScope}
+            roomAttachments={<RoomAttachments
+              events={allEvents}
+              homeserver={homeserver}
+              isLoading={messagesQuery.isLoading}
+              hasError={messagesQuery.isError}
+              hasOlder={!!hasOlderMessages}
+              isLoadingOlder={fetchingOlderMessages}
+              onLoadOlder={() => void loadMore()}
+            />}
+            activeTab={contextPanel}
+            onTabChange={setContextPanel}
+            onClose={() => setContextPanel(null)}
+            roomMembers={roomMembers}
+            senderStatusMap={senderStatusMap}
+            activeThread={activeThread && (messagesWithReplyCounts.find(message => message.id === activeThread.id && !message.detached) ?? activeThread)}
+            threadMention={threadMention}
+            threadRoots={threadRoots}
+            quotedReplies={activeThread ? roomReplies.repliesByRoot.get(activeThread.id) : undefined}
+            onOpenThread={handleOpenThread}
+            onBackToThreads={() => {
+              setActiveThread(null);
+              setThreadMention(null);
+            }}
+            memberMap={memberMap}
+            workerMatrixUserIds={workerMatrixUserIds}
+          />
+        )}
+      </div>
+      {agentRole && roomTaskData && (
+        <RoomTaskActivity
+          key={roomId}
+          roomId={roomId}
+          managedTeam={managedTeam}
+          managedTeamLabel={managedTeamLabel}
+          platformAssistant={agentRole === 'operations'}
+          data={roomTaskData}
+          panelOpen={contextPanel !== null}
+          onFlightCountChange={setTasksInFlight}
         />
       )}
     </div>

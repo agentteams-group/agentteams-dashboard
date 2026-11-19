@@ -1,5 +1,6 @@
 import type { MentionEntry } from './chat-composer';
 import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
+import { APPROVAL_FEEDBACK_MARKER } from '@/lib/approval-feedback';
 
 /** Keep transport commands in Matrix; show the interaction, not its wire syntax. */
 export function interactionActivity(body: string, content?: Record<string, unknown>, isHuman = false): string | undefined {
@@ -85,7 +86,7 @@ export function buildConfirmationReply(
   const workerIds = workerMatrixUserIds ?? [];
   // Task rooms can lack a Worker projection. Native decisions still belong
   // to the exact Agent that published the approval, including in group rooms.
-  const nativeDecision = /^\/(?:approval\s+(?:approve|deny|cancel)|agentteams-approval\s+(?:approve|deny)|approve|reject)\b/.test(content);
+  const nativeDecision = content.startsWith(APPROVAL_FEEDBACK_MARKER) || /^\/(?:approval\s+(?:approve|deny|cancel)|agentteams-approval\s+(?:approve|deny)|approve|reject)\b/.test(content);
   const targetId = sender && (workerIds.includes(sender) || nativeDecision)
     ? sender
     : workerIds[0];

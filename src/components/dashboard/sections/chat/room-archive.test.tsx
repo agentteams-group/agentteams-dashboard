@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ArchivedRoomsDialog, CompletedTaskArchiveAction, RoomArchiveAction } from './room-archive';
 import { MatrixRequestError } from '@/lib/matrix-api';
@@ -14,9 +14,13 @@ beforeEach(() => { mocks.list.mockReturnValue({ data: { rooms: [] }, isSuccess: 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); });
 describe('Controller-authorized task room controls', () => {
   it('archives every execution room of a completed task without opening chat', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<CompletedTaskArchiveAction title="示例任务" resolveRooms={async () => ['!one:test', '!two:test', '!one:test']} />);
-    fireEvent.click(screen.getByRole('button', { name: '归档任务 示例任务' }));
+    const trigger = screen.getByRole('button', { name: '归档任务 示例任务' });
+    fireEvent.click(trigger);
+    const confirmation = screen.getByRole('alertdialog', { name: '归档已完成的任务？' });
+    expect(confirmation).toHaveTextContent('历史消息和产物会保留');
+    expect(mocks.change).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole('button', { name: '确认归档' }));
     await vi.waitFor(() => expect(mocks.change).toHaveBeenCalledTimes(2));
     expect(mocks.change).toHaveBeenCalledWith({ roomId: '!one:test', archived: true });
     expect(mocks.change).toHaveBeenCalledWith({ roomId: '!two:test', archived: true });
@@ -33,11 +37,13 @@ describe('Controller-authorized task room controls', () => {
   });
   it('archives an authorized task with the artifact reminder', () => {
     status(false, true, false);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<RoomArchiveAction room={room} />);
     fireEvent.click(screen.getByRole('button', { name: '归档' }));
+    const confirmation = screen.getByRole('alertdialog', { name: '归档任务房间？' });
+    expect(confirmation).toHaveTextContent('产物已同步到工作区');
+    expect(mocks.change).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole('button', { name: '确认归档' }));
     expect(mocks.change).toHaveBeenCalledWith({ roomId: room.id, archived: true });
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('产物已同步到工作区'));
   });
   it('lets an authorized Leader restore without offering deletion', () => {
     status(true, true, false);
@@ -48,11 +54,12 @@ describe('Controller-authorized task room controls', () => {
   });
   it('requires confirmation before deleting a task authorized by Controller', () => {
     status(true, true, true);
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     render(<RoomArchiveAction room={{ ...room, archived: true }} />);
     fireEvent.click(screen.getByRole('button', { name: '删除房间' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '取消' }));
     expect(mocks.remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '删除房间' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '永久删除' }));
     expect(mocks.remove).toHaveBeenCalledWith(room.id);
   });
   it('submits team admin and human member account filters separately', () => {

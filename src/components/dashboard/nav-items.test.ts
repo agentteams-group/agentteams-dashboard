@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sectionMap } from './agent-teams-dashboard';
+import { pageDescriptions, sectionMap } from './agent-teams-dashboard';
 import {
   createActions,
   isCreateActionVisible,
@@ -98,6 +98,7 @@ describe('Navigation with groups (Workbench IA)', () => {
 
   it('maps every navigation entry to a section', () => {
     expect(navItems.map((item) => item.id).every((id) => sectionMap[id])).toBe(true);
+    expect(Object.keys(sectionMap).every(id => pageDescriptions[id]?.trim())).toBe(true);
   });
 });
 

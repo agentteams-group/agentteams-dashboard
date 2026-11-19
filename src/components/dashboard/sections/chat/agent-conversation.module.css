@@ -50,8 +50,13 @@
 }
 
 .conversation :global([data-chat-bubble]) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
   font-size: 0.875rem;
-  line-height: 1.65;
+  line-height: 1.5rem;
 }
 
 .conversation :global([data-chat-bubble] .matrix-message-content),
@@ -74,10 +79,7 @@
 }
 
 .conversation :global([data-chat-message='user'] [data-chat-bubble]) {
-  background: color-mix(in srgb, var(--primary) 7%, var(--background));
-  border-color: transparent;
-  border-radius: 0.875rem;
-  padding: 0.625rem 1rem;
+  font-size: 0.8125rem;
   max-width: min(100%, 42rem);
 }
 
@@ -114,9 +116,12 @@
 }
 
 .conversation :global([data-chat-composer-frame]:focus-within) {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+  border-color: var(--border);
+  box-shadow: 0 0 5px 2px rgb(60 60 60 / 8%);
 }
+
+.conversation :global([data-chat-composer] textarea:focus-visible) { outline: 0; box-shadow: none; }
+.conversation :global([data-chat-composer-frame]:has(textarea:focus-visible)) { outline: 1px solid var(--ring); outline-offset: 2px; }
 
 .conversation :global([data-chat-composer] textarea) {
   min-height: 4.125rem;

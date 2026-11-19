@@ -71,6 +71,13 @@ afterEach(() => {
 });
 
 describe('FilesSection 布局与焦点', () => {
+  it('空目录只显示一个空态，不保留重复的详情占位', async () => {
+    vi.mocked(humanFilesApi.listDirectory).mockResolvedValue({ path: '', entries: [] });
+    renderSection();
+    expect(await screen.findByText('此目录还是空的')).toBeInTheDocument();
+    expect(screen.queryByTestId('files-detail-rail')).toBeNull();
+    expect(screen.queryByText('此目录为空')).toBeNull();
+  });
   it('在团队文件范围内浏览团队共享目录，切回后仍可查看个人文件', async () => {
     const list = vi.spyOn(collaborationFiles, 'listCollaborationFiles').mockResolvedValue({
       root: 'teams/旅行团队/shared/',

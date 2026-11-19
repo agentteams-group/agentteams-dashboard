@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleAlert, Download, Library, ListChecks, Play, RotateCcw, Save, Send, Upload } from 'lucide-react';
@@ -309,7 +310,6 @@ export function LoopsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="循环"
-        description="流程画一次，复用无数次 —— 定义/发布/复用由 Dashboard 承载，执行由上游 Controller 运行"
       />
 
       {/* F5.6 能力徽标（§7.4 降级可见）：loops 写接口未接通时常显 */}
@@ -482,7 +482,7 @@ export function LoopsSection() {
                       <Save className="h-3 w-3" aria-hidden="true" />
                       存草稿
                     </Button>
-                    <select
+                    <NativeSelect
                       value={bindRoomId}
                       onChange={(e) => setBindRoomId(e.target.value)}
                       className="h-7 rounded-md border border-border/60 bg-background/60 px-1.5 text-xs"
@@ -494,7 +494,7 @@ export function LoopsSection() {
                           {r.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                     <Button
                       variant="outline"
                       size="sm"
