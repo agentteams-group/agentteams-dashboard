@@ -28,7 +28,7 @@ export function RoomContextTabs({ activeTab, onTabChange, showMembers = true, sh
       const taskBadge = vertical && tab.id === 'tasks' ? taskCount : undefined;
       return <button key={tab.id} type="button" data-context-tab={tab.id} aria-label={`${tab.label}${taskBadge !== undefined ? ` ${taskBadge}` : count ? ` ${count}` : ''}`} aria-pressed={activeTab === tab.id} title={tab.label} onClick={() => onTabChange(tab.id)} className={`relative shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${activeTab === tab.id ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
         {vertical ? <><Icon className="size-4" />
-          {taskBadge !== undefined && <span data-task-count aria-hidden="true" className="absolute -right-0.5 -top-1 min-w-3.5 rounded-full bg-muted px-0.5 text-[9px] font-semibold leading-3.5 tabular-nums text-foreground ring-1 ring-card">{taskBadge > 99 ? '99+' : taskBadge}</span>}
+          {taskBadge !== undefined && <span data-task-count aria-hidden="true" className="absolute -right-0.5 -top-1 min-w-3.5 rounded-full bg-muted px-0.5 text-xs font-semibold leading-3.5 tabular-nums text-foreground ring-1 ring-card">{taskBadge > 99 ? '99+' : taskBadge}</span>}
         </> : <>{tab.label}{count > 0 && <span className="ml-0.5 font-mono">{count}</span>}</>}
       </button>;
     })}
