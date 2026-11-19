@@ -4,6 +4,20 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const source = readFileSync(new URL('./agentteams-install.sh', import.meta.url), 'utf8');
+test('upgrade recognizes a prior unified default image and selects the released patch', () => {
+  const setup = ['prepare_upgrade_dashboard', 'prepare_unified_entry']
+    .map(name => source.match(new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?^\\}`, 'm'))[0]).join('\n');
+  const result = spawnSync('bash', ['-c', `set -e
+    ${setup}
+    AGENTTEAMS_REGISTRY=test; AGENTTEAMS_DASHBOARD=1; AGENTTEAMS_UNIFIED_ENTRY=1
+    AGENTTEAMS_DASHBOARD_VERSION=v1.4.2
+    AGENTTEAMS_DASHBOARD_IMAGE=test/agentteams/agentteams-dashboard:v1.4.2-unified
+    prepare_upgrade_dashboard; prepare_unified_entry
+    printf '%s' "$AGENTTEAMS_DASHBOARD_IMAGE"
+  `], {encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.stdout,'test/agentteams/agentteams-dashboard:v1.4.3-unified');
+});
 test('Harness release defaults follow Core and explicit runtime pins remain effective', () => {
   const resolve = ['_normalize_version', '_ver_lt', '_supports_deepseek_harness', 'resolve_image_tags']
     .map(name => source.match(new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?^\\}`, 'm'))[0]).join('\n');
