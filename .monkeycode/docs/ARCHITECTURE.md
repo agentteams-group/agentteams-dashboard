@@ -44,7 +44,7 @@ install/               独立安装脚本与 AgentTeams 集成补丁
 
 负责导航、资源管理界面、基础设施状态和模型管理。各 section 通过 hooks 获取数据。
 
-Dashboard 导航由 `nav-items.ts` 集中定义，包含总览、智能体、AI 网关、平台和治理五个可折叠分组，以及常驻文档入口。`use-active-section.ts` 将当前节和展开分组持久化到 localStorage，并使用 `#group/section` 深链接格式；旧版扁平哈希会自动映射到对应分组。当前活动节所在分组保持展开，分组内子项支持上下方向键聚焦和 Enter 激活。
+Dashboard 导航分两层：侧栏一级入口由 `workspace-navigation.tsx` 的 `workspaceMenus` 定义（助手 / 我的团队 / 工作台 / 资产中心 / 成员与团队 / 观测与治理），各入口的二级项来自 `nav-items.ts`（含 `area`、`group`、`minLevel`、`hiddenByFlag`）。深链接唯一映射层是 `src/lib/nav-hash.ts`：section id 保持扁平，`hashForSection` 输出分层哈希（`#workbench/space`、`#console/resources/workers`），旧扁平哈希首次解析时经 `history.replaceState` 归一化，带 roomId/params 的分层哈希不归一化。`use-active-section.ts` 把当前节持久化到 localStorage；总览、问天、插件、主题、更新等管理面入口收敛到左下角设置弹窗（`settings/management-tab.tsx`）。
 
 ### AgentTeams 代理
 
@@ -113,7 +113,74 @@ flowchart LR
   API --> Console["Higress Console"]
   API --> Storage["MinIO"]
   API --> Nacos["Nacos 注册中心"]
+  API --> AuditLog["审计日志 (JSONL)"]
 ```
+
+## 服务端治理（v1.2.4 起）
+
+`src/middleware.ts` 在 Higress session 通过验证后，注入 `x-agentteams-user` / `x-agentteams-user-level` 两个请求头；`src/app/api/agentteams/proxy-helper.ts` 透传给 Controller 便于审计关联。`src/lib/server-auth.ts` 的 `enforceServerSideRbac` 调用既有 `src/lib/rbac-engine.ts`（3 级权限 + 显式规则 deny 优先），对 workers / teams / managers / humans 的写操作路由做服务端细粒度校验；403 时自动写一条 warning 审计。
+
+审计事件落 `src/lib/audit-log.ts` 维护的 append-only JSONL（10 MB rotate，保留 30 份归档，路径由 `AGENTTEAMS_AUDIT_LOG_PATH` 覆盖，默认 `${cwd}/logs/audit.log.jsonl`）。客户端 `auditMutation`（`src/lib/audit-store.ts`）每次写入同时镜像到服务端 `/api/agentteams/audit` POST，失败仅 warn 不阻塞 mutation。审计列表查询走 `GET /api/agentteams/audit`，按身份等级分流：L2 仅能看自己的事件（服务端强制 `actor = identity.name`），L3 可看全量；L1/无身份返回 403，响应体带 `observedLevel` / `requiredLevel`，前端据此区分「身份头缺失」与「等级不足」。403 响应同时写一条 warning 审计。
+
+## 运行时消息协议（`org.agentteams.run`）
+
+Dashboard 解析 Matrix 消息时优先识别 `content['org.agentteams.run']` 结构化载荷（`src/lib/a2ui/protocol.ts` 定义 discriminated union：text / thinking / tool_call / confirmation / error），按 `version` 字段分流：
+
+- `version: "1"` 走 `parseAgentRunBlocks` 的规范化路径，补齐 `tool_call_id` / `status` / `started_at` / `finished_at` 等字段，confirmation 块强制 `confirmation_id`
+- `version: "0"` / 缺省走原有透传语义
+- 未知版本一律降级到 13 级文本启发式规则而不丢消息
+
+上游 runtime 接入此协议后即可替代现有文本启发式路径。`recordToolCalls` 接受可选 `structuredKeys`，v1 块含 `tool_call_id` 时按 id 为权威去重键，跨设备/跨修订一致。
+
+## 任务看板、产物与循环
+
+位置：`src/app/api/agentteams/projects/`、`src/lib/agentteams-projects-api.ts`、`src/components/dashboard/sections/tasks-section.tsx`、`artifacts-section.tsx`、`loops-section.tsx`
+
+项目（Project）由 Manager 通过 `TeamHarness.projectflow` 落到 `shared/projects/{id}/meta.json`，Dashboard 只读 + 干预：列表/卡片/拓扑三视图、attention 待决策聚合、pause/resume/replan、事件流游标翻页、历史快照与 spawns 会话消息。`loop` 类型项目带 `pause_sources`（`user` / `project`），恢复只清理一个来源。
+
+产物（Artifacts）复用项目端点，把「项目 → 任务 → 产物文件树」呈现为左右分栏，支持类型筛选、Markdown/图片/文本预览与下载；上游 404（未部署）或 5xx 分别降级为不同横幅。编码执行记录（Coding runs）是独立只读数据面，透传上游 `coding-runs` 列表与原始日志，`?format=json` 返回结构化信封。
+
+循环（Loops）的定义/发布/回滚由 Dashboard 承载：`loop-definition.ts` 做校验，画布组件按需分包（`@xyflow/react` 不进主 bundle），草稿存 localStorage，执行仍在上游 runtime。
+
+## HITL 与干预
+
+位置：`src/lib/hitl-inbox.ts`、`src/components/dashboard/sections/hitl-inbox-card.tsx`
+
+HITL 收件箱从 Matrix 时间线提取待审批的 Tool Guard / v1 `org.agentteams.run` 确认请求，按时间排序摄入并处理 `m.replace` 修订；全局 sync（`use-global-matrix-sync.ts`）在历史加载与实时同步两条路径上都会摄入。store 暴露 `takePendingChatRoomId` 等原子消费方法，供组件在渲染期消费而不在 effect 里 setState。
+
+上游 runtime 只回纯文本时，`intervention-heuristic.ts` 把「问句/引导行 + 连续编号选项」升格为 InterventionCard；代码块、无疑问语义、流式与自己的消息不参与升格，提交走 `composeAnswerText` 回房间。
+
+## 知识库与文件
+
+位置：`src/app/api/agentteams/workers/[name]/workspace-files/`、`humans/[name]/files/`、`teams/[name]/files/`、`src/components/dashboard/sections/knowledge-section.tsx`、`files-section.tsx`
+
+知识库读取 QwenPaw 工作区布局（MEMORY.md / memory/** / digest/**），按团队聚合各 Worker 的 Markdown 建图；图谱默认 3D（`knowledge-graph3d.tsx`，按需分包，WebGL 失败降级 2D），预览与图谱双卡并存。
+
+文件区覆盖 Human 私有空间（列表/树/网格、上传、编辑、回收站、配额）与 Team 共享空间（上传/下载），聊天侧的文件引用（`com.agentteams.file_refs`）与之共用选择器。
+
+## Worker 链路追踪
+
+位置：`src/app/api/agentteams/observability/`、`traces/`、`src/lib/observability-controller.ts`、`agentloop-server.ts`、`tracing-server.ts`
+
+可观测配置由 Controller 持有（`agentteams-observability` Secret 的 `data["config.json"]`），Dashboard 用调用方原有凭据代理读写，剥除客户端 `controllerUrl`，不再读取本地 `observability.json` 或 `LANGFUSE_*` 环境变量。查询后端双轨：`langfuse`（v3 写入、v1 查询）与 `agentloop`（阿里云 SLS 原始 Span，`@alicloud/credentials` 服务端凭证链，`AGENTLOOP_SLS_ENDPOINT` 可覆盖接入点）。采集开关按 Worker 下发，Langfuse 项目查询密钥只留在服务端。字段契约见 `docs/INTERFACES.md`。
+
+## 语音输入
+
+位置：`scripts/prepare-speech-assets.mjs`、`src/lib/speech-config.ts`、`src/app/api/agentteams/speech/`
+
+默认本地识别：构建期把固定版本 Whisper tiny 模型与 WASM 备到 `public/speech/ff41770/`，浏览器在 Web Worker 内识别，音频不上传。付费百炼识别由服务端代理，配置保存在 `DASHBOARD_CONFIG_FILE` 同目录的 `speech.json`（0600），页面保存优先于环境变量，密钥不回显。
+
+## 插件系统
+
+位置：`src/lib/plugins/`、`src/components/plugins/`、`tools/create-dashboard-plugin/`
+
+运行时通过动态 `import()` 加载 `plugin.json` 声明的 ES 模块，提供侧栏菜单、独立路由、仪表盘组件、详情面板区块、工具栏按钮五类扩展点；每插件错误隔离、独立状态、事件总线，开发态支持热更新。插件贡献的入口按等级门控（`minLevel`）隐藏，避免出现死链接。
+
+## 热更新与版本
+
+位置：`src/app/api/dashboard-build/`、`src/app/api/self-update/`、`scripts/build-hotfix-bundle.sh`
+
+`/api/dashboard-build` 只读返回 buildId + version + builtAt（免认证、`no-store`），页面「设置 → 更新」比较内嵌版本、服务器版本与上游 release tag；一致版本不同构建号视为「已是最新」。热更新是应用内补丁通道（L1 可见）：下载 release 资产 → sha256 校验 → 热替换应用目录（旧版留 `app.prev`）→ 进程退出由容器监管方拉起，多副本 Pod 以镜像滚动更新为准。发版与三方版本一致性口径见 `docs/RELEASE.md`。
 
 ## Higress 外部适配
 

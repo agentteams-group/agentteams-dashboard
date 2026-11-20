@@ -4,6 +4,8 @@
 审查范围：全项目（安全性、功能正确性、性能、样式与主题、可访问性、组件一致性、文档）
 基线状态：`npm run typecheck` 通过；`npm test` 1698 个用例全部通过；`npm run lint` 2 个 warning；`npm run build` 成功。
 
+> 说明：文中「位置」均为 2026-09-19 审查时的代码路径。此后工作区信息架构与组件目录经过重构（如 `projects-section.tsx` 拆入 `sections/projects/*`、`topology/topology-canvas.tsx` 已不再被引用），引用路径可能已失效；问题本身的结论与修复状态以收档记录为准。
+
 ## 修复状态（2026-09-20 收档）
 
 全部问题已按 `.monkeycode/specs/code-review-fixes/tasklist.md` 实施，收档时 lint 0 问题、tsc 干净、193 文件 / 1812 测试通过、`npm run build` 成功。

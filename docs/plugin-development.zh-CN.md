@@ -25,7 +25,7 @@
 - **插件（Plugin）**：一个包含 `plugin.json` 清单和一个 ES 模块入口的独立项目。入口模块导出 `activate(api)`（以及可选的 `deactivate()`）。
 - **扩展点（Extension Point）**：Dashboard 中允许插件注入 UI 的固定位置，共 5 类：侧边栏菜单、独立页面、仪表盘组件、详情面板区块、工具栏按钮。
 - **插件 API（Plugin API）**：`activate(api)` 收到的 `api` 对象，是插件与 Dashboard 交互的唯一入口，提供注册方法、事件总线、隔离状态、HTTP 封装与集群数据服务。
-- **注册表（Registry）**：Dashboard 内部维护插件的安装/启用/禁用/卸载状态与元数据。
+- **注册表（Registry）**：Dashboard 内部维护插件状态与元数据，状态共 5 种：`installed`（清单已登记、模块未激活）、`enabled`（已请求激活、加载中）、`active`（已加载并激活）、`disabled`（已停用）、`error`（加载或激活失败）。卸载即从注册表移除记录并清理持久化状态。
 - **加载器（Loader）**：运行时通过动态 `import()` 按需加载插件模块（不使用 Module Federation，无需额外构建配置）。
 
 ### 生命周期
@@ -61,7 +61,9 @@ my-plugin/
 ├─ vite.config.mjs             # 开发/构建配置
 ├─ vite-plugin-host-react.mjs  # 将 react 解析到宿主实例
 ├─ public/plugin.json          # 插件清单
-└─ src/main.jsx                # 入口：activate/deactivate
+├─ src/main.jsx                # 入口：activate/deactivate
+├─ .gitignore
+└─ README.md
 ```
 
 启动开发服务器并接入 Dashboard：
@@ -107,7 +109,8 @@ npm run dev        # http://localhost:5173
 | `dashboardVersion` | 否 | 兼容的 Dashboard 版本范围（semver），如 `>=0.2.0`、`^0.2.0`、`0.x` |
 | `min_version` | 否 | 上游风格字段，等价于 `>=min_version`；与 `dashboardVersion` 同时存在时优先后者 |
 | `extensionPoints` | 否 | 声明使用的扩展点；若声明，则只能使用已声明的扩展点 |
-| `permissions` | 否 | 声明式权限列表（当前版本仅作信息展示） |
+| `permissions` | 否 | 声明式权限列表；仅做字段校验与持久化，不参与访问控制，也不在界面展示 |
+| `homepage` | 否 | 项目主页 / 文档链接 |
 | `dependencies` | 否 | 依赖的其他插件 id 列表 |
 
 **版本校验**：安装时 Dashboard 会用自身版本匹配 `dashboardVersion`/`min_version`，不满足则拒绝安装并给出提示。
@@ -247,19 +250,36 @@ api.registerToolbarButton({
 
 ### HTTP 封装 `api.http`
 
-自动附带 Dashboard basePath 与同源凭证。
+自动附带 Dashboard basePath。
 
-- `api.http.fetch(path, init) → Promise<Response>`
-- `api.http.get<T>(path) → Promise<T>`
-- `api.http.post<T>(path, body?) → Promise<T>`
+- `api.http.fetch(path, init) → Promise<Response>`（`init` 原样透传，需自行设置凭证）
+- `api.http.get<T>(path) → Promise<T>`（自带 `credentials: 'same-origin'`）
+- `api.http.post<T>(path, body?) → Promise<T>`（自带 `credentials: 'same-origin'`）
 
 ### 集群数据与交互 `api.dashboard`
 
 - `api.dashboard.navigate(sectionId)`：跳转到内置 section 或插件页面（`plugin-route:<id>/<routeId>`）。
 - `api.dashboard.toast(message, type?)`：弹出提示（`info`/`success`/`warning`/`error`）。
+**集群与实体**：
+
 - `api.dashboard.getClusterStatus()`：集群状态（`totalWorkers`、`totalTeams`、`totalHumans`、`kubeMode` 等）。
 - `api.dashboard.getVersion()`：Controller/Dashboard 版本信息。
 - `api.dashboard.listWorkers()` / `listTeams()` / `listManagers()` / `listHumans()`：实体列表。
+
+**运行时监控**：
+
+- `api.dashboard.getMonitoring({ page, limit, search })`：资源监控快照。
+- `api.dashboard.getMonitoringLogs(kind, name, { tail, since })`：按资源读取容器日志。
+
+**对象存储**：
+
+- `api.dashboard.listBuckets()` / `listObjects(bucket, prefix?)`：bucket 与对象列举。
+- `api.dashboard.uploadObject(bucket, key, file)`：上传文件。
+- `api.dashboard.getDownloadUrl(bucket, key)`：下载 URL。
+- `api.dashboard.presignDownloadUrl(bucket, key)`：预签名下载 URL。
+- `api.dashboard.presignUploadUrl(bucket, key, contentType?)`：预签名上传（返回 `url` 与 `fields`）。
+
+完整面见 `src/lib/plugins/types.ts` 的 `PluginDashboardServices`。
 
 ### 日志 `api.log`
 
@@ -278,7 +298,7 @@ api.registerToolbarButton({
 ## 动态加载与错误边界
 
 - **按需加载**：插件入口通过运行时动态 `import()` 加载（bundled 插件同样懒加载），不进入首屏关键路径，保证首屏性能（LCP 目标 ≤ 2.5s）。
-- **错误边界**：每个插件贡献的渲染都被独立的错误边界包裹。插件加载失败或渲染抛错时，仅该插件显示错误提示，**Dashboard 主界面不受影响**。注册表会把该插件标记为 `error` 并记录原因，可在「设置 → 插件」查看。
+- **错误边界**：组件类贡献（仪表盘组件、独立页面、详情面板区块、工具栏按钮）各自有独立错误边界。插件加载失败或渲染抛错时，仅该插件显示错误提示，**Dashboard 主界面不受影响**。注册表会把该插件标记为 `error` 并记录原因，可在「设置 → 插件」查看。侧边栏菜单项是原生按钮，不承载插件组件，因此没有错误边界。
 - **失败隔离**：`activate` 抛错时，宿主会清理该插件已注册的部分贡献，避免残留。
 
 ---
@@ -291,15 +311,21 @@ api.registerToolbarButton({
 
 > 生产构建：`npm run build` 输出 `dist/main.js`（ES 模块）。将其与 `plugin.json`（`entry.dashboard` 指向 `dist/main.js`）部署到静态服务器，再安装清单 URL 即可。
 
+### 上传插件包（zip）安装
+
+「设置 → 插件」还支持插件包安装：先 `vite build`，再把 `dist/` 与 `plugin.json` 一起打成 zip 上传。宿主会解包到 `public/plugins/<id>/`，该目录同时是插件发现来源之一，因此无需静态服务器即可使用；卸载时会同步清理该目录。底层端点为 `POST /api/dashboard/plugins`。
+
 ---
 
 ## 发布流程
 
 1. **开发自测**：`npm run dev` + Dashboard 联调。
 2. **构建产物**：`npm run build`，得到 `dist/main.js`。
-3. **部署清单与产物**：把 `plugin.json` 和 `dist/` 部署到任意可访问的静态服务器（或对象存储）。确保 `plugin.json` 的 `entry.dashboard` 指向产物路径。
-4. **安装**：用户在 Dashboard「设置 → 插件 → 从 URL 安装」填入清单 URL；或运维通过 `NEXT_PUBLIC_PLUGIN_DEV_URLS`/注册表预置。
-5. **版本升级**：更新 `plugin.json` 的 `version` 与产物，重新部署；必要时在 Dashboard 重新加载插件。
+3. **分发**（二选一）：
+   - 把 `plugin.json` 和 `dist/` 部署到任意可访问的静态服务器（或对象存储），确保 `entry.dashboard` 指向产物路径；
+   - 或把 `dist/` 与 `plugin.json` 打成 zip，由用户在「设置 → 插件」上传安装。
+4. **安装**：用户在 Dashboard「设置 → 插件 → 从 URL 安装」填入清单 URL；或运维通过 `NEXT_PUBLIC_PLUGIN_DEV_URLS`/注册表预置；或走上传插件包途径。
+5. **版本升级**：更新 `plugin.json` 的 `version` 与产物，重新部署或重新上传；必要时在 Dashboard 重新加载插件。
 
 ---
 

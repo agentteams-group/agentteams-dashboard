@@ -3,7 +3,7 @@
 
   # AgentTeams Dashboard
 
-  **Mission Control for multi-agent teams — run Workers, Teams, Humans and Managers from one console: live topology, a task board with human-in-the-loop interventions, integrated Matrix chat with runtime-aware rendering, and AI-assisted diagnostics.**
+  **Mission Control for multi-agent teams — supervise Workers, Teams, Humans and Managers through a two-layer workspace (工作进展 / 管理工具): task board with human-in-the-loop interventions, artifacts and coding runs, asset center, members & teams, observability & governance, integrated Matrix chat with runtime-aware rendering, and AI-assisted diagnostics.**
 
   [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -32,25 +32,23 @@ Chat voice input: click the microphone, review the transcription in your draft, 
 
 ## ✨ Overview
 
-AgentTeams Dashboard is the **Mission Control** for [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — a **Next.js** console where operators supervise multi-agent teams in real time: cluster topology, a task board with human-in-the-loop interventions, integrated Matrix chat with runtime-aware message rendering, RBAC/audit governance, and an AI diagnostic assistant. It deploys standalone or embeds into an existing AgentTeams installation with a one-line script.
+AgentTeams Dashboard is the **Mission Control** for [AgentTeams](https://github.com/agentscope-ai/AgentTeams) — a **Next.js** console where operators supervise multi-agent teams in real time. The workspace is split into two layers: **工作进展** (Assistants, My teams, Task board, Artifacts, Coding runs, Automation) is the daily collaboration spine, while **管理工具** (Asset center, Members & teams, Observability & governance) holds platform administration. Everything is supervised through a single console with runtime-aware Matrix chat, human-in-the-loop interventions, RBAC/audit governance, tracing and an AI diagnostic assistant. It deploys standalone or embeds into an existing AgentTeams installation with a one-line script.
 
 ## 🚀 Features
 
-| Module | Description |
-|--------|-------------|
-| **Overview** | Cluster at a glance: active Workers, Teams, Matrix rooms, resource status |
-| **Workers** | Full lifecycle management: view, wake, sleep, ensure-ready, delete |
-| **Teams** | Team management: members, linked Workers/Humans, detail dialogs |
-| **Humans** | Human CRUD: card/table views, permission levels, room association |
-| **Managers** | Manager management: model configuration, welcome messages, team coordination |
-| **K8s** | Kubernetes CRD resource cards with YAML/JSON preview |
-| **Infrastructure** | Infra health: Controller, Matrix and component status |
-| **Chat** | Matrix workspaces: room and member navigation, virtualized timeline, threads, edits, rich runtime message rendering |
-| **Security** | Permission matrix, access control and security policy views |
-| **Skills** | Skill / MCP resource management |
+The sidebar mirrors the workspace IA — six first-level entries (`workspace-navigation.tsx`), each with its own sub-pages. Level-gated entries are marked L1/L2 (L1 = admin).
+
+| Area | What it covers |
+|------|----------------|
+| **助手** | Platform Manager or Leader DM conversation for the signed-in account: team jump links, draft persistence, `@` mentions, file references, message actions, threads and runtime-aware rendering |
+| **我的团队** | Team work rooms the account belongs to, with an **Admin** / **Member** badge and access to the Leader DM when the account is a Team Admin |
+| **工作台** | 任务看板 (task/project board with DAG + loop views, attention/HITL inbox, pause/resume/replan), 产物 (project → task → artifact tree with preview/download), 编码执行 (read-only coding-CLI run records and raw logs), 自动化 (loop definition canvas, templates, dry run, publish/rollback) |
+| **资产中心** | 模型 (alias routing, availability, LLM tuning), 工具 (MCP server registry, connection test, managed onboarding), 技能 (custom / Nacos / built-in skills), 知识库 (Worker workspace files + 2D/3D wikilink graph), 文件 (Human file areas: upload, edit, trash, quota) |
+| **成员与团队** | Agent (Worker) lifecycle and detail panels (wake/sleep/ensure-ready/delete, runtime config, coding CLI, skills, telemetry), teams and humans. Manager / platform-assistant setup lives under 助手 and is L1-only in the UI; the Controller enforces the real boundary |
+| **观测与治理** | Runtime monitor plugin, Tracing (Langfuse or Alibaba Cloud AgentLoop query backend) and 操作审计 (L2 self-scope, L3 all-scope, searchable/paginated event list with detail panel) |
+| **总览 / 问天 (Settings → 管理)** | 总览: cluster resource counts, Worker states, Controller version and infrastructure health. 问天 (WenTian): AI-assisted diagnosis from logs, sessions and Matrix messages — root-cause analysis, impact assessment and remediation steps — plus an SSE progress bar for log analysis, driven by the AgentTeams SRE expert prompt template |
 | **Debug Log** | One-click debug log collection: bundled ZIP with container diagnostics, agent sessions and Matrix messages, PII-redacted by default |
-| **WenTian (问天)** | Runtime diagnostic assistant: cluster health overview, AI-powered diagnosis with structured Markdown report (root cause analysis, impact assessment, remediation steps), log analysis with real-time SSE progress bar, all driven by the AgentTeams SRE expert prompt template |
-| **Architecture** | Architecture diagram and component relationships |
+| **Voice input** | Click the mic, review the transcription in the draft, then send. Local Whisper recognition is free by default; optional paid DashScope ASR uses a server-side API key. See [docs/voice-input.md](docs/voice-input.md) |
 | **Theming** | Built-in light / dark / high-contrast themes, a custom theme editor (30+ parameters) with JSON import/export, and enterprise `theme.config.json` injection |
 | **Plugins** | Runtime plugin system: 5 extension points, dynamic loading, per-plugin error isolation, dev hot-reload, and a `create-dashboard-plugin` scaffold CLI |
 
@@ -66,7 +64,7 @@ AgentTeams Dashboard is the **Mission Control** for [AgentTeams](https://github.
 
 The chat workspace renders Matrix rooms with virtualized history, unread-aware scrolling, message actions, read receipts and on-demand thread panels. Root messages remain in the main timeline; `m.thread` replies are counted on their root and loaded in the thread panel.
 
-Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates.
+Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations, the HITL inbox protocol and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates. Tool Guard / HITL confirmations surface as actionable cards that post the decision back as a normal Matrix reply, and the Overview HITL inbox aggregates pending approvals across rooms.
 
 The Dashboard does not implement or claim end-to-end encryption: chat content passes through the server-side proxy in plaintext, and encrypted rooms render as empty. Which layer can read what, and what operators must confirm for their deployment, is documented in [docs/trust-boundary.md](docs/trust-boundary.md).
 
@@ -111,7 +109,7 @@ Worker polling supports slim list projections and private ETag revalidation, wit
 
 The [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer starts Dashboard by default alongside the Controller/Manager. The default local flow opens Dashboard and copies the login password to the clipboard; paste it into the login page with `admin` prefilled. A model API key is optional during installation: the Manager conversation links to model management when configuration is missing. Installer changes are contributed to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
-- **Dashboard release target**: `v1.4.0`. The app version source of truth is `version` in `package.json` (`1.4.0`); the matching release tag is `v1.4.0`.
+- **Dashboard release target**: `v1.4.1`. The app version source of truth is `version` in `package.json` (`1.4.1`); the matching release tag is `v1.4.1`.
 - **Installer default**: `v1.4.1`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
@@ -139,7 +137,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.4.0` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.4.1` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 
@@ -154,7 +152,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.0 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.1 \
   AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 
@@ -272,7 +270,7 @@ AT and Dashboard can start without Langfuse. In **观测与治理 → Tracing**,
 
 **观测与治理** also contains the enabled runtime-monitor plugin and operation audit. Runtime monitoring reports resource counts, Worker states and the Controller version. Audit displays up to 200 recent recorded events, with search, resource filters, pagination and a detail panel; coverage depends on the Controller's event producers. The system overview and WenTian diagnostics remain in Settings. WenTian's health checks and log ZIP export work independently of AI analysis, which requires its server-side model credentials.
 
-Saving takes effect without a Dashboard restart. Settings are stored atomically in `observability.json` beside `DASHBOARD_CONFIG_FILE` (mode `0600`); persist that directory in a volume. Secret fields are write-only, and blank secret inputs retain saved values. `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_URL`, `LANGFUSE_PROJECT_ID`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` remain optional server-side defaults for reading existing traces.
+Saving takes effect without a Dashboard restart. Since the Worker-tracing rework, the observability configuration is owned by the **Controller**: it lives in the `agentteams-observability` Secret of the Controller namespace (`data["config.json"]`) and is written through `PUT /api/agentteams/observability` → `/api/v1/observability/config`, using the caller's own Controller credentials. The Dashboard strips any client-supplied `controllerUrl` and no longer reads a local `observability.json` or the `LANGFUSE_*` environment variables. Deployments that saved settings before the upgrade must re-save them from the UI; the old file is neither migrated nor deleted. Secret fields are write-only in the API projection (`secretKeyConfigured` / `collectorHeadersConfigured`), and blank secret inputs retain the stored values. A stale `revision` returns `409`.
 
 Collection defaults to off. Applying merges only telemetry environment variables through the Controller's existing Worker API. Running managed Workers are recreated; sleeping Workers use the settings on their next start. This requires telemetry-enabled QwenPaw or Hermes images and a Controller exposing editable Worker environments. Turning collection off also requires applying the saved settings; existing traces remain queryable. A successful connection test or configuration write does not prove Worker readiness or ingestion: run a task and inspect its trace.
 
@@ -282,7 +280,7 @@ Team/Worker filters and trace list/detail/session export use the current account
 
 Select **阿里云 AgentLoop** as the query backend in tracing settings. Enter the Trace store region, CMS Workspace and the raw Trace SLS Project/Logstore resolved from that Workspace's CMS EntityStore (`apm.trace_set.storage`). This is the XTrace store, not the AgentSpace's `agent-trajectory` store. The binding is supplied explicitly by an administrator; Dashboard does not discover or validate the CMS binding automatically.
 
-Dashboard uses the official `@alicloud/credentials` default server credential chain (including STS and RAM/OIDC roles), with read access scoped to the target Trace store. Cloud query credentials are never form fields or Worker environment values. Optional server defaults: `AGENTTEAMS_TRACING_BACKEND=agentloop`, `AGENTLOOP_REGION`, `AGENTLOOP_WORKSPACE`, `AGENTLOOP_SLS_PROJECT`, `AGENTLOOP_SLS_LOGSTORE`. The default SLS Project endpoint is `https://<project>.<region>.log.aliyuncs.com`; `AGENTLOOP_SLS_ENDPOINT` overrides this full endpoint server-side for intranet access or local protocol testing.
+Dashboard uses the official `@alicloud/credentials` default server credential chain (including STS and RAM/OIDC roles), with read access scoped to the target Trace store. Cloud query credentials are never form fields or Worker environment values. The backend selection and the four source fields (region, CMS Workspace, SLS Project, Logstore) are entered in the UI and stored in the Controller Secret like Langfuse settings; `AGENTLOOP_SLS_ENDPOINT` remains the only server-side override and replaces the full Project endpoint for intranet access or local protocol testing.
 
 Collector must export to the target Workspace using its OTLP/HTTP endpoint and ingestion headers. It may also export the same spans to Langfuse. Changing the query backend does not reconfigure Collector exporters. Worker telemetry supplies `gen_ai.span.kind`, Session/Turn, model usage and model/tool contents alongside existing Langfuse fields. This backend reads the documented raw Span schema with nanosecond `startTime`/`duration`; it does not create audit events, trajectory pipelines, datasets or evaluators.
 
@@ -343,20 +341,32 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 ```
 ├── src/
 │   ├── app/
-│   │   ├── api/              # Proxy API routes (agentteams + matrix)
+│   │   ├── api/              # Proxy API routes: agentteams, matrix, higress, auth, dashboard, self-update
+│   │   ├── replay/           # Session replay page
+│   │   ├── tracing-demo/     # Isolated tracing demo (opt-in, no Controller)
 │   │   ├── globals.css
 │   │   ├── layout.tsx
 │   │   └── page.tsx
 │   ├── components/
-│   │   ├── dashboard/        # Dashboard business components
-│   │   │   └── sections/     # Feature sections
+│   │   ├── dashboard/        # Shell, navigation and business components
+│   │   │   ├── sections/     # Feature sections (chat, tasks, artifacts, loops, files, knowledge, …)
+│   │   │   └── settings/     # Settings dialog tabs (backend, theme, plugins, update, speech, management)
+│   │   ├── plugins/          # Plugin host components
 │   │   ├── ui/               # shadcn/ui primitives
 │   │   ├── auth/             # Login components
-│   │   └── setup/            # Setup wizard
+│   │   ├── setup/            # First-launch setup wizard
+│   │   └── theme/            # Theme system
 │   ├── hooks/                # TanStack Query hooks
-│   └── lib/                  # Utilities, API client, stores
+│   ├── lib/                  # API clients, stores, protocol parsers, RBAC/audit, plugin runtime
+│   ├── middleware.ts         # Session gate, identity/level header injection
+│   └── __tests__/integration/  # Integration tests (require live backends)
+├── scripts/                  # dev/start servers, speech assets, standalone copy, docs consistency, hotfix bundle
+├── tools/
+│   └── create-dashboard-plugin/  # Plugin scaffold CLI
 ├── install/                  # AgentTeams integration install scripts
-├── public/                   # Static assets
+├── deploy/                   # Docker Compose deployment examples
+├── docs/                     # Documentation
+├── public/                   # Static assets (incl. generated speech models)
 ├── Dockerfile
 ├── Makefile                  # Multi-arch Docker build/push
 ├── next.config.ts
@@ -368,17 +378,26 @@ The browser never talks to the AgentTeams Controller or the Matrix Homeserver di
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start the dev server (port 3000) |
-| `npm run build` | Build the standalone production bundle |
-| `npm start` | Start the production server |
-| `npm run lint` | ESLint checks |
+| `npm run dev` | Prepare speech assets, then start the dev server (port 3000, log mirrored to `dev.log`) |
+| `npm run prepare:speech` | Download the pinned Whisper tiny model + WASM into `public/speech/` |
+| `npm run build` | Prepare speech assets, build the standalone bundle, copy standalone assets |
+| `npm start` | Start the production server (log mirrored to `server.log`) |
+| `npm run lint` | ESLint + typography scan (`scripts/typography-scan.mjs`) |
 | `npm run lint:tone` | AI-tone copy scan (visible copy hard-word gate) |
-| `npm run typecheck` | TypeScript type checking |
-| `npm test` | Run the vitest test suite |
+| `npm run lint:typography` | Typography scan only |
+| `npm run typecheck` | TypeScript type checking (`tsc --noEmit`) |
+| `npm test` | Run the vitest unit/component suite |
+| `npm run test:watch` | Vitest watch mode |
+| `npm run test:coverage` | Vitest with coverage |
+| `npm run test:integration` | Integration tests (need live backends / port 3000) |
+
+Documentation gates live outside `package.json`: `bash scripts/check-docs-consistency.sh`
+(README/docs stale-string, installer-version and link checks) and
+`bash install/agentteams-dashboard-tests.sh` (installer assertions).
 
 ## 🧪 Quality
 
-- **Unit tests** with vitest + Testing Library (2000+ tests across 200+ files, `npm test`)
+- **Unit tests** with vitest + Testing Library (4,000+ tests across 470+ files, `npm test`)
 - **Lint-clean** ESLint configuration (`npm run lint`)
 - **Type-safe** with strict TypeScript (`npm run typecheck`)
 - **Reproducible builds** via `npm ci` + lockfile and multi-arch Docker images (`make help`)
