@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding } from 'lucide-react';
+import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding, ListPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
@@ -14,6 +14,8 @@ import { useImeGuard } from './use-ime-guard';
 import type { DirectExecution } from '@/lib/direct-execution';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { ComposerReply } from './views/ReplyQuote';
+import { MessageQueuePanel } from './components/MessageQueuePanel';
+import type { ChatMessageQueue } from '@/lib/chat-message-queue';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -60,6 +62,10 @@ interface ChatComposerProps {
   onChange: (_value: string) => void;
   /** Sends the message; receives the currently attached file references (#87). */
   onSend: (_refs?: FileRef[]) => void;
+  onQueue?: (_refs?: FileRef[]) => void;
+  queue?: ChatMessageQueue;
+  onSendQueued?: (_id: string) => void;
+  onRemoveQueued?: (_id: string) => void;
   isSending: boolean;
   sendError: string | null;
   placeholder: string;
@@ -89,6 +95,10 @@ export function ChatComposer({
   value,
   onChange,
   onSend,
+  onQueue,
+  queue,
+  onSendQueued,
+  onRemoveQueued,
   isSending,
   sendError,
   placeholder,
@@ -222,10 +232,11 @@ export function ChatComposer({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [menuType]);
 
-  const handleSend = () => {
+  const handleSend = (enqueue = false) => {
     if (isSending || voiceBusy) return;
     if (!value.trim() && fileRefs.length === 0) return;
-    onSend(fileRefs);
+    if (enqueue) onQueue?.(fileRefs);
+    else onSend(fileRefs);
     // The parent owns `value` and clears it through onChange; refs are local
     // state so they are cleared here once handed to the parent.
     setFileRefs([]);
@@ -521,15 +532,19 @@ export function ChatComposer({
         </div>
       )}
 
-      {execution && !editSession && (
-        <p role="status" className="flex items-center gap-2 px-1 pb-2 text-xs text-muted-foreground">
+      {!editSession && (execution || queue?.messages.length) && (
+        <div className="mb-2 flex min-w-0 items-center justify-between gap-2 px-1">
+        {execution && <p role="status" className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${working ? 'bg-amber-500' : 'bg-muted-foreground/50'}`} />
-          {execution.status === 'running' ? 'Agent 正在工作，发送补充后将调整执行。'
+          <span className="truncate">{execution.status === 'running' ? '补充可调整当前执行，排队将在回复后发送。'
             : execution.status === 'stopping' ? '正在停止执行，等待当前工具清理完成…'
               : execution.status === 'stopped' ? '已停止。对话和已完成的结果会保留，可以继续补充。'
                 : execution.status === 'unavailable' ? '目标执行已结束或不可用，可以继续对话。'
-                  : execution.status === 'failed' ? '本轮执行已结束，请查看对话中的处理结果。' : '本轮已完成，可以继续对话。'}
-        </p>
+                  : execution.status === 'failed' ? '本轮执行已结束，请查看对话中的处理结果。' : '本轮已完成，可以继续对话。'}</span>
+        </p>}
+        {queue && onSendQueued && onRemoveQueued && <MessageQueuePanel messages={queue.messages} sendingId={queue.sendingId}
+          disabled={disabled || isSending || !execution} onSend={onSendQueued} onRemove={onRemoveQueued} />}
+        </div>
       )}
 
       {/* Input area: bordered rounded container with an inline toolbar, as in
@@ -636,18 +651,25 @@ export function ChatComposer({
                 <span className="hidden sm:inline">保存</span>
               </Button>
             ) : (
+              <div className="flex items-center gap-1.5">
+              {working && onQueue && <Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground"
+                aria-label="加入消息队列" title="排队，当前回复结束后发送" onClick={() => handleSend(true)}
+                disabled={disabled || (!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}>
+                <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />排队
+              </Button>}
               <Button
                 size="sm"
                 data-chat-send
                 aria-label={working ? '补充信息并继续' : '发送消息'}
                 className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
                 title={working ? '补充 (Enter)' : '发送 (Enter)'}
               >
                 {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                 <span>{working ? '补充' : '发送'}</span>
               </Button>
+              </div>
             )}
           </div>
         </div>

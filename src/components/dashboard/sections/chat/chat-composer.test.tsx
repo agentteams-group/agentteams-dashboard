@@ -33,6 +33,18 @@ it('does not show Stop for ordinary chats', () => {
   expect(screen.getByRole('button', { name: '发送消息' }).textContent).toBe('发送');
 });
 
+it('offers queueing separately from immediate supplementary input', () => {
+  const onQueue = vi.fn(), onSend = vi.fn();
+  render(<ChatComposer value="下一步整理报表" onChange={vi.fn()} onSend={onSend} onQueue={onQueue}
+    isSending={false} sendError={null} placeholder="消息" disabled={false}
+    execution={{ runId: '$run', agentId: '@agent:test', status: 'running' }} />);
+  fireEvent.click(screen.getByRole('button', { name: '加入消息队列' }));
+  expect(onQueue).toHaveBeenCalledOnce();
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '补充信息并继续' }));
+  expect(onSend).toHaveBeenCalledOnce();
+});
+
 describe('ChatComposer keyboard submission', () => {
   it('does not send when composition ends before the confirming Enter', () => {
     const onSend = vi.fn();

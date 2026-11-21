@@ -6,7 +6,7 @@ import { MessageList, type MessageListHandle } from './structures/MessageList';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
-import { useOutboundMessages } from './hooks/useOutboundMessages';
+import { buildOutboundRequest, useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
 import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
@@ -68,6 +68,7 @@ import type { TeamResponse } from '@/lib/agentteams-api';
 import type { RoomInfo } from './room-info';
 import { MessageReadRoomContext } from './message-read-status';
 import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
+import { chatQueueKey, sendQueuedMessage, useChatMessageQueue } from '@/lib/chat-message-queue';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -232,6 +233,8 @@ export function ChatRoom({
   const chatLayoutRef = useRef<HTMLDivElement>(null);
 
   const { userId, isLoggedIn, homeserver, accessToken } = useMatrixStore();
+  const queueKey = chatQueueKey({ homeserver, userId, roomId });
+  const queue = useChatMessageQueue(state => state.queues[queueKey]);
   const sendMutation = useMatrixSendMessage();
   const uploadMutation = useMatrixUploadMedia();
   const editMutation = useMatrixEditMessage();
@@ -509,7 +512,7 @@ export function ChatRoom({
     buildSystemNotice: buildSystemNoticeFromError,
   });
 
-  const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[], fileRefs?: FileRef[]) => {
+  const handleSend = useCallback((content: string, _options?: { html?: boolean }, mentions?: MentionEntry[], fileRefs?: FileRef[], enqueue = false) => {
     if (!canSend || membershipDenied) return;
     const typed = content.trim();
     // A message may carry only file references (#87); it then falls back to a
@@ -527,22 +530,25 @@ export function ChatRoom({
       ? buildConfirmationReply(trimmed, workerMatrixUserIds?.[0], workerMatrixUserIds)
       : { content: trimmed, mentions };
 
-    if (onSendMessage) {
+    if (enqueue && directExecution && isLoggedIn && !onSendMessage) {
+      useChatMessageQueue.getState().enqueue({ homeserver, userId, roomId, agentId: directExecution.agentId },
+        buildOutboundRequest(roomId, { content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs }));
+    } else if (onSendMessage) {
       onSendMessage(addressed.content, _options, addressed.mentions);
       clearDraft();
       return;
+    } else {
+      if (!roomId || !isLoggedIn) return;
+      sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs,
+        control: canRedirect && directExecution && !trimmed.startsWith('/') ? executionControl(directExecution, 'steer') : undefined });
     }
-    if (!roomId || !isLoggedIn) return;
-
-    sendOutbound({ content: addressed.content, options: _options, mentions: addressed.mentions, replyTo, msgtype, fileRefs,
-      control: canRedirect && directExecution && !trimmed.startsWith('/') ? executionControl(directExecution, 'steer') : undefined });
     // Sending a message immediately ends the typing state, otherwise other
     // members keep seeing "typing" for up to the full timeout window.
     stopTyping();
     clearDraft();
     setMentions([]);
     setReplyTo(null);
-  }, [onSendMessage, roomId, isLoggedIn, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds, canRedirect, directExecution, canSend]);
+  }, [onSendMessage, roomId, isLoggedIn, homeserver, userId, sendOutbound, stopTyping, replyTo, clearDraft, membershipDenied, agentRole, workerMatrixUserIds, canRedirect, directExecution, canSend]);
 
   const handleStopExecution = useCallback(() => {
     if (!directExecution || !canRedirect || !canSend || membershipDenied) return;
@@ -1013,6 +1019,12 @@ export function ChatRoom({
             value={inputValue}
             onChange={handleInputChange}
             onSend={(refs) => handleSend(inputValue, undefined, mentions, refs)}
+            onQueue={directExecution && !onSendMessage ? (refs) => handleSend(inputValue, undefined, mentions, refs, true) : undefined}
+            queue={queue}
+            onSendQueued={id => {
+              if (directExecution && canSend && isLoggedIn && !membershipDenied) void sendQueuedMessage(queueKey, id, directExecution, sendMutation.mutateAsync);
+            }}
+            onRemoveQueued={id => useChatMessageQueue.getState().remove(queueKey, id)}
             isSending={sendMutation.isPending}
             sendError={sendMutation.error?.message ?? null}
             placeholder={replyTo ? '写下你的回复…' : agentRole === 'operations' ? '描述你的运维目标，或询问平台运行情况…' : agentRole === 'leader' ? '告诉团队助手，你想推进什么…' : `发送消息给 ${roomName}…`}
