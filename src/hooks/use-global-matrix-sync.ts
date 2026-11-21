@@ -18,6 +18,7 @@ import {
   type RoomMeta,
 } from '@/hooks/use-matrix';
 import { extractMessagePreview } from '@/components/dashboard/sections/chat/room-builders';
+import { ingestAssistantReminders } from '@/lib/assistant-reminders';
 import {
   bufferSyncEvents,
   recordSyncFailure,
@@ -366,6 +367,7 @@ export function useGlobalMatrixSync(): void {
           filterRejected ? undefined : SYNC_FILTER,
         );
         if (cancelled || isStale()) return;
+        const live = Boolean(syncToken);
         syncToken = resp.next_batch;
         retryDelay = 1000;
 
@@ -422,6 +424,7 @@ export function useGlobalMatrixSync(): void {
             // opened — dedupe by event_id makes both paths idempotent, so
             // nothing is dropped and nothing double-renders.
             const timelineEvents = (roomData.timeline?.events || []) as MatrixEvent[];
+            ingestAssistantReminders(rid, timelineEvents, userId ?? '', live);
             if (timelineEvents.length > 0) {
               for (const ev of timelineEvents) {
                 if (typeof ev.origin_server_ts === 'number' && ev.origin_server_ts > maxEventTs) {
