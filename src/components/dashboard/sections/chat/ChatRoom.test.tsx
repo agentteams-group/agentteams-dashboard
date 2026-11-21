@@ -20,6 +20,7 @@ import { useSectionStore } from '@/lib/section-store';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
 import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
 import { useChatMessageQueue } from '@/lib/chat-message-queue';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
@@ -296,13 +297,29 @@ describe('ChatRoom read-position dual-write', () => {
     })));
     mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
       content: { msgtype: 'm.notice', body: '正在工作', 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
-    renderChatRoom({ workerMatrixUserIds: ['@peer:test'] });
+    renderChatRoom({ workerMatrixUserIds: ['@peer:test'], roomRuntime: 'qwenpaw' });
+    expect(screen.getByText('发送会打断当前会话')).toBeInTheDocument();
     expect(screen.queryByText('正在工作')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '停止执行' }));
     expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'stop', run_id: '$run', agent_id: '@peer:test' });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '只看杭州' } });
-    fireEvent.click(screen.getByRole('button', { name: '补充信息并继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'steer', run_id: '$run', agent_id: '@peer:test' });
+  });
+  it('uses the saved Enter preference to queue input in the actual room composer', () => {
+    useAgentTeamsStore.setState({ replyEnterAction: 'queue' });
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomMembersChunk.push(...['@me:test', '@peer:test'].map(id => ({
+      type: 'm.room.member', state_key: id, content: { membership: 'join' },
+    })));
+    mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
+      content: { 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    renderChatRoom({ workerMatrixUserIds: ['@peer:test'], roomRuntime: 'codex' });
+    expect(screen.queryByText('发送会打断当前会话')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '下一轮核对退款' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(screen.getByRole('button', { name: '1 条排队中' })).toBeInTheDocument();
+    expect(mocks.sendMutate).not.toHaveBeenCalled();
   });
   it('keeps queued input out of Matrix until selected and steers the currently advertised run', async () => {
     useMatrixStore.setState({ userId: '@me:test', homeserver: 'https://queue.test', isLoggedIn: true });
@@ -324,7 +341,7 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.roomMessagesChunk.push({ event_id: '$new-status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000,
       content: { 'com.agentteams.execution': { run_id: '$new-run', status: 'running', capabilities: ['stop', 'steer'] } } });
     view.rerender(<ChatProvider><ChatRoom roomId="!room:test" roomName="测试房间" workerMatrixUserIds={['@peer:test']} /></ChatProvider>);
-    fireEvent.click(screen.getByRole('button', { name: '插队发送第 2 条消息' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送第 2 条排队消息' }));
     await waitFor(() => expect(mocks.sendMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
       body: '改查杭州', extra: { 'com.agentteams.control': { action: 'steer', run_id: '$new-run', agent_id: '@peer:test' } },
     })));
@@ -341,6 +358,7 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.setAgentStatusMap({});
     useSectionStore.setState({ mentionRoomId: null });
     useChatMessageQueue.setState({ queues: {} });
+    useAgentTeamsStore.setState({ replyEnterAction: 'send', autoReconnect: false });
   });
 
   it('explains why a visible room cannot be used after the current user left', () => {

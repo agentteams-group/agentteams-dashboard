@@ -43,6 +43,7 @@ import { BackendTab } from './settings/backend-tab';
 import { SpeechSettings } from './settings/speech-settings';
 import { ClientConfigTab } from './settings/client-config-tab';
 import { ChatConnectionSettings } from './settings/chat-connection-settings';
+import { ChatInputSettings } from './settings/chat-input-settings';
 import { UpdateTab } from './settings/update-tab';
 import { ManagementTab, navigateFromSettings } from './settings/management-tab';
 
@@ -166,6 +167,7 @@ export function SettingsDialog() {
           <TabsList className="h-auto w-full flex-wrap justify-start gap-1 [&_[data-slot=tabs-trigger]]:h-9">
             <TabsTrigger value="management">管理</TabsTrigger>
             <TabsTrigger value="connection">连接</TabsTrigger>
+            <TabsTrigger value="chat">聊天</TabsTrigger>
             {isStateless && (
               <TabsTrigger value="client">
                 <Cpu className="w-3.5 h-3.5 mr-1" />
@@ -196,6 +198,10 @@ export function SettingsDialog() {
 
           <TabsContent value="management" className="py-4">
             <ManagementTab />
+          </TabsContent>
+
+          <TabsContent value="chat" className="py-4">
+            <ChatInputSettings />
           </TabsContent>
 
           <TabsContent value="updates" className="py-4">

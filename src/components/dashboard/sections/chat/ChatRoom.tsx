@@ -20,6 +20,7 @@ import { TaskTopologyPopover } from './components/TaskTopologyPopover';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useSectionStore } from '@/lib/section-store';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   useMatrixRoomMessages,
   useMatrixRoomMembers,
@@ -404,6 +405,8 @@ export function ChatRoom({
     allEvents, userId, roomMembers.map(member => member.userId), workerMatrixUserIds,
   ), [allEvents, userId, roomMembers, workerMatrixUserIds]);
   const canRedirect = directExecution?.status === 'running' || directExecution?.status === 'stopping';
+  const replyEnterAction = useAgentTeamsStore(state => state.replyEnterAction);
+  const peerRuntime = roomRuntime ?? (directExecution ? runtimeMap[directExecution.agentId]?.runtime : undefined);
 
   // m.fully_read account-data marker → anchor for the "unread" divider line.
   const readEventId = readMarkerQuery.data?.event_id ?? null;
@@ -1012,6 +1015,8 @@ export function ChatRoom({
           {membershipDenied && <p role="status" className="px-5 py-2 text-sm text-muted-foreground">你尚未加入此房间。请让团队管理员将你添加为团队成员后再聊天。</p>}
           <ChatComposer
             execution={directExecution}
+            replyEnterAction={replyEnterAction}
+            interruptsOnSend={peerRuntime === 'qwenpaw' || peerRuntime === 'copaw'}
             replyTo={replyTo}
             onCancelReply={() => setReplyTo(null)}
             onStop={handleStopExecution}

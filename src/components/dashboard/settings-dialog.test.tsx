@@ -20,6 +20,8 @@ const store = {
   taskBoardVisible: true,
   setTaskBoardVisible: vi.fn(),
   userLevel: 3,
+  replyEnterAction: 'send',
+  setReplyEnterAction: vi.fn(),
 };
 
 vi.mock('@/lib/agentteams-store', () => ({
@@ -78,9 +80,15 @@ describe('SettingsDialog · 模块更新已迁出', () => {
 
   it('保留既有 tab 集合', () => {
     render(<SettingsDialog />);
-    for (const name of ['管理', '连接', '后端', '外观', 'Beta功能', '插件', '更新']) {
+    for (const name of ['管理', '连接', '聊天', '后端', '外观', 'Beta功能', '插件', '更新']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument();
     }
+  });
+
+  it('exposes the reply Enter preference under chat settings', () => {
+    render(<SettingsDialog />);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '聊天' }), { button: 0, ctrlKey: false });
+    expect(screen.getByRole('combobox', { name: '回复中按 Enter' })).toHaveTextContent('立即发送');
   });
 
   it('keeps chat capability and disconnect controls in connection settings', () => {

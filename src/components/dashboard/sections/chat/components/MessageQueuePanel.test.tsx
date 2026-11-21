@@ -16,7 +16,7 @@ it('shows ordered summaries, full text, and per-message insert/delete actions', 
   ]);
   fireEvent.focus(screen.getByRole('button', { name: '查看第 2 条排队消息全文' }));
   expect((await screen.findByRole('dialog', { name: '排队消息全文' })).textContent).toContain(messages[1].request.body);
-  fireEvent.click(screen.getByRole('button', { name: '插队发送第 2 条消息' }));
+  fireEvent.click(screen.getByRole('button', { name: '发送第 2 条排队消息' }));
   expect(onSend).toHaveBeenCalledWith('1');
   fireEvent.click(screen.getByRole('button', { name: '删除第 3 条排队消息' }));
   expect(onRemove).toHaveBeenCalledWith('2');

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpRight, ChevronUp, ListOrdered, Trash2 } from 'lucide-react';
+import { Send, ChevronUp, ListOrdered, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { isDesktopHover, useHoverOpen } from '@/lib/desktop-interactions';
@@ -37,9 +37,9 @@ export function MessageQueuePanel({ messages, sendingId, disabled, onSend, onRem
         <Popover open={Boolean(preview)} onOpenChange={open => { if (!open) setPreviewId(null); }}>
           <PopoverAnchor asChild>
             <div data-message-queue-panel>
-              <div className="border-b border-border/60 px-4 py-3">
-                <p className="text-sm font-medium">待发送 <span className="ml-1 text-xs font-normal tabular-nums text-muted-foreground">{messages.length}</span></p>
-                <p className="mt-1 text-xs text-muted-foreground">当前回复结束后，按顺序发送</p>
+              <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+                <p className="shrink-0 text-sm font-medium">待发送 <span className="ml-1 text-xs font-normal tabular-nums text-muted-foreground">{messages.length}</span></p>
+                <p className="min-w-0 truncate text-xs text-muted-foreground" title="当前回复结束后，按顺序自动发送">当前回复结束后，按顺序自动发送</p>
               </div>
               <ol className="max-h-[min(19rem,40dvh)] overflow-y-auto overscroll-contain p-1.5">
                 {messages.map((message, index) => (
@@ -54,8 +54,8 @@ export function MessageQueuePanel({ messages, sendingId, disabled, onSend, onRem
                     </button>
                     <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
                       <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md px-2 text-xs"
-                        aria-label={`插队发送第 ${index + 1} 条消息`} disabled={disabled || Boolean(sendingId)} onClick={() => onSend(message.id)}>
-                        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />插队
+                        aria-label={`发送第 ${index + 1} 条排队消息`} disabled={disabled || Boolean(sendingId)} onClick={() => onSend(message.id)}>
+                        <Send className="h-3.5 w-3.5" aria-hidden="true" />发送
                       </Button>
                       <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md px-2 text-xs text-muted-foreground hover:text-destructive"
                         aria-label={`删除第 ${index + 1} 条排队消息`} disabled={sendingId === message.id} onClick={() => onRemove(message.id)}>

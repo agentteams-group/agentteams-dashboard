@@ -10,6 +10,8 @@ export interface ConnectionAttempt {
   error: string | null;
 }
 
+export type ReplyEnterAction = 'send' | 'queue';
+
 interface AgentTeamsState {
   controllerUrl: string;
   isConnected: boolean;
@@ -21,6 +23,8 @@ interface AgentTeamsState {
   lastConnectedAt: number | null;
   connectionLatency: number | null;
   connectionHistory: ConnectionAttempt[];
+  replyEnterAction: ReplyEnterAction;
+  setReplyEnterAction: (_action: ReplyEnterAction) => void;
 
   /**
    * Whether the 任务看板 nav item is visible (beta feature). Defaults to
@@ -85,6 +89,8 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
       lastConnectedAt: null,
       connectionLatency: null,
       connectionHistory: [],
+      replyEnterAction: 'send',
+      setReplyEnterAction: (replyEnterAction) => set({ replyEnterAction }),
       taskBoardVisible: true,
       classicNavigation: false,
       userLevel: 3,
@@ -194,6 +200,7 @@ export const useAgentTeamsStore = create<AgentTeamsState>()(
         lastConnectedAt: state.lastConnectedAt,
         taskBoardVisible: state.taskBoardVisible,
         classicNavigation: state.classicNavigation,
+        replyEnterAction: state.replyEnterAction,
       }),
       migrate: (persistedState) => {
         // Clear the legacy hard-coded default so the dashboard falls back to

@@ -16,6 +16,7 @@ import type { DisplayMessage } from '@/hooks/use-matrix';
 import { ComposerReply } from './views/ReplyQuote';
 import { MessageQueuePanel } from './components/MessageQueuePanel';
 import type { ChatMessageQueue } from '@/lib/chat-message-queue';
+import type { ReplyEnterAction } from '@/lib/agentteams-store';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -63,6 +64,8 @@ interface ChatComposerProps {
   /** Sends the message; receives the currently attached file references (#87). */
   onSend: (_refs?: FileRef[]) => void;
   onQueue?: (_refs?: FileRef[]) => void;
+  replyEnterAction?: ReplyEnterAction;
+  interruptsOnSend?: boolean;
   queue?: ChatMessageQueue;
   onSendQueued?: (_id: string) => void;
   onRemoveQueued?: (_id: string) => void;
@@ -96,6 +99,8 @@ export function ChatComposer({
   onChange,
   onSend,
   onQueue,
+  replyEnterAction = 'send',
+  interruptsOnSend = false,
   queue,
   onSendQueued,
   onRemoveQueued,
@@ -115,6 +120,7 @@ export function ChatComposer({
   onRequestEditLast,
 }: ChatComposerProps) {
   const working = execution?.status === 'running' || execution?.status === 'stopping';
+  const enterQueues = working && Boolean(onQueue) && replyEnterAction === 'queue';
   const [voiceBusy, setVoiceBusy] = useState(false);
   // Track @mentions that were inserted
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
@@ -300,7 +306,7 @@ export function ChatComposer({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSend(enterQueues);
     }
   };
 
@@ -536,7 +542,8 @@ export function ChatComposer({
         <div className="mb-2 flex min-w-0 items-center justify-between gap-2 px-1">
         {execution && <p role="status" className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${working ? 'bg-amber-500' : 'bg-muted-foreground/50'}`} />
-          <span className="truncate">{execution.status === 'running' ? '补充可调整当前执行，排队将在回复后发送。'
+          <span className="truncate">{working && interruptsOnSend ? '发送会打断当前会话'
+            : execution.status === 'running' ? '排队将在当前回复结束后自动发送。'
             : execution.status === 'stopping' ? '正在停止执行，等待当前工具清理完成…'
               : execution.status === 'stopped' ? '已停止。对话和已完成的结果会保留，可以继续补充。'
                 : execution.status === 'unavailable' ? '目标执行已结束或不可用，可以继续对话。'
@@ -611,7 +618,7 @@ export function ChatComposer({
           )}
 
           <p className="ml-2 hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="↑ 编辑上一条 · @ 提及 · : 表情 · / 命令">
-            Enter 发送 · Shift+Enter 换行
+            Enter {editSession ? '保存' : enterQueues ? '排队' : '发送'} · Shift+Enter 换行
           </p>
 
           <div className="ml-auto flex min-w-0 items-center gap-3">
@@ -660,14 +667,14 @@ export function ChatComposer({
               <Button
                 size="sm"
                 data-chat-send
-                aria-label={working ? '补充信息并继续' : '发送消息'}
+                aria-label="发送消息"
                 className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
                 onClick={() => handleSend()}
                 disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
-                title={working ? '补充 (Enter)' : '发送 (Enter)'}
+                title={working && interruptsOnSend ? '发送会打断当前会话' : enterQueues ? '立即发送' : '发送 (Enter)'}
               >
                 {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span>{working ? '补充' : '发送'}</span>
+                <span>发送</span>
               </Button>
               </div>
             )}
