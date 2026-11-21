@@ -34,6 +34,7 @@ import {
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
+import { QueuedMessagesRunner } from './sections/chat/components/QueuedMessagesRunner';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useInviteStore } from '@/lib/matrix-invite-store';
 import { usePendingTally } from '@/hooks/use-pending-tally';
@@ -359,6 +360,7 @@ export function AgentTeamsDashboard() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <QueuedMessagesRunner />
       <div className={`${styles.workspace} h-dvh overflow-hidden flex flex-col bg-background`}>
         <div className="flex flex-1 min-h-0">
           <Sidebar

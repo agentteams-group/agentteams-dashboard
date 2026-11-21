@@ -11,6 +11,20 @@ import { buildAnswerContent, type ConfirmationAnswerField } from '../confirmatio
 import { type LocalOutboundMessage, type ChatSystemNotice } from '../structures/MessageList';
 import type { MentionEntry } from '../chat-composer';
 import { CONTROL_KEY, type DirectControl } from '@/lib/direct-execution';
+import type { QueuedMessageRequest } from '@/lib/chat-message-queue';
+
+export interface OutboundMessageParams {
+  control?: DirectControl;
+  content: string;
+  options?: { html?: boolean };
+  mentions?: MentionEntry[];
+  replyTo?: DisplayMessage | null;
+  clientId?: string;
+  msgtype?: string;
+  fileRefs?: FileRef[];
+  referenceEventId?: string;
+  answer?: ConfirmationAnswerField;
+}
 
 interface UseOutboundMessagesParams {
   roomId: string;
@@ -60,48 +74,16 @@ export function useOutboundMessages({
     });
   }, []);
 
-  const sendOutbound = useCallback((params: {
-    control?: DirectControl;
-    content: string;
-    options?: { html?: boolean };
-    mentions?: MentionEntry[];
-    replyTo?: DisplayMessage | null;
-    clientId?: string;
-    msgtype?: string;
-    /** Workspace file references attached to this message (#87). */
-    fileRefs?: FileRef[];
-    /** Card event this reply answers (HITL correlation via m.reference). */
-    referenceEventId?: string;
-    /** 干预卡的结构化答复（方案 v3 C-3），并进 content 的自定义字段。 */
-    answer?: ConfirmationAnswerField;
-  }): Promise<boolean> => {
+  const sendOutbound = useCallback((params: OutboundMessageParams): Promise<boolean> => {
     // 返回值 = 「这条消息是否真的进了房间」。干预卡靠它决定该不该翻成已答复，
     // 所以未登录 / 没有房间时也必须是明确的 false，而不是 undefined。
     if (!roomId || !isLoggedIn || !userId) return Promise.resolve(false);
     const {
-      content, options, mentions, replyTo, clientId, msgtype, fileRefs, referenceEventId, answer, control,
+      content, options, mentions, replyTo, clientId, fileRefs, referenceEventId, answer, control,
     } = params;
 
-    // Only mentions that still appear in the final text are sent (the user may
-    // have typed more after inserting them, or deleted the placeholder again).
-    const activeMentions = (mentions ?? []).filter((m) => content.includes(m.placeholder));
-    const mentionUserIds = activeMentions.map(m => m.userId);
-    const mentionData = mentionUserIds.length > 0
-      ? { 'm.mentions': { user_ids: mentionUserIds } }
-      : {};
-
-    // Build a Matrix-compatible formatted body with clickable mention links
-    // (https://matrix.to/#/userId). Without these the receiver only sees the
-    // raw "@name" text and the mention is not actionable.
-    let formattedBody: string | undefined = options?.html ? content : undefined;
-    if (activeMentions.length > 0) {
-      let body = formattedBody ?? content;
-      for (const m of activeMentions) {
-        const link = `<a href="https://matrix.to/#/${encodeURIComponent(m.userId)}">${m.displayName}</a>`;
-        body = body.replaceAll(m.placeholder, link);
-      }
-      formattedBody = body;
-    }
+    const request = buildOutboundRequest(roomId, params);
+    const formattedBody = request.formattedBody;
     const cid = clientId ?? `local-${Date.now()}-${++localCounterRef.current}`;
 
     // First attempt renders an optimistic "sending" bubble; a retry keeps the
@@ -126,23 +108,7 @@ export function useOutboundMessages({
 
     return new Promise<boolean>((resolve) => {
     sendMutation.mutate(
-      {
-        roomId,
-        body: content,
-        formattedBody,
-        extra: {
-          ...mentionData,
-          ...(msgtype ? { msgtype } : {}),
-          ...(fileRefs && fileRefs.length > 0 ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
-          ...buildAnswerContent(answer),
-          ...(control ? { [CONTROL_KEY]: control } : {}),
-        },
-        relatesTo: replyTo
-          ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } }
-          : referenceEventId
-            ? { rel_type: 'm.reference', event_id: referenceEventId }
-            : undefined,
-      },
+      request,
       {
         onSuccess: (data) => {
           removeLocal(cid);
@@ -185,6 +151,32 @@ export function useOutboundMessages({
     sendOutbound,
     handleRetryNotice,
     buildSystemNotice: buildSystemNoticeFromError,
+  };
+}
+
+/** Capture the same body, references and reply target for immediate and queued sends. */
+export function buildOutboundRequest(roomId: string, params: OutboundMessageParams): QueuedMessageRequest {
+  const { content, options, mentions, replyTo, msgtype, fileRefs, referenceEventId, answer, control } = params;
+  const activeMentions = (mentions ?? []).filter(mention => content.includes(mention.placeholder));
+  let formattedBody = options?.html ? content : undefined;
+  if (activeMentions.length) {
+    formattedBody ??= content;
+    for (const mention of activeMentions) {
+      formattedBody = formattedBody.replaceAll(mention.placeholder,
+        `<a href="https://matrix.to/#/${encodeURIComponent(mention.userId)}">${mention.displayName}</a>`);
+    }
+  }
+  return {
+    roomId, body: content, formattedBody,
+    extra: {
+      ...(activeMentions.length ? { 'm.mentions': { user_ids: activeMentions.map(mention => mention.userId) } } : {}),
+      ...(msgtype ? { msgtype } : {}),
+      ...(fileRefs?.length ? { [FILE_REFS_CONTENT_KEY]: { refs: fileRefs } } : {}),
+      ...buildAnswerContent(answer),
+      ...(control ? { [CONTROL_KEY]: control } : {}),
+    },
+    relatesTo: replyTo ? { 'm.in_reply_to': { event_id: replyTo.eventId || replyTo.id } }
+      : referenceEventId ? { rel_type: 'm.reference', event_id: referenceEventId } : undefined,
   };
 }
 

@@ -2,12 +2,13 @@
 
 import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Mic, Square, X } from 'lucide-react';
+import { ChevronDown, Loader2, Mic, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { apiUrl } from '@/lib/api-base';
 import { decodeSpeechRecording, encodeSpeechWav, MAX_SPEECH_SECONDS } from '@/lib/speech-audio';
 import { normalizeSpeechTranscript } from '@/lib/speech-transcript';
+import { ChatInputSettings } from '@/components/dashboard/settings/chat-input-settings';
 
 type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing';
 
@@ -26,6 +27,7 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
   const [provider, setProvider] = useState<'local' | 'dashscope'>('local');
   const [language, setLanguage] = useState<'zh' | 'en' | 'auto'>('zh');
   const [dashscopeAvailable, setDashscopeAvailable] = useState(false);
+  const voiceTrigger = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
   const stream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -191,26 +193,32 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
       {phase === 'idle' ? (
+        <>
         <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0 text-muted-foreground" disabled={disabled}
-              aria-label="语音输入" title={`语音输入（${provider === 'local' ? '本地免费' : '百炼付费'}）`}>
-              <Mic className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="h-8 w-7 shrink-0 p-0 text-muted-foreground"
+              aria-label="聊天输入设置" title="聊天输入设置">
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="space-y-2 text-xs">
-            <label className="block space-y-1">
+          <PopoverContent side="top" align="end" sideOffset={8} collisionPadding={16} aria-label="聊天输入设置面板"
+            onInteractOutside={event => { if (event.target instanceof Node && voiceTrigger.current?.contains(event.target)) event.preventDefault(); }}
+            className="max-h-[min(32rem,75dvh)] w-[min(22rem,calc(100vw-2rem))] space-y-3 overflow-y-auto rounded-xl p-4 text-xs">
+            <p className="text-sm font-medium">聊天输入</p>
+            <ChatInputSettings className="space-y-3" />
+            <p className="border-t border-border/60 pt-3 text-sm font-medium">语音输入</p>
+            <label className="flex items-center justify-between gap-3">
               <span>语音识别方式</span>
               <NativeSelect aria-label="语音识别方式" value={provider} onChange={event => setProvider(event.target.value as 'local' | 'dashscope')}
-                className="w-full rounded-md border bg-background p-2 text-sm">
+                className="min-w-0 w-52 rounded-md border bg-background p-2 text-sm">
                 <option value="local">本地免费（音频不上传）</option>
                 <option value="dashscope" disabled={!dashscopeAvailable}>百炼（按量付费）</option>
               </NativeSelect>
             </label>
-            <label className="block space-y-1">
+            <label className="flex items-center justify-between gap-3">
               <span>识别语言</span>
               <NativeSelect aria-label="识别语言" value={language} onChange={event => setLanguage(event.target.value as 'zh' | 'en' | 'auto')}
-                className="w-full rounded-md border bg-background p-2 text-sm">
+                className="min-w-0 w-52 rounded-md border bg-background p-2 text-sm">
                 <option value="zh">中文（简体）</option>
                 <option value="en">English</option>
                 <option value="auto">自动识别</option>
@@ -224,6 +232,13 @@ export function VoiceInput({ disabled, onTranscript, onBusyChange }: VoiceInputP
             </Button>
           </PopoverContent>
         </Popover>
+        <Button ref={voiceTrigger} variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0 text-muted-foreground" disabled={disabled}
+          aria-label="语音输入" title={`语音输入（${provider === 'local' ? '本地免费' : '百炼付费'}）`}
+          aria-haspopup="dialog" aria-expanded={settingsOpen}
+          onClick={() => setSettingsOpen(true)}>
+          <Mic className="h-4 w-4" />
+        </Button>
+        </>
       ) : (
         <>
           {phase === 'recording' ? (
