@@ -588,7 +588,7 @@ export function ChatComposer({
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
         />
-        <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
+        <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-0.5">
           <Button
             variant="ghost"
             size="sm"
@@ -621,7 +621,7 @@ export function ChatComposer({
             Enter {editSession ? '保存' : enterQueues ? '排队' : '发送'} · Shift+Enter 换行
           </p>
 
-          <div className="ml-auto flex min-w-0 items-center gap-3">
+          <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-3">
             <VoiceInput
               key={`${roomId ?? ''}:${editSession?.eventId ?? 'draft'}`}
               disabled={disabled || isSending || Boolean(editSession)}

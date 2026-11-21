@@ -77,6 +77,22 @@ async function recordAndFinish() {
 }
 
 describe('voice input in the composer', () => {
+  it('opens shared chat and voice settings from the down arrow immediately left of the microphone', () => {
+    render(<Composer />);
+    const trigger = screen.getByRole('button', { name: '聊天输入设置' });
+    expect(trigger.nextElementSibling).toBe(screen.getByRole('button', { name: '语音输入' }));
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '聊天输入设置面板' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '回复中按 Enter' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '语音识别方式' })).toHaveValue('local');
+    fireEvent.change(screen.getByRole('combobox', { name: '识别语言' }), { target: { value: 'en' } });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: '语音输入' }));
+    expect(screen.getByRole('combobox', { name: '识别语言' })).toHaveValue('en');
+    expect(screen.getByRole('textbox')).toHaveValue('@worker 原有草稿');
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
   it('loads no model initially, appends editable text and sends only on user action', async () => {
     render(<Composer />);
     expect(FakeWorker.instances).toHaveLength(0);

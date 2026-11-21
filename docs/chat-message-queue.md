@@ -6,6 +6,11 @@ In **设置 → 聊天 → 回复中按 Enter**, users can choose **立即发送
 or **排队**. This preference is saved in the browser and only applies during
 an active reply. Clicking **发送** always sends immediately; Shift+Enter inserts
 a newline. Editing a message still uses Enter to save.
+The downward arrow immediately left of the voice button opens the same input
+settings in a small panel, together with voice recognition provider and language
+controls. Both Enter-setting entry points share the same preference and update
+together. The microphone still opens the recording setup; recording starts only
+after clicking 开始录音.
 
 QwenPaw conversations show **发送会打断当前会话** during a reply. The send
 buttons keep the same labels across runtimes.
