@@ -270,7 +270,7 @@ function followRows(input: {
       meta: `已暂停项目 · ${project.project_id}`,
       action: '去恢复',
       onOpen: () => {
-        useHitlInboxStore.getState().setPendingProjectKey({ id: project.project_id, team: project.team_id });
+        useHitlInboxStore.getState().setPendingProjectKey({ id: project.project_id, team: project.team_id ?? undefined });
         useSectionStore.getState().setActiveSection('tasks');
       },
     });
