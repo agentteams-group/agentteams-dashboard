@@ -3,7 +3,7 @@
 
   # AgentTeams Dashboard
 
-  **多智能体团队的 Mission Control —— 在一个控制台驾驭 Workers、Teams、Humans 与 Managers：实时拓扑、带人工干预的任务看板、具备运行时感知渲染的 Matrix 聊天，以及 AI 辅助诊断。**
+  **多智能体团队的 Mission Control —— 按「工作进展」与「管理工具」两级工作区督导 Workers、Teams、Humans 与 Managers：任务看板与人工干预、产物与编码执行、资产中心、成员与团队、观测与治理，以及具备运行时感知渲染的 Matrix 聊天与 AI 诊断。**
 
   [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -31,25 +31,24 @@
 
 ## ✨ 简介
 
-AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 的 **Mission Control**——基于 **Next.js** 的操作台，让操作者实时督导多智能体团队：集群拓扑、带人工干预（HITL）的任务看板、具备运行时感知渲染的 Matrix 聊天、RBAC/审计治理，以及 AI 诊断助手。既可以独立部署，也可以通过一行脚本嵌入到已有的 AgentTeams 安装中。
+AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 的 **Mission Control**——基于 **Next.js** 的操作台，让操作者在一个控制台端到端督导多智能体团队。界面按「工作进展」与「管理工具」两级组织：前者承载日常协作（助手、我的团队、任务看板、产物、编码执行、自动化），后者承载平台治理（资产中心、成员与团队、观测与治理）。两者共享具备运行时感知渲染的 Matrix 聊天、HITL 人工干预、RBAC/审计治理、Tracing 链路追踪与 AI 诊断助手。既可以独立部署，也可以通过一行脚本嵌入到已有的 AgentTeams 安装中。
 
 ## 🚀 功能模块
 
-| 模块 | 说明 |
+侧栏与工作区信息架构一致——六个一级入口（`workspace-navigation.tsx`），各自带二级页面。标注 L1/L2 的入口受仪表盘等级门控（L1 = 管理员）。
+
+| 区域 | 覆盖内容 |
 |------|------|
-| **Overview** | 全局概览：活跃 Worker、Team、Matrix 房间数、资源状态 |
-| **Workers** | Worker 全生命周期管理：查看、唤醒、休眠、确保就绪、删除 |
-| **Teams** | Team 管理：成员、关联 Worker、Human、详情弹窗 |
-| **Humans** | Human 资源 CRUD：卡片/表格视图、权限级别、房间关联 |
-| **Managers** | Manager 管理：模型配置、欢迎消息、协调团队/Worker |
-| **K8s** | Kubernetes CRD 资源卡片展示、YAML/JSON 预览 |
-| **Infrastructure** | 基础设施状态：Controller、Matrix、各组件健康度 |
-| **Chat** | Matrix 聊天工作区：房间与成员导航、虚拟时间线、线程、编辑和运行时富消息渲染 |
-| **Security** | 权限矩阵、访问控制、安全策略展示 |
-| **Skills** | Skill/MCP 资源管理 |
+| **首页** | WORKSPACE 基线总览：焦点任务卡与跳转、指标条（进行中 / 本周完成 / 协作成员 / 工作区资产）、HITL 待决策、命令编排器（一句指令直达 AT 助手会话）、今日焦点与插件卡片插槽 |
+| **助手** | 平台 Manager 或当前账号所属团队的 Leader 私聊：团队跳转、草稿持久化、`@` 提及、文件引用、消息操作、线程与运行时感知渲染 |
+| **我的团队** | 当前账号已加入的团队工作群，标注 **管理员** / **成员**，Team Admin 可返回自己的 Leader 助手 |
+| **工作台** | 任务看板（DAG/loop 视图、attention/HITL 收件箱、暂停/恢复/重规划）、产物（项目 → 任务 → 产物文件树 + 预览/下载）、编码执行（只读的编码 CLI 执行记录与原始日志）、自动化（循环定义画布、模板、试运行、发布/回滚） |
+| **资产中心** | 模型（别名路由、可用性、LLM 调优）、工具（MCP 注册表、连接测试、受管接入）、技能（custom / Nacos / builtin）、知识库（Worker 工作区文件 + 2D/3D wikilink 图谱）、文件（Human 文件区：上传、编辑、回收站、配额） |
+| **成员与团队** | Agent（Worker）生命周期与详情面板（唤醒/休眠/确保就绪/删除、运行时配置、coding CLI、技能、遥测）、团队、用户。Manager / 平台助手设置位于「助手」菜单，UI 层 L1 可见；真实边界由 Controller 强制 |
+| **观测与治理** | 运行时监控插件、Tracing（Langfuse 或阿里云 AgentLoop 查询后端）、操作审计（L2 自审 / L3 全审，可搜索分页事件列表 + 详情面板） |
+| **总览 / 问天（设置 → 管理）** | 总览：集群资源计数、Worker 状态、Controller 版本、基础设施健康度。问天（WenTian）：基于日志、会话与 Matrix 消息的 AI 诊断——根因分析、影响评估、修复步骤——日志分析带 SSE 进度条，内置 AgentTeams SRE 专家 Prompt 模板 |
 | **Debug Log** | 一键收集调试日志：容器诊断、Agent 会话、Matrix 消息打包成 ZIP 下载，默认 PII 脱敏 |
-| **问天诊断** | 运行时诊断助手：集群健康概览、AI 深度诊断（结构化 Markdown 报告：根因分析/影响评估/修复建议）、日志分析（SSE 实时进度条），内置 AgentTeams SRE 专家 Prompt 模板 |
-| **Architecture** | 架构图与组件关系说明 |
+| **语音输入** | 点击麦克风录音，转写填入草稿后可编辑再发送。默认本地 Whisper 免费识别；可选百炼付费识别（服务端 API Key）。详见 [docs/voice-input.md](docs/voice-input.md) |
 | **主题** | 内置亮色 / 暗色 / 高对比度主题，自定义主题编辑器（30+ 参数）支持 JSON 导入/导出，企业 `theme.config.json` 注入 |
 | **插件** | 运行时插件系统：5 类扩展点、动态加载、插件级错误隔离、开发热更新、`create-dashboard-plugin` 脚手架 CLI |
 
@@ -65,7 +64,7 @@ AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeam
 
 聊天工作区提供 Matrix 房间的虚拟化历史消息、未读感知滚动、消息操作、已读回执与按需加载的线程面板。根消息保留在主时间线；`m.thread` 回复会计入根消息，并在对应线程面板中加载。
 
-运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。
+运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息、HITL 收件箱协议和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。Tool Guard / HITL 确认以可操作卡片呈现，决定以普通 Matrix 回复回写；首页的 HITL 收件箱会跨房间聚合待审批项。
 
 本控制台不实现也不承诺端到端加密：聊天正文经服务端代理明文转发，开启加密的房间在这里会显示为没有新消息。哪几跳是明文、凭据在谁手里、运营者需要确认什么，见 [docs/trust-boundary.md](docs/trust-boundary.md)。
 
@@ -103,7 +102,7 @@ MCP 服务器在 Dashboard 里是治理面，不只是清单：
 
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
-- **Dashboard 目标发布标签**：`v1.4.0`（应用版本以 `package.json` 的 `version` 为准：`1.4.0`）
+- **Dashboard 目标发布标签**：`v1.4.3`（应用版本以 `package.json` 的 `version` 为准：`1.4.3`）
 - **安装器默认版本**：`v1.4.3`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
@@ -131,7 +130,7 @@ bash install/agentteams-dashboard.sh uninstall
 |------|------|--------|
 | `AGENTTEAMS_DASHBOARD` | 是否安装 Dashboard（`1`=安装，`0`=跳过） | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Dashboard 主机端口 | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.4.0` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.4.3` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Dashboard 完整镜像名 | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL（共享登录，显式配置优先） | 自动探测 |
 
@@ -146,7 +145,7 @@ bash install/agentteams-dashboard.sh uninstall
 非交互安装示例：
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.0 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.3 \
   AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 
@@ -250,7 +249,7 @@ docker build -t agentteams-dashboard:local .
 
 AT 与 Dashboard 不依赖 Langfuse 也能启动。管理员在「控制台 → 治理 → Tracing」打开「可观测配置」，填写 Langfuse 项目查询凭据与已有的 OTLP/HTTP Collector 地址，测试连接、保存并应用到选定的托管 Worker。Collector 需已把数据导出到同一个 Langfuse 项目，且 Worker 能访问它。Collector 侧请使用仅具备写入权限的凭据，项目查询凭据只留在 Dashboard 服务端。
 
-保存后无需重启 Dashboard。配置以 `0600` 权限原子写入 `DASHBOARD_CONFIG_FILE` 同目录的 `observability.json`，该目录需挂载持久卷。密钥字段只写不读，留空表示保留已保存的值。`LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_URL`、`LANGFUSE_PROJECT_ID`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 仍可作为读取存量 Trace 的服务端默认值。
+保存后无需重启 Dashboard。自 Worker 链路追踪改造起，可观测配置由 **Controller** 持有：保存在 Controller 命名空间的 `agentteams-observability` Secret（`data["config.json"]`），通过 `PUT /api/agentteams/observability` → `/api/v1/observability/config` 使用调用方自身凭据写入。Dashboard 会剥除客户端提交的 `controllerUrl`，不再读取本地 `observability.json`，也不再读取 `LANGFUSE_*` 环境变量。升级前保存过配置的部署需要管理员在页面重新保存一次；旧文件既不迁移也不删除。密钥字段在 API 投影中只写不读（`secretKeyConfigured` / `collectorHeadersConfigured`），留空表示保留已存值，`revision` 过期返回 `409`。
 
 采集默认关闭。应用时只通过 Controller 既有的 Worker API 合并遥测相关环境变量；运行中的托管 Worker 会重建，休眠中的 Worker 在下次启动时生效。这要求 QwenPaw 或 Hermes 镜像已支持遥测，且 Controller 允许编辑 Worker 环境变量。关闭采集同样需要执行一次「应用」，已入库的 Trace 仍可查询。连接测试或配置写入成功都不代表 Worker 已就绪或已开始上报：请实际运行一个任务并查看对应的 Trace。
 
@@ -260,7 +259,7 @@ Team/Worker 过滤、Trace 列表/详情/会话导出都按当前账号在 Contr
 
 在 Tracing 的「可观测配置」中，将查询后端选为「阿里云 AgentLoop」，填写地域、CMS Workspace，以及通过该 Workspace 的 CMS EntityStore（`apm.trace_set.storage`）定位的原始 Trace SLS Project / Logstore。此处不是 AgentSpace 的 `agent-trajectory` 数据源；绑定关系由管理员显式提供，Dashboard 不自动发现或核实 CMS 绑定。
 
-查询使用官方 `@alicloud/credentials` 服务端默认凭证链，支持 STS、RAM/OIDC 角色等，只授予目标 Trace 数据源的读取权限。浏览器和 Worker 不持有查询密钥。可用服务端默认变量：`AGENTTEAMS_TRACING_BACKEND=agentloop`、`AGENTLOOP_REGION`、`AGENTLOOP_WORKSPACE`、`AGENTLOOP_SLS_PROJECT`、`AGENTLOOP_SLS_LOGSTORE`。默认 SLS Project 接入点为 `https://<project>.<region>.log.aliyuncs.com`；内网或协议测试可通过服务端 `AGENTLOOP_SLS_ENDPOINT` 设置完整 Project 接入点。
+查询使用官方 `@alicloud/credentials` 服务端默认凭证链，支持 STS、RAM/OIDC 角色等，只授予目标 Trace 数据源的读取权限。浏览器和 Worker 不持有查询密钥。查询后端与四个源字段（地域、CMS Workspace、SLS Project、Logstore）在页面填写，与 Langfuse 配置一样存入 Controller Secret；`AGENTLOOP_SLS_ENDPOINT` 是唯一保留的服务端覆盖项，用于内网或协议测试时替换完整 Project 接入点。
 
 Collector 需配置目标 Workspace 的 OTLP/HTTP 地址和采集鉴权头，也可同时上报 Langfuse。切换查询后端不修改 Collector 的出口。Worker 输出标准入口、Session/Turn、模型用量和模型/工具内容，并保留 Langfuse 兼容字段。查询按官方 raw Span 的纳秒 `startTime` / `duration` 读取；本轮不创建审计事件、轨迹 Pipeline、Dataset 或评估器。
 
@@ -294,20 +293,32 @@ Collector 需配置目标 Workspace 的 OTLP/HTTP 地址和采集鉴权头，也
 ```
 ├── src/
 │   ├── app/
-│   │   ├── api/              # 代理 API（agentteams + matrix）
+│   │   ├── api/              # 代理 API：agentteams、matrix、higress、auth、dashboard、self-update
+│   │   ├── replay/           # 会话回放页
+│   │   ├── tracing-demo/     # 隔离的 tracing 演示页（显式开启，无 Controller）
 │   │   ├── globals.css
 │   │   ├── layout.tsx
 │   │   └── page.tsx
 │   ├── components/
-│   │   ├── dashboard/        # 面板业务组件
-│   │   │   └── sections/     # 各功能区域
+│   │   ├── dashboard/        # 外壳、导航与业务组件
+│   │   │   ├── sections/     # 各功能区（chat、tasks、artifacts、loops、files、knowledge 等）
+│   │   │   └── settings/     # 设置弹窗页签（后端、主题、插件、更新、语音、管理）
+│   │   ├── plugins/          # 插件宿主组件
 │   │   ├── ui/               # shadcn/ui 基础组件
 │   │   ├── auth/             # 登录组件
-│   │   └── setup/            # 初始化向导
+│   │   ├── setup/            # 首启配置向导
+│   │   └── theme/            # 主题系统
 │   ├── hooks/                # TanStack Query Hooks
-│   └── lib/                  # 工具函数、API 客户端、Store
+│   ├── lib/                  # API 客户端、Store、协议解析、RBAC/审计、插件运行时
+│   ├── middleware.ts         # 会话门控、身份/等级请求头注入
+│   └── __tests__/integration/  # 集成测试（需要真实后端）
+├── scripts/                  # dev/start 服务、语音资源、standalone 拷贝、文档一致性、热补丁打包
+├── tools/
+│   └── create-dashboard-plugin/  # 插件脚手架 CLI
 ├── install/                  # AgentTeams 集成安装脚本
-├── public/                   # 静态资源
+├── deploy/                   # Docker Compose 部署示例
+├── docs/                     # 文档
+├── public/                   # 静态资源（含构建期生成的语音模型）
 ├── Dockerfile
 ├── Makefile                  # 多架构 Docker 构建/推送
 ├── next.config.ts
@@ -319,17 +330,24 @@ Collector 需配置目标 Workspace 的 OTLP/HTTP 地址和采集鉴权头，也
 
 | 脚本 | 说明 |
 |------|------|
-| `npm run dev` | 启动开发服务器（端口 3000） |
-| `npm run build` | 构建 standalone 产物 |
-| `npm start` | 启动生产服务器 |
-| `npm run lint` | ESLint 检查 |
+| `npm run dev` | 准备语音资源后启动开发服务器（端口 3000，日志镜像到 `dev.log`） |
+| `npm run prepare:speech` | 下载固定版本 Whisper tiny 模型 + WASM 到 `public/speech/` |
+| `npm run build` | 准备语音资源、构建 standalone 产物、拷贝 standalone 资源 |
+| `npm start` | 启动生产服务器（日志镜像到 `server.log`） |
+| `npm run lint` | ESLint + 排版扫描（`scripts/typography-scan.mjs`） |
 | `npm run lint:tone` | AI 味文案扫描（可见文案硬词门禁） |
-| `npm run typecheck` | TypeScript 类型检查 |
-| `npm test` | 运行 vitest 测试套件 |
+| `npm run lint:typography` | 仅排版扫描 |
+| `npm run typecheck` | TypeScript 类型检查（`tsc --noEmit`） |
+| `npm test` | 运行 vitest 单元/组件测试 |
+| `npm run test:watch` | Vitest watch 模式 |
+| `npm run test:coverage` | Vitest 覆盖率 |
+| `npm run test:integration` | 集成测试（需要真实后端 / 3000 端口） |
+
+文档门禁不在 `package.json` 中：`bash scripts/check-docs-consistency.sh`（README/docs 陈旧字符串、安装器版本、链接检查）与 `bash install/agentteams-dashboard-tests.sh`（安装器断言）。
 
 ## 🧪 质量保障
 
-- **单元测试**：vitest + Testing Library（200+ 个测试文件共 2000+ 个用例，`npm test`）
+- **单元测试**：vitest + Testing Library（470+ 个测试文件共 4000+ 个用例，`npm test`）
 - **代码规范**：ESLint 零问题（`npm run lint`）
 - **类型安全**：strict TypeScript（`npm run typecheck`）
 - **可复现构建**：`npm ci` + lockfile，多架构 Docker 镜像（`make help`）

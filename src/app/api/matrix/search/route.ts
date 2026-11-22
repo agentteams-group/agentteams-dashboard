@@ -3,7 +3,8 @@
 // 走服务端代理而不是让浏览器直连 homeserver，和其余 matrix 路由同一条约定：
 // homeserver 允许列表校验（SEC-05）和审计留在服务端，Bearer token 只从
 // Authorization 头取，绝不接受 query 传 token。
-// filter JSON 在这里拼装，客户端只传 search_term / room_id / limit 三个白名单参数，
+// filter JSON 在这里拼装，客户端只传 search_term / room_id / limit / next_batch
+// 四个白名单参数（next_batch 供翻页，原样透传上游），
 // 避免运维界面被人塞任意 filter 打到上游。room_id 缺省即不限制房间。
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatrixHomeserver, getAccessToken, proxyToMatrix } from '../proxy-helper';

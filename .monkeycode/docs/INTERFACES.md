@@ -1,5 +1,11 @@
 # AgentTeams Dashboard 接口
 
+## Manager 创建团队时选择管理员
+
+Manager 可在普通消息正文中输出 `team-admin` 围栏 JSON，使用已有确认卡回写通道，不要求运行时支持自定义 Matrix 消息字段。JSON 必须包含唯一 `confirmation_id`、`question` 和非空 `options`（每项有 `id`、`label`，可带 `description`）。`id` 为 Human 资源名，`label` 也应包含资源名，便于 Manager 从自然语言答复中准确识别。
+
+Dashboard 将其规范化为 `tool_name: select_team_admin` 的确认卡，以单选下拉框展示，初始不选择任何用户，不提供自由输入。用户选择并点击提交后，沿用 `com.agentteams.answer` 和房间正文回传答案；发送失败时仍可重试。Manager 必须等待答案并重新校验 Human 后，使用 `agt create team --admin <Human资源名>` 创建团队。无效 JSON 或空候选列表保留为普通可见文本。
+
 ## 前端数据层
 
 `src/lib/agentteams-api.ts` 定义 Worker、Team、Human、Manager、基础设施和存储相关类型，并通过 `/api/agentteams/*` 调用 Controller。
@@ -12,7 +18,7 @@ Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须
 
 ## Higress 数据面端点（对外接口）
 
-以下是 Higress Gateway 暴露给 Manager/Worker/外部客户端的数据面端点，Dashboard 不直接代理这些端点，但其健康检查与模型绑定逻辑以其口径为准：
+以下是 Higress Gateway 暴露给 Manager/Worker/外部客户端的数据面端点，Dashboard 的健康检查、MCP 调试与资源绑定逻辑以其口径为准：
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
@@ -20,6 +26,7 @@ Controller 的 Team 创建/更新接收 `workerMembers: [{name, role}]`，必须
 | `/v1/embeddings` | POST | 向量化（配置 memorySearch 时使用） |
 | `/v1/models` | GET | **不是**完整的 OpenAI 模型列表端点；ai-proxy 仅匹配 chat/completions 与 embeddings。`/v1/models` 仅作为认证/连通性探测（401/403=key 或 allowedConsumers 有误，404=非 ai-proxy 路由） |
 | `/mcp-servers/{name}/mcp` | POST | MCP Server 端点（Streamable HTTP），name 为 MCP Server 名（内置 GitHub 为 `mcp-github`），按 `consumerAuthInfo` 做 per-consumer 授权 |
+| `/mcp-servers/{name}` | GET/POST | Dashboard 受管 MCP 的入口；代理模式按选定的 Streamable HTTP 或 SSE 协议接入，HTTP API 和数据库模式由网关提供 MCP 工具，按 Consumer 授权 |
 | `worker-{name}-{port}-local.agentteams.io` | * | 暴露的 Worker 端口（服务发布），**无认证**（公开访问），域名绑定在网关端口 |
 
 AI 路由默认 `default-ai-route`，路径前缀 `/v1`，上游由 `AGENTTEAMS_LLM_PROVIDER` 决定。嵌入模式下容器内网关地址为 `http://aigw-local.agentteams.io:8080`（宿主机 `:18080`），Console 容器内 `http://agentteams-controller:8001`（宿主机 `:18001`）。
@@ -36,16 +43,16 @@ AI 路由默认 `default-ai-route`，路径前缀 `/v1`，上游由 `AGENTTEAMS_
 
 ## Higress 控制面 Console API（参照）
 
-Dashboard 仅代理其中的 ai-providers 与 ai-routes 子集；完整控制面口径如下（路径前缀 `/v1`，session-cookie 认证，`POST /system/init` 初始化 admin、`POST /session/login` 获取 cookie）：
+Dashboard 代理模型管理接口，并通过受管 MCP 流程调用所需的控制面接口；完整控制面口径如下（路径前缀 `/v1`，session-cookie 认证，`POST /system/init` 初始化 admin、`POST /session/login` 获取 cookie）：
 
 | 端点 | 方法 | 用途 | Dashboard 是否代理 |
 |---|---|---|---|
 | `/v1/ai/providers` + `/{name}` | GET/POST/PUT/DELETE | LLM Provider 管理 | 是（`/api/higress/ai-providers`） |
 | `/v1/ai/routes` + `/{name}` | GET/POST/PUT/DELETE | AI 路由管理（含 `authConfig.allowedConsumers`） | 是（`/api/higress/ai-routes`） |
-| `/v1/consumers` + `/{name}` | GET/POST/DELETE | key-auth Consumer 管理 | 否（经 Controller `/api/v1/gateway/consumers`） |
-| `/v1/domains`、`/v1/service-sources`、`/v1/routes` | GET/POST/PUT/DELETE | 域名、服务源、经典路由 | 否 |
+| `/v1/consumers` + `/{name}` | GET/POST/DELETE | key-auth Consumer 管理 | 受管 MCP 诊断身份；Worker Consumer 经 Controller 管理 |
+| `/v1/domains`、`/v1/service-sources`、`/v1/routes` | GET/POST/PUT/DELETE | 域名、服务源、经典路由 | 受管 MCP 使用服务源，其他接口不开放通用代理 |
 | `/v1/routes/{name}/plugin-instances/{plugin}` | PUT | 路由插件配置（如 basic-auth） | 否 |
-| `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT | MCP Server 与 Consumer 授权 | 否 |
+| `/v1/mcpServer`、`/v1/mcpServer/consumers` | GET/PUT/DELETE | MCP Server 与 Consumer 授权 | 是（受管 MCP 流程） |
 | `/system/higress-config` | GET/PUT | 网关配置（如 stream idleTimeout） | 否 |
 
 ## 技能中心与 Nacos 集成契约
@@ -90,12 +97,16 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 | 路径前缀 | 目标系统 | 主要职责 |
 |---|---|---|
 | `/api/agentteams/*` | AgentTeams Controller | 集群资源、状态、安装、存储、日志和消费者管理 |
+| `/api/agentteams/monitoring?page=&limit=&search=` | Controller `/api/v1/monitoring` | 管理员容器监控：按页读取 Worker、Manager、Controller、Dashboard 的 CPU、内存、运行状态、启动时间、重启/OOM；未知用量为 null，无独立内存限额为 null。当前 Docker embedded 可用，其他数据源显示暂不支持 |
+| `/api/agentteams/monitoring/{kind}/{name}/logs?tail=&since=` | Controller 同名路径 | 管理员按资源读取容器 stdout/stderr；tail 默认 300、最大 1000，since 为 RFC3339。最多 1 MiB，返回截断标志；常见凭据字段遮盖。资源来自 Controller，不能传任意宿主机容器名；无缓存 |
 | `/api/matrix/*` | Matrix Homeserver | 登录、房间、消息、成员、上传和同步 |
 | `/api/higress/ai-providers` | Higress Console | Provider 列表和创建 |
 | `/api/higress/ai-providers/[name]` | Higress Console | 单个 Provider 读取、更新和删除 |
 | `/api/higress/ai-routes` | Higress Console | AI Route 列表和创建 |
 | `/api/higress/ai-routes/[name]` | Higress Console | 单个 AI Route 读取、更新和删除 |
 | `/api/agentteams/skills` | MinIO | 技能列表（支持 source、search、分页）与上传（支持 overwrite 覆盖） |
+| `/api/agentteams/mcps`、`/api/agentteams/mcps/[name]` | MinIO | MCP 目录与旧版端点元数据；低权限会话仅返回受管服务概要 |
+| `/api/agentteams/mcps/manage` | Higress + MinIO + Controller | 管理员专用：能力查询、接入保存、工具发现和调用、Agent 授权、导入与删除；详见 `docs/design/mcp-onboarding.md` |
 | `/api/agentteams/skills/[name]` | MinIO | 单个技能元数据读取、更新与删除 |
 | `/api/agentteams/skills/[name]/download` | MinIO | 下载技能 ZIP 包 |
 | `/api/agentteams/skills/nacos/config` | 本地配置 | Nacos 注册中心配置的读取与写入 |
@@ -127,6 +138,102 @@ Higress SDK `RoutePredicateTypeEnum` 线上枚举值为 `EQUAL`/`PRE`/`REGULAR`�
 Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对象；`enabled`、`maxRetries`、`retryOn`、`retryStatusCodes` 和 `fallbacks` 执行受限类型校验，Console 返回的未知字段会保留并以摘要形式展示。
 
 验证记录：`npm run lint`、`npm run typecheck` 与 `git diff --check` 已通过。完整 `npm test` 全量通过（58 个测试文件 445 个用例）。
+
+## 运行时块协议（`org.agentteams.run` v1）
+
+> 契约源码：`src/lib/a2ui/protocol.ts`（union 与归一化）；解析分流：`src/lib/a2ui/parser.ts` `parseAgentRunBlocks`；叙述背景见 `docs/ARCHITECTURE.md`「运行时消息协议」。本节是字段规范（B4）。
+
+**信封**：Matrix 消息 `content['org.agentteams.run']`（opt-in 通道；无该键时 Dashboard 走 body 文本启发式）。
+
+| 信封字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `version` | `"1"` \| `"0"` \| 缺省 | 否 | `"0"`/缺省 = 旧宽松形状；`"1"` = 归一化形状。其他值 = 未知版本 → 解析器返回 `undefined`，调用方回退文本启发式（**永不丢消息**） |
+| `run_id` | string | 否 | 关联同一次执行的多条消息（v1 预留） |
+| `step_id` | string | 否 | run 内当前步骤（v1 预留） |
+| `blocks` | Block[] | 是 | 块数组，见下 |
+
+**块 union**（`type` 判别）：
+
+| type | 字段 | 说明 |
+|---|---|---|
+| `text` | `text: string`；`isStreaming?` | 正文片段 |
+| `thinking` | `content: string`；`isStreaming?` | 思考片段（折叠卡片） |
+| `tool_call` | `payload.tool_name: string`、`payload.arguments: object`、`payload.status: 'pending'\|'running'\|'succeeded'\|'failed'`；可选 `result`、`tool_call_id`（跨修订/重放去重的稳定 id）、`started_at`/`finished_at`（epoch ms） | 工具调用卡 |
+| `confirmation` | `payload.tool_name: string`、`payload.confirmation_id: string`（必填，关联批准/拒绝回复）；可选 `parameters`、`external_files`、`expires_at` | Tool Guard 审批卡 |
+| `error` | `payload.kind: 'cancelled'\|'failed'\|'quiet'`、`payload.title: string` | run 收尾哨兵（kind 之外的值被拒 → 回退文本启发式） |
+
+**版本协商与回退语义**：
+
+1. `resolveProtocolVersion`：`"1"` → v1；缺省/`null`/`"0"` → legacy；其余 → 未知（解析器整体返回 `undefined`）。
+2. v1 归一化（`normalizeToolCallPayload` 等）：缺省可选字段补安全默认（如 `status` 缺省 `running`），未知字段剥除保证可序列化；`confirmation` 缺 `confirmation_id`、`error` 的 `kind` 非法 → 该块被拒，调用方回退 legacy 文本启发式（审批卡仍可见）。
+3. 未知块类型静默跳过；未知**信封版本**整体回退——前向兼容承诺：新版本字段对旧 Dashboard 表现为纯文本启发式渲染，不炸、不丢。
+4. 回退链路有测试钉住：`parser-agent-run.test.ts`（解析层返回 `undefined`）+ `normalize.test.ts`「falls back to the body-text heuristics when the protocol version is unknown」（normalize 链路落到 legacy 块）。
+
+## 上游版本对照记录
+
+> B3（2026-09-29 起）：Dashboard 依赖的 Controller 契约随上游 `agentscope-ai/AgentTeams` minor 版本演进。每条契约记录「Dashboard 依赖 → 上游落点 → 版本/PR」。上游 minor 发布后按 CONTRIBUTING 的流程过一遍 proxy 层端点；安装器漂移由 weekly cron（`.github/workflows/upstream-drift.yml`）告警。
+
+### v1.2.4 口径（2026-09-29 落定）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 项目事件流分页 | `GET /api/agentteams/projects/{id}/events` 透传 `limit`（1..200，控制器默认 50）与不透明 `cursor`，翻页直到 `next_cursor` 耗尽（单次打开封顶 10 页 × 200 = 2000 条） | `GET /api/v1/projects/{id}/events`，上游 PR #1233（任务状态转换引擎：table + history + events + progress） | `src/app/api/agentteams/projects/[id]/events/route.ts` 注释 + `project-events-panel.tsx` 游标循环 |
+| Worker env 编辑 | `PUT /api/v1/workers/{name}` 请求体新增 `env`（字面量 key/value，未变更整体省略）；响应含 `env` / `envEditable`，非管理员读响应被 Dashboard 剥除 | controller 侧 worker 配置接口（与 dashboard PR #135 同期的上游能力，见 `.monkeycode/specs/dashboard-optimization/b1-upstream-alignment.md` 复核要点） | `workers/environment-access.ts` + B1 对照清单 |
+| gateway 身份探测 | `POST /api/agentteams/workers/{name}/gateway-probe` 纯透传至 `POST /api/v1/workers/{name}/gateway-probe`（RBAC `update` × `gateway.consumer`），错误语义原样返回 | 同上 | `workers/[name]/gateway-probe/route.ts` + route.test.ts |
+| 审计字段 | Dashboard 自持 JSONL 审计日志（`AuditEventRecord`：id/timestamp/severity/actor/actor_level/entity_type/entity_name/action/details/source_ip），**不依赖** controller 审计端点 | 无上游契约（dashboard-owned） | `src/lib/audit-log.ts` |
+| 请求模型别名 | Manager/Worker 的 `model` 字段语义 = 请求模型别名（经 AI 网关路由），非 Higress Provider 名；存量非空值原样重提交 | `install/AGENTTEAMS_PATCH.md`「Request Model Alias Migration」 | `external-model-binding-guard` 路由守卫 |
+| 安装器 dashboard 集成 | 本仓 `install/agentteams-install.sh` 为上游 `install/agentteams-install.sh` 的工作副本（PR #1075 已并入上游，后续 #1081/#1118/#1162/#1195） | `agentscope-ai/AgentTeams` main | weekly drift cron + `install/AGENTTEAMS_PATCH.md` |
+
+### 项目 attention / signal-events / pause_sources（2026-11-01 后上游合入）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 项目待决策聚合（只读） | `GET /api/agentteams/projects/{id}/attention` 透传 `include_resolved`（`1`=含已处理）、`limit`（1..500，默认 200）、`team`；响应 `{project_id, items[], count}`，项为任务 meta `attention` 列表投影（`task_id/task_title/task_status/room_id/kind/question/attempt/requested_at/resolved/event_id/options/suggested/expires_at`）。写端（回答问题）仍走任务 Matrix 房间 | `GET /api/v1/projects/{id}/attention`，上游 #1434（`internal/server/attention_read.go`）；读端只读，无写路径 | `src/app/api/agentteams/projects/[id]/attention/route.ts` + `project-attention-panel.tsx` |
+| 协议信号流（只读） | `GET /api/agentteams/projects/{id}/signal-events` 透传 `type`（可重复/逗号分隔）、`task`（别名 `taskId`）、`since`（RFC3339）、`limit`（1..200，默认 50）、`cursor`、`team`；响应 `{project_id, events[], count, next_cursor?}`，事件 11 字段无 `project_id`，由服务端按 `ref` / 任务 meta 归属项目 | `GET /api/v1/projects/{id}/signal-events`，上游 #1433（`internal/server/signal_events_read.go`）；cursor = base64url(`<occurred_at>\0<event_id>`)，无权限返回 404 | `src/app/api/agentteams/projects/[id]/signal-events/route.ts` + `project-signal-events-panel.tsx` |
+| Loop 暂停来源 | workflow 响应 `loop.pause_sources: string[]`（`user` / `project`）；非空即执行派发仍暂停，恢复只清一个来源（其余保留） | 上游 #1402/#1431（`project_handler.go` loopMeta；`loop_handler.go` 写端；Loop CRD 不再被 patch） | `WorkflowLoop.pause_sources` + `workflow-detail.tsx` Loop 卡片 |
+| 团队待决策收件箱（只读） | `GET /api/agentteams/teams/{name}/attention` 透传 `status`（`open` 默认 / `overdue` / `resolved` / `all`，其余 400）、`limit`（1..1000，默认 200，越界 400 而非截断）；响应 `{team_id, items[], count, truncated}`，行为任务 meta `attention` 的 camelCase 投影（含 `overdue/resolvedVia/resolvedBy/resolvedAt/resolution/freeform/notified/roomId/url`）；`X-Attention-Skipped` / `X-Attention-Truncated` 原样透传。写端（回答问题）仍走任务 Matrix 房间 | `GET /api/v1/teams/{name}/attention`，上游 #1503（`internal/server/attention_team.go`）；读端只读，无权限返回 404，`limit` 只限制返回行数、读取范围仍是整队 | `src/app/api/agentteams/teams/[name]/attention/route.ts` + `teams/team-attention-panel.tsx` |
+
+### Coding CLI（Dashboard 消费上游 #1360）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| CLI 探测 | `GET /api/agentteams/workers/{name}/coding-cli` | `GET /api/v1/workers/{name}/coding-cli`；未合入时 404 占位 | `workers/[name]/coding-cli/route.ts` + `worker-coding-cli-panel.tsx` |
+| settings | `GET/PUT /api/agentteams/workers/{name}/coding-cli/{cli}/settings`（`{cli}` ∈ qwen-code, opencode, qoder） | 同构；PUT 深度合并，脱敏键留空发哨兵 `***` | `[...rest]/route.ts` 白名单 + 面板 settings 表单 |
+| 异步安装 | `POST .../{cli}/install` → 202 `{task_id}`；`GET .../{cli}/install/{task_id}` | 同构；kube 一律 503，仅 embedded docker 可 exec | 面板 1.5s 轮询，满 5 分钟提示稍后刷新 |
+
+### 编码执行记录与 LLM 调优（#146，上游 @ `d84e839`）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| 编码执行记录列表 | `GET /api/agentteams/coding-runs` → `[{task_id, run, team?, cli?, worker?, status?, exit_code?, started_at?, ended_at?, log_bytes?}]`（上限 200，按调用方可读前缀过滤；v2 元数据来自 `runs.jsonl`，未记录时省略） | `internal/server/coding_runs.go`；注册见 `internal/server/http.go:157-159`；数据在对象存储 `shared/tasks/{taskID}/workspace/coding-cli-logs/` | `coding-runs/route.ts` + route.test.ts |
+| 编码执行记录详情 | `GET /api/agentteams/coding-runs/{taskID}/runs/{run}?team=` → `text/plain` 原始日志字节透传；`?format=json` → 结构化信封 `{task_id, run, team?, meta, input, output}` | 同上；`run` = `run-YYYYMMDD-HHMMSS.log` 文件 | `coding-runs/[taskID]/runs/[run]/route.ts`：taskID / run 本地白名单校验；`format` / `team` 原样转发 |
+| 编码执行记录时间语义 | `started_at` 仅取上游 UTC 值（`runs.jsonl`，`date -u` 写入）；上游明确**不**从 run 文件名推导（容器本地时间，时区不可知），缺省即未知 | 上游 v2 契约 @ `agentscope-ai/AgentTeams#1381`（2026-10-15 合并，merge `f02ac5b2`） | `src/lib/coding-runs.ts`（`parseCodingRunTime` 仅作 v1 降级展示，`formatCodingRunInstant` 转本地） |
+| Worker LLM 调优 | `PUT /api/v1/workers/{name}` 请求体可含 10 个 `Llm*` 字段（8 启动期 + 2 流超时） | `api/v1beta1/types.go` WorkerSpec（~195-224）；registry 默认 3/1/10/10/600/5/1/300 | `src/lib/llm-tuning.ts` + `worker-llm-tuning-panel.tsx` |
+| 团队 LLM 默认 | `PUT /api/v1/teams/{name}` 请求体可含同 10 字段（团队默认，被 Worker 覆盖） | `api/v1beta1/types.go` TeamSpec（~511-531）；流超时需 QwenPaw >= 2.2.1 | `team-edit-dialog.tsx` + `llm-tuning-fields.tsx` |
+
+### Worker 链路追踪（#1531；2026-11-11 Controller 配置与查询改造）
+
+配置统一保存在 Controller 命名空间的 `agentteams-observability` Secret（`data["config.json"]`）。Dashboard 使用调用方原有凭据代理到固定部署 Controller，剥除 `controllerUrl`；不再读取本地 `observability.json` 或 Langfuse 环境变量。升级前已有私有文件的部署需要管理员将配置重新保存到 Controller，旧文件不自动读取或删除。具体字段对照见 [.monkeycode/specs/controller-observability-config.md](../.monkeycode/specs/controller-observability-config.md)。
+
+| 契约点 | Dashboard 依赖 | Controller 行为 / 复核方式 |
+|---|---|---|
+| 配置读写 | `GET/PUT /api/agentteams/observability` → `/api/v1/observability/config`；表单字段与 `revision` 原样传递 | 管理员写入；返回脱敏投影，`secretKeyConfigured` / `collectorHeadersConfigured` 表示已保存凭据。空密钥保留旧值，陈旧 revision 返回 409；`observability-controller.ts`、配置路由回归 |
+| 测试与应用 | `POST {action:'test', settings}` → `/api/v1/observability/test`；`{action:'apply', workers, revision}` → `/api/v1/observability/apply` | 管理员操作。测试使用草稿与已存密钥合并，验证查询后端和 Collector；应用更新选定托管 QwenPaw/Hermes Worker env，保留无关 env，并返回逐 Worker 结果 |
+| Worker env | 由 Controller 在创建容器时读取同一配置，已有容器显式 apply | 注入采集开关、内容开关、Collector endpoint/headers、HTTP protobuf 协议和 revision；关闭时清除旧 Collector 覆盖值。Langfuse 查询密钥不进入 Worker |
+| Langfuse 列表 | `GET /api/agentteams/traces` → `GET /api/v1/traces`；保留列表形状与筛选，`options=resources` 仍使用当前账号资源范围 | Controller 验证当前 Worker/Team 归属并读取后端全部页，再返回授权的分页列表；session 查询无默认 24h 截断 |
+| Langfuse 详情 | `GET /api/agentteams/traces/{traceId}` → `GET /api/v1/traces/{traceId}` | Controller 先验证归属，再读取 observations 全部页；详情形状不变，外部 Langfuse 链接仅管理员返回 |
+| AgentLoop 兼容 | Controller 保存后端选择和四个源字段；`agentloop-server.ts` 接收显式配置 | 保留 Dashboard 的 `@alicloud/credentials` 服务端默认链和已有 SLS 完整分页/预算；配置与 Langfuse 凭据不再由 Dashboard 自持。测试先验证 AgentLoop 查询，再由 Controller 检查 Collector |
+| Agent 任务诊断 | Dashboard 不代理 Manager/Leader 身份 | Agent 用自己的 Controller token 调用 `agt get tasks`、`agt tracing task`；团队任务、完整任务 Trace、错误证据及缺口由 Controller 返回 |
+
+采集仍是 Worker → OTLP Collector → 后端。Collector 写入密钥与查询凭据分离；仅切换查询后端不会修改 Collector exporter。QwenPaw 本地真实模型、Langfuse 入库和 Manager/Leader 诊断验收记录在配套 AgentTeams 方案中，不能替代部署环境验收。
+
+### 上游 2026-11-06/07 批次（#1481 / #1522 / #1539）
+
+| 契约点 | Dashboard 依赖 | 上游落点 | 复核方式 |
+|---|---|---|---|
+| teams/humans 列表投影 | `GET /api/v1/teams`、`/humans` 列表响应**不再携带** `initialPassword`（详情 GET 保留）；新增 `fields=summary|all` 查询参数（缺省 = 旧全量形状，Dashboard 未用投影）；聊天侧 `HumanPanel` 原按列表渲染初始密码徽章，已移除（初始密码只在 Humans 区详情弹窗经单个 GET 展示） | 上游 #1481（`resource_handler.go` `humanListToResponse`/`projectTeamListRow`；`fields` 解析 fail-closed，非法值 400） | `src/components/dashboard/sections/chat/human-panel.tsx` + `humans/human-detail-dialog.tsx`（走 `getHuman`） |
+| runtime-config 乐观锁 | Dashboard B5 代理 `GET/PUT /api/agentteams/workers/{name}/runtime-config` 双向透传 `If-Match`/`ETag`；面板保存带 `If-Match`（`worker-runtime-config-panel.tsx`），无需改动 | 上游 #1522：PUT 缺 `If-Match` → 428；过期 → 409 `{code:'conflict', message, etag, current}`；per-Worker 串行锁 | `workers/[name]/runtime-config/route.ts` + `worker-runtime-config-panel.tsx` |
+| OSS 目录列举 | 无 API 变化；human 文件区列表的 mtime 从此有真实值 | 上游 #1539（`internal/oss/minio.go` 改走 SDK） | 无需 Dashboard 改动 |
 
 ## 安全边界
 
