@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axe from 'axe-core';
 import { WorkspaceHome } from './workspace-home';
@@ -8,13 +8,14 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useInviteStore } from '@/lib/matrix-invite-store';
 import { useSectionStore } from '@/lib/section-store';
 import type { BoardTask } from '@/hooks/use-task-board';
-import type { ManagerResponse, TeamResponse } from '@/lib/agentteams-api';
+import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 
 const env = vi.hoisted(() => ({
   userLevel: 3,
   models: { isSuccess: true, isPlaceholderData: false, data: [{}, {}, {}] },
   skills: { isSuccess: true, isPlaceholderData: false, data: { total: 5 } },
   tools: { isSuccess: true, isPlaceholderData: false, data: [{}, {}] },
+  workers: { isSuccess: true, isPlaceholderData: false, data: [] as WorkerResponse[] },
 }));
 
 vi.mock('@/lib/agentteams-store', () => ({
@@ -24,7 +25,7 @@ vi.mock('@/hooks/use-agentteams-models', () => ({ useModels: () => env.models })
 vi.mock('@/hooks/use-skill-center', () => ({ useSkills: () => env.skills }));
 vi.mock('@/hooks/use-agentteams-mcps', () => ({ useMcpServers: () => env.tools }));
 vi.mock('@/hooks/use-projects', () => ({ useProjects: () => ({ data: { projects: [] } }) }));
-vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
+vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => env.workers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [] }) }));
 
@@ -44,6 +45,24 @@ function task(overrides: Partial<BoardTask> & { runId: string }): BoardTask {
     source: 'test',
     ...overrides,
   };
+}
+
+function worker(overrides: Partial<WorkerResponse> & { name: string }): WorkerResponse {
+  return {
+    phase: 'Running',
+    state: 'Running',
+    containerManaged: true,
+    model: 'default',
+    runtime: 'openclaw',
+    image: '',
+    containerState: '',
+    matrixUserID: '@worker:test',
+    roomID: '!room:test',
+    message: '',
+    team: '',
+    role: '',
+    ...overrides,
+  } as WorkerResponse;
 }
 
 /** 本周一中午（weeksAgo=0）或第 n 周前的周一中午。 */
@@ -85,6 +104,7 @@ function assertDomOrder(...testIds: string[]): void {
 
 beforeEach(() => {
   env.userLevel = 3;
+  env.workers.data = [];
   useHitlInboxStore.setState({ confirmations: {}, resolutions: {}, pendingChatRoomId: null, pendingProjectKey: null });
   useInviteStore.getState().clear();
   useExtensionStore.getState().clear();
@@ -94,7 +114,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('WorkspaceHome — WORKSPACE baseline composition', () => {
-  it('renders the hero, metrics, HITL, composer, focus, assets and plugin slots in order', () => {
+  it('renders the hero (clock, headline, assistant card), live card, metrics, follow-ups, assets and plugin slots in order', () => {
     useHitlInboxStore.getState().upsertConfirmation({
       id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@worker-1:test',
       toolName: 'shell_exec', approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
@@ -109,11 +129,27 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
       ],
     });
 
-    assertDomOrder('home-hero', 'home-metrics', 'home-hitl', 'home-composer', 'home-focus', 'home-assets', 'plugin-widgets');
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toContain('一站式 AI 工作台');
-    expect(screen.getByLabelText('向 AT 助手输入指令')).toBeInTheDocument();
+    assertDomOrder('home-hero', 'home-metrics', 'home-followups', 'home-assets', 'plugin-widgets');
+    const hero = screen.getByTestId('home-hero');
+    expect(within(hero).getByRole('heading', { level: 1 }).textContent).toContain('一站式 AI 工作台');
+    expect(within(hero).getByLabelText('向 AT 助手输入指令')).toBeInTheDocument();
+    expect(within(hero).getByTestId('home-live')).toBeInTheDocument();
     expect(screen.getByText('待决策')).toBeInTheDocument();
     expect(screen.getByText('Widget One')).toBeInTheDocument();
+  });
+
+  it('prints the localized date line above the headline once mounted', async () => {
+    renderHome();
+    await waitFor(() => expect(screen.getByTestId('home-hero').textContent).toMatch(/\d+月\d+日，星期\S+ · \d{2}:\d{2}/));
+  });
+
+  it('greets with the pending decision count once mounted', () => {
+    useHitlInboxStore.getState().upsertConfirmation({
+      id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@worker-1:test',
+      toolName: 'shell_exec', approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
+    });
+    renderHome({ tasks: [task({ runId: 'r1' }), task({ runId: 'r2' })] });
+    expect(screen.getByTestId('home-composer').textContent).toContain('今天有 1 事需要你确认');
   });
 
   it('counts active tasks, this-week completions, members and assets in the metrics bar', () => {
@@ -130,7 +166,7 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
     expect(metricValue('进行中')).toBe('02');
     expect(metricValue('本周完成')).toBe('01');
     expect(metricValue('协作成员')).toBe('06');
-    expect(metricValue('工作区资产')).toBe('10');
+    expect(metricValue('工作区资产')).toBe('16');
   });
 
   it('hides task metrics while the board is loading or degraded', () => {
@@ -140,17 +176,18 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
     expect(metricValue('协作成员')).toBe('06');
   });
 
-  it('keeps the focus list, empty states and composer when nothing is pending', () => {
+  it('keeps the empty states for follow-ups, live card and composer when nothing is pending', () => {
     const { container } = renderHome();
 
     expect(screen.queryByText('待决策')).toBeNull();
     expect(container.querySelector('[data-testid="plugin-widgets"]')).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe('暂无正在推进的任务');
+    expect(screen.getByRole('status').textContent).toBe('暂无需要跟进的事项');
     expect(screen.getByTestId('home-composer')).toBeInTheDocument();
+    expect(screen.getByTestId('home-live').textContent).toContain('等待 Agent 接入');
     expect(screen.getByRole('heading', { name: '工作区资产' })).toBeInTheDocument();
   });
 
-  it('shows the featured task with progress and opens it from the hero card', () => {
+  it('shows the featured follow-up with progress and opens it from the action button', () => {
     renderHome({
       tasks: [
         task({ runId: 'r1', title: 'Agent 协作流程 v2.0 校验', projectId: 'p-1' }),
@@ -159,39 +196,54 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
       ],
     });
 
-    const aside = screen.getByTestId('home-hero-aside');
-    expect(within(aside).getByText('Agent 协作流程 v2.0 校验')).toBeInTheDocument();
-    expect(aside.textContent).toContain('子任务 1 / 2');
-    fireEvent.click(within(aside).getByRole('button', { name: /继续推进/ }));
+    const featured = screen.getByTestId('home-featured');
+    expect(within(featured).getByText('Agent 协作流程 v2.0 校验')).toBeInTheDocument();
+    expect(featured.textContent).toContain('子任务 1 / 2');
+    fireEvent.click(within(featured).getByRole('button', { name: /继续推进/ }));
     expect(window.location.hash).toBe('#workbench/tasks?project=p-1');
   });
 
-  it('lists the top three active tasks with owner, subtask progress and status', () => {
+  it('marks the featured follow-up with its downstream blocking count', () => {
     renderHome({
       tasks: [
-        task({ runId: 'r1', title: '任务一' }),
-        task({ runId: 'r2', title: '任务二', status: 'revision' }),
-        task({ runId: 'r3', title: '任务三', status: 'assigned' }),
-        task({ runId: 'r4', title: '任务四', status: 'submitted' }),
+        task({ runId: 'r1', title: 'Agent 协作流程 v2.0 校验' }),
+        task({ runId: 'r2', dependsOn: ['r1'], title: '下游任务' }),
+        task({ runId: 'r3', dependsOn: ['r1'], title: '下游任务二' }),
+      ],
+    });
+    expect(screen.getByTestId('home-featured').textContent).toContain('阻塞下游 2 项');
+  });
+
+  it('renders the live collaboration topology from running workers with their task progress', () => {
+    env.workers.data = [
+      worker({ name: 'research', team: 'alpha' }),
+      worker({ name: 'report', team: '', phase: 'Sleeping' }),
+    ];
+    renderHome({
+      tasks: [
+        task({ runId: 'r1', title: '调研协作流程', assignedTo: '@research:test' }),
+        task({ runId: 'r1-a', parentTaskId: 'r1', status: 'completed', assignedTo: '@research:test' }),
       ],
     });
 
-    const focus = screen.getByTestId('home-focus');
-    expect(within(focus).getByText('任务一')).toBeInTheDocument();
-    expect(within(focus).getByText('任务三')).toBeInTheDocument();
-    expect(within(focus).queryByText('任务四')).toBeNull();
-    const metaTexts = Array.from(focus.querySelectorAll('p')).map(node => node.textContent ?? '');
-    expect(metaTexts.filter(text => text.includes('子任务'))).toHaveLength(3);
-    expect(metaTexts.some(text => text.includes('@worker-1:test · alpha · 子任务 0 / 0'))).toBe(true);
+    const live = screen.getByTestId('home-live');
+    expect(within(live).getByText('02 AGENTS')).toBeInTheDocument();
+    expect(within(live).getByText('你')).toBeInTheDocument();
+    expect(within(live).getByText('research')).toBeInTheDocument();
+    expect(within(live).getByText('调研协作流程')).toBeInTheDocument();
+    expect(live.textContent).toContain('100%');
+    expect(within(live).queryByText('report')).toBeNull();
+    expect(live.textContent).toContain('持续交付中');
   });
 
-  it('hides the AT assistant entry below level 3 while keeping the other blocks', () => {
-    env.userLevel = 2;
+  it('falls back to the worker team label when a running agent has no active task', () => {
+    env.workers.data = [worker({ name: 'report', team: 'alpha' })];
     renderHome();
 
-    expect(screen.queryByRole('button', { name: /与AT助手对话/ })).toBeNull();
-    expect(screen.getByTestId('home-composer')).toBeInTheDocument();
-    expect(screen.getByTestId('home-metrics')).toBeInTheDocument();
+    const live = screen.getByTestId('home-live');
+    expect(within(live).getByText('report')).toBeInTheDocument();
+    expect(within(live).getByText('Alpha 团队')).toBeInTheDocument();
+    expect(live.textContent).toContain('01 AGENTS');
   });
 });
 
@@ -235,6 +287,31 @@ describe('WorkspaceHome — command composer', () => {
   });
 });
 
+describe('WorkspaceHome — workspace assets grid', () => {
+  it('renders the four real asset tiles and opens their sections', () => {
+    renderHome();
+
+    const assets = screen.getByTestId('home-assets');
+    for (const label of ['成员与权限', '模型', '技能', 'MCP 工具']) {
+      expect(within(assets).getByText(label)).toBeInTheDocument();
+    }
+    expect(assets.textContent).toContain('16 项');
+
+    fireEvent.click(within(assets).getByText('模型').closest('button')!);
+    expect(useSectionStore.getState().activeSection).toBe('models');
+  });
+
+  it('shows placeholder dashes while asset counts are loading', () => {
+    env.models.isSuccess = false;
+    try {
+      renderHome();
+      expect(screen.getByTestId('home-assets').textContent).toContain('统计中');
+    } finally {
+      env.models.isSuccess = true;
+    }
+  });
+});
+
 describe('WorkspaceHome — plugin widgets slot', () => {
   it('renders registered widgets after the assets section', () => {
     useExtensionStore.getState().add('widgets', 'plugin-a', {
@@ -271,6 +348,7 @@ describe('WorkspaceHome — accessibility (axe-core)', () => {
     useExtensionStore.getState().add('widgets', 'plugin-a', {
       id: 'w1', title: 'Widget One', component: () => <div>Widget One</div>, size: 'md',
     });
+    env.workers.data = [worker({ name: 'research', team: 'alpha' })];
     const { container } = renderHome({ tasks: [task({ runId: 'r1', title: 'Agent 协作流程校验' })] });
 
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
