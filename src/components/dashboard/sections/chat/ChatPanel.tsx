@@ -48,6 +48,11 @@ export function ChatPanel({
   const userLevel = useAgentTeamsStore(state => state.userLevel);
   const archiveStatus = useRoomArchiveStatus(room.id);
   const roomTaskData = useRoomTaskData(room.id, taskBoard);
+  const workerId = room.type === 'worker' ? room.workerName : undefined;
+  const topic = [
+    workerId && `ID ${workerId}`,
+    room.parentTeam && `团队: ${room.parentTeam}`,
+  ].filter(Boolean).join(' · ');
   const renderPanel = (configured = true) => (
     <div className={`${styles.conversation} relative flex h-full min-w-0 ${className}`}>
       <div className="flex-1 min-w-0">
@@ -68,7 +73,7 @@ export function ChatPanel({
           workerMatrixUserIds={room.workerMatrixUserIds ?? (room.matrixUserId ? [room.matrixUserId] : undefined)}
           roomPhase={room.phase}
           roomRuntime={room.runtime}
-          topic={room.parentTeam ? `团队: ${room.parentTeam}` : undefined}
+          topic={topic || undefined}
           headerActions={<>
             {headerActions}
             <RoomArchiveAction room={room} />

@@ -270,6 +270,7 @@ describe('Team and Agent resource cards', () => {
     expect(screen.queryByText('4 个 Agent')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'boss' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+    expect(screen.getByText('ID lead')).toBeInTheDocument();
   });
   it('shows an independent team page and preserves a selected team on refresh', () => {
     renderSection('#console/resources/teams?team=alpha&edit=true', 'teams');
@@ -290,6 +291,7 @@ describe('Team and Agent resource cards', () => {
         fireEvent.change(search, { target: { value } });
         expect(cards.getAllByRole('heading', { level: 2 })).toHaveLength(1);
         expect(cards.getByRole('heading', { name: '月见·研究助手' })).toBeInTheDocument();
+        expect(cards.getByText('ID agent-123')).toBeInTheDocument();
       }
       fireEvent.click(cards.getByRole('button', { name: '详情' }));
       expect(window.location.hash).toContain('agent=agent-123');

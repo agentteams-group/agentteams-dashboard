@@ -156,6 +156,7 @@ export function WorkerDetailPanel({
   const { data: existingSkills = [] } = useWorkerSkills(workerName);
 
   const view = detail?.name === workerName ? detail : worker;
+  const displayName = workerDisplayName(view);
   const dm = dmTargetFor(view);
 
   const refreshDetail = useCallback(async (force = false) => {
@@ -514,9 +515,10 @@ export function WorkerDetailPanel({
           </button> : <AccountAvatar kind="agent" name={view.name} className="size-9" />}
           <div className="min-w-0 flex-1">
             <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
-              <span className="truncate" title={view.name}>{workerDisplayName(view)}</span>
+              <span className="truncate" title={displayName}>{displayName}</span>
               <Badge variant="outline" className="text-xs">{roleLabel(view.role)}</Badge>
             </h2>
+            <p className="truncate font-mono text-xs text-muted-foreground" title={view.name}>ID {view.name}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <StatusDot phase={view.phase} />
               <PhaseBadge kind="worker" phase={view.phase} />

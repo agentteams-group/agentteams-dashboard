@@ -10,7 +10,16 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 const api = vi.hoisted(() => ({ listProjects: vi.fn(), getProjectWorkflow: vi.fn() }));
 vi.mock('@/lib/agentteams-projects-api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/agentteams-projects-api')>(), listProjects: api.listProjects, getProjectWorkflow: api.getProjectWorkflow }));
-vi.mock('./ChatRoom', () => ({ ChatRoom: ({ roomName, integratedSidebar, headerActions }: { roomName: string; integratedSidebar?: boolean; headerActions?: ReactNode }) => <div data-integrated-sidebar={String(integratedSidebar)}>{roomName}{headerActions}</div> }));
+vi.mock('./ChatRoom', () => ({
+  ChatRoom: ({ roomName, topic, integratedSidebar, headerActions }: {
+    roomName: string;
+    topic?: string;
+    integratedSidebar?: boolean;
+    headerActions?: ReactNode;
+  }) => <div data-integrated-sidebar={String(integratedSidebar)}>
+    {roomName}{topic && <p>{topic}</p>}{headerActions}
+  </div>,
+}));
 vi.mock('./components/ConversationTaskTips', () => ({ ConversationTaskTips: () => <button type="button">当前对话的任务</button> }));
 vi.mock('./manager-model-gate', () => ({ ManagerModelGate: ({ children }: { children: (_configured: boolean) => ReactNode }) => children(true) }));
 
@@ -33,6 +42,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('chat header actions', () => {
+  it('shows the Worker resource ID below a distinct private chat title', () => {
+    renderChat({ id: '!worker:test', name: '月见·研究助手', type: 'worker', members: [], workerName: 'worker-a', parentTeam: 'design' });
+    expect(screen.getByText('月见·研究助手')).toBeInTheDocument();
+    expect(screen.getByText('ID worker-a · 团队: design')).toBeInTheDocument();
+  });
+
+  it.each(['worker-a', 'worker-a 房间'])('shows the Worker resource ID alongside the chat title %s', (name) => {
+    renderChat({ id: '!worker:test', name, type: 'worker', members: [], workerName: 'worker-a' });
+    expect(screen.getByText(name)).toBeInTheDocument();
+    expect(screen.getByText('ID worker-a')).toBeInTheDocument();
+  });
+
   it('opens settings for the selected platform assistant and preserves its instance name', () => {
     renderChat({ id: '!ops:test', name: '平台助手 · second', type: 'manager', agentRole: 'operations', members: [] }, 'second');
     expect(screen.getByText('平台助手 · second')).toBeInTheDocument();
