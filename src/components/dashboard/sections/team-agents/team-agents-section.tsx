@@ -30,6 +30,7 @@ import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
 import { TeamAgentsWorkbench } from './team-agents-workbench';
 import { isDesktopHover } from '@/lib/desktop-interactions';
+import { workerDisplayName } from '@/lib/worker-display-name';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -115,7 +116,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const allAgents = [
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
   ].sort((a, b) => a.name.localeCompare(b.name));
-  const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
+  const agents = allAgents.filter((agent) => [workerDisplayName(agent), agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
   const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
   const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
   const selectedTeam = teams.find((team) => team.name === location.team);
@@ -134,7 +135,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     const agent = allAgents.find((item) => item.kind === 'agent' && item.name === name)
       ?? { name, model: '', runtime: '', phase: '', team: '', kind: 'agent' as const, label: 'Worker' };
     const onView = () => navigate('agents', 'agent', name);
-    return <MemberPreview key={name} name={name} onOpen={onView}>
+    return <MemberPreview key={name} name={name} label={workerDisplayName(agent)} onOpen={onView}>
       <AgentSummaryCard agent={agent} onView={onView} onEdit={() => navigate('agents', 'agent', name, true)} />
     </MemberPreview>;
   }

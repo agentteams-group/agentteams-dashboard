@@ -156,7 +156,7 @@ export function ChatRoomHeader({
           </div>
         ) : (
           topic && (
-            <p className="text-xs text-muted-foreground truncate">{topic}</p>
+            <p className="text-xs text-muted-foreground truncate" title={topic}>{topic}</p>
           )
         )}
       </div>

@@ -1,6 +1,7 @@
 import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import { managerRoomIds } from '@/lib/task-actors';
+import { workerIdentityName } from '@/lib/worker-display-name';
 import type { RoomInfo } from './room-info';
 
 export interface RoomMetaInput {
@@ -128,7 +129,7 @@ export function buildRooms(
     if (worker.roomID) {
       pushRoom({
         id: worker.roomID,
-        name: lookup[worker.roomID]?.roomName || `${worker.name} 房间`,
+        name: workerIdentityName(worker.identity) || lookup[worker.roomID]?.roomName || `${worker.name} 房间`,
         type: 'worker',
         members: [worker.matrixUserID].filter(Boolean),
         parentTeam: worker.team,

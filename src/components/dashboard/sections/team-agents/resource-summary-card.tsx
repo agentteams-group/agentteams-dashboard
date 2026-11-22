@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { OverflowText } from '@/components/dashboard/overflow-text';
 import { runtimeLabel } from '@/lib/runtime-labels';
+import { workerDisplayName } from '@/lib/worker-display-name';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS } from '../humans/human-types';
 import { Users } from 'lucide-react';
 
 export interface AgentSummary {
   name: string;
+  identity?: string;
   model: string;
   runtime: string;
   phase: string;
@@ -19,8 +21,9 @@ export interface AgentSummary {
   team: string;
 }
 
-export function ResourceIdentity({ name, role, kind, phase, onView }: {
+export function ResourceIdentity({ name, resourceId, role, kind, phase, onView }: {
   name: string;
+  resourceId?: string;
   role: string;
   kind: 'worker' | 'manager' | 'human' | 'team';
   phase?: string;
@@ -33,7 +36,10 @@ export function ResourceIdentity({ name, role, kind, phase, onView }: {
       <h2 className="min-w-0 text-base font-semibold leading-6">
         <OverflowText text={name} onClick={onView} className={onView ? 'hover:underline' : undefined} />
       </h2>
-      <OverflowText text={role} className="text-xs leading-5 text-muted-foreground" />
+      <div className="text-xs text-muted-foreground">
+        {resourceId && <OverflowText text={`ID ${resourceId}`} className="font-mono leading-4" />}
+        <OverflowText text={role} className="leading-5" />
+      </div>
     </div>
     {phase && <PhaseBadge kind={kind} phase={phase} className="mt-1 shrink-0" />}
   </div>;
@@ -43,8 +49,15 @@ export function AgentSummaryCard({ agent, onView, onEdit }: {
   agent: AgentSummary; onView: () => void; onEdit: () => void;
 }) {
   return <Card className="h-[300px] min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md sm:h-[280px]">
-    <CardContent className="flex flex-1 flex-col gap-5 p-5">
-      <ResourceIdentity name={agent.name} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onView} />
+    <CardContent className="flex flex-1 flex-col gap-3 p-5">
+      <ResourceIdentity
+        name={workerDisplayName(agent)}
+        resourceId={agent.name}
+        role={agent.label}
+        kind={agent.kind === 'manager' ? 'manager' : 'worker'}
+        phase={agent.phase}
+        onView={onView}
+      />
       <div className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3">
         <span className="shrink-0 text-xs text-muted-foreground">模型</span>
         <OverflowText text={agent.model || '未设置'} className="flex-1 text-sm font-medium" />

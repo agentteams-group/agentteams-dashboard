@@ -212,6 +212,12 @@ const CARDS: Array<{ title: string; content: string }> = [
 ];
 
 describe('WorkerDrawer', () => {
+  it.each(['月见·研究助手', 'worker-a'])('shows the resource ID alongside the Worker name %s', (displayName) => {
+    renderDrawerFor({ ...worker, identity: `- Name: ${displayName}` });
+    expect(screen.getByText(displayName, { selector: 'h2 span' })).toBeInTheDocument();
+    expect(screen.getByText('ID worker-a')).toBeInTheDocument();
+  });
+
   it('renders header, status and model card', () => {
     renderDrawer();
     expect(screen.getByText('worker-a')).toBeInTheDocument();
