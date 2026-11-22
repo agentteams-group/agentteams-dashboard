@@ -19,11 +19,14 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import { RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
 import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-api';
+import { useChatMessageQueue } from '@/lib/chat-message-queue';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 const mocks = vi.hoisted(() => {
   const sendReceiptMutate = vi.fn();
   const setReadMarkerMutate = vi.fn();
   const sendMutate = vi.fn();
+  const sendMutateAsync = vi.fn().mockResolvedValue({ event_id: '$queued-send' });
   const olderMessages = { hasNextPage: false, fetchNextPage: vi.fn() };
   const uploadMutateAsync = vi.fn().mockResolvedValue({ content_uri: 'mxc://hs.test/file' });
   const roomMessagesChunk: unknown[] = [
@@ -54,6 +57,7 @@ const mocks = vi.hoisted(() => {
     sendReceiptMutate,
     setReadMarkerMutate,
     sendMutate,
+    sendMutateAsync,
     olderMessages,
     uploadMutateAsync,
     roomMessagesChunk,
@@ -110,7 +114,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     useMatrixThreadMessages: () => ({ data: { chunk: mocks.threadMessagesChunk }, isLoading: false, isError: false }),
     useMatrixSetReadMarker: () => ({ mutate: mocks.setReadMarkerMutate, isPending: false }),
     useMatrixSendReadReceipt: () => ({ mutate: mocks.sendReceiptMutate }),
-    useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, isPending: false, error: null }),
+    useMatrixSendMessage: () => ({ mutate: mocks.sendMutate, mutateAsync: mocks.sendMutateAsync, isPending: false, error: null }),
     useMatrixEditMessage: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
     useMatrixRedactMessage: () => ({ mutate: vi.fn() }),
     useMatrixUploadMedia: () => ({ mutate: vi.fn(), mutateAsync: mocks.uploadMutateAsync, isPending: false }),
@@ -293,13 +297,55 @@ describe('ChatRoom read-position dual-write', () => {
     })));
     mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
       content: { msgtype: 'm.notice', body: '正在工作', 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
-    renderChatRoom({ workerMatrixUserIds: ['@peer:test'] });
+    renderChatRoom({ workerMatrixUserIds: ['@peer:test'], roomRuntime: 'qwenpaw' });
+    expect(screen.getByText('发送会打断当前会话')).toBeInTheDocument();
     expect(screen.queryByText('正在工作')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '停止执行' }));
     expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'stop', run_id: '$run', agent_id: '@peer:test' });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '只看杭州' } });
-    fireEvent.click(screen.getByRole('button', { name: '补充信息并继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     expect(mocks.sendMutate.mock.calls.at(-1)?.[0].extra['com.agentteams.control']).toEqual({ action: 'steer', run_id: '$run', agent_id: '@peer:test' });
+  });
+  it('uses the saved Enter preference to queue input in the actual room composer', () => {
+    useAgentTeamsStore.setState({ replyEnterAction: 'queue' });
+    useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
+    mocks.roomMembersChunk.push(...['@me:test', '@peer:test'].map(id => ({
+      type: 'm.room.member', state_key: id, content: { membership: 'join' },
+    })));
+    mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
+      content: { 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    renderChatRoom({ workerMatrixUserIds: ['@peer:test'], roomRuntime: 'codex' });
+    expect(screen.queryByText('发送会打断当前会话')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '下一轮核对退款' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(screen.getByRole('button', { name: '1 条排队中' })).toBeInTheDocument();
+    expect(mocks.sendMutate).not.toHaveBeenCalled();
+  });
+  it('keeps queued input out of Matrix until selected and steers the currently advertised run', async () => {
+    useMatrixStore.setState({ userId: '@me:test', homeserver: 'https://queue.test', isLoggedIn: true });
+    mocks.roomMembersChunk.push(...['@me:test', '@peer:test'].map(id => ({
+      type: 'm.room.member', state_key: id, content: { membership: 'join' },
+    })));
+    mocks.roomMessagesChunk.push({ event_id: '$status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 3000,
+      content: { 'com.agentteams.execution': { run_id: '$run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    const view = renderChatRoom({ workerMatrixUserIds: ['@peer:test'] });
+    for (const content of ['原定下一步', '改查杭州', '删除这条']) {
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: content } });
+      fireEvent.click(screen.getByRole('button', { name: '加入消息队列' }));
+    }
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(mocks.sendMutate).not.toHaveBeenCalled();
+    expect(mocks.sendMutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '3 条排队中' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除第 3 条排队消息' }));
+    mocks.roomMessagesChunk.push({ event_id: '$new-status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000,
+      content: { 'com.agentteams.execution': { run_id: '$new-run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    view.rerender(<ChatProvider><ChatRoom roomId="!room:test" roomName="测试房间" workerMatrixUserIds={['@peer:test']} /></ChatProvider>);
+    fireEvent.click(screen.getByRole('button', { name: '发送第 2 条排队消息' }));
+    await waitFor(() => expect(mocks.sendMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      body: '改查杭州', extra: { 'com.agentteams.control': { action: 'steer', run_id: '$new-run', agent_id: '@peer:test' } },
+    })));
+    await waitFor(() => expect(screen.getByRole('button', { name: '1 条排队中' })).toBeInTheDocument());
   });
   afterEach(() => {
     cleanup();
@@ -311,6 +357,8 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.olderMessages.hasNextPage = false;
     mocks.setAgentStatusMap({});
     useSectionStore.setState({ mentionRoomId: null });
+    useChatMessageQueue.setState({ queues: {} });
+    useAgentTeamsStore.setState({ replyEnterAction: 'send', autoReconnect: false });
   });
 
   it('explains why a visible room cannot be used after the current user left', () => {
@@ -447,7 +495,11 @@ describe('ChatRoom read-position dual-write', () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true, homeserver: 'https://hs.test', accessToken: 'tok' });
     renderChatRoom();
 
+    const composer = screen.getByRole('textbox', { name: '消息' });
+    fireEvent.change(composer, { target: { value: '尚未发送的草稿' } });
+    const timeline = screen.getByTestId('virtuoso');
     fireEvent.click(screen.getByTitle('显示成员'));
+    expect(screen.getByRole('complementary', { name: '会话上下文面板' })).toHaveClass('absolute', 'right-0');
     expect(screen.getByText('成员 (0)')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('显示文件'));
     expect(screen.queryByText('成员 (0)')).toBeNull();
@@ -455,6 +507,48 @@ describe('ChatRoom read-position dual-write', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭上下文面板' }));
     expect(screen.queryByText('当前会话暂无附件')).toBeNull();
+    expect(screen.getByTestId('virtuoso')).toBe(timeline);
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
+    expect(composer).toHaveValue('尚未发送的草稿');
+  });
+
+  it('opens the floating panel on mouse entry and closes only after leaving the whole panel', async () => {
+    vi.stubGlobal('PointerEvent', MouseEvent);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true } as MediaQueryList));
+    try {
+      renderChatRoom({ integratedSidebar: true, roomTaskData: { board: { tasks: [] }, roots: [], snapshots: [], count: 0 } });
+      const toggle = screen.getByRole('button', { name: '展开上下文面板' });
+      const composer = screen.getByRole('textbox', { name: '消息' });
+      const timeline = screen.getByTestId('virtuoso');
+      fireEvent.change(composer, { target: { value: '保留草稿和滚动位置' } });
+      expect(screen.getByRole('button', { name: '任务 0' })).toBeInTheDocument();
+
+      const pointer = (type: string, target: HTMLElement, relatedTarget?: HTMLElement) => {
+        const event = new MouseEvent(type, { bubbles: true, relatedTarget });
+        Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+        fireEvent(target, event);
+      };
+      pointer('pointerover', toggle);
+      const panel = screen.getByRole('complementary', { name: '会话上下文面板' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: '收起上下文面板' })).toBe(toggle);
+      pointer('pointerout', toggle, panel);
+      pointer('pointerover', panel, toggle);
+      expect(panel).toBeInTheDocument();
+      pointer('pointerout', panel, composer);
+      await waitFor(() => expect(panel).not.toBeInTheDocument());
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByTestId('virtuoso')).toBe(timeline);
+      expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
+      expect(composer).toHaveValue('保留草稿和滚动位置');
+
+      fireEvent.click(toggle, { detail: 0 });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.click(toggle, { detail: 0 });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('lists room attachments, skips redacted files, and returns to the list after preview', () => {

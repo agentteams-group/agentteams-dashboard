@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -514,7 +515,7 @@ export function QuotaDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="hf-quota-unit">单位</Label>
-            <select
+            <NativeSelect
               id="hf-quota-unit"
               value={unit}
               disabled={!canAdmin}
@@ -523,7 +524,7 @@ export function QuotaDialog({
             >
               <option value="MB">MB</option>
               <option value="GB">GB</option>
-            </select>
+            </NativeSelect>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">

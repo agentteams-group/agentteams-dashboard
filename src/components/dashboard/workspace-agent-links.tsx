@@ -18,7 +18,7 @@ export function WorkspaceAgentLinks({ rooms = [], collapsed = false, activeSecti
       {rooms.map((room) => {
         const operations = room.agentRole === 'operations';
         const Icon = operations ? ShieldCheck : Bot;
-        const label = operations ? '平台助手' : room.name;
+        const label = room.name;
         const selected = activeSection === 'chat' && activeRoomId === room.id;
         return (
           <button

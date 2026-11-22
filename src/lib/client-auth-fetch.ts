@@ -203,16 +203,16 @@ export function installClientAuthFetch(): void {
     } catch {
       return originalFetch(input, init);
     }
-    // Absolute URLs are compared against the origin; relative URLs are
-    // already same-origin by construction.
-    let sameOrigin = true;
-    if (/^https?:\/\//i.test(url)) {
-      try {
-        sameOrigin = new URL(url).origin === window.location.origin;
-      } catch {
-        sameOrigin = false;
+    let sameOrigin = false;
+    try {
+      const resolved = new URL(url, window.location.origin);
+      sameOrigin = resolved.origin === window.location.origin;
+      if (sameOrigin) {
+        url = resolved.pathname;
+        const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        if (basePath && url.startsWith(`${basePath}/`)) url = url.slice(basePath.length);
       }
-    }
+    } catch { /* Invalid URLs never receive a credential. */ }
     const dataUrl = sameOrigin && isDataPlaneUrl(url);
 
     const headers = new Headers(init?.headers);
@@ -255,7 +255,7 @@ export function installClientAuthFetch(): void {
       markBounced();
       await clearServerSession(originalFetch);
       clearClientCredentials();
-      window.location.replace('/?reason=unauthorized&from=data401');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/?reason=unauthorized&from=data401`);
     }
     return response;
   }) as typeof fetch;

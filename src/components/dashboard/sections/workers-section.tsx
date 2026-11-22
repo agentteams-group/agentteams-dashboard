@@ -31,21 +31,11 @@ import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bind
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { describeWorkerDeleteError, formatErrorMessage } from '@/lib/api-error';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
-import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
+import { rejectCopawCreate } from '@/lib/runtime-options';
 import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-types';
 import {
   filterWorkers,
@@ -188,7 +178,6 @@ export function WorkersSection() {
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
-  const [upgradeTarget, setUpgradeTarget] = useState<WorkerResponse | null>(null);
   const [agentSpecs, setAgentSpecs] = useState<Array<{ name: string; description: string; version: string }>>([]);
   // modelOptions 来自 useModelSelection（上方）——同源单一实现。
 
@@ -578,7 +567,6 @@ export function WorkersSection() {
       editForm.llmHeartbeatEnabled !== editWorker.llmHeartbeatEnabled ||
       editForm.model !== (editWorker.model || '') ||
       editForm.modelProvider !== undefined ||
-      editForm.runtime !== editWorker.runtime ||
       editForm.image !== (editWorker.image || '') ||
       editForm.agents !== (editWorker.agents || '') ||
       !arraysEqual(editForm.skills || [], editWorker.skills || []) ||
@@ -591,10 +579,9 @@ export function WorkersSection() {
 
     const { name: _ignored, ...data } = editForm;
     void _ignored;
-    if (isLegacyCopaw(data.runtime) && data.runtime !== editWorker.runtime) {
-      toast.error('CoPaw 已停止新建。请将运行时改为 QwenPaw 后再保存。');
-      return;
-    }
+    // Runtime changes go through the conditional handoff endpoint.
+    delete data.runtime;
+    if (data.image === (editWorker.image || '')) delete data.image;
     if (!envChanged) delete data.env;
     if (editForm.llmHeartbeatEnabled === editWorker.llmHeartbeatEnabled) delete data.llmHeartbeatEnabled;
     warnIfModelAliasUnbound(editForm.model);
@@ -615,19 +602,6 @@ export function WorkersSection() {
       }
     );
   }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound, syncWorkerSkills]);
-
-  const handleUpgradeToQwenPaw = useCallback(() => {
-    if (!upgradeTarget) return;
-    updateWorker.mutate(
-      { name: upgradeTarget.name, data: { runtime: 'qwenpaw' } },
-      {
-        onSuccess: () => {
-          setUpgradeTarget(null);
-          toast.success(`已将 Worker "${upgradeTarget.name}" 的运行时改为 QwenPaw，Controller 将协调升级。`);
-        },
-      },
-    );
-  }, [upgradeTarget, updateWorker]);
 
   const handleConfigApply = useCallback(() => {
     setConfigError(null);
@@ -879,7 +853,7 @@ export function WorkersSection() {
               onWake={(name) => wakeWorker.mutate(name)}
               onSleep={(name) => sleepWorker.mutate(name)}
               onEnsureReady={(name) => ensureReadyWorker.mutate(name)}
-              onUpgradeToQwenPaw={setUpgradeTarget}
+              onUpgradeToQwenPaw={(worker) => { void loadWorker(worker, 'edit'); }}
               onDelete={setDeleteTarget}
               isActionPending={
                 wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
@@ -919,7 +893,9 @@ export function WorkersSection() {
         value={editForm}
         onChange={setEditForm}
         isPending={updateWorker.isPending}
-        onOpenChange={(open) => !open && closeEdit()}
+        onOpenChange={(open) => {
+          if (!open) { closeEdit(); void refetch(); }
+        }}
         onSubmit={handleUpdate}
         modelOptions={modelOptions}
         modelProvider={editWorker?.modelProvider}
@@ -971,22 +947,6 @@ export function WorkersSection() {
         isLoading={deleteWorker.isPending}
       />
 
-      <AlertDialog open={!!upgradeTarget} onOpenChange={(open) => !open && setUpgradeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
-            <AlertDialogDescription>
-              将 Worker &quot;{upgradeTarget?.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。工作区、会话、记忆和凭据会按 Controller 迁移链路保留。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updateWorker.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUpgradeToQwenPaw} disabled={updateWorker.isPending}>
-              {updateWorker.isPending ? '升级中...' : '确认升级'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

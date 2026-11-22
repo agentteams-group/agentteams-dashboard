@@ -52,7 +52,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Legacy redirect
-  if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
+  if (!process.env.NEXT_PUBLIC_BASE_PATH && (pathname === '/dashboard' || pathname.startsWith('/dashboard/'))) {
     const target = pathname.replace(/^\/dashboard/, '') || '/';
     const url = request.nextUrl.clone();
     url.pathname = target;

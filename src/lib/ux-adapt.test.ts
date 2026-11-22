@@ -200,7 +200,7 @@ describe('横竖屏：375×812 / 812×375 契约', () => {
     expect(section).toMatch(/h-full w-\[420px\] max-w-\[92vw\]/);
     expect(section).toMatch(/max-h-\[85vh\] w-full rounded-t-xl/);
     // 工具条 / 搜索区一律 flex-wrap，375 下不出横向滚动
-    expect(section).toMatch(/flex flex-wrap items-end justify-between gap-3/);
+    expect(section).toMatch(/flex flex-wrap items-center justify-between gap-3/);
     expect(section).toMatch(/flex w-full min-w-0 flex-col gap-1 sm:w-\[280px\]/);
   });
 
@@ -289,6 +289,15 @@ describe('文件页 375 宽：只剩名称 + 操作，操作收「更多」，�
     const mode = effectiveLayoutMode({ containerWidth: 375, listWidth: 375, listMeasured: true });
     expect(mode).toBe('sheet');
     expect(panesFor(mode, true)).toEqual({ list: 'list', detail: null, overlay: 'sheet' });
+  });
+
+  it('文件分栏不会随自身列表宽度改变而来回切换', () => {
+    for (const listWidth of [1200, 808, 1200, 808]) {
+      expect(effectiveLayoutMode({ containerWidth: 1200, listWidth, listMeasured: true })).toBe('split');
+    }
+    for (const listWidth of [1024, 632, 1024, 632]) {
+      expect(effectiveLayoutMode({ containerWidth: 1024, listWidth, listMeasured: true })).toBe('drawer');
+    }
   });
 
   it('批量条 sticky 且在文档流内（不遮最后一行）、按钮 44 起', () => {

@@ -156,7 +156,7 @@ export function ChatRoomHeader({
           </div>
         ) : (
           topic && (
-            <p className="text-xs text-muted-foreground truncate">{topic}</p>
+            <p className="text-xs text-muted-foreground truncate" title={topic}>{topic}</p>
           )
         )}
       </div>
@@ -165,7 +165,7 @@ export function ChatRoomHeader({
         {taskAction ?? <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
-          label="任务拓扑"
+          label="任务"
           onClick={() => onTogglePanel('tasks')}
         />}
         {!agentRole && <ContextChip

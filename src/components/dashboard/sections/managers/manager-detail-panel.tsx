@@ -37,6 +37,8 @@ import {
   Tags,
 } from 'lucide-react';
 import { ResourceDetailTabs } from '@/components/dashboard/resource-detail-tabs';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { QwenpawRuntimeConfigPanel } from '../workers/qwenpaw-runtime-config-panel';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -140,6 +142,8 @@ export type ManagerDetailPanelProps = {
   onDm?: (_mxid: string, _roomId?: string) => void;
   /** 根节点附加 class（内联页面用 min-h-0 flex-1 参与父级 flex 布局）。 */
   className?: string;
+  initialTab?: string;
+  chrome?: 'full' | 'section';
 };
 
 export function ManagerDetailPanel({
@@ -151,6 +155,8 @@ export function ManagerDetailPanel({
   onChanged,
   onDm,
   className,
+  initialTab,
+  chrome = 'full',
 }: ManagerDetailPanelProps) {
   const managerName = manager.name;
   const canWrite = userLevel >= 3;
@@ -397,15 +403,17 @@ export function ManagerDetailPanel({
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
+      {chrome === 'full' && <>
       {/* 身份头（抽屉场景由 Sheet 关闭键兜底关闭；内联场景由页面返回键兜底） */}
       <div className="shrink-0 border-b px-3 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Crown className="size-4 shrink-0 text-violet-500" aria-hidden="true" />
+          <AccountAvatar kind="agent" name={view.name} label={view.name} className="size-8 rounded-lg" />
           <h2 className="min-w-0 truncate text-base font-semibold">{view.name}</h2>
           <PhaseBadge kind="manager" phase={view.phase} className="shrink-0" />
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           <RuntimeBadge runtime={view.runtime || ''} />
+          {view.model && <span className="font-mono text-muted-foreground">{view.model}</span>}
           <span className="text-muted-foreground" title={view.image || view.version}>版本 {managerVersionLabel(view.image, view.version)}</span>
         </div>
       </div>
@@ -492,8 +500,9 @@ export function ManagerDetailPanel({
 
       </div>
 
-      <ResourceDetailTabs key={managerName} label="平台助手配置" items={[
-        { id: 'basic', title: '基本信息', render: () => <section className="space-y-4" aria-label="连接信息">
+      </>}
+      <ResourceDetailTabs key={managerName} label="平台助手配置" initialTab={initialTab} chrome={chrome} items={[
+        { id: 'basic', title: '基础配置', render: () => <section className="space-y-4" aria-label="连接信息">
           <h3 className="text-sm font-medium">连接信息</h3>
           <Row label="Matrix 账号">
             {view.matrixUserID ? (
@@ -669,6 +678,7 @@ export function ManagerDetailPanel({
           ) : null}
         </section>
         },
+        ...(view.runtime === 'qwenpaw' ? [{ id: 'advanced', title: '高级配置', render: () => <QwenpawRuntimeConfigPanel workerName={managerName} memberKind="managers" canWrite={canWrite} onChanged={finishSave} /> }] : []),
         { id: 'logs', title: '日志', render: () => <ManagerLogsCard managerName={managerName} enabled={canWrite} /> },
       ]} />
 

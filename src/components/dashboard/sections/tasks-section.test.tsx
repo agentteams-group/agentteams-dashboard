@@ -124,7 +124,8 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
     fireEvent.click(within(flow).getByRole('button',{name:/交付优先级筛选/}));
     const sheet=await screen.findByRole('dialog');
     expect(within(sheet).getByRole('region',{name:'子任务列表'})).toHaveTextContent('分析筛选规则');
-    fireEvent.click(within(sheet).getByRole('button',{name:/实现筛选接口/}));
+    const subtasks = within(sheet).getByRole('region', { name: '子任务列表' });
+    fireEvent.click(within(subtasks).getByRole('button', { name: /实现筛选接口/ }));
     expect(within(sheet).getByRole('button',{name:'返回主任务：交付优先级筛选'})).toBeInTheDocument();
     expect(within(sheet).getByText('前置依赖')).toBeInTheDocument();
   });
@@ -133,6 +134,7 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
     viewPreference.value = 'projects';
     viewPreference.tasks = [];
     viewPreference.live = {};
+    window.history.replaceState(null, '', '#');
     vi.unstubAllGlobals();
   });
 
@@ -207,7 +209,7 @@ it('opens the selected task detail and keeps populated groups at a fixed height'
   expect(card.closest('[class*="h-[360px]"]')).not.toBeNull();
   expect(within(card).queryByText('进行中')).toBeNull();
   expect(within(card).getByLabelText('任务正在执行')).toHaveClass('motion-safe:animate-spin');
-  expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveClass('motion-safe:animate-pulse');
+  expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveStyle({ backgroundColor: '#CB9300' });
   fireEvent.click(card);
   expect(await screen.findByRole('dialog')).toBeInTheDocument();
   expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();
@@ -249,6 +251,18 @@ describe('task collaboration room entry', () => {
     viewPreference.value = 'kanban';
     viewPreference.tasks = [{ runId: 'task-room', title: '执行分析', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '!source:test', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
   }
+  it('opens the same board details when following a conversation task link', async () => {
+    task();
+    viewPreference.tasks[0].teamId = 'travel-crew';
+    viewPreference.tasks[0].status = 'pending';
+    window.history.replaceState(null, '', '#workbench/tasks?task=task-room&team=travel-crew');
+    renderSection();
+    const detail = await screen.findByRole('dialog', { name: '执行分析' });
+    expect(within(detail).getByText('task-room')).toBeInTheDocument();
+    fireEvent.keyDown(detail, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '执行分析' })).toBeNull());
+    expect(window.location.hash).toBe('#workbench/tasks');
+  });
   it('moves a refreshed task between columns while keeping the board mounted and ignoring a stale chat status', async () => {
     task();
     viewPreference.tasks[0].status = 'assigned';

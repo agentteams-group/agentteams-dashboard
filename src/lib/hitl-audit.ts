@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/api-base';
 /**
  * HITL 审计上报（PRD F2.4）：干预生命周期事件（request/answer/expire）
  * 经 BFF 落服务端审计 JSONL。fire-and-forget：失败静默（审计缺失不阻塞
@@ -19,7 +20,7 @@ export interface HitlAuditInput {
 }
 
 export function recordHitlAudit(input: HitlAuditInput): void {
-  void fetch('/api/agentteams/hitl/audit', {
+  void fetch(apiUrl('/api/agentteams/hitl/audit'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

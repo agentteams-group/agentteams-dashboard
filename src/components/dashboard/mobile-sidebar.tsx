@@ -30,7 +30,7 @@ export function MobileSidebar({ agentRooms, open, activeSection, countMap, secti
           aria-label="移动导航" className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card md:hidden">
           <div className="flex h-16 shrink-0 items-center justify-between px-4">
             <div className="flex items-center gap-2">
-              <Image src="/agentteams-logo.svg" alt="AgentTeams" width={32} height={32} className="rounded-lg" />
+              <Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="AgentTeams" width={32} height={32} className="rounded-lg" />
               <span className="text-base font-semibold">AgentTeams</span>
             </div>
             <Button variant="ghost" size="icon" aria-label="关闭导航" onClick={onClose}><X className="size-5" /></Button>

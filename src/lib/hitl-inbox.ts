@@ -4,6 +4,7 @@ import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from './runtime-approval';
+import { APPROVAL_FEEDBACK_MARKER } from './approval-feedback';
 
 export interface HitlConfirmation {
   id: string;
@@ -183,6 +184,14 @@ export const useHitlInboxStore = create<HitlInboxState>()(
 
   resolveRoomReply: (roomId, sender, body, currentUserId, relatedEventId) => {
     if (sender !== currentUserId) return;
+    if (stripLeadingMentions(body).startsWith(APPROVAL_FEEDBACK_MARKER)) {
+      if (!relatedEventId) return;
+      const linked = Object.values(get().confirmations).find(item => item.roomId === roomId && item.eventId === relatedEventId);
+      if (!linked || linked.requestId) return;
+      get().resolveConfirmation(linked.id, sender, body);
+      if (linked.id !== relatedEventId) get().resolveConfirmation(relatedEventId, sender, body);
+      return;
+    }
     const kind = hitlResolutionKind(body);
     if (!kind) return;
 

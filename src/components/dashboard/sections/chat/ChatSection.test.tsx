@@ -19,8 +19,9 @@ const hooksMock = vi.hoisted(() => ({
   useRoomAccess: vi.fn(),
   useArchivedRooms: vi.fn(),
 }));
-const sessionMock = vi.hoisted(() => ({ userLevel: 3, userId: '@user:test', sessionUser: 'alice' }));
+const sessionMock = vi.hoisted(() => ({ isLoggedIn: true, userLevel: 3, userId: '@user:test', sessionUser: 'alice' }));
 const taskFeedMock = vi.hoisted(() => ({ workflows: [] as unknown[] }));
+const taskBoardMock = vi.hoisted(() => ({ tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
 
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: hooksMock.useWorkers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: hooksMock.useTeams }));
@@ -29,6 +30,7 @@ vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: hooksMock.useRoomAccess }));
 vi.mock('@/hooks/use-room-archive', () => ({ useArchivedRooms: hooksMock.useArchivedRooms }));
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: taskFeedMock.workflows, loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
+vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => taskBoardMock }));
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({
@@ -36,7 +38,7 @@ vi.mock('@/lib/agentteams-store', () => ({
 }));
 
 vi.mock('@/lib/matrix-store', () => ({
-  useMatrixStore: () => ({ isLoggedIn: true, userId: sessionMock.userId, homeserver: 'https://test', logout: vi.fn() }),
+  useMatrixStore: () => ({ isLoggedIn: sessionMock.isLoggedIn, userId: sessionMock.userId, homeserver: 'https://test', logout: vi.fn() }),
 }));
 
 // Room-members/state queries are irrelevant here; keep useRoomMetaStore real.
@@ -60,16 +62,17 @@ vi.mock('./ChatPanel', () => ({
 }));
 
 vi.mock('./chat-room-sidebar', () => ({
+  InviteInbox: () => <div data-testid="invite-inbox-stub" />,
   ChatRoomSidebar: ({ footer, rooms, onSelectRoom }: { footer?: ReactNode; rooms: { id: string; name: string }[]; onSelectRoom: (_id: string) => void }) => (
     <div data-testid="sidebar-stub">{footer}{rooms.map(room => <button key={room.id} onClick={() => onSelectRoom(room.id)}>{room.name}</button>)}</div>
   ),
 }));
-vi.mock('./chat-auth-badge', () => ({ ChatAuthBadge: () => <div>MatrixAuth</div> }));
 vi.mock('./sync-status-chip', () => ({ SyncStatusChip: () => <div>SyncChip</div> }));
 vi.mock('./chat-empty-state', () => ({ ChatEmptyState: () => <div data-testid="empty-stub" /> }));
 vi.mock('./human-panel', () => ({ HumanPanel: () => <div /> }));
 vi.mock('./room-topology', () => ({ RoomTopology: () => <div /> }));
-vi.mock('./matrix-status-banner', () => ({ MatrixStatusBanner: () => <div /> }));
+vi.mock('./matrix-status-banner', () => ({ MatrixStatusBanner: ({ onLoginClick }: { onLoginClick: () => void }) => <button onClick={onLoginClick}>重新连接</button> }));
+vi.mock('./matrix-login-form', () => ({ MatrixLoginForm: ({ onLoginSuccess }: { onLoginSuccess: () => void }) => <button onClick={onLoginSuccess}>完成连接</button> }));
 vi.mock('./ChatStore', () => ({
   ChatProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -90,7 +93,10 @@ beforeEach(() => {
   useSectionStore.setState({ taskCollaboration: null });
   localStorage.clear();
   sessionMock.userId = '@user:test';
+  sessionMock.isLoggedIn = true;
+  sessionMock.sessionUser = 'alice';
   taskFeedMock.workflows = [];
+  taskBoardMock.tasks = [];
   hooksMock.useArchivedRooms.mockReturnValue({ data: { rooms: [] }, isSuccess: true });
   hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!leader:test', '!ops:test', '!room1:test'], state: 'joined', refetch: vi.fn() });
 });
@@ -250,7 +256,7 @@ describe('role-based assistant landing', () => {
     hooksMock.useTeams.mockReturnValue({ data: [{ name: 'private-team', teamRoomID: '!private-group:test', leaderDMRoomID: '!private-leader:test' }], isLoading: false });
     hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test'], state: 'joined', refetch: vi.fn() });
     renderWithQueryClient();
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队及任务房间' }));
     expect(screen.queryByText(/private-team/)).toBeNull();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
   });
@@ -258,7 +264,7 @@ describe('role-based assistant landing', () => {
   it('opens the accessible leader DM for a team user without loading global managers', () => {
     sessionMock.userLevel = 2;
     hooksMock.useManagers.mockReturnValue({ data: undefined, isLoading: false });
-    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', teamName: '设计团队', leaderName: 'leader', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', teamName: '设计团队', admin: { name: 'alice' }, leaderName: 'leader', leaderDMRoomID: '!leader:test' }], isLoading: false });
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
     expect(useRoomMetaStore.getState().activeRoomId).toBe('!leader:test');
@@ -304,7 +310,7 @@ describe('role-based assistant landing', () => {
       interrupts: [],
     }];
     renderWithQueryClient();
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队及任务房间' }));
     const sidebar = within(screen.getByTestId('sidebar-stub'));
     expect(sidebar.getByRole('button', { name: '网站改版' })).toBeInTheDocument();
   });
@@ -318,13 +324,13 @@ describe('role-based assistant landing', () => {
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!archive:test');
     expect(screen.queryByRole('button', { name: '已归档房间' })).toBeNull();
     expect(screen.queryByRole('button', { name: '归档任务' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队及任务房间' }));
     expect(within(screen.getByTestId('sidebar-stub')).queryByRole('button', { name: '已验收任务' })).toBeNull();
   });
 
   it('restores the same account selection and gives an explicit deep link priority', () => {
     hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
-    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', admin: { name: 'alice' }, leaderDMRoomID: '!leader:test' }], isLoading: false });
     localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
@@ -336,7 +342,7 @@ describe('role-based assistant landing', () => {
 
   it('does not open an unjoined DM from a saved selection or deep link', () => {
     sessionMock.userLevel = 2;
-    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', admin: { name: 'alice' }, leaderDMRoomID: '!leader:test' }], isLoading: false });
     hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: [], state: 'joined', refetch: vi.fn() });
     localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
     useHitlInboxStore.getState().setPendingChatRoomId('!leader:test');
@@ -348,7 +354,7 @@ describe('role-based assistant landing', () => {
 
   it('falls back when membership is revoked and keeps another account selection separate', () => {
     hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
-    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', leaderDMRoomID: '!leader:test' }], isLoading: false });
+    hooksMock.useTeams.mockReturnValue({ data: [{ name: 'design', admin: { name: 'alice' }, leaderDMRoomID: '!leader:test' }], isLoading: false });
     localStorage.setItem(conversationStorageKey('https://test', '@user:test')!, '!leader:test');
     renderWithQueryClient();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!leader:test');
@@ -378,13 +384,45 @@ describe('separate assistants and my teams with mixed roles', () => {
   });
   afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
 
-  it('shows only administered teams as private assistants', () => {
+  it('switches between owned team assistants and never lists team group chats as assistants', async () => {
     renderWithQueryClient('assistants');
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
-    const sidebar = within(screen.getByTestId('sidebar-stub'));
-    expect(sidebar.getByRole('button', { name: 'Team A助手' })).toBeInTheDocument();
-    expect(sidebar.getByRole('button', { name: 'Team B助手' })).toBeInTheDocument();
-    expect(sidebar.queryByRole('button', { name: /team-c|team-d/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '切换助手' }));
+    const choices = within(screen.getByRole('region', { name: '团队助手' }));
+    expect(choices.getByRole('button', { name: 'Team A助手' })).toBeInTheDocument();
+    expect(choices.getByRole('button', { name: 'Team B助手' })).toBeInTheDocument();
+    expect(choices.queryByRole('button', { name: /Team C|Team D/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar-stub')).not.toBeInTheDocument();
+    fireEvent.click(choices.getByRole('button', { name: 'Team B助手' }));
+    await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!dm-b:test'));
+  });
+
+  it('does not turn platform administration or stale DM membership into Team Admin rights', () => {
+    sessionMock.userLevel = 3;
+    sessionMock.sessionUser = 'operator';
+    hooksMock.useManagers.mockReturnValue({ data: [{ name: 'default', roomID: '!ops:test' }], isLoading: false });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!ops:test', '!dm-a:test', '!group-a:test'], state: 'joined', refetch: vi.fn() });
+    useHitlInboxStore.getState().setPendingChatRoomId('!dm-a:test');
+    renderWithQueryClient('assistants');
+    expect(screen.getByText(/团队助手私聊仅对该团队的 Team Admin 开放/)).toBeInTheDocument();
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!ops:test');
+    fireEvent.click(screen.getByRole('button', { name: '切换助手' }));
+    expect(screen.queryByRole('button', { name: 'Team A助手' })).not.toBeInTheDocument();
+    expect(screen.getByText('团队助手仅对你担任 Team Admin 的团队开放。')).toBeInTheDocument();
+  });
+
+  it('keeps ordinary members in their joined team groups without exposing team assistant DMs', () => {
+    sessionMock.sessionUser = 'member';
+    renderWithQueryClient('assistants');
+    expect(screen.queryByTestId('chat-panel-stub')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '切换助手' }));
+    expect(screen.queryByRole('button', { name: /Team [A-D]助手/ })).not.toBeInTheDocument();
+    expect(screen.getByText('团队助手仅对你担任 Team Admin 的团队开放。')).toBeInTheDocument();
+  });
+
+  it('keeps the accessible leader conversation and team link without an assistant space list', () => {
+    renderWithQueryClient('assistants');
+    expect(screen.queryByRole('button', { name: '切换团队及任务房间' })).toBeNull();
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
     expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!dm-a:test');
     fireEvent.click(screen.getByRole('button', { name: '团队协作' }));
     expect(useSectionStore.getState().activeSection).toBe('my-teams');
@@ -393,14 +431,13 @@ describe('separate assistants and my teams with mixed roles', () => {
 
   it('shows every joined team, identifies each role, and opens ordinary member groups', async () => {
     renderWithQueryClient('teams');
-    const sidebar = within(screen.getByTestId('sidebar-stub'));
-    expect(sidebar.getAllByRole('button', { name: /team-[a-d] 团队房间/ })).toHaveLength(4);
-    expect(screen.getByText('Team A')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /切换团队.*Team A.*管理员/ })).toBeInTheDocument();
-    fireEvent.click(sidebar.getByRole('button', { name: 'team-c 团队房间' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队' }));
+    const sidebar = within(screen.getByRole('list', { name: '我的团队' }));
+    expect(sidebar.getAllByRole('button', { name: /Team [A-D]/ })).toHaveLength(4);
+    expect(screen.getByRole('button', { name: '切换团队' })).toHaveTextContent('Team A管理员');
+    fireEvent.click(sidebar.getByRole('button', { name: /Team C/ }));
     await waitFor(() => expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group-c:test'));
-    expect(screen.getByText('Team C')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /切换团队.*Team C.*成员/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '切换团队' })).toHaveTextContent('Team C成员');
     expect(screen.queryByRole('button', { name: '团队助手' })).toBeNull();
   });
 
@@ -413,6 +450,18 @@ describe('separate assistants and my teams with mixed roles', () => {
 });
 
 describe('project rooms in the teams view', () => {
+  it('keeps execution rooms out of the team picker', () => {
+    taskBoardMock.tasks = [
+      { runId: 'standalone', title: '真实任务房间', status: 'in_progress', teamId: 'design', executionRoomId: '!project:test', roomId: '!leader:test', assignedTo: 'leader', dependsOn: [], createdAt: 0, source: 'controller', outcome: null },
+      { runId: 'private', title: '未加入的任务', status: 'pending', executionRoomId: '!private:test', roomId: '!leader:test', assignedTo: 'leader', dependsOn: [], createdAt: 0, source: 'controller', outcome: null },
+    ];
+    taskFeedMock.workflows = [];
+    renderWithQueryClient('teams');
+    fireEvent.click(screen.getByRole('button', { name: '切换团队' }));
+    const sidebar = within(screen.getByRole('list', { name: '我的团队' }));
+    expect(sidebar.queryByRole('button', { name: /真实任务房间/ })).toBeNull();
+    expect(sidebar.queryByRole('button', { name: '未加入的任务' })).toBeNull();
+  });
   const projectWorkflow = {
     project_id: 'project-1',
     title: '网站改版',
@@ -435,18 +484,30 @@ describe('project rooms in the teams view', () => {
   });
   afterEach(() => { sessionMock.userLevel = 3; cleanup(); });
 
-  it('lists only joined teams in the teams sidebar, keeping project rooms accessible by deep link', () => {
+  it('selects teams directly and keeps project rooms out of the picker', () => {
     renderWithQueryClient('teams');
-    const sidebar = within(screen.getByTestId('sidebar-stub'));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队' }));
+    const sidebar = within(screen.getByRole('list', { name: '我的团队' }));
     expect(sidebar.queryByRole('button', { name: /网站改版/ })).toBeNull();
-    expect(sidebar.getByRole('button', { name: /design 团队房间/ })).toBeInTheDocument();
+    const team = sidebar.getByRole('button', { name: /设计团队/ });
+    expect(team).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /展开团队/ })).toBeNull();
+    expect(screen.queryByPlaceholderText('搜索对话…')).toBeNull();
+    fireEvent.click(team);
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group:test');
+  });
+
+  it('restores a team instead of an old remembered task room', () => {
+    localStorage.setItem(`${conversationStorageKey('https://test', '@user:test')}:teams`, '!project:test');
+    renderWithQueryClient('teams');
+    expect(screen.getByTestId('chat-panel-stub')).toHaveTextContent('!group:test');
+    expect(useSectionStore.getState().taskCollaboration).toBeNull();
   });
 
   it('does not list project rooms in the assistants view', () => {
     renderWithQueryClient('assistants');
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
-    const sidebar = within(screen.getByTestId('sidebar-stub'));
-    expect(sidebar.queryByRole('button', { name: /网站改版/ })).toBeNull();
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+    expect(screen.queryByText(/网站改版/)).toBeNull();
   });
 
   it('routes a project deep link from the assistants view into my teams', () => {
@@ -484,17 +545,16 @@ describe('ChatSection mobile room drawer', () => {
     vi.unstubAllGlobals();
   });
 
-  it('opens an accessible room drawer and closes it with Escape', async () => {
+  it('opens a touch accessible room picker and closes it with Escape', async () => {
     renderWithQueryClient();
     expect(screen.queryByTestId('sidebar-stub')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队及任务房间' }));
     expect(screen.getByTestId('sidebar-stub')).toBeTruthy();
-    expect(screen.getByRole('dialog', { name: '切换对话' })).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: '切换对话' })).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('dialog', { name: '切换团队及任务房间' })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('sidebar-stub')).toBeNull());
-    expect(screen.getByRole('button', { name: '打开空间列表' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: '切换团队及任务房间' })).toHaveFocus();
   });
 });
 
@@ -507,17 +567,26 @@ describe('ChatSection merged section chrome', () => {
     cleanup();
   });
 
-  it('drops the standalone bar and parks the session cluster in the room list footer', () => {
+  it('keeps connection diagnostics out of normal conversation chrome', () => {
     renderWithQueryClient();
 
     expect(screen.queryByText('Agent Chat')).toBeNull();
     expect(screen.queryByText('实时通信与人机协同')).toBeNull();
 
     expect(screen.queryByTestId('sidebar-stub')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
-    const sidebar = screen.getByTestId('sidebar-stub');
-    expect(within(sidebar).getByText('SyncChip')).toBeTruthy();
-    expect(within(sidebar).getByText('MatrixAuth')).toBeTruthy();
+    expect(screen.queryByText('SyncChip')).toBeNull();
+    expect(screen.queryByText('对话已连接')).toBeNull();
+    expect(screen.queryByRole('button', { name: '断开对话连接' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /服务端能力/ })).toBeNull();
+  });
+
+  it('still opens and completes reconnection from the disconnected notice', async () => {
+    sessionMock.isLoggedIn = false;
+    renderWithQueryClient();
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
+    expect(screen.getByRole('dialog', { name: '重新连接对话' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '完成连接' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '重新连接对话' })).toBeNull());
   });
 });
 
@@ -546,7 +615,7 @@ describe('ChatSection projection failure notices', () => {
     expect(screen.getByText(/Managers 投影失败（403）/)).toBeTruthy();
     // The chat section must stay mounted (sidebar + empty state), not be
     // replaced by a full-page ApiErrorState.
-    fireEvent.click(screen.getByRole('button', { name: '打开空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换团队及任务房间' }));
     expect(screen.getAllByTestId('sidebar-stub').length).toBe(1);
     expect(screen.getByTestId('empty-stub')).toBeTruthy();
   });

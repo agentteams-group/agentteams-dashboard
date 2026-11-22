@@ -40,6 +40,7 @@ The sidebar mirrors the workspace IA — six first-level entries (`workspace-nav
 
 | Area | What it covers |
 |------|----------------|
+| **首页** | WORKSPACE baseline overview: featured task card with jump link, metrics bar (in progress / completed this week / collaborators / workspace assets), HITL pending decisions, command composer (one prompt straight into the AT assistant chat), today's focus and plugin widget slots |
 | **助手** | Platform Manager or Leader DM conversation for the signed-in account: team jump links, draft persistence, `@` mentions, file references, message actions, threads and runtime-aware rendering |
 | **我的团队** | Team work rooms the account belongs to, with an **Admin** / **Member** badge and access to the Leader DM when the account is a Team Admin |
 | **工作台** | 任务看板 (task/project board with DAG + loop views, attention/HITL inbox, pause/resume/replan), 产物 (project → task → artifact tree with preview/download), 编码执行 (read-only coding-CLI run records and raw logs), 自动化 (loop definition canvas, templates, dry run, publish/rollback) |
@@ -64,7 +65,7 @@ The sidebar mirrors the workspace IA — six first-level entries (`workspace-nav
 
 The chat workspace renders Matrix rooms with virtualized history, unread-aware scrolling, message actions, read receipts and on-demand thread panels. Root messages remain in the main timeline; `m.thread` replies are counted on their root and loaded in the thread panel.
 
-Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations, the HITL inbox protocol and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates. Tool Guard / HITL confirmations surface as actionable cards that post the decision back as a normal Matrix reply, and the Overview HITL inbox aggregates pending approvals across rooms.
+Runtime messages are parsed from A2UI markers, AgentScope runtime `Message` repr bodies, `agentteams.workflow`, Tool Guard confirmations, the HITL inbox protocol and legacy card formats. The UI renders Markdown, collapsible reasoning, tool-call, workflow, confirmation and A2UI blocks. Optional `org.agentteams.run` payloads are supported as a runtime-adapter compatibility format; the Dashboard also handles standard Matrix `m.replace` revisions for streaming updates. Tool Guard / HITL confirmations surface as actionable cards that post the decision back as a normal Matrix reply, and the home-page HITL inbox aggregates pending approvals across rooms.
 
 The Dashboard does not implement or claim end-to-end encryption: chat content passes through the server-side proxy in plaintext, and encrypted rooms render as empty. Which layer can read what, and what operators must confirm for their deployment, is documented in [docs/trust-boundary.md](docs/trust-boundary.md).
 
@@ -109,8 +110,8 @@ Worker polling supports slim list projections and private ETag revalidation, wit
 
 The [AgentTeams](https://github.com/agentscope-ai/AgentTeams) installer starts Dashboard by default alongside the Controller/Manager. The default local flow opens Dashboard and copies the login password to the clipboard; paste it into the login page with `admin` prefilled. A model API key is optional during installation: the Manager conversation links to model management when configuration is missing. Installer changes are contributed to the AgentTeams repository; the patch-based flow under `install/patches/` has been retired.
 
-- **Dashboard release target**: `v1.4.1`. The app version source of truth is `version` in `package.json` (`1.4.1`); the matching release tag is `v1.4.1`.
-- **Installer default**: `v1.4.1`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
+- **Dashboard release target**: `v1.4.3`. The app version source of truth is `version` in `package.json` (`1.4.3`); the matching release tag is `v1.4.3`.
+- **Installer default**: `v1.4.3`; set `AGENTTEAMS_DASHBOARD_VERSION` to override
 - **Default port**: `13000`, bound to `127.0.0.1` (set `AGENTTEAMS_LOCAL_ONLY=0` to expose on `0.0.0.0`)
 - **Available versions**: tagged at https://github.com/agentteams-group/agentteams-dashboard/tags
 - **Integration PR**: https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -137,7 +138,7 @@ After installation visit `http://127.0.0.1:13000/`.
 |----------|-------------|---------|
 | `AGENTTEAMS_DASHBOARD` | Enable Dashboard installation (`1` = install, `0` = skip) | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Host port mapped to the Dashboard container | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.4.1` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard image tag (independent release) | `v1.4.3` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Full Dashboard image reference | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL for shared login (explicit config takes priority) | auto-detected |
 
@@ -152,7 +153,7 @@ After installation visit `http://127.0.0.1:13000/`.
 Non-interactive install example:
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.1 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.3 \
   AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 

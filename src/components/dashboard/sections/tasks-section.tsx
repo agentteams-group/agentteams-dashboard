@@ -1,33 +1,28 @@
 'use client';
 
+import { isDesktopHover } from '@/lib/desktop-interactions';
+import { taskStatus } from '@/lib/task-status';
+
 import { useState, useMemo, useCallback, useEffect, useRef, useId } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   ListTodo,
   Search,
-  CircleCheck,
-  CircleX,
   Loader2,
   Clock,
-  ChevronUp,
   MessageSquare,
-  MessageSquareReply,
   Crown,
   Users,
-  Eye,
   FolderTree,
   GitBranch,
   Layers,
   AlertTriangle,
   Sparkles,
   RefreshCw,
-  RotateCcw,
   Database,
 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiUrl, requestJson } from '@/lib/api-base';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { OverflowText } from '@/components/dashboard/overflow-text';
 import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
@@ -45,14 +40,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { ArchivedRoomsDialog, CompletedTaskArchiveAction } from './chat/room-archive';
+import { ArchivedRoomsDialog } from './chat/room-archive';
 import { useArchivedRooms } from '@/hooks/use-room-archive';
-import { currentHashParams } from '@/lib/nav-hash';
+import { currentHashParams, tasksHash } from '@/lib/nav-hash';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useActiveSection } from '@/components/dashboard/use-active-section';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
 import {
   useMergedTaskBoard,
   useLogTaskBoardScan,
@@ -72,103 +66,28 @@ import { MetaEditorEntry } from './projects/meta-editor';
 import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
-import { buildTaskDag, buildProjectDag } from '@/lib/project-dag';
-import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
+import { buildProjectDag } from '@/lib/project-dag';
+import { mainTasks, subtasksOf } from '@/lib/task-hierarchy';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { isStaleProjectSelection } from './task-selectors';
-import { ProjectDagSvg, type DagNodeColor } from '@/components/dashboard/project-dag-svg';
+import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
+import {
+  DAG_NODE_FILL,
+  PROJECT_STATUS_LABEL,
+  TASK_STATUS_COLUMNS,
+  OutcomeBadge,
+  StatusBadge,
+  SubtaskProgress,
+  TaskDependencies,
+  TaskDetailSheet,
+  TaskRoomActions,
+  taskMetaQuery,
+} from './task-detail-sheet';
 
 // ----- Status config -----
 
-import { PROJECT_STATUS_COLOR, OUTCOME_COLOR } from '@/lib/status-colors';
+import { PROJECT_STATUS_COLOR } from '@/lib/status-colors';
 import { INTERACTIVE_CARD_CLASS, handleActivate } from '@/lib/interaction-states';
-
-const TASK_STATUS_COLUMNS: Array<{
-  key: TaskStatus;
-  label: string;
-  description: string;
-  color: string; // tailwind text/bg
-  icon: typeof CircleCheck;
-}> = [
-  {
-    key: 'pending',
-    label: '待办',
-    description: '已交给团队 Leader，等待分析、拆分和派发',
-    color: 'text-muted-foreground bg-muted border-border',
-    icon: Clock,
-  },
-  {
-    key: 'assigned',
-    label: '已派发',
-    description: 'Leader 已拆分并派发给 Worker，等待接单',
-    color: 'text-foreground bg-muted border-border',
-    icon: ChevronUp,
-  },
-  {
-    key: 'in_progress',
-    label: '进行中',
-    description: 'Worker 正在执行',
-    color: 'text-status-running bg-status-running/5 border-status-running/15',
-    icon: Loader2,
-  },
-  {
-    key: 'submitted',
-    label: '待验收',
-    description: '已提交结果，等待验收',
-    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
-    icon: CircleCheck,
-  },
-  {
-    key: 'completed',
-    label: '已完成',
-    description: 'Worker 报完成,Manager 已确认',
-    color: 'text-status-done bg-status-done/5 border-status-done/15',
-    icon: CircleCheck,
-  },
-  {
-    key: 'revision',
-    label: '需修订',
-    description: 'Manager 验收未通过,打回重做',
-    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
-    icon: RotateCcw,
-  },
-  {
-    key: 'failed',
-    label: '失败',
-    description: '执行失败,需要人工介入',
-    color: 'text-status-failed bg-status-failed/5 border-status-failed/15',
-    icon: CircleX,
-  },
-  {
-    key: 'blocked',
-    label: '阻塞',
-    description: '等待依赖项完成或外部解锁',
-    color: 'text-status-waiting bg-status-waiting/5 border-status-waiting/15',
-    icon: AlertTriangle,
-  },
-  {
-    key: 'unknown',
-    label: '未知',
-    description: '状态未知',
-    color: 'text-muted-foreground bg-muted border-border',
-    icon: Eye,
-  },
-];
-
-const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
-  planning: '规划中',
-  active: '进行中',
-  paused: '已暂停',
-  completed: '已完成',
-  unknown: '未知',
-};
-
-const OUTCOME_LABEL: Record<NonNullable<BoardTask['outcome']>, string> = {
-  SUCCESS: '成功',
-  SUCCESS_WITH_NOTES: '成功 (附注)',
-  REVISION_NEEDED: '需修订',
-  BLOCKED: '阻塞',
-};
 
 const MARKER_LABEL: Record<string, string> = {
   ' ': '待办',
@@ -218,20 +137,6 @@ function findWorkerByName(
 
 // ----- Sub-components -----
 
-function StatusBadge({ status }: { status: TaskStatus }) {
-  const cfg = TASK_STATUS_COLUMNS.find((c) => c.key === status);
-  if (!cfg) {
-    return <Badge variant="outline" className="text-xs">未知</Badge>;
-  }
-  const Icon = cfg.icon;
-  return (
-    <Badge className={`text-xs gap-1 border ${cfg.color}`}>
-      <Icon className={`h-2.5 w-2.5 ${status === 'in_progress' ? 'animate-spin' : ''}`} />
-      {cfg.label}
-    </Badge>
-  );
-}
-
 function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
     <Badge className={`text-xs border ${PROJECT_STATUS_COLOR[status]}`}>
@@ -240,91 +145,14 @@ function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   );
 }
 
-function OutcomeBadge({ outcome }: { outcome: BoardTask['outcome'] }) {
-  if (!outcome) return null;
-  return (
-    <Badge className={`text-xs border ${OUTCOME_COLOR[outcome]}`}>
-      {OUTCOME_LABEL[outcome]}
-    </Badge>
-  );
-}
-
-function TaskRoomActions({ task, tasks = [], compact = false }: { task: BoardTask; tasks?: BoardTask[]; compact?: boolean }) {
-  const queryClient = useQueryClient();
-  const access = useChatRoomAccess();
-  const children = subtasksOf(task, tasks);
-  const executionTask = children.find(child => child.executionRoomId) ?? children.find(child => child.status !== 'pending') ?? task;
-  const awaitingDispatch = executionTask.status === 'pending' && !executionTask.executionRoomId;
-  const unavailableReason = '任务尚未派发，协作房间未创建';
-  const [opening, setOpening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  async function enterCollaboration() {
-    setOpening(true);
-    setError(null);
-    try {
-      // Older Controllers expose the execution room only through task meta.
-      const meta = executionTask.executionRoomId ? undefined : await queryClient.fetchQuery({
-        queryKey: ['task-detail', executionTask.runId, executionTask.teamId],
-        queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(executionTask.runId)}/meta${executionTask.teamId ? `?team=${encodeURIComponent(executionTask.teamId)}` : ''}`)),
-        staleTime: 15000,
-      });
-      const roomId = (executionTask.executionRoomId || meta?.room_id)?.replace(/^room:/, '');
-      if (!roomId) setError('协作房间尚未创建');
-      else if (access.state !== 'joined' || !access.joinedRooms?.includes(roomId)) setError('尚未加入协作房间，请联系团队管理员');
-      else openChatRoom(roomId, task.runId);
-    } catch {
-      setError('协作房间暂时无法读取，请稍后重试');
-    } finally {
-      setOpening(false);
-    }
-  }
-  return <div className="space-y-2">
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex" title={awaitingDispatch ? unavailableReason : undefined} onClick={event => event.stopPropagation()}>
-      <Button variant={compact ? 'ghost' : 'outline'} size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs'} aria-label="进入协作房间" disabled={awaitingDispatch || opening || access.state !== 'joined'}
-        title={awaitingDispatch ? unavailableReason : access.state !== 'joined' ? '请先登录对话并等待房间权限同步' : '进入该任务的执行协作房间'}
-        onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); void enterCollaboration(); }}>
-        {opening ? <Loader2 className="size-3.5 animate-spin" /> : <MessageSquare className="size-3.5" />}{!compact && '进入协作房间'}
-      </Button>
-      </span>
-      {task.roomId && <Button variant="ghost" size={compact ? 'icon' : 'sm'} className={compact ? 'size-8 text-muted-foreground' : 'text-xs text-muted-foreground'} aria-label="查看来源会话" title="查看来源会话" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); openChatRoom(task.roomId); }}><MessageSquareReply className="size-3.5" />{!compact && '查看来源会话'}</Button>}
-      {task.status === 'completed' && children.every(child => child.status === 'completed') && <CompletedTaskArchiveAction title={task.title} resolveRooms={async () => {
-        const executionTasks = children.length ? children : [task];
-        return Promise.all(executionTasks.map(async item => {
-          if (item.executionRoomId) return item.executionRoomId.replace(/^room:/, '');
-          const meta = await queryClient.fetchQuery({
-            queryKey: ['task-detail', item.runId, item.teamId],
-            queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(item.runId)}/meta${item.teamId ? `?team=${encodeURIComponent(item.teamId)}` : ''}`)),
-            staleTime: 15000,
-          });
-          if (!meta.room_id) throw new Error('协作房间尚未创建，无法归档');
-          return meta.room_id.replace(/^room:/, '');
-        }));
-      }} />}
-    </div>
-    {!compact && awaitingDispatch && <p role="status" className="text-xs text-muted-foreground">{unavailableReason}</p>}
-    {error && <p role="status" className="text-xs text-muted-foreground">{error}</p>}
-  </div>;
-}
-
 function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: BoardTask; tasks: BoardTask[]; project?: BoardProject; team?: string; onOpenDetails?: () => void }) {
   const children = subtasksOf(task, tasks);
   const detail = useQuery({
-    queryKey: ['task-detail', task.runId, task.teamId],
-    queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task.runId)}/meta${task.teamId ? `?team=${encodeURIComponent(task.teamId)}` : ''}`)),
-    staleTime: 15000,
+    ...taskMetaQuery(task.runId, task.teamId),
     enabled: children.length === 0 && (task.status !== 'pending' || !!task.executionRoomId),
     retry: false,
   });
   const sourceName = useRoomMetaStore(state => state.meta[task.roomId]?.roomName);
-  const [selectedId, setSelectedId] = useState(task.runId);
-  const dag = useMemo(() => {
-    const descendants = subtasksOf(task, tasks);
-    if (!descendants.length) return task.projectId ? buildProjectDag(tasks, task.projectId) : null;
-    const ids = new Set(descendants.map(child => child.runId));
-    return buildTaskDag([task, ...descendants.map(child => ({ ...child, dependsOn: child.dependsOn.some(id => ids.has(id)) ? child.dependsOn.filter(id => ids.has(id)) : [task.runId] }))]);
-  }, [tasks, task]);
-  const selected = tasks.find(item => item.runId === selectedId) ?? task;
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
   return <div className="space-y-2">
@@ -341,16 +169,7 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
       {detail.isLoading && <p role="status" className="text-xs text-muted-foreground">正在加载详情…</p>}
       {detail.isError && <p role="status" className="text-xs text-muted-foreground">详情暂时无法读取<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></p>}
     </section>}
-    <section className="space-y-2"><h4 className="text-xs font-medium">{children.length ? '子任务分工与依赖' : '项目任务分工与依赖'}</h4>
-      {dag && dag.nodes.length > 0 ? <>
-        {!children.length && project && <section aria-label="项目整体进度" className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs"><p className="truncate font-medium" title={project.name}>{project.name}</p><p className="mt-1 text-muted-foreground">项目{PROJECT_STATUS_LABEL[project.status] ?? '状态待同步'} · 已完成 {dag.nodes.filter(node => node.status === 'completed').length}/{dag.nodes.length}</p></section>}
-        <p className="text-xs text-muted-foreground">{children.length ? '顶部为主任务；下方展示子任务及其前置依赖。' : '连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。'}</p>
-        <div className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/10 p-1">
-          <ProjectDagSvg dag={dag} nodeColors={DAG_NODE_FILL} neutral nodeWidth={156} nodeHeight={48} gapY={88} title="项目任务分工与依赖" currentNodeId={task.runId} selectedNodeId={selectedId} onNodeClick={setSelectedId} />
-        </div>
-        <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-xs"><p className="font-medium">所选任务：{selected.title}</p><div className="flex items-center gap-2 text-muted-foreground"><span>{selected.assignedTo || (subtasksOf(selected, tasks).length ? '团队 Leader 协调' : '未分配')}</span><StatusBadge status={selected.status} /></div></div>
-      </> : <p className="text-xs text-muted-foreground">该任务暂无项目分工信息</p>}
-    </section>
+    <TaskDependencies task={task} tasks={tasks} project={project} />
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><TaskRoomActions task={task} tasks={tasks} />{onOpenDetails && <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenDetails}>查看完整详情</Button>}</div>
   </div>;
 }
@@ -625,17 +444,6 @@ function ProjectPlanPreview({ project }: { project: BoardProject }) {
 
 // ----- Project DAG view -----
 
-const DAG_NODE_FILL: Record<string, DagNodeColor> = {
-  pending: { fill: 'rgba(148,163,184,0.12)', stroke: '#94a3b8', text: '#94a3b8' },
-  assigned: { fill: 'rgba(148,163,184,0.18)', stroke: '#94a3b8', text: '#cbd5e1' },
-  in_progress: { fill: 'rgba(139,92,246,0.16)', stroke: '#8b5cf6', text: '#a78bfa' },
-  revision: { fill: 'rgba(245,158,11,0.14)', stroke: '#f59e0b', text: '#fbbf24' },
-  completed: { fill: 'rgba(16,185,129,0.14)', stroke: '#10b981', text: '#34d399' },
-  failed: { fill: 'rgba(239,68,68,0.14)', stroke: '#ef4444', text: '#f87171' },
-  blocked: { fill: 'rgba(249,115,22,0.14)', stroke: '#f97316', text: '#fdba74' },
-  unknown: { fill: 'rgba(148,163,184,0.08)', stroke: '#64748b', text: '#94a3b8' },
-};
-
 function ProjectDagView({ project, tasks }: { project: BoardProject; tasks: BoardTask[] }) {
   const dag = useMemo(
     () => buildProjectDag(tasks, project.runId),
@@ -761,8 +569,21 @@ export function TasksSection() {
     isTasksViewMode,
   );
   const [search, setSearch] = useState('');
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const selectedTask = board.tasks.find(task => task.runId === selectedTaskId) ?? null;
+  const [selectedTaskKey, setSelectedTaskKey] = useState<{ id: string; team?: string } | null>(null);
+  const matchesSelectedTask = (task: BoardTask) => selectedTaskKey && task.runId === selectedTaskKey.id &&
+    (!selectedTaskKey.team || task.teamId === selectedTaskKey.team);
+  const boardSelection = board.tasks.find(matchesSelectedTask);
+  // A conversation can still link to a task hidden from the board by archiving.
+  const selectedTask = boardSelection ?? primary.tasks.find(matchesSelectedTask) ?? null;
+  const selectTask = (task: BoardTask) => setSelectedTaskKey({ id: task.runId, team: task.teamId });
+  const closeTask = () => {
+    setSelectedTaskKey(null);
+    const params = currentHashParams();
+    if (window.location.hash.split('?')[0] !== tasksHash() || !params?.has('task')) return;
+    params.delete('task');
+    params.delete('team');
+    window.history.replaceState(window.history.state, '', params.size ? `${tasksHash()}?${params}` : tasksHash());
+  };
   const [selectedProjectId, setSelectedProjectId] = usePersistentState<
     string | null
   >(TASKS_PROJECT_KEY, null, isProjectIdOrNone);
@@ -820,23 +641,26 @@ export function TasksSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 深链消费（方案 v3 C-2）：命令面板命中任务/项目后写的是
-  // `#workbench/tasks?project=<runId>`；导航只走 hash（C-1 定的单一路径），
-  // 所以参数得在本视图读回选中态。除了挂载，还听 hashchange：否则从面板
-  // 第两次点不同项目只会改地址、不切项目。只在当前 hash 就是看板路径时
-  // 应用，避开别的路径上残留的查询参数。
+  // The board owns both project and task detail links. Read them on mount and
+  // on hash changes to support navigation while the board is already open.
   useEffect(() => {
-    const applyProjectParam = () => {
+    const applyTaskBoardParams = () => {
       const path = window.location.hash.replace(/^#/, '').split('?')[0];
       if (path !== 'workbench/tasks') return;
-      const projectId = currentHashParams()?.get('project');
+      const params = currentHashParams();
+      const taskId = params?.get('task');
+      if (taskId) {
+        const team = params?.get('team') || undefined;
+        setSelectedTaskKey(current => current?.id === taskId && current.team === team ? current : { id: taskId, team });
+      }
+      const projectId = params?.get('project');
       if (!projectId) return;
       setView('projects');
       setSelectedProjectId(projectId);
     };
-    applyProjectParam();
-    window.addEventListener('hashchange', applyProjectParam);
-    return () => window.removeEventListener('hashchange', applyProjectParam);
+    applyTaskBoardParams();
+    window.addEventListener('hashchange', applyTaskBoardParams);
+    return () => window.removeEventListener('hashchange', applyTaskBoardParams);
   }, [setView, setSelectedProjectId]);
 
   const handleReload = useCallback(() => {
@@ -918,9 +742,10 @@ export function TasksSection() {
               {(['kanban', 'projects'] as const).map((v) => (
                 <Button
                   key={v}
-                  variant={view === v ? 'default' : 'outline'}
+                  variant={view === v ? 'secondary' : 'ghost'}
                   size="sm"
                   onClick={() => setView(v)}
+                  onPointerEnter={event => { if (isDesktopHover(event)) setView(v); }}
                 >
                   {v === 'kanban' ? (
                     <>
@@ -1006,9 +831,9 @@ export function TasksSection() {
                 key={col.key}
                 className="flex h-[360px] min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-border bg-muted/10 p-3"
               >
-                <div className={`-mx-3 -mt-3 flex items-center gap-2 border-b px-3 py-3 ${col.color}`}>
-                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full bg-current ${col.color.split(' ')[0]} ${col.key === 'in_progress' && list.length > 0 ? 'motion-safe:animate-pulse' : ''}`} />
-                  <p className="text-xs font-semibold">{col.label}</p>
+                <div className="-mx-3 -mt-3 flex items-center gap-2 border-b border-border bg-background px-3 py-3 text-foreground">
+                  <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: taskStatus(col.key).color }} />
+                  <p data-task-column-title className="font-semibold">{taskStatus(col.key).label}</p>
                   <span className="ml-auto rounded-md bg-background px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{list.length}</span>
                 </div>
                 <div className="relative min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain custom-scrollbar">
@@ -1037,9 +862,9 @@ export function TasksSection() {
                               managerName={mgr}
                               workerTeam={wk?.team}
                               highlightProjectId={effectiveProjectId ?? undefined}
-                              selected={selectedTaskId === t.runId}
+                              selected={selectedTask === t}
                               showStatus={false}
-                              onClick={() => setSelectedTaskId(t.runId)}
+                              onClick={() => selectTask(t)}
                             />
                           </motion.div>
                         );
@@ -1056,8 +881,8 @@ export function TasksSection() {
         </div>
       )}
 
-      <TaskDetailSheet task={selectedTask} tasks={board.tasks} onSelectTask={task => setSelectedTaskId(task.runId)} teamId={selectedTask?.teamId ?? board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={() => setSelectedTaskId(null)} onOpenProject={() => {
-        if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); setSelectedTaskId(null); }
+      <TaskDetailSheet task={selectedTask} tasks={boardSelection ? board.tasks : primary.tasks} onSelectTask={selectTask} teamId={selectedTask?.teamId ?? board.projects.find(project => project.runId === selectedTask?.projectId)?.teamId} onClose={closeTask} onOpenProject={() => {
+        if (selectedTask?.projectId) { setSelectedProjectId(selectedTask.projectId); setView('projects'); closeTask(); }
       }} />
 
       {/* View: Projects (cards + selected project plan)
@@ -1160,7 +985,7 @@ export function TasksSection() {
                     tasks={tasksForProject(selectedProject.runId)}
                   />
                   {selectedProject.source === 'api' ? (
-                    <div className="space-y-4"><section aria-label="项目主任务" className="space-y-2"><h4 className="text-sm font-medium">项目任务（{tasksForProject(selectedProject.runId).length}）</h4><div className="grid grid-cols-1 gap-2 md:grid-cols-2">{tasksForProject(selectedProject.runId).map(task => <TaskCard key={task.runId} task={task} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(task.runId)} />)}</div></section><details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">项目管理与完整执行记录</summary><div className="mt-4"><WorkflowDetail
+                    <div className="space-y-4"><section aria-label="项目主任务" className="space-y-2"><h4 className="text-sm font-medium">项目任务（{tasksForProject(selectedProject.runId).length}）</h4><div className="grid grid-cols-1 gap-2 md:grid-cols-2">{tasksForProject(selectedProject.runId).map(task => <TaskCard key={task.runId} task={task} tasks={board.tasks} project={selectedProject} onClick={() => selectTask(task)} />)}</div></section><details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">项目管理与完整执行记录</summary><div className="mt-4"><WorkflowDetail
                       projectId={selectedProject.runId}
                       teamId={selectedProject.teamId}
                     /></div></details></div>
@@ -1171,7 +996,7 @@ export function TasksSection() {
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {tasksForProject(selectedProject.runId).map((t) => (
-                          <TaskCard key={t.runId} task={t} tasks={board.tasks} project={selectedProject} onClick={() => setSelectedTaskId(t.runId)} />
+                          <TaskCard key={t.runId} task={t} tasks={board.tasks} project={selectedProject} onClick={() => selectTask(t)} />
                         ))}
                       </div>
                     </div>
@@ -1216,61 +1041,4 @@ export function TasksSection() {
       <div data-reload-key={reloadKey} hidden />
     </div>
   );
-}
-
-interface TaskMetaDetail {
-  created_at?: string | number;
-  history?: Array<{ action: string; note?: string }>;
-  room_id?: string;
-  status?: string;
-  summary?: string;
-  description?: string;
-  spec_path?: string;
-  result_summary?: string;
-  result_path?: string;
-  deliverables?: Array<string | { name?: string; path?: string; description?: string }>;
-}
-
-function SubtaskProgress({ task, tasks }: { task: BoardTask; tasks: BoardTask[] }) {
-  const progress = subtaskProgress(task, tasks);
-  return progress.total > 0 ? <div aria-label="子任务进度" className="space-y-1.5 text-xs text-muted-foreground"><p>子任务 {progress.completed}/{progress.total} 已完成 <span className="float-right tabular-nums">{progress.percent}%</span></p><Progress value={progress.percent} className="h-1" /></div> : null;
-}
-
-function TaskDetailSheet({ task, tasks, onSelectTask, teamId, onClose, onOpenProject }: { task: BoardTask | null; tasks: BoardTask[]; onSelectTask: (_task: BoardTask) => void; teamId?: string; onClose: () => void; onOpenProject: () => void }) {
-  const children = task ? subtasksOf(task, tasks) : [];
-  const parent = task?.parentTaskId ? tasks.find(item => item.runId === task.parentTaskId && item.projectId === task.projectId && item.teamId === task.teamId) : undefined;
-  const detail = useQuery({
-    queryKey: ['task-detail', task?.runId, teamId],
-    queryFn: () => requestJson<TaskMetaDetail>(apiUrl(`/api/agentteams/tasks/${encodeURIComponent(task!.runId)}/meta${teamId ? `?team=${encodeURIComponent(teamId)}` : ''}`)),
-    enabled: !!task && children.length === 0 && (task.status !== 'pending' || !!task.executionRoomId),
-    staleTime: 15000,
-    retry: false,
-    throwOnError: false,
-  });
-  return <Sheet open={!!task} onOpenChange={open => { if (!open) onClose(); }}>
-    <SheetContent className="sm:max-w-lg">
-      <SheetHeader className="border-b border-border pr-12">
-        <SheetTitle>{task?.title ?? '任务详情'}</SheetTitle>
-        <SheetDescription>查看任务状态、执行说明与交付结果</SheetDescription>
-      </SheetHeader>
-      {task && <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 custom-scrollbar">
-        {parent && <Button variant="ghost" size="sm" onClick={() => onSelectTask(parent)}>返回主任务：{parent.title}</Button>}
-        <SubtaskProgress task={task} tasks={tasks} />
-        {children.length > 0 && <section aria-label="子任务列表" className="space-y-2"><h3 className="text-sm font-medium">子任务（{children.length}）</h3>{children.map(child => <button key={child.runId} className="flex w-full items-start justify-between gap-3 rounded-lg border border-border p-3 text-left hover:bg-muted/40" onClick={() => onSelectTask(child)}><span className="min-w-0 text-sm"><span className="block">{child.title}</span><span className="mt-1 block text-xs text-muted-foreground">{child.assignedTo || '未分配'}</span></span><StatusBadge status={child.status} /></button>)}</section>}
-        <div className="flex items-center gap-2">{detail.data?.status === 'submitted' ? <Badge variant="outline" className="text-status-waiting">待验收</Badge> : <StatusBadge status={task.status} />}{task.outcome && <OutcomeBadge outcome={task.outcome} />}</div>
-        <TaskRoomActions task={{ ...task, teamId: task.teamId ?? teamId }} tasks={tasks} />
-        <dl className="grid grid-cols-[5rem_1fr] gap-x-4 gap-y-3 text-sm">
-          <dt className="text-muted-foreground">负责人</dt><dd>{task.assignedTo || (children.length ? '团队 Leader 协调' : '未分配')}</dd>
-          <dt className="text-muted-foreground">任务编号</dt><dd className="break-all font-mono text-xs">{task.runId}</dd>
-          {task.projectId && <><dt className="text-muted-foreground">所属项目</dt><dd><button className="text-primary hover:underline" onClick={onOpenProject}>查看项目详情</button></dd></>}
-          {task.dependsOn.length > 0 && <><dt className="text-muted-foreground">前置依赖</dt><dd className="break-all">{task.dependsOn.join('、')}</dd></>}
-        </dl>
-        {detail.isLoading && <p role="status" className="text-sm text-muted-foreground">正在加载详情…</p>}
-        {detail.isError && <div role="alert" className="text-sm text-status-failed">详情暂时无法加载<Button variant="ghost" size="sm" onClick={() => void detail.refetch()}>重试</Button></div>}
-        <section className="space-y-2"><h3 className="text-sm font-medium">任务说明</h3><p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detail.data?.description || detail.data?.summary || task.spec || '暂无补充说明'}</p></section>
-        {(detail.data?.result_summary || detail.data?.result_path) && <section className="space-y-2"><h3 className="text-sm font-medium">执行结果</h3><p className="whitespace-pre-wrap break-all text-sm leading-6 text-muted-foreground">{detail.data.result_summary || detail.data.result_path}</p></section>}
-        {!!detail.data?.deliverables?.length && <section className="space-y-2"><h3 className="text-sm font-medium">交付文件</h3><ul className="space-y-2">{detail.data.deliverables.map((file, i) => <li key={i} className="break-all rounded-md border border-border px-3 py-2 text-sm">{typeof file === 'string' ? file : file.name || file.path || file.description || '交付文件'}</li>)}</ul></section>}
-      </div>}
-    </SheetContent>
-  </Sheet>;
 }

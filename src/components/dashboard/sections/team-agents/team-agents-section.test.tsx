@@ -206,26 +206,98 @@ function renderSection(hash = '#console/resources/team-agents?tab=teams', view?:
 function selectTab(name: RegExp) {
   fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0, ctrlKey: false });
 }
-beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; });
-afterEach(cleanup);
+beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; localStorage.clear(); vi.stubGlobal('innerWidth', 1440); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe('Teams page view switch', () => {
+  it('keeps current cards and loads the original three-pane workbench', async () => {
+    renderSection('#console/resources/teams', 'teams');
+    expect(screen.getByLabelText('团队卡片')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '拓扑' }));
+    expect(await screen.findByTestId('team-agents-shell')).toBeInTheDocument();
+    expect(screen.queryByLabelText('团队卡片')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '团队拓扑' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull();
+    expect(within(screen.getByRole('region', { name: '团队列表' })).getByRole('heading', { name: '团队' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: '团队列表' })).queryByText('Managers')).toBeNull();
+    expect(window.location.hash).toContain('view=topology');
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索团队或 Agent' }), { target: { value: 'w1' } });
+    const list = screen.getByRole('region', { name: '团队列表' });
+    expect(within(list).getByRole('button', { name: /alpha/ })).toBeInTheDocument();
+    expect(within(list).queryByRole('button', { name: /beta/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '卡片' }));
+    expect(screen.getByLabelText('团队卡片')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '搜索团队或 Agent' })).toHaveValue('w1');
+    expect(screen.queryByTestId('team-agents-shell')).not.toBeInTheDocument();
+    expect(window.location.hash).toBe('#console/resources/teams');
+  });
+
+  it('keeps topology selection in the workbench and opens the selected detail section', async () => {
+    renderSection('#console/resources/teams?view=topology&team=beta', 'teams');
+    expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull();
+    const graph = screen.getByRole('region', { name: '团队拓扑' });
+    fireEvent.click(within(graph).getByRole('button', { name: /lead2.*负责人/ }));
+    const inspector = await screen.findByRole('region', { name: '实体详情' });
+    await waitFor(() => expect(within(inspector).getByRole('heading', { name: 'lead2' })).toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(window.location.hash).toContain('view=topology');
+    expect(window.location.hash).toContain('agent=lead2');
+    fireEvent.click(within(inspector).getByRole('button', { name: '基础配置' }));
+    expect(await screen.findByRole('dialog', { name: 'lead2 · 基础配置' })).toHaveTextContent('agent-profile:lead2');
+    expect(window.location.hash).toContain('panel=basic');
+  });
+
+  it('restores topology preference only on the Teams page', async () => {
+    localStorage.setItem('teamAgents.view', 'topology');
+    const teams = renderSection('#console/resources/teams', 'teams');
+    expect(await screen.findByTestId('team-agents-shell')).toBeInTheDocument();
+    teams.unmount();
+    renderSection('#console/resources/workers', 'agents');
+    expect(screen.queryByTestId('team-agents-shell')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Agent 卡片')).toBeInTheDocument();
+  });
+});
 
 describe('Team and Agent resource cards', () => {
   it('shows the independent Agent page without page tabs or Managers', () => {
     renderSection('#console/resources/workers', 'agents');
     expect(screen.getByRole('heading', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('group', { name: '团队视图' })).not.toBeInTheDocument();
     const header = screen.getByRole('heading', { name: 'Agent' }).closest('[data-slot="section-header"]') as HTMLElement;
     expect(within(header).getByRole('textbox', { name: '搜索团队或 Agent' })).toBeInTheDocument();
     expect(screen.queryByText('4 个 Agent')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'boss' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'lead' })).toBeInTheDocument();
+    expect(screen.getByText('ID lead')).toBeInTheDocument();
   });
   it('shows an independent team page and preserves a selected team on refresh', () => {
     renderSection('#console/resources/teams?team=alpha&edit=true', 'teams');
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('group', { name: '团队视图' })).not.toBeInTheDocument();
     expect(screen.getByText('team-profile:alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
     expect(window.location.hash).toBe('#console/resources/teams');
+  });
+  it('searches a Worker by display name or resource name and opens it by resource name', () => {
+    const named = { ...worker('agent-123', ''), identity: '- Name: 月见·研究助手' };
+    workersFixture.push(named);
+    try {
+      renderSection('#console/resources/workers', 'agents');
+      const search = screen.getByRole('textbox', { name: '搜索团队或 Agent' });
+      const cards = within(screen.getByLabelText('Agent 卡片'));
+      for (const value of ['月见', 'agent-123']) {
+        fireEvent.change(search, { target: { value } });
+        expect(cards.getAllByRole('heading', { level: 2 })).toHaveLength(1);
+        expect(cards.getByRole('heading', { name: '月见·研究助手' })).toBeInTheDocument();
+        expect(cards.getByText('ID agent-123')).toBeInTheDocument();
+      }
+      fireEvent.click(cards.getByRole('button', { name: '详情' }));
+      expect(window.location.hash).toContain('agent=agent-123');
+    } finally {
+      workersFixture.pop();
+    }
   });
   it('paginates cards and resets the page when searching or switching tabs', () => {
     const scrollIntoView = HTMLElement.prototype.scrollIntoView;
@@ -260,11 +332,11 @@ describe('Team and Agent resource cards', () => {
       renderSection();
       expect(screen.queryByRole('button', { name: '查看 extra-29 的主页' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: '查看 member-29 的主页' })).not.toBeInTheDocument();
-      fireEvent.mouseEnter(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
-      const list = await screen.findByRole('dialog', { name: 'Alpha的 Workers 资料卡' });
-      expect(within(list).getByRole('heading', { name: 'Workers · 31' })).toBeInTheDocument();
-      fireEvent.focus(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
-      fireEvent.click(screen.getByRole('button', { name: '展开Alpha的 Workers' }));
+      fireEvent.mouseEnter(screen.getByRole('button', { name: '展开Alpha的 Agent' }));
+      const list = await screen.findByRole('dialog', { name: 'Alpha的 Agent 资料卡' });
+      expect(within(list).getByRole('heading', { name: 'Agent · 32' })).toBeInTheDocument();
+      fireEvent.focus(screen.getByRole('button', { name: '展开Alpha的 Agent' }));
+      fireEvent.click(screen.getByRole('button', { name: '展开Alpha的 Agent' }));
       expect(list).toBeInTheDocument();
       fireEvent.click(within(list).getByRole('button', { name: '查看 extra-29 的主页' }));
       expect(screen.getByText('agent-profile:extra-29')).toBeInTheDocument();
@@ -301,14 +373,14 @@ describe('Team and Agent resource cards', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('separates humans from agents and excludes the admin and leader from member counts', () => {
+  it('counts all humans and agents while retaining admin and leader identities', () => {
     renderSection();
     const cards = screen.getByLabelText('团队卡片');
     expect(within(cards).getAllByText('Team Admin')).toHaveLength(2);
-    expect(within(cards).getByText('普通成员 · 1')).toBeInTheDocument();
-    expect(within(cards).getByRole('button', { name: '查看 boss 的主页' })).toHaveTextContent('团队管理员');
+    expect(within(cards).getByText('成员 · 2')).toBeInTheDocument();
+    for (const admin of within(cards).getAllByRole('button', { name: '查看 boss 的主页' })) expect(admin).toHaveTextContent('团队管理员');
     expect(within(cards).getByRole('button', { name: '查看 reviewer 的主页' })).toHaveTextContent('评审成员');
-    expect(within(cards).getByText('Workers · 1')).toBeInTheDocument();
+    expect(within(cards).getByText('Agent · 2')).toBeInTheDocument();
     expect(screen.queryByLabelText('Agent 卡片')).not.toBeInTheDocument();
   });
 

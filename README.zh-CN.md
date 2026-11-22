@@ -39,6 +39,7 @@ AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeam
 
 | 区域 | 覆盖内容 |
 |------|------|
+| **首页** | WORKSPACE 基线总览：焦点任务卡与跳转、指标条（进行中 / 本周完成 / 协作成员 / 工作区资产）、HITL 待决策、命令编排器（一句指令直达 AT 助手会话）、今日焦点与插件卡片插槽 |
 | **助手** | 平台 Manager 或当前账号所属团队的 Leader 私聊：团队跳转、草稿持久化、`@` 提及、文件引用、消息操作、线程与运行时感知渲染 |
 | **我的团队** | 当前账号已加入的团队工作群，标注 **管理员** / **成员**，Team Admin 可返回自己的 Leader 助手 |
 | **工作台** | 任务看板（DAG/loop 视图、attention/HITL 收件箱、暂停/恢复/重规划）、产物（项目 → 任务 → 产物文件树 + 预览/下载）、编码执行（只读的编码 CLI 执行记录与原始日志）、自动化（循环定义画布、模板、试运行、发布/回滚） |
@@ -63,7 +64,7 @@ AgentTeams Dashboard 是 [AgentTeams](https://github.com/agentscope-ai/AgentTeam
 
 聊天工作区提供 Matrix 房间的虚拟化历史消息、未读感知滚动、消息操作、已读回执与按需加载的线程面板。根消息保留在主时间线；`m.thread` 回复会计入根消息，并在对应线程面板中加载。
 
-运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息、HITL 收件箱协议和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。Tool Guard / HITL 确认以可操作卡片呈现，决定以普通 Matrix 回复回写；总览的 HITL 收件箱会跨房间聚合待审批项。
+运行时消息支持 A2UI 标记、AgentScope runtime `Message` repr 正文、`agentteams.workflow`、Tool Guard 确认消息、HITL 收件箱协议和 legacy 卡片格式。界面可呈现 Markdown、可折叠思考、工具调用、工作流、确认和 A2UI 块。`org.agentteams.run` 作为 runtime adapter 的可选兼容载荷；Dashboard 同时通过标准 Matrix `m.replace` 修订事件处理流式更新。Tool Guard / HITL 确认以可操作卡片呈现，决定以普通 Matrix 回复回写；首页的 HITL 收件箱会跨房间聚合待审批项。
 
 本控制台不实现也不承诺端到端加密：聊天正文经服务端代理明文转发，开启加密的房间在这里会显示为没有新消息。哪几跳是明文、凭据在谁手里、运营者需要确认什么，见 [docs/trust-boundary.md](docs/trust-boundary.md)。
 
@@ -101,8 +102,8 @@ MCP 服务器在 Dashboard 里是治理面，不只是清单：
 
 Dashboard 已集成到 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 安装脚本中（通过补丁方式）。应用补丁后，安装向导会自动询问是否安装 Dashboard，容器会随 Controller/Manager 一起启动。
 
-- **Dashboard 目标发布标签**：`v1.4.1`（应用版本以 `package.json` 的 `version` 为准：`1.4.1`）
-- **安装器默认版本**：`v1.4.1`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
+- **Dashboard 目标发布标签**：`v1.4.3`（应用版本以 `package.json` 的 `version` 为准：`1.4.3`）
+- **安装器默认版本**：`v1.4.3`；设置 `AGENTTEAMS_DASHBOARD_VERSION` 可覆盖
 - **默认端口**：`13000`，绑定 `127.0.0.1`（设置 `AGENTTEAMS_LOCAL_ONLY=0` 可暴露到 `0.0.0.0`）
 - **可用版本**：https://github.com/agentteams-group/agentteams-dashboard/tags
 - **集成 PR**：https://github.com/agentscope-ai/AgentTeams/pull/1075
@@ -129,7 +130,7 @@ bash install/agentteams-dashboard.sh uninstall
 |------|------|--------|
 | `AGENTTEAMS_DASHBOARD` | 是否安装 Dashboard（`1`=安装，`0`=跳过） | `1` |
 | `AGENTTEAMS_PORT_DASHBOARD` | Dashboard 主机端口 | `13000` |
-| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.4.1` |
+| `AGENTTEAMS_DASHBOARD_VERSION` | Dashboard 镜像版本（独立发布） | `v1.4.3` |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | Dashboard 完整镜像名 | `${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}` |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | Higress Console URL（共享登录，显式配置优先） | 自动探测 |
 
@@ -144,7 +145,7 @@ bash install/agentteams-dashboard.sh uninstall
 非交互安装示例：
 
 ```bash
-AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.1 \
+AGENTTEAMS_DASHBOARD=1 AGENTTEAMS_PORT_DASHBOARD=13000 AGENTTEAMS_DASHBOARD_VERSION=v1.4.3 \
   AGENTTEAMS_NON_INTERACTIVE=1 bash agentteams-install.sh
 ```
 

@@ -13,6 +13,8 @@ import {
 } from '@/lib/nav-hash';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 
+const DEFAULT_SECTION = 'overview';
+
 /**
  * Active section resolution for the Workbench IA.
  *
@@ -41,7 +43,7 @@ function applyDeepLinks(resolved: ReturnType<typeof resolveHash>): void {
 }
 
 function resolveInitialSection(): string {
-  if (typeof window === 'undefined') return 'chat';
+  if (typeof window === 'undefined') return DEFAULT_SECTION;
 
   const hash = window.location.hash.slice(1);
   if (hash) {
@@ -64,9 +66,7 @@ function resolveInitialSection(): string {
     }
   }
 
-  // The product root always opens the user's assistant. Explicit deep links
-  // above still restore a tool page or a particular conversation.
-  return 'chat';
+  return DEFAULT_SECTION;
 }
 
 // Initial resolution must run once per app lifetime. TasksSection (and any
@@ -87,7 +87,7 @@ export function useActiveSection() {
   const activeSection = useSectionStore((s) => s.activeSection);
   const taskCollaboration = useSectionStore((s) => s.taskCollaboration);
 
-  // Resolve the initial section once on mount (hash / localStorage / default).
+  // Resolve the initial section once on mount from the URL or the default.
   // Subsequent mounts (TasksSection etc.) keep the live store value.
   useEffect(() => {
     if (initialResolutionDone) return;
@@ -105,7 +105,7 @@ export function useActiveSection() {
     // Read the live store value instead of the captured `activeSection`:
     // on mount the initial-resolution effect above has already written the
     // resolved section into the store, while this effect's closure still
-    // holds the pre-resolution default ('chat'). Writing that stale
+    // holds the pre-resolution default. Writing that stale
     // value would momentarily clobber the URL hash, and the resulting
     // hashchange event races the re-render — when the event wins, the
     // handler reads the stale hash and bounces the user back to overview.
@@ -144,8 +144,8 @@ export function useActiveSection() {
         return;
       }
 
-      useSectionStore.getState().setActiveSection('chat');
-      window.location.hash = '#workbench/space';
+      useSectionStore.getState().setActiveSection(DEFAULT_SECTION);
+      window.location.hash = `#${hashForSection(DEFAULT_SECTION)}`;
     };
 
     window.addEventListener('hashchange', handleHashChange);

@@ -207,11 +207,17 @@ const CARDS: Array<{ title: string; content: string }> = [
   { title: 'Coding CLI', content: 'coding-panel' },
   { title: '工作区文件', content: 'workspace-panel' },
   { title: 'Worker 插件', content: 'plugins-panel' },
-  { title: '运行时升级', content: '将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。' },
+  { title: '运行时升级', content: '通过 Controller 将此 Worker 交接到 QwenPaw。' },
   { title: '检查点', content: 'checkpoints-card' },
 ];
 
 describe('WorkerDrawer', () => {
+  it.each(['月见·研究助手', 'worker-a'])('shows the resource ID alongside the Worker name %s', (displayName) => {
+    renderDrawerFor({ ...worker, identity: `- Name: ${displayName}` });
+    expect(screen.getByText(displayName, { selector: 'h2 span' })).toBeInTheDocument();
+    expect(screen.getByText('ID worker-a')).toBeInTheDocument();
+  });
+
   it('renders header, status and model card', () => {
     renderDrawer();
     expect(screen.getByText('worker-a')).toBeInTheDocument();

@@ -33,8 +33,8 @@
 #   AGENTTEAMS_DATA_DIR           Docker volume name for persistent data (default: agentteams-data)
 #   AGENTTEAMS_WORKSPACE_DIR      Host directory for manager workspace (default: ~/agentteams-manager)
 #   AGENTTEAMS_VERSION            Image tag            (default: latest)
-#   AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION DeepSeek Harness runtime image tag (default: v1.2.7; explicit overrides supported)
-#   AGENTTEAMS_CODEX_WORKER_VERSION Codex runtime image tag (default: v1.2.7; explicit overrides supported)
+#   AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION DeepSeek Harness runtime image tag (default: selected Core version; explicit overrides supported)
+#   AGENTTEAMS_CODEX_WORKER_VERSION Codex runtime image tag (default: selected Core version; explicit overrides supported)
 #   AGENTTEAMS_REGISTRY           Image registry       (default: auto-detected by timezone)
 #   AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY
 #                                      WASM plugins (default: cn-hangzhou primary)
@@ -71,8 +71,14 @@
 #   AGENTTEAMS_PORT_MANAGER_CONSOLE  Host port for Manager console (default: 18888)
 #   AGENTTEAMS_WORKER_IDLE_TIMEOUT  Worker idle timeout in minutes (default: 720, i.e. 12 hours)
 #   AGENTTEAMS_DASHBOARD              Install agentteams-dashboard management UI (default: 1)
-#   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.4.1, independent of AgentTeams version)
+#   AGENTTEAMS_DASHBOARD_VERSION      Dashboard version (default: v1.4.3, independent of AgentTeams version)
 #   AGENTTEAMS_PORT_DASHBOARD         Dashboard host port (default: 13000)
+#   AGENTTEAMS_UNIFIED_ENTRY          single-entry mode (0/1, default 1 from Core 1.2.8;
+#                                     earlier versions keep the original ports). When 1
+#                                     only the Higress gateway port is published;
+#                                     Console/Element/dashboard stay internal and
+#                                     /api + /dashboard are served behind the entry.
+#   AGENTTEAMS_ENTRY_EXTERNAL_URL     Public address of the single entry (optional)
 #   AGENTTEAMS_DASHBOARD_IMAGE        Override dashboard image (default: <registry>/agentteams/agentteams-dashboard:<DASHBOARD_VERSION>)
 #   AGENTTEAMS_AI_GATEWAY_ADMIN_URL   Higress Console URL for shared auth (auto-detected)
 
@@ -81,12 +87,12 @@ set -e
 # Remember caller overrides before installer defaults are applied.
 _INSTALL_ENV_KEYS=" $(env | sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' | tr '\n' ' ') "
 AGENTTEAMS_VERSION="${AGENTTEAMS_VERSION:-}"
-AGENTTEAMS_KNOWN_STABLE_VERSION="v1.2.7"   # fallback if GitHub API is unreachable
+AGENTTEAMS_KNOWN_STABLE_VERSION="v1.2.8"   # fallback if GitHub API is unreachable
 AGENTTEAMS_FALLBACK_VERSION="${AGENTTEAMS_KNOWN_STABLE_VERSION}"
 AGENTTEAMS_AUTO_VERSION=0
 AGENTTEAMS_DEEPSEEK_HARNESS_MIN_VERSION="v1.2.4"
-AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION="${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION:-v1.2.7}"
-AGENTTEAMS_CODEX_WORKER_VERSION="${AGENTTEAMS_CODEX_WORKER_VERSION:-v1.2.7}"
+AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION="${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION:-}"
+AGENTTEAMS_CODEX_WORKER_VERSION="${AGENTTEAMS_CODEX_WORKER_VERSION:-}"
 
 _normalize_version() {
     local version="$1"
@@ -1211,6 +1217,9 @@ CONTROLLER_IMAGE="${AGENTTEAMS_INSTALL_CONTROLLER_IMAGE:-}"
 resolve_image_tags() {
     local _shared_manager_images
     AGENTTEAMS_VERSION="$(_normalize_version "${AGENTTEAMS_VERSION}")"
+    # Resolve defaults from the final Core selection; preserve independent overrides.
+    local _deepseek_version="${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION:-${AGENTTEAMS_VERSION}}"
+    local _codex_version="${AGENTTEAMS_CODEX_WORKER_VERSION:-${AGENTTEAMS_VERSION}}"
     MANAGER_IMAGE="${AGENTTEAMS_INSTALL_MANAGER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-manager:${AGENTTEAMS_VERSION}}"
     MANAGER_QWENPAW_IMAGE="${AGENTTEAMS_INSTALL_MANAGER_QWENPAW_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-manager-qwenpaw:${AGENTTEAMS_VERSION}}"
     # CoPaw images are no longer built; only an explicit legacy override is honored.
@@ -1220,8 +1229,8 @@ resolve_image_tags() {
     QWENPAW_WORKER_IMAGE="${AGENTTEAMS_INSTALL_QWENPAW_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-qwenpaw:${AGENTTEAMS_VERSION}}"
     HERMES_WORKER_IMAGE="${AGENTTEAMS_INSTALL_HERMES_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-hermes:${AGENTTEAMS_VERSION}}"
     OPENHUMAN_WORKER_IMAGE="${AGENTTEAMS_INSTALL_OPENHUMAN_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-openhuman:${AGENTTEAMS_VERSION}}"
-    DEEPSEEK_HARNESS_WORKER_IMAGE="${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-deepseek:${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}}"
-    CODEX_WORKER_IMAGE="${AGENTTEAMS_INSTALL_CODEX_WORKER_IMAGE:-${AGENTTEAMS_CODEX_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-codex:${AGENTTEAMS_CODEX_WORKER_VERSION}}}"
+    DEEPSEEK_HARNESS_WORKER_IMAGE="${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-deepseek:${_deepseek_version}}"
+    CODEX_WORKER_IMAGE="${AGENTTEAMS_INSTALL_CODEX_WORKER_IMAGE:-${AGENTTEAMS_CODEX_WORKER_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-codex:${_codex_version}}}"
     # Historical releases keep their original repositories; explicit images stay pinned.
     case "${AGENTTEAMS_VERSION}" in
         latest|local-*|sha-*) ;;
@@ -1230,13 +1239,13 @@ resolve_image_tags() {
             [ -n "${AGENTTEAMS_INSTALL_QWENPAW_WORKER_IMAGE:-}" ] || QWENPAW_WORKER_IMAGE="${QWENPAW_WORKER_IMAGE/agentteams-harness-qwenpaw/agentteams-qwenpaw-worker}"
             [ -n "${AGENTTEAMS_INSTALL_HERMES_WORKER_IMAGE:-}" ] || HERMES_WORKER_IMAGE="${HERMES_WORKER_IMAGE/agentteams-harness-hermes/agentteams-hermes-worker}"
             [ -n "${AGENTTEAMS_INSTALL_OPENHUMAN_WORKER_IMAGE:-}" ] || OPENHUMAN_WORKER_IMAGE="${OPENHUMAN_WORKER_IMAGE/agentteams-harness-openhuman/agentteams-openhuman-worker}"
-            if [ -z "${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-}" ] && { [ "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" = v0.1.2 ] || [ "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" = v1.2.7 ]; }; then
+            if [ -z "${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-}" ] && { [ -z "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" ] || [ "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" = v0.1.2 ] || [ "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" = v1.2.7 ]; }; then
                 case "${_INSTALL_ENV_KEYS:- }" in
                     *' AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION '*) ;;
                     *) DEEPSEEK_HARNESS_WORKER_IMAGE="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-deepseek-harness-worker:v0.1.1" ;;
                 esac
             fi
-            if [ -z "${AGENTTEAMS_INSTALL_CODEX_WORKER_IMAGE:-}${AGENTTEAMS_CODEX_WORKER_IMAGE:-}" ] && [ "${AGENTTEAMS_CODEX_WORKER_VERSION}" = v1.2.7 ]; then
+            if [ -z "${AGENTTEAMS_INSTALL_CODEX_WORKER_IMAGE:-}${AGENTTEAMS_CODEX_WORKER_IMAGE:-}" ] && { [ -z "${AGENTTEAMS_CODEX_WORKER_VERSION}" ] || [ "${AGENTTEAMS_CODEX_WORKER_VERSION}" = v1.2.7 ]; }; then
                 case "${_INSTALL_ENV_KEYS:- }" in
                     *' AGENTTEAMS_CODEX_WORKER_VERSION '*) ;;
                     *) CODEX_WORKER_IMAGE="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-harness-codex:v0.1.0" ;;
@@ -1244,7 +1253,7 @@ resolve_image_tags() {
             fi
         fi ;;
     esac
-    if [ -z "${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-}" ] && _ver_lt "${AGENTTEAMS_DEEPSEEK_HARNESS_WORKER_VERSION}" v0.1.2; then
+    if [ -z "${AGENTTEAMS_INSTALL_DEEPSEEK_HARNESS_WORKER_IMAGE:-}" ] && _ver_lt "${_deepseek_version}" v0.1.2; then
         DEEPSEEK_HARNESS_WORKER_IMAGE="${DEEPSEEK_HARNESS_WORKER_IMAGE/agentteams-harness-deepseek/agentteams-deepseek-harness-worker}"
     fi
     EMBEDDED_IMAGE="${AGENTTEAMS_INSTALL_EMBEDDED_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-embedded:${AGENTTEAMS_VERSION}}"
@@ -1319,7 +1328,7 @@ _check_version_images() {
             fi
         done
         if [ "${AGENTTEAMS_DASHBOARD:-1}" = "1" ]; then
-            _check_install_image "${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}}" "${platform}" || return $?
+            _check_install_image "${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}}" "${platform}" || return $?
         fi
         return 0
     )
@@ -1553,6 +1562,10 @@ agentteams_read_secret_from_data_volume() {
         "${EMBEDDED_IMAGE}" -c "grep \"^${_key}=\" /data/agentteams-secrets.env 2>/dev/null | cut -d= -f2- | head -1 | tr -d '\r'" 2>/dev/null
 }
 
+agentteams_existing_controller_is_embedded() {
+    ${DOCKER_CMD} inspect "$1" --format '{{json .Config.Entrypoint}}' 2>/dev/null | grep -q 'supervisord'
+}
+
 # Read KEY=value from /data/worker-creds/<worker>.env on a Docker volume.
 agentteams_read_worker_creds_value_from_volume() {
     local _vol="$1" _worker="$2" _key="$3"
@@ -1616,6 +1629,8 @@ load_current_params_from_env() {
         [ -z "${AGENTTEAMS_DASHBOARD_VERSION:+x}" ] && AGENTTEAMS_DASHBOARD_VERSION="$(grep '^AGENTTEAMS_DASHBOARD_VERSION=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_PORT_DASHBOARD:+x}" ] && AGENTTEAMS_PORT_DASHBOARD="$(grep '^AGENTTEAMS_PORT_DASHBOARD=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_DASHBOARD_IMAGE:+x}" ] && AGENTTEAMS_DASHBOARD_IMAGE="$(grep '^AGENTTEAMS_DASHBOARD_IMAGE=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_UNIFIED_ENTRY:+x}" ] && AGENTTEAMS_UNIFIED_ENTRY="$(grep '^AGENTTEAMS_UNIFIED_ENTRY=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
+        [ -z "${AGENTTEAMS_ENTRY_EXTERNAL_URL:+x}" ] && AGENTTEAMS_ENTRY_EXTERNAL_URL="$(grep '^AGENTTEAMS_ENTRY_EXTERNAL_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${DASHBOARD_SESSION_SECRET:+x}" ] && DASHBOARD_SESSION_SECRET="$(grep '^DASHBOARD_SESSION_SECRET=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_URL:+x}" ] && AGENTTEAMS_AI_GATEWAY_ADMIN_URL="$(grep '^AGENTTEAMS_AI_GATEWAY_ADMIN_URL=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
         [ -z "${AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS:+x}" ] && AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS="$(grep '^AGENTTEAMS_AI_GATEWAY_ADMIN_ALLOWED_HOSTS=' "${env_file}" 2>/dev/null | cut -d= -f2- | tr -d '\r')"
@@ -2161,9 +2176,9 @@ prepare_upgrade_dashboard() {
     # Recognize versions shipped as installer defaults. Custom images/tags and
     # caller-specified versions remain pinned, including newer release tags.
     case "${old_version}" in
-        ''|v1.2.4|v1.3.1|v1.4.0|v1.4.1)
-            if [ -z "${old_image}" ] || [ "${old_image}" = "${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${old_version}" ]; then
-                AGENTTEAMS_DASHBOARD_VERSION=v1.4.1
+        ''|v1.2.4|v1.3.1|v1.4.0|v1.4.1|v1.4.2)
+            if [ -z "${old_image}" ] || [ "${old_image}" = "${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${old_version}" ] || [ "${old_image}" = "${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${old_version}-unified" ]; then
+                AGENTTEAMS_DASHBOARD_VERSION=v1.4.3
                 AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}"
             fi
             ;;
@@ -2883,7 +2898,7 @@ step_workspace() {
 
 step_dashboard() {
     AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
-    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}"
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
     AGENTTEAMS_HIGRESS_ADAPTER_MODE="${AGENTTEAMS_HIGRESS_ADAPTER_MODE:-direct}"
     AGENTTEAMS_AI_GATEWAY_URL="${AGENTTEAMS_AI_GATEWAY_URL:-}"
@@ -2918,7 +2933,8 @@ step_dashboard() {
     fi
     if [ -n "${_old_saved_version}" ] && \
        [ "${_old_saved_version}" != "${AGENTTEAMS_DASHBOARD_VERSION}" ] && \
-       [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "$(_dashboard_default_image "${_old_saved_version}")" ]; then
+       { [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "$(_dashboard_default_image "${_old_saved_version}")" ] || \
+         [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "$(_dashboard_default_image "${_old_saved_version}")-unified" ]; }; then
         AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
     fi
 
@@ -3018,7 +3034,8 @@ step_dashboard() {
     # fresh installs and upgrades where the previous image was the default.
     # Only a real user override (image != default for old version) is preserved.
     if [ "${AGENTTEAMS_DASHBOARD_VERSION}" != "${_old_version}" ] && \
-       [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "${_old_default_image}" ]; then
+       { [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "${_old_default_image}" ] || \
+         [ "${AGENTTEAMS_DASHBOARD_IMAGE}" = "${_old_default_image}-unified" ]; }; then
         AGENTTEAMS_DASHBOARD_IMAGE=$(_dashboard_default_image)
     fi
     local _current_image="${AGENTTEAMS_DASHBOARD_IMAGE}"
@@ -3506,6 +3523,97 @@ WantedBy=default.target"
 # Dashboard startup (called after controller is ready)
 # ============================================================
 
+# Only Core 1.2.8 and later default to the new entry. Saved or explicit choices win.
+configure_unified_entry_version() {
+    local supported=0
+    if ! _ver_lt "${AGENTTEAMS_VERSION:-v1.2.7}" v1.2.8; then supported=1; fi
+    local default="${supported}"
+    [ "${AGENTTEAMS_UPGRADE:-0}" != "1" ] || default=0
+    AGENTTEAMS_UNIFIED_ENTRY="${AGENTTEAMS_UNIFIED_ENTRY:-${default}}"
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY}" = "1" ] && [ "${supported}" != "1" ]; then
+        error 'Unified entry requires AgentTeams 1.2.8 or later. Existing services have not been stopped.'
+        return 1
+    fi
+}
+
+# The installer owns these backends; both new installs and upgrades use the same names.
+prepare_unified_entry() {
+    local root_image="${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}"
+    case "${AGENTTEAMS_DASHBOARD_IMAGE:-}" in
+        ""|"${root_image}"|"${root_image}-unified")
+            AGENTTEAMS_DASHBOARD_IMAGE="${root_image}"
+            if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ]; then
+                AGENTTEAMS_DASHBOARD_IMAGE="${root_image}-unified"
+            fi ;;
+    esac
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ]; then
+        if [ "${AGENTTEAMS_DASHBOARD:-0}" = "1" ]; then
+            AGENTTEAMS_DASHBOARD_URL="http://${DASHBOARD_CONTAINER}:3000"
+        else
+            AGENTTEAMS_DASHBOARD_URL=""
+        fi
+    fi
+}
+
+unified_entry_url() {
+    if [ -n "${AGENTTEAMS_ENTRY_EXTERNAL_URL:-}" ]; then
+        printf '%s' "${AGENTTEAMS_ENTRY_EXTERNAL_URL%/}"
+    else
+        local host=127.0.0.1
+        if [ "${AGENTTEAMS_LOCAL_ONLY:-1}" != "1" ]; then host="$(detect_lan_ip)"; fi
+        printf 'http://%s:%s' "${host:-127.0.0.1}" "${AGENTTEAMS_PORT_GATEWAY:-18080}"
+    fi
+}
+
+dashboard_browser_url() {
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ]; then
+        printf '%s/dashboard/' "$(unified_entry_url)"
+    else
+        printf 'http://127.0.0.1:%s/' "${AGENTTEAMS_PORT_DASHBOARD:-13000}"
+    fi
+}
+
+# Run before writing configuration or removing any existing service.
+check_unified_entry_images() {
+    [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ] || return 0
+    [ "${AGENTTEAMS_USE_EMBEDDED:-0}" = "1" ] || { error 'Unified entry requires the embedded Controller.'; return 1; }
+    local supported
+    supported=$(${DOCKER_CMD} image inspect --format '{{index .Config.Labels "io.agentteams.unified-entry"}}' "${EMBEDDED_IMAGE}")
+    [ "${supported}" = "1" ] || { error 'This Controller image does not support unified entry. Existing services have not been stopped.'; return 1; }
+    if [ "${AGENTTEAMS_DASHBOARD:-0}" = "1" ]; then
+        supported=$(${DOCKER_CMD} image inspect --format '{{index .Config.Labels "io.agentteams.dashboard-base-path"}}' "${AGENTTEAMS_DASHBOARD_IMAGE}")
+        [ "${supported}" = "/dashboard" ] || { error 'Unified entry requires a Dashboard image built for /dashboard. Existing services have not been stopped.'; return 1; }
+    fi
+}
+
+# Check the actual gateway routes, not a separately published Dashboard port.
+verify_unified_entry() {
+    [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ] || return 0
+    local entry token attempt api html asset
+    entry="$(unified_entry_url)"
+    for ((attempt=0; attempt<60; attempt++)); do
+        token=$(${DOCKER_CMD} exec "${CONTROLLER_CONTAINER}" cat /var/run/agentteams/cli-token 2>/dev/null) || token=""
+        if [ -n "${token}" ]; then
+            api=$(curl -fsS --max-time 5 -H "Authorization: Bearer ${token}" "${entry}/api/v1/version" 2>/dev/null) || api=""
+            if printf '%s' "${api}" | grep -q '"controller"'; then
+                if [ "${AGENTTEAMS_DASHBOARD:-0}" != "1" ]; then
+                    return 0
+                fi
+                html=$(curl -fsS --max-time 5 "${entry}/dashboard/" 2>/dev/null) || html=""
+                asset=$(printf '%s' "${html}" | grep -oE '/dashboard/_next/static/[^"<> ]+\.js' | head -1)
+                if [ -n "${asset}" ] &&
+                    curl -fsS --max-time 5 "${entry}${asset}" >/dev/null 2>&1 &&
+                    curl -fsS --max-time 5 "${entry}/dashboard/api/agentteams/healthz/" >/dev/null 2>&1; then
+                    return 0
+                fi
+            fi
+        fi
+        sleep 2
+    done
+    error "Unified entry is not ready at ${entry}; check Controller, Higress and Dashboard logs. Installation did not pass verification."
+    return 1
+}
+
 _start_dashboard() {
     AGENTTEAMS_DASHBOARD_READY=0
     local CTRL_CONTAINER="agentteams-controller"
@@ -3531,7 +3639,8 @@ _start_dashboard() {
     fi
 
     AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
-    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}"
+    AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}"
+    prepare_unified_entry
     AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
 
     # Embedded deployment marker: controller lives on the same network as the
@@ -3927,15 +4036,26 @@ _start_dashboard() {
         fi
     fi
 
+    local _dashboard_ports=()
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" != "1" ]; then
+        _dashboard_ports=(-p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000")
+    fi
+
     ${DOCKER_CMD} run -d \
         --name "${DASHBOARD_CONTAINER}" \
         --restart unless-stopped \
         --network "${AGENTTEAMS_NETWORK:-agentteams-net}" \
         --network-alias dashboard.agentteams.io \
-        -p "${BIND_ADDR}:${AGENTTEAMS_PORT_DASHBOARD}:3000" \
+        "${_dashboard_ports[@]}" \
         "${env_args[@]}" \
         "${_vol_args[@]}" \
         "${AGENTTEAMS_DASHBOARD_IMAGE}"
+
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ]; then
+        verify_unified_entry || return 1
+        AGENTTEAMS_DASHBOARD_READY=1
+        return 0
+    fi
 
     # Wait for dashboard to be ready
     local max_wait=60
@@ -4024,9 +4144,13 @@ install_manager() {
 
     # Saved registry and image overrides are now available, including explicit-version upgrades.
     resolve_image_tags
+    configure_unified_entry_version || exit 1
+    prepare_unified_entry
     # Runtime and dashboard choices are now known. Verify before saving configuration
     # or stopping existing containers, and never downgrade an upgrade automatically.
     _select_available_auto_version
+    configure_unified_entry_version || exit 1
+    prepare_unified_entry
 
     # Post-machine defaults for any steps that were skipped
     AGENTTEAMS_LOCAL_ONLY="${AGENTTEAMS_LOCAL_ONLY:-1}"
@@ -4228,8 +4352,10 @@ install_manager() {
     _selected_manager_image="$(manager_image_for_runtime "${AGENTTEAMS_MANAGER_RUNTIME:-qwenpaw}")"
     _pull_image "${_selected_manager_image}" "install.image.exists" "install.image.pulling_manager"
     if [ "${AGENTTEAMS_DASHBOARD:-1}" = "1" ]; then
-        _pull_image "${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}}" "install.image.exists" "install.image.pulling_manager"
+        _pull_image "${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}}" "install.image.exists" "install.image.pulling_manager"
     fi
+
+    check_unified_entry_images || exit 1
 
     # Write .env file
     AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY="${AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY:-higress-registry.cn-hangzhou.cr.aliyuncs.com}"
@@ -4270,6 +4396,11 @@ AGENTTEAMS_PORT_GATEWAY=${AGENTTEAMS_PORT_GATEWAY}
 AGENTTEAMS_PORT_CONSOLE=${AGENTTEAMS_PORT_CONSOLE}
 AGENTTEAMS_PORT_ELEMENT_WEB=${AGENTTEAMS_PORT_ELEMENT_WEB}
 AGENTTEAMS_PORT_MANAGER_CONSOLE=${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}
+
+# Unified entry: expose only the Higress gateway; /api + /dashboard behind
+# one address; Console/Element/dashboard stay internal.
+AGENTTEAMS_UNIFIED_ENTRY=$(if ! _ver_lt "${AGENTTEAMS_VERSION:-v1.2.7}" v1.2.8; then printf '%s' "${AGENTTEAMS_UNIFIED_ENTRY:-1}"; fi)
+AGENTTEAMS_ENTRY_EXTERNAL_URL=${AGENTTEAMS_ENTRY_EXTERNAL_URL:-}
 
 # Manager runtime (qwenpaw | openclaw | copaw | hermes | deepseek-harness | openhuman)
 AGENTTEAMS_MANAGER_RUNTIME=${AGENTTEAMS_MANAGER_RUNTIME:-qwenpaw}
@@ -4365,7 +4496,7 @@ AGENTTEAMS_HOST_SHARE_DIR=${AGENTTEAMS_HOST_SHARE_DIR:-}
 
 # agentteams-dashboard (management UI)
 AGENTTEAMS_DASHBOARD=${AGENTTEAMS_DASHBOARD:-1}
-AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}
+AGENTTEAMS_DASHBOARD_VERSION=${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}
 AGENTTEAMS_PORT_DASHBOARD=${AGENTTEAMS_PORT_DASHBOARD:-13000}
 AGENTTEAMS_DASHBOARD_IMAGE=${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}
 DASHBOARD_SESSION_SECRET=${DASHBOARD_SESSION_SECRET:-}
@@ -4402,7 +4533,7 @@ EOF
         _is_old_arch=0
         if ! ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^agentteams-controller$"; then
             _is_old_arch=1
-        elif ${DOCKER_CMD} ps -a --format '{{.Names}} {{.Image}}' 2>/dev/null | grep "^agentteams-controller " | grep -qv "embedded"; then
+        elif ! agentteams_existing_controller_is_embedded "agentteams-controller"; then
             _is_old_arch=1
         fi
 
@@ -4547,7 +4678,6 @@ CREDEOF
             -v "${AGENTTEAMS_DATA_DIR}:/data" \
             -v "${_creds_tmp}:/creds:ro" \
             "${EMBEDDED_IMAGE}" -c '
-                rm -rf /data/worker-creds
                 mkdir -p /data/worker-creds
                 cp /creds/*.env /data/worker-creds/ 2>/dev/null || true
                 chmod 600 /data/worker-creds/*.env 2>/dev/null || true
@@ -4639,6 +4769,16 @@ CREDEOF
             -e "${_ctrl_env_prefix}MANAGER_ENABLED=true"
             -e "${_ctrl_env_prefix}PORT_MANAGER_CONSOLE=${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}"
         )
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ] && [ "${_ctrl_env_prefix}" = "AGENTTEAMS_" ]; then
+            _ctrl_env_args+=(
+                -e "${_ctrl_env_prefix}UNIFIED_ENTRY_ENABLED=true"
+                -e "${_ctrl_env_prefix}ENTRY_INTERNAL_URL=http://127.0.0.1:${AGENTTEAMS_PORT_GATEWAY}"
+                -e "${_ctrl_env_prefix}ENTRY_EXTERNAL_URL=${AGENTTEAMS_ENTRY_EXTERNAL_URL:-}"
+            )
+            if [ -n "${AGENTTEAMS_DASHBOARD_URL:-}" ]; then
+                _ctrl_env_args+=(-e "${_ctrl_env_prefix}DASHBOARD_URL=${AGENTTEAMS_DASHBOARD_URL}")
+            fi
+        fi
         # Forward the configured Console URL to the Controller (management
         # plane); see _controller_admin_url_env_args. Default direct mode
         # keeps the Controller's internal Console default.
@@ -4746,6 +4886,12 @@ CREDEOF
             _ctrl_env_args+=(-e "${_ctrl_env_prefix}FS_PUBLIC_ENDPOINT=${AGENTTEAMS_FS_PUBLIC_ENDPOINT}")
         fi
 
+        # Unified entry: publish only the gateway when single-entry mode is enabled.
+        local _entry_port_args=(-p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080")
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" != "1" ]; then
+            _entry_port_args+=(-p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088")
+        fi
+
         # shellcheck disable=SC2086
         ${DOCKER_CMD} run -d \
             --name agentteams-controller \
@@ -4758,9 +4904,7 @@ CREDEOF
             --security-opt label=disable \
             -v "${AGENTTEAMS_DATA_DIR}:/data" \
             -v "${AGENTTEAMS_WORKSPACE_DIR}:/root/agentteams-fs/agents/manager" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" \
+            "${_entry_port_args[@]}" \
             --restart unless-stopped \
             "${EMBEDDED_IMAGE}"
 
@@ -4937,6 +5081,12 @@ CREDEOF
             MATRIX_DEBUG_ARGS="-e AGENTTEAMS_MATRIX_DEBUG=1"
         fi
 
+        # Unified entry: publish only the gateway when single-entry mode is enabled.
+        local _entry_port_args=(-p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080")
+        if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" != "1" ]; then
+            _entry_port_args+=(-p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" -p "127.0.0.1:${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}:18888")
+        fi
+
         # shellcheck disable=SC2086
         ${DOCKER_CMD} run -d \
             --name agentteams-manager \
@@ -4953,10 +5103,7 @@ CREDEOF
             ${NETWORK_ARGS} \
             ${NETWORK_ALIAS_ARGS} \
             ${PROXY_ARGS} \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_GATEWAY}:8080" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_CONSOLE}:8001" \
-            -p "${_port_prefix}${AGENTTEAMS_PORT_ELEMENT_WEB:-18088}:8088" \
-            -p "127.0.0.1:${AGENTTEAMS_PORT_MANAGER_CONSOLE:-18888}:18888" \
+            "${_entry_port_args[@]}" \
             "${DATA_MOUNT_ARGS[@]}" \
             ${WORKSPACE_MOUNT_ARGS} \
             ${HOST_SHARE_MOUNT_ARGS} \
@@ -4981,7 +5128,10 @@ CREDEOF
     unset _port_prefix
 
     # ── Start Dashboard (optional) ────────────────────────────────────
-    _start_dashboard
+    _start_dashboard || exit 1
+    if [ "${AGENTTEAMS_DASHBOARD:-0}" != "1" ]; then
+        verify_unified_entry || exit 1
+    fi
     if [ "${AGENTTEAMS_DASHBOARD_READY:-0}" = "1" ]; then
         open_dashboard
     elif [ "${AGENTTEAMS_DASHBOARD:-0}" = "1" ]; then
@@ -4991,6 +5141,18 @@ CREDEOF
     # Apply Podman autostart if selected and environment matches
     if [ "${DOCKER_CMD}" = "podman" ] && [ "${AGENTTEAMS_PODMAN_AUTOSTART:-0}" = "1" ]; then
         setup_podman_autostart
+    fi
+
+    if [ "${AGENTTEAMS_UNIFIED_ENTRY:-0}" = "1" ]; then
+        log "$(msg success.title)"
+        if [ "${AGENTTEAMS_DASHBOARD_READY:-0}" = "1" ]; then
+            log "Dashboard: $(dashboard_browser_url)"
+        else
+            log "AgentTeams API: $(unified_entry_url)/api/v1/version"
+        fi
+        log "$(msg success.username "${AGENTTEAMS_ADMIN_USER}")"
+        log "$(msg success.password "${AGENTTEAMS_ADMIN_PASSWORD}")"
+        return 0
     fi
 
     log ""
@@ -5387,7 +5549,7 @@ open_url() {
 }
 
 open_dashboard() {
-    local url="http://127.0.0.1:${AGENTTEAMS_PORT_DASHBOARD:-13000}/"
+    local url="$(dashboard_browser_url)"
     case "${AGENTTEAMS_ADMIN_USER:-admin}" in
         *[!a-zA-Z0-9_.-]*) ;;
         *) url="${url}?username=${AGENTTEAMS_ADMIN_USER:-admin}" ;;
@@ -5480,7 +5642,7 @@ case "${1:-}" in
         check_container_runtime
         load_current_params_from_env
         AGENTTEAMS_DASHBOARD="${AGENTTEAMS_DASHBOARD:-1}"
-        AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.1}"
+        AGENTTEAMS_DASHBOARD_VERSION="${AGENTTEAMS_DASHBOARD_VERSION:-v1.4.3}"
         AGENTTEAMS_PORT_DASHBOARD="${AGENTTEAMS_PORT_DASHBOARD:-13000}"
         AGENTTEAMS_DASHBOARD_IMAGE="${AGENTTEAMS_DASHBOARD_IMAGE:-${AGENTTEAMS_REGISTRY}/agentteams/agentteams-dashboard:${AGENTTEAMS_DASHBOARD_VERSION}}"
         AGENTTEAMS_USE_EMBEDDED=1

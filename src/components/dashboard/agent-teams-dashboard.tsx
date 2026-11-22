@@ -4,10 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } fro
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Home,
-  ChevronRight as ChevronSep,
-} from 'lucide-react';
-import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -38,6 +34,7 @@ import {
 import { useDeploymentMode } from '@/hooks/use-deployment-mode';
 import { usePhaseWatcher } from '@/hooks/use-phase-watcher';
 import { useGlobalMatrixSync } from '@/hooks/use-global-matrix-sync';
+import { QueuedMessagesRunner } from './sections/chat/components/QueuedMessagesRunner';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useInviteStore } from '@/lib/matrix-invite-store';
 import { usePendingTally } from '@/hooks/use-pending-tally';
@@ -54,8 +51,11 @@ import { buildRooms } from './sections/chat/room-builders';
 import { withLeaderAccess } from './sections/chat/agent-conversations';
 import { isManagedHuman } from './sections/humans/human-selectors';
 import { useChatRoomAccess } from '@/hooks/use-chat-room-access';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { isTeamAdmin } from '@/lib/team-access';
 import styles from './workspace.module.css';
 import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
+import { isComposing, useDesktopInputFocus } from '@/lib/desktop-interactions';
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -99,7 +99,32 @@ export const sectionMap: Record<string, React.ComponentType> = {
   'my-teams': ChatSection,
 };
 
+export const pageDescriptions: Record<string, string> = {
+  overview: '查看工作区的任务进展、团队和资源概况。',
+  chat: '与 AT 助手或你管理团队的团队助手私聊，交代目标并跟进进展。',
+  'my-teams': '在已加入的团队群聊中查看协作记录并参与讨论。',
+  tasks: '按状态跟进任务，查看子任务、依赖和协作房间。',
+  artifacts: '浏览、预览和下载项目任务的交付文件。',
+  'coding-runs': '查看编码执行记录、结果和原始日志。',
+  loops: '定义、发布和复用自动化流程，查看执行记录。',
+  models: '管理模型连接、AI 路由、访问凭证和限流策略。',
+  tools: '登记和验证 MCP 服务，管理 Agent 的使用授权。',
+  skills: '查看、上传和分发工作区技能。',
+  knowledge: '浏览可访问的 Agent 知识库、记忆文件和引用关系。',
+  files: '浏览和管理个人文件及团队文件。',
+  resources: '查看团队、成员及 Agent 的协作关系。',
+  'team-agents': '查看团队成员、协作关系与配置。',
+  workers: '管理 Agent，查看运行状态和配置。',
+  humans: '管理工作区用户、权限和协作账号。',
+  teams: '查看团队成员、协作关系与配置。',
+  'platform-assistant-settings': '配置平台助手的模型、提示词、技能与运行参数。',
+  'plugin-route:monitor-panel/monitor': '查看 Agent 的资源用量、运行指标和日志。',
+  tracing: '查看 Agent 执行链路、耗时、用量和错误。',
+  audit: '查询工作区操作记录并跟踪变更。',
+};
+
 export function AgentTeamsDashboard() {
+  useDesktopInputFocus();
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
   const isConversationSection = activeSection === 'chat' || activeSection === 'my-teams';
@@ -119,6 +144,7 @@ export function AgentTeamsDashboard() {
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
+  const matrixUserId = useMatrixStore((s) => s.userId);
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
@@ -134,7 +160,7 @@ export function AgentTeamsDashboard() {
   const { data: managers } = useManagers();
   const { data: humans } = useHumans();
   const conversationAccess = useChatRoomAccess();
-  const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? room.team?.admin ? room.team.admin.name === sessionUser : userLevel >= 3 : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, conversationAccess.joinedRooms, conversationAccess.state]);
+  const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? !!room.team && isTeamAdmin(room.team, sessionUser, matrixUserId) : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, matrixUserId, conversationAccess.joinedRooms, conversationAccess.state]);
 
   // Plugin system: discover + activate plugins once per session.
   usePluginSystem();
@@ -196,6 +222,7 @@ export function AgentTeamsDashboard() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || isComposing()) return;
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (isCmdOrCtrl) {
@@ -203,8 +230,9 @@ export function AgentTeamsDashboard() {
         if (e.key >= '1' && e.key <= '4') {
           e.preventDefault();
           const index = parseInt(e.key, 10) - 1;
-          if (index < workspaceMenus.length) {
-            setActiveSection(workspaceMenus[index].id);
+          const destinations = workspaceMenus.filter(menu => menu.id !== 'overview');
+          if (index < destinations.length) {
+            setActiveSection(destinations[index].id);
             setMobileMenuOpen(false);
           }
         }
@@ -257,6 +285,11 @@ export function AgentTeamsDashboard() {
     ? activePluginRoute?.contribution.title ?? '插件页面'
     : activeItem?.label || '总览';
   const activeMenu = workspaceMenuFor(activeSection);
+  const pageDescription = taskCollaboration && activeSection === 'chat'
+    ? '跟进任务协作、执行进展与交付内容。'
+    : pageDescriptions[activeSection] ?? (isPluginSection
+      ? (activePluginRoute?.contribution.description?.trim() || '此页面由已启用的工作区插件提供。')
+      : pageDescriptions.overview);
 
   const workerCount = workers?.length ?? 0;
   const humanCount = useMemo(() => humans?.filter(isManagedHuman).length ?? 0, [humans]);
@@ -327,6 +360,7 @@ export function AgentTeamsDashboard() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <QueuedMessagesRunner />
       <div className={`${styles.workspace} h-dvh overflow-hidden flex flex-col bg-background`}>
         <div className="flex flex-1 min-h-0">
           <Sidebar
@@ -357,6 +391,8 @@ export function AgentTeamsDashboard() {
 
           <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
             <DashboardHeader
+              pageLabel={activeLabel}
+              groupLabel={activeMenu?.label}
               isConnected={isConnected}
               workerCount={workerCount}
               teamCount={teamCount}
@@ -379,6 +415,9 @@ export function AgentTeamsDashboard() {
             />
 
             <ConnectionBanner />
+            <p data-slot="page-description" className="workspace-content shrink-0 py-3 text-xs leading-5 text-muted-foreground">
+              {pageDescription}
+            </p>
 
             {/*
               Single tree for every section. The chat layout only differs in
@@ -394,19 +433,6 @@ export function AgentTeamsDashboard() {
             <div
               className={`flex-1 flex flex-col min-h-0 ${isConversationSection ? '' : 'bg-background'}`}
             >
-              {!isConversationSection && (
-                <div className="px-5 py-3 md:px-6 bg-background">
-                  <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Home className="w-3.5 h-3.5" />
-                    <ChevronSep className="w-3 h-3" />
-                    <span className="font-medium text-foreground">AgentTeams</span>
-                    <ChevronSep className="w-3 h-3" />
-                    {activeMenu && activeMenu.label !== activeLabel && <><span>{activeMenu.label}</span><ChevronSep className="w-3 h-3" /></>}
-                    <span>{activeLabel}</span>
-                  </nav>
-                </div>
-              )}
-
               {isConversationSection ? (
                 <div className="flex-1 flex flex-col min-h-0">
                   <SectionErrorBoundary sectionName={activeLabel}>
@@ -416,11 +442,11 @@ export function AgentTeamsDashboard() {
                   </SectionErrorBoundary>
                 </div>
               ) : (
-                <main className="flex-1 overflow-y-auto custom-scrollbar p-5 md:px-6 md:pb-6 md:pt-3">
+                <main className="workspace-content flex-1 overflow-y-auto custom-scrollbar pt-1 pb-4">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeSection}
-                      className="mx-auto w-full max-w-[1440px]"
+                      className="w-full"
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}

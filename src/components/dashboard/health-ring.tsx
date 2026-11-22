@@ -23,8 +23,12 @@ export function HealthRing({
   const strokeColor = healthScoreStrokeColor(score);
   const center = size / 2;
 
+  // 数字必须跟着环走：svg 与数字放进同一个 relative 盒子，数字绝对定位到环心；
+  // 字号按直径缩放（100 三个字符在任何尺寸都不溢出）。
+  const scoreFontSize = Math.max(8, Math.min(20, Math.round(size * 0.34)));
   return (
     <div className={`inline-flex flex-col items-center gap-0.5 ${className}`}>
+      <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="transform -rotate-90">
         {/* Background circle */}
         <circle
@@ -50,23 +54,16 @@ export function HealthRing({
           style={{ transition: 'stroke-dashoffset 0.5s ease' }}
         />
       </svg>
-      {/* Score text centered over the ring */}
+      {/* Score text centered over the ring（同层 relative 盒子内绝对定位） */}
       <span
-        className="absolute text-xs font-bold"
-        style={{
-          width: size,
-          height: size,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transform: 'none',
-          color: strokeColor,
-        }}
+        className="absolute inset-0 flex items-center justify-center font-bold leading-none"
+        style={{ fontSize: scoreFontSize, color: strokeColor }}
       >
         {score}
       </span>
+      </span>
       {label && (
-        <span className="text-xs text-muted-foreground leading-none">{label}</span>
+        <span className="mt-0.5 text-xs leading-none text-muted-foreground">{label}</span>
       )}
     </div>
   );
@@ -87,6 +84,7 @@ export function HealthRingCompact({
   const strokeColor = healthScoreStrokeColor(score);
   const center = size / 2;
 
+  const scoreFontSize = Math.max(8, Math.min(14, Math.round(size * 0.38)));
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="transform -rotate-90">
@@ -113,8 +111,8 @@ export function HealthRingCompact({
         />
       </svg>
       <span
-        className="absolute text-xs font-bold"
-        style={{ color: strokeColor }}
+        className="absolute inset-0 flex items-center justify-center font-bold leading-none"
+        style={{ fontSize: scoreFontSize, color: strokeColor }}
       >
         {score}
       </span>

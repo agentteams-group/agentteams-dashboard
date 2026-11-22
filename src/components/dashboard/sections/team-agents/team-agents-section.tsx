@@ -28,6 +28,9 @@ import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { filterTeamRows, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
+import { TeamAgentsWorkbench } from './team-agents-workbench';
+import { isDesktopHover } from '@/lib/desktop-interactions';
+import { workerDisplayName } from '@/lib/worker-display-name';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -43,7 +46,7 @@ function readLocation() {
   return {
     tab: (typeof window === 'undefined' ? 'teams' : teamAgentsInitialIntentFromHash(window.location.hash)) as TeamAgentsTab,
     team: params?.get('team') ?? null, agent: params?.get('agent') ?? null,
-    edit: params?.get('edit') === 'true',
+    edit: params?.get('edit') === 'true', view: params?.get('view') ?? null,
   };
 }
 
@@ -60,8 +63,9 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const queryClient = useQueryClient();
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
-  const [location, setLocation] = useState<ReturnType<typeof readLocation>>({ tab: view ?? 'teams', team: null, agent: null, edit: false });
+  const [location, setLocation] = useState<ReturnType<typeof readLocation>>({ tab: view ?? 'teams', team: null, agent: null, edit: false, view: null });
   const [search, setSearch] = useState('');
+  const [teamView, setTeamView] = useState<'cards' | 'topology'>('cards');
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
@@ -69,7 +73,13 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [millforgeTeam, setMillforgeTeam] = useState<string | null>(null);
 
   useEffect(() => {
-    const sync = () => setLocation({ ...readLocation(), ...(view ? { tab: view } : {}) });
+    const sync = () => {
+      const next = { ...readLocation(), ...(view ? { tab: view } : {}) };
+      setLocation(next);
+      let stored: string | null = null;
+      try { stored = window.localStorage.getItem('teamAgents.view'); } catch { /* Non-persistent browser. */ }
+      setTeamView(view === 'teams' && (next.view === 'topology' || next.view !== 'cards' && stored === 'topology') ? 'topology' : 'cards');
+    };
     sync();
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
@@ -82,6 +92,16 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     openResource(`${hashForSection(tab === 'agents' ? 'workers' : 'teams')}${params.size ? `?${params}` : ''}`);
     setLocation(readLocation());
   }
+  function switchView(next: 'cards' | 'topology') {
+    try { window.localStorage.setItem('teamAgents.view', next); } catch { /* Non-persistent browser. */ }
+    const params = new URLSearchParams(currentHashParams()?.toString() ?? '');
+    if (next === 'topology') params.set('view', 'topology');
+    else for (const key of ['view', 'team', 'agent', 'manager', 'edit', 'panel', 'inspect', 'tab']) params.delete(key);
+    setTeamView(next);
+    openResource(`${hashForSection('teams')}${params.size ? `?${params}` : ''}`);
+    setLocation({ ...readLocation(), ...(view ? { tab: view } : {}) });
+  }
+
   function refresh() {
     void teamsQuery.refetch();
     for (const key of ['agentteams-workers', 'agentteams-humans']) {
@@ -96,7 +116,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const allAgents = [
     ...workers.map((worker) => ({ ...worker, kind: 'agent' as const, label: teams.some((team) => team.leaderName === worker.name) ? '团队负责人 · Leader' : '执行成员 · Worker' })),
   ].sort((a, b) => a.name.localeCompare(b.name));
-  const agents = allAgents.filter((agent) => [agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
+  const agents = allAgents.filter((agent) => [workerDisplayName(agent), agent.name, agent.model, agent.runtime, agent.team].some((value) => value?.toLowerCase().includes(query)));
   const teamPage = useListPagination(teamRows, 12, `${location.tab}:${query}`);
   const agentPage = useListPagination(agents, 12, `${location.tab}:${query}`);
   const selectedTeam = teams.find((team) => team.name === location.team);
@@ -115,7 +135,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     const agent = allAgents.find((item) => item.kind === 'agent' && item.name === name)
       ?? { name, model: '', runtime: '', phase: '', team: '', kind: 'agent' as const, label: 'Worker' };
     const onView = () => navigate('agents', 'agent', name);
-    return <MemberPreview key={name} name={name} onOpen={onView}>
+    return <MemberPreview key={name} name={name} label={workerDisplayName(agent)} onOpen={onView}>
       <AgentSummaryCard agent={agent} onView={onView} onEdit={() => navigate('agents', 'agent', name, true)} />
     </MemberPreview>;
   }
@@ -130,18 +150,27 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
 
   if ((teamsQuery.isError || workersQuery.isError) && !isConnected) return <ApiErrorState />;
 
-  return <div className="space-y-4" data-testid="team-agents-section">
-    <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
-      meta={!isDetail && <div className="flex min-w-0 flex-wrap items-center gap-3">{!view && <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
+  const isTopology = view === 'teams' && teamView === 'topology';
+  const controls = <div className="flex min-w-0 flex-wrap items-center gap-3">{!view && <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
         <TabsTrigger value="teams">团队 <span className="text-muted-foreground tabular-nums">{teams.length}</span></TabsTrigger>
         <TabsTrigger value="agents">Agent <span className="text-muted-foreground tabular-nums">{workers.length}</span></TabsTrigger>
       </TabsList></Tabs>}
         <Input className="h-9 w-72 max-w-full" aria-label="搜索团队或 Agent" placeholder={location.tab === 'teams' ? '搜索团队或成员…' : '搜索名称、模型或运行时…'} value={search} onChange={(event) => setSearch(event.target.value)} />
-      </div>}
-      actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
-        <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />
+        {view === 'teams' && (
+          <div role="group" aria-label="团队视图" className="inline-flex shrink-0 rounded-lg border p-0.5">
+            <Button size="sm" variant={teamView === 'cards' ? 'secondary' : 'ghost'} aria-pressed={teamView === 'cards'} onPointerEnter={event => { if (isDesktopHover(event)) switchView('cards'); }} onClick={() => switchView('cards')}>卡片</Button>
+            <Button size="sm" variant={teamView === 'topology' ? 'secondary' : 'ghost'} aria-pressed={teamView === 'topology'} onPointerEnter={event => { if (isDesktopHover(event)) switchView('topology'); }} onClick={() => switchView('topology')}>拓扑</Button>
+          </div>
+        )}
+      </div>;
 
-    {isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
+  return <div className="space-y-4" data-testid="team-agents-section">
+    {!isTopology && <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
+      meta={!isDetail && controls}
+      actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
+        <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />}
+
+    {isTopology ? <TeamAgentsWorkbench toolbar={controls} search={search} /> : isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
       {!selectedWorker && <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
         <h2 className="min-w-0 font-medium"><OverflowText text={`${location.edit ? '编辑' : '主页'} · ${selectedTeam?.teamName || location.team || location.agent}`} /></h2>
         {selectedTeam && <Button size="sm" variant="outline" onClick={() => setMillforgeTeam(selectedTeam.name)}>千锻 · 团队配置</Button>}
@@ -155,14 +184,16 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
           {teamPage.items.map(({ team }) => {
             const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));
             const teamWorkers = teamMemberWorkers(team, workers).filter((worker) => worker.name !== team.leaderName);
-            return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-4 p-5">
+            const humanNames = [...(team.admin?.name ? [team.admin.name] : []), ...members];
+            const agentNames = [...(team.leaderName ? [team.leaderName] : []), ...teamWorkers.map(worker => worker.name)];
+            return <Card key={team.name} className="min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md"><CardContent className="space-y-3 p-4">
               <ResourceIdentity name={team.teamName || team.name} role={`团队 · ${members.length + (team.admin?.name ? 1 : 0)} 人 · ${teamWorkers.length + (team.leaderName ? 1 : 0)} Agent`} kind="team" phase={team.phase} onView={() => navigate('teams', 'team', team.name)} />
-              <OverflowText text={team.description || ''} multiline className="h-10 text-xs leading-5 text-muted-foreground" />
+              {team.description && <OverflowText text={team.description} multiline className="text-xs leading-5 text-muted-foreground" />}
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm">
+                <dt className="pt-1 text-muted-foreground">成员 · {humanNames.length}</dt><dd className="h-7 min-w-0">{humanNames.length ? memberList(humanNames, humanChip, `${team.teamName || team.name}的成员`, '成员') : '暂无成员'}</dd>
+                <dt className="pt-1 text-muted-foreground">Agent · {agentNames.length}</dt><dd className="h-7 min-w-0">{agentNames.length ? memberList(agentNames, agentChip, `${team.teamName || team.name}的 Agent`, 'Agent') : '暂无 Agent'}</dd>
                 <dt className="pt-1 text-muted-foreground">Team Admin</dt><dd className="h-7 min-w-0">{team.admin?.name ? humanChip(team.admin.name) : '未设置'}</dd>
-                <dt className="pt-1 text-muted-foreground">普通成员 · {members.length}</dt><dd className="h-7 min-w-0">{members.length ? memberList(members, humanChip, `${team.teamName || team.name}的普通成员`, '普通成员') : <span className="text-muted-foreground">暂无普通成员</span>}</dd>
                 <dt className="pt-1 text-muted-foreground">Leader</dt><dd className="h-7 min-w-0">{team.leaderName ? agentChip(team.leaderName) : '未设置'}</dd>
-                <dt className="pt-1 text-muted-foreground">Workers · {teamWorkers.length}</dt><dd className="h-7 min-w-0">{teamWorkers.length ? memberList(teamWorkers.map((worker) => worker.name), agentChip, `${team.teamName || team.name}的 Workers`, 'Workers') : <span className="text-muted-foreground">暂无 Worker</span>}</dd>
               </dl>
             </CardContent><div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3"><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name)}>详情</Button><Button variant="outline" size="sm" onClick={() => navigate('teams', 'team', team.name, true)}>编辑</Button></div></Card>;
           })}

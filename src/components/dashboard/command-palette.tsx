@@ -1,24 +1,14 @@
 'use client';
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Bot,
-  Users,
-  Crown,
-  UserCheck,
-  ArrowRight,
-  MessageSquare,
-  MessageSquareText,
-  AlertTriangle,
-  Compass,
-  ListTodo,
-  FolderKanban,
-  RefreshCcw,
-  ScrollText,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useMemo, useState, useEffect, useRef, type RefObject } from 'react';
+import { ArrowRight, AlertTriangle } from 'lucide-react';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
-import { navItems } from './nav-items';
+import { isNavItemVisible, navItems, type DeploymentMode } from './nav-items';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useSkills } from '@/hooks/use-skill-center';
+import { useMcpServers } from '@/hooks/use-agentteams-mcps';
+import { mergeMainTaskIndex, useTaskIndex } from '@/hooks/use-projects';
+import { isComposing } from '@/lib/desktop-interactions';
 import { workspaceMenus, workspaceMenuFor } from './workspace-navigation';
 import { useRoomMetaStore, useMatrixMessageSearch } from '@/hooks/use-matrix';
 import { useMergedTaskBoard } from '@/hooks/use-task-board';
@@ -33,6 +23,8 @@ export interface SearchResult {
     | 'task'
     | 'project'
     | 'loop'
+    | 'skill'
+    | 'tool'
     | 'worker'
     | 'team'
     | 'manager'
@@ -60,43 +52,15 @@ export interface SearchResult {
   hash?: string;
 }
 
-const ENTITY_ICONS = {
-  task: ListTodo,
-  project: FolderKanban,
-  loop: RefreshCcw,
-  worker: Bot,
-  team: Users,
-  manager: Crown,
-  human: UserCheck,
-  room: MessageSquare,
-  message: MessageSquareText,
-  'message-notice': AlertTriangle,
-  'audit-event': ScrollText,
-  section: Compass,
-} as const;
-
-const ENTITY_COLORS = {
-  task: 'text-sky-500',
-  project: 'text-violet-500',
-  loop: 'text-sky-500',
-  worker: 'text-emerald-500',
-  team: 'text-emerald-500',
-  manager: 'text-violet-500',
-  human: 'text-cyan-500',
-  room: 'text-sky-500',
-  message: 'text-status-info',
-  'message-notice': 'text-status-waiting',
-  'audit-event': 'text-amber-500',
-  section: 'text-amber-500',
-} as const;
-
 const ENTITY_LABELS = {
   task: '任务',
   project: '项目',
-  loop: '循环',
-  worker: 'Worker',
+  loop: '自动化',
+  skill: '技能',
+  tool: '工具',
+  worker: 'Agent',
   team: '团队',
-  manager: 'Manager',
+  manager: 'Agent',
   human: '用户',
   room: '房间',
   message: '消息',
@@ -105,10 +69,13 @@ const ENTITY_LABELS = {
   section: '页面',
 } as const;
 
-/** 面板分组渲染顺序：要做的事 → 实体 → 导航目的地。 */
+/** 同等匹配度时，优先展示页面，再展示资源。 */
 const PALETTE_ORDER = [
+  'section',
   'task',
   'project',
+  'skill',
+  'tool',
   'loop',
   'worker',
   'team',
@@ -118,20 +85,16 @@ const PALETTE_ORDER = [
   'message',
   'message-notice',
   'audit-event',
-  'section',
 ] as const;
 
-/**
- * Static navigation destinations (PRD §5.3 命令面板兜底): every nav item is
- * reachable by typing its label, which also eases the Workbench IA migration.
- */
-const SECTION_HITS: SearchResult[] = [...workspaceMenus, ...navItems].map((item) => ({
-  entity: 'section',
-  name: item.label,
-  subtitle: workspaceMenuFor(item.id)?.label ?? '设置',
-  phase: workspaceMenuFor(item.id)?.label ?? '设置',
-  section: item.id,
-}));
+const sectionItems = Array.from(new Map([...workspaceMenus, ...navItems].map(item => [item.id, item])).values());
+const shortcutSections = workspaceMenus.flatMap(menu =>
+  menu.id === 'workbench' ? menu.sections : ['overview', 'chat', 'my-teams'].includes(menu.id) ? [menu.id] : []
+);
+
+function resourceSearchHash(section: 'skills' | 'tools', name: string) {
+  return `#${hashForSection(section)}?q=${encodeURIComponent(name)}`;
+}
 
 /**
  * 消息检索的状态行（服务端不支持 / 请求失败）。
@@ -149,14 +112,33 @@ export function useGlobalSearch(
   teams?: TeamResponse[],
   managers?: ManagerResponse[],
   humans?: HumanResponse[],
-  options: { enabled?: boolean } = {}
+  options: { enabled?: boolean; mode?: DeploymentMode | null } = {}
 ): SearchResult[] {
   const roomMeta = useRoomMetaStore((s) => s.meta);
+  const userLevel = useAgentTeamsStore(state => state.userLevel);
+  const taskBoardVisible = useAgentTeamsStore(state => state.taskBoardVisible);
+  const q = query.toLowerCase().trim();
+  const mode = options.mode;
+  const sections = useMemo(() => sectionItems.flatMap(item => {
+    const nav = navItems.find(nav => nav.id === item.id);
+    if (nav && !isNavItemVisible(nav, mode, taskBoardVisible, userLevel)) return [];
+    const group = workspaceMenuFor(item.id)?.label ?? '设置';
+    return [{
+      entity: 'section' as const,
+      name: item.id === 'chat' ? 'AgentTeams助手' : item.label,
+      subtitle: group,
+      phase: group,
+      section: item.id,
+    }];
+  }), [mode, taskBoardVisible, userLevel]);
   // 四类新实体（方案 v3 C-2）：只在面板开着时拉，并且关掉轮询——
   // 顶栏不该为搜索常驻一个 8s/15s 的后台拉取（看板与审计页自己会拉，
   // 共同一个 queryKey，面板只是提前读一眼缓存）。
-  const enabled = options.enabled !== false;
+  const enabled = options.enabled !== false && q.length > 0;
   const board = useMergedTaskBoard({ enabled, refetchInterval: false });
+  const taskIndex = useTaskIndex({ enabled: enabled && taskBoardVisible, refetchInterval: false });
+  const skills = useSkills(query.trim() || undefined, null, 1, 5, { enabled });
+  const tools = useMcpServers({ enabled });
   const audit = useAuditEvents({ limit: 100 }, { enabled, refetchInterval: false });
   // 跨房间消息（方案 v3 B-1 的延伸）：只在面板开着、词够长时打 /search（长度门在 hook 里）。
   const messages = useMatrixMessageSearch(query, { enabled });
@@ -164,15 +146,27 @@ export function useGlobalSearch(
   const loopDrafts = useMemo(() => (enabled ? readDrafts() : []), [enabled]);
 
   return useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return [];
+    if (!q) return sections.filter(hit => shortcutSections.includes(hit.section));
 
     const results: SearchResult[] = [];
 
-    // Navigation destinations (label match only — static list)
-    SECTION_HITS.forEach((hit) => {
-      if (hit.name.toLowerCase().includes(q)) results.push(hit);
+    sections.forEach(hit => {
+      if (hit.name.toLowerCase().includes(q)
+        || workspaceMenus.some(menu => menu.id === hit.section && menu.label.toLowerCase().includes(q))
+        || (hit.section === 'chat' && 'at助手'.includes(q))
+        || (hit.section === 'skills' && '技能管理'.includes(q))
+        || (hit.section === 'tools' && 'mcp 工具'.includes(q))) results.push(hit);
     });
+
+    for (const skill of skills.data?.skills ?? []) {
+      results.push({ entity: 'skill', name: skill.name, subtitle: skill.description, phase: '', section: 'skills', hash: resourceSearchHash('skills', skill.name) });
+    }
+
+    for (const tool of tools.data ?? []) {
+      if (tool.name.toLowerCase().includes(q) || tool.description?.toLowerCase().includes(q)) {
+        results.push({ entity: 'tool', name: tool.name, subtitle: tool.description ?? '', phase: '', section: 'tools', hash: resourceSearchHash('tools', tool.name) });
+      }
+    }
 
     // Matrix rooms already known to the global sync loop (room meta is
     // populated by useGlobalMatrixSync regardless of the active section).
@@ -221,9 +215,8 @@ export function useGlobalSearch(
       results.push(messageNotice('消息检索失败'));
     }
 
-    // 任务（C-2）：命中后落到所属项目的看板视图。看板上的选中单元就是项目，
-    // 任务没有自己的选中态，所以不伪造一个没人读的 ?task= 参数。
-    board.tasks.forEach((t) => {
+    const indexedTasks = taskBoardVisible ? mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []) : [];
+    indexedTasks.forEach((t) => {
       if (
         t.title.toLowerCase().includes(q) ||
         t.runId.toLowerCase().includes(q) ||
@@ -235,13 +228,13 @@ export function useGlobalSearch(
           subtitle: `${t.runId} · 负责 ${t.assignedTo || '未分配'}`,
           phase: t.status,
           section: 'tasks',
-          hash: tasksHash(t.projectId),
+          hash: `${tasksHash()}?${new URLSearchParams({ task: t.runId, ...(t.teamId ? { team: t.teamId } : {}) })}`,
         });
       }
     });
 
     // 项目（C-2）
-    board.projects.forEach((p) => {
+    (taskBoardVisible ? board.projects : []).forEach((p) => {
       if (p.name.toLowerCase().includes(q) || p.runId.toLowerCase().includes(q)) {
         results.push({
           entity: 'project',
@@ -328,15 +321,16 @@ export function useGlobalSearch(
     });
 
     // Search managers
-    managers?.forEach((m) => {
+    (userLevel >= 3 ? managers : [])?.forEach((m) => {
       if (
         m.name.toLowerCase().includes(q) ||
+        (m.name === 'default' && 'agentteams助手 at助手'.includes(q)) ||
         m.model?.toLowerCase().includes(q) ||
         m.runtime?.toLowerCase().includes(q)
       ) {
         results.push({
           entity: 'manager',
-          name: m.name,
+          name: m.name === 'default' ? 'AgentTeams助手' : m.name,
           subtitle: `${m.runtime || '-'} · ${m.model || '-'}`,
           phase: m.phase,
           section: 'platform-assistant-settings',
@@ -346,7 +340,7 @@ export function useGlobalSearch(
     });
 
     // Search humans
-    humans?.forEach((h) => {
+    (userLevel >= 3 ? humans : [])?.forEach((h) => {
       if (
         h.name.toLowerCase().includes(q) ||
         h.displayName?.toLowerCase().includes(q) ||
@@ -382,141 +376,80 @@ export function useGlobalSearch(
       return true;
     });
     return capped.slice(0, 24);
-  }, [query, workers, teams, managers, humans, roomMeta, board.tasks, board.projects, audit.data, loopDrafts, messages.data, messages.isError]);
+  }, [query, q, sections, taskBoardVisible, userLevel, workers, teams, managers, humans, roomMeta, board.tasks, board.projects, taskIndex.data, skills.data, tools.data, audit.data, loopDrafts, messages.data, messages.isError]);
 }
 
-export function CommandPalette({
-  results,
-  onSelect,
-  onClose,
-}: {
+export function CommandPalette({ results, onSelect, onClose, inputRef, query = '', loading = false }: {
   results: SearchResult[];
   onSelect: (_result: SearchResult) => void;
   onClose: () => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
+  query?: string;
+  loading?: boolean;
 }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [keyboardSelection, setKeyboardSelection] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const selectableResults = useMemo(() => PALETTE_ORDER
-    .filter((entity) => entity !== 'message-notice')
-    .flatMap((entity) => results.filter((result) => result.entity === entity)), [results]);
-
-  // Reset selection when the result count changes (adjust state during render)
-  const [prevResultCount, setPrevResultCount] = useState(results.length);
-  if (prevResultCount !== results.length) {
-    setPrevResultCount(results.length);
-    setSelectedIdx(0);
-  }
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.isComposing) return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (selectableResults.length) setSelectedIdx((prev) => (prev + 1) % selectableResults.length);
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (selectableResults.length) setSelectedIdx((prev) => (prev - 1 + selectableResults.length) % selectableResults.length);
-      } else if (e.key === 'Enter' && selectableResults[selectedIdx]) {
-        e.preventDefault();
-        onSelect(selectableResults[selectedIdx]);
-      } else if (e.key === 'Escape') {
-        onClose();
-      }
-    },
-    [selectableResults, selectedIdx, onSelect, onClose]
-  );
+  const selectable = useMemo(() => results.filter(result => result.entity !== 'message-notice'), [results]);
+  const activeIndex = Math.min(selectedIdx, Math.max(0, selectable.length - 1));
+  const notices = results.filter(result => result.entity === 'message-notice');
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || isComposing() || (inputRef && document.activeElement !== inputRef.current)) return;
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (!selectable.length) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setKeyboardSelection(true);
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        setSelectedIdx((activeIndex + step + selectable.length) % selectable.length);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        onSelect(selectable[activeIndex]);
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [activeIndex, inputRef, onClose, onSelect, selectable]);
 
-  // Scroll selected item into view
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-search-index="${selectedIdx}"]`);
-    el?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIdx]);
-
-  if (results.length === 0) return null;
-
-  // Group by entity type
-  const grouped = results.reduce(
-    (acc, r) => {
-      if (!acc[r.entity]) acc[r.entity] = [];
-      acc[r.entity].push(r);
-      return acc;
-    },
-    {} as Record<string, SearchResult[]>
-  );
-
-  let flatIdx = 0;
+    if (!keyboardSelection) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-search-index="${activeIndex}"]`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, keyboardSelection]);
 
   return (
-    <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl max-h-80 overflow-y-auto custom-scrollbar z-50">
-      <div ref={listRef} className="py-1">
-        {PALETTE_ORDER.map((entityType) => {
-          const items = grouped[entityType];
-          if (!items || items.length === 0) return null;
-
-          // 降级说明行：没有去处，所以不是按钮；也不占键盘序号（否则高亮
-          // 会和列表错开一位）。同一个房间可能出现两条正文一模一样的命中，
-          // 所以按钮的 key 靠序号而不只靠 entity+name。
-          if (entityType === 'message-notice') {
-            const NoticeIcon = ENTITY_ICONS['message-notice'];
-            return (
-              <div key={entityType} role="status">
-                {items.map((result) => (
-                  <p
-                    key={result.name}
-                    className="flex items-start gap-2 px-3 py-1.5 text-xs text-status-waiting"
-                  >
-                    <NoticeIcon className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>{result.name}</span>
-                  </p>
-                ))}
-              </div>
-            );
-          }
-
-          const Icon = ENTITY_ICONS[entityType];
-          return (
-            <div key={entityType}>
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                {ENTITY_LABELS[entityType]} ({items.length})
-              </div>
-              {items.map((result) => {
-                const idx = flatIdx++;
-                return (
-                  <button
-                    key={`${result.entity}-${idx}-${result.name}`}
-                    data-search-index={idx}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                      idx === selectedIdx ? 'bg-accent' : 'hover:bg-accent/50'
-                    }`}
-                    onClick={() => onSelect(result)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setSelectedIdx(idx)}
-                  >
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${ENTITY_COLORS[result.entity]}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium truncate">{result.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {result.subtitle}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {result.phase}
-                    </Badge>
-                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
+    <div ref={listRef} role="region" aria-label={query ? '工作区搜索结果' : '常用页面'}
+      className="absolute inset-x-0 top-full z-50 mt-1.5 max-h-[min(24rem,60dvh)] overflow-y-auto rounded-2xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl custom-scrollbar">
+      {!results.length && <p role="status" className="px-3 py-3 text-sm text-muted-foreground">{loading ? '正在搜索…' : '没有找到匹配结果'}</p>}
+      {selectable.map((result, index) => (
+        <button
+          key={`${result.entity}-${index}-${result.name}`}
+          type="button"
+          aria-label={result.entity === 'section' || result.entity === 'message' ? undefined : `${result.name} ${ENTITY_LABELS[result.entity]}`}
+          data-search-index={index}
+          data-highlighted={(!!query || keyboardSelection) && index === activeIndex}
+          className="flex min-h-9 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent data-[highlighted=true]:bg-accent"
+          onClick={() => onSelect(result)}
+          onMouseDown={event => event.preventDefault()}
+          onMouseEnter={() => setSelectedIdx(index)}
+        >
+          <span className="min-w-0">
+            <span title={result.name} className="block truncate">{result.name}</span>
+            {result.entity === 'message' && <span className="block truncate text-xs text-muted-foreground">{result.subtitle}</span>}
+          </span>
+          {result.entity === 'section'
+            ? <ArrowRight className="size-4 shrink-0" aria-hidden="true" />
+            : <span className="shrink-0 text-xs text-muted-foreground">{ENTITY_LABELS[result.entity]}</span>}
+        </button>
+      ))}
+      {notices.map(result => <p key={result.name} role="status" className="flex items-start gap-2 px-3 py-2 text-xs text-status-waiting">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span>{result.name}</span>
+      </p>)}
     </div>
   );
 }

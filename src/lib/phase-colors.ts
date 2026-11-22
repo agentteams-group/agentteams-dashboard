@@ -65,12 +65,12 @@ export const RUNTIME_LABELS: Record<string, string> = {
 };
 
 // ============ Tailwind Badge Classes (for Badge components) ============
-// 只允许可读的六个语义 token；新增阶段时先在 phase-badge 里把阶段名归到
-// 其中一个语义上，不要在这里新开一个颜色。
+// 运行 / 活跃复用主操作黄绿色底与深色文字；其他状态使用语义色。
+const ACTIVE_RESOURCE_BADGE = 'bg-[var(--action-primary)] text-[var(--action-primary-foreground)] border-transparent';
 
 export const WORKER_PHASE_BADGE_CLASSES: Record<string, string> = {
   Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
-  Running: 'bg-status-running/15 text-status-running border-status-running/30',
+  Running: ACTIVE_RESOURCE_BADGE,
   Sleeping: 'bg-status-info/15 text-status-info border-status-info/30',
   Updating: 'bg-status-info/15 text-status-info border-status-info/30',
   Stopped: 'bg-status-blocked/15 text-status-blocked border-status-blocked/30',
@@ -80,20 +80,20 @@ export const WORKER_PHASE_BADGE_CLASSES: Record<string, string> = {
 
 export const TEAM_PHASE_BADGE_CLASSES: Record<string, string> = {
   Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
-  Active: 'bg-status-running/15 text-status-running border-status-running/30',
+  Active: ACTIVE_RESOURCE_BADGE,
   Degraded: 'bg-status-blocked/15 text-status-blocked border-status-blocked/30',
   Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 
 export const MANAGER_PHASE_BADGE_CLASSES: Record<string, string> = {
-  Running: 'bg-status-running/15 text-status-running border-status-running/30',
+  Running: ACTIVE_RESOURCE_BADGE,
   Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
   Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 
 export const HUMAN_PHASE_BADGE_CLASSES: Record<string, string> = {
   Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
-  Active: 'bg-status-running/15 text-status-running border-status-running/30',
+  Active: ACTIVE_RESOURCE_BADGE,
   Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 

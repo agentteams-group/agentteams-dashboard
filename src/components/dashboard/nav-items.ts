@@ -112,7 +112,7 @@ export const navItems: NavItem[] = [
   { id: 'audit', label: '操作审计', icon: ScrollText, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 2 },
   { id: 'tracing', label: 'Tracing', icon: Activity, area: 'console', group: 'governance', legacyGroup: 'resource', minLevel: 1 },
   // 系统：集群概览归入系统（附录 A）。
-  { id: 'overview', label: '总览', icon: LayoutDashboard, area: 'console', group: 'system', legacyGroup: 'core' },
+  { id: 'overview', label: '首页', icon: LayoutDashboard, area: 'console', group: 'system', legacyGroup: 'core' },
 ];
 
 /** 工作台/控制台两级的区定义（侧栏一级入口）。 */

@@ -3,9 +3,10 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { McpServerConfig } from '@/lib/agentteams-api';
 
-export function useMcpServers(): UseQueryResult<McpServerConfig[], Error> {
+export function useMcpServers({ enabled = true }: { enabled?: boolean } = {}): UseQueryResult<McpServerConfig[], Error> {
   return useQuery<McpServerConfig[], Error>({
     queryKey: ['agentteams-mcps'],
+    enabled,
     queryFn: async () => {
       const data = await agentteamsApi.listMcpServers();
       return data.servers;

@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/api-base';
 import { useQuery } from '@tanstack/react-query';
 
 export interface AuditEvent {
@@ -61,7 +62,7 @@ export function useAuditEvents(
       if (query.limit !== undefined) params.set('limit', String(query.limit));
 
       const qs = params.toString();
-      const res = await fetch(`/api/agentteams/audit${qs ? `?${qs}` : ''}`, {
+      const res = await fetch(apiUrl(`/api/agentteams/audit${qs ? `?${qs}` : ''}`), {
         credentials: 'same-origin',
       });
       if (res.status === 403) {

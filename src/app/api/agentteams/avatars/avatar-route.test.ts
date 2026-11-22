@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import sharp from 'sharp';
 import { GET, PUT } from './[kind]/[name]/route';
 import { GET as getPresets } from './presets/route';
-import { defaultAvatarPreset } from '@/lib/avatars';
+import { defaultAvatarPreset, type AvatarCatalog, type AvatarKind } from '@/lib/avatars';
 
 vi.mock('../proxy-helper', () => ({
   getControllerUrl: () => 'http://controller',
@@ -72,16 +72,25 @@ it.each(['gif', 'webp'] as const)('keeps animated %s frames and timing when stor
   });
 });
 
-it('shows animal presets for Agents and keeps the account catalogs separate', async () => {
-  const catalog = async (kind: string) => getPresets(new NextRequest(
+async function catalog(kind: AvatarKind): Promise<AvatarCatalog> {
+  const response = await getPresets(new NextRequest(
     `http://dashboard.test/api/agentteams/avatars/presets/?kind=${kind}`,
     { headers: { 'x-agentteams-user': 'admin', 'x-agentteams-user-level': '3' } },
-  )).then(response => response.json());
+  ));
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+it('shows animal presets for Agents and keeps the account catalogs separate', async () => {
   const agentCatalog = await catalog('agent');
-  expect(agentCatalog.series.map(({ id }: { id: string }) => id)).toEqual(['animal', 'pixelbot']);
-  expect(agentCatalog.presets.filter(({ series }: { series: string }) => series === 'animal')).toHaveLength(16);
+  expect(agentCatalog.series.map(({ id }) => id)).toEqual(['animal', 'pixelbot', 'model-girl']);
+  expect(agentCatalog.series).toContainEqual({ id: 'model-girl', label: '模型娘' });
+  expect(agentCatalog.presets.filter(({ series }) => series === 'animal')).toHaveLength(16);
   const humanCatalog = await catalog('human');
-  expect(humanCatalog.series.map(({ id }: { id: string }) => id)).not.toContain('animal');
+  const humanSeries = humanCatalog.series.map(({ id }) => id);
+  expect(humanSeries).not.toContain('animal');
+  expect(humanSeries).not.toContain('model-girl');
+  expect((await PUT(request('alice', 2, JSON.stringify({ preset: 'model-girl-gpt' })), human)).status).toBe(400);
 
   const initial = await GET(request('admin', 3), agent);
   const preset = defaultAvatarPreset('agent', 'worker');
@@ -89,4 +98,19 @@ it('shows animal presets for Agents and keeps the account catalogs separate', as
   expect(Buffer.from(await initial.arrayBuffer())).toEqual(await readFile(join(process.cwd(), 'public/avatars', `${preset}.png`)));
   expect((await PUT(request('alice', 2, JSON.stringify({ preset: 'animal-1' })), human)).status).toBe(400);
   expect((await PUT(request('admin', 3, JSON.stringify({ preset: 'animal-1' })), agent)).status).toBe(204);
+});
+
+it('saves and serves each model girl portrait offered to Workers', async () => {
+  const { presets } = await catalog('agent');
+  const choices = presets.filter(item => item.series === 'model-girl');
+  expect(choices.map(item => item.label)).toEqual(['DeepSeek', 'GPT', '千问', 'Claude', 'Kimi', 'GLM', 'Gemini', 'Grok']);
+  for (const { id } of choices) {
+    const saved = await PUT(request('admin', 3, JSON.stringify({ preset: id })), agent);
+    expect(saved.status).toBe(204);
+    const avatar = await GET(request('admin', 3), agent);
+    expect(avatar.headers.get('content-type')).toBe('image/png');
+    const data = Buffer.from(await avatar.arrayBuffer());
+    expect(data.equals(await readFile(join(process.cwd(), 'public/avatars', `${id}.png`)))).toBe(true);
+    expect(await sharp(data).metadata()).toMatchObject({ format: 'png', width: 256, height: 256 });
+  }
 });

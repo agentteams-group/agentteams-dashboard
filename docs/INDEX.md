@@ -21,6 +21,7 @@
 
 - [debug-log-collection.md](debug-log-collection.md) - 一键调试日志收集功能
 - [voice-input.md](voice-input.md) - 聊天语音输入（本地 Whisper 免费识别 / 百炼付费识别）配置与边界
+- [chat-message-queue.md](chat-message-queue.md) - 直聊消息排队：发送/排队语义、回复中按 Enter 偏好、排队摘要悬停预览
 - [runtime-approval.md](runtime-approval.md) - Runtime 工具审批协议（`org.agentteams.approval`，QwenPaw 与 Codex Harness）
 - [worker-list-compatibility.md](worker-list-compatibility.md) - Worker 列表投影与条件读：Controller 各代能力组合下的 Dashboard 行为
 - [superagent-workspace.md](superagent-workspace.md) - 工作区信息架构（助手 / 我的团队 / 工作台 / 资产中心 / 成员与团队 / 观测与治理）

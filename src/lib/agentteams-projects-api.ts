@@ -190,7 +190,7 @@ export interface ProjectListResponse {
   degradedReason?: 'api-not-deployed' | 'controller-error';
 }
 
-const PROJECTS_URL = '/api/agentteams/projects';
+const PROJECTS_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/agentteams/projects`;
 
 // requestJson / extractErrorDetail now live in ./api-base (shared by all
 // agentteams clients — projects, workers — since PR #86 review).

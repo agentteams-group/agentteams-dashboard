@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -47,7 +49,7 @@ function AuditReplayLink({ auditRef }: { auditRef: ParsedAuditRef }) {
       setOpening(true);
       setNotice(null);
       try {
-        const res = await fetch(`/api/agentteams/replay/export?room=${encodeURIComponent(auditRef.roomId)}`);
+        const res = await fetch(apiUrl(`/api/agentteams/replay/export?room=${encodeURIComponent(auditRef.roomId)}`));
         if (res.ok) {
           const data = (await res.json()) as { found?: boolean; replayId?: string };
           if (data.replayId) {
@@ -163,9 +165,9 @@ export function AuditSection() {
       actions={data?.source && <Badge variant="outline">数据源：{data.source === 'controller' ? 'Controller' : '本地日志'}</Badge>}
       meta={<div className="flex min-w-0 flex-wrap items-center gap-3">
       <Input aria-label="搜索审计记录" placeholder="搜索操作者、资源或操作…" value={search} onChange={event => setSearch(event.target.value)} className="h-9 w-72 max-w-full" />
-      <select aria-label="资源类型" value={entityType} onChange={event => setEntityType(event.target.value as EntityFilter)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+      <NativeSelect aria-label="资源类型" value={entityType} onChange={event => setEntityType(event.target.value as EntityFilter)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
         {ENTITY_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-      </select>
+      </NativeSelect>
       </div>} />
     {data?.scope && data.scope !== 'all' && <p className="text-xs text-muted-foreground">{scopeNote}</p>}
     {data?.source === 'local' && data.note && <p className="rounded-lg border border-amber-500/30 p-3 text-xs text-muted-foreground">{data.note}</p>}

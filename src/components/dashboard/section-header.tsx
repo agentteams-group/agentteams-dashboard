@@ -16,21 +16,17 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, description, isLive, onRefresh, isRefreshing, actions, meta }: SectionHeaderProps) {
   return (
-    <div data-slot="section-header" className="flex flex-wrap items-center gap-x-6 gap-y-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-          {description && <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>}
-        </div>
+    <div data-slot="section-header" className="flex flex-wrap items-center gap-3">
+      <h1 className="sr-only">{title}</h1>
+      {description && <p className="w-full text-xs leading-5 text-muted-foreground">{description}</p>}
         {isLive && (
           <Badge variant="outline" className="text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400 gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             实时
           </Badge>
         )}
-      </div>
       {meta}
-      <div className="ml-auto flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {onRefresh && (
           <Button
             variant="ghost"

@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Clock, AlertTriangle, MessageSquare, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -342,7 +343,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
         {payload.tool_name === 'select_team_admin' ? (
           <label className="block space-y-3 text-sm">
             <span>{question.question}</span>
-            <select
+            <NativeSelect
               aria-label="Team Admin"
               className="w-full rounded-md border bg-background p-3"
               value={selected[0] ?? ''}
@@ -351,7 +352,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
             >
               <option value="" disabled>请选择团队管理员</option>
               {list.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
+            </NativeSelect>
             {list.find((option) => option.id === selected[0])?.description && (
               <span className="block text-xs text-muted-foreground">{list.find((option) => option.id === selected[0])?.description}</span>
             )}

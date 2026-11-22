@@ -1,11 +1,13 @@
 'use client';
 
 import { useRef, useEffect, useState, useMemo } from 'react';
+import Image from 'next/image';
 import type { RefObject } from 'react';
 import { useTheme } from '@/components/theme/theme-provider';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   Search,
+  X,
   Zap,
   RefreshCw,
   Sun,
@@ -15,7 +17,9 @@ import {
   Menu,
   ImageIcon,
   LogOut,
+  ChevronRight,
 } from 'lucide-react';
+import { isComposing, isDesktopHover } from '@/lib/desktop-interactions';
 import { apiUrl } from '@/lib/api-base';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +47,8 @@ import { AvatarEditor } from './avatar-editor';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
 
 interface DashboardHeaderProps {
+  pageLabel?: string;
+  groupLabel?: string;
   isConnected: boolean;
   workerCount: number;
   teamCount: number;
@@ -65,6 +71,8 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({
+  pageLabel = '首页',
+  groupLabel,
   isConnected,
   versionString,
   isRefreshingAll,
@@ -85,15 +93,15 @@ export function DashboardHeader({
   const { resolvedTheme, setTheme, locked: themeLocked } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
+  const [query, setQuery] = useState(searchQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waitingForQuery = !!query.trim() && query !== debouncedQuery;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
 
-  // 只在命令面板真的打开时才拉四类新实体（方案 v3 C-2）：
-  // 顶栏不输字的时候不该多带两份后台请求。
-  const searchResults = useGlobalSearch(debouncedQuery, workers, teams, managers, humans, {
-    enabled: paletteOpen,
+  const searchResults = useGlobalSearch(query.trim() ? debouncedQuery : '', workers, teams, managers, humans, {
+    enabled: paletteOpen && !waitingForQuery,
+    mode,
   });
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
@@ -103,7 +111,7 @@ export function DashboardHeader({
     // The login UI is rendered at the ROOT path (page.tsx shows LoginPage when
     // unauthenticated) — there is no /login route (404).
     void fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' }).finally(() => {
-      window.location.replace('/');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
     });
   };
 
@@ -123,18 +131,17 @@ export function DashboardHeader({
   const themeLabel = resolvedTheme.nameZh || resolvedTheme.name;
 
   useEffect(() => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      onSearchChange(debouncedQuery);
-    }, 300);
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [debouncedQuery, onSearchChange]);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+      onSearchChange(query);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, onSearchChange]);
 
   useEffect(() => {
-    const input = searchInputRef.current;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || isComposing()) return;
+      const input = searchInputRef.current;
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (isCmdOrCtrl && e.key === 'k') {
         e.preventDefault();
@@ -146,12 +153,13 @@ export function DashboardHeader({
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [searchInputRef]);
 
   return (
-    <header className="h-14 shrink-0 border-b border-border bg-background flex items-center gap-1 px-3 sm:gap-3 sm:px-6 sticky top-0 z-30">
+    <header className="workspace-header min-h-14 shrink-0 border-b border-border bg-background flex flex-wrap items-center gap-2 py-2 sticky top-0 z-30">
+      <div className="workspace-header-main flex min-w-0 flex-wrap items-center gap-3">
       <Button
         variant="ghost"
         size="icon"
@@ -162,51 +170,62 @@ export function DashboardHeader({
         <Menu className="w-5 h-5" aria-hidden="true" />
       </Button>
 
-      <div className={`${paletteOpen ? 'absolute inset-x-3 top-3 z-40 sm:relative sm:inset-auto' : 'relative'} min-w-0 flex-1 max-w-sm`}>
-        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${paletteOpen ? 'block' : 'hidden sm:block'} w-4 h-4 text-muted-foreground z-10`} />
+      <nav aria-label="面包屑" className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <span className="hidden sm:inline">AgentTeams</span><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="AgentTeams" width={20} height={20} className="shrink-0 sm:hidden" /><ChevronRight className="size-3 shrink-0" aria-hidden />
+        {groupLabel && groupLabel !== pageLabel && <><span className="hidden sm:inline">{groupLabel}</span><ChevronRight className="hidden size-3 shrink-0 sm:block" aria-hidden /></>}
+        <span aria-current="page" title={pageLabel} className="truncate font-semibold text-foreground">{pageLabel}</span>
+      </nav>
+      <div className="workspace-search relative min-w-0" data-open={paletteOpen}
+        onPointerEnter={event => { if (isDesktopHover(event)) { setPaletteOpen(true); searchInputRef.current?.focus({ preventScroll: true }); } }}
+        onPointerLeave={event => {
+          if (event.pointerType !== 'mouse' || isComposing()) return;
+          setPaletteOpen(false);
+          if (document.activeElement === searchInputRef.current) searchInputRef.current?.blur();
+        }}
+        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaletteOpen(false); }}>
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
           ref={searchInputRef}
-          placeholder="搜索 Agent、任务和工具…"
+          placeholder={paletteOpen ? "搜索页面、任务、技能或工具…" : "搜索工作区"}
           aria-label="搜索工作区"
-          value={debouncedQuery}
-          onChange={(e) => setDebouncedQuery(e.target.value)}
+          value={query}
+          onChange={event => { setQuery(event.target.value); setPaletteOpen(true); }}
           onFocus={() => setPaletteOpen(true)}
-          onBlur={() => {
-            // Delay closing so click events on results can fire
-            setTimeout(() => setPaletteOpen(false), 200);
-          }}
-          className={`${paletteOpen ? '' : 'max-sm:sr-only'} pl-9 h-9 rounded-lg border-border bg-muted/30 shadow-none focus-visible:bg-background`}
+          onClick={() => setPaletteOpen(true)}
+          className="h-9 rounded-full border-border bg-background pl-9 pr-8 shadow-none"
         />
-        {paletteOpen && searchResults.length > 0 && (
-          <CommandPalette
-            results={searchResults}
-            onSelect={(result: SearchResult) => {
-              if (result.roomId) {
-                openChatRoom(result.roomId);
-              }
-              // 单一导航路径（C-1 定的规矩）：生产者只写 hash，由
-              // use-active-section 的 hashchange 监听器解析。带深链参数的命中
-              // （?project= / ?loop= / ?entity=）必须走这条路，否则 onNavClick
-              // 写的规范 hash 会把它覆盖掉，参数就丢了。
-              if (result.hash) {
-                window.location.hash = result.hash;
-              } else {
-                onNavClick(result.section);
-              }
-              setDebouncedQuery('');
-              setPaletteOpen(false);
-              searchInputRef.current?.blur();
-            }}
-            onClose={() => setPaletteOpen(false)}
-          />
-        )}
-        {paletteOpen && searchResults.length === 0 && (
-          <div role="status" className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-border bg-popover p-4 text-sm text-muted-foreground shadow-lg">
-            {debouncedQuery.trim() ? '没有找到匹配结果' : '输入名称搜索 Agent、任务或页面'}
-          </div>
-        )}
+        {query && <button type="button" aria-label="清除搜索" title="清除搜索"
+          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+          onMouseDown={event => event.preventDefault()}
+          onClick={() => {
+            setQuery('');
+            setDebouncedQuery('');
+            setPaletteOpen(true);
+            searchInputRef.current?.focus({ preventScroll: true });
+          }}>
+          <X className="size-4" aria-hidden="true" />
+        </button>}
+        {paletteOpen && <CommandPalette
+          key={query.trim()}
+          inputRef={searchInputRef}
+          query={query.trim()}
+          loading={waitingForQuery}
+          results={waitingForQuery ? [] : searchResults}
+          onSelect={(result: SearchResult) => {
+            if (result.roomId) openChatRoom(result.roomId);
+            if (result.hash) window.location.hash = result.hash;
+            else onNavClick(result.section);
+            setQuery('');
+            setDebouncedQuery('');
+            setPaletteOpen(false);
+            searchInputRef.current?.blur();
+          }}
+          onClose={() => setPaletteOpen(false)}
+        />}
+      </div>
       </div>
 
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm" aria-label="创建">
@@ -237,7 +256,6 @@ export function DashboardHeader({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

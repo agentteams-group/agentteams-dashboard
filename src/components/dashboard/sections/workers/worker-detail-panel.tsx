@@ -1,5 +1,8 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+import { workerDisplayName } from '@/lib/worker-display-name';
+
 // Worker 详情面板（F7 唯一实现）：WorkerDrawer 与「团队与Agent」页内联详情
 // 共用本组件。对齐工作台插件 WorkerDetailPane：
 // - 状态叙述 + 心跳/最近活动/在跑任务/上次运行/上次完成/loop 预算（D2）；
@@ -111,6 +114,8 @@ export type WorkerDetailPanelProps = {
   onDm?: (_mxid: string, _roomId?: string) => void;
   /** 根节点附加 class（内联页面用 min-h-0 flex-1 参与父级 flex 布局）。 */
   className?: string;
+  initialTab?: string;
+  chrome?: 'full' | 'section';
   onChanged?: () => void;
   onDeleted?: () => void;
 };
@@ -123,6 +128,8 @@ export function WorkerDetailPanel({
   onClose,
   onDm,
   className,
+  initialTab,
+  chrome = 'full',
   onChanged,
   onDeleted,
 }: WorkerDetailPanelProps) {
@@ -135,7 +142,6 @@ export function WorkerDetailPanel({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [ensureReadyUnsupported, setEnsureReadyUnsupported] = useState(false);
   const [tracingUrl, setTracingUrl] = useState<string | null>(null);
@@ -150,6 +156,7 @@ export function WorkerDetailPanel({
   const { data: existingSkills = [] } = useWorkerSkills(workerName);
 
   const view = detail?.name === workerName ? detail : worker;
+  const displayName = workerDisplayName(view);
   const dm = dmTargetFor(view);
 
   const refreshDetail = useCallback(async (force = false) => {
@@ -209,7 +216,7 @@ export function WorkerDetailPanel({
       return;
     }
     let alive = true;
-    fetch('/api/agentteams/observability', { cache: 'no-store' })
+    fetch(apiUrl('/api/agentteams/observability'), { cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { enabled?: boolean; publicUrl?: string; langfuseUrl?: string };
@@ -259,20 +266,7 @@ export function WorkerDetailPanel({
     });
   }, [deleteWorker, onClose, onDeleted, workerName]);
 
-  const handleUpgrade = useCallback(() => {
-    if (!workerName) return;
-    updateWorker.mutate(
-      { name: workerName, data: { runtime: 'qwenpaw' } },
-      {
-        onSuccess: () => {
-          setUpgradeOpen(false);
-          invalidateWorkerDetail(workerName);
-          void refreshDetail(true);
-          onChanged?.();
-        },
-      },
-    );
-  }, [onChanged, refreshDetail, updateWorker, workerName]);
+
 
   const openDm = useCallback(() => {
     if (!dm) return;
@@ -481,17 +475,17 @@ export function WorkerDetailPanel({
     resourceCards.push({
       id: 'upgrade',
       title: '运行时升级',
-      desc: 'CoPaw → QwenPaw（二次确认）',
+      desc: 'CoPaw → QwenPaw',
       render: () => (
         <div className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            将运行时从 CoPaw 升级到 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。
+            通过 Controller 将此 Worker 交接到 QwenPaw。
           </p>
           <Button
             variant="outline"
             className="h-11 text-sm"
             onClick={() => {
-              setUpgradeOpen(true);
+              setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' });
             }}
           >
             升级到 QwenPaw
@@ -513,7 +507,7 @@ export function WorkerDetailPanel({
 
   return (
     <div className={`flex min-w-0 flex-col ${className ?? ''}`}>
-      <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
+      {chrome === 'full' && <div className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-3">
         <div className="flex items-start gap-3">
           {userLevel >= 3 ? <button type="button" className="shrink-0 rounded-full hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={`更换 ${view.name} 的头像`} title="更换头像" onClick={() => setAvatarOpen(true)}>
@@ -521,9 +515,10 @@ export function WorkerDetailPanel({
           </button> : <AccountAvatar kind="agent" name={view.name} className="size-9" />}
           <div className="min-w-0 flex-1">
             <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
-              <span className="truncate">{view.name}</span>
+              <span className="truncate" title={displayName}>{displayName}</span>
               <Badge variant="outline" className="text-xs">{roleLabel(view.role)}</Badge>
             </h2>
+            <p className="truncate font-mono text-xs text-muted-foreground" title={view.name}>ID {view.name}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <StatusDot phase={view.phase} />
               <PhaseBadge kind="worker" phase={view.phase} />
@@ -602,9 +597,9 @@ export function WorkerDetailPanel({
             </Button>
           )}
         </div>
-      </div>
+      </div>}
 
-      <ResourceDetailTabs key={workerName} label="Agent 配置" items={[
+      <ResourceDetailTabs key={workerName} label="Agent 配置" initialTab={initialTab} chrome={chrome} items={[
         { id: 'basic', title: '基础配置', render: () => <div className="space-y-4">
         <section className="space-y-2 rounded-lg border p-3" aria-label="基础配置">
           <Row label="运行时" value={runtimeName} />
@@ -684,18 +679,30 @@ export function WorkerDetailPanel({
         value={editForm}
         onChange={setEditForm}
         isPending={updateWorker.isPending}
-        onOpenChange={(open) => !open && setEditForm(null)}
-        modelOptions={modelOptions}
-        modelProvider={view.modelProvider}
-        sessionIssue={sessionIssue}
-        onSubmit={() => updateWorker.mutate({ name: view.name, data: editForm }, {
-          onSuccess: () => {
+        onOpenChange={(open) => {
+          if (!open) {
             setEditForm(null);
             invalidateWorkerDetail(view.name);
             void refreshDetail(true);
             onChanged?.();
-          },
-        })}
+          }
+        }}
+        modelOptions={modelOptions}
+        modelProvider={view.modelProvider}
+        sessionIssue={sessionIssue}
+        onSubmit={() => {
+          const data = { ...editForm };
+          delete data.runtime;
+          if (data.image === (view.image || '')) delete data.image;
+          updateWorker.mutate({ name: view.name, data }, {
+            onSuccess: () => {
+              setEditForm(null);
+              invalidateWorkerDetail(view.name);
+              void refreshDetail(true);
+              onChanged?.();
+            },
+          });
+        }}
       />}
 
       <WorkerSkillUploadDialog
@@ -728,22 +735,6 @@ export function WorkerDetailPanel({
       </AlertDialog>
 
       {avatarOpen && userLevel >= 3 && <AvatarEditor key={view.name} kind="agent" name={view.name} onClose={() => setAvatarOpen(false)} />}
-      <AlertDialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
-            <AlertDialogDescription>
-              将 Worker &quot;{view.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。工作区、会话、记忆和凭据会按 Controller 迁移链路保留。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updateWorker.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUpgrade} disabled={updateWorker.isPending}>
-              {updateWorker.isPending ? '升级中...' : '确认升级'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

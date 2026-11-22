@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useState, useCallback } from 'react';
 import { Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -66,7 +67,7 @@ export function SkillDistributeDialog({
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">选择 Worker *</label>
-            <select
+            <NativeSelect
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={selectedWorker}
               onChange={(e) => setSelectedWorker(e.target.value)}
@@ -77,7 +78,7 @@ export function SkillDistributeDialog({
                   {w.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="space-y-2">

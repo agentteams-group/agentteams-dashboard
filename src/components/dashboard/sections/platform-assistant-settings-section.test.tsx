@@ -31,7 +31,7 @@ describe('platform assistant settings', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByText('高级管理')).toBeNull();
     expect(screen.queryByText('duplicate-instance-list')).toBeNull();
-    expect(screen.getByRole('button', { name: '实例管理' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '实例管理' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '返回对话' }));
     expect(useSectionStore.getState().activeSection).toBe('chat');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!default:test');
