@@ -3,6 +3,9 @@
   font-family: 'AlimamaDFK';
   font-weight: 400;
   font-display: swap;
+  /* 子集只含标题/标语的汉字与全角标点；拉丁字母（如 AI）排除在外，
+     落到无衬线栈，避免楷体子集外的回退字形突兀。 */
+  unicode-range: U+3000-303F, U+4E00-9FFF, U+FF00-FFEF;
   src: url('../../../../public/fonts/alimama-dfk.woff2') format('woff2');
 }
 
@@ -16,8 +19,6 @@
   --ink-rule: color-mix(in srgb, var(--foreground) 82%, transparent);
 
   display: grid;
-  max-width: 1080px;
-  margin: 0 auto;
   padding: 22px 32px 18px;
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -47,6 +48,8 @@
 .composer { display: flex; align-items: center; gap: 8px; padding: 5px 5px 5px 11px; border: 1px solid var(--soft-line); border-radius: 10px; background: var(--background); transition: border-color .15s ease, box-shadow .15s ease; }
 .composer:focus-within { border-color: var(--grass); box-shadow: 0 0 0 3px color-mix(in srgb, var(--grass) 12%, transparent); }
 .composerInput { height: 27px; flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font-size: 12px; line-height: 1.5; box-shadow: none; }
+/* 全局键盘焦点描边在浅绿输入条里显成黑细线；换成本设计的草绿。 */
+.composerInput:focus-visible { outline: 1px solid color-mix(in srgb, var(--grass) 70%, transparent); outline-offset: -1px; }
 .composerInput::placeholder { color: var(--faint); }
 .send { height: 27px; flex: none; padding: 0 12px; border: 0; border-radius: 8px; background: var(--grass); color: var(--action-primary-foreground); font-size: 10px; font-weight: 500; }
 .send:hover { background: var(--action-primary-hover); }
@@ -59,7 +62,7 @@
 .sceneHead { display: flex; align-items: center; justify-content: space-between; font-size: 10px; letter-spacing: .1em; color: #93A694; }
 .liveTag { display: inline-flex; align-items: center; gap: 6px; }
 .liveDot { width: 5px; height: 5px; border-radius: 50%; background: #A9CB6B; }
-.sceneSvg { display: block; width: 100%; height: auto; max-height: 150px; margin-block: auto; }
+.sceneSvg { display: block; width: 100%; max-width: 460px; height: auto; max-height: 150px; margin-block: auto; margin-inline: auto; }
 .sceneEmpty { margin: auto 0; font-size: 12px; color: #8FA392; }
 .sceneFoot { padding-top: 11px; border-top: 1px solid #344639; font-size: 10px; letter-spacing: .04em; color: #7E9484; }
 
