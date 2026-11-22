@@ -7,7 +7,7 @@ const board = vi.hoisted(() => ({ tasks: [] as unknown[], isLoading: true, degra
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [{}, {}] }) }));
-vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => board }));
+vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => board, useProjects: () => ({ data: { projects: [] } }) }));
 vi.mock('./workspace-home', () => ({
   WorkspaceHome: ({ workerCount, loading, degraded, tasks }: { workerCount: number; loading: boolean; degraded: boolean; tasks: unknown[] }) => (
     <main>Workspace home ({workerCount} workers, {loading ? 'loading' : 'loaded'}, {degraded ? 'degraded' : 'healthy'}, {tasks.length} tasks)</main>

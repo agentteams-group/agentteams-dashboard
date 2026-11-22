@@ -16,6 +16,7 @@ const env = vi.hoisted(() => ({
   skills: { isSuccess: true, isPlaceholderData: false, data: { total: 5 } },
   tools: { isSuccess: true, isPlaceholderData: false, data: [{}, {}] },
   workers: { isSuccess: true, isPlaceholderData: false, data: [] as WorkerResponse[] },
+  projects: { data: { projects: [] } },
 }));
 
 vi.mock('@/lib/agentteams-store', () => ({
@@ -24,7 +25,7 @@ vi.mock('@/lib/agentteams-store', () => ({
 vi.mock('@/hooks/use-agentteams-models', () => ({ useModels: () => env.models }));
 vi.mock('@/hooks/use-skill-center', () => ({ useSkills: () => env.skills }));
 vi.mock('@/hooks/use-agentteams-mcps', () => ({ useMcpServers: () => env.tools }));
-vi.mock('@/hooks/use-projects', () => ({ useProjects: () => ({ data: { projects: [] } }) }));
+vi.mock('@/hooks/use-projects', () => ({ useProjects: () => env.projects, useApiTaskBoard: () => ({ tasks: [], isLoading: false, degraded: false }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => env.workers }));
 vi.mock('@/hooks/use-agentteams-teams', () => ({ useTeams: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [] }) }));
@@ -65,6 +66,13 @@ function worker(overrides: Partial<WorkerResponse> & { name: string }): WorkerRe
   } as WorkerResponse;
 }
 
+function confirmation(id: string, toolName = 'shell_exec') {
+  return {
+    id, roomId: '!room:test', eventId: `$e1-${id}`, sender: '@worker-1:test',
+    toolName, approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
+  };
+}
+
 /** 本周一中午（weeksAgo=0）或第 n 周前的周一中午。 */
 function mondayOfWeek(weeksAgo: number): number {
   const now = new Date();
@@ -91,7 +99,7 @@ function renderHome(props: Partial<Parameters<typeof WorkspaceHome>[0]> = {}) {
 function metricValue(label: string): string {
   const metrics = screen.getByTestId('home-metrics');
   const button = within(metrics).getByText(label).closest('button');
-  return button?.querySelector('strong')?.textContent ?? '';
+  return button?.querySelector('span')?.textContent ?? '';
 }
 
 function assertDomOrder(...testIds: string[]): void {
@@ -105,6 +113,7 @@ function assertDomOrder(...testIds: string[]): void {
 beforeEach(() => {
   env.userLevel = 3;
   env.workers.data = [];
+  env.projects = { data: { projects: [] } };
   useHitlInboxStore.setState({ confirmations: {}, resolutions: {}, pendingChatRoomId: null, pendingProjectKey: null });
   useInviteStore.getState().clear();
   useExtensionStore.getState().clear();
@@ -114,11 +123,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('WorkspaceHome — WORKSPACE baseline composition', () => {
-  it('renders the hero (clock, headline, assistant card), live card, metrics, follow-ups, assets and plugin slots in order', () => {
-    useHitlInboxStore.getState().upsertConfirmation({
-      id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@worker-1:test',
-      toolName: 'shell_exec', approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
-    });
+  it('renders brand, hero (clock, title, assistant card, live card), metrics, follow-ups, assets and plugin slots in order', () => {
+    useHitlInboxStore.getState().upsertConfirmation(confirmation('c1'));
     useExtensionStore.getState().add('widgets', 'plugin-a', {
       id: 'w1', title: 'Widget One', component: () => <div>Widget One</div>, size: 'md',
     });
@@ -131,25 +137,24 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
 
     assertDomOrder('home-hero', 'home-metrics', 'home-followups', 'home-assets', 'plugin-widgets');
     const hero = screen.getByTestId('home-hero');
-    expect(within(hero).getByRole('heading', { level: 1 }).textContent).toContain('一站式 AI 工作台');
+    expect(within(hero).getByRole('heading', { level: 1 }).textContent).toBe('一站式 AI 工作台');
     expect(within(hero).getByLabelText('向 AT 助手输入指令')).toBeInTheDocument();
     expect(within(hero).getByTestId('home-live')).toBeInTheDocument();
-    expect(screen.getByText('待决策')).toBeInTheDocument();
+    expect(within(hero).getByText('已关联工作区')).toBeInTheDocument();
+    expect(screen.getByText('确认 shell_exec')).toBeInTheDocument();
     expect(screen.getByText('Widget One')).toBeInTheDocument();
   });
 
   it('prints the localized date line above the headline once mounted', async () => {
     renderHome();
-    await waitFor(() => expect(screen.getByTestId('home-hero').textContent).toMatch(/\d+月\d+日，星期\S+ · \d{2}:\d{2}/));
+    await waitFor(() => expect(screen.getByTestId('home-hero').textContent).toMatch(/\d+ 月 \d+ 日，星期\S+ · \d{2}:\d{2}/));
   });
 
   it('greets with the pending decision count once mounted', () => {
-    useHitlInboxStore.getState().upsertConfirmation({
-      id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@worker-1:test',
-      toolName: 'shell_exec', approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
-    });
+    useHitlInboxStore.getState().upsertConfirmation(confirmation('c1'));
     renderHome({ tasks: [task({ runId: 'r1' }), task({ runId: 'r2' })] });
-    expect(screen.getByTestId('home-composer').textContent).toContain('今天有 1 事需要你确认');
+    expect(screen.getByTestId('home-composer').textContent).toContain('今天只有 1 件事需要你确认');
+    expect(screen.getByTestId('home-composer').textContent).toContain('其余 2 项，交给 Agent 就好');
   });
 
   it('counts active tasks, this-week completions, members and assets in the metrics bar', () => {
@@ -179,12 +184,12 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
   it('keeps the empty states for follow-ups, live card and composer when nothing is pending', () => {
     const { container } = renderHome();
 
-    expect(screen.queryByText('待决策')).toBeNull();
+    expect(screen.queryByText('确认 shell_exec')).toBeNull();
     expect(container.querySelector('[data-testid="plugin-widgets"]')).toBeNull();
     expect(screen.getByRole('status').textContent).toBe('暂无需要跟进的事项');
     expect(screen.getByTestId('home-composer')).toBeInTheDocument();
     expect(screen.getByTestId('home-live').textContent).toContain('等待 Agent 接入');
-    expect(screen.getByRole('heading', { name: '工作区资产' })).toBeInTheDocument();
+    expect(within(screen.getByTestId('home-assets')).getByText('工作区资产')).toBeInTheDocument();
   });
 
   it('shows the featured follow-up with progress and opens it from the action button', () => {
@@ -199,6 +204,8 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
     const featured = screen.getByTestId('home-featured');
     expect(within(featured).getByText('Agent 协作流程 v2.0 校验')).toBeInTheDocument();
     expect(featured.textContent).toContain('子任务 1 / 2');
+    expect(featured.textContent).toContain('50%');
+    expect(within(featured).getByLabelText('焦点任务进度')).toHaveAttribute('aria-valuenow', '50');
     fireEvent.click(within(featured).getByRole('button', { name: /继续推进/ }));
     expect(window.location.hash).toBe('#workbench/tasks?project=p-1');
   });
@@ -212,6 +219,19 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
       ],
     });
     expect(screen.getByTestId('home-featured').textContent).toContain('阻塞下游 2 项');
+    expect(screen.getByTestId('home-followups').textContent).toContain('完成后解锁下游 2 项');
+  });
+
+  it('renders pending confirmations as numbered follow-up rows that open the room', () => {
+    useHitlInboxStore.getState().upsertConfirmation(confirmation('c1', 'mcp_mail'));
+    renderHome();
+
+    const followups = screen.getByTestId('home-followups');
+    expect(within(followups).getByText('确认 mcp_mail')).toBeInTheDocument();
+    expect(within(followups).getByText('去确认')).toBeInTheDocument();
+    fireEvent.click(within(followups).getByRole('button', { name: '去确认' }));
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!room:test');
+    expect(useSectionStore.getState().activeSection).toBe('chat');
   });
 
   it('renders the live collaboration topology from running workers with their task progress', () => {
@@ -228,12 +248,13 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
 
     const live = screen.getByTestId('home-live');
     expect(within(live).getByText('02 AGENTS')).toBeInTheDocument();
-    expect(within(live).getByText('你')).toBeInTheDocument();
-    expect(within(live).getByText('research')).toBeInTheDocument();
-    expect(within(live).getByText('调研协作流程')).toBeInTheDocument();
-    expect(live.textContent).toContain('100%');
-    expect(within(live).queryByText('report')).toBeNull();
+    expect(live.textContent).toContain('你');
+    expect(live.textContent).toContain('research');
+    expect(live.textContent).toContain('调研协作流程');
+    expect(live.textContent).toContain('research 100%');
+    expect(live.textContent).not.toContain('report');
     expect(live.textContent).toContain('持续交付中');
+    expect(live.querySelector('svg[role="img"]')).not.toBeNull();
   });
 
   it('falls back to the worker team label when a running agent has no active task', () => {
@@ -241,9 +262,9 @@ describe('WorkspaceHome — WORKSPACE baseline composition', () => {
     renderHome();
 
     const live = screen.getByTestId('home-live');
-    expect(within(live).getByText('report')).toBeInTheDocument();
-    expect(within(live).getByText('Alpha 团队')).toBeInTheDocument();
-    expect(live.textContent).toContain('01 AGENTS');
+    expect(live.textContent).toContain('report');
+    expect(live.textContent).toContain('Alpha 团队');
+    expect(within(live).getByText('01 AGENTS')).toBeInTheDocument();
   });
 });
 
@@ -295,13 +316,13 @@ describe('WorkspaceHome — workspace assets grid', () => {
     for (const label of ['成员与权限', '模型', '技能', 'MCP 工具']) {
       expect(within(assets).getByText(label)).toBeInTheDocument();
     }
-    expect(assets.textContent).toContain('16 项');
+    expect(within(assets).getByText('16 项')).toBeInTheDocument();
 
-    fireEvent.click(within(assets).getByText('模型').closest('button')!);
+    fireEvent.click(within(assets).getByText('模型'));
     expect(useSectionStore.getState().activeSection).toBe('models');
   });
 
-  it('shows placeholder dashes while asset counts are loading', () => {
+  it('shows the loading caption while asset counts are unresolved', () => {
     env.models.isSuccess = false;
     try {
       renderHome();
@@ -340,11 +361,8 @@ describe('WorkspaceHome — accessibility (axe-core)', () => {
   // jsdom has no real layout, so the color-contrast rule stays disabled here
   // (same scope as worker-card.a11y.test.tsx); AA contrast is covered by the
   // token-level assertions in a11y-axe.test.tsx.
-  it('has no critical axe violations with tasks, HITL items and widgets present', async () => {
-    useHitlInboxStore.getState().upsertConfirmation({
-      id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@worker-1:test',
-      toolName: 'shell_exec', approveReply: 'approve', rejectReply: 'reject', timestamp: Date.now(),
-    });
+  it('has no critical axe violations with tasks, follow-up rows and widgets present', async () => {
+    useHitlInboxStore.getState().upsertConfirmation(confirmation('c1'));
     useExtensionStore.getState().add('widgets', 'plugin-a', {
       id: 'w1', title: 'Widget One', component: () => <div>Widget One</div>, size: 'md',
     });
