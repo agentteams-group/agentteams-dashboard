@@ -32,6 +32,13 @@ Entries discovered by the Agent while performing [specific task description] sho
 ## Entries
 
 [User Instruction Summary]
+- Date: 2026-11-21
+- Context: 用户提供首页设计稿并要求「使用 issue-spec 出一份 proposal」时确认的口径
+- Instructions:
+  - issue-spec proposal 按 `.github/ISSUE_TEMPLATE/feature_request.md` 的结构写（要解决的问题 / 提议的方案 / 备选方案与不选的原因 / 影响面 / 验收口径），落盘到 `.monkeycode/specs/{YYYY-MM-DD-{feature}}/proposal.md`
+  - 用户提供设计决策类任务时，先调研（读代码 + 读设计稿）再给结论，提案必须含「选定项 + 不选项 + 各自理由」
+
+[User Instruction Summary]
 - Date: 2026-08-11
 - Context: PR patch 应用后项目梳理阶段
 - Instructions:
