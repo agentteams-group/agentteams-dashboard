@@ -29,6 +29,17 @@ export interface UsePersistedDraftResult {
   clear: () => void;
 }
 
+/**
+ * Seed a room's composer draft from a non-chat surface (e.g. the homepage
+ * command orchestrator) before deep-linking into the room. `ChatRoom` keeps
+ * the draft hook mounted across room switches and restores the stored value
+ * during render when `roomId` changes, so the seeded text is already in the
+ * composer when the conversation opens.
+ */
+export function seedChatDraft(roomId: string, text: string): void {
+  writeDraft(`agentteams-chat-draft:${roomId}`, text);
+}
+
 export function usePersistedDraft(roomId: string): UsePersistedDraftResult {
   const draftKey = `agentteams-chat-draft:${roomId}`;
   const [value, setValueState] = useState<string>(() => readDraft(draftKey));
