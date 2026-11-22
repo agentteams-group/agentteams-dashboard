@@ -10,6 +10,8 @@ Dashboard 将其规范化为 `tool_name: select_team_admin` 的确认卡，以�
 
 `src/lib/agentteams-api.ts` 定义 Worker、Team、Human、Manager、基础设施和存储相关类型，并通过 `/api/agentteams/*` 调用 Controller。
 
+Worker 的 `identity` 支持通过 `- Name: 月见·研究助手` 或 `- **Name:** 月见·研究助手` 配置显示名。Agent 列表、详情和私聊使用该名称，搜索仍支持资源名。未配置时，列表和详情显示资源名，私聊沿用 Matrix 房间标题或资源名。路由、资源操作和 Matrix 身份继续使用各自的标识。
+
 `src/lib/higress-api.ts` 定义 `LlmProvider`、`LlmProviderResponse`、`AiRoute` 及对应的创建和更新请求。Provider 响应使用 `tokenCount` 表示凭据数量。
 
 ## Team workerMembers 契约

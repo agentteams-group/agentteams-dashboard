@@ -279,6 +279,24 @@ describe('Team and Agent resource cards', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
     expect(window.location.hash).toBe('#console/resources/teams');
   });
+  it('searches a Worker by display name or resource name and opens it by resource name', () => {
+    const named = { ...worker('agent-123', ''), identity: '- Name: 月见·研究助手' };
+    workersFixture.push(named);
+    try {
+      renderSection('#console/resources/workers', 'agents');
+      const search = screen.getByRole('textbox', { name: '搜索团队或 Agent' });
+      const cards = within(screen.getByLabelText('Agent 卡片'));
+      for (const value of ['月见', 'agent-123']) {
+        fireEvent.change(search, { target: { value } });
+        expect(cards.getAllByRole('heading', { level: 2 })).toHaveLength(1);
+        expect(cards.getByRole('heading', { name: '月见·研究助手' })).toBeInTheDocument();
+      }
+      fireEvent.click(cards.getByRole('button', { name: '详情' }));
+      expect(window.location.hash).toContain('agent=agent-123');
+    } finally {
+      workersFixture.pop();
+    }
+  });
   it('paginates cards and resets the page when searching or switching tabs', () => {
     const scrollIntoView = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = vi.fn();

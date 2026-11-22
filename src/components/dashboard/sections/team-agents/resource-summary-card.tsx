@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { OverflowText } from '@/components/dashboard/overflow-text';
 import { runtimeLabel } from '@/lib/runtime-labels';
+import { workerDisplayName } from '@/lib/worker-display-name';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS } from '../humans/human-types';
 import { Users } from 'lucide-react';
 
 export interface AgentSummary {
   name: string;
+  identity?: string;
   model: string;
   runtime: string;
   phase: string;
@@ -44,7 +46,7 @@ export function AgentSummaryCard({ agent, onView, onEdit }: {
 }) {
   return <Card className="h-[300px] min-w-0 w-full max-w-[360px] gap-0 overflow-hidden rounded-2xl border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md sm:h-[280px]">
     <CardContent className="flex flex-1 flex-col gap-5 p-5">
-      <ResourceIdentity name={agent.name} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onView} />
+      <ResourceIdentity name={workerDisplayName(agent)} role={agent.label} kind={agent.kind === 'manager' ? 'manager' : 'worker'} phase={agent.phase} onView={onView} />
       <div className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3">
         <span className="shrink-0 text-xs text-muted-foreground">模型</span>
         <OverflowText text={agent.model || '未设置'} className="flex-1 text-sm font-medium" />

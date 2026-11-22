@@ -136,6 +136,15 @@ describe('buildRooms', () => {
     expect(rooms[0].phase).toBe('Running');
   });
 
+  it('uses the identity display name for Worker chats and keeps their original identifiers', () => {
+    const first = worker({ identity: '- **Name:** 月见·研究助手' });
+    const second = worker({ name: 'w2', roomID: '!w2:matrix' });
+    const meta = { [first.roomID]: { roomName: 'w1 房间' }, [second.roomID]: { roomName: 'Existing Matrix room' } };
+    const rooms = buildRooms([first, second], undefined, undefined, meta);
+    expect(rooms[0]).toMatchObject({ name: '月见·研究助手', id: first.roomID, workerName: first.name, matrixUserId: first.matrixUserID });
+    expect(rooms[1]?.name).toBe('Existing Matrix room');
+  });
+
   it('copies lastMessagePreview from room meta', () => {
     const rooms = buildRooms(
       [worker({ roomID: '!w:matrix' })],

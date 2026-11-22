@@ -1,6 +1,7 @@
 'use client';
 
 import { apiUrl } from '@/lib/api-base';
+import { workerDisplayName } from '@/lib/worker-display-name';
 
 // Worker 详情面板（F7 唯一实现）：WorkerDrawer 与「团队与Agent」页内联详情
 // 共用本组件。对齐工作台插件 WorkerDetailPane：
@@ -513,7 +514,7 @@ export function WorkerDetailPanel({
           </button> : <AccountAvatar kind="agent" name={view.name} className="size-9" />}
           <div className="min-w-0 flex-1">
             <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
-              <span className="truncate">{view.name}</span>
+              <span className="truncate" title={view.name}>{workerDisplayName(view)}</span>
               <Badge variant="outline" className="text-xs">{roleLabel(view.role)}</Badge>
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">

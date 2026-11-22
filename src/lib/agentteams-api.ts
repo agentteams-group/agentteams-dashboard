@@ -57,6 +57,7 @@ export interface LlmTuningFields {
 }
 
 export interface WorkerResponse extends LlmTuningFields {
+  identity?: string;
   /** Present only when the Controller supports OpenClaw autonomous checks. */
   llmHeartbeatEnabled?: boolean;
   env?: Record<string, string>;
