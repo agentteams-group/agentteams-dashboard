@@ -15,7 +15,7 @@ graph TD
     B --> C["hero：标题/时钟/对话输入框/夜景图/焦点浮卡"]
     B --> D["metrics：4 项指标条"]
     B --> E["今日推荐：动态条目 + 快捷指令"]
-    B --> F["lower：今日推荐 | 工作区资产；正在推进通栏"]
+    B --> F["lower：左栏今日推荐+正在推进 | 右栏工作区资产"]
     E --> G["HITL 待确认 useHitlInboxStore"]
     E --> H["任务看板 mainTasks/subtaskProgress"]
     E --> I["快捷指令 seedChatDraft + openChatRoom"]
@@ -51,7 +51,7 @@ graph TD
 - 空文本时发送按钮禁用；`level >= 3` 门控保留（低等级用户不展示输入框）。
 - hero 按钮行不再渲染「查看任务」按钮（任务看板入口保留在「正在推进」标题行）。
 
-### 新增：今日推荐（lower 左栏，与「工作区资产」并排）
+### 新增：今日推荐（lower 左栏顶部）
 
 ```ts
 interface Recommendation {
@@ -73,9 +73,9 @@ interface Recommendation {
 
 ### 布局与聚焦样式
 
-- 页面结构：hero → metrics 指标条 → lower（左栏「今日推荐」+ 右栏「工作区资产」，1.55fr / 1fr）→ 「正在推进」通栏。
+- 页面结构：hero → metrics 指标条 → lower（1.55fr / 1fr 两栏）：左栏「今日推荐」在上、「正在推进」在下垂直堆叠；右栏「工作区资产」。
 - 「正在推进」标题行保留「任务看板」入口；hero 按钮行不再渲染「查看任务」按钮。
-- 输入框聚焦态只加强自身下边线（`.composerInput:focus-visible` 将底边变为主题色），卡片不画聚焦描边、裸 input 不画 outline；全局 `:focus-visible` 规则在卡片内会形成「盒中盒」，故显式覆盖。
+- composer 卡片不画边框（`border: 0`），仅靠输入框底部 1px 边线（`--border`，聚焦时 `--action-primary`）作为视觉边界；裸 input 不画 outline、卡片无聚焦描边；全局 `:focus-visible` 规则会画整框，用 `.composerInput:focus-visible`（特异性 0,2,0）显式关闭。
 - `openTasks` 的 hash 写入收敛到模块级 `openTaskBoard(task)`：渲染期创建的推荐数组不得引用会改写 `window.location.hash` 的组件内闭包（`react-hooks/immutability`），无 projectId 时走 `navigate('tasks')`。
 
 ## Data Models
@@ -99,7 +99,7 @@ interface Recommendation {
 
 ## Test Strategy
 
-- 旧布局回归：hero 标题/副标题/时钟、指标条 4 项、今日推荐与工作区资产并排、正在推进通栏前 3 条、工作区资产 3 行、`level < 3` 隐藏对话入口。
+- 旧布局回归：hero 标题/副标题/时钟、指标条 4 项、今日推荐与正在推进同处左栏（推荐在上）、工作区资产右栏 3 行、`level < 3` 隐藏对话入口。
 - 对话输入框：发送写草稿并深链（`pendingChatRoomId` + `activeSection`）、空文本禁用、chip 切换选中态、无房间降级只切 section。
 - 今日推荐：HITL 优先且上限 3、点击跳转对应房间/看板、空态、加载态、降级态。
 - `overview-section.test.tsx` 恢复旧断言。

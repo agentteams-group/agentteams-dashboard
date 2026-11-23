@@ -86,19 +86,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('WorkspaceHome — classic layout', () => {
-  it('renders the hero, metrics, recommendations, assets and board sections in order', () => {
+  it('stacks recommendations above the board beside the assets column', () => {
     renderHome({ tasks: [task({ runId: 'r1' })] });
 
     const hero = screen.getByLabelText('你的协作工作区');
     const metrics = screen.getByLabelText('工作区摘要');
     const recommend = screen.getByRole('region', { name: '今日推荐' });
-    const assets = sectionByTitle('工作区资产');
     const board = sectionByTitle('正在推进');
+    const assets = sectionByTitle('工作区资产');
     expect(hero.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(metrics.compareDocumentPosition(recommend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(recommend.parentElement).toBe(assets.parentElement);
-    expect(recommend.compareDocumentPosition(assets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(assets.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(recommend.parentElement).toBe(board.parentElement);
+    expect(recommend.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(assets.parentElement).toBe(board.parentElement?.parentElement);
+    expect(board.compareDocumentPosition(assets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(hero).getByRole('heading', { level: 1 }).textContent).toBe('一站式AI工作台构建-协作-治理');
   });
 

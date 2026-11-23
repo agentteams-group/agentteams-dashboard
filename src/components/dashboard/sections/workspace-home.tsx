@@ -142,6 +142,7 @@ export function WorkspaceHome({ teams, managers, workerCount, tasks, loading, de
       {metrics.map(metric => <button key={metric.section} type="button" onClick={() => navigate(metric.section)}><strong>{metric.count === undefined ? '—' : String(metric.count).padStart(2, '0')}</strong><span>{metric.label}</span></button>)}
     </div>
     <div className={styles.lower}>
+      <div className={styles.lowerMain}>
       <section className={styles.recommend} aria-label="今日推荐">
         <div className={styles.sectionTitle}><h2>今日推荐</h2></div>
         <div className={styles.list}>
@@ -154,11 +155,12 @@ export function WorkspaceHome({ teams, managers, workerCount, tasks, loading, de
           </div>
         </div>
       </section>
+      <section>
+        <div className={styles.sectionTitle}><h2>正在推进</h2><Button variant="link" onClick={() => openTasks()}>任务看板<ArrowRight className="size-3.5" /></Button></div>
+        <div className={styles.list}>{active.length ? active.slice(0, 3).map(task => <div key={task.runId} className={styles.row}><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium" title={task.title}>{task.title}</p><p className="mt-1 truncate text-xs text-muted-foreground">{task.teamId || task.projectId || task.runId}</p></div><span className="flex shrink-0 items-center gap-1 text-xs"><span className="size-2 rounded-full" style={{ backgroundColor: taskStatus(task.status).color }} />{taskStatus(task.status).label}</span><Button variant="link" size="sm" onClick={() => openTasks(task)}>查看<ArrowUpRight className="size-3.5" /></Button></div>) : <p role="status" className="p-5 text-sm text-muted-foreground">{loading ? '正在加载任务…' : degraded ? '任务暂时无法加载，请稍后重试。' : '暂无正在推进的任务'}</p>}</div>
+      </section>
+      </div>
       <section><div className={styles.sectionTitle}><h2>工作区资产</h2></div><div className={styles.list}>{assets.map(asset => <div key={asset.section} className={styles.row}><div className="min-w-0 flex-1"><p className="text-sm font-medium">{asset.label}</p><p className="mt-1 truncate text-xs text-muted-foreground">{asset.count === undefined ? '数据待加载' : `${asset.count} 项资产`}</p></div><Button variant="link" size="sm" onClick={() => navigate(asset.section)}>打开<ArrowRight className="size-3.5" /></Button></div>)}</div></section>
     </div>
-    <section>
-      <div className={styles.sectionTitle}><h2>正在推进</h2><Button variant="link" onClick={() => openTasks()}>任务看板<ArrowRight className="size-3.5" /></Button></div>
-      <div className={styles.list}>{active.length ? active.slice(0, 3).map(task => <div key={task.runId} className={styles.row}><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium" title={task.title}>{task.title}</p><p className="mt-1 truncate text-xs text-muted-foreground">{task.teamId || task.projectId || task.runId}</p></div><span className="flex shrink-0 items-center gap-1 text-xs"><span className="size-2 rounded-full" style={{ backgroundColor: taskStatus(task.status).color }} />{taskStatus(task.status).label}</span><Button variant="link" size="sm" onClick={() => openTasks(task)}>查看<ArrowUpRight className="size-3.5" /></Button></div>) : <p role="status" className="p-5 text-sm text-muted-foreground">{loading ? '正在加载任务…' : degraded ? '任务暂时无法加载，请稍后重试。' : '暂无正在推进的任务'}</p>}</div>
-    </section>
   </div>;
 }
