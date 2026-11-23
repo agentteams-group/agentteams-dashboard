@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Check, Trash2, CheckCircle2, XCircle, AlertTriangle, Info, ArrowRight } from 'lucide-react';
+import { Bell, Bot, Check, Trash2, CheckCircle2, XCircle, AlertTriangle, Info, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -10,6 +10,7 @@ import { useSectionStore } from '@/lib/section-store';
 import { usePendingTally } from '@/hooks/use-pending-tally';
 import { MyWorkbenchSection } from './sections/my-workbench-section';
 import { useNotificationStore } from '@/lib/notification-store';
+import { useMatrixStore } from '@/lib/matrix-store';
 import { hasNotificationTarget, openNotificationTarget } from '@/lib/notification-nav';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -29,9 +30,11 @@ const typeColors: Record<string, string> = {
 };
 
 export function NotificationPopover() {
-  const { notifications, markAsRead, markAllRead, clearAll, unreadCount } =
+  const { notifications: allNotifications, markAsRead, markAllRead, clearAll } =
     useNotificationStore();
-  const count = unreadCount();
+  const userId = useMatrixStore(state => state.userId);
+  const notifications = allNotifications.filter(n => !n.recipientId || n.recipientId === userId);
+  const count = notifications.filter(n => !n.read).length;
   // 跳完要把气泡关掉，所以 open 由本组件持有（原来是非受控，关不掉）。
   const open = useSectionStore(state => state.notificationsOpen);
   const setOpen = useSectionStore(state => state.setNotificationsOpen);
@@ -55,7 +58,7 @@ export function NotificationPopover() {
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
         <div className="p-4"><MyWorkbenchSection onNavigate={() => setOpen(false)} /></div>
         <div className="flex items-center justify-between p-3 border-b">
-          <span className="text-sm">系统通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
+          <span className="text-sm">系统与助手通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
           <div className="flex gap-1">
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
               <Check className="w-3 h-3 mr-1" />
@@ -77,7 +80,7 @@ export function NotificationPopover() {
           ) : (
             <div className="divide-y">
               {notifications.map((n) => {
-                const TypeIcon = typeIcons[n.type] || Info;
+                const TypeIcon = n.kind === 'assistant' ? Bot : typeIcons[n.type] || Info;
                 const typeColor = typeColors[n.type] || 'text-muted-foreground';
                 const hasTarget = hasNotificationTarget(n);
                 return (
@@ -108,7 +111,7 @@ export function NotificationPopover() {
                             }
                             className="text-xs shrink-0"
                           >
-                            {n.type === 'success' ? '成功' :
+                            {n.kind === 'assistant' ? '助手提醒' : n.type === 'success' ? '成功' :
                              n.type === 'error' ? '错误' :
                              n.type === 'warning' ? '警告' : '信息'}
                           </Badge>
@@ -124,7 +127,7 @@ export function NotificationPopover() {
                       </p>
                       {hasTarget && (
                         <span className="inline-flex items-center gap-0.5 text-xs text-primary">
-                          查看上下文
+                          {n.kind === 'assistant' ? '查看助手会话' : '查看上下文'}
                           <ArrowRight className="h-3 w-3" aria-hidden="true" />
                         </span>
                       )}
