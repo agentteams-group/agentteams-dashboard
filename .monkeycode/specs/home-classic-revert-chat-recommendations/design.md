@@ -58,9 +58,12 @@ interface Recommendation {
   key: string;
   title: string;      // 如「确认 shell_exec」「推进 协作闭环稳定性验证」
   meta: string;       // 房间名 / 团队名 / 状态说明
-  action: () => void; // openTasks(task) 或 openChatRoom(roomId)
+  roomId?: string;    // HITL 条目：点击 openChatRoom(roomId)
+  task?: BoardTask;   // 任务条目：点击 openTasks(task)
 }
 ```
+
+条目只携带数据，不携带闭包：渲染期创建的数组若引用会改写 `window.location.hash` 的 `openTasks`，会触发 `react-hooks/immutability` lint 规则；动作在 JSX 事件处理器中按 `roomId`/`task` 现场解析。
 
 派生规则（上限 3 条，HITL 优先）：
 
