@@ -19,7 +19,7 @@ export function AssistantReminderSettings({ team, manager, roomId }: { team?: st
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ReminderView | null>(null);
   const [enabled, setEnabled] = useState(true);
-  const [hours, setHours] = useState(24);
+  const [hours, setHours] = useState(3);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const id = useId();
@@ -68,7 +68,7 @@ export function AssistantReminderSettings({ team, manager, roomId }: { team?: st
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild><Button size="sm" variant="ghost" aria-label="提醒设置" title="提醒设置"><BellRing className="size-4" /><span className="hidden lg:inline">提醒</span></Button></PopoverTrigger>
     <PopoverContent align="end" className="w-80 space-y-4">
-      <div><h3 className="font-medium">助手提醒</h3><p className="mt-1 text-sm text-muted-foreground">定时汇总你关注的内容，在这个会话提醒你。</p></div>
+      <div><h3 className="font-medium">助手提醒</h3><p className="mt-1 text-sm text-muted-foreground">定时检查你关注的内容，有新信息才在这个会话提醒你。</p></div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {view ? <>
         <div className="flex items-center justify-between"><label htmlFor={`${id}-enabled`} className="text-sm">定时提醒</label><Switch id={`${id}-enabled`} checked={enabled} onCheckedChange={setEnabled} disabled={saving} /></div>
