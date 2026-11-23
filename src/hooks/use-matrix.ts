@@ -13,6 +13,7 @@ import { consumeBufferedEvents } from '@/lib/matrix-sync-buffer';
 import { recordSearchProbe } from '@/lib/matrix-capabilities';
 import { useRuntimeMap, useHumanMatrixIds } from '@/components/dashboard/sections/chat/runtime-map-context';
 import { READ_AUDIENCE_KEY, SESSION_RECEIPT_TYPE } from '@/lib/message-read-status';
+import { isAssistantControlEvent } from '@/lib/assistant-control';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -1025,6 +1026,7 @@ export function formatMatrixEvents(
   for (const event of [...events].sort((a, b) => a.origin_server_ts - b.origin_server_ts)) {
     if (redactedIds.has(event.event_id)) continue;
     if (event.type === 'm.room.redaction') continue;
+    if (isAssistantControlEvent(event)) continue;
 
     const formatted = formatMatrixEvent(event, currentUserId);
     if (!formatted) continue;

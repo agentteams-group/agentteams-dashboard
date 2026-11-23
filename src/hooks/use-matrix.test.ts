@@ -23,6 +23,18 @@ function message(
   };
 }
 
+it('keeps assistant background control out of the conversation while retaining real reminders', () => {
+  const wake = message('wake', 'Background Teams instructions', 200, {
+    'org.agentteams.coordination': { channel_meta: { sender_id: '@manager:example.test',
+      agent_matrix_user_id: '@manager:example.test', teamharness_coordination: { kind: 'assistant_digest' } } },
+  });
+  wake.content.msgtype = 'm.notice';
+  const reminder = message('reminder', 'Verified new information', 300, {
+    'org.agentteams.assistant_reminder': { recipient: '@human:example.test' },
+  });
+  expect(formatMatrixEvents([wake, reminder], '@human:example.test').map(item => item.eventId)).toEqual(['reminder']);
+});
+
 describe('formatMatrixEvents', () => {
   it('sorts an agent revision at the edit time so the final answer follows later messages', () => {
     const events = [

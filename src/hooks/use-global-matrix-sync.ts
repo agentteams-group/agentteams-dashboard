@@ -19,6 +19,7 @@ import {
 } from '@/hooks/use-matrix';
 import { extractMessagePreview } from '@/components/dashboard/sections/chat/room-builders';
 import { ingestAssistantReminders } from '@/lib/assistant-reminders';
+import { isAssistantControlEvent } from '@/lib/assistant-control';
 import {
   bufferSyncEvents,
   recordSyncFailure,
@@ -283,6 +284,7 @@ export function useGlobalMatrixSync(): void {
       let lastEvent: (typeof timelineEvents)[number] | undefined;
       for (const event of timelineEvents) {
         if (event.type === SESSION_RECEIPT_TYPE) continue;
+        if (isAssistantControlEvent(event)) continue;
         if (typeof event.origin_server_ts !== 'number') continue;
         if (!lastEvent || event.origin_server_ts >= (lastEvent.origin_server_ts ?? 0)) {
           lastEvent = event;

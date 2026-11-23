@@ -164,6 +164,25 @@ describe('useGlobalMatrixSync', () => {
     unmount();
   });
 
+  it('does not replace the sidebar preview or ordering with a background assistant wake', async () => {
+    const wake = msgEvent('$wake', 2000, { msgtype: 'm.notice',
+      'org.agentteams.coordination': { channel_meta: { sender_id: '@agent:test',
+        agent_matrix_user_id: '@agent:test', teamharness_coordination: { kind: 'assistant_digest' } } },
+    });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      '!r1:test': joinedRoom({ timeline: { events: [msgEvent('$answer', 1000), wake], limited: false, prev_batch: 'p' },
+        unread_notifications: { highlight_count: 0, notification_count: 0 } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useRoomMetaStore.getState().meta['!r1:test']).toMatchObject({
+      lastMessageTs: 1000, lastMessagePreview: 'msg $answer', unreadCount: 0,
+    });
+    unmount();
+  });
+
   it('parses m.receipt ephemeral events into the receipt store for any room', async () => {
     (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
       syncWith({
