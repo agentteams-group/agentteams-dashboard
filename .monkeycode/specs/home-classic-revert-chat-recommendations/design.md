@@ -75,7 +75,7 @@ interface Recommendation {
 
 - 页面结构：hero → metrics 指标条 → lower（左栏「今日推荐」+ 右栏「工作区资产」，1.55fr / 1fr）→ 「正在推进」通栏。
 - 「正在推进」标题行保留「任务看板」入口；hero 按钮行不再渲染「查看任务」按钮。
-- 输入框聚焦态由外层卡片承接（`.composer:focus-within` 画主题色描边 + 3px 柔环），裸 input 自身 `outline: 0`，避免全局 `:focus-visible` 规则在卡片内形成「盒中盒」；处理方式与聊天页 composer 一致。
+- 输入框聚焦态只加强自身下边线（`.composerInput:focus-visible` 将底边变为主题色），卡片不画聚焦描边、裸 input 不画 outline；全局 `:focus-visible` 规则在卡片内会形成「盒中盒」，故显式覆盖。
 - `openTasks` 的 hash 写入收敛到模块级 `openTaskBoard(task)`：渲染期创建的推荐数组不得引用会改写 `window.location.hash` 的组件内闭包（`react-hooks/immutability`），无 projectId 时走 `navigate('tasks')`。
 
 ## Data Models
