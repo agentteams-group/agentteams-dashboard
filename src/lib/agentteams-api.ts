@@ -1001,6 +1001,11 @@ export const agentteamsApi = {
   },
 
   // Skill Center
+  getDevelopmentSquadSkills: () => proxyRequest<{
+    version: string;
+    skills: { name: string; content: string }[];
+  }>('/teams/development-skills'),
+
   listSkills: (queryParams?: string): Promise<{ skills: SkillEntry[]; total: number }> => {
     const query = queryParams ? `?${queryParams}` : '';
     return proxyRequest<{ skills: SkillEntry[]; total: number }>(`/skills${query}`);

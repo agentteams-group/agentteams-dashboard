@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List, X } from 'lucide-react';
+import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List, X, Rocket } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +38,7 @@ import {
 import { TeamCard } from './teams/team-card';
 import { TeamTable } from './teams/team-table';
 import { TeamCreateDialog } from './teams/team-create-dialog';
+import { DevelopmentSquadDialog } from './teams/development-squad-dialog';
 import { TeamEditDialog, type TeamEditForm } from './teams/team-edit-dialog';
 import { TeamDetailDialog } from './teams/team-detail-dialog';
 import { TeamTopologyDialog } from './teams/team-topology-dialog';
@@ -102,6 +103,7 @@ export function TeamsSection() {
   const updateTeam = useUpdateTeam();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [developmentSquadOpen, setDevelopmentSquadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailTeam, setDetailTeam] = useState<TeamResponse | null>(null);
   const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
@@ -290,6 +292,9 @@ export function TeamsSection() {
               <Download className="w-4 h-4 mr-1" aria-hidden="true" />
               导出 JSON
             </Button>
+            <Button size="sm" variant="outline" disabled={!isConnected} onClick={() => setDevelopmentSquadOpen(true)}>
+              <Rocket className="w-4 h-4 mr-1" aria-hidden="true" />部署开发小队
+            </Button>
             <Button
               size="sm"
               className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
@@ -409,6 +414,16 @@ export function TeamsSection() {
           {pageSection}
         </>
       )}
+
+      <DevelopmentSquadDialog
+        open={developmentSquadOpen}
+        onOpenChange={setDevelopmentSquadOpen}
+        onDeployed={() => {
+          for (const key of ['agentteams-teams', 'agentteams-workers', 'agentteams-skills', 'agentteams-worker-skills']) {
+            void queryClient.invalidateQueries({ queryKey: [key] });
+          }
+        }}
+      />
 
       <TeamCreateDialog
         open={createOpen}
