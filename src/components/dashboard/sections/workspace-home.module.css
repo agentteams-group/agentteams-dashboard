@@ -19,7 +19,10 @@
 .row { display: flex; min-height: 66px; align-items: center; gap: 8px; padding-block: 10px; }
 .row + .row { border-top: 1px solid var(--border); }
 .composer { display: flex; flex: 1; min-width: 250px; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--background); }
+.composer:focus-within { border-color: var(--action-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 12%, transparent); }
 .composerInput { width: 100%; border: 0; outline: 0; background: transparent; color: var(--foreground); font-size: 15px; }
+/* 裸 input 的全局聚焦描边在卡片内会形成盒中盒；聚焦态交给 .composer:focus-within。 */
+.composerInput:focus-visible { outline: 0; box-shadow: none; }
 .composerInput::placeholder { color: var(--muted-foreground); }
 .composerRow { display: flex; align-items: center; gap: 8px; }
 .chip { height: 26px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 12px; }
