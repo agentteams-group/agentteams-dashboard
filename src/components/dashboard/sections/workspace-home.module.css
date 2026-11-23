@@ -21,13 +21,21 @@
 .row + .row { border-top: 1px solid var(--border); }
 .composer { display: flex; flex: 1; min-width: 250px; flex-direction: column; gap: 10px; padding: 14px 16px; border: 0; border-radius: 20px; background: var(--background); }
 .composerInput { width: 100%; padding-bottom: 8px; border: 0; border-bottom: 1px solid var(--border); outline: 0; background: transparent; color: var(--foreground); font-size: 15px; }
-/* 卡片不画边框：聚焦只加强输入框下边线（全局 :focus-visible 会画整框，显式关闭）。 */
-.composerInput:focus-visible { border-bottom-color: var(--action-primary); outline: 0; box-shadow: none; }
+/* 卡片不画边框：hover/focus 只控制输入框底边线。workspace 全局 input:hover 特异性 0,5,1、input:focus-visible 为 0,2,1，需用组件内限定 + :not 链（0,6,1）压过，否则仍会画出整框柔环与灰色描边。 */
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):hover,
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible {
+  border-color: var(--border);
+  box-shadow: none;
+  outline: 0;
+}
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible {
+  border-bottom-color: var(--action-primary);
+}
 .composerInput::placeholder { color: var(--muted-foreground); }
-.composerRow { display: flex; align-items: center; gap: 8px; }
-.chip { height: 26px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 12px; }
+.composerRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip { height: 26px; flex-shrink: 0; white-space: nowrap; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 12px; }
 .chip[aria-pressed="true"] { border-color: var(--action-primary); color: var(--foreground); }
-.composerSend { display: inline-flex; height: 30px; width: 30px; align-items: center; justify-content: center; margin-left: auto; border: 0; border-radius: 999px; background: var(--action-primary); color: var(--action-primary-foreground); }
+.composerSend { display: inline-flex; height: 30px; width: 30px; flex-shrink: 0; align-items: center; justify-content: center; margin-left: auto; border: 0; border-radius: 999px; background: var(--action-primary); color: var(--action-primary-foreground); }
 .composerSend:disabled { cursor: not-allowed; opacity: .5; }
 .recommend .quick { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .empty { padding: 20px 0; color: var(--muted-foreground); font-size: 14px; }

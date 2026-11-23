@@ -38,6 +38,7 @@
 4. WHEN 用户点击「+ 添加上下文」或「自动分配 Agent」chip，THE 系统 SHALL 切换该 chip 的选中态并给出视觉反馈。
 5. IF 无可用 AT 助手房间，THE 系统 SHALL 仅切换到 chat section 而不写入草稿。
 6. WHEN 输入框获得焦点或用户指向 composer，THE 首页 SHALL 不展示任何卡片边框，仅将输入框底部边线加强为主题色。
+7. WHILE 视口宽度为 768px 或更窄（含侧栏展开），THE 首页 SHALL 保持 chip 文字完整位于按钮内且发送按钮可见（chip 不压缩、不溢出固定高度）。
 
 ### Requirement 3：今日推荐
 

@@ -75,7 +75,8 @@ interface Recommendation {
 
 - 页面结构：hero → metrics 指标条 → lower（1.55fr / 1fr 两栏）：左栏「今日推荐」在上、「正在推进」在下垂直堆叠；右栏「工作区资产」。
 - 「正在推进」标题行保留「任务看板」入口；hero 按钮行不再渲染「查看任务」按钮。
-- composer 卡片不画边框（`border: 0`），仅靠输入框底部 1px 边线（`--border`，聚焦时 `--action-primary`）作为视觉边界；裸 input 不画 outline、卡片无聚焦描边；全局 `:focus-visible` 规则会画整框，用 `.composerInput:focus-visible`（特异性 0,2,0）显式关闭。
+- composer 卡片不画边框（`border: 0`），仅靠输入框底部 1px 边线（`--border`，聚焦时 `--action-primary`）作为视觉边界；裸 input 不画 outline、卡片无聚焦描边；workspace 全局 `input:hover`（特异性 0,5,1）与 `input:focus-visible`（0,2,1）会画柔环与灰描边，须以 `.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):hover/:focus-visible`（0,6,1）压过：hover/focus 统一回写 `border-color: var(--border)`、`box-shadow: none`、`outline: 0`，聚焦态再将底边线改 `--action-primary`。
+- 窄屏保护（768px 及更窄、含侧栏展开）：`.composerRow` 允许 `flex-wrap: wrap`，chip 设 `flex-shrink: 0` + `white-space: nowrap`，发送按钮 `flex-shrink: 0`，保证 chip 文字完整留在固定 26px 高度内、发送按钮可见。
 - `openTasks` 的 hash 写入收敛到模块级 `openTaskBoard(task)`：渲染期创建的推荐数组不得引用会改写 `window.location.hash` 的组件内闭包（`react-hooks/immutability`），无 projectId 时走 `navigate('tasks')`。
 
 ## Data Models
