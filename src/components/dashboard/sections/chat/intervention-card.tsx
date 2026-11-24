@@ -214,7 +214,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
       ...(typeof requestTimestamp === 'number' ? { elapsedMs: Date.now() - requestTimestamp } : {}),
       actor: currentUserId ?? undefined,
     });
-  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, requestTimestamp, addNotification, currentUserId, timeoutMs, sourceRoomId]);
+  }, [expired, resolution, questions, page, payload.tool_name, payload.confirmation_id, payload.reply_format, requestTimestamp, addNotification, currentUserId, timeoutMs, sourceRoomId]);
 
   // 序号快捷键 1-9（自由输入聚焦时让位给文本录入）。
   // 绑定在卡片根节点而非 window：多个干预卡同时可见时，按键只作用于
