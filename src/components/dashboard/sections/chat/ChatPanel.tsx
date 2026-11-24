@@ -13,6 +13,7 @@ import { useRoomTaskData, type RoomTaskBoard } from './components/RoomTasksPanel
 import { ManagerModelGate } from './manager-model-gate';
 import { RoomArchiveAction } from './room-archive';
 import { useRoomArchiveStatus } from '@/hooks/use-room-archive';
+import { AssistantReminderSettings } from './assistant-reminder-settings';
 
 export type { ChatContextPanel } from './ChatRoom';
 
@@ -76,6 +77,7 @@ export function ChatPanel({
           topic={topic || undefined}
           headerActions={<>
             {headerActions}
+            {room.agentRole && <AssistantReminderSettings roomId={room.id} team={room.agentRole === 'leader' ? room.parentTeam : undefined} manager={managerName} />}
             <RoomArchiveAction room={room} />
             {room.agentRole === 'operations' && managerName && userLevel >= 3 && <Button size="sm" variant="ghost" aria-label="平台助手设置" title="平台助手设置"
               onClick={() => { window.location.hash = platformAssistantSettingsHash(managerName); }}><Settings className="size-4" /><span className="hidden lg:inline">设置</span></Button>}

@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { NotificationPopover } from './notification-popover';
 import { useNotificationStore, type NewNotification } from '@/lib/notification-store';
 import { useSectionStore } from '@/lib/section-store';
+import { useMatrixStore } from '@/lib/matrix-store';
 
 /**
  * C-1「通知点击直达上下文」的验收：通知不只是被读掉，还要把用户带到
@@ -28,6 +29,16 @@ afterEach(() => {
 });
 
 describe('NotificationPopover（C-1 通知点击直达上下文）', () => {
+  it('shows only the current recipient’s assistant reminder and links to its room', async () => {
+    useMatrixStore.setState({ userId: '@alice:test' });
+    for (const user of ['alice', 'bob']) pushNotification({ type: 'info', kind: 'assistant', title: `${user}助手发来一条提醒`, message: '团队摘要', recipientId: `@${user}:test`, roomId: `!${user}:test` });
+    render(<NotificationPopover />);
+    fireEvent.click(screen.getByRole('button', { name: /通知（1 条未读）/ }));
+    expect(screen.queryByText('bob助手发来一条提醒')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /alice助手发来一条提醒/ }));
+    expect(window.location.hash).toBe('#workbench/space/!alice:test');
+    expect(useNotificationStore.getState().notifications.find(n => n.recipientId === '@alice:test')?.read).toBe(true);
+  });
   beforeEach(() => {
     useSectionStore.setState({ notificationsOpen: false });
     window.location.hash = '#workbench/me';

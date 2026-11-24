@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface Notification {
+  /** A reminder is scoped to its Matrix recipient and de-duplicated by event. */
+  kind?: 'assistant';
+  sourceEventId?: string;
+  recipientId?: string;
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
   title: string;
