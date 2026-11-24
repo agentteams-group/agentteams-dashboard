@@ -29,6 +29,8 @@ import {
 import { MarkdownMessage } from '../markdown-message';
 import { MermaidRenderer } from '../mermaid-renderer';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 // 敏感过滤共享定义（知识库 v2 server 侧同款，见 lib/sensitive-files）
 import { SENSITIVE_PATTERNS } from '@/lib/sensitive-files';
@@ -183,7 +185,7 @@ export function FilesBrowserPanel({ scope, readOnly = false }: { scope: Collabor
 
       <div className="flex-1 min-h-0 flex flex-col gap-3">
         {/* File list */}
-        <Card className="flex flex-col min-h-0" style={{ flex: '0 0 45%' }}>
+        <Card className="flex flex-col min-h-0" style={{ flex: `0 0 ${selectedKey && isSlideDocument(selectedKey) ? '25%' : '45%'}` }}>
           <CardHeader className="py-2 px-3 shrink-0">
             <CardTitle className="text-sm flex items-center gap-2">
               <Folder className="h-4 w-4" />
@@ -312,6 +314,10 @@ function FilePreview({ url, objectKey }: { url: string; objectKey: string }) {
   const ext = objectKey.split('.').pop()?.toLowerCase();
   const isTextFile = ['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'htm', 'js', 'ts', 'jsx', 'tsx', 'py', 'sh', 'bash', 'log', 'csv', 'mermaid', 'mmd', 'mm'].includes(ext || '');
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
+
+  if (isSlideDocument(objectKey)) {
+    return <DocumentPreview url={url} filename={objectKey.split('/').pop() || objectKey} />;
+  }
 
   if (isImage) {
     return (

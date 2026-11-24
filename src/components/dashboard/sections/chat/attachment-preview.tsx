@@ -10,6 +10,8 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 export interface PreviewAttachment {
   filename: string;
@@ -22,6 +24,7 @@ export const AttachmentPreviewContext = createContext<((_file: PreviewAttachment
 
 const PREVIEW_LIMIT = 512 * 1024;
 export function attachmentPreviewKind(file: Pick<PreviewAttachment, 'filename' | 'mimetype'>) {
+  if (isSlideDocument(file.filename) || /^application\/(?:pdf|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.presentationml\.presentation)\b/i.test(file.mimetype)) return 'document';
   if (/\.html?$/i.test(file.filename) || /^text\/html\b/i.test(file.mimetype)) return 'html';
   if (/\.(?:md|markdown)$/i.test(file.filename) || /^text\/markdown\b/i.test(file.mimetype)) return 'markdown';
   if (/^(?:text\/|application\/(?:json|xml)\b)/i.test(file.mimetype) || /\.(?:txt|json|xml|csv|log)$/i.test(file.filename)) return 'text';
@@ -61,12 +64,13 @@ function PreviewContent({ file }: { file: PreviewAttachment }) {
         await reader.cancel().catch(() => undefined);
       }
     },
-    enabled: !!url && !!kind,
+    enabled: !!url && !!kind && kind !== 'document',
     retry: false,
     staleTime: 60_000,
     throwOnError: false,
   });
 
+  if (kind === 'document' && url) return <DocumentPreview url={url} filename={file.filename} mimetype={file.mimetype} accessToken={file.url.startsWith('mxc://') ? accessToken : undefined} />;
   if (query.isPending) return <div role="status" className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />加载预览…</div>;
   if (query.isError) return <div role="alert" className="p-4 text-sm text-destructive">预览加载失败 <Button variant="ghost" size="sm" onClick={() => void query.refetch()}>重试</Button></div>;
   if (kind === 'html' && query.data.truncated) return <p className="p-4 text-sm text-muted-foreground">HTML 文件过大，请下载后查看。</p>;

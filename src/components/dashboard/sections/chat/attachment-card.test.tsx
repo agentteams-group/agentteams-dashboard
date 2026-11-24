@@ -9,6 +9,10 @@ vi.mock('@/lib/matrix-store', () => ({
   useMatrixStore: () => ({ homeserver: 'https://hs.test' }),
 }));
 
+vi.mock('@/components/dashboard/document-preview', () => ({
+  DocumentPreview: ({ filename }: { filename: string }) => <div>分页预览 {filename}</div>,
+}));
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function render(ui: React.ReactElement) {
@@ -27,6 +31,22 @@ function makePayload(overrides: Partial<{ url: string; filename: string; mimetyp
 }
 
 describe('AttachmentCard', () => {
+  it.each(['pdf', 'pptx', 'ppt'])('opens a %s file through the existing room preview', (extension) => {
+    const open = vi.fn();
+    render(<AttachmentPreviewContext.Provider value={open}><AttachmentCard payload={makePayload({ filename: `report.${extension}`, mimetype: 'application/octet-stream' })} compact /></AttachmentPreviewContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: `查看 report.${extension}` }));
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ filename: `report.${extension}` }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('uses the document renderer in the standalone preview without a text fetch', async () => {
+    const read = vi.fn();
+    vi.stubGlobal('fetch', read);
+    render(<AttachmentCard payload={makePayload({ filename: 'report.pdf', mimetype: 'application/pdf' })} />);
+    fireEvent.click(screen.getByRole('button', { name: '查看 report.pdf' }));
+    expect(await screen.findByText('分页预览 report.pdf')).toBeInTheDocument();
+    expect(read).not.toHaveBeenCalled();
+  });
   it('renders filename, friendly type and download link', () => {
     render(<AttachmentCard payload={makePayload()} />);
 

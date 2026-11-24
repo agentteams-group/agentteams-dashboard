@@ -28,7 +28,9 @@ import {
   isEditableText,
   maskEtag,
 } from '@/lib/files-model';
-import { humanFilesApi, type HumanFileEntry } from '@/lib/human-files-api';
+import { humanFilesApi, humanFileDownloadUrl, type HumanFileEntry } from '@/lib/human-files-api';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 import { isImageName } from './file-views';
 
 const TEXT_PREVIEW_EXT = new Set([
@@ -81,7 +83,7 @@ export function PreviewDialog({
   const [state, setState] = useState<PreviewState>({ kind: 'idle' });
 
   useEffect(() => {
-    if (!open || !entry) {
+    if (!open || !entry || isSlideDocument(entry.name)) {
       setState({ kind: 'idle' });
       return;
     }
@@ -122,11 +124,17 @@ export function PreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+      <DialogContent className={entry && isSlideDocument(entry.name)
+        ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none sm:max-w-none'
+        : 'flex max-h-[85vh] flex-col sm:max-w-2xl'}>
         <DialogHeader>
           <DialogTitle className="truncate">{entry?.name ?? ''}</DialogTitle>
           <DialogDescription>{path}</DialogDescription>
         </DialogHeader>
+        {entry && isSlideDocument(entry.name) && <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+          <DocumentPreview url={humanFileDownloadUrl(humanName, path)} filename={entry.name} />
+        </div>}
+        {!(entry && isSlideDocument(entry.name)) && (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/20 p-2">
           {state.kind === 'loading' && (
             <p className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
@@ -150,6 +158,7 @@ export function PreviewDialog({
             </p>
           )}
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -191,7 +200,7 @@ export function FileDetailCard({
   if (!entry) return null;
   const isDir = entry.type === 'directory';
   const editable = !isDir && isEditableText(entry.name, entry.size);
-  const previewable = !isDir && (isImageName(entry.name) || isEditableText(entry.name, entry.size));
+  const previewable = !isDir && (isSlideDocument(entry.name) || isImageName(entry.name) || isEditableText(entry.name, entry.size));
 
   return (
     <div
