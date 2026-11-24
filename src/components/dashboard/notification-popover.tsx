@@ -60,11 +60,11 @@ export function NotificationPopover() {
         <div className="flex items-center justify-between p-3 border-b">
           <span className="text-sm">系统与助手通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => markAllRead(userId)}>
               <Check className="w-3 h-3 mr-1" />
               全部已读
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearAll}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => clearAll(userId)}>
               <Trash2 className="w-3 h-3 mr-1" />
               清空
             </Button>

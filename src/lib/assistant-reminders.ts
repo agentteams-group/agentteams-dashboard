@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
 import type { MatrixEvent } from './matrix-api';
-import { useNotificationStore } from './notification-store';
+import { assistantReminderKey, useNotificationStore } from './notification-store';
 import { openNotificationTarget } from './notification-nav';
 
 /** Called only for rooms joined by the authenticated Matrix user. */
@@ -10,11 +10,12 @@ export function ingestAssistantReminders(roomId: string, events: MatrixEvent[], 
     if (event.type !== 'm.room.message' || !marker || typeof marker !== 'object' || event.sender === userId) continue;
     const reminder = marker as Record<string, unknown>;
     if (reminder.recipient !== userId || typeof reminder.title !== 'string' || typeof event.content.body !== 'string') continue;
-    const store = useNotificationStore.getState();
-    if (store.notifications.some(n => n.sourceEventId === event.event_id && n.recipientId === userId && n.roomId === roomId)) continue;
     const notification = { type: 'info' as const, kind: 'assistant' as const, origin: 'system' as const,
       title: `${reminder.title}发来一条提醒`, message: event.content.body.replace(/\s+/g, ' ').slice(0, 160),
       roomId, sourceEventId: event.event_id, recipientId: userId };
+    const store = useNotificationStore.getState();
+    const key = assistantReminderKey(notification);
+    if (key && store.seenAssistantReminders[key]) continue;
     store.addNotification(notification);
     // Historical sync populates the inbox without replaying old toast popups.
     if (live) toast(notification.title, { description: notification.message.length > 72 ? notification.message.slice(0, 72) + '…' : notification.message, duration: 8000,
