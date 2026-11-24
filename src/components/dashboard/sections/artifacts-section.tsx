@@ -84,6 +84,8 @@ import {
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 // ── 文件类型（与插件 Artifacts.kindOf 同款扩展名分组）──────────────────
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp']);
@@ -141,7 +143,7 @@ type Selection =
 
 interface PreviewState {
   entry: FileEntry;
-  status: 'loading' | 'ready' | 'binary' | 'error';
+  status: 'loading' | 'ready' | 'binary' | 'error' | 'document';
   text?: string;
   error?: string;
 }
@@ -353,6 +355,10 @@ export function ArtifactsSection() {
   }, [selected, allFiles]);
 
   const openPreview = useCallback((entry: FileEntry) => {
+    if (isSlideDocument(entry.name)) {
+      setPreview({ entry, status: 'document' });
+      return;
+    }
     const url = getTaskArtifactUrl(entry.projectId, entry.taskId, entry.path);
     setPreview({ entry, status: 'loading' });
     void (async () => {
@@ -729,7 +735,9 @@ export function ArtifactsSection() {
 
       {/* 预览对话框（9/14 加宽：max-w-2xl→max-w-5xl，内容 70vh） */}
       <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="sm:max-w-5xl max-w-[95vw]">
+        <DialogContent className={preview?.status === 'document'
+          ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none sm:max-w-none'
+          : 'sm:max-w-5xl max-w-[95vw]'}>
           <DialogHeader>
             <DialogTitle className="truncate">
               {preview ? `${preview.entry.name} — 预览` : ''}
@@ -738,7 +746,15 @@ export function ArtifactsSection() {
               {preview ? `${preview.entry.source} · ${preview.entry.taskLabel}` : ''}
             </DialogDescription>
           </DialogHeader>
-          {preview && (
+          {preview?.status === 'document' && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+              <DocumentPreview
+                url={getTaskArtifactUrl(preview.entry.projectId, preview.entry.taskId, preview.entry.path)}
+                filename={preview.entry.name}
+              />
+            </div>
+          )}
+          {preview && preview.status !== 'document' && (
             <div className="max-h-[70vh] overflow-y-auto rounded-md border bg-muted/20 p-3">
               {preview.status === 'loading' && (
                 <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">

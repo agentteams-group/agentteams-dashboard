@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "predev": "npm run prepare:speech",
+    "predev": "node scripts/copy-document-preview-assets.mjs && npm run prepare:speech",
     "dev": "node scripts/dev.mjs",
     "prepare:speech": "node scripts/prepare-speech-assets.mjs",
     "build": "npm run prepare:speech && next build && node scripts/copy-standalone-assets.mjs",
@@ -16,12 +16,14 @@
     "test": "vitest run",
     "test:integration": "vitest run src/__tests__/integration",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prebuild": "node scripts/copy-document-preview-assets.mjs"
   },
   "dependencies": {
     "@a2ui/react": "^0.12.0",
     "@a2ui/web_core": "^0.12.0",
     "@alicloud/credentials": "2.4.7",
+    "@extend-ai/react-pptx": "^0.6.1",
     "@huggingface/transformers": "3.8.1",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-avatar": "^1.2.6",
@@ -53,6 +55,7 @@
     "mitt": "^3.0.1",
     "next": "^16.4.1",
     "opencc-js": "1.4.2",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-hook-form": "^7.88.0",

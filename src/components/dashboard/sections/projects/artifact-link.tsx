@@ -14,6 +14,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 // ── 产物预览（9/17 验收第六轮：任务看板产物点按=预览，行为对齐产物 tab）────
 // 此前 ArtifactLink 点按=直接下载；装验反馈「加上预览」→ 点按开预览对话框
@@ -31,7 +33,7 @@ function artifactExt(name: string): string {
   return m ? m[1] : '';
 }
 interface ArtifactPreviewState {
-  status: 'loading' | 'ready' | 'binary' | 'error';
+  status: 'loading' | 'ready' | 'binary' | 'error' | 'document';
   text?: string;
   error?: string;
   isImage?: boolean;
@@ -89,6 +91,10 @@ export function ArtifactLink({
   const [anchorCoordinate, setAnchorCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [showSource, setShowSource] = useState(false);
   const openPreview = () => {
+    if (isSlideDocument(label)) {
+      setPreview({ status: 'document' });
+      return;
+    }
     setPreview({ status: 'loading' });
     setShowSource(false);
     setAnchorLine(null);
@@ -214,13 +220,20 @@ export function ArtifactLink({
       <Dialog open={!!preview} onOpenChange={(open) => !open && closePreview()}>
         {/* 9/17 装验第 7 轮：对话框 90vh 封顶 + 自身可滚——内容再高也不
             超出窗口（此前超高内容把对话框顶破视口）。 */}
-        <DialogContent className="sm:max-w-5xl max-w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className={preview?.status === 'document'
+          ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none overflow-y-auto sm:max-w-none'
+          : 'sm:max-w-5xl max-w-[95vw] max-h-[90vh] overflow-y-auto'}>
           <DialogHeader>
             <DialogTitle className="truncate">{label} — 预览</DialogTitle>
             <DialogDescription className="truncate font-mono">{href}</DialogDescription>
           </DialogHeader>
+          {preview?.status === 'document' && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+              <DocumentPreview url={href} filename={label} />
+            </div>
+          )}
           {/* 双轴滚动：宽内容（代码/表格/长 URL）横向滚而不撑破对话框 */}
-          {preview && (
+          {preview && preview.status !== 'document' && (
             <div className="max-h-[70vh] min-w-0 overflow-auto rounded-md border bg-muted/20 p-3">
               {preview.status === 'loading' && (
                 <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
