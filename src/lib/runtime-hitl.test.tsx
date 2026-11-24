@@ -47,4 +47,11 @@ describe('shared HITL controls', () => {
     expect(deriveWorkerSessionState(opts)).toBe('waiting_user');
     expect(deriveWorkerSessionState({ ...opts, phase: 'Stopped' })).toBe('idle');
   });
+  it('preserves other blocks bundled with a question receipt', () => {
+    const event = question('answered');
+    const run = event.content['org.agentteams.run'] as { blocks: unknown[] };
+    run.blocks.push({ type: 'text', text: 'Continuation completed' });
+    const blocks = normalizeToBlocks({ body: 'Receipt', content: event.content, isStreaming: false });
+    expect(blocks).toEqual([expect.objectContaining({ type: 'text', text: 'Continuation completed' })]);
+  });
 });
