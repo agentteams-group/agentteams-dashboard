@@ -28,12 +28,20 @@ export interface Notification {
 /** Input for `addNotification` (id / timestamp / read are filled in there). */
 export type NewNotification = Omit<Notification, 'id' | 'timestamp' | 'read'>;
 
+export function assistantReminderKey(notification: NewNotification) {
+  return notification.kind === 'assistant' && notification.recipientId && notification.roomId && notification.sourceEventId
+    ? JSON.stringify([notification.recipientId, notification.roomId, notification.sourceEventId])
+    : undefined;
+}
+
 interface NotificationState {
   notifications: Notification[];
+  /** Event identities survive inbox truncation and clearing; no message content. */
+  seenAssistantReminders: Record<string, true>;
   addNotification: (_notification: NewNotification) => void;
   markAsRead: (_id: string) => void;
-  markAllRead: () => void;
-  clearAll: () => void;
+  markAllRead: (_recipientId: string) => void;
+  clearAll: (_recipientId: string) => void;
   unreadCount: () => number;
 }
 
@@ -44,6 +52,7 @@ export const useNotificationStore = create<NotificationState>()(
   persist(
     (set, get) => ({
       notifications: [],
+      seenAssistantReminders: {},
 
       addNotification: (notification) => {
         const newNotification: Notification = {
@@ -54,8 +63,15 @@ export const useNotificationStore = create<NotificationState>()(
           origin: notification.origin || 'user',
         };
         set((state) => {
+          const key = assistantReminderKey(notification);
+          if (key && state.seenAssistantReminders[key]) return state;
           const updated = [newNotification, ...state.notifications];
-          return { notifications: updated.slice(0, MAX_NOTIFICATIONS) };
+          return {
+            notifications: updated.slice(0, MAX_NOTIFICATIONS),
+            seenAssistantReminders: key
+              ? { ...state.seenAssistantReminders, [key]: true }
+              : state.seenAssistantReminders,
+          };
         });
       },
 
@@ -67,22 +83,36 @@ export const useNotificationStore = create<NotificationState>()(
         }));
       },
 
-      markAllRead: () => {
+      markAllRead: (recipientId) => {
         set((state) => ({
-          notifications: state.notifications.map((n) => ({ ...n, read: true })),
+          notifications: state.notifications.map((n) =>
+            !n.recipientId || n.recipientId === recipientId ? { ...n, read: true } : n
+          ),
         }));
       },
 
-      clearAll: () => set({ notifications: [] }),
+      clearAll: (recipientId) => set((state) => ({
+        notifications: state.notifications.filter((n) => n.recipientId && n.recipientId !== recipientId),
+      })),
 
       unreadCount: () => get().notifications.filter((n) => !n.read).length,
     }),
     {
       name: 'agentteams-notifications',
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => {
+        const notifications = (persistedState as { notifications?: Notification[] }).notifications ?? [];
+        const seenAssistantReminders: Record<string, true> = {};
+        for (const notification of notifications) {
+          const key = assistantReminderKey(notification);
+          if (key) seenAssistantReminders[key] = true;
+        }
+        return { notifications, seenAssistantReminders };
+      },
       partialize: (state) => ({
         // Only persist the most recent notifications
         notifications: state.notifications.slice(0, PERSIST_MAX),
+        seenAssistantReminders: state.seenAssistantReminders,
       }),
     }
   )

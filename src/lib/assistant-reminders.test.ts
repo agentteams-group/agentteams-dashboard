@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 vi.mock('sonner', () => ({ toast: vi.fn() }));
 const event = { event_id: '$digest', sender: '@leader:test', type: 'm.room.message', origin_server_ts: 1,
   content: { body: '团队协作动态与今日待办', 'org.agentteams.assistant_reminder': { title: '研发团队助手', recipient: '@alice:test', requestId: 'daily-1' } } } as MatrixEvent;
-beforeEach(() => { useNotificationStore.setState({ notifications: [] }); vi.clearAllMocks(); });
+beforeEach(() => { useNotificationStore.setState({ notifications: [], seenAssistantReminders: {} }); vi.clearAllMocks(); });
 describe('assistant reminders', () => {
   it('shows a toast for a new live reminder and opens its original conversation', () => {
     ingestAssistantReminders('!assistant:test', [event], '@alice:test', true);
