@@ -1,5 +1,22 @@
 # Runtime tool approvals
 
+New requests declare `reply_format: "com.agentteams.answer"` and provide
+`context_id`. Dashboard sends one shared decision shape for every Harness:
+`com.agentteams.answer: {kind: "tool_approval", confirmation_id, context_id,
+agent_id, answer: "approved" | "rejected"}`. The Adapter translates to native
+commands/RPCs and retains all native permission checks. `actor` is display
+provenance; the Matrix sender is the authority. New Harnesses require no client
+command branch. The table below applies only to requests from older adapters.
+
+Ask User is separate: `org.agentteams.run` confirmation cards return
+`kind: "ask_user"` and `responses: [{id, selected, custom?}]`. Native questions
+and TeamHarness `request_attention` use the same UI. New questions advertise
+the same reply format and send owner receipts with `answered`, `cancelled` or
+`expired`. Submission remains pending until a receipt; wrong-owner/room
+receipts cannot settle it, including across history loading. A pending human
+request takes precedence over typing/heartbeat as `waiting_user`; a stopped
+Worker remains inactive. Normal questions are not Task blocked states.
+
 QwenPaw and the independent Codex Harness publish `org.agentteams.approval`
 in Matrix `m.room.message` content. Dashboard reuses its tool confirmation
 card and routes the decision back to the sending Agent as a normal Matrix reply.
@@ -27,7 +44,7 @@ card and routes the decision back to the sending Agent as a normal Matrix reply.
 - Receipts carry the same runtime, request and context IDs and come from the
   same Agent in the same room. The Matrix request event ID identifies the card.
 
-Reply commands differ per runtime:
+Legacy reply commands differ per runtime:
 
 | Runtime | Approve | Deny |
 |---|---|---|

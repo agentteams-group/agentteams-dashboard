@@ -30,6 +30,7 @@
  */
 
 import type { ParsedA2uiBlock } from './parser';
+import { questionReceipts } from '../runtime-hitl';
 import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY, runtimeApprovalPayload } from '../runtime-approval';
 import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, fileReferencesFromBody, parseFileRefs } from '../file-refs';
 import {
@@ -108,7 +109,11 @@ function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   // 2. org.agentteams.run → structured block channel (opt-in; upstream has no
   // producer yet, kept as a forward-compatible path).
   const runBlocks = parseAgentRunBlocks(content['org.agentteams.run'], isStreaming);
-  if (runBlocks) return runBlocks;
+  if (runBlocks) {
+    const receipts = new Set(questionReceipts(content).map(receipt => receipt.id));
+    const visible = runBlocks.filter(block => block.type !== 'confirmation' || !receipts.has(String(block.payload?.confirmation_id)));
+    return visible.length ? visible : [{ type: 'text', text: body }];
+  }
 
   // 3. A2UI protocol markers → a2ui block(s). Unclosed markers render as a
   // loading placeholder while streaming (see parseA2uiMarkers).

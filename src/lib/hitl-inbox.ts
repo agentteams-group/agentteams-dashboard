@@ -5,6 +5,7 @@ import { recordHitlAudit } from '@/lib/hitl-audit';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from './runtime-approval';
 import { APPROVAL_FEEDBACK_MARKER } from './approval-feedback';
+import { questionReceipts } from './runtime-hitl';
 
 export interface HitlConfirmation {
   id: string;
@@ -25,7 +26,9 @@ export interface HitlConfirmation {
   /** #235：运行时请求 ID（`/approval approve <id>` 的绑定目标）。 */
   requestId?: string;
   runtimeApproval?: boolean;
+  awaitsReceipt?: boolean;
   contextId?: string;
+  expiresAt?: number;
   timestamp: number;
 }
 
@@ -119,6 +122,10 @@ export const useHitlInboxStore = create<HitlInboxState>()(
         const receipt = state.resolutions[runtimeReceiptKey(item.roomId, item.sender, item.requestId, item.contextId)];
         if (receipt) return applyResolution(state, { ...receipt, id: item.id });
       }
+      if (item.awaitsReceipt && item.requestId) {
+        const receipt = state.resolutions[`question:${runtimeReceiptKey(item.roomId, item.sender, item.requestId)}`];
+        if (receipt) return applyResolution(state, { ...receipt, id: item.id });
+      }
       const isNew = !(item.id in state.confirmations);
       // hitl.request 审计（F2.4）：仅新条目上报一次（m.replace 修订
       // 静默 upsert，不重复计审计）。
@@ -206,7 +213,7 @@ export const useHitlInboxStore = create<HitlInboxState>()(
         && (!body.trim().startsWith('@') || body.includes(item.sender) || body.includes(`@${item.sender.slice(1).split(':')[0]} `)));
       if (matches.length === 1) {
         const target = matches[0];
-        if (target.runtimeApproval) get().submitConfirmation(target.id, sender, body);
+        if (target.runtimeApproval || target.awaitsReceipt) get().submitConfirmation(target.id, sender, body);
         else get().resolveConfirmation(target.id, sender, body);
       }
       return;
@@ -214,7 +221,7 @@ export const useHitlInboxStore = create<HitlInboxState>()(
     if (relatedEventId) {
       const linked = pending.find((item) => item.eventId === relatedEventId);
       if (linked) {
-        if (linked.runtimeApproval) get().submitConfirmation(linked.id, sender, body);
+        if (linked.runtimeApproval || linked.awaitsReceipt) get().submitConfirmation(linked.id, sender, body);
         else get().resolveConfirmation(linked.id, sender, body);
       }
       // 显式指向某张卡片时不再猜测其它卡片：目标可能已在本地处理过。
@@ -228,7 +235,10 @@ export const useHitlInboxStore = create<HitlInboxState>()(
     if (APPROVAL_COMMAND_RE.test(stripLeadingMentions(body))) return;
     const pool = sameKind.length > 0 ? sameKind : pending.filter((item) => !item.runtimeApproval);
     const target = pool.sort((a, b) => a.timestamp - b.timestamp)[0];
-    if (target) get().resolveConfirmation(target.id, sender, body);
+    if (target) {
+      if (target.awaitsReceipt) get().submitConfirmation(target.id, sender, body);
+      else get().resolveConfirmation(target.id, sender, body);
+    }
   },
 
   setPendingChatRoomId: (roomId) => set({ pendingChatRoomId: roomId }),
@@ -454,8 +464,10 @@ export function extractConfirmationFromEvent(
       : {}),
     ...(confirmationId ? { requestId: confirmationId } : {}),
     ...(payload.runtimeApproval === true ? { runtimeApproval: true } : {}),
+    ...(payload.reply_format === 'com.agentteams.answer' ? { awaitsReceipt: true } : {}),
     ...(asString(payload.contextId) ? { contextId: asString(payload.contextId) } : {}),
     timestamp: event.origin_server_ts,
+    ...(typeof payload.expiresAt === 'number' ? { expiresAt: payload.expiresAt } : typeof payload.expires_at === 'number' ? { expiresAt: payload.expires_at } : {}),
   };
 }
 
@@ -469,6 +481,29 @@ export function ingestHitlTimelineEvents(
   for (const event of ordered) {
     if (event.type !== 'm.room.message') continue;
     const content = resolveEventContent(event);
+    const answer = content['com.agentteams.answer'] as Record<string, unknown> | undefined;
+    if (event.sender === currentUserId && answer && typeof answer.confirmation_id === 'string' && typeof answer.agent_id === 'string') {
+      for (const item of Object.values(useHitlInboxStore.getState().confirmations)) {
+        if (item.roomId !== roomId || item.sender !== answer.agent_id || item.requestId !== answer.confirmation_id
+          || (item.runtimeApproval && item.contextId !== answer.context_id)) continue;
+        store.submitConfirmation(item.id, event.sender, typeof answer.answer === 'string' ? answer.answer : undefined);
+      }
+      continue;
+    }
+    const receipts = event.sender !== currentUserId ? questionReceipts(content) : [];
+    if (receipts.length) {
+      for (const receipt of receipts) {
+        const key = `question:${runtimeReceiptKey(roomId, event.sender, receipt.id)}`;
+        if (receipt.status === 'expired') store.expireConfirmation(key, event.sender);
+        else store.resolveConfirmation(key, event.sender, receipt.status);
+        for (const item of Object.values(useHitlInboxStore.getState().confirmations)) {
+          if (!item.awaitsReceipt || item.roomId !== roomId || item.sender !== event.sender || item.requestId !== receipt.id) continue;
+          if (receipt.status === 'expired') store.expireConfirmation(item.id, event.sender);
+          else store.resolveConfirmation(item.id, event.sender, receipt.status);
+        }
+      }
+      continue;
+    }
     const approval = event.sender !== currentUserId && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
     if (approval && approval.status !== 'pending') {
       // Initial sync can deliver a receipt before history pagination loads

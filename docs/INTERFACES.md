@@ -161,7 +161,7 @@ Higress Console API 固定使用 `v1` 路径。`fallbackConfig` 接受 JSON 对�
 | `text` | `text: string`；`isStreaming?` | 正文片段 |
 | `thinking` | `content: string`；`isStreaming?` | 思考片段（折叠卡片） |
 | `tool_call` | `payload.tool_name: string`、`payload.arguments: object`、`payload.status: 'pending'\|'running'\|'succeeded'\|'failed'`；可选 `result`、`tool_call_id`（跨修订/重放去重的稳定 id）、`started_at`/`finished_at`（epoch ms） | 工具调用卡 |
-| `confirmation` | `payload.tool_name: string`、`payload.confirmation_id: string`（必填，关联批准/拒绝回复）；可选 `parameters`、`external_files`、`expires_at` | Tool Guard 审批卡 |
+| `confirmation` | `payload.tool_name: string`、`payload.confirmation_id: string`（必填）；可选 `question/questions`、`options`、`multi_select`、`requested_of`、`reply_format`、`status`、`parameters`、`external_files`、`expires_at` | Ask User 卡片与回执；兼容历史 Tool Guard 卡片 |
 | `error` | `payload.kind: 'cancelled'\|'failed'\|'quiet'`、`payload.title: string` | run 收尾哨兵（kind 之外的值被拒 → 回退文本启发式） |
 
 **版本协商与回退语义**：

@@ -130,7 +130,7 @@ export function ThreadPanel({
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, _eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     if (!isLoggedIn || sendMutation.isPending) return Promise.resolve(false);
-    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
+    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds, Boolean(answer));
     let formattedBody: string | undefined;
     if (reply.mentions?.length) {
       formattedBody = reply.content;
@@ -144,7 +144,7 @@ export function ThreadPanel({
         roomId,
         body: reply.content,
         formattedBody,
-        extra: buildAnswerContent(answer),
+        extra: buildAnswerContent(answer ? { ...answer, agent_id: sender } : undefined),
         mentions: reply.mentions?.length
           ? { user_ids: reply.mentions.map((mention) => mention.userId) }
           : undefined,

@@ -812,10 +812,10 @@ export function ChatRoom({
 
   const handleSendConfirmation = useCallback((content: string, sender?: string, eventId?: string, answer?: ConfirmationAnswerField): Promise<boolean> => {
     if (membershipDenied) return Promise.resolve(false);
-    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds);
+    const reply = buildConfirmationReply(content, sender, workerMatrixUserIds, Boolean(answer));
     // answer 为空时只发自然语言（v1 工具确认 / 启发式卡），非空时额外带
     // com.agentteams.answer，让运行时能按 confirmation_id 对上本次选择。
-    return sendOutbound({ ...reply, referenceEventId: eventId, answer });
+    return sendOutbound({ ...reply, referenceEventId: eventId, answer: answer ? { ...answer, agent_id: sender } : undefined });
   }, [sendOutbound, workerMatrixUserIds, membershipDenied]);
 
   const handleCancelLocal = useCallback((message: DisplayMessage) => {
