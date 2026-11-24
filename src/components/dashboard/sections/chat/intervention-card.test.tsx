@@ -96,6 +96,13 @@ describe('composeAnswerText（降级自然语言回写）', () => {
 });
 
 describe('InterventionCard（F2.1 交互契约）', () => {
+  it('expires a submitted native question that has no owner receipt', () => {
+    useHitlInboxStore.setState({ confirmations: {}, resolutions: { 'iv-test-1': { id: 'iv-test-1', status: 'submitted', timestamp: Date.now(), answer: 'A' } } });
+    render(<InterventionCard payload={{ ...basePayload, reply_format: 'com.agentteams.answer', expires_at: Date.now() - 1000 }} onAnswer={mockOnAnswer} />);
+    expect(screen.getByText('已超时')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1'].status).toBe('submitted');
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });

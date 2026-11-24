@@ -142,7 +142,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
   // 仅在无收件箱条目时回退到卡片挂载时刻。
   const expiresAt =
     effectiveExpiry(payload.expires_at) ?? (requestTimestamp ?? mountedAt) + timeoutMs;
-  const expired = resolution?.status === 'expired' || (submitted === null && now >= expiresAt);
+  const expired = resolution?.status === 'expired' || (resolution?.status !== 'answered' && now >= expiresAt);
 
   // ── 交互动作（先于引用它们的 effects 声明）──
 
@@ -231,7 +231,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
     toggleOption(page, list[index].id);
   };
 
-  if (submitted) {
+  if (submitted && !expired) {
     return (
       <div role="status" className="my-2 w-full max-w-2xl rounded-xl border bg-card px-4 py-3 text-sm">
         <h3 className="mb-2 text-sm font-medium">{questions[0].question}</h3>

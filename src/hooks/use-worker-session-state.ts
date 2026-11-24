@@ -27,7 +27,7 @@ export function useWorkerAgentStatusMap(): Record<string, WorkerAgentStatusInfo 
   for (const w of workers ?? []) {
     if (!w.matrixUserID) continue;
     map[w.matrixUserID] = {
-      agentStatus: Object.values(pending).some(item => item.sender === w.matrixUserID && (!item.expiresAt || item.expiresAt > now)) ? 'waiting_user' : w.agentStatus,
+      agentStatus: Object.values(pending).some(item => item.sender === w.matrixUserID && (item.expiresAt === undefined || item.expiresAt > now)) ? 'waiting_user' : w.agentStatus,
       runningTaskCount: w.runningTaskCount,
       lastFinishAt: w.lastFinishAt,
       lastRunAt: w.lastRunAt,
@@ -90,7 +90,7 @@ export function useWorkerSessionState(
   const tick = useSessionTick();
   const now = nowArg ?? tick;
   const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(
-    item => item.sender === worker.matrixUserID && (!item.expiresAt || item.expiresAt > now),
+    item => item.sender === worker.matrixUserID && (item.expiresAt === undefined || item.expiresAt > now),
   ));
   // (hooks below are unconditional — the worker identity may change
   // between renders while the list row stays mounted)
@@ -131,7 +131,7 @@ export function useRoomSessionState(
   const typing = useTypingStore((s) => (roomId ? s.typingUsers[roomId] ?? EMPTY_TYPING : EMPTY_TYPING));
   const lastMessageTs = useRoomMetaStore((s) => (roomId ? s.meta[roomId]?.lastMessageTs : undefined));
   const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(
-    item => item.roomId === roomId && item.sender === workerMxid && (!item.expiresAt || item.expiresAt > now),
+    item => item.roomId === roomId && item.sender === workerMxid && (item.expiresAt === undefined || item.expiresAt > now),
   ));
   if (!roomId || !workerMxid) return 'idle';
   if (waiting) return 'waiting_user';
@@ -174,7 +174,7 @@ export function useChatRoomSessionState(
   const running = useRoomRunningState(roomId, workerMatrixUserIds);
   const single = useRoomSessionState(roomId, workerMatrixUserIds?.[0], now);
   const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(item =>
-    item.roomId === roomId && workerMatrixUserIds?.includes(item.sender) && (!item.expiresAt || item.expiresAt > now)));
+    item.roomId === roomId && workerMatrixUserIds?.includes(item.sender) && (item.expiresAt === undefined || item.expiresAt > now)));
   if (waiting) return { state: 'waiting_user', runningOnly: false };
   if (runningOnly) {
     return { state: running ? 'running' : 'idle', runningOnly: true };
