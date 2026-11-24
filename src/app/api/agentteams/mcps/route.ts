@@ -3,6 +3,7 @@ import type { BucketItem, Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { enforceLevelOnlyRbac, readServerIdentity } from '@/lib/server-auth';
 import { publicMcpRecord, readMcpRecord, withMcpRecordLock, type ManagedMcpRecord } from '@/lib/server/mcp-management';
+import { callControllerAsset } from '@/app/api/higress/controller-helper';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -32,12 +33,19 @@ async function listAllObjects(client: Client, bucket: string, prefix: string): P
 }
 
 export async function GET(request: NextRequest) {
-  const bucket = getMinioBucket();
-  if (!bucket) {
-    return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
-  }
-
   try {
+    // Managed saves go through Controller; read the same directory before
+    // consulting legacy registrations. Asset management requires level 3.
+    if (readServerIdentity(request)?.level === 3) {
+      const managed = await callControllerAsset(request, 'mcps', { action: 'list' });
+      if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
+    }
+
+    const bucket = getMinioBucket();
+    if (!bucket) {
+      return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
+    }
+
     const client = createMinioClient();
     const objects = await listAllObjects(client, bucket, MCP_SERVERS_PREFIX);
     const servers: McpServerConfig[] = [];

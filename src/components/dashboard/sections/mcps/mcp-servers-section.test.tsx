@@ -38,3 +38,16 @@ it('opens the freshly verified saved connection while the directory refetch is p
  fireEvent.click(screen.getByRole('button',{name:'完成测试接入'}));
  expect(screen.getByText('新连接验证通过')).toBeTruthy();
 });
+
+it('shows gateway-only services without editable or authorization actions',()=>{
+ managed.servers=[{name:'outside-gateway',url:'http://gateway/mcp-servers/outside-gateway/mcp',transport:'streaminghttp',managed:false,gatewayOnly:true,kind:'proxy',gatewayState:'ready',createdAt:'',updatedAt:''}];
+ render(<TooltipProvider><McpServersSection/></TooltipProvider>);
+ expect((screen.getByRole('button',{name:'outside-gateway'}) as HTMLButtonElement).disabled).toBe(true);
+ expect(screen.getByText('已在网关配置')).toBeTruthy();
+ expect(screen.getByText('在 Higress 中管理')).toBeTruthy();
+ expect(screen.queryByText('0 个已授权')).toBeNull();
+ expect(screen.queryByRole('button',{name:'测试'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'详情'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'编辑'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'更多操作 outside-gateway'})).toBeNull();
+});
