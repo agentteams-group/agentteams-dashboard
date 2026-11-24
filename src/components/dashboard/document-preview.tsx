@@ -124,7 +124,7 @@ function DocumentPreviewContent({ url, filename, accessToken, mimetype }: Docume
               </button>
             ))}
           </nav>
-          <span aria-live="polite" className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{page + 1}/{count}</span>
+          <span aria-live="polite" className="shrink-0 text-xs tabular-nums text-muted-foreground">{page + 1}/{count}</span>
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="下一页" disabled={page === count - 1} onClick={() => setPage(page + 1)}>
             <ChevronDown className="h-4 w-4" />
           </Button>
