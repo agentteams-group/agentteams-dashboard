@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { DocumentPreview } from './document-preview';
 
@@ -85,5 +85,16 @@ describe('DocumentPreview', () => {
     expect(screen.getByText('页面内容 1')).toBeInTheDocument();
     fireEvent.mouseEnter(screen.getByRole('button', { name: '第 3 页' }));
     expect(screen.getByText('页面内容 3')).toBeInTheDocument();
+  });
+
+  it('accepts mouse-wheel deltas expressed in lines', async () => {
+    mockDownload();
+    render(<DocumentPreview url="/report.pdf" filename="report.pdf" />);
+    await screen.findByRole('button', { name: '下一页' });
+    await act(async () => {});
+    const wheel = new WheelEvent('wheel', { deltaY: 3, deltaMode: 1, bubbles: true, cancelable: true });
+    fireEvent(screen.getByLabelText('幻灯片画布'), wheel);
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(screen.getByText('页面内容 2')).toBeInTheDocument();
   });
 });

@@ -68,7 +68,7 @@ function DocumentPreviewContent({ url, filename, accessToken, mimetype }: Docume
       event.preventDefault();
       // Throttle high-frequency wheel events from trackpad momentum.
       const now = performance.now();
-      if (Math.abs(event.deltaY) < 4 || now - lastTurn < 400) return;
+      if ((event.deltaMode === 0 && Math.abs(event.deltaY) < 4) || now - lastTurn < 400) return;
       lastTurn = now;
       setPage((current) => Math.max(0, Math.min(count - 1, current + Math.sign(event.deltaY))));
     };
