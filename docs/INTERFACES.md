@@ -74,6 +74,13 @@ Dashboard 代理模型管理接口，并通过受管 MCP 流程调用所需的�
 
 ### Nacos 技能下载
 
+Nacos 3.3 的 ARD 发现和版本管理使用 `/api/agentteams/skills/nacos/ard`。连接沿用技能中心的 Nacos 配置，`ardBaseUrl` 可单独指定 ARD 服务地址。
+
+- `GET` 接受 `q` 和 `page`，返回命名空间中的 Skill、上线版本和下一页标记。选中结果后传入 `source`、`name` 和 `worker`，读取 Controller 转发的运行时启用版本、工作区版本和来源冲突。`edit=1&file=…` 读取编辑内容和工作区摘要，`diff=1` 携带 `expected` 与 `digest` 返回文件变化列表，附加 `file` 可读取两侧内容。
+- `POST` 的 `apply` 操作按单个 Worker 应用指定的上游版本。请求携带读取时的 `source`、`expected` 和工作区 `digest`。界面分发后再次读取运行时，确认该版本已经启用。
+- `GET` 的 `receipt=1` 读取当前连接标识 `registry`、持久化发布记录及 Nacos 最新流程状态。`version` 是该来源上次发布的版本，`latest` 来自 Nacos 原生版本标签，`upstream` 是 ARD 当前可发现的版本。Worker 更新到其他成员发布的版本后，可从已对齐的工作区继续发布。自定义 Skill 使用 `name` 和 `local=1` 指定技能中心来源。首次发布后根据 ARD 返回的真实资源标识关联本地 Skill。
+- `POST` 的 `publish` 接收 `registry`、`expected`、`digest`、新 `version`、`message` 和文本 `edits`，从完整包创建草稿。技能中心来源传 `local: true`，首次发布的 `expected` 为空字符串。`finish` 接收同一注册中心、资源及版本，核对已记录草稿的包摘要后提交，或发布已通过审核的版本。关闭面板或提交失败后，可回读记录继续。更新对象只有在原生运行时回读到目标启用版本后才显示已确认。
+
 `GET /api/agentteams/skills/nacos/{name}/download` 专用于 Nacos 来源技能的下载，支持 MinIO 缓存策略：
 
 1. 检查 MinIO 中是否已有该技能的文件内容（`{name}/` 前缀下），有则直接打包返回。

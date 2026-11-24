@@ -25,6 +25,7 @@ export interface SkillCreateResponse extends SkillEntry {
 
 export interface NacosConfig {
   registryUrl: string;
+  ardBaseUrl?: string;
   namespace: string;
   alias?: string;
   protocol?: 'http' | 'https';

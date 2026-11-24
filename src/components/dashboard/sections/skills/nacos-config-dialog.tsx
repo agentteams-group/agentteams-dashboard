@@ -34,6 +34,7 @@ export function NacosConfigDialog({ open, onOpenChange }: NacosConfigDialogProps
   const configKey = config
     ? JSON.stringify([
         config.registryUrl,
+        config.ardBaseUrl,
         config.namespace,
         config.alias,
         config.protocol,
@@ -67,6 +68,7 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
   const syncMutation = useNacosSync();
 
   const [registryUrl, setRegistryUrl] = useState(config?.registryUrl || '');
+  const [ardBaseUrl, setArdBaseUrl] = useState(config?.ardBaseUrl || '');
   const [namespace, setNamespace] = useState(config?.namespace || 'public');
   const [alias, setAlias] = useState(config?.alias || '');
   const [protocol, setProtocol] = useState<'http' | 'https'>(config?.protocol || 'http');
@@ -78,6 +80,7 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
   const handleSave = useCallback(async () => {
     await updateMutation.mutateAsync({
       registryUrl,
+      ardBaseUrl: ardBaseUrl.trim() || undefined,
       namespace,
       alias: alias || undefined,
       protocol,
@@ -86,7 +89,7 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
       username: username || undefined,
       password: password || undefined,
     });
-  }, [registryUrl, namespace, alias, protocol, apiPrefix, mode, username, password, updateMutation]);
+  }, [registryUrl, ardBaseUrl, namespace, alias, protocol, apiPrefix, mode, username, password, updateMutation]);
 
   const handleSync = useCallback(async () => {
     await syncMutation.mutateAsync();
@@ -169,6 +172,10 @@ function NacosConfigDialogContent({ config, onOpenChange }: NacosConfigDialogCon
             </div>
           )}
 
+          <div className="space-y-2">
+            <Label htmlFor="nacos-ard-base">ARD 服务地址（Nacos 3.3）</Label>
+            <Input id="nacos-ard-base" value={ardBaseUrl} onChange={(e) => setArdBaseUrl(e.target.value)} placeholder="默认使用注册中心主机的 9080 端口" />
+          </div>
           <div className="space-y-2">
             <Label>命名空间</Label>
             <Input

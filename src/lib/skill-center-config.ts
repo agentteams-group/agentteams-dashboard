@@ -25,6 +25,7 @@ export function maskNacosConfig(config: NacosConfig | null): NacosConfig | null 
 
 export interface NacosConfig {
   registryUrl: string;
+  ardBaseUrl?: string;
   namespace: string;
   alias?: string;
   protocol?: 'http' | 'https';

@@ -94,7 +94,13 @@ MCP 服务器在 Dashboard 里是治理面，不只是清单：
 - **审计线索** —— MCP 配置变更流入 Dashboard 审计日志（actor、级别、时间戳，追加式 JSONL）。
 - **凭据卫生** —— 上游密钥（如 `Authorization` 头）永不回传浏览器；选择器只展示传输类型。
 
-技能/MCP 目录一键安装 + 上述治理语义，让 Dashboard 成为「每个智能体能触达什么」的控制点。线协议见 [docs/INTERFACES.md](docs/INTERFACES.md)。
+在「资产中心 → 技能 → 配置 Nacos」中填写注册中心、命名空间与凭据。Nacos 3.3 需开启 ARD；如果使用网关或自定义端口，可以填写独立的 ARD 服务地址。「发现 Nacos Skill」支持浏览与搜索已上线的完整包。选择一个 Skill 后可比较各 Worker 的运行时启用版本和工作区版本，再勾选要更新的 Worker。当前运行时版本回读支持本地嵌入式 QwenPaw，其他运行时和离线 Worker 会显示检测结果。
+
+更新已安装的 Skill 时，请使用包含 `3231267` 修复的 QwenPaw Harness 镜像。旧镜像在 Worker 停机同步时可能把旧文件写回分发目录。[QwenPaw PR #18](https://github.com/agentteams-group/agentteams-harness-qwenpaw/pull/18)
+
+选择「查看差异」可检查更新将新增、删除或修改的文件，并排查看工作区与上游的文本内容。如果 Worker 已启用内容一致的版本，勾选并应用即可登记来源，此操作无需重启 Worker。
+
+自定义 Skill 可从「更多 → 发布到 Nacos」首次发布。已关联的 Worker Skill 可从「编辑并发布」编辑工作区包中的文本。填写版本号和变更说明后创建草稿，再点击「提交发布」。提交失败后重新打开面板即可继续同一份草稿。审核通过后可按需完成发布，页面会分别显示上线状态、ARD 发现结果及 Worker 实际启用版本。[接口说明](docs/INTERFACES.md)
 
 ## 📦 快速开始
 

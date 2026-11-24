@@ -156,6 +156,18 @@ describe('PUT /api/agentteams/skills/nacos/config', () => {
     expect(JSON.stringify(await res.json())).not.toContain('brand-new-pw');
   });
 
+  it('更换 ARD 服务地址后需要重新提供连接凭据', async () => {
+    mockGetNacosConfig.mockResolvedValue({ ...SAVED_CONFIG, ardBaseUrl: 'https://registry-one.example' });
+    const res = await PUT(buildPutRequest({
+      registryUrl: SAVED_CONFIG.registryUrl,
+      ardBaseUrl: 'https://registry-two.example',
+      password: NACOS_PASSWORD_MASK,
+    }, 3));
+    expect(res.status).toBe(400);
+    expect(mockSetNacosConfig).not.toHaveBeenCalled();
+    expect(JSON.stringify(await res.json())).not.toContain(PLAINTEXT_PASSWORD);
+  });
+
   it('传回掩码占位符且存储无已存密码时保存为 undefined', async () => {
     const res = await PUT(
       buildPutRequest(
