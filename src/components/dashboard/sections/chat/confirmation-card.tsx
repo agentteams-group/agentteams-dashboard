@@ -29,6 +29,8 @@ export interface ConfirmationCardPayload {
    */
   requestId?: string;
   runtimeApproval?: boolean;
+  structuredReply?: boolean;
+  contextId?: string;
   resolutionKey?: string;
   sourceEventId?: string;
   /** #235：取消命令（`/approval cancel <id>`），运行时提供时才出现。 */
@@ -68,6 +70,7 @@ export function toConfirmationCardPayload(payload: Record<string, unknown>): Con
     findings: typeof payload.findings === 'number' ? payload.findings : undefined,
     requestId: confirmationId,
     ...(payload.runtimeApproval === true ? { runtimeApproval: true } : {}),
+    ...(payload.structuredReply === true ? { structuredReply: true, contextId: str(payload.contextId) } : {}),
     cancelReply: str(payload.cancelReply),
     expiresAt: typeof payload.expiresAt === 'number'
       ? payload.expiresAt
@@ -131,6 +134,7 @@ export function ConfirmationCard({ payload, onApprove, onReject, onCancel }: Con
         confirmation_id: payload.requestId,
         answer: kind === 'approve' ? 'approved' : kind === 'reject' ? 'rejected' : 'cancelled',
         tool_name: payload.toolName,
+        ...(payload.structuredReply ? { kind: 'tool_approval' as const, context_id: payload.contextId } : {}),
         ...(currentUserId ? { actor: currentUserId } : {}),
       }
       : undefined;

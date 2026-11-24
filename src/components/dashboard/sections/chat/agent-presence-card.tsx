@@ -106,18 +106,21 @@ const NODE_STATUS_ZH: Record<string, string> = {
 
 /** Controller 心跳的 agentStatus 取值（idle/running/disabled）。 */
 const AGENT_STATUS_ZH: Record<string, string> = {
+  waiting_user: '等待人工',
   running: '运行中',
   idle: '空闲',
   disabled: '已停用',
 };
 
 const SESSION_STATE_ZH: Record<WorkerSessionState, string> = {
+  waiting_user: '等待人工',
   running: '运行中',
   done: '刚完成',
   idle: '空闲',
 };
 
 const SESSION_STATE_TOKEN: Record<WorkerSessionState, StatusToken> = {
+  waiting_user: 'waiting',
   running: 'running',
   done: 'done',
   idle: 'info',

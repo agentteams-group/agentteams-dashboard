@@ -2,9 +2,10 @@
 export const RUNTIME_APPROVAL_KEY = 'org.agentteams.approval';
 export interface RuntimeApproval {
   version: 1;
-  runtime: 'openclaw' | 'qwenpaw' | 'hermes' | 'deepseek-harness' | 'openhuman' | 'codex';
+  runtime: string;
   request_id: string;
   context_id?: string;
+  reply_format?: 'com.agentteams.answer';
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
   tool_name?: string;
   parameters?: string;
@@ -16,10 +17,15 @@ export interface RuntimeApproval {
 export function parseRuntimeApproval(value: unknown): RuntimeApproval | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const data = value as RuntimeApproval;
-  if (data.version !== 1 || !['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'].includes(data.runtime)
+  if (data.version !== 1 || typeof data.runtime !== 'string' || !data.runtime
+    || (data.reply_format !== 'com.agentteams.answer' && !['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'].includes(data.runtime))
     || typeof data.request_id !== 'string' || !/^[\w.:-]+$/.test(data.request_id)
     || !['pending', 'approved', 'rejected', 'cancelled', 'expired'].includes(data.status)) return;
   if (data.status === 'pending' && (typeof data.tool_name !== 'string' || !data.tool_name)) return;
+  if (data.reply_format === 'com.agentteams.answer') {
+    if (typeof data.context_id !== 'string' || !/^[\w.:-]+$/.test(data.context_id)) return;
+    return data;
+  }
   if (data.runtime === 'codex' && (typeof data.context_id !== 'string' || !/^[\w.:-]+$/.test(data.context_id))) return;
   if (['hermes', 'deepseek-harness', 'openhuman'].includes(data.runtime)
     && (typeof data.context_id !== 'string' || !/^[\w.-]+$/.test(data.context_id))) return;
@@ -28,7 +34,9 @@ export function parseRuntimeApproval(value: unknown): RuntimeApproval | undefine
 
 export function runtimeApprovalPayload(data: RuntimeApproval): Record<string, unknown> {
   const id = data.request_id;
-  const replies = data.runtime === 'codex'
+  const replies = data.reply_format === 'com.agentteams.answer'
+    ? [`批准请求 ${id}`, `拒绝请求 ${id}`]
+    : data.runtime === 'codex'
     ? [`/approve ${id} ${data.context_id}`, `/reject ${id} ${data.context_id}`]
     : data.runtime === 'openclaw'
       ? [`/approve ${id} allow-once`, `/approve ${id} deny`]
@@ -40,6 +48,7 @@ export function runtimeApprovalPayload(data: RuntimeApproval): Record<string, un
     requestId: id,
     runtimeApproval: true,
     contextId: data.context_id,
+    structuredReply: data.reply_format === 'com.agentteams.answer',
     parameters: typeof data.parameters === 'string' ? data.parameters : undefined,
     severity: typeof data.severity === 'string' ? data.severity : undefined,
     riskDetails: typeof data.risk_details === 'string' ? data.risk_details : undefined,

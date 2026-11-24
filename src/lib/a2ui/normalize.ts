@@ -30,6 +30,7 @@
  */
 
 import type { ParsedA2uiBlock } from './parser';
+import { questionReceipts } from '../runtime-hitl';
 import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY, runtimeApprovalPayload } from '../runtime-approval';
 import { FILE_REFS_CONTENT_KEY, fileReferenceDisplayBody, fileReferencesFromBody, parseFileRefs } from '../file-refs';
 import {
@@ -94,6 +95,7 @@ function stripLongMessageHtmlFooter(html: string): string {
 
 function selectBlocks(input: NormalizeInput): ParsedA2uiBlock[] {
   const { body, formattedBody, content, isStreaming, isMine, runtime } = input;
+  if (!isMine && questionReceipts(content).length) return [{ type: 'text', text: body }];
 
   const approval = !isMine && parseRuntimeApproval(content[RUNTIME_APPROVAL_KEY]);
   if (approval && approval.status === 'pending') {

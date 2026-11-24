@@ -42,6 +42,9 @@ export interface ConfirmationReply {
 export const ANSWER_CONTENT_KEY = 'com.agentteams.answer';
 
 export interface ConfirmationAnswerField {
+  kind?: 'ask_user' | 'tool_approval';
+  context_id?: string;
+  agent_id?: string;
   /** 卡片自身的确认 id；启发式卡（`heuristic:` 前缀）不是运行时请求，不带此字段。 */
   confirmation_id: string;
   /** 与房间正文一致的所见答案，便于消费端不必再解析自然语言。 */
@@ -82,12 +85,13 @@ export function buildConfirmationReply(
   content: string,
   sender: string | undefined,
   workerMatrixUserIds: string[] | undefined,
+  structured = false,
 ): ConfirmationReply {
   const workerIds = workerMatrixUserIds ?? [];
   // Task rooms can lack a Worker projection. Native decisions still belong
   // to the exact Agent that published the approval, including in group rooms.
   const nativeDecision = content.startsWith(APPROVAL_FEEDBACK_MARKER) || /^\/(?:approval\s+(?:approve|deny|cancel)|agentteams-approval\s+(?:approve|deny)|approve|reject)\b/.test(content);
-  const targetId = sender && (workerIds.includes(sender) || nativeDecision)
+  const targetId = sender && (workerIds.includes(sender) || nativeDecision || structured)
     ? sender
     : workerIds[0];
   if (!targetId) return { content };

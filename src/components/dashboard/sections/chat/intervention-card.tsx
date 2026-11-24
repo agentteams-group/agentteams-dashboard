@@ -128,7 +128,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
   // 发送中 / 未写入房间：两者一起撑起 C-3 的诚实反馈，避免「点了就算已答复」。
   const [submitting, setSubmitting] = useState(false);
   const [sendFailed, setSendFailed] = useState(false);
-  const submitted = useMemo(() => resolution?.status === 'answered'
+  const submitted = useMemo(() => resolution?.status === 'answered' || resolution?.status === 'submitted'
     ? { by: resolution.actor ?? '', at: resolution.timestamp }
     : null, [resolution]);
   const [now, setNow] = useState(() => Date.now());
@@ -195,14 +195,14 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
     if (!expired || expiredNotifiedRef.current) return;
     expiredNotifiedRef.current = true;
     if (resolution?.status === 'expired') return;
-    useHitlInboxStore.getState().expireConfirmation(payload.confirmation_id, currentUserId ?? undefined);
+    if (!payload.reply_format) useHitlInboxStore.getState().expireConfirmation(payload.confirmation_id, currentUserId ?? undefined);
     // 房间定位：本卡只在当前打开的房间的消息流里挂载（切房间时卸载），所以
     // activeRoomId 就是发出这条干预的房间；通知点击后能直接回到它。
     const timeoutRoomId = sourceRoomId ?? useRoomMetaStore.getState().activeRoomId;
     addNotification({
       type: 'warning',
       title: '干预请求已超时',
-      message: `「${questions[page]?.question ?? payload.tool_name}」在 ${formatInterventionTimeout(timeoutMs)}内未获答复，任务保持阻塞，请管理员关注。`,
+      message: `「${questions[page]?.question ?? payload.tool_name}」在 ${formatInterventionTimeout(timeoutMs)}内未获答复，仍在等待人工处理。`,
       origin: 'system',
       ...(timeoutRoomId ? { roomId: timeoutRoomId } : {}),
     });
@@ -237,7 +237,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
         <h3 className="mb-2 text-sm font-medium">{questions[0].question}</h3>
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
           <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          已提交选择
+          {resolution?.answer === 'cancelled' ? '请求已取消' : payload.reply_format && resolution?.status === 'answered' ? 'Agent 已确认答案' : '已提交选择'}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {resolution?.answer?.replace(/^【干预答复】\s*/, '').replace(/A\d+：/g, '').replace(/\n/g, '；')}
@@ -269,6 +269,7 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
       ? undefined
       : {
           confirmation_id: payload.confirmation_id,
+          ...(payload.reply_format ? { kind: 'ask_user' as const } : {}),
           answer: text,
           tool_name: payload.tool_name,
           responses: questions.map((question, index) => ({
@@ -306,7 +307,10 @@ export function InterventionCard({ payload, onAnswer, sourceRoomId }: Interventi
       return;
     }
     // 收件箱互通（F2.3）：任一处处理，另一处同步消失并保留已答复状态。
-    useHitlInboxStore.getState().resolveConfirmation(
+    const resolve = payload.reply_format
+      ? useHitlInboxStore.getState().submitConfirmation
+      : useHitlInboxStore.getState().resolveConfirmation;
+    resolve(
       payload.confirmation_id,
       currentUserId ?? undefined,
       text

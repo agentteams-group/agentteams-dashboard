@@ -84,6 +84,8 @@ export interface RuntimeConfirmationBlock {
     external_files?: string;
     /** Stable id used to correlate approve / deny replies. */
     confirmation_id: string;
+    reply_format?: 'com.agentteams.answer';
+    status?: 'pending' | 'answered' | 'cancelled' | 'expired';
     expires_at?: number;
     /**
      * 工具护栏风险等级（#235）：CRITICAL / HIGH / MEDIUM / LOW / INFO。
@@ -288,6 +290,10 @@ export function normalizeConfirmationPayload(raw: unknown): RuntimeConfirmationB
     tool_name: toolName,
     confirmation_id: confirmationId,
   };
+  if (source.reply_format === 'com.agentteams.answer') payload.reply_format = source.reply_format;
+  if (['pending', 'answered', 'cancelled', 'expired'].includes(String(source.status))) {
+    payload.status = source.status as RuntimeConfirmationBlock['payload']['status'];
+  }
   if (typeof source.parameters === 'string') payload.parameters = source.parameters;
   if (typeof source.external_files === 'string') payload.external_files = source.external_files;
   if (typeof source.expires_at === 'number') payload.expires_at = source.expires_at;

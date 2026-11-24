@@ -1,4 +1,4 @@
-export type WorkerSessionState = 'running' | 'done' | 'idle';
+export type WorkerSessionState = 'running' | 'waiting_user' | 'done' | 'idle';
 
 
 /** Minimal room shape the derivation needs (test objects may be lean). */
