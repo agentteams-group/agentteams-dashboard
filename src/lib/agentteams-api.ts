@@ -962,6 +962,7 @@ export interface McpServerConfig {
   createdAt: string;
   updatedAt: string;
   managed?: boolean;
+  gatewayOnly?: boolean;
   kind?: import('@/lib/mcp-management').McpKind;
   toolCount?: number;
   authorizedWorkerCount?: number;
