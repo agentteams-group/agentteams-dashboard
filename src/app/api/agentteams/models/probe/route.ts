@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
   // validates its actual target against the Dashboard's policy instead.
   const managed = await callControllerAsset(request, 'models', { action: 'probe', input: value });
   if (managed) {
-    if (isRecord(managed.body) && managed.body.error === 'model probe endpoint is outside the configured network allowlist') {
-      return NextResponse.json({ success: false, message: '内网模型地址尚未获准探测。请在「模型连接 → 探测地址」中加入模型服务的主机名或 IP，保存后重试；本次尚未请求模型服务。' }, { status: managed.response.status });
+    if (isRecord(managed.body) && (managed.body.code === 'model_probe_host_not_allowed' || managed.body.error === 'model probe endpoint is outside the configured network allowlist')) {
+      return NextResponse.json({ success: false, code: 'model_probe_host_not_allowed', blockedHost: typeof managed.body.host === 'string' ? managed.body.host : undefined, model: input.model.trim(), message: '内网模型地址尚未获准探测。请在「模型 → 内网白名单」中加入模型服务的主机名或 IP，保存后重试；本次尚未请求模型服务。' }, { status: managed.response.status });
     }
     return NextResponse.json(managed.body, { status: managed.response.status });
   }

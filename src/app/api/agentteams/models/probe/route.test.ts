@@ -63,12 +63,13 @@ describe('model connection probe endpoint', () => {
   });
 
   it('explains a Controller network-policy rejection without falling back to a direct probe', async () => {
-    vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}, { status: 400 }), body: { error: 'model probe endpoint is outside the configured network allowlist', fallbackAllowed: false } });
+    vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}, { status: 400 }), body: { error: 'model probe endpoint is outside the configured network allowlist', code: 'model_probe_host_not_allowed', host: '172.16.50.89', fallbackAllowed: false } });
     const response = await POST(request({ providerName: 'private-model', model: 'test-model' }));
     expect(response.status).toBe(400);
     const result = await response.json();
     expect(result.success).toBe(false);
-    expect(result.message).toContain('探测地址');
+    expect(result.message).toContain('内网白名单');
+    expect(result).toMatchObject({ code: 'model_probe_host_not_allowed', blockedHost: '172.16.50.89' });
     expect(result.message).toContain('保存后重试');
     expect(result.message).toContain('尚未请求模型服务');
     expect(fetchMock).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ModelsSection } from './models-section';
 vi.mock('@/hooks/use-agentteams-models', () => ({ useModels: () => ({ data: [] }), useAiRoutes: () => ({ data: [] }), useCreateModel: () => ({}), useUpdateModel: () => ({}), useDeleteModel: () => ({}), useCreateAiRoute: () => ({}), useUpdateAiRoute: () => ({}), useDeleteAiRoute: () => ({}) }));
@@ -7,13 +8,16 @@ vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: 
 vi.mock('@/hooks/use-agentteams-infrastructure', () => ({ useInfrastructure: () => ({ data: null }) }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [] }) }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
-vi.mock('./model-probe-policy-dialog', () => ({ ModelProbePolicyDialog: ({ onClose }: { onClose: () => void }) => <div role="dialog" aria-label="模型探测地址"><button onClick={onClose}>关闭探测配置</button></div> }));
+vi.mock('./model-probe-policy-settings', () => ({ ModelProbePolicySettings: () => <input aria-label="内网主机草稿" defaultValue="" /> }));
 afterEach(cleanup);
-it('opens probe-address management next to Add connection without changing the active model tab', () => {
+it('opens an independent internal-allowlist tab and retains its draft across tab switches', () => {
  render(<TooltipProvider><ModelsSection /></TooltipProvider>);
- const entry = screen.getByRole('button', { name: '探测地址' });
- expect(entry.parentElement).toBe(screen.getByRole('button', { name: '添加连接' }).parentElement);
- fireEvent.click(entry); expect(screen.getByRole('dialog', { name: '模型探测地址' })).toBeTruthy();
- fireEvent.click(screen.getByRole('button', { name: '关闭探测配置' })); expect(screen.queryByRole('dialog')).toBeNull();
- expect(screen.getByRole('tab', { name: '模型连接' }).getAttribute('aria-selected')).toBe('true');
+ expect(screen.queryByLabelText('内网主机草稿')).toBeNull();
+ const tab = screen.getByRole('tab', { name: '内网白名单' });
+ fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+ const draft = screen.getByLabelText('内网主机草稿'); fireEvent.change(draft, { target: { value: 'gpu.local' } });
+ fireEvent.mouseDown(screen.getByRole('tab', { name: '模型连接' }), { button: 0, ctrlKey: false });
+ expect(draft.closest('[role="tabpanel"]')).toHaveAttribute('hidden');
+ fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+ expect(draft).toHaveValue('gpu.local'); expect(tab).toHaveAttribute('aria-selected', 'true');
 });

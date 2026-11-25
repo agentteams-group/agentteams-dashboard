@@ -434,6 +434,37 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it.each(['draft', 'saved'])('approves a blocked host and retries the %s test in place with the same model and credential selection', async mode => {
+    let probeCount = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('probe-policy')) return Response.json({ allowedHosts: init?.method === 'PUT' ? ['existing.local', '172.16.50.89'] : ['existing.local'], allowPrivateNetwork: false, revision: init?.method === 'PUT' ? '2' : '1', source: 'persistent' });
+      probeCount++;
+      return Response.json(probeCount === 1 ? { success: false, code: 'model_probe_host_not_allowed', blockedHost: '172.16.50.89', message: 'blocked' } : { success: true, message: 'approved model replied' });
+    });
+    vi.stubGlobal('fetch', fetchMock); renderSection();
+    if (mode === 'draft') {
+      fireEvent.click(screen.getByRole('button', { name: '添加连接' }));
+      fireEvent.change(screen.getByLabelText('连接名称 *'), { target: { value: 'unsaved-connection' } });
+      fireEvent.change(screen.getByLabelText('API Key *'), { target: { value: 'draft-key' } });
+      fireEvent.change(screen.getByRole('combobox', { name: '模型 ID' }), { target: { value: 'private-model' } });
+      fireEvent.click(screen.getByRole('button', { name: '测试模型 private-model' }));
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: '测试连接 openai' }));
+      fireEvent.change(screen.getByRole('combobox', { name: '测试模型 ID' }), { target: { value: 'private-model' } });
+      fireEvent.click(screen.getByRole('button', { name: '开始测试' }));
+    }
+    await screen.findByText('加入内网白名单？');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '加入并重试' }));
+    await screen.findByText('approved model replied');
+    const probes = fetchMock.mock.calls.filter(([url]) => !String(url).includes('probe-policy'));
+    expect(probes).toHaveLength(2); expect(probes[0][1]?.body).toBe(probes[1][1]?.body);
+    if (mode === 'draft') {
+      expect((screen.getByLabelText('连接名称 *') as HTMLInputElement).value).toBe('unsaved-connection');
+      expect((screen.getByLabelText('API Key *') as HTMLInputElement).value).toBe('draft-key');
+    } else expect(JSON.parse(String(probes[1][1]?.body))).toEqual({ providerName: 'openai', model: 'private-model' });
+  });
+
   it('tests a saved connection without asking for or sending its stored key', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: false, message: '模型访问被拒绝，请检查权限或额度', model: 'private-model', latencyMs: 12 }));
     vi.stubGlobal('fetch', fetchMock);
