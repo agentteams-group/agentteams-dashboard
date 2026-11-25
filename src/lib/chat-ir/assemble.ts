@@ -18,6 +18,7 @@
  */
 
 import type { DisplayMessage } from '@/hooks/use-matrix';
+import { parseRuntimeApproval, RUNTIME_APPROVAL_KEY } from '@/lib/runtime-approval';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { parseLongMessage, parseEmbeddedAgentReprBlocks } from '@/lib/a2ui/parser';
@@ -214,7 +215,7 @@ function blockInput(message: DisplayMessage) {
 /** Blocks a message contributes to a turn, or null when it stays a tile. */
 function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
   if (message.isMe || !message.workerName) return null;
-  if (message.workflow) return null;
+  if (message.workflow || parseRuntimeApproval(message.rawContent?.[RUNTIME_APPROVAL_KEY])) return null;
   if (message.mediaUrl) return null;
   if (message.fileRefs && message.fileRefs.length > 0) return null;
   if (message.type !== 'm.text' && message.type !== 'm.notice') return null;

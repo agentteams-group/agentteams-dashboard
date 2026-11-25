@@ -493,6 +493,28 @@ describe('ChatIR turn assembly', () => {
     });
   });
 
+  it('keeps a final report and its files separate from a preceding expired approval', () => {
+    const events = [
+      notice('approval', '@w:server', 'Bash: expired', 1000, {
+        'org.agentteams.approval': { version: 1, runtime: 'claudecode', request_id: 'r1',
+          context_id: 'c1', reply_format: 'com.agentteams.answer', status: 'expired' },
+        'org.agentteams.progress_only': true,
+      }),
+      ev('report', '@w:server', '验收通过，页面按钮和编码均已核对。', 2000, {
+        'org.agentteams.progress_only': true,
+      }),
+      ev('file', '@w:server', 'page.html', 2100, {
+        msgtype: 'm.file', filename: 'page.html', url: 'mxc://server/page',
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'report' },
+      }),
+    ];
+    const { messages } = assemble(events, 'claudecode');
+    expect(messages.map(m => m.id)).toEqual(['approval', 'report']);
+    expect(messages[1].precomputedBlocks).toContainEqual(expect.objectContaining({
+      type: 'attachment', payload: expect.objectContaining({ url: 'mxc://server/page' }),
+    }));
+  });
+
   it('does not treat a long-message narration as the run answer', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),
