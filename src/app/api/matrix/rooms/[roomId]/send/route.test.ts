@@ -9,7 +9,9 @@ describe('Matrix room message send route', () => {
     let delivered: Record<string, unknown> | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       if (String(url).includes('/api/matrix/')) {
-        return PUT(new NextRequest(new URL(String(url), 'http://dashboard.test'), init),
+        return PUT(new NextRequest(new URL(String(url), 'http://dashboard.test'), {
+          method: init?.method, headers: init?.headers, body: String(init?.body),
+        }),
           { params: Promise.resolve({ roomId: '!room:test' }) });
       }
       delivered = JSON.parse(init!.body as string);
