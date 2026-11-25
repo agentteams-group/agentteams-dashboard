@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMcpCatalog, trustedCatalogServerNames } from '@/hooks/use-mcp-catalog';
@@ -8,9 +8,7 @@ import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -50,7 +48,6 @@ export function WorkerCreateDialog({
   modelOptions,
   sessionIssue,
   modelsLoading = false,
-
   agentSpecs,
 }: {
   open: boolean;
@@ -62,7 +59,6 @@ export function WorkerCreateDialog({
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
   modelsLoading?: boolean;
-
   agentSpecs?: AgentSpecTemplateOption[];
 }) {
   const nameError = workerNameError(value.name);
@@ -74,6 +70,11 @@ export function WorkerCreateDialog({
       ? infrastructure.isLoading ? '正在读取模型连接设置，请稍候。' : '无法读取模型连接设置，请稍后重试。'
       : null);
   const modelId = useId();
+  const connectionId = useId();
+  const [externalConnection, setExternalConnection] = useState('');
+  useEffect(() => {
+    if (!open) setExternalConnection('');
+  }, [open]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateNote, setTemplateNote] = useState<string | null>(null);
@@ -95,8 +96,12 @@ export function WorkerCreateDialog({
       .map((provider) => ({ model, provider, value: JSON.stringify([provider, model]) })),
   );
   const modelProviders = [...new Set(selections.map((selection) => selection.provider))].sort((a, b) => a.localeCompare(b));
+  const connection = gatewayMode === 'external'
+    ? externalConnection || selections.find((selection) => selection.model === value.model)?.provider || ''
+    : value.modelProvider || '';
+  const connectionModels = selections.filter((selection) => selection.provider === connection);
   const selected = selections.find((selection) =>
-    selection.model === value.model && (!value.modelProvider || selection.provider === value.modelProvider),
+    selection.model === value.model && selection.provider === connection,
   );
   // B7 21.1: catalog 上标记 trusted 的 MCP server 在新建 Worker 时默认勾选
   //（操作员可手动取消）；catalog 不可用（旧 Controller 404）时退化为无默认。
@@ -228,6 +233,35 @@ export function WorkerCreateDialog({
           </div>
 
           <div className="space-y-2 min-w-0">
+            <Label htmlFor={connectionId}>模型连接 *</Label>
+            <Select
+              name="worker-model-connection"
+              value={modelProviders.includes(connection) ? connection : ''}
+              disabled={isPending || !!modelIssue || modelProviders.length === 0}
+              onValueChange={(provider) => {
+                setExternalConnection(provider);
+                onChange({
+                  ...value,
+                  model: '',
+                  modelProvider: gatewayMode === 'external' ? undefined : provider,
+                });
+              }}
+            >
+              <SelectTrigger id={connectionId} aria-label="模型连接" className="w-full min-w-0">
+                <SelectValue placeholder="请选择模型连接" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelProviders.map((provider) => (
+                  <SelectItem key={provider} value={provider}>{provider}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {gatewayMode === 'external' && connection.includes(' / ') && (
+              <p className="text-xs text-muted-foreground">此连接组由外部网关按模型路由分配，无法单独指定其中一个连接。</p>
+            )}
+          </div>
+
+          <div className="space-y-2 min-w-0">
             <div className="flex items-center gap-1">
               <Label htmlFor={modelId}>模型 *</Label>
               <InfoTip label="模型访问与验证说明">
@@ -242,10 +276,10 @@ export function WorkerCreateDialog({
             <div className="min-w-0 w-full overflow-hidden">
               <Select
                 name="worker-model"
-                value={selected?.value ?? ''}
-                disabled={isPending || !!modelIssue || selections.length === 0}
+                value={selected?.model ?? ''}
+                disabled={isPending || !!modelIssue || connectionModels.length === 0}
                 onValueChange={(next) => {
-                  const selection = selections.find((item) => item.value === next);
+                  const selection = connectionModels.find((item) => item.model === next);
                   if (!selection) return;
                   onChange({
                     ...value,
@@ -257,20 +291,15 @@ export function WorkerCreateDialog({
                 }}
               >
                 <SelectTrigger id={modelId} aria-label="模型" className="w-full min-w-0">
-                  <SelectValue placeholder="请选择模型">
-                    {selected ? `${selected.provider} · ${selected.model}` : value.model || undefined}
+                  <SelectValue placeholder={connection ? '请选择模型' : '请先选择模型连接'}>
+                    {value.model || undefined}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {modelProviders.map((provider) => (
-                    <SelectGroup key={provider}>
-                      <SelectLabel>{provider}</SelectLabel>
-                      {selections.filter((selection) => selection.provider === provider).map((selection) => (
-                        <SelectItem key={selection.value} value={selection.value}>
-                          {selection.model}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
+                  {connectionModels.map((selection) => (
+                    <SelectItem key={selection.value} value={selection.model}>
+                      {selection.model}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -285,9 +314,9 @@ export function WorkerCreateDialog({
                 <a href="#console/resources/models" className="ml-1 underline" onClick={() => onOpenChange(false)}>前往模型管理</a>
               </p>
             ) : value.model && !selected ? (
-              <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">当前模型未在已配置连接中找到，请重新选择。</p>
+              <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">请先选择模型连接，再选择该连接下的模型。</p>
             ) : (
-              <p className="text-xs text-muted-foreground">模型按所属连接分组，选择后显示连接名称和模型名称。</p>
+              <p className="text-xs text-muted-foreground">仅显示所选连接下已配置的模型。</p>
             )}
           </div>
 
