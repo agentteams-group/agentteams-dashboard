@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { v4 as uuid } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiUrl, extractErrorDetail } from '@/lib/api-base';
-import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
+import { CREATABLE_WORKER_RUNTIMES } from '@/lib/runtime-options';
 import { runtimeLabel } from '@/lib/runtime-labels';
 
 interface Handoff {
@@ -43,7 +43,15 @@ async function readSnapshot(response: Response): Promise<Snapshot> {
     target_failure: state.target_failure, etag: response.headers.get('ETag') };
 }
 
-export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime: string }) {
+export interface WorkerRuntimeHandoffHandle {
+  submit: () => Promise<boolean> | undefined;
+}
+
+export function WorkerRuntimeHandoff({ name, runtime, ref }: {
+  name: string;
+  runtime: string;
+  ref?: Ref<WorkerRuntimeHandoffHandle>;
+}) {
   const url = apiUrl(`/api/agentteams/workers/${encodeURIComponent(name)}/runtime-handoff`);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [selected, setSelected] = useState('');
@@ -74,14 +82,15 @@ export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime:
   }, [url, posting, refresh]);
 
   const op = snapshot?.handoff;
-  const busy = Boolean(op && op.phase !== 'completed');
-  const current = snapshot?.active_start?.runtime || (op?.phase === 'completed' ? op.target_runtime : runtime);
-  const target = busy && op ? op.target_runtime : selected || (isLegacyCopaw(current) ? 'qwenpaw' : current);
+  const failedTarget = Boolean(snapshot?.target_failure && op && ['creating', 'recovering'].includes(op.phase));
+  const busy = Boolean(op && op.phase !== 'completed' && !failedTarget);
+  const current = (failedTarget && op ? op.target_runtime : '') || snapshot?.active_start?.runtime || (op?.phase === 'completed' ? op.target_runtime : runtime);
+  const target = busy && op ? op.target_runtime : selected || current;
   const disabled = !snapshot || Boolean(readError) || busy || posting;
   const unknown = current && !CREATABLE_WORKER_RUNTIMES.some((r) => r.value === current);
 
   async function switchRuntime() {
-    if (!snapshot || readError || busy || posting || !target || target === current) return;
+    if (!snapshot || readError || busy || posting || !target || target === current) return false;
     if (request.current?.target !== target || request.current.id === op?.id) {
       request.current = { target, id: uuid() };
     }
@@ -95,13 +104,19 @@ export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime:
       });
       const state = await readSnapshot(result);
       setSnapshot(state);
+      return true;
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : '提交交接失败');
+      return false;
     } finally {
       setPosting(false);
       setRefresh((n) => n + 1);
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    submit: () => target && target !== current && !busy ? switchRuntime() : undefined,
+  }));
 
   return (
     <div className="space-y-2">
@@ -121,11 +136,10 @@ export function WorkerRuntimeHandoff({ name, runtime }: { name: string; runtime:
       {snapshot?.target_failure && <p role="alert" className="text-xs text-destructive">目标实例启动异常。{snapshot.target_failure}</p>}
       {readError && <p role="alert" className="text-xs text-destructive">{readError}</p>}
       {writeError && <p role="alert" className="text-xs text-destructive">{writeError}</p>}
-      {readError ? <Button type="button" size="sm" variant="outline" onClick={() => setRefresh((n) => n + 1)}>重新读取交接状态</Button>
-        : !busy && snapshot && target && target !== current &&
-          <Button type="button" size="sm" variant="outline" disabled={posting} onClick={switchRuntime}>
-            {posting ? '提交中…' : `从 ${runtimeLabel(current)} 切换到 ${runtimeLabel(target)}`}
-          </Button>}
+      {readError && <Button type="button" size="sm" variant="outline" onClick={() => setRefresh((n) => n + 1)}>重新读取交接状态</Button>}
+      {!busy && target && target !== current && <p className="text-xs text-muted-foreground">
+        保存后将停止当前实例，并切换为 {runtimeLabel(target)}。
+      </p>}
     </div>
   );
 }

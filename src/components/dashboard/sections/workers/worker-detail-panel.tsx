@@ -170,13 +170,11 @@ export function WorkerDetailPanel({
   }, [workerName]);
 
   useEffect(() => {
-    // 只按名字重挂载：worker prop 每次轮询都换引用，若进依赖会触发
-    // 反复 fetch。挂载初始值由 useState(worker) 提供；换名后 detail 还
-    // 是旧名 → view 回退到 worker prop，数据一致，无需 setDetail(worker)。
+    // 状态或运行时变化时刷新详情；列表轮询仅更换对象引用不触发读取。
     let alive = true;
     setEnsureReadyUnsupported(false);
     setLoopStatus(null);
-    fetchWorkerDetail(workerName)
+    fetchWorkerDetail(workerName, { force: true })
       .then((next) => {
         if (alive) setDetail(next);
       })
@@ -184,7 +182,7 @@ export function WorkerDetailPanel({
     return () => {
       alive = false;
     };
-  }, [workerName]);
+  }, [workerName, worker.phase, worker.runtime, worker.state]);
 
   // loop 预算：按 1:1 Worker 房间 session 查激活 loop；404/失败 → 整行不显。
   useEffect(() => {
