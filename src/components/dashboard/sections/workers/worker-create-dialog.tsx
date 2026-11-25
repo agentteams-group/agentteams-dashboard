@@ -4,6 +4,7 @@ import { useId, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMcpCatalog, trustedCatalogServerNames } from '@/hooks/use-mcp-catalog';
+import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import {
   Select,
   SelectContent,
@@ -48,7 +49,7 @@ export function WorkerCreateDialog({
   onSubmit,
   modelOptions,
   sessionIssue,
-  gatewayMode = 'direct',
+  modelsLoading = false,
 
   agentSpecs,
 }: {
@@ -60,11 +61,18 @@ export function WorkerCreateDialog({
   onSubmit: () => void;
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
-  gatewayMode?: 'direct' | 'external';
+  modelsLoading?: boolean;
 
   agentSpecs?: AgentSpecTemplateOption[];
 }) {
   const nameError = workerNameError(value.name);
+  const infrastructure = useInfrastructure({ enabled: open });
+  const gatewayMode = infrastructure.data?.higress?.mode;
+  const modelIssue = sessionIssue ?? (modelsLoading
+    ? '正在加载模型列表，请稍候。'
+    : !gatewayMode
+      ? infrastructure.isLoading ? '正在读取模型连接设置，请稍候。' : '无法读取模型连接设置，请稍后重试。'
+      : null);
   const modelId = useId();
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -235,7 +243,7 @@ export function WorkerCreateDialog({
               <Select
                 name="worker-model"
                 value={selected?.value ?? ''}
-                disabled={isPending || !!sessionIssue || selections.length === 0}
+                disabled={isPending || !!modelIssue || selections.length === 0}
                 onValueChange={(next) => {
                   const selection = selections.find((item) => item.value === next);
                   if (!selection) return;
@@ -267,9 +275,9 @@ export function WorkerCreateDialog({
                 </SelectContent>
               </Select>
             </div>
-            {sessionIssue ? (
+            {modelIssue ? (
               <p role="alert" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
-                {sessionIssue}
+                {modelIssue}
               </p>
             ) : selections.length === 0 ? (
               <p className="text-xs text-muted-foreground">
@@ -344,7 +352,7 @@ export function WorkerCreateDialog({
             </Button>
             <Button
               onClick={onSubmit}
-              disabled={!value.name || !!nameError || isPending || !!sessionIssue || !selected}
+              disabled={!value.name || !!nameError || isPending || !!modelIssue || !selected}
             >
               {isPending ? '创建中...' : '创建'}
             </Button>

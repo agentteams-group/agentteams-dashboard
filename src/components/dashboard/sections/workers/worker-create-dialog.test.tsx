@@ -7,6 +7,12 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 
+const gateway = vi.hoisted(() => ({ mode: 'direct' as 'direct' | 'external' | undefined, isLoading: false }));
+vi.mock('@/hooks/use-agentteams-infrastructure', () => ({
+  useInfrastructure: () => ({ data: gateway.mode ? { higress: { mode: gateway.mode } } : undefined, isLoading: gateway.isLoading }),
+}));
+afterEach(() => { gateway.mode = 'direct'; gateway.isLoading = false; });
+
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? <>{children}</> : null,
@@ -98,12 +104,10 @@ const renderDialog = (
 function Harness({
   initial,
   onSubmit,
-  gatewayMode,
   modelOptions = MODEL_OPTIONS,
 }: {
   initial: CreateWorkerRequest;
   onSubmit: (_form: CreateWorkerRequest) => void;
-  gatewayMode?: 'direct' | 'external';
   modelOptions?: ModelSelectionOption[];
 }) {
   const [value, setValue] = useState<CreateWorkerRequest>(initial);
@@ -117,7 +121,6 @@ function Harness({
         isPending={false}
         onSubmit={() => onSubmit(value)}
         modelOptions={modelOptions}
-        gatewayMode={gatewayMode}
       />
     </TooltipProvider>
   );
@@ -168,8 +171,9 @@ describe('WorkerCreateDialog grouped model selection', () => {
   });
 
   it('keeps external gateway requests alias-only while displaying their resolved connection', () => {
+    gateway.mode = 'external';
     const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
-    render(<Harness gatewayMode="external" initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
 
     chooseModel('provider-a', 'team-chat');
     expect(screen.getByText('provider-a · team-chat')).toBeInTheDocument();
@@ -206,8 +210,9 @@ describe('WorkerCreateDialog grouped model selection', () => {
   });
 
   it('shows all connections for a shared external alias without pretending to pin one', () => {
+    gateway.mode = 'external';
     const onSubmit = vi.fn();
-    render(<Harness gatewayMode="external" initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit}
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit}
       modelOptions={[boundOption('shared-model', 'provider-a'), boundOption('shared-model', 'provider-b')]} />);
     expect(within(screen.getByLabelText('模型')).getAllByRole('option')).toHaveLength(1);
     chooseModel('provider-a / provider-b', 'shared-model');
@@ -286,6 +291,28 @@ describe('WorkerCreateDialog creation checks', () => {
   it('does not submit a stale selection when model configuration cannot be read', () => {
     renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'team-chat' }, { sessionIssue: '连接列表加载失败' });
     expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('waits for gateway mode instead of sending a provider before it is known', () => {
+    gateway.mode = undefined;
+    gateway.isLoading = true;
+    renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'team-chat' });
+    expect(screen.getByText('正在读取模型连接设置，请稍候。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('reports an unavailable gateway mode without treating it as an empty model catalog', () => {
+    gateway.mode = undefined;
+    renderDialog();
+    expect(screen.getByText('无法读取模型连接设置，请稍后重试。')).toBeInTheDocument();
+    expect(screen.queryByText(/暂无已配置的模型/)).toBeNull();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('shows loading rather than an empty model directory while catalog requests are pending', () => {
+    renderDialog(undefined, { modelOptions: [], modelsLoading: true });
+    expect(screen.getByText('正在加载模型列表，请稍候。')).toBeInTheDocument();
+    expect(screen.queryByText(/暂无已配置的模型/)).toBeNull();
   });
 
   it('does not offer malformed names even when returned as configured models', () => {
