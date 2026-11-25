@@ -31,7 +31,8 @@ export async function probeHarnessModel(
   const member = `/api/agentteams/${kind}/${encodeURIComponent(name)}`;
   const response = await fetch(apiUrl(`${member}/gateway-probe`), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind: 'model' }), signal: AbortSignal.timeout(15_000),
+    // Legacy Controllers can spend 20 seconds executing the model request.
+    body: JSON.stringify({ kind: 'model' }), signal: AbortSignal.timeout(30_000),
   });
   const body = await response.json().catch(() => null);
   // Older Controllers return a synchronous result; do not start a second probe.
