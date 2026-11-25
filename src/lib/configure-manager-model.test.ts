@@ -62,3 +62,13 @@ describe('configureManagerModel', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+it('waits for the queued Harness result before completing Manager setup', async () => {
+  const id = 'a'.repeat(32);
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ status: 'pending', queued: true, request_id: id, expires_at: new Date(Date.now() + 60_000).toISOString() }, { status: 202 }))
+    .mockResolvedValueOnce(Response.json({ version: 1, status: 'ok', reason: 'ok', request_id: id }));
+  await configureManagerModel('default', { model: 'existing' }, vi.fn());
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenLastCalledWith('/api/agentteams/managers/default/health/', expect.objectContaining({ cache: 'no-store' }));
+});
