@@ -27,6 +27,7 @@ import { agentteamsApi } from '@/lib/agentteams-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
 import { useModelSelection } from '@/hooks/use-model-selection';
+import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
@@ -148,9 +149,16 @@ export function WorkersSection() {
   const ensureReadyWorker = useEnsureReadyWorker();
   const updateWorker = useUpdateWorker();
   // Soft model alias validation (embedded mode): warn but allow submit.
-  const { options: modelOptions, providers, aiRoutes, sessionIssue } = useModelSelection();
+  const { options: modelOptions, providers, aiRoutes, sessionIssue, isLoading: modelsLoading } = useModelSelection();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const infrastructure = useInfrastructure({ enabled: createOpen });
+  const gatewayMode = infrastructure.data?.higress?.mode;
+  const createModelIssue = sessionIssue ?? (modelsLoading
+    ? '正在加载模型列表，请稍候。'
+    : !gatewayMode
+      ? infrastructure.isLoading ? '正在读取模型连接设置，请稍候。' : '无法读取模型连接设置，请稍后重试。'
+      : null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
   const [drawerWorker, setDrawerWorker] = useState<WorkerResponse | null>(null);
@@ -881,7 +889,8 @@ export function WorkersSection() {
         isPending={createWorker.isPending}
         onSubmit={handleCreate}
         modelOptions={modelOptions}
-        sessionIssue={sessionIssue}
+        sessionIssue={createModelIssue}
+        gatewayMode={gatewayMode}
         agentSpecs={agentSpecs}
       />
 

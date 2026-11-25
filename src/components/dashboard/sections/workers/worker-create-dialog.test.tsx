@@ -22,22 +22,26 @@ vi.mock('@/components/ui/select', () => ({
     onValueChange,
     disabled,
     children,
+    name,
   }: {
     value?: string;
     onValueChange: (_v: string) => void;
     disabled?: boolean;
     children: React.ReactNode;
+    name?: string;
   }) => (
-    <select value={value} disabled={disabled} onChange={(e) => onValueChange(e.target.value)}>
+    <select aria-label={name === 'worker-model' ? '模型' : undefined} value={value} disabled={disabled} onChange={(e) => onValueChange(e.target.value)}>
       {children}
     </select>
   ),
   SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectLabel: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => (
     <option value={value}>{children}</option>
   ),
   SelectTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  SelectValue: () => null,
+  SelectValue: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 }));
 
 vi.mock('@/components/dashboard/sections/skills/skill-selector', () => ({
@@ -70,6 +74,7 @@ const MODEL_OPTIONS: ModelSelectionOption[] = [
 
 const renderDialog = (
   value: CreateWorkerRequest = { name: 'worker-1', runtime: 'openclaw' },
+  props: Partial<React.ComponentProps<typeof WorkerCreateDialog>> = {},
 ) => {
   const onChange = vi.fn((_next: unknown) => {});
   const onSubmit = vi.fn(() => {});
@@ -83,6 +88,7 @@ const renderDialog = (
         isPending={false}
         onSubmit={() => onSubmit()}
         modelOptions={MODEL_OPTIONS}
+        {...props}
       />
     </TooltipProvider>,
   );
@@ -92,9 +98,13 @@ const renderDialog = (
 function Harness({
   initial,
   onSubmit,
+  gatewayMode,
+  modelOptions = MODEL_OPTIONS,
 }: {
   initial: CreateWorkerRequest;
   onSubmit: (_form: CreateWorkerRequest) => void;
+  gatewayMode?: 'direct' | 'external';
+  modelOptions?: ModelSelectionOption[];
 }) {
   const [value, setValue] = useState<CreateWorkerRequest>(initial);
   return (
@@ -106,53 +116,48 @@ function Harness({
         onChange={setValue}
         isPending={false}
         onSubmit={() => onSubmit(value)}
-        modelOptions={MODEL_OPTIONS}
+        modelOptions={modelOptions}
+        gatewayMode={gatewayMode}
       />
     </TooltipProvider>
   );
 }
 
-function chooseOption(input: HTMLElement, name: string) {
-  fireEvent.focus(input);
-  fireEvent.mouseDown(
-    within(input.parentElement as HTMLElement).getByRole('option', { name }),
-  );
+function chooseModel(provider: string, model: string) {
+  fireEvent.change(screen.getByLabelText('模型'), {
+    target: { value: JSON.stringify([provider, model]) },
+  });
 }
 
-const providerInput = () => screen.getByLabelText('模型连接');
-const modelInput = () => screen.getByLabelText('模型');
-
-describe('WorkerCreateDialog Provider → Model（provider-first picker）', () => {
+describe('WorkerCreateDialog grouped model selection', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
   });
 
-  it('渲染 Provider 与 Model 两个控件，Provider 在上', () => {
+  it('shows one model selector with configured models grouped by connection', () => {
     renderDialog();
-    const provider = providerInput();
-    const model = modelInput();
-    expect(
-      provider.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByLabelText('模型连接')).toBeNull();
+    expect(screen.getByText('provider-a')).toBeInTheDocument();
+    expect(screen.getByText('provider-b')).toBeInTheDocument();
+    const model = screen.getByLabelText('模型');
+    expect(within(model).getByRole('option', { name: 'team-chat' })).toBeInTheDocument();
+    expect(within(model).getByRole('option', { name: 'alias-b' })).toBeInTheDocument();
+    expect(within(model).queryByRole('option', { name: 'qwen3.6-plus' })).toBeNull();
   });
 
-  it('选 Provider 后 Model 候选按 provider 过滤', () => {
+  it('starts without an implicit connection or model and requires a model selection', () => {
     render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={() => {}} />);
-    chooseOption(providerInput(), 'provider-a');
-
-    fireEvent.focus(modelInput());
-    const listbox = within(modelInput().parentElement as HTMLElement).getByRole('listbox');
-    expect(within(listbox).getByRole('option', { name: 'team-chat' })).toBeInTheDocument();
-    expect(within(listbox).queryByRole('option', { name: 'alias-b' })).toBeNull();
+    expect(screen.queryByText('跟随默认连接')).toBeNull();
+    expect(screen.queryByText('自动匹配连接')).toBeNull();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
   });
 
   it('创建 payload 带 modelProvider（非空）', () => {
     const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
     render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
 
-    chooseOption(providerInput(), 'provider-a');
-    chooseOption(modelInput(), 'team-chat');
+    chooseModel('provider-a', 'team-chat');
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -162,33 +167,63 @@ describe('WorkerCreateDialog Provider → Model（provider-first picker）', () 
     });
   });
 
-  it('空 Provider = 不带 modelProvider（跟随默认）', () => {
+  it('keeps external gateway requests alias-only while displaying their resolved connection', () => {
     const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
-    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
+    render(<Harness gatewayMode="external" initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit} />);
 
-    chooseOption(modelInput(), 'team-chat');
+    chooseModel('provider-a', 'team-chat');
+    expect(screen.getByText('provider-a · team-chat')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].model).toBe('team-chat');
     expect(onSubmit.mock.calls[0][0].modelProvider).toBeUndefined();
   });
 
-  it('provider/model 失配 → 黄字提示但不阻塞提交', () => {
+  it('switches the connection and model together', () => {
     const onSubmit = vi.fn((_form: CreateWorkerRequest) => {});
     render(
       <Harness
-        initial={{ name: 'worker-1', runtime: 'openclaw', model: 'alias-b', modelProvider: 'provider-a' }}
+        initial={{ name: 'worker-1', runtime: 'openclaw', model: 'team-chat', modelProvider: 'provider-a' }}
         onSubmit={onSubmit}
       />,
     );
 
-    expect(screen.getByText(/与当前\s*Provider「provider-a」不一致/)).toBeInTheDocument();
+    chooseModel('provider-b', 'alias-b');
+    expect(screen.getByText('provider-b · alias-b')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
-    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ model: 'alias-b', modelProvider: 'provider-b' });
+  });
+
+  it('distinguishes the same model name on different direct connections', () => {
+    const onSubmit = vi.fn();
+    render(<Harness initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit}
+      modelOptions={[boundOption('shared-model', 'provider-a'), boundOption('shared-model', 'provider-b')]} />);
+    chooseModel('provider-b', 'shared-model');
+    expect(screen.getByText('provider-b · shared-model')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ model: 'shared-model', modelProvider: 'provider-b' });
+  });
+
+  it('shows all connections for a shared external alias without pretending to pin one', () => {
+    const onSubmit = vi.fn();
+    render(<Harness gatewayMode="external" initial={{ name: 'worker-1', runtime: 'openclaw' }} onSubmit={onSubmit}
+      modelOptions={[boundOption('shared-model', 'provider-a'), boundOption('shared-model', 'provider-b')]} />);
+    expect(within(screen.getByLabelText('模型')).getAllByRole('option')).toHaveLength(1);
+    chooseModel('provider-a / provider-b', 'shared-model');
+    expect(screen.getByText('provider-a / provider-b · shared-model')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    expect(onSubmit.mock.calls[0][0].model).toBe('shared-model');
+    expect(onSubmit.mock.calls[0][0].modelProvider).toBeUndefined();
+  });
+
+  it('deduplicates the same connection and model returned by multiple routes', () => {
+    renderDialog(undefined, { modelOptions: [boundOption('team-chat', 'provider-a'), boundOption('team-chat', 'provider-a')] });
+    expect(within(screen.getByLabelText('模型')).getAllByRole('option')).toHaveLength(1);
   });
 });
 
-describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插件 G2）', () => {
+describe('WorkerCreateDialog creation checks', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -213,45 +248,54 @@ describe('WorkerCreateDialog 模型写前校验（9/13 装验反馈：参考插�
     expect(screen.getByRole('option', { name: 'Hermes' })).toBeInTheDocument();
   });
 
-  it('留空 = 跟随集群默认（✓，不拦提交）', () => {
+  it('does not silently submit an empty model as the cluster default', () => {
     renderDialog({ name: 'worker-1', runtime: 'openclaw' });
-    expect(screen.getByText(/跟随集群默认/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '创建' })).toBeEnabled();
+    expect(screen.queryByText(/跟随集群默认/)).toBeNull();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
   });
 
-  it('命中 alias 组 = ✓', () => {
+  it('accepts a configured model without a force-write step', () => {
     renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'team-chat' });
-    expect(screen.getByText(/命中 alias 组/)).toBeInTheDocument();
+    expect(screen.getByText('provider-a · team-chat')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
-    // 命中 → 直接提交，不弹强写确认
     expect(screen.queryByRole('button', { name: '确认强写' })).toBeNull();
   });
 
-  it('未命中 alias 组 = ⚠ 两步确认强写', async () => {
+  it('requires an unconfigured draft model to be selected again', () => {
     const { onSubmit } = renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'custom-x' });
-    expect(screen.getByText(/未命中 alias 组/)).toBeInTheDocument();
-
-    // 第一次点击 → 只弹确认条，不提交
+    expect(screen.getByText(/当前模型未在已配置连接中找到/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '确认强写' })).toBeInTheDocument();
-
-    // 确认强写 → 提交
-    fireEvent.click(screen.getByRole('button', { name: '确认强写' }));
-    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it('返回修改 → 关闭确认条，不提交', () => {
-    const { onSubmit } = renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'custom-x' });
-    fireEvent.click(screen.getByRole('button', { name: '创建' }));
-    fireEvent.click(screen.getByRole('button', { name: '返回修改' }));
-    expect(screen.queryByRole('button', { name: '确认强写' })).toBeNull();
-    expect(onSubmit).not.toHaveBeenCalled();
+  it('offers model management instead of unconfigured built-in models', () => {
+    renderDialog(undefined, { modelOptions: [{ alias: 'qwen3.6-plus', kind: 'builtin' }] });
+    expect(screen.getByText(/暂无已配置的模型/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '前往模型管理' })).toHaveAttribute('href', '#console/resources/models');
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('does not treat a failed catalog request as an unconfigured connection', () => {
+    renderDialog(undefined, { modelOptions: [], sessionIssue: '连接列表加载失败' });
+    expect(screen.getByText('连接列表加载失败')).toBeInTheDocument();
+    expect(screen.queryByText(/暂无已配置的模型/)).toBeNull();
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('does not submit a stale selection when model configuration cannot be read', () => {
+    renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'team-chat' }, { sessionIssue: '连接列表加载失败' });
+    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
+  });
+
+  it('does not offer malformed names even when returned as configured models', () => {
+    renderDialog(undefined, { modelOptions: [boundOption('/models', 'provider-a'), boundOption('team-chat', 'provider-a')] });
+    expect(within(screen.getByLabelText('模型')).queryByRole('option', { name: '/models' })).toBeNull();
+    expect(within(screen.getByLabelText('模型')).getByRole('option', { name: 'team-chat' })).toBeInTheDocument();
   });
 
   it('路径形态（/models，9/2 事故值）= ✗ 禁提交', () => {
     renderDialog({ name: 'worker-1', runtime: 'openclaw', model: '/models' });
-    expect(screen.getByText(/模型名不能是路径\/URL 或含空格/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建' })).toBeDisabled();
   });
 
@@ -291,7 +335,7 @@ describe('WorkerCreateDialog SOUL 上传（参考插件 📎）', () => {
 
   it('超过 150 行 → 行数预算提示（不阻断）', () => {
     const bigSoul = Array.from({ length: 151 }, (_, i) => `line-${i}`).join('\n');
-    renderDialog({ name: 'worker-1', runtime: 'openclaw', soul: bigSoul });
+    renderDialog({ name: 'worker-1', runtime: 'openclaw', model: 'team-chat', soul: bigSoul });
     expect(screen.getByText(/SOUL 建议 ≤150 行（当前 151 行）/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建' })).toBeEnabled();
   });
