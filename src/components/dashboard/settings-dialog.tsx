@@ -158,13 +158,16 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={settingsOpen} onOpenChange={handleOpen}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex h-[85dvh] flex-col overflow-hidden sm:max-w-2xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="management" className="w-full">
-          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 [&_[data-slot=tabs-trigger]]:h-9">
+        <Tabs
+          defaultValue="management"
+          className="min-h-0 w-full flex-1 overflow-hidden [&>[data-slot=tabs-content]]:min-h-0 [&>[data-slot=tabs-content]]:overflow-y-auto [&>[data-slot=tabs-content]]:overscroll-contain [&>[data-slot=tabs-content]]:[scrollbar-gutter:stable]"
+        >
+          <TabsList className="h-auto w-full shrink-0 flex-wrap justify-start gap-1 sm:h-auto [&_[data-slot=tabs-trigger]]:h-9">
             <TabsTrigger value="management">管理</TabsTrigger>
             <TabsTrigger value="connection">连接</TabsTrigger>
             <TabsTrigger value="chat">聊天</TabsTrigger>
@@ -416,7 +419,7 @@ export function SettingsDialog() {
 
       {/* Test Result */}
       {testResult && (
-        <div className="rounded-lg border p-3 space-y-1">
+        <div className="shrink-0 rounded-lg border p-3 space-y-1">
           <div className="flex items-center gap-2">
             {testResult.success ? (
               <Badge variant="default" className="gap-1">
@@ -442,7 +445,7 @@ export function SettingsDialog() {
         </div>
       )}
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="shrink-0 gap-2">
           <Button variant="outline" onClick={handleTest} disabled={isTesting}>
             {isTesting ? (
               <Loader2 className="w-4 h-4 mr-1 animate-spin" />
