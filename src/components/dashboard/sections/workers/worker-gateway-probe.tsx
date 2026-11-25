@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { apiUrl } from '@/lib/api-base';
+import { probeHarnessModel } from '@/lib/probe-harness-model';
 import { InfoTip } from '@/components/dashboard/info-tip';
 
 export function WorkerGatewayProbe({ workerName }: { workerName: string }) {
@@ -16,7 +17,13 @@ export function WorkerGatewayProbe({ workerName }: { workerName: string }) {
       // Always reload persisted spec: unsaved form values must not be reported
       // as verified, and a renamed worker may have a different consumer name.
       const saved = await agentteamsApi.getWorker(workerName);
-      const targets = kind === 'model' ? [undefined] : (saved.mcpServers || []).map((server) => server.name);
+      if (kind === 'model') {
+        const label = saved.model || '模型';
+        const result = await probeHarnessModel('workers', workerName, (message) => setResults([`${label}：${message}`]));
+        setResults([`${label}：${result.success ? '验证通过' : '未通过'} · ${result.message}`]);
+        return;
+      }
+      const targets = (saved.mcpServers || []).map((server) => server.name);
       if (!targets.length) { setResults(['尚未保存 MCP 配置。']); return; }
       for (const server of targets) {
         const response = await fetch(apiUrl(`/api/agentteams/workers/${encodeURIComponent(workerName)}/gateway-probe`), {
@@ -36,7 +43,7 @@ export function WorkerGatewayProbe({ workerName }: { workerName: string }) {
       <p className="font-medium">已保存配置的网关验证</p>
       <InfoTip label="网关验证说明">
         <span className="block">验证使用该 Worker 的 Consumer 身份，不使用上游 API Key。请先保存修改；表单中尚未保存的模型与 MCP 不参与验证。</span>
-        <span className="mt-1 block">请求由 Controller 发出。模型验证会产生一次最多 8 个输出 token 的推理调用；MCP 验证仅初始化并读取工具列表，不执行工具。</span>
+        <span className="mt-1 block">模型验证由 Harness 按实际模型配置执行，页面会等待本次探测结果，可能产生少量推理费用；MCP 验证由 Controller 初始化并读取工具列表，不执行工具。</span>
         <span className="mt-1 block">未授权时，请管理员在「模型管理 → Consumers」检查 AI 路由绑定范围；MCP 需通过 Manager 或 Higress 授权。这里不会自动扩大权限。</span>
         <span className="mt-1 block">验证成功表示当前 Consumer 能完成该探测，不代表业务链路端到端可用。</span>
       </InfoTip>

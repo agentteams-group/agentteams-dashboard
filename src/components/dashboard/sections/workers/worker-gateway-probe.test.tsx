@@ -23,3 +23,19 @@ it('reports an unsupported older Controller instead of success', async () => {
   render(<TooltipProvider><WorkerGatewayProbe workerName="alice" /></TooltipProvider>); fireEvent.click(screen.getByText('验证已保存模型'));
  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Controller 暂不支持'));
 });
+it('shows a queued Harness probe as pending until the matching result arrives', async () => {
+  vi.mocked(agentteamsApi.getWorker).mockResolvedValue({ model: 'saved-model' } as never);
+  const id = 'a'.repeat(32);
+  let answer!: (_value: Response) => void;
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ status: 'pending', queued: true, request_id: id, expires_at: new Date(Date.now() + 60_000).toISOString() }, { status: 202 }))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
+  vi.stubGlobal('fetch', fetcher);
+  render(<TooltipProvider><WorkerGatewayProbe workerName="alice" /></TooltipProvider>);
+  fireEvent.click(screen.getByText('验证已保存模型'));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('等待 Harness'));
+  expect(screen.getByRole('status').textContent).not.toContain('未通过');
+  expect(screen.getByRole('status').textContent).not.toContain('验证通过');
+  answer(Response.json({ version: 1, status: 'ok', reason: 'ok', request_id: id }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('saved-model：验证通过'));
+});
