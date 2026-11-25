@@ -49,6 +49,41 @@ describe('model connection probe endpoint', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('lets Controller policy decide whether a private draft endpoint can be probed', async () => {
+    vi.stubEnv('MODEL_PROBE_ALLOW_HOSTS', '');
+    vi.stubEnv('MODEL_PROBE_ALLOW_PRIVATE_NETWORK', '0');
+    try {
+      const privateInput = { ...input, type: 'custom', baseUrl: 'http://172.16.50.89:8080/v1' };
+      vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}), body: { success: true, scope: 'upstream' } });
+      expect(await (await POST(request(privateInput))).json()).toMatchObject({ success: true });
+      expect(callControllerAsset).toHaveBeenCalledWith(expect.any(NextRequest), 'models', { action: 'probe', input: privateInput });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(consoleCall).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('explains a Controller network-policy rejection without falling back to a direct probe', async () => {
+    vi.mocked(callControllerAsset).mockResolvedValue({ response: Response.json({}, { status: 400 }), body: { error: 'model probe endpoint is outside the configured network allowlist', fallbackAllowed: false } });
+    const response = await POST(request({ providerName: 'private-model', model: 'test-model' }));
+    expect(response.status).toBe(400);
+    const result = await response.json();
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Controller');
+    expect(result.message).toContain('MODEL_PROBE_ALLOW_HOSTS');
+    expect(result.message).toContain('尚未请求模型服务');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(consoleCall).not.toHaveBeenCalled();
+  });
+
+  it('still blocks an unapproved private endpoint when using the legacy direct probe', async () => {
+    vi.stubEnv('MODEL_PROBE_ALLOW_HOSTS', '');
+    vi.stubEnv('MODEL_PROBE_ALLOW_PRIVATE_NETWORK', '0');
+    try {
+      expect((await POST(request({ ...input, baseUrl: 'http://172.16.50.89:8080/v1' }))).status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it('uses saved credentials only against the saved endpoint, ignoring browser endpoint overrides', async () => {
     consoleCall.mockResolvedValue({ response: Response.json({}), body: { data: { name: 'saved', type: 'openai', tokens: ['saved-secret'], rawConfigs: { openaiCustomUrl: 'https://saved.example/v1', openaiCustomServicePort: 8443 } } } });
     const result = await (await POST(request({ providerName: 'saved', model: 'qwen3.8-max', baseUrl: 'https://attacker.example/v1', token: 'ignored' }))).json();

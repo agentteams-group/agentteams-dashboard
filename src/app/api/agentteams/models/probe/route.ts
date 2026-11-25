@@ -15,13 +15,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: '请填写有效的模型 ID 和连接配置' }, { status: 400 });
   }
   const input = value as unknown as ModelProbeInput;
-  // Keep the existing URL guard before forwarding user-entered endpoints.
-  if (!input.providerName && input.baseUrl) {
-    try { validateModelProbeBaseUrl(input.baseUrl); }
-    catch { return NextResponse.json({ success: false, message: '模型地址不在允许的探测范围内' }, { status: 400 }); }
-  }
+  // Controller owns the probe's network policy. The legacy direct path below
+  // validates its actual target against the Dashboard's policy instead.
   const managed = await callControllerAsset(request, 'models', { action: 'probe', input: value });
-  if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
+  if (managed) {
+    if (isRecord(managed.body) && managed.body.error === 'model probe endpoint is outside the configured network allowlist') {
+      return NextResponse.json({ success: false, message: '内网模型地址尚未获准探测。请管理员在 Controller 配置 MODEL_PROBE_ALLOW_HOSTS（模型服务的主机名或 IP），并重启后重试；本次尚未请求模型服务。' }, { status: managed.response.status });
+    }
+    return NextResponse.json(managed.body, { status: managed.response.status });
+  }
   const model = input.model.trim();
   const secrets: string[] = [];
   let target;

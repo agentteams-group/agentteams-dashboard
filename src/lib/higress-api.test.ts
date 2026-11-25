@@ -84,6 +84,17 @@ describe('Higress form serialization', () => {
     expect(validateProviderForm({ ...provider, type: 'qwen', protocol: 'original' })).toContain('自定义 API 地址请使用 OpenAI 兼容协议');
   });
 
+  it.each(['http://172.16.50.89:8080/v1', 'https://models.example.test/v1'])('restores a custom connection after Higress normalizes its type: %s', (baseUrl) => {
+    const payload = serializeProviderForm({ ...provider, type: 'custom', baseUrl });
+    expect(payload.type).toBe('openai');
+    expect(modelProviderType({ name: 'custom-model', type: 'openai', tokenCount: 1, rawConfigs: payload.rawConfigs })).toBe('custom');
+    expect(modelProviderType({ name: 'official', type: 'openai', tokenCount: 1, rawConfigs: { openaiCustomUrl: 'https://api.openai.com/v1' } })).toBe('openai');
+  });
+
+  it('keeps an explicitly native OpenAI connection editable with its original protocol', () => {
+    expect(modelProviderType({ name: 'native', type: 'openai', protocol: 'original', tokenCount: 1, rawConfigs: { openaiCustomUrl: 'https://models.example.test/v1' } })).toBe('openai');
+  });
+
   it('keeps a configured token failover policy in provider payloads', () => {
     const tokenFailoverConfig = {
       enabled: true,

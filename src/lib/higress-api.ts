@@ -498,6 +498,7 @@ export function modelProviderType(provider: LlmProviderResponse): string {
       for (const type of ['qwen', 'deepseek', 'moonshot', 'zhipuai', 'openrouter', 'groq', 'grok']) {
         if (host === new URL(PROVIDER_BASE_URLS[type]).hostname) return type;
       }
+      if (host !== new URL(PROVIDER_BASE_URLS.openai).hostname && provider.protocol !== 'original') return 'custom';
     } catch { /* Retain the declared type for unrecognized custom URLs. */ }
   }
   return provider.type;

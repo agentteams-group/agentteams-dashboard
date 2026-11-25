@@ -138,6 +138,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     try {
       renderSection('providers');
       fireEvent.click(screen.getByRole('button', { name: '编辑 openai' }));
+      expect((screen.getByRole('combobox', { name: '厂商／平台' }) as HTMLInputElement).value).toBe('自定义（OpenAI 兼容）');
       expect((screen.getByLabelText('API 地址（Base URL）') as HTMLInputElement).value).toBe('http://host.docker.internal:58317/v1');
       fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
       expect(mutations.updateProvider).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ rawConfigs: expect.objectContaining({ openaiCustomUrl: 'http://host.docker.internal:58317/v1' }) }) }), expect.any(Object));

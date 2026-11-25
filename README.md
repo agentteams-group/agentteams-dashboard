@@ -438,3 +438,17 @@ without executing them. Only saved MCP endpoints on the configured gateway are
 accepted. Provider-specific gateways and legacy SSE endpoints are not supported
 by this probe. A successful check verifies Controller-to-gateway access using the
 Worker identity, not connectivity from the Worker container or task completion.
+
+The **Models → Test** button separately tests the model provider upstream. For an
+internal OpenAI-compatible service, set `MODEL_PROBE_ALLOW_HOSTS` on the
+**Controller**, listing only the approved hostnames or IPs, without URL schemes,
+ports or paths. For example, `MODEL_PROBE_ALLOW_HOSTS=172.16.50.89` permits a
+configured `http://172.16.50.89:8080/v1` endpoint. Preserve any existing entries
+as a comma-separated list and recreate the container or roll out the Deployment
+after changing its environment. Helm installations can use
+`controller.env.MODEL_PROBE_ALLOW_HOSTS`. This permits a probe; routing, network
+reachability, API credentials and model availability still need to succeed.
+
+Controllers without model asset management use the legacy direct probe in the
+Dashboard; only that fallback reads the same variables from the Dashboard
+environment. A supported Controller's rejection does not trigger a direct probe.
