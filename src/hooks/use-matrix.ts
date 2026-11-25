@@ -842,6 +842,17 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     }
   }
 
+  // Scheduled/Task wakeups are input for the runtime, not unanswered turns.
+  const coordination = content['org.agentteams.coordination'] as {
+    channel_meta?: { sender_id?: string; agent_matrix_user_id?: string;
+      teamharness_coordination?: { kind?: string } };
+  } | undefined;
+  const control = coordination?.channel_meta;
+  if (content.msgtype === 'm.notice'
+    && ['assistant_digest', 'handoff'].includes(control?.teamharness_coordination?.kind ?? '')
+    && control?.sender_id === event.sender
+    && control?.agent_matrix_user_id === event.sender) return null;
+
   // A thread reply carries an m.thread relation pointing at the thread root.
   const threadRelation = content['m.relates_to'] as {
     rel_type?: string; event_id?: string; is_falling_back?: boolean; 'm.in_reply_to'?: { event_id?: string };

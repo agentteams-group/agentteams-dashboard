@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import quietTaskHandoff from './__fixtures__/quiet-task-handoff.json';
 import { formatMatrixEvents } from '@/hooks/use-matrix';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { assembleChatTimeline, NO_ANSWER_STALE_MS } from './assemble';
@@ -64,6 +65,64 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  it('replays the reported native planning handoff as one finalized process and its downstream message', () => {
+    const events = quietTaskHandoff as MatrixEvent[];
+    const sender = events[0].sender;
+    for (const ordered of [events, [...events].reverse()]) {
+      const { messages } = assemble(ordered, 'qwenpaw', sender, events.at(-1)!.origin_server_ts + NO_ANSWER_STALE_MS + 1);
+      expect(messages).toHaveLength(2);
+      expect(messages.filter(message => message.precomputedBlocks?.some(block => block.type === 'tool_call'))).toHaveLength(1);
+      expect(messages.map(message => message.turnState)).toEqual(['finalized', 'finalized']);
+      expect(messages.some(message => message.content.includes('@natural-openclaw'))).toBe(true);
+    }
+  });
+
+  it('folds a quiet Task handoff into its exact process thread without false interruption', () => {
+    const events = [
+      notice('$root', '@w:server', '处理中...', 0),
+      ev('$tool', '@w:server', '🔧 **teamharness__task**\n```json\n{"action":"plan"}\n```', 1000, threadOf('$root')),
+      ev('$handoff', '@w:server', '@next:server 请开始实现', 2000),
+      ev('$quiet', '@w:server', '* 已处理', 3000, replaceOf('$root', '已处理')),
+    ];
+    for (const ordered of [events, [...events].reverse()]) {
+      const { messages } = assemble(ordered, 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+      expect(messages).toHaveLength(2);
+      const process = messages.find(message => message.sourceEventIds?.includes('$tool'))!;
+      expect(process.turnState).toBe('finalized');
+      expect(process.content).toBe('');
+      expect(process.precomputedBlocks?.map(block => block.type)).toEqual(['tool_call']);
+      expect(messages.some(message => message.content === '已处理')).toBe(false);
+      expect(messages.some(message => message.content.includes('@next'))).toBe(true);
+    }
+  });
+
+  it('does not turn execution control notices into thinking bubbles for known workers', () => {
+    const events = [notice('$control', '@w:server', '正在处理，你可以继续补充信息或停止执行。', 0, {
+      'org.agentteams.progress_only': true,
+      'com.agentteams.execution': { run_id: '$source', status: 'running', capabilities: ['stop', 'steer'] },
+    })];
+    expect(assemble(events, 'qwenpaw').messages).toEqual([]);
+    const human = events.map(event => ({ ...event, sender: ME }));
+    expect(assemble(human, 'qwenpaw').messages).toHaveLength(1);
+  });
+
+  it('does not create an empty receipt bubble for a quiet turn with no process', () => {
+    expect(assemble([notice('$quiet', '@w:server', '已处理', 0)], 'qwenpaw').messages).toEqual([]);
+  });
+
+  it('retains failure endings and genuinely interrupted runs', () => {
+    const events = [
+      notice('$root', '@w:server', '处理中...', 0),
+      ev('$tool', '@w:server', '🔧 **execute_shell_command**\n```json\n{"command":"false"}\n```', 1000, threadOf('$root')),
+      ev('$failed', '@w:server', '* 处理异常', 2000, replaceOf('$root', '处理异常')),
+    ];
+    const { messages } = assemble(events, 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].precomputedBlocks).toContainEqual(expect.objectContaining({ type: 'error', payload: { kind: 'failed', title: '任务异常' } }));
+    const incomplete = assemble(events.slice(0, 2), 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+    expect(incomplete.messages[0].turnState).toBe('interrupted');
+  });
+
   it('keeps protocol notifications separate from the assistant answer and retains their event ids', () => {
     const body = '[ProjectFlow] create_project + plan_dag: 项目「基线交付」已创建';
     const events = [ev('answer', '@w:server', '项目已正式启动并完成交接。', 0), ev('flow', '@w:server', body, 1_000)];
@@ -180,7 +239,7 @@ describe('ChatIR turn assembly', () => {
     });
   });
 
-  it('settles earlier process tiles when a final edit arrives after an independent message', () => {
+  it('keeps an explicitly threaded final edit with its process across an independent message', () => {
     const events = [
       notice('root', '@w:server', '处理中...', 0),
       notice('step', '@w:server', '正在完成项目', 1_000, threadOf('root')),
@@ -188,9 +247,9 @@ describe('ChatIR turn assembly', () => {
       ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
     ];
     const { messages } = assemble(events, 'qwenpaw');
-    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined, 'finalized']);
-    expect(messages[0].content).toBe('');
-    expect(messages[2].content).toBe('最终答案');
+    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined]);
+    expect(messages[0].content).toBe('最终答案');
+    expect(messages[0].sourceEventIds).toEqual(expect.arrayContaining(['root', 'step', 'answer']));
   });
 
   it('keeps qwenpaw thread narration inside the process fold', () => {
