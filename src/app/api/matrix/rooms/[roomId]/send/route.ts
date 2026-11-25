@@ -21,6 +21,12 @@ export async function PUT(
     }
 
     const control = body[CONTROL_KEY];
+    const answer = body['com.agentteams.answer'];
+    if (answer !== undefined && (!answer || typeof answer !== 'object' || Array.isArray(answer)
+      || typeof answer.confirmation_id !== 'string' || !answer.confirmation_id.trim()
+      || typeof answer.answer !== 'string')) {
+      return NextResponse.json({ error: 'Invalid confirmation answer' }, { status: 400 });
+    }
     if (control !== undefined && (!control || typeof control !== 'object'
       || !['stop', 'steer'].includes(control.action)
       || typeof control.run_id !== 'string' || !control.run_id
@@ -39,6 +45,7 @@ export async function PUT(
     if (control) messageContent[CONTROL_KEY] = {
       action: control.action, run_id: control.run_id, agent_id: control.agent_id,
     };
+    if (answer) messageContent['com.agentteams.answer'] = answer;
 
     if (body.track_read_status === true && relatesTo?.rel_type !== 'm.replace') {
       // Capture membership before sending; historical messages never consult
