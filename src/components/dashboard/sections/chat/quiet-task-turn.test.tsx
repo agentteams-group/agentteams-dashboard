@@ -6,6 +6,7 @@ import { formatMatrixEvents } from '@/hooks/use-matrix';
 import { assembleChatTimeline, NO_ANSWER_STALE_MS } from '@/lib/chat-ir/assemble';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import { MessageBubble } from './views/MessageBubble';
+import { markStoppedMessages } from '@/lib/direct-execution';
 
 vi.mock('./markdown-message', () => ({ MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div> }));
 afterEach(cleanup);
@@ -29,6 +30,7 @@ it('renders the completed planning tool and downstream handoff without empty or 
     currentUserId: '@human:server', runtimeMap: { [sender]: { runtime: 'qwenpaw', workerName: 'leader' } },
     now: ts + NO_ANSWER_STALE_MS + 10_000,
   });
+  expect(markStoppedMessages(messages, events, [sender]).map(message => message.id)).toEqual(messages.map(message => message.id));
   render(<QueryClientProvider client={new QueryClient()}>
     {messages.map(message => <MessageBubble key={message.id} message={message} showSender isContinuation={false} />)}
   </QueryClientProvider>);
