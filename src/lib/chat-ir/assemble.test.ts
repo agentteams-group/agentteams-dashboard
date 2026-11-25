@@ -65,6 +65,20 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  it('finalizes a QwenPaw task run whose first top-level event is a tool and whose report is a new Matrix event', () => {
+    const run = (blocks: unknown[]) => ({ 'org.agentteams.run': { version: '1', run_id: 'qwenpaw:task:one', blocks },
+      'org.agentteams.progress_only': true });
+    const events = [
+      notice('thinking', '@w:server', '核对结果', 0, run([{ type: 'thinking', content: '核对结果' }])),
+      notice('tool', '@w:server', 'read', 10, run([{ type: 'tool_call', tool_call_id: 'call', tool_name: 'read', status: 'succeeded' }])),
+      ev('result', '@w:server', '验收通过', 20, run([{ type: 'text', text: '验收通过' }])),
+    ];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ content: '验收通过', turnState: 'finalized' });
+    expect(messages[0].precomputedBlocks?.map(block => block.type)).toEqual(['thinking', 'tool_call', 'text']);
+  });
+
   for (const runtime of ['codex', 'claudecode', 'qoder', 'openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman']) {
     it(`${runtime}: correlates native tool edits, retains results and closes one process`, () => {
       const run = 'native-owned-run';

@@ -268,6 +268,11 @@ function qwenPawTraceKey(message: DisplayMessage): string | undefined {
   }
 }
 
+function isStructuredRunAnswer(message: DisplayMessage): boolean {
+  return !!message.runId && message.type === 'm.text' && !message.isThreadReply && !message.isStreaming
+    && !!message.agentBlocks?.some(block => block.type === 'text' && block.text?.trim() && !block.isStreaming);
+}
+
 function isPersistedQuotedReply(message: DisplayMessage): boolean {
   const transaction = message.rawContent?.['org.agentteams.reply_txn'];
   return !message.isThreadReply && !message.isStreaming && message.type === 'm.text'
@@ -435,8 +440,8 @@ function chooseAnswer(
   }
   const root = entries.find((entry) => !entry.message.isThreadReply) ?? null;
   if (profile === 'qwenpaw') {
-    const quotedReply = answerable.findLast(entry => isPersistedQuotedReply(entry.message));
-    return quotedReply ?? (root && root.text && !root.narration ? root : null);
+    const final = answerable.findLast(entry => isStructuredRunAnswer(entry.message) || isPersistedQuotedReply(entry.message));
+    return final ?? (root && root.text && !root.narration ? root : null);
   }
   if (profile === 'openclaw' || profile === 'manager') {
     return answerable[answerable.length - 1];
@@ -600,7 +605,7 @@ export function assembleChatTimeline(
     if (placement.kind !== 'turn') continue;
     const turn = placement.turn;
     if (turn.profile === 'qwenpaw' && !turn.detached && turn.entries.some(entry =>
-      (entry.message.isEdited || isPersistedQuotedReply(entry.message))
+      (entry.message.isEdited || isPersistedQuotedReply(entry.message) || isStructuredRunAnswer(entry.message))
       && !entry.message.isStreaming && isAnswerEntry(turn.profile, entry, false)
     )) answeredQwenPawLanes.add(senderLaneKey(turn.sender, turn.key));
   }
