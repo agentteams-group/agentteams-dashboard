@@ -15,6 +15,8 @@ export interface ModelProbeResult {
   message: string;
   model?: string;
   latencyMs?: number;
+  code?: string;
+  blockedHost?: string;
 }
 
 export const MODEL_PROBE_BASES: Readonly<Record<string, string>> = {

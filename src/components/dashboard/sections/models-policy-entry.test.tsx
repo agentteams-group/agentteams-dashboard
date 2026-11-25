@@ -1,0 +1,23 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { ModelsSection } from './models-section';
+vi.mock('@/hooks/use-agentteams-models', () => ({ useModels: () => ({ data: [] }), useAiRoutes: () => ({ data: [] }), useCreateModel: () => ({}), useUpdateModel: () => ({}), useDeleteModel: () => ({}), useCreateAiRoute: () => ({}), useUpdateAiRoute: () => ({}), useDeleteAiRoute: () => ({}) }));
+vi.mock('@/hooks/use-higress-console-access', () => ({ useHigressConsoleAccess: () => ({ canManage: true }) }));
+vi.mock('@/hooks/use-agentteams-infrastructure', () => ({ useInfrastructure: () => ({ data: null }) }));
+vi.mock('@/hooks/use-agentteams-managers', () => ({ useManagers: () => ({ data: [] }) }));
+vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [] }) }));
+vi.mock('./model-probe-policy-settings', () => ({ ModelProbePolicySettings: () => <input aria-label="内网主机草稿" defaultValue="" /> }));
+afterEach(cleanup);
+it('opens an independent internal-allowlist tab and retains its draft across tab switches', () => {
+ render(<TooltipProvider><ModelsSection /></TooltipProvider>);
+ expect(screen.queryByLabelText('内网主机草稿')).toBeNull();
+ const tab = screen.getByRole('tab', { name: '内网白名单' });
+ fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+ const draft = screen.getByLabelText('内网主机草稿'); fireEvent.change(draft, { target: { value: 'gpu.local' } });
+ fireEvent.mouseDown(screen.getByRole('tab', { name: '模型连接' }), { button: 0, ctrlKey: false });
+ expect(draft.closest('[role="tabpanel"]')).toHaveAttribute('hidden');
+ fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+ expect(draft).toHaveValue('gpu.local'); expect(tab).toHaveAttribute('aria-selected', 'true');
+});

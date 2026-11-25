@@ -69,6 +69,8 @@ import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 import { ManagerModelSetup } from './manager-model-setup';
+import { ModelProbePolicySettings } from './model-probe-policy-settings';
+import { ModelProbeAllowlistPrompt } from './model-probe-allowlist-prompt';
 import { MODEL_PRESET_NOTES, providerModelPresets } from '@/lib/model-catalog';
 import { commonReasoningEfforts, MODEL_CAPABILITIES, readModelRequestParameters, REASONING_EFFORT_LABELS } from '@/lib/model-parameters';
 import type { ModelProbeInput, ModelProbeResult } from '@/lib/model-connection-probe';
@@ -203,9 +205,10 @@ async function probeModelConnection(input: ModelProbeInput): Promise<ModelProbeR
   }
 }
 
-function ModelProbeStatus({ result }: { result: ModelProbeResult | null }) {
+function ModelProbeStatus({ result, onRetry }: { result: ModelProbeResult | null; onRetry?: () => void | Promise<void> }) {
   return result ? <div role="status" className={'flex items-start gap-2 rounded-md border p-3 text-xs leading-5 ' + (result.success ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400' : 'border-destructive/30 bg-destructive/5 text-destructive')}>
     {result.success ? <Zap className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
+    {result.code === 'model_probe_host_not_allowed' && result.blockedHost && onRetry ? <ModelProbeAllowlistPrompt host={result.blockedHost} onRetry={onRetry} /> : null}
     <div className="min-w-0 break-words"><p>{result.message}</p>{result.model || result.latencyMs !== undefined ? <p className="text-muted-foreground">{result.model}{result.latencyMs !== undefined ? ` · ${result.latencyMs} ms` : ''}</p> : null}</div>
   </div> : null;
 }
@@ -215,11 +218,12 @@ function ConnectionTestDialog({ provider, onClose }: { provider: LlmProviderResp
   const [model, setModel] = useState(models[0] ?? '');
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ModelProbeResult | null>(null);
+  const handleTest = async () => { setTesting(true); setResult(null); const next = await probeModelConnection({ providerName: provider.name, model: model.trim() }); setResult(next); setTesting(false); };
   return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-[95vw] sm:max-w-md"><DialogHeader><DialogTitle>测试连接 - {provider.name}</DialogTitle><DialogDescription>使用已保存的 API 地址和密钥，直连所选模型进行一次短调用。</DialogDescription></DialogHeader>
     <div className="min-w-0 space-y-3 py-2"><Label htmlFor="saved-probe-model">模型 ID</Label><Combobox id="saved-probe-model" portal ariaLabel="测试模型 ID" value={model} options={models} disabled={testing} placeholder="选择或输入要测试的模型 ID" onChange={(next) => { setModel(next); setResult(null); }} />
       <p className="text-xs leading-5 text-muted-foreground">测试输出预算最多 256 Token，可能产生少量费用；不验证 Agent 授权或工具调用能力。</p>
-      {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={result} />}
-    </div><DialogFooter><Button variant="outline" onClick={onClose}>关闭</Button><Button disabled={testing || !model.trim()} onClick={async () => { setTesting(true); setResult(null); const next = await probeModelConnection({ providerName: provider.name, model: model.trim() }); setResult(next); setTesting(false); }}>{testing ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Play className="mr-1 size-3.5" />}{testing ? '测试中…' : '开始测试'}</Button></DialogFooter>
+      {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={result} onRetry={handleTest} />}
+    </div><DialogFooter><Button variant="outline" onClick={onClose}>关闭</Button><Button disabled={testing || !model.trim()} onClick={() => void handleTest()}>{testing ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Play className="mr-1 size-3.5" />}{testing ? '测试中…' : '开始测试'}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }
 
@@ -234,6 +238,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
   const [errors, setErrors] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelProbeResult | null>(null);
+  const [lastTestModel, setLastTestModel] = useState('');
   const editing = Boolean(provider);
   const pending = create.isPending || update.isPending;
   const savedForm = provider ? providerToForm(provider) : null;
@@ -277,6 +282,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
   };
 
   const handleTest = async (model: string) => {
+    setLastTestModel(model);
     setTestResult(null);
     const token = tokenInput.split(',')[0]?.trim() || '';
     setTesting(true);
@@ -344,7 +350,7 @@ function ProviderDialog({ open, provider, onOpenChange }: { open: boolean; provi
         </div>
         <MappingEditor simple value={form.modelMappings} modelOptions={modelOptions} onTest={handleTest} canTest={canTest} onChange={(modelMappings) => { setForm({ ...form, modelMappings }); setTestResult(null); }} />
         {editing && !tokenInput.trim() && !savedEndpointUnchanged ? <p className="text-xs text-muted-foreground">地址或厂商已修改，请先保存连接或输入新 API Key 后测试。</p> : <p className="text-xs leading-5 text-muted-foreground">选择模型后可点「测试」直连调用，输出预算最多 256 Token，可能产生少量费用。Agent 授权和工具调用需另外验证。</p>}
-        {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={testResult} />}
+        {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={testResult} onRetry={() => handleTest(lastTestModel)} />}
         <details className="rounded-md border p-3" open={Boolean(form.requestParameters || (Array.isArray(form.originalRawConfigs?.customSettings) && form.originalRawConfigs.customSettings.length)) || undefined}>
           <summary className="cursor-pointer text-sm font-medium">调用参数（可选）</summary>
           <div className="mt-3 space-y-3">
@@ -508,6 +514,8 @@ export function ModelsSection() {
   const [providerDialog, setProviderDialog] = useState<LlmProviderResponse | null | undefined>(undefined);
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
   const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
+  const [activeTab, setActiveTab] = useState('providers');
+  const [policyVisited, setPolicyVisited] = useState(false);
   const [testProvider, setTestProvider] = useState<LlmProviderResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
   const providers = providersQuery.data ?? [];
@@ -531,12 +539,13 @@ export function ModelsSection() {
       </div>
     } />
     <ManagerModelSetup />
-    <Tabs defaultValue="providers" className="gap-4">
+    <Tabs value={activeTab} onValueChange={value => { setActiveTab(value); if (value === 'network') setPolicyVisited(true); }} className="gap-4">
       <TabsList aria-label="模型配置分类" className="max-w-full justify-start overflow-x-auto [&>[role=tab]]:shrink-0">
         <TabsTrigger value="providers">模型连接</TabsTrigger>
         <TabsTrigger value="routes">AI 路由</TabsTrigger>
         <TabsTrigger value="access">访问凭证</TabsTrigger>
         <TabsTrigger value="limits">限流与参考</TabsTrigger>
+        <TabsTrigger value="network">内网白名单</TabsTrigger>
       </TabsList>
       <TabsContent value="providers">
     <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">模型连接<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个模型连接</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加连接</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onTest={setTestProvider} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
@@ -545,6 +554,7 @@ export function ModelsSection() {
     <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同模型连接。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同模型连接；给不同模型连接配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">{routes.length} 条</span></CardTitle><CardDescription>决定请求由哪个模型连接处理，以及哪些 Agent 可以访问</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}>添加路由</Button></CardHeader><CardContent className="space-y-4 p-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个模型连接后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>
       </TabsContent>
       <TabsContent value="access"><ConsumerSection /></TabsContent>
+      <TabsContent value="network" forceMount hidden={activeTab !== 'network'}>{policyVisited && <ModelProbePolicySettings active={activeTab === 'network'} />}</TabsContent>
       <TabsContent value="limits" className="space-y-4"><RateLimitSection routes={routes} /><HigressReferencePanel /></TabsContent>
     </Tabs>
     <ProviderDialog key={`provider-${providerDialog?.name ?? 'new'}-${providerDialog !== undefined}`} open={providerDialog !== undefined} provider={providerDialog ?? null} onOpenChange={(open) => !open && setProviderDialog(undefined)} /><RouteDialog key={`route-${routeDialog?.name ?? 'new'}-${routeDialog !== undefined}`} open={routeDialog !== undefined} route={routeDialog ?? null} providerNames={providerNames} fallbackConfigWritable={routes.some((item) => item.fallbackConfigWritable)} onOpenChange={(open) => !open && setRouteDialog(undefined)} /><RouteProviderSwitchDialog key={`switch-${switchRoute?.name ?? 'none'}`} open={switchRoute !== null} route={switchRoute} providers={providers} onOpenChange={(open) => !open && setSwitchRoute(null)} />

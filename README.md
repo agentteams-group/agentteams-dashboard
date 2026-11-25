@@ -438,3 +438,30 @@ without executing them. Only saved MCP endpoints on the configured gateway are
 accepted. Provider-specific gateways and legacy SSE endpoints are not supported
 by this probe. A successful check verifies Controller-to-gateway access using the
 Worker identity, not connectivity from the Worker container or task completion.
+
+The **Models → Test** button separately tests the model provider upstream. Use
+**Models → Internal allowlist** to manage permitted internal
+model-service hosts. Enter hostnames or IPs, one per line or comma-separated,
+without schemes, ports, paths or wildcards. Saving takes effect immediately for
+subsequent probes, including removals, without restarting Controller. The
+Controller persists this policy in its namespace's `agentteams-model-probe-policy`
+ConfigMap; it survives Controller restarts. Only administrators can read or write
+it, and conflicting saves require reloading the current revision.
+
+If an internal model test is rejected, a confirmation shows the actual blocked
+host. **Add and retry** appends that host to the current policy and repeats the
+same model test after saving; cancellation leaves policy unchanged. New-connection
+drafts and saved-model selections remain in place. The Internal allowlist tab
+refreshes on entry and preserves dirty drafts, requiring reload after a conflicting
+policy update rather than overwriting newer settings.
+
+Until a policy is saved, Controller reads `MODEL_PROBE_ALLOW_HOSTS` and
+`MODEL_PROBE_ALLOW_PRIVATE_NETWORK` as deployment defaults. A saved policy fully
+overrides those defaults, including an empty host list or disabled broad private
+access. The advanced private-network switch preserves the existing all-private
+mode for deployments that explicitly need it. A successful approval only permits
+the probe; model credentials, network reachability and availability must still
+succeed. Older Controllers show an upgrade message instead of saving browser-only
+policy. Controllers without model asset management retain the legacy direct
+probe in Dashboard, using its environment policy; supported Controller rejections
+never trigger a direct probe.
