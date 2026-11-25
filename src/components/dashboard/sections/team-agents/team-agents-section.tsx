@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,6 +22,7 @@ import { currentHashParams, hashForSection, type TeamAgentsTab } from '@/lib/nav
 import type { CreateTeamRequest, CreateWorkerRequest } from '@/lib/agentteams-api';
 import { teamHumanMembers } from '@/lib/agentteams-api';
 import { TeamCreateDialog } from '../teams/team-create-dialog';
+import { DevelopmentSquadDialog } from '../teams/development-squad-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
@@ -31,6 +33,7 @@ import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource
 import { TeamAgentsWorkbench } from './team-agents-workbench';
 import { isDesktopHover } from '@/lib/desktop-interactions';
 import { workerDisplayName } from '@/lib/worker-display-name';
+import { openChatRoom } from '@/lib/open-chat-room';
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -67,6 +70,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const [search, setSearch] = useState('');
   const [teamView, setTeamView] = useState<'cards' | 'topology'>('cards');
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
+  const [developmentSquadOpen, setDevelopmentSquadOpen] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
   const [newTeam, setNewTeam] = useState<CreateTeamRequest>(EMPTY_TEAM);
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>(EMPTY_WORKER);
@@ -168,7 +172,10 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     {!isTopology && <SectionHeader title={view === 'agents' ? 'Agent' : view === 'teams' ? '团队' : '团队与 Agent'} onRefresh={refresh} isRefreshing={teamsQuery.isRefetching}
       meta={!isDetail && controls}
       actions={isDetail ? <Button size="sm" variant="outline" onClick={() => navigate(location.tab)}>返回列表</Button> :
-        <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>} />}
+        <div className="flex gap-2">
+          {location.tab === 'teams' && <Button size="sm" variant="outline" disabled={!isConnected} onClick={() => setDevelopmentSquadOpen(true)}><Rocket className="mr-1 size-4" aria-hidden="true" />部署开发小队</Button>}
+          <Button size="sm" onClick={() => location.tab === 'teams' ? setCreateTeamOpen(true) : setCreateWorkerOpen(true)}>{location.tab === 'teams' ? '创建团队' : '创建 Agent'}</Button>
+        </div>} />}
 
     {isTopology ? <TeamAgentsWorkbench toolbar={controls} search={search} /> : isDetail ? <div className="flex h-[calc(100dvh-15rem)] min-h-[420px] flex-col rounded-xl border bg-card">
       {!selectedWorker && <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
@@ -206,6 +213,11 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         </div>}
       {!teamsQuery.isLoading && !workersQuery.isLoading && <ListPagination {...(location.tab === 'teams' ? teamPage : agentPage)} label={location.tab === 'teams' ? '团队' : 'Agent'} />}
     </>}
+
+    <DevelopmentSquadDialog open={developmentSquadOpen} onOpenChange={setDevelopmentSquadOpen} onRequested={result => {
+      setDevelopmentSquadOpen(false);
+      openChatRoom(result.roomId);
+    }} />
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}
       onSubmit={() => createTeam.mutate(newTeam, { onSuccess: (created) => { setCreateTeamOpen(false); setNewTeam(EMPTY_TEAM); if (created?.name) navigate('teams', 'team', created.name); } })} />

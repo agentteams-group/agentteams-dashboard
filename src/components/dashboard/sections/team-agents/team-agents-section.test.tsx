@@ -209,6 +209,17 @@ function selectTab(name: RegExp) {
 beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; localStorage.clear(); vi.stubGlobal('innerWidth', 1440); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it('opens the development squad template from the routed teams view', () => {
+  renderSection('#console/resources/teams', 'teams');
+  fireEvent.click(screen.getByRole('button', { name: '部署开发小队' }));
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByText('研发 Leader')).toBeInTheDocument();
+  expect(within(dialog).getByText('dev-squad-developer')).toBeInTheDocument();
+  expect(within(dialog).getByText('dev-squad-reviewer')).toBeInTheDocument();
+  expect(within(dialog).getByText('dev-squad-tester')).toBeInTheDocument();
+  expect(within(dialog).getByPlaceholderText('留空使用当前集群默认模型')).toBeInTheDocument();
+});
+
 describe('Teams page view switch', () => {
   it('keeps current cards and loads the original three-pane workbench', async () => {
     renderSection('#console/resources/teams', 'teams');
