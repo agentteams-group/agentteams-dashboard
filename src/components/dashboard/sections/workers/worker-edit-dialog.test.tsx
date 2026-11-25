@@ -90,16 +90,19 @@ function Harness({
   initial,
   onSubmit,
   modelProvider,
+  basicOnly = false,
 }: {
   initial: WorkerEditForm;
   onSubmit: (_form: WorkerEditForm) => void;
   modelProvider?: string;
+  basicOnly?: boolean;
 }) {
   const [value, setValue] = useState<WorkerEditForm>(initial);
   return (
     <TooltipProvider>
       <WorkerEditDialog
         open
+        basicOnly={basicOnly}
         envEditable
         workerName={initial.name ?? 'worker-1'}
         value={value}
@@ -192,13 +195,119 @@ describe('WorkerEditDialog 运行时交接', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it('CoPaw 存量显示来源，默认升级目标为 QwenPaw', () => {
+  it('CoPaw 存量保留当前值，避免只保存基础配置就自动切换', () => {
     render(<Harness initial={{ name: 'worker-1', runtime: 'copaw' }} onSubmit={() => {}} />);
-    expect(runtimeSelect().value).toBe('qwenpaw');
+    expect(runtimeSelect().value).toBe('copaw');
     expect(screen.getByText(/CoPaw 已停止新建/)).toBeInTheDocument();
   });
 
-  it.each([null, '"read-version"'])('切换发送独立条件请求，网络重试复用请求编号 (%s)', async (etag) => {
+  it.each([false, true])('选择目标后仅在保存时切换，并在提交成功前阻止重复保存 (basicOnly=%s)', async (basicOnly) => {
+    const idle = { schema_version: 1, kind: 'WorkerRuntimeState' };
+    let finishSwitch!: (_response: Response) => void;
+    const posts: RequestInit[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === 'POST') {
+        posts.push(init);
+        return new Promise<Response>((resolve) => { finishSwitch = resolve; });
+      }
+      return Response.json(idle);
+    }));
+    try {
+      const save = vi.fn();
+      render(<Harness basicOnly={basicOnly} initial={{ name: 'worker-1', runtime: 'codex' }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      fireEvent.change(runtimeSelect(), { target: { value: 'qwenpaw' } });
+      expect(posts).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: '从 Codex 切换到 QwenPaw' })).not.toBeInTheDocument();
+      expect(screen.getByText('保存后将停止当前实例，并切换为 QwenPaw。')).toBeInTheDocument();
+
+      const button = screen.getByRole('button', { name: '保存' });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(posts).toHaveLength(1);
+      expect(button).toBeDisabled();
+      expect(save).not.toHaveBeenCalled();
+      finishSwitch(Response.json({ ...idle, handoff: {
+        id: JSON.parse(String(posts[0].body)).request_id, phase: 'stopping',
+        source: { runtime: 'codex' }, target_runtime: 'qwenpaw',
+      } }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each(['qwenpaw', 'copaw'] as const)('未修改运行时时只保存基础配置，不发起交接 (%s)', async (runtime) => {
+    const fetchMock = vi.fn(async () => Response.json({ schema_version: 1, kind: 'WorkerRuntimeState' }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const save = vi.fn();
+      render(<Harness initial={{ name: 'worker-1', runtime }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('目标启动失败后可以在保存时切回原运行时', async () => {
+    const failed = { schema_version: 1, kind: 'WorkerRuntimeState', active_start: { runtime: 'codex' },
+      handoff: { id: 'old-switch', phase: 'creating', source: { runtime: 'codex' }, target_runtime: 'qwenpaw' },
+      target_failure: 'Target Worker is stopped.' };
+    const posts: RequestInit[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === 'POST') {
+        posts.push(init);
+        return Response.json({ ...failed, target_failure: undefined, handoff: { id: 'new-switch', phase: 'stopping',
+          source: { runtime: 'qwenpaw' }, target_runtime: 'codex' } });
+      }
+      return Response.json(failed, { headers: { ETag: '"failed-version"' } });
+    }));
+    try {
+      const save = vi.fn();
+      render(<Harness basicOnly initial={{ name: 'worker-1', runtime: 'qwenpaw' }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      expect(runtimeSelect()).toHaveValue('qwenpaw');
+      fireEvent.change(runtimeSelect(), { target: { value: 'codex' } });
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(posts).toHaveLength(1);
+      expect(JSON.parse(String(posts[0].body))).toEqual({ target_runtime: 'codex', request_id: expect.any(String) });
+      expect(posts[0].headers).toMatchObject({ 'If-Match': '"failed-version"' });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('切换预检失败时保留弹窗和选择，不继续提交基础配置', async () => {
+    const idle = { schema_version: 1, kind: 'WorkerRuntimeState' };
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => init.method === 'POST'
+      ? Response.json({ error: 'current Worker start unavailable' }, { status: 503 })
+      : Response.json(idle)));
+    try {
+      const save = vi.fn();
+      render(<Harness initial={{ name: 'worker-1', runtime: 'codex' }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      fireEvent.change(runtimeSelect(), { target: { value: 'qwenpaw' } });
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('current Worker start unavailable');
+      expect(save).not.toHaveBeenCalled();
+      expect(runtimeSelect()).toHaveValue('qwenpaw');
+      expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('取消编辑时不发起运行时切换', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ schema_version: 1, kind: 'WorkerRuntimeState' }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const save = vi.fn();
+      render(<Harness initial={{ name: 'worker-1', runtime: 'codex' }} onSubmit={save} />);
+      await waitFor(() => expect(runtimeSelect()).toBeEnabled());
+      fireEvent.change(runtimeSelect(), { target: { value: 'qwenpaw' } });
+      fireEvent.click(screen.getByRole('button', { name: '取消' }));
+      expect(fetchMock.mock.calls).toHaveLength(1);
+      expect(save).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each([null, '"read-version"'])('保存发送条件交接请求，网络重试复用请求编号 (%s)', async (etag) => {
     const idle = { schema_version: 1, kind: 'WorkerRuntimeState' };
     const posts: RequestInit[] = [];
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
@@ -216,11 +325,12 @@ describe('WorkerEditDialog 运行时交接', () => {
       render(<Harness initial={{ name: 'worker-1', runtime: 'hermes' }} onSubmit={save} />);
       await waitFor(() => expect(runtimeSelect()).toBeEnabled());
       fireEvent.change(runtimeSelect(), { target: { value: 'qwenpaw' } });
-      fireEvent.click(screen.getByRole('button', { name: '从 Hermes 切换到 QwenPaw' }));
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
       await screen.findByText('模拟响应丢失');
-      fireEvent.click(screen.getByRole('button', { name: '从 Hermes 切换到 QwenPaw' }));
-      await waitFor(() => expect(posts).toHaveLength(2));
       expect(save).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(posts).toHaveLength(2));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
       expect(posts[1].body).toBe(posts[0].body);
       expect(posts[0].headers).toEqual({ 'Content-Type': 'application/json', ...(etag ? { 'If-Match': etag } : { 'If-None-Match': '*' }) });
       expect(JSON.parse(String(posts[0].body))).toEqual({ target_runtime: 'qwenpaw', request_id: expect.any(String) });

@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { WorkerEnvEditor } from './worker-env-editor';
 import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WorkerHeartbeatControl } from './worker-heartbeat-control';
-import { WorkerRuntimeHandoff } from './worker-runtime-handoff';
+import { WorkerRuntimeHandoff, type WorkerRuntimeHandoffHandle } from './worker-runtime-handoff';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +61,8 @@ export function WorkerEditDialog({
 
 }) {
   const [envValid, setEnvValid] = useState(true);
+  const runtimeHandoff = useRef<WorkerRuntimeHandoffHandle>(null);
+  const [savingRuntime, setSavingRuntime] = useState(false);
   const initialProvider = (modelProvider ?? '').trim();
   const [provider, setProvider] = useState(initialProvider);
   const [wasOpen, setWasOpen] = useState(open);
@@ -79,8 +81,20 @@ export function WorkerEditDialog({
     else delete next.modelProvider;
     onChange(next);
   };
+  const handleSubmit = () => {
+    if (isPending || savingRuntime) return;
+    const pending = runtimeHandoff.current?.submit();
+    if (!pending) {
+      onSubmit();
+      return;
+    }
+    setSavingRuntime(true);
+    void pending.then((success) => {
+      if (success) onSubmit();
+    }).finally(() => setSavingRuntime(false));
+  };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!savingRuntime) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑 Worker - {workerName}</DialogTitle>
@@ -109,7 +123,7 @@ export function WorkerEditDialog({
               </p>
             ) : null}
           </div>
-          {open && workerName && <WorkerRuntimeHandoff key={workerName} name={workerName} runtime={currentRuntime} />}
+          {open && workerName && <WorkerRuntimeHandoff ref={runtimeHandoff} key={workerName} name={workerName} runtime={currentRuntime} />}
           {isLegacyCopaw(currentRuntime) && <p className="text-xs text-muted-foreground">CoPaw 已停止新建，可选择 QwenPaw 作为目标运行时。</p>}
           {!basicOnly && currentRuntime === 'openclaw' ? (
             <WorkerHeartbeatControl
@@ -157,14 +171,14 @@ export function WorkerEditDialog({
           </>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={savingRuntime} onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
-            onClick={onSubmit}
-            disabled={isPending || !envValid}
+            onClick={handleSubmit}
+            disabled={isPending || savingRuntime || !envValid}
           >
-            {isPending ? '保存中...' : '保存'}
+            {isPending || savingRuntime ? '保存中...' : '保存'}
           </Button>
         </DialogFooter>
       </DialogContent>
