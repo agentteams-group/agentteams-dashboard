@@ -446,7 +446,7 @@ export function TeamAgentsWorkbench({ toolbar, search = '' }: { toolbar?: ReactN
   const { isConnected, userLevel } = useAgentTeamsStore();
   const { data: humans = [] } = useHumans();
   const [teamPage] = useState(() => typeof window !== 'undefined' && workbenchSectionIdFromHash(window.location.hash) === 'teams');
-  const { options: modelOptions, sessionIssue } = useModelSelection();
+  const { options: modelOptions, sessionIssue, isLoading: modelsLoading } = useModelSelection();
   const queryClient = useQueryClient();
   const reduceMotion = useReducedMotion();
   // A2：壳自身作为测量容器（断点跟容器宽度走，不跟 window 走）。
@@ -1170,6 +1170,7 @@ export function TeamAgentsWorkbench({ toolbar, search = '' }: { toolbar?: ReactN
         onSubmit={handleCreateWorker}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
+        modelsLoading={modelsLoading}
       />
 
       {/* R2 详情大弹窗：承载当前 main 版面板，壳见 detail-dialog-shell.tsx。

@@ -59,7 +59,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
   const { data: humans } = useHumans();
   const { searchQuery } = useSearch();
   const { isConnected, userLevel } = useAgentTeamsStore();
-  const { options: modelOptions, sessionIssue } = useModelSelection();
+  const { options: modelOptions, sessionIssue, isLoading: modelsLoading } = useModelSelection();
   const queryClient = useQueryClient();
   const createTeam = useCreateTeam();
   const createWorker = useCreateWorker();
@@ -209,7 +209,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
 
     <TeamCreateDialog open={createTeamOpen} onOpenChange={setCreateTeamOpen} value={newTeam} onChange={setNewTeam} isPending={createTeam.isPending} workers={workers} modelOptions={modelOptions} sessionIssue={sessionIssue} onWorkerCreated={refresh}
       onSubmit={() => createTeam.mutate(newTeam, { onSuccess: (created) => { setCreateTeamOpen(false); setNewTeam(EMPTY_TEAM); if (created?.name) navigate('teams', 'team', created.name); } })} />
-    <WorkerCreateDialog open={createWorkerOpen} onOpenChange={setCreateWorkerOpen} value={newWorker} onChange={setNewWorker} isPending={createWorker.isPending} modelOptions={modelOptions} sessionIssue={sessionIssue}
+    <WorkerCreateDialog open={createWorkerOpen} onOpenChange={setCreateWorkerOpen} value={newWorker} onChange={setNewWorker} isPending={createWorker.isPending} modelOptions={modelOptions} sessionIssue={sessionIssue} modelsLoading={modelsLoading}
       onSubmit={() => createWorker.mutate(newWorker, { onSuccess: (created) => { setCreateWorkerOpen(false); setNewWorker(EMPTY_WORKER); if (created?.name) navigate('agents', 'agent', created.name); } })} />
     {forgingTeam && <MillforgeDialog open team={forgingTeam} workers={workers} canInstall={userLevel >= 3} modelAliases={modelOptions.map((option) => option.alias)} onOpenChange={(open) => !open && setMillforgeTeam(null)} onInjected={refresh} />}
   </div>;

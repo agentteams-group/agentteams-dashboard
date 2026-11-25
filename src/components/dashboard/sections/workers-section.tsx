@@ -148,7 +148,7 @@ export function WorkersSection() {
   const ensureReadyWorker = useEnsureReadyWorker();
   const updateWorker = useUpdateWorker();
   // Soft model alias validation (embedded mode): warn but allow submit.
-  const { options: modelOptions, providers, aiRoutes, sessionIssue } = useModelSelection();
+  const { options: modelOptions, providers, aiRoutes, sessionIssue, isLoading: modelsLoading } = useModelSelection();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -882,6 +882,7 @@ export function WorkersSection() {
         onSubmit={handleCreate}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
+        modelsLoading={modelsLoading}
         agentSpecs={agentSpecs}
       />
 
