@@ -1,8 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { PUT } from './route';
+import { matrixApi } from '@/lib/matrix-api';
 
 describe('Matrix room message send route', () => {
+  it('carries a native approval through both the actual client and send proxy', async () => {
+    const answer = { kind: 'tool_approval' as const, confirmation_id: 'req-1', context_id: 'ctx-1', agent_id: '@worker:hs', answer: 'approved' };
+    let delivered: Record<string, unknown> | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('/api/matrix/')) {
+        return PUT(new NextRequest(new URL(String(url), 'http://dashboard.test'), init),
+          { params: Promise.resolve({ roomId: '!room:test' }) });
+      }
+      delivered = JSON.parse(init!.body as string);
+      return Response.json({ event_id: '$answer' });
+    });
+    await matrixApi.sendMessage('http://127.0.0.1:6167', 'test-token', '!room:test', '批准本次', {
+      'com.agentteams.answer': answer, mentions: { user_ids: ['@worker:hs'] },
+    });
+    expect(delivered?.['com.agentteams.answer']).toEqual(answer);
+    expect(delivered?.['m.mentions']).toEqual({ user_ids: ['@worker:hs'] });
+  });
+
   it.each([
     { kind: 'tool_approval', confirmation_id: 'req-1', context_id: 'ctx-1', agent_id: '@worker:hs', answer: 'approved', actor: '@human:hs' },
     { kind: 'ask_user', confirmation_id: 'question-1', agent_id: '@worker:hs', answer: '选择 A', responses: [{ id: 'q1', selected: ['a'] }] },
