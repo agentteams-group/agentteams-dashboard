@@ -68,8 +68,8 @@ describe('model connection probe endpoint', () => {
     expect(response.status).toBe(400);
     const result = await response.json();
     expect(result.success).toBe(false);
-    expect(result.message).toContain('Controller');
-    expect(result.message).toContain('MODEL_PROBE_ALLOW_HOSTS');
+    expect(result.message).toContain('探测地址');
+    expect(result.message).toContain('保存后重试');
     expect(result.message).toContain('尚未请求模型服务');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(consoleCall).not.toHaveBeenCalled();

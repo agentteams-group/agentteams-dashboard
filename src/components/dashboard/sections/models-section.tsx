@@ -69,6 +69,7 @@ import type { HigressStatus } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 import { ManagerModelSetup } from './manager-model-setup';
+import { ModelProbePolicyDialog } from './model-probe-policy-dialog';
 import { MODEL_PRESET_NOTES, providerModelPresets } from '@/lib/model-catalog';
 import { commonReasoningEfforts, MODEL_CAPABILITIES, readModelRequestParameters, REASONING_EFFORT_LABELS } from '@/lib/model-parameters';
 import type { ModelProbeInput, ModelProbeResult } from '@/lib/model-connection-probe';
@@ -508,6 +509,7 @@ export function ModelsSection() {
   const [providerDialog, setProviderDialog] = useState<LlmProviderResponse | null | undefined>(undefined);
   const [routeDialog, setRouteDialog] = useState<AiRoute | null | undefined>(undefined);
   const [switchRoute, setSwitchRoute] = useState<AiRoute | null>(null);
+  const [probePolicyOpen, setProbePolicyOpen] = useState(false);
   const [testProvider, setTestProvider] = useState<LlmProviderResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'provider' | 'route'; name: string } | null>(null);
   const providers = providersQuery.data ?? [];
@@ -531,6 +533,7 @@ export function ModelsSection() {
       </div>
     } />
     <ManagerModelSetup />
+    {probePolicyOpen && <ModelProbePolicyDialog onClose={() => setProbePolicyOpen(false)} />}
     <Tabs defaultValue="providers" className="gap-4">
       <TabsList aria-label="模型配置分类" className="max-w-full justify-start overflow-x-auto [&>[role=tab]]:shrink-0">
         <TabsTrigger value="providers">模型连接</TabsTrigger>
@@ -539,7 +542,7 @@ export function ModelsSection() {
         <TabsTrigger value="limits">限流与参考</TabsTrigger>
       </TabsList>
       <TabsContent value="providers">
-    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">模型连接<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个模型连接</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加连接</Button></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onTest={setTestProvider} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
+    <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex flex-wrap items-center gap-3 text-base">模型连接<span className="text-sm font-normal text-muted-foreground">共 {providers.length} 个模型连接</span></CardTitle><CardDescription>连接模型服务：地址、协议和密钥</CardDescription></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => setProbePolicyOpen(true)}>探测地址</Button><Button variant="outline" size="sm" disabled={deleting} onClick={() => setProviderDialog(null)}>添加连接</Button></div></CardHeader><CardContent className="space-y-4 p-4"><ResourceError error={providersQuery.error} /><ProviderTable loading={providersQuery.isLoading} providers={providers} pending={deleting} onEdit={setProviderDialog} onTest={setTestProvider} onDelete={(name) => setDeleteTarget({ type: 'provider', name })} /></CardContent></Card>
       </TabsContent>
       <TabsContent value="routes">
     <Card className="gap-0 py-0 shadow-none"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div className="space-y-1"><CardTitle className="flex items-center gap-1 text-base">AI 路由<InfoTip label="AI 路由分发说明">AI 路由按 model 别名分发到不同模型连接。所有 AI 路由共享网关路径前缀（默认 /v1），网关通过请求体中的 model 别名匹配对应路由分发到不同模型连接；给不同模型连接配置不同的模型映射别名即可实现多路分发。</InfoTip><span className="ml-2 text-sm font-normal text-muted-foreground">{routes.length} 条</span></CardTitle><CardDescription>决定请求由哪个模型连接处理，以及哪些 Agent 可以访问</CardDescription></div><Button variant="outline" size="sm" disabled={deleting || providerNames.length === 0} onClick={() => setRouteDialog(null)}>添加路由</Button></CardHeader><CardContent className="space-y-4 p-4">{providerNames.length === 0 && <p className="text-sm text-muted-foreground">请先创建至少一个模型连接后再添加路由。</p>}<ResourceError error={routesQuery.error} /><RouteTable loading={routesQuery.isLoading} routes={routes} pending={deleting} onEdit={setRouteDialog} onSwitch={setSwitchRoute} onDelete={(name) => setDeleteTarget({ type: 'route', name })} /></CardContent></Card>

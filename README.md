@@ -439,16 +439,22 @@ accepted. Provider-specific gateways and legacy SSE endpoints are not supported
 by this probe. A successful check verifies Controller-to-gateway access using the
 Worker identity, not connectivity from the Worker container or task completion.
 
-The **Models → Test** button separately tests the model provider upstream. For an
-internal OpenAI-compatible service, set `MODEL_PROBE_ALLOW_HOSTS` on the
-**Controller**, listing only the approved hostnames or IPs, without URL schemes,
-ports or paths. For example, `MODEL_PROBE_ALLOW_HOSTS=172.16.50.89` permits a
-configured `http://172.16.50.89:8080/v1` endpoint. Preserve any existing entries
-as a comma-separated list and recreate the container or roll out the Deployment
-after changing its environment. Helm installations can use
-`controller.env.MODEL_PROBE_ALLOW_HOSTS`. This permits a probe; routing, network
-reachability, API credentials and model availability still need to succeed.
+The **Models → Test** button separately tests the model provider upstream. Use
+**Models → Model connections → Probe addresses** to manage permitted internal
+model-service hosts. Enter hostnames or IPs, one per line or comma-separated,
+without schemes, ports, paths or wildcards. Saving takes effect immediately for
+subsequent probes, including removals, without restarting Controller. The
+Controller persists this policy in its namespace's `agentteams-model-probe-policy`
+ConfigMap; it survives Controller restarts. Only administrators can read or write
+it, and conflicting saves require reloading the current revision.
 
-Controllers without model asset management use the legacy direct probe in the
-Dashboard; only that fallback reads the same variables from the Dashboard
-environment. A supported Controller's rejection does not trigger a direct probe.
+Until a policy is saved, Controller reads `MODEL_PROBE_ALLOW_HOSTS` and
+`MODEL_PROBE_ALLOW_PRIVATE_NETWORK` as deployment defaults. A saved policy fully
+overrides those defaults, including an empty host list or disabled broad private
+access. The advanced private-network switch preserves the existing all-private
+mode for deployments that explicitly need it. A successful approval only permits
+the probe; model credentials, network reachability and availability must still
+succeed. Older Controllers show an upgrade message instead of saving browser-only
+policy. Controllers without model asset management retain the legacy direct
+probe in Dashboard, using its environment policy; supported Controller rejections
+never trigger a direct probe.

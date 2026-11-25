@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   const managed = await callControllerAsset(request, 'models', { action: 'probe', input: value });
   if (managed) {
     if (isRecord(managed.body) && managed.body.error === 'model probe endpoint is outside the configured network allowlist') {
-      return NextResponse.json({ success: false, message: '内网模型地址尚未获准探测。请管理员在 Controller 配置 MODEL_PROBE_ALLOW_HOSTS（模型服务的主机名或 IP），并重启后重试；本次尚未请求模型服务。' }, { status: managed.response.status });
+      return NextResponse.json({ success: false, message: '内网模型地址尚未获准探测。请在「模型连接 → 探测地址」中加入模型服务的主机名或 IP，保存后重试；本次尚未请求模型服务。' }, { status: managed.response.status });
     }
     return NextResponse.json(managed.body, { status: managed.response.status });
   }
