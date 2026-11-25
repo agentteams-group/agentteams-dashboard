@@ -65,6 +65,42 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  for (const runtime of ['codex', 'claudecode', 'qoder', 'openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman']) {
+    it(`${runtime}: correlates native tool edits, retains results and closes one process`, () => {
+      const run = 'native-owned-run';
+      const content = (block: Record<string, unknown>) => ({
+        msgtype: 'm.notice', 'org.agentteams.progress_only': true,
+        'm.mentions': { user_ids: [] },
+        'org.agentteams.run': { version: '1', run_id: run, blocks: [block] },
+      });
+      const first = { type: 'tool_call', tool_call_id: 'read-one', tool_name: 'read_file', arguments: { path: 'index.html' }, status: 'running' };
+      const second = { ...first, tool_call_id: 'read-two', arguments: { path: 'missing.html' } };
+      const events = [
+        notice('$one', '@w:server', 'read_file', 0, content(first)),
+        notice('$two', '@w:server', 'read_file', 1000, content(second)),
+        notice('$two-end', '@w:server', 'read_file', 2000, {
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$two' },
+          'm.new_content': { body: 'read_file', ...content({ ...second, status: 'failed', result: 'not found' }) },
+        }),
+        notice('$one-end', '@w:server', 'read_file', 3000, {
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$one' },
+          'm.new_content': { body: 'read_file', ...content({ ...first, status: 'succeeded', result: '<html>ok</html>' }) },
+        }),
+        notice('$end', '@w:server', '执行过程', 4000, content({ type: 'error', kind: 'quiet', title: '已处理' })),
+      ];
+      for (const ordered of [events, [...events].reverse()]) {
+        const { messages } = assemble(ordered, runtime, '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+        expect(messages).toHaveLength(1);
+        expect(messages[0].turnState).toBe('finalized');
+        const tools = messages[0].precomputedBlocks?.filter(block => block.type === 'tool_call');
+        expect(tools).toHaveLength(2);
+        expect(tools?.map(block => block.payload)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ tool_call_id: 'read-one', arguments: { path: 'index.html' }, result: '<html>ok</html>', status: 'succeeded' }),
+          expect.objectContaining({ tool_call_id: 'read-two', result: 'not found', status: 'failed' }),
+        ]));
+      }
+    });
+  }
   it('replays the reported native planning handoff as one finalized process and its downstream message', () => {
     const events = quietTaskHandoff as MatrixEvent[];
     const sender = events[0].sender;
